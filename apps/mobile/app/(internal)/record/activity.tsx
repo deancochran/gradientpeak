@@ -7,7 +7,7 @@
  * - Only accessible if no Activity Plan is attached
  * - Once an Activity Plan is attached, category is locked to the plan's category
  *
- * Note: Location (indoor/outdoor) is now controlled via the GPS toggle button in the footer
+ * Note: GPS recording is controlled via the GPS toggle button in the footer
  */
 
 import React, { useState } from "react";
@@ -26,10 +26,7 @@ import {
 } from "lucide-react-native";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { useActivityStatus } from "@/lib/hooks/useActivityRecorder";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 
 const ACTIVITY_CATEGORIES: {
   value: PublicActivityCategory;
@@ -45,7 +42,7 @@ const ACTIVITY_CATEGORIES: {
 
 export default function ActivitySelectionScreen() {
   const service = useSharedActivityRecorder();
-  const { activityCategory, activityLocation } = useActivityStatus(service);
+  const { activityCategory, gpsRecordingEnabled } = useActivityStatus(service);
 
   // Check if a plan is attached (category should be locked)
   const hasPlan = service?.hasPlan ?? false;
@@ -56,11 +53,11 @@ export default function ActivitySelectionScreen() {
   const handleSave = () => {
     if (!service) return;
 
-    // Update the activity category only (location is controlled by GPS button)
+    // Update the activity category only (GPS is controlled by GPS button)
     // The service will preserve any existing plan automatically
     service.selectActivityFromPayload({
       category: selectedCategory,
-      location: activityLocation, // Keep current location
+      gpsRecordingEnabled,
     });
 
     router.back();
@@ -76,15 +73,17 @@ export default function ActivitySelectionScreen() {
         {hasPlan && (
           <View className="bg-muted/50 p-3 rounded-lg mb-4 border border-border">
             <Text className="text-xs text-muted-foreground">
-              Category is locked because an Activity Plan is attached. Detach the plan to change category.
+              Category is locked because an Activity Plan is attached. Detach
+              the plan to change category.
             </Text>
           </View>
         )}
 
-        {/* Info Banner - Location Control */}
+        {/* Info Banner - GPS Control */}
         <View className="bg-muted/50 p-3 rounded-lg mb-4 border border-border">
           <Text className="text-xs text-muted-foreground">
-            Use the GPS toggle button in the footer to switch between Indoor and Outdoor modes.
+            Use the GPS toggle button in the footer to turn GPS recording ON or
+            OFF.
           </Text>
         </View>
 
@@ -126,11 +125,7 @@ export default function ActivitySelectionScreen() {
 
       {/* Save Button */}
       <View className="p-4 border-t border-border">
-        <Button
-          onPress={handleSave}
-          disabled={!hasChanges}
-          className="w-full"
-        >
+        <Button onPress={handleSave} disabled={!hasChanges} className="w-full">
           <Text className="text-primary-foreground">Save Changes</Text>
         </Button>
       </View>

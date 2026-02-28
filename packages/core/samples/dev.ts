@@ -11,7 +11,7 @@ export const DEV_SAMPLE_BIKE: RecordingServiceActivityPlan = {
   description:
     "Compact 1-minute activity using mixed target types and intervals to validate schema logic.",
   activity_category: "other",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up Spin",
@@ -54,7 +54,7 @@ export const DEV_SAMPLE_RUN: RecordingServiceActivityPlan = {
   description:
     "1-minute developer activity to validate heart-rate and RPE parsing for run-type plans.",
   activity_category: "other",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up Jog",
@@ -100,7 +100,7 @@ export const DEV_SAMPLE_TREADMILL: RecordingServiceActivityPlan = {
   description:
     "Short treadmill validation activity testing RPE, speed, and intervals.",
   activity_category: "other",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Walk Warm-up",
@@ -141,7 +141,7 @@ export const DEV_SAMPLE_SWIM: RecordingServiceActivityPlan = {
   description:
     "Compact swim plan verifying distance units and stroke-rate handling.",
   activity_category: "other",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -182,7 +182,7 @@ export const DEV_SAMPLE_STRENGTH: RecordingServiceActivityPlan = {
   description:
     "One-minute strength training plan to validate reps, resistance, and dual targets.",
   activity_category: "other",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up Stretch",

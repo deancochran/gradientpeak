@@ -57,7 +57,6 @@ export class WahooSyncService {
             name,
             description,
             activity_category,
-            activity_location,
             structure,
             updated_at,
             route_id
@@ -101,7 +100,7 @@ export class WahooSyncService {
         };
       }
 
-      // 4. Convert activity category + location to activity type
+      // 4. Convert activity category to activity type
       if (!planned.activity_plan) {
         return {
           success: false,
@@ -112,14 +111,13 @@ export class WahooSyncService {
 
       const activityType = toActivityType(
         planned.activity_plan.activity_category,
-        planned.activity_plan.activity_location,
       );
 
       if (!isActivityTypeSupportedByWahoo(activityType)) {
         return {
           success: false,
           action: "no_change",
-          error: `Activity type '${activityType}' is not supported by Wahoo. Only cycling (outdoor_bike, indoor_bike_trainer) and running (outdoor_run, indoor_treadmill) activities can be synced to Wahoo.`,
+          error: `Activity type '${activityType}' is not supported by Wahoo. Only cycling and running activities can be synced to Wahoo.`,
         };
       }
 
@@ -165,10 +163,7 @@ export class WahooSyncService {
                 filePath: route.file_path,
                 name: route.name,
                 description: route.description ?? undefined,
-                activityType: toActivityType(
-                  route.activity_category,
-                  "outdoor",
-                ),
+                activityType: toActivityType(route.activity_category),
                 totalDistance: route.total_distance,
                 totalAscent: route.total_ascent ?? undefined,
                 totalDescent: route.total_descent ?? undefined,
@@ -324,6 +319,7 @@ export class WahooSyncService {
     // Convert to Wahoo format
     const wahooPlan = convertToWahooPlan(structure, {
       activityType: activityType as any,
+      hasRoute: Boolean(routeData),
       name: planned.activity_plan.name,
       description: planned.activity_plan.description,
       ftp: profile?.ftp || undefined,
@@ -344,7 +340,9 @@ export class WahooSyncService {
     console.log(`[Wahoo Sync] Plan created with ID: ${plan.id}`);
 
     // Get workout type ID and duration
-    const workoutTypeId = toWahooWorkoutTypeId(activityType as any);
+    const workoutTypeId = toWahooWorkoutTypeId(activityType as any, {
+      hasRoute: Boolean(routeData),
+    });
     if (workoutTypeId === null) {
       return {
         success: false,
@@ -461,6 +459,7 @@ export class WahooSyncService {
       // Convert to Wahoo format
       const wahooPlan = convertToWahooPlan(structure, {
         activityType: activityType as any,
+        hasRoute: Boolean(planned.activity_plan.route_id),
         name: planned.activity_plan.name,
         description: planned.activity_plan.description,
         ftp: profile?.ftp || undefined,
@@ -477,7 +476,9 @@ export class WahooSyncService {
       });
 
       // Get workout type ID and duration
-      const workoutTypeId = toWahooWorkoutTypeId(activityType as any);
+      const workoutTypeId = toWahooWorkoutTypeId(activityType as any, {
+        hasRoute: Boolean(planned.activity_plan.route_id),
+      });
       if (workoutTypeId === null) {
         return {
           success: false,

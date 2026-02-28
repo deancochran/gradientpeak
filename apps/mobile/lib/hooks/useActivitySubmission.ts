@@ -135,7 +135,6 @@ function calculateActivityMetrics(
   metrics: Record<string, unknown>;
   hrZoneSeconds: number[] | null;
   powerZoneSeconds: number[] | null;
-  location: "indoor" | "outdoor" | null;
 } {
   if (!metadata.startedAt || !metadata.endedAt) {
     throw new Error(
@@ -266,9 +265,6 @@ function calculateActivityMetrics(
   // Build power zone seconds array (7 zones) - will be calculated on server
   const powerZoneSeconds = null;
 
-  // Get location from metadata
-  const location = metadata.activityLocation;
-
   return {
     durationSeconds: duration_seconds,
     movingSeconds: moving_seconds,
@@ -276,7 +272,6 @@ function calculateActivityMetrics(
     metrics,
     hrZoneSeconds,
     powerZoneSeconds,
-    location,
   };
 }
 
@@ -425,9 +420,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         profile_id: metadata.profileId,
         started_at: metadata.startedAt,
         finished_at: metadata.endedAt,
-        name: `${metadata.activityLocation} ${metadata.activityCategory} - ${new Date(metadata.startedAt).toLocaleDateString()}`,
+        name: `${metadata.activityCategory} (${metadata.gpsRecordingEnabled ? "GPS ON" : "GPS OFF"}) - ${new Date(metadata.startedAt).toLocaleDateString()}`,
         type: metadata.activityCategory,
-        location: calculatedMetrics.location,
         duration_seconds: calculatedMetrics.durationSeconds,
         moving_seconds: calculatedMetrics.movingSeconds,
         distance_meters: calculatedMetrics.distanceMeters,

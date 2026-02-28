@@ -102,16 +102,17 @@ export * from "./onboarding";
 
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
 // Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input
-export const activityPlanCreateSchema = z.object({
-  activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
-  activity_location: z.enum(["outdoor", "indoor"]),
-  name: z.string().min(1, "Plan name is required"),
-  description: z.string().max(1000).nullable().optional(),
-  structure: z.any(), // Will be validated by activityPlanStructureSchema
-  version: z.string().default("1.0").optional(),
-  route_id: z.string().uuid().nullable().optional(),
-  notes: z.string().max(2000).nullable().optional(),
-});
+export const activityPlanCreateSchema = z
+  .object({
+    activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
+    name: z.string().min(1, "Plan name is required"),
+    description: z.string().max(1000).nullable().optional(),
+    structure: z.any(), // Will be validated by activityPlanStructureSchema
+    version: z.string().default("1.0").optional(),
+    route_id: z.string().uuid().nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+  })
+  .strict();
 
 export const activityPlanUpdateSchema = activityPlanCreateSchema.partial();
 
@@ -120,10 +121,11 @@ export const activityPlanUpdateSchema = activityPlanCreateSchema.partial();
 // Type for ActivityRecorder service (V2 only)
 export type RecordingServiceActivityPlan = Omit<
   PublicActivityPlansInsert,
-  "idx" | "profile_id" | "created_at"
+  "idx" | "profile_id" | "created_at" | "gps_recording_enabled"
 > & {
   structure: ActivityPlanStructureV2;
-  route_id?: string | null; // Optional route ID for outdoor activities
+  gps_recording_enabled?: boolean;
+  route_id?: string | null; // Optional route ID when following a route
 };
 
 // tRPC-specific Training Plans Schemas

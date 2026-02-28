@@ -12,7 +12,7 @@ export const EASY_AEROBIC_RUN: RecordingServiceActivityPlan = {
   name: "Easy Aerobic Run",
   description: "Comfortable outdoor run focusing on aerobic base building",
   activity_category: "run",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Easy Run",
@@ -34,7 +34,7 @@ export const TEMPO_RUN: RecordingServiceActivityPlan = {
   name: "Tempo Run",
   description: "Sustained tempo effort with warm-up and cool-down",
   activity_category: "run",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up Jog",
@@ -68,7 +68,7 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
   name: "5K Pace Intervals",
   description: "High-intensity intervals at 5K race pace",
   activity_category: "run",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -113,7 +113,7 @@ export const LONG_RUN: RecordingServiceActivityPlan = {
   name: "Long Steady Run",
   description: "Extended aerobic run for endurance building",
   activity_category: "run",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Easy Start",
@@ -147,7 +147,7 @@ export const FARTLEK_RUN: RecordingServiceActivityPlan = {
   name: "Fartlek Training",
   description: "Unstructured speed play with varied intensities",
   activity_category: "run",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -188,7 +188,7 @@ export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
   description:
     "20 minute tempo run at 85% FTP - Comfortably hard sustained effort",
   activity_category: "run",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(10),
@@ -215,7 +215,7 @@ export const SYSTEM_THRESHOLD_INTERVALS_RUN: RecordingServiceActivityPlan = {
   name: "Threshold Intervals",
   description: "6x1km at 95% FTP with 2min recovery - Build speed endurance",
   activity_category: "run",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(15),
@@ -252,7 +252,7 @@ export const SYSTEM_LONG_EASY_RUN: RecordingServiceActivityPlan = {
   name: "Long Easy Run",
   description: "15km easy long run at 70% effort - Build aerobic endurance",
   activity_category: "run",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(10),

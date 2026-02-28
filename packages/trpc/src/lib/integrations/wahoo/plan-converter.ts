@@ -44,6 +44,7 @@ export interface WahooTarget {
 
 export interface ConvertOptions {
   activityType: ActivityType;
+  hasRoute?: boolean;
   name: string;
   description?: string;
   ftp?: number;
@@ -110,7 +111,9 @@ export function convertToWahooPlan(
   structure: ActivityPlanStructureV2,
   options: ConvertOptions,
 ): WahooPlanJson {
-  const activityTypeMapping = toWahooTypes(options.activityType);
+  const activityTypeMapping = toWahooTypes(options.activityType, {
+    hasRoute: options.hasRoute,
+  });
 
   if (!activityTypeMapping) {
     throw new Error(

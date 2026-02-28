@@ -15,8 +15,6 @@ export const publicActivityCategorySchema = z.enum([
   "other",
 ]);
 
-export const publicActivityLocationSchema = z.enum(["outdoor", "indoor"]);
-
 export const publicEffortTypeSchema = z.enum(["power", "speed"]);
 
 export const publicEventStatusSchema = z.enum([
@@ -110,7 +108,6 @@ export const publicActivitiesRowSchema = z.object({
   intensity_factor: z.number().nullable(),
   is_private: z.boolean(),
   laps: jsonSchema.nullable(),
-  location: z.string().nullable(),
   map_bounds: jsonSchema.nullable(),
   max_cadence: z.number().nullable(),
   max_heart_rate: z.number().nullable(),
@@ -175,7 +172,6 @@ export const publicActivitiesInsertSchema = z.object({
   intensity_factor: z.number().optional().nullable(),
   is_private: z.boolean().optional(),
   laps: jsonSchema.optional().nullable(),
-  location: z.string().optional().nullable(),
   map_bounds: jsonSchema.optional().nullable(),
   max_cadence: z.number().optional().nullable(),
   max_heart_rate: z.number().optional().nullable(),
@@ -240,7 +236,6 @@ export const publicActivitiesUpdateSchema = z.object({
   intensity_factor: z.number().optional().nullable(),
   is_private: z.boolean().optional(),
   laps: jsonSchema.optional().nullable(),
-  location: z.string().optional().nullable(),
   map_bounds: jsonSchema.optional().nullable(),
   max_cadence: z.number().optional().nullable(),
   max_heart_rate: z.number().optional().nullable(),
@@ -351,7 +346,6 @@ export const publicActivityEffortsRelationshipsSchema = z.tuple([
 
 export const publicActivityPlansRowSchema = z.object({
   activity_category: publicActivityCategorySchema,
-  activity_location: publicActivityLocationSchema,
   created_at: z.string(),
   description: z.string(),
   id: z.string(),
@@ -368,7 +362,6 @@ export const publicActivityPlansRowSchema = z.object({
 
 export const publicActivityPlansInsertSchema = z.object({
   activity_category: publicActivityCategorySchema.optional(),
-  activity_location: publicActivityLocationSchema.optional(),
   created_at: z.string().optional(),
   description: z.string(),
   id: z.string().optional(),
@@ -385,7 +378,6 @@ export const publicActivityPlansInsertSchema = z.object({
 
 export const publicActivityPlansUpdateSchema = z.object({
   activity_category: publicActivityCategorySchema.optional(),
-  activity_location: publicActivityLocationSchema.optional(),
   created_at: z.string().optional(),
   description: z.string().optional(),
   id: z.string().optional(),

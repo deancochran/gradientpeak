@@ -26,14 +26,17 @@ import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface GPSStatusOverlayProps {
   service: ActivityRecorderService | null;
-  isOutdoor: boolean;
+  gpsRecordingEnabled: boolean;
 }
 
 /**
  * Determines if GPS signal is currently available/strong
  * Based on recent location updates from the service
  */
-function useGPSStatus(service: ActivityRecorderService | null, isOutdoor: boolean): {
+function useGPSStatus(
+  service: ActivityRecorderService | null,
+  gpsRecordingEnabled: boolean,
+): {
   hasSignal: boolean;
   lastUpdateTime: number | null;
   lastAccuracy: number | null;
@@ -43,7 +46,7 @@ function useGPSStatus(service: ActivityRecorderService | null, isOutdoor: boolea
   const [lastAccuracy, setLastAccuracy] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!service || !isOutdoor) {
+    if (!service || !gpsRecordingEnabled) {
       setHasSignal(true);
       return;
     }
@@ -58,9 +61,10 @@ function useGPSStatus(service: ActivityRecorderService | null, isOutdoor: boolea
       setLastAccuracy(location?.coords?.accuracy ?? null);
 
       // Signal is good if accuracy is reasonable
-      const isAccurate = location?.coords?.accuracy !== undefined &&
-                         location?.coords?.accuracy !== null &&
-                         location.coords.accuracy <= 20;
+      const isAccurate =
+        location?.coords?.accuracy !== undefined &&
+        location?.coords?.accuracy !== null &&
+        location.coords.accuracy <= 20;
 
       setHasSignal(isAccurate);
     };
@@ -105,16 +109,22 @@ function useGPSStatus(service: ActivityRecorderService | null, isOutdoor: boolea
     // IMPORTANT: Do not include lastUpdateTime in deps to prevent infinite loop
     // The interval checks status periodically without re-creating itself
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [service, isOutdoor]);
+  }, [service, gpsRecordingEnabled]);
 
   return { hasSignal, lastUpdateTime, lastAccuracy };
 }
 
-export function GPSStatusOverlay({ service, isOutdoor }: GPSStatusOverlayProps) {
-  const { hasSignal, lastUpdateTime, lastAccuracy } = useGPSStatus(service, isOutdoor);
+export function GPSStatusOverlay({
+  service,
+  gpsRecordingEnabled,
+}: GPSStatusOverlayProps) {
+  const { hasSignal, lastUpdateTime, lastAccuracy } = useGPSStatus(
+    service,
+    gpsRecordingEnabled,
+  );
 
-  // Only show overlay for outdoor activities when GPS signal is lost
-  if (!isOutdoor || hasSignal) {
+  // Only show overlay when GPS recording is enabled and signal is lost
+  if (!gpsRecordingEnabled || hasSignal) {
     return null;
   }
 
@@ -129,7 +139,8 @@ export function GPSStatusOverlay({ service, isOutdoor }: GPSStatusOverlayProps) 
         <ActivityIndicator size="large" className="mb-4" />
         <Text className="text-lg font-semibold mb-2">GPS Searching...</Text>
         <Text className="text-sm text-muted-foreground text-center max-w-xs">
-          Your recording is still active. GPS signal will reconnect automatically.
+          Your recording is still active. GPS signal will reconnect
+          automatically.
         </Text>
         {lastUpdateTime && (
           <Text className="text-xs text-muted-foreground mt-3">

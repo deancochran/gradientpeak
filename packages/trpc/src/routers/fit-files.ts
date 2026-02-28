@@ -650,7 +650,6 @@ export const fitFilesRouter = createTRPCRouter({
           name,
           notes: notes || null,
           type: activityType,
-          location: "outdoor", // Could be inferred from GPS data
           is_private: true,
           started_at: startTime.toISOString(),
           finished_at: endTime.toISOString(),

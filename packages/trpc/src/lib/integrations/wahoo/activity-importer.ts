@@ -8,14 +8,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WahooWorkoutSummary } from "./client";
 import { fromActivityType, type ActivityType } from "./activity-type-utils";
 
-// Wahoo workout type mapping to GradientPeak legacy activity types
+// Wahoo workout type mapping to GradientPeak activity categories
 const WAHOO_WORKOUT_TYPE_MAP: Record<number, ActivityType> = {
-  0: "outdoor_bike", // BIKING OUTDOOR
-  1: "outdoor_run", // RUNNING OUTDOOR
-  2: "indoor_strength", // FITNESS EQUIPMENT
-  5: "indoor_treadmill", // TREADMILL RUNNING
-  12: "indoor_bike_trainer", // INDOOR BIKING
-  25: "indoor_swim", // LAP SWIMMING
+  0: "bike", // BIKING OUTDOOR
+  1: "run", // RUNNING OUTDOOR
+  2: "other", // FITNESS EQUIPMENT (not 1:1 with a single GP category)
+  5: "run", // TREADMILL RUNNING
+  12: "bike", // INDOOR BIKING
+  25: "swim", // LAP SWIMMING
 };
 
 export interface ImportResult {
@@ -79,19 +79,29 @@ export class WahooActivityImporter {
       // 3. Find linked planned activity event (if any)
       // Note: This queries synced_events which links events to external workouts
       // The external_id column stores the Wahoo workout ID
-      const { data: syncedActivity } = await (this.supabase as any)
-        .from("synced_events")
-        .select("event_id")
-        .eq("provider", "wahoo")
-        .eq("external_id", summary.workout_id.toString())
-        .eq("profile_id", integration.profile_id)
-        .single();
+      const linkedWorkoutId = summary.workout_id ?? summary.workout?.id ?? null;
+
+      const { data: syncedActivity } = linkedWorkoutId
+        ? await (this.supabase as any)
+            .from("synced_events")
+            .select("event_id")
+            .eq("provider", "wahoo")
+            .eq("external_id", linkedWorkoutId.toString())
+            .eq("profile_id", integration.profile_id)
+            .single()
+        : { data: null };
 
       // 4. Fetch the workout to get activity type
       // Note: In a real implementation, you'd fetch this from Wahoo API
       // For now, we'll infer from the workout_type_id in the summary
       const activityType = this.inferActivityType(summary);
-      const { category, location } = fromActivityType(activityType);
+      const { category } = fromActivityType(activityType);
+
+      const fitFile = await this.downloadAndStoreFitFile(
+        summary.file?.url,
+        integration.profile_id,
+        summary.id,
+      );
 
       // 5. Calculate start time from duration
       const startedAt = this.calculateStartTime(summary);
@@ -127,27 +137,25 @@ export class WahooActivityImporter {
         finished_at: finishedAt,
 
         // Activity type (new schema)
-        type: activityType,
+        type: category,
         name: `${category} Activity`,
 
         // Core metrics
-        distance_meters: summary.distance_accum || 0,
-        duration_seconds: summary.duration_total_accum || 0,
-        moving_seconds: summary.duration_active_accum || 0,
+        distance_meters: toInteger(summary.distance_accum),
+        duration_seconds: toInteger(summary.duration_total_accum),
+        moving_seconds: toInteger(summary.duration_active_accum),
 
-        // Additional metrics in metrics field
-        metrics: {
-          total_ascent: summary.ascent_accum || 0,
-          total_descent: 0, // Wahoo doesn't provide descent
-          calories: summary.calories_accum || 0,
-          avg_power: summary.power_avg || null,
-          normalized_power: summary.power_bike_np_last || null,
-          training_stress_score: summary.power_bike_tss_last || null,
-          avg_hr: summary.heart_rate_avg || null,
-          avg_cadence: summary.cadence_avg || null,
-          avg_speed: summary.speed_avg ? summary.speed_avg * 3.6 : null,
-          work: summary.work_accum ? summary.work_accum / 1000 : null,
-        },
+        // Additional metrics mapped to concrete DB columns
+        elevation_gain_meters: toInteger(summary.ascent_accum),
+        calories: toInteger(summary.calories_accum),
+        avg_power: toNullableNumber(summary.power_avg),
+        normalized_power: toNullableNumber(summary.power_bike_np_last),
+        training_stress_score: toNullableNumber(summary.power_bike_tss_last),
+        avg_heart_rate: toNullableInteger(summary.heart_rate_avg),
+        avg_cadence: toNullableInteger(summary.cadence_avg),
+        avg_speed_mps: toNullableNumber(summary.speed_avg),
+        fit_file_path: fitFile?.path ?? null,
+        fit_file_size: fitFile?.size ?? null,
       };
 
       // 7. Create activity
@@ -191,18 +199,64 @@ export class WahooActivityImporter {
    * to get the actual workout_type_id
    */
   private inferActivityType(summary: WahooWorkoutSummary): ActivityType {
-    // Check if it's a cycling workout (has power data)
-    if (summary.power_avg > 0 || summary.power_bike_np_last > 0) {
-      return "indoor_bike_trainer";
+    const workoutTypeId = summary.workout?.workout_type_id;
+    if (
+      workoutTypeId !== undefined &&
+      WAHOO_WORKOUT_TYPE_MAP[workoutTypeId] !== undefined
+    ) {
+      return WAHOO_WORKOUT_TYPE_MAP[workoutTypeId]!;
     }
 
-    // Check if it's a running workout (has cadence but no power)
-    if (summary.cadence_avg > 0) {
-      return "indoor_treadmill";
+    // Hard-cutover rule: only map explicit 1:1 workout_type_id values.
+    // Ambiguous or unknown activities (yoga, hiking, walking, skiing, etc.)
+    // are imported as "other".
+    return "other";
+  }
+
+  private async downloadAndStoreFitFile(
+    url: string | undefined,
+    profileId: string,
+    workoutSummaryId: number,
+  ): Promise<{ path: string; size: number } | null> {
+    if (!url) {
+      return null;
     }
 
-    // Default to indoor bike
-    return "indoor_bike_trainer";
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.warn(
+          `Failed to download Wahoo FIT file for summary ${workoutSummaryId}: ${response.status}`,
+        );
+        return null;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      const fitPath = `${profileId}/wahoo-${workoutSummaryId}.fit`;
+
+      const { error: uploadError } = await this.supabase.storage
+        .from("fit-files")
+        .upload(fitPath, bytes, {
+          contentType: "application/octet-stream",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.warn(
+          `Failed to store Wahoo FIT file for summary ${workoutSummaryId}: ${uploadError.message}`,
+        );
+        return null;
+      }
+
+      return { path: fitPath, size: bytes.byteLength };
+    } catch (error) {
+      console.warn(
+        `Failed to fetch/store Wahoo FIT file for summary ${workoutSummaryId}`,
+        error,
+      );
+      return null;
+    }
   }
 
   /**
@@ -211,19 +265,43 @@ export class WahooActivityImporter {
    * the actual start time, or we'd fetch it from the workout details
    */
   private calculateStartTime(summary: WahooWorkoutSummary): string {
+    if (summary.started_at) {
+      return summary.started_at;
+    }
+
     const now = new Date();
     const startTime = new Date(
-      now.getTime() - summary.duration_total_accum * 1000,
+      now.getTime() - toNumber(summary.duration_total_accum) * 1000,
     );
     return startTime.toISOString();
   }
+}
 
-  /**
-   * Map Wahoo workout type ID to GradientPeak activity type
-   */
-  private mapWorkoutType(workoutTypeId: number): ActivityType {
-    return WAHOO_WORKOUT_TYPE_MAP[workoutTypeId] || "indoor_bike_trainer";
+function toNumber(value: number | string | null | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toNullableNumber(
+  value: number | string | null | undefined,
+): number | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
   }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toInteger(value: number | string | null | undefined): number {
+  return Math.round(toNumber(value));
+}
+
+function toNullableInteger(
+  value: number | string | null | undefined,
+): number | null {
+  const parsed = toNullableNumber(value);
+  return parsed === null ? null : Math.round(parsed);
 }
 
 /**

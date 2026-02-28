@@ -144,11 +144,6 @@ function hasChanges(local: SystemTemplate, remote: any): boolean {
       console.log("DEBUG: activity_category mismatch");
     return true;
   }
-  if (local.activity_location !== remote.activity_location) {
-    if (local.name === "Sweet Spot Intervals")
-      console.log("DEBUG: activity_location mismatch");
-    return true;
-  }
   if (localRouteId !== remoteRouteId) {
     if (local.name === "Sweet Spot Intervals")
       console.log("DEBUG: route_id mismatch");
@@ -257,7 +252,6 @@ async function seedTemplates() {
                 name: template.name, // Update name if it changed
                 description: template.description,
                 activity_category: template.activity_category,
-                activity_location: template.activity_location,
                 structure: template.structure,
                 route_id: template.route_id,
                 notes: template.notes,
@@ -286,7 +280,6 @@ async function seedTemplates() {
               name: template.name,
               description: template.description,
               activity_category: template.activity_category,
-              activity_location: template.activity_location,
               structure: template.structure,
               route_id: template.route_id,
               notes: template.notes,

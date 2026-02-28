@@ -8,7 +8,7 @@ Inputs: `design.md`
 ## 1) Architecture and Ownership
 
 - `apps/mobile`:
-  - refactor activity plan creation UX into staged modal/sheet flow
+  - refactor activity plan create/edit UX into one reusable in-place form screen
   - add inline validation and error placement logic
   - support interval and step editing without route redirects
 - `packages/core` and/or existing plan estimation utilities:
@@ -20,43 +20,44 @@ Inputs: `design.md`
 
 Lock these decisions before coding begins:
 
-1. Creation flow is staged: Basics -> Interval Builder -> Review.
-2. The flow remains in current screen context (sheet/modal/inline), not full-screen redirects for sub-steps.
-3. Validation is strict and submit-gating.
-4. Inline errors are required at the field/section causing failure.
+1. Create and edit must use a shared form component/logic path.
+2. Authoring must be completed in one pushed screen (no multi-screen wizard).
+3. Interval add/repeat/steps configuration is inline in same surface.
+4. Validation is strict and submit-gating.
+5. Inline errors are required at the field/section causing failure.
 
 ## 3) Workstreams
 
-### A) UX Surface Refactor
+### A) Shared Create/Edit Form Foundation
 
-- Identify current creation entry point and split into staged internal state machine.
-- Implement step shell with forward/back progression.
+- Identify current create and edit entry points and route both into a shared form implementation.
+- Build one form state model reusable for create defaults and edit hydration.
 - Preserve Android back and gesture behavior.
 
-### B) Basics Step
+### B) Single-Screen Form Sections
 
 - Implement required fields and validation for plan name and sport type.
-- Keep optional metadata fields in same step.
-- Block progression until basics valid.
+- Keep optional metadata fields in same screen section.
+- Keep all sections on one screen with optional expand/collapse behavior.
 
-### C) Interval Builder + Interval Sub-Modal
+### C) Inline Interval and Step Authoring
 
 - Implement interval list with empty prompt.
-- Add/edit interval sub-modal.
+- Add interval inline from a single action.
 - Enforce repeat count minimum and step presence before interval save.
-- Add step editor with required duration/zone/type constraints.
+- Add step editor with required duration/zone/type constraints in same screen context.
 - Add reorder support (or maintain existing reorder behavior if already present).
 
-### D) Review and Save
+### D) Summary + Save in Same Screen
 
-- Build summary surface with structural overview.
+- Build summary surface with structural overview in same screen.
 - Integrate estimated totals via existing estimation pipeline.
-- Add edit shortcuts that deep-link back to relevant creation section.
 - Gate final save on full validation pass.
 
 ### E) Legacy Path Cleanup
 
-- Remove or demote legacy redirect-based sub-step paths from default creation flow.
+- Remove or demote legacy create/edit form divergence.
+- Remove redirect-based sub-step paths from default authoring flow.
 - Keep compatibility wrappers only if required temporarily, then remove.
 
 ## 4) Validation and Quality Gates
@@ -67,14 +68,14 @@ Lock these decisions before coding begins:
 
 ## 5) Test Strategy
 
-- Step progression tests (cannot advance when required fields missing).
+- Shared form parity tests (create and edit render/behave through same component path).
 - Interval constraints tests (repeat >= 1, at least one step).
 - Submit gating tests (invalid structure blocked).
-- Review shortcut tests (edit links route to correct section).
+- Single-screen interaction tests (no route hops during interval/step authoring).
 - Regression tests for existing creation contract payload.
 
 ## 6) Rollout Notes
 
-- Deliver flow in sequence: shell -> basics -> interval builder -> review.
+- Deliver flow in sequence: shared foundation -> single-screen sections -> inline interval/step -> save.
 - Keep payload schema compatibility stable until all callers are verified.
 - Validate UX parity on both iOS and Android interaction patterns.

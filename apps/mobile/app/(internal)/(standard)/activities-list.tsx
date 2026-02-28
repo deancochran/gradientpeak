@@ -214,7 +214,7 @@ function ActivitiesScreen() {
                           You
                         </Text>
 
-                        {/* Metadata Row: Date + Device + Location */}
+                        {/* Metadata Row: Date + Device */}
                         <View className="flex-row items-center gap-1.5 mt-1 flex-wrap">
                           <Text className="text-xs text-muted-foreground">
                             {format(
@@ -230,16 +230,6 @@ function ActivitiesScreen() {
                               <Text className="text-xs text-muted-foreground">
                                 {activity.device_manufacturer}{" "}
                                 {activity.device_product || ""}
-                              </Text>
-                            </>
-                          )}
-                          {activity.location && (
-                            <>
-                              <Text className="text-xs text-muted-foreground">
-                                •
-                              </Text>
-                              <Text className="text-xs text-muted-foreground capitalize">
-                                {activity.location}
                               </Text>
                             </>
                           )}

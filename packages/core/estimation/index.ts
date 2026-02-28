@@ -53,7 +53,7 @@ export {
  *
  * Strategy priority:
  * 1. Structure-based (highest accuracy) - if workout has steps
- * 2. Route-based (medium accuracy) - if outdoor activity with route
+ * 2. Route-based (medium accuracy) - if route data is provided
  * 3. Template-based (lowest accuracy) - fallback using activity type defaults
  *
  * @param context - User profile, activity details, and optional structure/route
@@ -78,7 +78,7 @@ export function estimateActivity(context: EstimationContext): EstimationResult {
   }
 
   // Strategy 2: Route-based
-  if (context.route && context.activityLocation === "outdoor") {
+  if (context.route) {
     try {
       return estimateFromRoute(context);
     } catch (error) {
@@ -147,12 +147,8 @@ export function estimateActivityBatch(
     structure?: any;
     route?: any;
     activity_category: string;
-    activity_location: string;
   }>,
-  context: Omit<
-    EstimationContext,
-    "structure" | "route" | "activityCategory" | "activityLocation"
-  >,
+  context: Omit<EstimationContext, "structure" | "route" | "activityCategory">,
 ): Map<string, EstimationResult> {
   const results = new Map<string, EstimationResult>();
 
@@ -163,7 +159,6 @@ export function estimateActivityBatch(
         structure: plan.structure,
         route: plan.route,
         activityCategory: plan.activity_category as any,
-        activityLocation: plan.activity_location as any,
       };
 
       const estimation = estimateActivity(planContext);
@@ -310,7 +305,6 @@ export function buildEstimationContext(params: {
   // Activity plan data
   activityPlan: {
     activity_category: string;
-    activity_location: string;
     structure?: any;
     route_id?: string;
   };
@@ -336,16 +330,12 @@ export function buildEstimationContext(params: {
     weeklyPlannedTSS,
   } = params;
 
-  // Calculate age from date of birth
-  const age = userProfile.dob ? calculateAge(userProfile.dob) : undefined;
-
   // Note: This function builds a context but needs proper profile type
   // The profile parameter should match PublicProfilesRow from the database
   return {
     profile: userProfile as any, // Cast to match PublicProfilesRow
     fitnessState,
     activityCategory: activityPlan.activity_category as any,
-    activityLocation: activityPlan.activity_location as any,
     structure: activityPlan.structure,
     route: route
       ? {
@@ -358,21 +348,4 @@ export function buildEstimationContext(params: {
     scheduledDate,
     weeklyPlannedTSS,
   };
-}
-
-/**
- * Calculate age from date of birth
- */
-function calculateAge(dob: string): number {
-  const birthDate = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-  if (
-    monthDiff < 0 ||
-    (monthDiff === 0 && today.getDate() < birthDate.getDate())
-  ) {
-    age--;
-  }
-  return age;
 }

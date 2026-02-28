@@ -710,9 +710,9 @@ export const optionalEstimatedTssSchema = z.preprocess(
 );
 
 /**
- * Activity location validation
+ * GPS recording intent validation
  */
-export const activityLocationSchema = z.enum(["outdoor", "indoor"]);
+export const gpsRecordingEnabledSchema = z.boolean();
 
 /**
  * Activity category validation
@@ -728,7 +728,6 @@ export const activityCategorySchema = publicActivityCategorySchema;
  * - name: required string (enhanced: 1-100 chars)
  * - description: required string (enhanced: max 1000 chars)
  * - notes: optional nullable string (enhanced: max 2000 chars)
- * - activity_location: enum ["outdoor", "indoor"]
  * - activity_category: enum ["run", "bike", "swim", "strength", "other"]
  * - route_id: optional nullable UUID
  * - structure: optional nullable JSON
@@ -744,7 +743,6 @@ export const activityPlanCreateFormSchema = publicActivityPlansInsertSchema
     name: true,
     description: true,
     notes: true,
-    activity_location: true,
     activity_category: true,
     route_id: true,
     structure: true,

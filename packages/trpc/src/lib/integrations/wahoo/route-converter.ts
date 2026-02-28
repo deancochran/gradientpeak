@@ -67,7 +67,7 @@ export function validateRouteForWahoo(routeData: RouteFileData): {
   // Check activity type supports routes
   if (!supportsRoutes(routeData.activityType)) {
     errors.push(
-      `Activity type '${routeData.activityType}' does not support routes in Wahoo. Only outdoor_bike and outdoor_run support routes.`,
+      `Activity type '${routeData.activityType}' does not support routes in Wahoo. Only bike and run support routes.`,
     );
   }
 

@@ -217,7 +217,7 @@ function PlanScreen() {
 
     const payload: ActivityPayload = {
       category: plannedActivity.activity_plan.activity_category,
-      location: plannedActivity.activity_plan.activity_location,
+      gpsRecordingEnabled: true,
       eventId: plannedActivity.id,
       plan: plannedActivity.activity_plan,
     };

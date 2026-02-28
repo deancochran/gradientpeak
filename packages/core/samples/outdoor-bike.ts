@@ -12,7 +12,7 @@ export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
   name: "Easy Endurance Ride",
   description: "Comfortable outdoor ride focusing on aerobic base building",
   activity_category: "bike",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Easy Ride",
@@ -35,7 +35,7 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
   name: "Sweet Spot Intervals",
   description: "Outdoor ride with sweet spot power intervals",
   activity_category: "bike",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -80,7 +80,7 @@ export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   name: "Tempo Intervals",
   description: "Outdoor ride with sustained tempo efforts",
   activity_category: "bike",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -127,7 +127,7 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   name: "Climbing Intervals",
   description: "High-intensity climbing intervals for outdoor terrain",
   activity_category: "bike",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Warm-up",
@@ -172,7 +172,7 @@ export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
   name: "Group Ride Simulation",
   description: "Variable intensity ride simulating group ride dynamics",
   activity_category: "bike",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .step({
       name: "Group Warm-up",
@@ -224,7 +224,7 @@ export const SYSTEM_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
   name: "Long Endurance Ride",
   description: "2 hour Zone 2 endurance ride at 70% FTP - Build aerobic base",
   activity_category: "bike",
-  activity_location: "outdoor",
+  gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(15),

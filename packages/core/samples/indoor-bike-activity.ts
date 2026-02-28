@@ -19,7 +19,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   name: "VO2 Max Development",
   description: "75-minute activity with challenging VO2 max intervals",
   activity_category: "bike",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -88,7 +88,7 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
   name: "Active Recovery Ride",
   description: "45-minute easy recovery ride to promote blood flow",
   activity_category: "bike",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -124,7 +124,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
   description:
     "Short activity focusing on neuromuscular power and sprint development",
   activity_category: "bike",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
@@ -182,7 +182,7 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
   description:
     "45-minute indoor trainer activity focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
   activity_category: "bike",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
@@ -230,7 +230,7 @@ export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
   description:
     "A short test activity containing every major step type and target style to validate parsing, UI rendering, and compliance scoring.",
   activity_category: "bike",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Warm-up Spin",
@@ -288,7 +288,7 @@ export const SYSTEM_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
   name: "Sweet Spot Intervals",
   description: "Classic sweet spot workout with 3x10min intervals at 90% FTP",
   activity_category: "bike",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(10),
@@ -334,7 +334,7 @@ export const SYSTEM_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   description:
     "5x3min at 120% FTP with 3min recovery - High intensity aerobic capacity development",
   activity_category: "bike",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(15),
@@ -372,7 +372,7 @@ export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   description:
     "4x8min at 95% FTP (threshold) - Build sustainable power at threshold",
   activity_category: "bike",
-  activity_location: "indoor",
+  gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(15),

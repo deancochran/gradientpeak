@@ -25,9 +25,7 @@ import { Icon } from "@/components/ui/icon";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type {
-  PublicActivityLocation
-} from "@repo/supabase";
+import type {} from "@repo/supabase";
 import type { LocationObject } from "expo-location";
 import { Minimize2, Navigation } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
@@ -37,12 +35,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export interface ZoneAProps {
   service: ActivityRecorderService | null;
-  location: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   hasRoute: boolean;
   isFocused: boolean; // Whether this zone is currently focused
 }
 
-export function ZoneA({ service, location, hasRoute, isFocused }: ZoneAProps) {
+export function ZoneA({
+  service,
+  gpsRecordingEnabled,
+  hasRoute,
+  isFocused,
+}: ZoneAProps) {
   const { focusZoneA, clearFocus } = useFocusMode();
   const { gpsEnabled } = useGpsTracking(service);
   const insets = useSafeAreaInsets();
@@ -74,7 +77,7 @@ export function ZoneA({ service, location, hasRoute, isFocused }: ZoneAProps) {
 
   // Subscribe to GPS location updates
   useEffect(() => {
-    if (!service || !location) return;
+    if (!service) return;
 
     // Subscribe to location updates
     const handleLocationUpdate = (loc: LocationObject) => {
@@ -107,14 +110,15 @@ export function ZoneA({ service, location, hasRoute, isFocused }: ZoneAProps) {
     return () => {
       service.locationManager.removeCallback(handleLocationUpdate);
     };
-  }, [service, location, isAutoCentered, magnetometerHeading]);
+  }, [service, isAutoCentered, magnetometerHeading]);
 
   // Subscribe to magnetometer heading updates
   useEffect(() => {
     if (!service) return;
 
     const handleHeadingUpdate = (headingObject: any) => {
-      const newHeading = headingObject.magHeading ?? headingObject.trueHeading ?? 0;
+      const newHeading =
+        headingObject.magHeading ?? headingObject.trueHeading ?? 0;
 
       // Smooth interpolation to prevent jitter
       setMagnetometerHeading((prev) => {
@@ -199,16 +203,15 @@ export function ZoneA({ service, location, hasRoute, isFocused }: ZoneAProps) {
     }
   }, [currentLocation, magnetometerHeading]);
 
-  // Determine what to show based on location, GPS state, and route
-  const isOutdoor = location === "outdoor";
-  const shouldRender = (isOutdoor && gpsEnabled) || hasRoute;
+  // Determine what to show based on GPS state and route
+  const shouldRender = (gpsRecordingEnabled && gpsEnabled) || hasRoute;
 
   // Calculate focused height
   // Parent container has paddingTop: insets.top already applied
   // We need to fill: screenHeight - insets.top (parent container) - 120 (footer)
   const focusedHeight = screenHeight - insets.top - 120;
 
-  // Don't render if indoor without route
+  // Don't render if GPS is OFF and no route is attached
   if (!shouldRender) {
     return null;
   }
@@ -264,7 +267,7 @@ export function ZoneA({ service, location, hasRoute, isFocused }: ZoneAProps) {
           accessibilityHint="Expands the map to fill the screen"
         >
           {/* Map Content */}
-          {!isOutdoor && hasRoute && service ? (
+          {!gpsRecordingEnabled && hasRoute && service ? (
             <VirtualRouteMap service={service} isFocused={false} />
           ) : (
             <View className="flex-1">
@@ -315,7 +318,7 @@ export function ZoneA({ service, location, hasRoute, isFocused }: ZoneAProps) {
       {isFocused && (
         <>
           {/* Map Content (non-pressable when focused) */}
-          {!isOutdoor && hasRoute && service ? (
+          {!gpsRecordingEnabled && hasRoute && service ? (
             <VirtualRouteMap service={service} isFocused={true} />
           ) : (
             <View className="flex-1">
@@ -376,13 +379,16 @@ export function ZoneA({ service, location, hasRoute, isFocused }: ZoneAProps) {
         </>
       )}
 
-      {/* GPS Status Overlay (outdoor only) */}
-      {isOutdoor && (
-        <GPSStatusOverlay service={service} isOutdoor={isOutdoor} />
+      {/* GPS Status Overlay (GPS ON only) */}
+      {gpsRecordingEnabled && (
+        <GPSStatusOverlay
+          service={service}
+          gpsRecordingEnabled={gpsRecordingEnabled}
+        />
       )}
 
       {/* Re-center Button (shows when not auto-centered, in both normal and focused) */}
-      {!isAutoCentered && currentLocation && isOutdoor && (
+      {!isAutoCentered && currentLocation && gpsRecordingEnabled && (
         <View className="absolute bottom-4 right-4">
           <Button
             size="icon"

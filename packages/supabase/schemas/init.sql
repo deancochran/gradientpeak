@@ -2,12 +2,6 @@
 -- ENUMS
 -- ============================================================================
 
--- Location where activity takes place
-create type public.activity_location as enum (
-    'outdoor',
-    'indoor'
-);
-
 -- Category/type of activity (broad classification)
 create type public.activity_category as enum (
     'run',
@@ -199,7 +193,6 @@ create table if not exists public.activity_plans (
     version text not null default '1.0',
     name text not null,
     notes text,
-    activity_location activity_location not null default 'indoor',
     activity_category activity_category not null default 'run',
     description text not null,
     structure jsonb,
@@ -440,7 +433,6 @@ create table if not exists public.activities (
     name text not null,
     notes text,
     type text not null, -- 'bike', 'run', 'swim', 'strength', 'other'
-    location text, -- 'indoor', 'outdoor'
     is_private boolean not null default true,
 
     -- ============================================================================
@@ -559,10 +551,6 @@ create index if not exists idx_activities_profile_started
 
 create index if not exists idx_activities_type
     on public.activities(type);
-
-create index if not exists idx_activities_location
-    on public.activities(location)
-    where location is not null;
 
 create index if not exists idx_activities_started
     on public.activities(started_at desc);

@@ -4,7 +4,7 @@
 
 import type {
   PublicActivityPlansRow,
-  PublicActivityRoutesRow
+  PublicActivityRoutesRow,
 } from "@repo/supabase";
 import {
   buildEstimationContext,
@@ -58,7 +58,6 @@ export async function addEstimationToPlan(
     userProfile: profile || {},
     activityPlan: {
       activity_category: plan.activity_category,
-      activity_location: plan.activity_location,
       structure: plan.structure,
       route_id: plan.route_id ?? undefined,
     },
@@ -129,7 +128,6 @@ export async function addEstimationToPlans(
         userProfile: profile || {},
         activityPlan: {
           activity_category: plan.activity_category,
-          activity_location: plan.activity_location,
           structure: plan.structure,
           route_id: plan.route_id ?? undefined,
         },
@@ -184,7 +182,7 @@ export async function estimatePlannedActivity(
   // Fetch activity plan
   const { data: plan } = await supabase
     .from("activity_plans")
-    .select("activity_category, activity_location, structure, route_id")
+    .select("activity_category, structure, route_id")
     .eq("id", activityPlanId)
     .single();
 
@@ -244,7 +242,6 @@ export async function estimatePlannedActivity(
       : undefined,
     activityPlan: {
       activity_category: plan.activity_category,
-      activity_location: plan.activity_location,
       structure: plan.structure,
       route_id: plan.route_id,
     },

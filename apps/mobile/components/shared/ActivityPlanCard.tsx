@@ -18,7 +18,6 @@ export interface ActivityPlan {
   id: string;
   name: string;
   activity_category: string;
-  activity_location: string;
   description?: string | null;
   structure?: ActivityPlanStructureV2;
   estimated_duration?: number | null; // in minutes

@@ -1,7 +1,4 @@
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-} from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/supabase";
 import type { DurationV2, IntensityTargetV2, PlanStepV2 } from "../schemas";
 
 /**
@@ -9,7 +6,6 @@ import type { DurationV2, IntensityTargetV2, PlanStepV2 } from "../schemas";
  */
 export interface DefaultsContext {
   activityCategory: PublicActivityCategory;
-  activityLocation: PublicActivityLocation;
   position: number; // 0 = first step, -1 = last step
   totalSteps: number;
 }

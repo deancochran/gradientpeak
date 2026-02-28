@@ -10,7 +10,6 @@ interface ActivityPlanCreationState {
   // Form data
   name: string;
   description: string;
-  activityLocation: "outdoor" | "indoor";
   activityCategory: "run" | "bike" | "swim" | "strength" | "other";
   structure: ActivityPlanStructureV2;
   routeId: string | null;
@@ -19,7 +18,6 @@ interface ActivityPlanCreationState {
   // Actions
   setName: (name: string) => void;
   setDescription: (description: string) => void;
-  setActivityLocation: (location: "outdoor" | "indoor") => void;
   setActivityCategory: (
     category: "run" | "bike" | "swim" | "strength" | "other",
   ) => void;
@@ -93,7 +91,6 @@ function generateDefaultActivityName(): string {
 const initialState = {
   name: generateDefaultActivityName(),
   description: "",
-  activityLocation: "outdoor" as const,
   activityCategory: "run" as const,
   structure: { version: 2 as const, intervals: [] },
   routeId: null,
@@ -108,7 +105,6 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>(
     // Actions
     setName: (name) => set({ name }),
     setDescription: (description) => set({ description }),
-    setActivityLocation: (activityLocation) => set({ activityLocation }),
     setActivityCategory: (activityCategory) => set({ activityCategory }),
     setStructure: (structure) => set({ structure }),
     setRouteId: (routeId) => set({ routeId }),

@@ -3,56 +3,280 @@ import { getDurationMs } from "@/lib/utils/durationConversion";
 import {
   type ActivityPlanStructureV2,
   type IntervalStepV2,
+  type IntervalV2,
   getStepIntensityColor,
 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { useMemo } from "react";
-import { TouchableWithoutFeedback, View } from "react-native";
-import Svg, { Rect } from "react-native-svg";
+import {
+  Pressable,
+  ScrollView,
+  TouchableWithoutFeedback,
+  View,
+} from "react-native";
+import Svg, { Rect, Text as SvgText } from "react-native-svg";
+
+interface IntervalIssueSummary {
+  interval: number;
+  step: number;
+  total: number;
+}
 
 interface TimelineChartProps {
   structure: ActivityPlanStructureV2;
   selectedStepIndex?: number;
+  selectedIntervalId?: string | null;
   onStepPress?: (index: number) => void;
+  onIntervalPress?: (intervalId: string) => void;
   height?: number;
   minStepHeight?: number;
   maxStepHeight?: number;
   compact?: boolean;
+  showIntervalIndicators?: boolean;
+  showLegend?: boolean;
+  intervalIssues?: Record<string, IntervalIssueSummary>;
 }
 
 export function TimelineChart({
   structure,
   selectedStepIndex,
+  selectedIntervalId,
   onStepPress,
-  height = 120,
+  onIntervalPress,
+  height = 132,
   minStepHeight = 10,
   maxStepHeight,
   compact = false,
+  intervalIssues,
 }: TimelineChartProps) {
-  const svgHeight = height - 16;
-  const maxStepHeightValue = maxStepHeight ?? svgHeight - 30;
+  const margin = { top: 2, right: 2, bottom: 16, left: 22 };
+  const gapWithinInterval = 2;
+  const gapBetweenIntervals = 8;
+  const minAxisY = 0;
 
-  // Expand intervals into flat steps for visualization
-  const steps: IntervalStepV2[] = useMemo(() => {
-    const flatSteps: IntervalStepV2[] = [];
-    const intervals = structure.intervals || [];
+  const intervalMeta = useMemo(
+    () =>
+      (structure.intervals || []).map((interval, index) => {
+        const durationPerRepMs = interval.steps.reduce(
+          (sum, step) => sum + getDurationMs(step.duration),
+          0,
+        );
 
-    for (const interval of intervals) {
-      for (let i = 0; i < interval.repetitions; i++) {
-        for (const step of interval.steps) {
-          flatSteps.push(step);
-        }
+        return {
+          interval,
+          index,
+          durationPerRepMs,
+          totalDurationMs: durationPerRepMs * interval.repetitions,
+        };
+      }),
+    [structure.intervals],
+  );
+
+  const flattenedSteps = useMemo(() => {
+    const flatSteps: Array<{
+      step: IntervalStepV2;
+      intervalId: string;
+      intervalIndex: number;
+    }> = [];
+
+    intervalMeta.forEach(({ interval, index: intervalIndex }) => {
+      for (let i = 0; i < interval.repetitions; i += 1) {
+        interval.steps.forEach((step) => {
+          flatSteps.push({
+            step,
+            intervalId: interval.id,
+            intervalIndex,
+          });
+        });
       }
-    }
+    });
 
     return flatSteps;
-  }, [structure.intervals]);
+  }, [intervalMeta]);
 
-  const totalDuration = useMemo(() => {
-    return steps.reduce((total, step) => {
-      return total + getDurationMs(step.duration);
+  const steps = useMemo(
+    () => flattenedSteps.map((entry) => entry.step),
+    [flattenedSteps],
+  );
+
+  const maxAxisY = useMemo(() => {
+    const maxIntensity = flattenedSteps.reduce((max, entry) => {
+      const intensity = entry.step.targets?.[0]?.intensity ?? 0;
+      return intensity > max ? intensity : max;
     }, 0);
-  }, [steps]);
+
+    return maxIntensity > 0 ? maxIntensity : 1;
+  }, [flattenedSteps]);
+
+  const totalDuration = useMemo(
+    () =>
+      flattenedSteps.reduce((total, entry) => {
+        return total + getDurationMs(entry.step.duration);
+      }, 0),
+    [flattenedSteps],
+  );
+
+  const totalGapWidth = useMemo(() => {
+    if (flattenedSteps.length <= 1) {
+      return 0;
+    }
+
+    let width = 0;
+    flattenedSteps.forEach((entry, index) => {
+      if (index === flattenedSteps.length - 1) {
+        return;
+      }
+
+      const nextEntry = flattenedSteps[index + 1];
+      width +=
+        nextEntry.intervalIndex !== entry.intervalIndex
+          ? gapBetweenIntervals
+          : gapWithinInterval;
+    });
+
+    return width;
+  }, [flattenedSteps]);
+
+  const chartWidth = useMemo(() => {
+    const minWidth = 340;
+    const byStepCount =
+      flattenedSteps.length * 30 + totalGapWidth + margin.left + margin.right;
+    const byIntervals = intervalMeta.length * 92 + margin.left + margin.right;
+    return Math.max(minWidth, byStepCount, byIntervals);
+  }, [flattenedSteps.length, intervalMeta.length, totalGapWidth]);
+
+  const plotWidth = Math.max(120, chartWidth - margin.left - margin.right);
+  const plotHeight = Math.max(36, height - margin.top - margin.bottom);
+  const maxBarHeight = maxStepHeight ?? plotHeight;
+
+  const usablePlotWidth = Math.max(plotWidth - totalGapWidth, plotWidth * 0.62);
+
+  const derivedSelectedIntervalId = useMemo(() => {
+    if (selectedIntervalId) {
+      return selectedIntervalId;
+    }
+
+    if (
+      selectedStepIndex !== undefined &&
+      flattenedSteps[selectedStepIndex]?.intervalId
+    ) {
+      return flattenedSteps[selectedStepIndex].intervalId;
+    }
+
+    return null;
+  }, [flattenedSteps, selectedIntervalId, selectedStepIndex]);
+
+  const chartData = useMemo(() => {
+    return flattenedSteps.map((entry, index) => {
+      const durationMs = getDurationMs(entry.step.duration);
+      const widthPercent =
+        totalDuration > 0 ? (durationMs / totalDuration) * 100 : 0;
+      const intensity = entry.step.targets?.[0]?.intensity ?? 0;
+
+      const barHeight =
+        minStepHeight + (intensity / maxAxisY) * (maxBarHeight - minStepHeight);
+      const barY = margin.top + plotHeight - barHeight;
+
+      return {
+        index,
+        width: (widthPercent / 100) * usablePlotWidth,
+        color: getStepIntensityColor(entry.step),
+        isSelected: index === selectedStepIndex,
+        barHeight,
+        barY,
+        intervalIndex: entry.intervalIndex,
+        intervalId: entry.intervalId,
+        isInSelectedInterval:
+          !!derivedSelectedIntervalId &&
+          entry.intervalId === derivedSelectedIntervalId,
+      };
+    });
+  }, [
+    derivedSelectedIntervalId,
+    flattenedSteps,
+    margin.top,
+    maxBarHeight,
+    minStepHeight,
+    maxAxisY,
+    plotHeight,
+    selectedStepIndex,
+    totalDuration,
+    usablePlotWidth,
+  ]);
+
+  const positionedBars = useMemo(() => {
+    return chartData.reduce(
+      (acc, bar, index) => {
+        const x = acc.currentX;
+        const nextBar = chartData[index + 1];
+        const gap = nextBar
+          ? nextBar.intervalIndex !== bar.intervalIndex
+            ? gapBetweenIntervals
+            : gapWithinInterval
+          : 0;
+
+        acc.items.push({
+          ...bar,
+          x,
+        });
+        acc.currentX = x + bar.width + gap;
+        return acc;
+      },
+      {
+        items: [] as Array<
+          (typeof chartData)[number] & {
+            x: number;
+          }
+        >,
+        currentX: 0,
+      },
+    ).items;
+  }, [chartData]);
+
+  const intervalSegments = useMemo(() => {
+    const segments = new Map<
+      string,
+      {
+        interval: IntervalV2;
+        intervalIndex: number;
+        xStart: number;
+        xEnd: number;
+        durationPerRepMs: number;
+        totalDurationMs: number;
+      }
+    >();
+
+    positionedBars.forEach((bar) => {
+      const interval = structure.intervals[bar.intervalIndex];
+      if (!interval) {
+        return;
+      }
+
+      const existing = segments.get(interval.id);
+      if (!existing) {
+        const durationPerRepMs =
+          intervalMeta[bar.intervalIndex]?.durationPerRepMs ?? 0;
+        segments.set(interval.id, {
+          interval,
+          intervalIndex: bar.intervalIndex,
+          xStart: bar.x,
+          xEnd: bar.x + bar.width,
+          durationPerRepMs,
+          totalDurationMs: durationPerRepMs * interval.repetitions,
+        });
+        return;
+      }
+
+      existing.xStart = Math.min(existing.xStart, bar.x);
+      existing.xEnd = Math.max(existing.xEnd, bar.x + bar.width);
+    });
+
+    return Array.from(segments.values()).sort(
+      (a, b) => a.intervalIndex - b.intervalIndex,
+    );
+  }, [intervalMeta, positionedBars, structure.intervals]);
+
+  const maxAxisXMinutes = Math.max(0, Math.round(totalDuration / 60000));
 
   if (steps.length === 0) {
     return (
@@ -65,138 +289,192 @@ export function TimelineChart({
     );
   }
 
-  const chartWidth = 300;
-  const chartData = steps.map((step, index) => {
-    const durationMs = getDurationMs(step.duration);
-    const widthPercent =
-      totalDuration > 0 ? (durationMs / totalDuration) * 100 : 0;
-    const intensity = step.targets?.[0]?.intensity || 0;
-    const color = getStepIntensityColor(step);
-
-    // Calculate height based on intensity (0-100 scale)
-    const barHeight =
-      minStepHeight + (intensity / 100) * (maxStepHeightValue - minStepHeight);
-    const barY = 20 + maxStepHeightValue - barHeight;
-
-    return {
-      index,
-      widthPercent,
-      width: (widthPercent / 100) * chartWidth,
-      color,
-      isSelected: index === selectedStepIndex,
-      step,
-      barHeight,
-      barY,
-    };
-  });
-
   const handleStepPress = (stepIndex: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onStepPress?.(stepIndex);
   };
 
+  const handleIntervalPress = (intervalId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onIntervalPress?.(intervalId);
+  };
+
   return (
-    <View style={{ height }} className="w-full px-4 py-2">
-      {/* SVG Chart */}
-      <View className="relative">
-        <Svg
-          width="100%"
-          height={svgHeight}
-          viewBox={`0 0 ${chartWidth} ${svgHeight}`}
-        >
-          {
-            chartData.reduce(
-              (acc, data, idx) => {
-                const x = acc.currentX;
-                const width = data.width;
-                const rect = (
-                  <Rect
-                    key={idx}
-                    x={x}
-                    y={data.barY}
-                    width={width}
-                    height={data.barHeight}
-                    fill={data.color}
-                    opacity={data.isSelected ? 1 : 0.85}
-                    stroke={data.isSelected ? "#3B82F6" : "transparent"}
-                    strokeWidth={data.isSelected ? 3 : 0}
-                    rx={4}
-                    ry={4}
+    <View className="w-full">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={{ width: chartWidth, height }} className="relative">
+          <Svg width={chartWidth} height={height}>
+            <SvgText
+              x={margin.left - 3}
+              y={margin.top + 7}
+              fontSize={9}
+              fill="#64748B"
+              textAnchor="end"
+            >
+              {maxAxisY}
+            </SvgText>
+
+            <SvgText
+              x={margin.left - 3}
+              y={margin.top + plotHeight + 3}
+              fontSize={9}
+              fill="#64748B"
+              textAnchor="end"
+            >
+              {minAxisY}
+            </SvgText>
+
+            {positionedBars.map((bar) => (
+              <Rect
+                key={bar.index}
+                x={margin.left + bar.x}
+                y={bar.barY}
+                width={bar.width}
+                height={bar.barHeight}
+                fill={bar.color}
+                opacity={
+                  bar.isSelected ? 1 : bar.isInSelectedInterval ? 0.95 : 0.82
+                }
+                stroke={
+                  bar.isSelected || bar.isInSelectedInterval
+                    ? "#2563EB"
+                    : "transparent"
+                }
+                strokeWidth={
+                  bar.isSelected ? 2.6 : bar.isInSelectedInterval ? 1.2 : 0
+                }
+                rx={3}
+                ry={3}
+              />
+            ))}
+
+            {intervalSegments.map((segment) => (
+              <SvgText
+                key={`interval-label-${segment.interval.id}`}
+                x={margin.left + (segment.xStart + segment.xEnd) / 2}
+                y={margin.top + plotHeight + 11}
+                fontSize={9}
+                fill="#64748B"
+                textAnchor="middle"
+              >
+                I{segment.intervalIndex + 1}
+              </SvgText>
+            ))}
+
+            <SvgText
+              x={margin.left}
+              y={height - 2}
+              fontSize={9}
+              fill="#64748B"
+              textAnchor="start"
+            >
+              0
+            </SvgText>
+
+            <SvgText
+              x={chartWidth - margin.right}
+              y={height - 2}
+              fontSize={9}
+              fill="#64748B"
+              textAnchor="end"
+            >
+              {maxAxisXMinutes}
+            </SvgText>
+          </Svg>
+
+          {onIntervalPress && intervalSegments.length > 0 ? (
+            <View className="absolute inset-0">
+              {intervalSegments.map((segment) => {
+                const isSelected =
+                  derivedSelectedIntervalId === segment.interval.id;
+                const rawWidth = segment.xEnd - segment.xStart;
+                const segmentWidth = Math.max(rawWidth, 48);
+                const segmentLeft =
+                  margin.left + segment.xStart - (segmentWidth - rawWidth) / 2;
+                const intervalDurationMinutes = Math.max(
+                  1,
+                  Math.round(segment.totalDurationMs / 60000),
+                );
+
+                return (
+                  <Pressable
+                    key={segment.interval.id}
+                    onPress={() => handleIntervalPress(segment.interval.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Interval ${segment.intervalIndex + 1}${isSelected ? ", selected" : ""}, ${intervalDurationMinutes} minutes, ${segment.interval.repetitions} repeats`}
+                    accessibilityHint="Opens interval editor sheet"
+                    style={{
+                      position: "absolute",
+                      left: segmentLeft,
+                      top: margin.top,
+                      width: segmentWidth,
+                      height: plotHeight,
+                      borderRadius: 6,
+                      borderWidth: isSelected ? 2 : 0,
+                      borderColor: isSelected ? "#2563EB" : "transparent",
+                      backgroundColor: isSelected
+                        ? "rgba(37, 99, 235, 0.08)"
+                        : "transparent",
+                    }}
                   />
                 );
-
-                acc.elements.push(rect);
-                acc.currentX = x + width + 2; // Add small gap between bars
-                return acc;
-              },
-              { elements: [] as React.ReactElement[], currentX: 0 },
-            ).elements
-          }
-        </Svg>
-
-        {/* Invisible touchable overlays for step interaction */}
-        <View className="absolute inset-0 flex-row">
-          {
-            chartData.reduce(
-              (acc, data, idx) => {
-                const x = acc.currentX;
-                const width = data.width;
-
-                const overlay = (
-                  <TouchableWithoutFeedback
-                    key={idx}
-                    onPress={() => handleStepPress(data.index)}
-                  >
-                    <View
-                      style={{
-                        position: "absolute",
-                        left: x,
-                        top: data.barY,
-                        width: width,
-                        height: data.barHeight,
-                      }}
-                    />
-                  </TouchableWithoutFeedback>
-                );
-
-                acc.elements.push(overlay);
-                acc.currentX = x + width + 2;
-                return acc;
-              },
-              { elements: [] as React.ReactElement[], currentX: 0 },
-            ).elements
-          }
+              })}
+            </View>
+          ) : onStepPress ? (
+            <View className="absolute inset-0 flex-row">
+              {positionedBars.map((bar) => (
+                <TouchableWithoutFeedback
+                  key={bar.index}
+                  onPress={() => handleStepPress(bar.index)}
+                >
+                  <View
+                    style={{
+                      position: "absolute",
+                      left:
+                        margin.left +
+                        bar.x -
+                        (Math.max(bar.width, 44) - bar.width) / 2,
+                      top: margin.top,
+                      width: Math.max(bar.width, 44),
+                      height: plotHeight,
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Step ${bar.index + 1}`}
+                    accessibilityHint="Opens step editor"
+                  />
+                </TouchableWithoutFeedback>
+              ))}
+            </View>
+          ) : null}
         </View>
-      </View>
+      </ScrollView>
 
-      {/* Labels */}
-      {!compact && (
-        <View className="flex-row justify-between mt-2">
+      {!compact ? (
+        <View className="flex-row justify-between">
           <Text className="text-xs text-muted-foreground">
             {steps.length} step{steps.length !== 1 ? "s" : ""}
           </Text>
           <Text className="text-xs text-muted-foreground">
-            {Math.round(totalDuration / 60000)}min
+            {Math.round(totalDuration / 60000)} min
           </Text>
         </View>
-      )}
+      ) : null}
 
-      {/* Selected step info */}
       {!compact &&
-        selectedStepIndex !== undefined &&
-        steps[selectedStepIndex] && (
-          <View className="mt-2 p-2 bg-muted rounded-md">
-            <Text className="text-xs font-medium">
-              Step {selectedStepIndex + 1}: {steps[selectedStepIndex].name}
+      selectedStepIndex !== undefined &&
+      steps[selectedStepIndex] ? (
+        <View className="mt-1 rounded-md bg-muted p-2">
+          <Text className="text-xs font-medium">
+            Step {selectedStepIndex + 1}: {steps[selectedStepIndex].name}
+          </Text>
+          {steps[selectedStepIndex].targets?.[0] ? (
+            <Text className="text-xs text-muted-foreground">
+              {steps[selectedStepIndex].targets![0].type}:{" "}
+              {steps[selectedStepIndex].targets![0].intensity}
             </Text>
-            {steps[selectedStepIndex].targets?.[0] && (
-              <Text className="text-xs text-muted-foreground">
-                {steps[selectedStepIndex].targets![0].type}:{" "}
-                {steps[selectedStepIndex].targets![0].intensity}
-              </Text>
-            )}
-          </View>
-        )}
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }

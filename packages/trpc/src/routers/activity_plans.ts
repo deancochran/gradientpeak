@@ -12,16 +12,17 @@ import {
 } from "../utils/estimation-helpers";
 
 // Input schemas for queries
-const listActivityPlansSchema = z.object({
-  includeOwnOnly: z.boolean().default(true),
-  includeSystemTemplates: z.boolean().default(false),
-  activityCategory: z
-    .enum(["run", "bike", "swim", "strength", "other", "all"])
-    .optional(),
-  activityLocation: z.enum(["outdoor", "indoor", "all"]).optional(),
-  limit: z.number().min(1).max(100).default(20),
-  cursor: z.string().optional(),
-});
+const listActivityPlansSchema = z
+  .object({
+    includeOwnOnly: z.boolean().default(true),
+    includeSystemTemplates: z.boolean().default(false),
+    activityCategory: z
+      .enum(["run", "bike", "swim", "strength", "other", "all"])
+      .optional(),
+    limit: z.number().min(1).max(100).default(20),
+    cursor: z.string().optional(),
+  })
+  .strict();
 
 // Helper to validate V2 structure only
 function validateStructure(structure: unknown): void {
@@ -35,6 +36,12 @@ const createActivityPlanInput = activityPlanCreateSchema.extend({
 const updateActivityPlanInput = activityPlanUpdateSchema.extend({
   structure: activityPlanStructureSchemaV2.optional(), // V2 structure only
 });
+
+const updateActivityPlanWithIdInput = updateActivityPlanInput
+  .extend({
+    id: z.string().uuid(),
+  })
+  .strict();
 
 export const activityPlansRouter = createTRPCRouter({
   // ------------------------------
@@ -73,10 +80,6 @@ export const activityPlansRouter = createTRPCRouter({
       if (input.activityCategory && input.activityCategory !== "all") {
         query = query.eq("activity_category", input.activityCategory);
       }
-      if (input.activityLocation && input.activityLocation !== "all") {
-        query = query.eq("activity_location", input.activityLocation);
-      }
-
       // Apply cursor (if provided, fetch items after this cursor)
       if (input.cursor) {
         const [cursorDate, cursorId] = input.cursor.split("_");
@@ -231,17 +234,9 @@ export const activityPlansRouter = createTRPCRouter({
   // Update activity plan
   // ------------------------------
   update: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().uuid(),
-        })
-        .and(updateActivityPlanInput),
-    )
+    .input(updateActivityPlanWithIdInput)
     .mutation(async ({ ctx, input }) => {
-      const { id, ...updates } = input as { id: string } & z.infer<
-        typeof updateActivityPlanInput
-      >;
+      const { id, ...updates } = input;
 
       // Check ownership
       const { data: existing } = await ctx.supabase
@@ -392,7 +387,6 @@ export const activityPlansRouter = createTRPCRouter({
           name: input.newName,
           description: originalPlan.description,
           activity_category: originalPlan.activity_category,
-          activity_location: originalPlan.activity_location,
           structure: originalPlan.structure,
           version: originalPlan.version,
           route_id: originalPlan.route_id,

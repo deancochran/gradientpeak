@@ -28,7 +28,6 @@ interface ActivityHeaderProps {
     startedAt: string;
     device_manufacturer?: string | null;
     device_product?: string | null;
-    location?: string | null;
   };
   notes?: string;
   editable?: boolean;
@@ -106,14 +105,6 @@ export function ActivityHeader({
                 <Text className="text-xs text-muted-foreground">•</Text>
                 <Text className="text-xs text-muted-foreground">
                   {deviceInfo}
-                </Text>
-              </>
-            )}
-            {activity.location && (
-              <>
-                <Text className="text-xs text-muted-foreground">•</Text>
-                <Text className="text-xs text-muted-foreground capitalize">
-                  {activity.location}
                 </Text>
               </>
             )}

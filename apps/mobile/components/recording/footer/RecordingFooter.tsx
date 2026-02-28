@@ -14,14 +14,12 @@
 
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import BottomSheet, { BottomSheetBackdrop, SNAP_POINT_TYPE } from "@gorhom/bottom-sheet";
-import type {
-  RecordingState
-} from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import BottomSheet, {
+  BottomSheetBackdrop,
+  SNAP_POINT_TYPE,
+} from "@gorhom/bottom-sheet";
+import type { RecordingState } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import React, { useCallback, useMemo, useRef } from "react";
 import { View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,7 +29,7 @@ export interface RecordingFooterProps {
   service: ActivityRecorderService | null;
   recordingState: RecordingState;
   category: PublicActivityCategory;
-  location: PublicActivityLocation;
+  gpsRecordingEnabled: boolean;
   hasPlan: boolean;
   hasRoute: boolean;
   onStart: () => void;
@@ -70,7 +68,7 @@ export function RecordingFooter({
   service,
   recordingState,
   category,
-  location,
+  gpsRecordingEnabled,
   hasPlan,
   hasRoute,
   onStart,
@@ -79,7 +77,8 @@ export function RecordingFooter({
   onLap,
   onFinish,
 }: RecordingFooterProps) {
-  const { focusState, focusFooter, clearFocus, isAnyZoneFocused } = useFocusMode();
+  const { focusState, focusFooter, clearFocus, isAnyZoneFocused } =
+    useFocusMode();
   const bottomSheetRef = useRef<BottomSheet>(null);
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -88,16 +87,19 @@ export function RecordingFooter({
   const themeColors = THEME_COLORS[colorScheme === "dark" ? "dark" : "light"];
 
   // Construct theme-aware styles
-  const bottomSheetStyles = useMemo(() => ({
-    handleIndicator: {
-      ...BOTTOM_SHEET_BASE_STYLES.handleIndicator,
-      backgroundColor: themeColors.handleIndicator,
-    },
-    background: {
-      backgroundColor: themeColors.background,
-    },
-    container: BOTTOM_SHEET_BASE_STYLES.container,
-  }), [themeColors]);
+  const bottomSheetStyles = useMemo(
+    () => ({
+      handleIndicator: {
+        ...BOTTOM_SHEET_BASE_STYLES.handleIndicator,
+        backgroundColor: themeColors.handleIndicator,
+      },
+      background: {
+        backgroundColor: themeColors.background,
+      },
+      container: BOTTOM_SHEET_BASE_STYLES.container,
+    }),
+    [themeColors],
+  );
 
   // Snap points: collapsed (120px) and expanded (60% screen)
   // Mixed fixed/percentage snap points are fully supported and recommended
@@ -153,7 +155,7 @@ export function RecordingFooter({
         service={service}
         recordingState={recordingState}
         category={category}
-        location={location}
+        gpsRecordingEnabled={gpsRecordingEnabled}
         hasPlan={hasPlan}
         hasRoute={hasRoute}
         onStart={onStart}

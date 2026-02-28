@@ -10,7 +10,6 @@
 
 import {
   isContinuousActivity,
-  isOutdoorActivity,
   isStepBasedActivity,
   shouldUseFollowAlong,
 } from "../schemas/activity_payload";
@@ -46,13 +45,12 @@ export class RecordingConfigResolver {
   private static computeCapabilities(
     input: RecordingConfigInput,
   ): Omit<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
-    const isOutdoor = isOutdoorActivity(input.activityLocation);
     const hasStructuredPlan = input.plan?.hasStructure ?? false;
     const hasFtmsTrainer = !!input.devices.ftmsTrainer;
     const hasRoute = input.plan?.hasRoute ?? false;
 
     // Data collection capabilities - straightforward hardware checks
-    const canTrackLocation = isOutdoor && input.gpsAvailable;
+    const canTrackLocation = input.gpsRecordingEnabled && input.gpsAvailable;
     const canTrackPower = input.devices.hasPowerMeter || hasFtmsTrainer;
     const canTrackHeartRate = input.devices.hasHeartRateMonitor;
     const canTrackCadence = input.devices.hasCadenceSensor;
@@ -68,7 +66,7 @@ export class RecordingConfigResolver {
     // Route overlay: Show if we're tracking location AND have a route to overlay
     const shouldShowRouteOverlay = canTrackLocation && hasRoute;
 
-    // Turn-by-turn: Only for outdoor navigation with GPS + route
+    // Turn-by-turn: Only when GPS tracking and a route are both available
     const shouldShowTurnByTurn = canTrackLocation && hasRoute;
 
     // Follow-along: Activity-specific (swim lanes, etc)
@@ -138,10 +136,10 @@ export class RecordingConfigResolver {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // GPS validation - outdoor activities REQUIRE GPS
-    if (isOutdoorActivity(input.activityLocation) && !input.gpsAvailable) {
+    // GPS validation - fail when GPS recording is enabled but unavailable
+    if (input.gpsRecordingEnabled && !input.gpsAvailable) {
       errors.push(
-        "GPS is required for outdoor activities. Please enable location services.",
+        "GPS recording is enabled, but GPS is unavailable. Please enable location services.",
       );
     }
 
@@ -172,7 +170,7 @@ export class RecordingConfigResolver {
 
     // Info if no sensors for continuous activity
     if (
-      isContinuousActivity(input.activityCategory, input.activityLocation) &&
+      isContinuousActivity(input.activityCategory) &&
       !input.devices.hasPowerMeter &&
       !input.devices.hasHeartRateMonitor &&
       !input.devices.hasCadenceSensor &&

@@ -1,7 +1,4 @@
-import {
-  createMinimalActivityPlanStructure,
-  useActivityPlanCreationStore,
-} from "@/lib/stores/activityPlanCreation";
+import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { trpc } from "@/lib/trpc";
 import { getErrorMessage, showErrorAlert } from "@/lib/utils/formErrors";
 import {
@@ -13,6 +10,8 @@ import { useCallback, useEffect, useMemo } from "react";
 import { Alert } from "react-native";
 
 export type ActivityPlanFormData = ActivityPlanCreateFormData;
+
+export type ActivityPlanValidationErrors = Record<string, string>;
 
 interface UseActivityPlanFormOptions {
   planId?: string;
@@ -32,14 +31,12 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const {
     name,
     description,
-    activityLocation,
     activityCategory,
     structure,
     routeId,
     notes,
     setName,
     setDescription,
-    setActivityLocation,
     setActivityCategory,
     setRouteId,
     setNotes,
@@ -111,7 +108,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       // Then load the existing plan data
       setName(existingPlan.name);
       setDescription(existingPlan.description || "");
-      setActivityLocation(existingPlan.activity_location);
       setActivityCategory(existingPlan.activity_category);
       setRouteId(existingPlan.route_id || null);
       setNotes(existingPlan.notes || "");
@@ -128,7 +124,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     isEditMode,
     setName,
     setDescription,
-    setActivityLocation,
     setActivityCategory,
     setRouteId,
     setNotes,
@@ -170,37 +165,124 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     };
   }, [structure]);
 
+  const validateStrictStructure = useCallback(
+    (structureToValidate = structure) => {
+      const errors: ActivityPlanValidationErrors = {};
+
+      if (!name?.trim()) {
+        errors.name = "Plan name is required.";
+      }
+
+      if (!activityCategory) {
+        errors.activity_category = "Activity type is required.";
+      }
+
+      const intervals = structureToValidate.intervals || [];
+      if (intervals.length < 1) {
+        errors.intervals = "Add at least one interval.";
+      }
+
+      intervals.forEach((interval, intervalIndex) => {
+        if (
+          !Number.isFinite(interval.repetitions) ||
+          interval.repetitions < 1
+        ) {
+          errors[`interval:${interval.id}:repetitions`] =
+            "Repeat count must be at least 1.";
+        }
+
+        if (!interval.steps || interval.steps.length < 1) {
+          errors[`interval:${interval.id}:steps`] =
+            "Each interval must include at least one step.";
+        }
+
+        interval.steps.forEach((step, stepIndex) => {
+          const durationErrorKey = `step:${interval.id}:${step.id}:duration`;
+          const targetErrorKey = `step:${interval.id}:${step.id}:target`;
+
+          const hasPositiveDuration =
+            (step.duration.type === "time" && step.duration.seconds > 0) ||
+            (step.duration.type === "distance" && step.duration.meters > 0) ||
+            (step.duration.type === "repetitions" && step.duration.count > 0);
+
+          if (!hasPositiveDuration) {
+            errors[durationErrorKey] =
+              "Step duration must be greater than zero (time, distance, or reps).";
+          }
+
+          const primaryTarget = step.targets?.[0];
+          const hasValidTarget =
+            !!primaryTarget &&
+            typeof primaryTarget.type === "string" &&
+            primaryTarget.type.length > 0 &&
+            Number.isFinite(primaryTarget.intensity) &&
+            primaryTarget.intensity > 0;
+
+          if (!hasValidTarget) {
+            errors[targetErrorKey] =
+              "Set an intensity zone/type target for this step.";
+          }
+
+          if (!step.name?.trim()) {
+            errors[`step:${interval.id}:${step.id}:name`] =
+              `Step ${stepIndex + 1} needs a name.`;
+          }
+        });
+
+        if (!interval.name?.trim()) {
+          errors[`interval:${interval.id}:name`] =
+            `Interval ${intervalIndex + 1} needs a name.`;
+        }
+      });
+
+      return errors;
+    },
+    [name, activityCategory, structure],
+  );
+
   // Validation
   const validate = useCallback(
     (structureOverride = structure) => {
+      const strictErrors = validateStrictStructure(structureOverride);
+
       try {
         activityPlanCreateFormSchema.parse({
           name,
           description: description || null,
-          activity_location: activityLocation,
           activity_category: activityCategory,
           route_id: routeId || null,
           notes: notes || null,
           structure: structureOverride,
         });
-        return { isValid: true, errors: {} };
+
+        return {
+          isValid: Object.keys(strictErrors).length === 0,
+          errors: strictErrors,
+        };
       } catch (error: any) {
+        const schemaErrors: ActivityPlanValidationErrors = { ...strictErrors };
         if (error?.issues) {
-          const errors: Record<string, string> = {};
           error.issues.forEach((err: any) => {
             if (err.path[0]) {
-              errors[err.path[0] as string] = err.message;
+              schemaErrors[err.path[0] as string] = err.message;
             }
           });
-          return { isValid: false, errors };
+          return { isValid: false, errors: schemaErrors };
         }
-        return { isValid: false, errors: { general: getErrorMessage(error) } };
+
+        return {
+          isValid: false,
+          errors: {
+            ...schemaErrors,
+            general: getErrorMessage(error),
+          },
+        };
       }
     },
     [
+      validateStrictStructure,
       name,
       description,
-      activityLocation,
       activityCategory,
       structure,
       routeId,
@@ -208,16 +290,11 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     ],
   );
 
+  const validation = useMemo(() => validate(), [validate]);
+
   // Submit handler
   const submit = useCallback(async () => {
-    const structureToSubmit =
-      structure.intervals && structure.intervals.length > 0
-        ? structure
-        : createMinimalActivityPlanStructure(name.trim() || "Main Activity");
-
-    if (structureToSubmit !== structure) {
-      useActivityPlanCreationStore.setState({ structure: structureToSubmit });
-    }
+    const structureToSubmit = structure;
 
     const validation = validate(structureToSubmit);
     if (!validation.isValid) {
@@ -231,7 +308,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         name,
         description:
           description && description.trim() !== "" ? description : null,
-        activity_location: activityLocation as any,
         activity_category: activityCategory as any,
         structure: structureToSubmit,
         route_id: routeId || null,
@@ -259,7 +335,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     validate,
     name,
     description,
-    activityLocation,
     activityCategory,
     structure,
     routeId,
@@ -304,7 +379,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     form: {
       name,
       description,
-      activityLocation,
       activityCategory,
       structure,
       routeId,
@@ -314,7 +388,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     // Form setters
     setName,
     setDescription,
-    setActivityLocation,
     setActivityCategory,
     setRouteId,
     setNotes,
@@ -330,12 +403,17 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     submit,
     cancel,
     validate,
+    validation,
     reset,
 
     // State
     isSubmitting: createMutation.isPending || updateMutation.isPending,
     isLoading: isLoadingPlan,
     isEditMode,
+    canSubmit:
+      validation.isValid &&
+      !createMutation.isPending &&
+      !updateMutation.isPending,
     error: createMutation.error || updateMutation.error,
   };
 }

@@ -3,10 +3,10 @@
  *
  * ## Problem This Solves
  *
- * Previously, this modal maintained internal state (selectedCategory, selectedLocation)
+ * Previously, this modal maintained internal state (selectedCategory, gpsRecordingEnabled)
  * that was synchronized with parent props via useEffect. This caused a race condition:
  *
- * 1. User clicks "Indoor" → modal calls onActivitySelect()
+ * 1. User toggles GPS and picks a category → modal calls onActivitySelect()
  * 2. Parent updates service → service emits "activitySelected" event
  * 3. Parent component re-renders with new props
  * 4. Modal's useEffect tries to sync with new props
@@ -19,7 +19,7 @@
  * - No internal state (no useState)
  * - No prop synchronization (no useEffect)
  * - Props are renamed from "initial" to "current" to reflect they're not just initial values
- * - Parent controls all state via currentCategory and currentLocation props
+ * - Parent controls all state via currentCategory and currentGpsRecordingEnabled props
  * - When user clicks, modal immediately closes and notifies parent
  * - No race conditions possible because modal doesn't manage or sync any state
  *
@@ -27,31 +27,26 @@
  *
  * ```tsx
  * const [category, setCategory] = useState<PublicActivityCategory>("run");
- * const [location, setLocation] = useState<PublicActivityLocation>("outdoor");
+ * const [gpsRecordingEnabled, setGpsRecordingEnabled] = useState(true);
  *
  * <ActivitySelectionModal
  *   visible={isOpen}
  *   onClose={() => setIsOpen(false)}
- *   onActivitySelect={(cat, loc) => {
+ *   onActivitySelect={(cat, gpsEnabled) => {
  *     setCategory(cat);
- *     setLocation(loc);
- *     service.selectActivity(cat, loc);
+ *     setGpsRecordingEnabled(gpsEnabled);
+ *     service.selectActivity(cat, gpsEnabled);
  *   }}
  *   currentCategory={category}
- *   currentLocation={location}
+ *   currentGpsRecordingEnabled={gpsRecordingEnabled}
  * />
  * ```
  */
 
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import {
-  getActivityDisplayName
-} from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation
-} from "@repo/supabase";
+import { getActivityDisplayName } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import {
   Activity,
   Bike,
@@ -69,10 +64,10 @@ interface ActivitySelectionModalProps {
   onClose: () => void;
   onActivitySelect: (
     category: PublicActivityCategory,
-    location: PublicActivityLocation,
+    gpsRecordingEnabled: boolean,
   ) => void;
   currentCategory: PublicActivityCategory;
-  currentLocation: PublicActivityLocation;
+  currentGpsRecordingEnabled: boolean;
 }
 
 // Simplified activity configurations
@@ -130,20 +125,20 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
   onClose,
   onActivitySelect,
   currentCategory,
-  currentLocation,
+  currentGpsRecordingEnabled,
 }: ActivitySelectionModalProps) {
   // No internal state - completely controlled by parent
 
   const handleCategorySelect = (category: PublicActivityCategory) => {
     // Immediately close and notify parent
     onClose();
-    onActivitySelect(category, currentLocation);
+    onActivitySelect(category, currentGpsRecordingEnabled);
   };
 
-  const handleLocationChange = (location: PublicActivityLocation) => {
+  const handleGpsChange = (gpsRecordingEnabled: boolean) => {
     // Immediately close and notify parent
     onClose();
-    onActivitySelect(currentCategory, location);
+    onActivitySelect(currentCategory, gpsRecordingEnabled);
   };
 
   // Don't render modal content if not visible to avoid unnecessary renders
@@ -174,13 +169,13 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
 
           <ScrollView className="max-h-[70vh]">
             <View className="px-6 pt-6">
-              {/* Indoor/Outdoor Toggle at Top */}
+              {/* GPS Toggle at Top */}
               <View className="mb-6">
                 <View className="flex-row bg-muted rounded-xl p-1">
                   <Pressable
-                    onPress={() => handleLocationChange("outdoor")}
+                    onPress={() => handleGpsChange(true)}
                     className={`flex-1 py-3 rounded-lg items-center ${
-                      currentLocation === "outdoor"
+                      currentGpsRecordingEnabled
                         ? "bg-background shadow-sm"
                         : ""
                     }`}
@@ -190,27 +185,27 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
                         as={MapPin}
                         size={18}
                         className={
-                          currentLocation === "outdoor"
+                          currentGpsRecordingEnabled
                             ? "text-primary"
                             : "text-muted-foreground"
                         }
                       />
                       <Text
                         className={`font-semibold ${
-                          currentLocation === "outdoor"
+                          currentGpsRecordingEnabled
                             ? "text-primary"
                             : "text-muted-foreground"
                         }`}
                       >
-                        Outdoor
+                        GPS ON
                       </Text>
                     </View>
                   </Pressable>
 
                   <Pressable
-                    onPress={() => handleLocationChange("indoor")}
+                    onPress={() => handleGpsChange(false)}
                     className={`flex-1 py-3 rounded-lg items-center ${
-                      currentLocation === "indoor"
+                      !currentGpsRecordingEnabled
                         ? "bg-background shadow-sm"
                         : ""
                     }`}
@@ -220,19 +215,19 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
                         as={Activity}
                         size={18}
                         className={
-                          currentLocation === "indoor"
+                          !currentGpsRecordingEnabled
                             ? "text-primary"
                             : "text-muted-foreground"
                         }
                       />
                       <Text
                         className={`font-semibold ${
-                          currentLocation === "indoor"
+                          !currentGpsRecordingEnabled
                             ? "text-primary"
                             : "text-muted-foreground"
                         }`}
                       >
-                        Indoor
+                        GPS OFF
                       </Text>
                     </View>
                   </Pressable>
@@ -269,7 +264,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
                           {
                             getActivityDisplayName(
                               activity.category,
-                              "outdoor",
+                              true,
                             ).split(" ")[0]
                           }
                         </Text>

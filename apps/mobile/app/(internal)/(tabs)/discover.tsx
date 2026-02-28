@@ -36,10 +36,7 @@ const CATEGORIES = [
     icon: Footprints,
     color: "text-emerald-600",
     bgColor: "bg-emerald-50",
-    subcategories: [
-      { category: "run", location: "outdoor", label: "Outdoor Running" },
-      { category: "run", location: "indoor", label: "Treadmill" },
-    ],
+    subcategories: [{ category: "run", label: "Running" }],
   },
   {
     id: "bike",
@@ -47,10 +44,7 @@ const CATEGORIES = [
     icon: Bike,
     color: "text-blue-600",
     bgColor: "bg-blue-50",
-    subcategories: [
-      { category: "bike", location: "outdoor", label: "Outdoor Cycling" },
-      { category: "bike", location: "indoor", label: "Indoor Cycling" },
-    ],
+    subcategories: [{ category: "bike", label: "Cycling" }],
   },
   {
     id: "swim",
@@ -58,9 +52,7 @@ const CATEGORIES = [
     icon: Waves,
     color: "text-cyan-600",
     bgColor: "bg-cyan-50",
-    subcategories: [
-      { category: "swim", location: "indoor", label: "Swimming" },
-    ],
+    subcategories: [{ category: "swim", label: "Swimming" }],
   },
   {
     id: "strength",
@@ -68,9 +60,7 @@ const CATEGORIES = [
     icon: Dumbbell,
     color: "text-red-600",
     bgColor: "bg-red-50",
-    subcategories: [
-      { category: "strength", location: "indoor", label: "Strength Training" },
-    ],
+    subcategories: [{ category: "strength", label: "Strength Training" }],
   },
   {
     id: "other",
@@ -78,9 +68,7 @@ const CATEGORIES = [
     icon: Activity,
     color: "text-gray-600",
     bgColor: "bg-gray-50",
-    subcategories: [
-      { category: "other", location: "outdoor", label: "Other Activities" },
-    ],
+    subcategories: [{ category: "other", label: "Other Activities" }],
   },
 ] as const;
 

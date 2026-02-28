@@ -41,7 +41,7 @@ const CATEGORY_OPTIONS: {
 export default function PlanPickerPage() {
   const service = useSharedActivityRecorder();
   const plan = usePlan(service);
-  const { activityCategory } = useActivityStatus(service);
+  const { activityCategory, gpsRecordingEnabled } = useActivityStatus(service);
   const { attachPlan, detachPlan } = useRecordingConfiguration(service);
 
   // Search and filter state
@@ -84,11 +84,7 @@ export default function PlanPickerPage() {
 
   // Handle planned activity selection
   const handlePlanPress = useCallback(
-    (
-      eventId: string,
-      planCategory: PublicActivityCategory,
-      planLocation: string,
-    ) => {
+    (eventId: string, planCategory: PublicActivityCategory) => {
       // If plan's category differs from current category, update category first
       if (service && planCategory !== activityCategory) {
         console.log(
@@ -96,14 +92,14 @@ export default function PlanPickerPage() {
         );
         service.selectActivityFromPayload({
           category: planCategory,
-          location: planLocation as any,
+          gpsRecordingEnabled,
         });
       }
 
       attachPlan(eventId);
       router.back();
     },
-    [attachPlan, service, activityCategory],
+    [attachPlan, service, activityCategory, gpsRecordingEnabled],
   );
 
   // Handle detach plan
@@ -214,8 +210,6 @@ export default function PlanPickerPage() {
                     plannedActivity.id,
                     plannedActivity.activity_plan
                       ?.activity_category as PublicActivityCategory,
-                    plannedActivity.activity_plan?.activity_location ||
-                      "indoor",
                   )
                 }
               />
@@ -254,7 +248,6 @@ interface PlannedActivityListItemProps {
       name: string;
       description: string | null;
       activity_category: string;
-      activity_location: string;
     } | null;
   };
   isSelected: boolean;
@@ -296,8 +289,7 @@ function PlannedActivityListItem({
               <>
                 <Text className="text-xs text-muted-foreground">•</Text>
                 <Text className="text-xs text-muted-foreground capitalize">
-                  {activityPlan.activity_category} ·{" "}
-                  {activityPlan.activity_location}
+                  {activityPlan.activity_category}
                 </Text>
               </>
             )}

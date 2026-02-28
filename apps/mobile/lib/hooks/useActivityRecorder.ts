@@ -28,11 +28,7 @@ import type {
   StatsUpdateEvent,
 } from "@/lib/services/ActivityRecorder/types";
 import type { RecordingServiceActivityPlan } from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  PublicProfilesRow,
-} from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 
@@ -61,7 +57,7 @@ export interface RecorderActions {
   // Activity selection
   selectActivity: (
     category: PublicActivityCategory,
-    location: PublicActivityLocation,
+    gpsRecordingEnabled: boolean,
   ) => void;
 
   // Device management
@@ -459,27 +455,25 @@ export function useLapTime(service: ActivityRecorderService | null): number {
  *
  * @example
  * ```tsx
- * const { isOutdoorActivity, hasPlan } = useActivityStatus(service);
+ * const { gpsRecordingEnabled, hasPlan } = useActivityStatus(service);
  *
  * // Use in card list determination
- * if (isOutdoorActivity) cardList.push('map');
+ * if (gpsRecordingEnabled) cardList.push('map');
  * if (hasPlan) cardList.push('plan');
  * ```
  */
 export function useActivityStatus(service: ActivityRecorderService | null): {
-  isOutdoorActivity: boolean;
+  gpsRecordingEnabled: boolean;
   activityCategory: PublicActivityCategory;
-  activityLocation: PublicActivityLocation;
 } {
   useServiceEvent(service, "activitySelected");
 
   const activityCategory = service?.selectedActivityCategory || "bike";
-  const activityLocation = service?.selectedActivityLocation || "indoor";
+  const gpsRecordingEnabled = service?.isGpsRecordingEnabled() ?? true;
 
   return {
-    isOutdoorActivity: activityLocation === "outdoor",
+    gpsRecordingEnabled,
     activityCategory,
-    activityLocation,
   };
 }
 
@@ -506,14 +500,14 @@ export function useActivityStatus(service: ActivityRecorderService | null): {
  */
 export function useGpsTracking(service: ActivityRecorderService | null) {
   const [gpsEnabled, setGpsEnabled] = useState(
-    service?.isGpsTrackingEnabled() ?? true,
+    service?.isGpsRecordingEnabled() ?? true,
   );
 
   useEffect(() => {
     if (!service) return;
 
     // Initialize with current state
-    setGpsEnabled(service.isGpsTrackingEnabled());
+    setGpsEnabled(service.isGpsRecordingEnabled());
 
     // Subscribe to GPS tracking changes
     const handleGpsTrackingChange = (enabled: boolean) => {
@@ -533,17 +527,17 @@ export function useGpsTracking(service: ActivityRecorderService | null) {
 
   const toggleGps = useCallback(async () => {
     if (!service) return;
-    await service.toggleGpsTracking();
+    await service.toggleGpsRecording();
   }, [service]);
 
   const enableGps = useCallback(async () => {
     if (!service) return;
-    await service.enableGpsTracking();
+    await service.enableGpsRecording();
   }, [service]);
 
   const disableGps = useCallback(async () => {
     if (!service) return;
-    await service.disableGpsTracking();
+    await service.disableGpsRecording();
   }, [service]);
 
   return {
@@ -601,9 +595,9 @@ export function useRecorderActions(
 
   // Activity selection
   const selectActivity = useCallback(
-    (category: PublicActivityCategory, location: PublicActivityLocation) => {
+    (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => {
       if (!service) return;
-      service.selectUnplannedActivity(category, location);
+      service.selectUnplannedActivity(category, gpsRecordingEnabled);
     },
     [service],
   );

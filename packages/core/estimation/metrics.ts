@@ -1,8 +1,4 @@
-import type {
-  PublicActivityCategory,
-  PublicActivityLocation,
-  PublicProfilesRow,
-} from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 import type {
   EstimationContext,
   EstimationResult,
@@ -18,7 +14,7 @@ export function estimateMetrics(
   context: EstimationContext,
 ): MetricEstimations {
   const { duration, intensityFactor, tss } = baseEstimation;
-  const { profile, activityCategory, activityLocation, route } = context;
+  const { profile, activityCategory, route } = context;
 
   // Estimate calories
   const calories = estimateCalories(
@@ -30,7 +26,6 @@ export function estimateMetrics(
     context.thresholdHr,
     context.weightKg,
     activityCategory,
-    activityLocation,
   );
 
   // Estimate distance
@@ -38,7 +33,6 @@ export function estimateMetrics(
     duration,
     intensityFactor,
     activityCategory,
-    activityLocation,
     route,
   );
 
@@ -84,7 +78,6 @@ function estimateCalories(
   thresholdHr?: number | null,
   weightKg?: number | null,
   activityCategory: PublicActivityCategory = "other",
-  activityLocation: PublicActivityLocation = "outdoor",
 ): number {
   // Method 1: Power-based (most accurate for cycling)
   if (ftp && activityCategory === "bike") {
@@ -182,7 +175,6 @@ function estimateDistance(
   duration: number,
   intensityFactor: number,
   activityCategory: PublicActivityCategory,
-  activityLocation: PublicActivityLocation,
   route?: { distanceMeters: number },
 ): number | undefined {
   // If route provided, use route distance
@@ -197,11 +189,7 @@ function estimateDistance(
 
   // Typical speeds by activity type and effort level
   const effortLevel = getEffortLevel(intensityFactor);
-  const speeds = getTypicalSpeeds(
-    activityCategory,
-    activityLocation,
-    effortLevel,
-  );
+  const speeds = getTypicalSpeeds(activityCategory, effortLevel);
 
   return speeds * duration; // distance in meters
 }
@@ -220,7 +208,6 @@ function getEffortLevel(intensityFactor: number): "easy" | "moderate" | "hard" {
  */
 function getTypicalSpeeds(
   activityCategory: PublicActivityCategory,
-  activityLocation: PublicActivityLocation,
   effortLevel: "easy" | "moderate" | "hard",
 ): number {
   const speedTables = {
