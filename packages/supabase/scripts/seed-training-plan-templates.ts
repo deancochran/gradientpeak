@@ -7,6 +7,7 @@
  *   pnpm seed-training-plans --type=periodized  # Sync only periodized plans
  *   pnpm seed-training-plans --dry-run          # Preview changes without applying
  *   pnpm seed-training-plans --no-delete        # Don't delete templates not in code
+ *   pnpm seed-training-plans --url=http://localhost:54321  # Override Supabase URL
  *
  * This script uses a "smart sync" approach:
  * 1. Fetches existing system training plan templates from the database
@@ -29,13 +30,14 @@ const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 const typeArg = args.find((arg) => arg.startsWith("--type="));
+const urlArg = args.find((arg) => arg.startsWith("--url="));
 const planType = typeArg?.split("=")[1] as
   | "periodized"
   | "maintenance"
   | undefined;
 
-// Environment variables
-const SUPABASE_URL = process.env.SUPABASE_URL;
+// Environment variables - allow CLI override
+const SUPABASE_URL = urlArg?.split("=")[1] || process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY =
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 

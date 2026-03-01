@@ -7,6 +7,7 @@
  *   pnpm seed-templates --category=bike    # Sync only bike templates
  *   pnpm seed-templates --dry-run          # Preview changes without applying
  *   pnpm seed-templates --no-delete        # Don't delete templates not in code
+ *   pnpm seed-templates --url=http://localhost:54321  # Override Supabase URL
  *
  * This script uses a "smart sync" approach:
  * 1. Fetches existing system templates from the database
@@ -33,12 +34,13 @@ const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 const categoryArg = args.find((arg) => arg.startsWith("--category="));
+const urlArg = args.find((arg) => arg.startsWith("--url="));
 const category = categoryArg?.split("=")[1] as
   | SystemTemplate["activity_category"]
   | undefined;
 
-// Environment variables
-const SUPABASE_URL = process.env.SUPABASE_URL;
+// Environment variables - allow CLI override
+const SUPABASE_URL = urlArg?.split("=")[1] || process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY =
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
