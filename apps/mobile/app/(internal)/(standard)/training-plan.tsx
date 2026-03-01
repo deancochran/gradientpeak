@@ -12,12 +12,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
 import {
   TPV_NEXT_STEP_INTENTS,
   normalizeTrainingPlanNextStep,
 } from "@/lib/constants/trainingPlanIntents";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
@@ -28,6 +30,7 @@ import {
   ChevronRight,
   CircleCheck,
   Gauge,
+  Library,
   Pause,
   Trash2,
   TrendingUp,
@@ -55,6 +58,7 @@ interface InsightSummary {
 
 export default function TrainingPlanOverview() {
   const router = useRouter();
+  const { profile } = useAuth();
   const utils = trpc.useUtils();
   const { id, nextStep, activityId } = useLocalSearchParams<{
     id?: string;
@@ -121,9 +125,41 @@ export default function TrainingPlanOverview() {
   }, [idealCurveData]);
 
   const [refreshing, setRefreshing] = React.useState(false);
+  const [templateStartDate, setTemplateStartDate] = React.useState("");
+  const [templateGoalDate, setTemplateGoalDate] = React.useState("");
   const [insightModal, setInsightModal] = React.useState<
     "adherence" | "readiness" | null
   >(null);
+
+  const saveToLibraryMutation = trpc.library.add.useMutation({
+    onSuccess: async () => {
+      await utils.library.listTrainingPlans.invalidate();
+      Alert.alert("Saved", "Training plan added to your library.");
+    },
+    onError: (error) => {
+      Alert.alert("Save failed", error.message || "Could not save to library");
+    },
+  });
+
+  const applyTemplateMutation = trpc.trainingPlans.applyTemplate.useMutation({
+    onSuccess: async (result) => {
+      await Promise.all([
+        utils.trainingPlans.invalidate(),
+        utils.events.invalidate(),
+        utils.library.listTrainingPlans.invalidate(),
+      ]);
+      Alert.alert(
+        "Template Applied",
+        `Created ${result.created_event_count} scheduled session${result.created_event_count === 1 ? "" : "s"}.`,
+      );
+    },
+    onError: (error) => {
+      Alert.alert(
+        "Apply failed",
+        error.message || "Could not apply this training plan template",
+      );
+    },
+  });
 
   const deletePlanMutation = useReliableMutation(trpc.trainingPlans.delete, {
     invalidate: [utils.trainingPlans],
@@ -290,6 +326,48 @@ export default function TrainingPlanOverview() {
       ],
     );
   }, [deletePlanMutation, plan]);
+
+  const handleSaveToLibrary = useCallback(() => {
+    if (!plan?.id) {
+      Alert.alert("Save failed", "No plan ID was found.");
+      return;
+    }
+
+    saveToLibraryMutation.mutate({
+      item_type: "training_plan",
+      item_id: plan.id,
+    });
+  }, [plan?.id, saveToLibraryMutation]);
+
+  const handleApplyTemplate = useCallback(() => {
+    if (!plan?.id) {
+      Alert.alert("Apply failed", "No plan ID was found.");
+      return;
+    }
+
+    const normalizedStartDate = templateStartDate.trim();
+    const normalizedGoalDate = templateGoalDate.trim();
+
+    if (
+      normalizedStartDate &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(normalizedStartDate)
+    ) {
+      Alert.alert("Invalid start date", "Use YYYY-MM-DD format.");
+      return;
+    }
+
+    if (normalizedGoalDate && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedGoalDate)) {
+      Alert.alert("Invalid goal date", "Use YYYY-MM-DD format.");
+      return;
+    }
+
+    applyTemplateMutation.mutate({
+      template_type: "training_plan",
+      template_id: plan.id,
+      start_date: normalizedStartDate || undefined,
+      goal_date: normalizedGoalDate || undefined,
+    });
+  }, [applyTemplateMutation, plan?.id, templateGoalDate, templateStartDate]);
 
   const focusContext = useMemo(() => {
     if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.REFINE) {
@@ -517,6 +595,8 @@ export default function TrainingPlanOverview() {
     );
   }
 
+  const isOwnedByUser = plan.profile_id === profile?.id;
+
   // Has training plan - show dashboard
   return (
     <ScrollView
@@ -572,6 +652,63 @@ export default function TrainingPlanOverview() {
               </TouchableOpacity>
             }
           />
+
+          <Card className="mt-3">
+            <CardContent className="p-3 gap-3">
+              <View className="gap-1">
+                <Text className="text-sm font-semibold">Template Actions</Text>
+                <Text className="text-xs text-muted-foreground">
+                  Save this plan for quick reuse, or apply it to create a new
+                  scheduled copy.
+                </Text>
+                {!isOwnedByUser ? (
+                  <Text className="text-xs text-muted-foreground">
+                    This is a shared template. Applying creates your own private
+                    plan copy.
+                  </Text>
+                ) : null}
+              </View>
+
+              <Button
+                variant="outline"
+                onPress={handleSaveToLibrary}
+                disabled={saveToLibraryMutation.isPending}
+                className="flex-row items-center justify-center gap-2"
+              >
+                <Icon as={Library} size={16} className="text-foreground" />
+                <Text className="text-foreground font-medium">
+                  {saveToLibraryMutation.isPending
+                    ? "Saving..."
+                    : "Save to Library"}
+                </Text>
+              </Button>
+
+              <View className="gap-2">
+                <Input
+                  value={templateStartDate}
+                  onChangeText={setTemplateStartDate}
+                  placeholder="Start date (YYYY-MM-DD)"
+                  autoCapitalize="none"
+                />
+                <Input
+                  value={templateGoalDate}
+                  onChangeText={setTemplateGoalDate}
+                  placeholder="Goal date (YYYY-MM-DD, optional)"
+                  autoCapitalize="none"
+                />
+                <Button
+                  onPress={handleApplyTemplate}
+                  disabled={applyTemplateMutation.isPending}
+                >
+                  <Text className="text-primary-foreground font-semibold">
+                    {applyTemplateMutation.isPending
+                      ? "Applying..."
+                      : "Apply Template"}
+                  </Text>
+                </Button>
+              </View>
+            </CardContent>
+          </Card>
 
           <TrainingPlanKpiRow items={summaryKpis} />
         </View>

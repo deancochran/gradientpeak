@@ -23,6 +23,7 @@ import {
   CalendarX,
   Copy,
   Edit,
+  Library,
   Share2,
   Smartphone,
   Trash2,
@@ -251,6 +252,29 @@ export default function ActivityPlanDetailPage() {
     },
   });
 
+  const saveToLibraryMutation = trpc.library.add.useMutation({
+    onSuccess: async () => {
+      await utils.library.listActivityPlans.invalidate();
+      Alert.alert("Saved", "Activity plan added to your library.");
+    },
+    onError: (error) => {
+      Alert.alert("Save failed", error.message || "Could not save to library");
+    },
+  });
+
+  const handleSaveToLibrary = () => {
+    const actualPlanId = planId || activityPlan?.id;
+    if (!actualPlanId) {
+      Alert.alert("Save failed", "No activity plan ID was found.");
+      return;
+    }
+
+    saveToLibraryMutation.mutate({
+      item_type: "activity_plan",
+      item_id: actualPlanId,
+    });
+  };
+
   const handleDelete = () => {
     if (!activityPlan) return;
 
@@ -394,32 +418,18 @@ export default function ActivityPlanDetailPage() {
 
             {/* Secondary Actions Row */}
             <View className="flex-row gap-2">
-              {isOwnedByUser && (
-                <>
-                  <Button
-                    onPress={handleEdit}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 flex-row items-center justify-center gap-1.5"
-                  >
-                    <Icon as={Edit} size={16} className="text-foreground" />
-                    <Text className="text-foreground text-sm">Edit</Text>
-                  </Button>
-
-                  <Button
-                    onPress={handleDelete}
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 flex-row items-center justify-center gap-1.5"
-                    disabled={deleteMutation.isPending}
-                  >
-                    <Icon as={Trash2} size={16} className="text-destructive" />
-                    <Text className="text-destructive text-sm">
-                      {deleteMutation.isPending ? "Deleting..." : "Delete"}
-                    </Text>
-                  </Button>
-                </>
-              )}
+              <Button
+                onPress={handleSaveToLibrary}
+                variant="outline"
+                size="sm"
+                className="flex-1 flex-row items-center justify-center gap-1.5"
+                disabled={saveToLibraryMutation.isPending}
+              >
+                <Icon as={Library} size={16} className="text-foreground" />
+                <Text className="text-foreground text-sm">
+                  {saveToLibraryMutation.isPending ? "Saving..." : "Save"}
+                </Text>
+              </Button>
 
               <Button
                 onPress={handleDuplicate}
@@ -441,6 +451,33 @@ export default function ActivityPlanDetailPage() {
                 <Text className="text-foreground text-sm">Share</Text>
               </Button>
             </View>
+
+            {isOwnedByUser && (
+              <View className="flex-row gap-2">
+                <Button
+                  onPress={handleEdit}
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 flex-row items-center justify-center gap-1.5"
+                >
+                  <Icon as={Edit} size={16} className="text-foreground" />
+                  <Text className="text-foreground text-sm">Edit</Text>
+                </Button>
+
+                <Button
+                  onPress={handleDelete}
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 flex-row items-center justify-center gap-1.5"
+                  disabled={deleteMutation.isPending}
+                >
+                  <Icon as={Trash2} size={16} className="text-destructive" />
+                  <Text className="text-destructive text-sm">
+                    {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                  </Text>
+                </Button>
+              </View>
+            )}
           </View>
 
           {/* Scheduled Date Banner */}

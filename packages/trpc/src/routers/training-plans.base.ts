@@ -35,6 +35,7 @@ import {
   trainingPlanCalibrationConfigSchema,
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
+  templateApplyInputSchema,
   validatePlanFeasibility,
   type CreationContextSummary,
   type DeterministicProjectionMicrocycle,
@@ -73,12 +74,169 @@ const plannedEventType = "planned_activity" as const;
 type FeasibilityState = z.infer<typeof feasibilityStateSchema>;
 type SafetyState = z.infer<typeof safetyStateSchema>;
 
+type DerivableSession = {
+  date: string;
+  title: string;
+  activity_plan_id: string | null;
+  all_day: boolean;
+  starts_at: string;
+  ends_at: string | null;
+};
+
 function toDayStartIso(dateOnly: string): string {
   return `${dateOnly}T00:00:00.000Z`;
 }
 
 function toNextDayStartIso(dateOnly: string): string {
   return toDayStartIso(addDaysDateOnlyUtc(dateOnly, 1));
+}
+
+function isUuidString(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      value,
+    )
+  );
+}
+
+function deriveTemplateSessions(
+  structure: unknown,
+  fallbackStartDate: string,
+): DerivableSession[] {
+  if (!structure || typeof structure !== "object") {
+    return [];
+  }
+
+  const root = structure as Record<string, unknown>;
+  const sessions: DerivableSession[] = [];
+  const seen = new Set<string>();
+
+  const rootStartDate =
+    typeof root.start_date === "string" ? root.start_date : fallbackStartDate;
+
+  const pushSession = (session: DerivableSession) => {
+    const key = `${session.date}|${session.activity_plan_id ?? "none"}|${session.title}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    sessions.push(session);
+  };
+
+  const rootSessions = Array.isArray(root.sessions)
+    ? (root.sessions as Array<Record<string, unknown>>)
+    : [];
+
+  for (const session of rootSessions) {
+    const activityPlanId = isUuidString(session.activity_plan_id)
+      ? session.activity_plan_id
+      : null;
+    const offset =
+      typeof session.offset_days === "number"
+        ? session.offset_days
+        : typeof session.day_offset === "number"
+          ? session.day_offset
+          : null;
+    const explicitDate =
+      typeof session.scheduled_date === "string"
+        ? session.scheduled_date
+        : null;
+
+    const date =
+      explicitDate ??
+      (typeof offset === "number"
+        ? addDaysDateOnlyUtc(rootStartDate, offset)
+        : null);
+
+    if (!date) continue;
+
+    pushSession({
+      date,
+      title:
+        typeof session.title === "string" && session.title.trim().length > 0
+          ? session.title
+          : "Planned Session",
+      activity_plan_id: activityPlanId,
+      all_day: true,
+      starts_at: toDayStartIso(date),
+      ends_at: toNextDayStartIso(date),
+    });
+  }
+
+  const blocks = Array.isArray(root.blocks)
+    ? (root.blocks as Array<Record<string, unknown>>)
+    : [];
+
+  for (const block of blocks) {
+    const blockStart =
+      typeof block.start_date === "string" ? block.start_date : rootStartDate;
+    const blockSessions = Array.isArray(block.sessions)
+      ? (block.sessions as Array<Record<string, unknown>>)
+      : [];
+
+    for (const session of blockSessions) {
+      const activityPlanId = isUuidString(session.activity_plan_id)
+        ? session.activity_plan_id
+        : null;
+      const offset =
+        typeof session.offset_days === "number"
+          ? session.offset_days
+          : typeof session.day_offset === "number"
+            ? session.day_offset
+            : null;
+      const explicitDate =
+        typeof session.scheduled_date === "string"
+          ? session.scheduled_date
+          : null;
+
+      const date =
+        explicitDate ??
+        (typeof offset === "number"
+          ? addDaysDateOnlyUtc(blockStart, offset)
+          : null);
+
+      if (!date) continue;
+
+      pushSession({
+        date,
+        title:
+          typeof session.title === "string" && session.title.trim().length > 0
+            ? session.title
+            : typeof block.name === "string" && block.name.trim().length > 0
+              ? block.name
+              : "Planned Session",
+        activity_plan_id: activityPlanId,
+        all_day: true,
+        starts_at: toDayStartIso(date),
+        ends_at: toNextDayStartIso(date),
+      });
+    }
+  }
+
+  sessions.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  return sessions;
+}
+
+function withTrainingPlanIdentity<
+  T extends {
+    id: string;
+    profile_id: string | null;
+    template_visibility?: string | null;
+    is_system_template?: boolean | null;
+  },
+>(plan: T) {
+  return {
+    ...plan,
+    content_type: "training_plan" as const,
+    content_id: plan.id,
+    owner_profile_id: plan.profile_id,
+    visibility:
+      plan.template_visibility === "private" ||
+      plan.template_visibility === "public"
+        ? plan.template_visibility
+        : plan.is_system_template
+          ? "public"
+          : "private",
+  };
 }
 
 type InsightContributorImpact = "positive" | "neutral" | "negative";
@@ -1858,22 +2016,67 @@ export const trainingPlansRouter = createTRPCRouter({
   // ------------------------------
   // List all training plans for the user
   // ------------------------------
-  list: protectedProcedure.query(async ({ ctx }) => {
-    const { data, error } = await ctx.supabase
-      .from("training_plans")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .order("created_at", { ascending: false });
+  list: protectedProcedure
+    .input(
+      z
+        .object({
+          includeOwnOnly: z.boolean().default(true),
+          includeSystemTemplates: z.boolean().default(false),
+          ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
+          visibility: z.enum(["private", "public"]).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      let query = ctx.supabase
+        .from("training_plans")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
+      let ownerScope: "own" | "system" | "public" | "all" | "none";
+      if (input?.ownerScope) {
+        ownerScope = input.ownerScope;
+      } else {
+        const includeOwnOnly = input?.includeOwnOnly ?? true;
+        const includeSystemTemplates = input?.includeSystemTemplates ?? false;
+        ownerScope = includeOwnOnly
+          ? includeSystemTemplates
+            ? "all"
+            : "own"
+          : includeSystemTemplates
+            ? "system"
+            : "none";
+      }
 
-    return data || [];
-  }),
+      if (ownerScope === "own") {
+        query = query.eq("profile_id", ctx.session.user.id);
+      } else if (ownerScope === "system") {
+        query = query.eq("is_system_template", true);
+      } else if (ownerScope === "public") {
+        query = query.eq("template_visibility", "public");
+      } else if (ownerScope === "all") {
+        query = query.or(
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
+        );
+      } else {
+        return [];
+      }
+
+      if (input?.visibility) {
+        query = query.eq("template_visibility", input.visibility);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message,
+        });
+      }
+
+      return (data || []).map((plan) => withTrainingPlanIdentity(plan as any));
+    }),
 
   // ------------------------------
   // Check if user has a training plan
@@ -3920,6 +4123,163 @@ export const trainingPlansRouter = createTRPCRouter({
       return {
         id: input.id,
         ...template,
+      };
+    }),
+
+  applyTemplate: protectedProcedure
+    .input(templateApplyInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      if (input.template_type !== "training_plan") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "Only training plan templates are supported by this mutation",
+        });
+      }
+
+      const profileId = ctx.session.user.id;
+
+      const { data: templatePlan, error: templateError } = await ctx.supabase
+        .from("training_plans")
+        .select("*")
+        .eq("id", input.template_id)
+        .or(
+          `profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`,
+        )
+        .single();
+
+      if (templateError || !templatePlan) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Training plan template not found",
+        });
+      }
+
+      const structure =
+        templatePlan.structure && typeof templatePlan.structure === "object"
+          ? ({
+              ...(templatePlan.structure as Record<string, unknown>),
+            } as Record<string, unknown>)
+          : {};
+
+      const appliedStructureId = crypto.randomUUID();
+      const appliedPlanStartDate =
+        input.start_date ??
+        (typeof structure.start_date === "string"
+          ? structure.start_date
+          : formatDateOnlyUtc(new Date()));
+
+      structure.id = appliedStructureId;
+      if (typeof structure.start_date === "string" || input.start_date) {
+        structure.start_date = appliedPlanStartDate;
+      }
+
+      const { data: appliedPlan, error: appliedPlanError } = await ctx.supabase
+        .from("training_plans")
+        .insert({
+          name: `${templatePlan.name} (Applied)`,
+          description: templatePlan.description,
+          structure: structure as any,
+          is_active: false,
+          is_system_template: false,
+          template_visibility: "private",
+          profile_id: profileId,
+        })
+        .select("id")
+        .single();
+
+      if (appliedPlanError || !appliedPlan) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create applied training plan",
+        });
+      }
+
+      const derivableSessions = deriveTemplateSessions(
+        structure,
+        appliedPlanStartDate,
+      );
+
+      const candidatePlanIds = Array.from(
+        new Set(
+          derivableSessions
+            .map((session) => session.activity_plan_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+
+      let allowedPlanIds = new Set<string>();
+      if (candidatePlanIds.length > 0) {
+        const { data: accessiblePlans, error: plansError } = await ctx.supabase
+          .from("activity_plans")
+          .select("id")
+          .in("id", candidatePlanIds)
+          .or(
+            `profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`,
+          );
+
+        if (plansError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: plansError.message,
+          });
+        }
+
+        allowedPlanIds = new Set((accessiblePlans ?? []).map((row) => row.id));
+      }
+
+      const eventRows = derivableSessions
+        .filter(
+          (session) =>
+            !session.activity_plan_id ||
+            allowedPlanIds.has(session.activity_plan_id),
+        )
+        .map((session) => ({
+          profile_id: profileId,
+          event_type: plannedEventType,
+          title: session.title,
+          all_day: session.all_day,
+          timezone: "UTC",
+          starts_at: session.starts_at,
+          ends_at: session.ends_at,
+          status: "scheduled" as const,
+          activity_plan_id: session.activity_plan_id,
+          training_plan_id: appliedPlan.id,
+        }));
+
+      const schedule_batch_id = crypto.randomUUID();
+      let created_event_count = 0;
+
+      if (eventRows.length > 0) {
+        const { data: insertedEvents, error: eventsError } = await ctx.supabase
+          .from("events")
+          .insert(
+            eventRows.map((eventRow) => ({
+              ...eventRow,
+              schedule_batch_id,
+            })),
+          )
+          .select("id");
+
+        if (eventsError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Applied plan was created, but event scheduling failed",
+          });
+        }
+
+        created_event_count = insertedEvents?.length ?? 0;
+      }
+
+      return {
+        applied_plan_id: appliedPlan.id,
+        schedule_batch_id,
+        created_event_count,
+        cache_tags: [
+          "events.list",
+          "trainingPlans.list",
+          "library.listTrainingPlans",
+        ],
       };
     }),
 

@@ -350,12 +350,15 @@ export const publicActivityPlansRowSchema = z.object({
   description: z.string(),
   id: z.string(),
   idx: z.number(),
+  import_external_id: z.string().nullable(),
+  import_provider: z.string().nullable(),
   is_system_template: z.boolean(),
   name: z.string(),
   notes: z.string().nullable(),
   profile_id: z.string().nullable(),
   route_id: z.string().nullable(),
   structure: jsonSchema.nullable(),
+  template_visibility: z.string(),
   updated_at: z.string(),
   version: z.string(),
 });
@@ -366,12 +369,15 @@ export const publicActivityPlansInsertSchema = z.object({
   description: z.string(),
   id: z.string().optional(),
   idx: z.number().optional(),
+  import_external_id: z.string().optional().nullable(),
+  import_provider: z.string().optional().nullable(),
   is_system_template: z.boolean().optional(),
   name: z.string(),
   notes: z.string().optional().nullable(),
   profile_id: z.string().optional().nullable(),
   route_id: z.string().optional().nullable(),
   structure: jsonSchema.optional().nullable(),
+  template_visibility: z.string().optional(),
   updated_at: z.string().optional(),
   version: z.string().optional(),
 });
@@ -382,12 +388,15 @@ export const publicActivityPlansUpdateSchema = z.object({
   description: z.string().optional(),
   id: z.string().optional(),
   idx: z.number().optional(),
+  import_external_id: z.string().optional().nullable(),
+  import_provider: z.string().optional().nullable(),
   is_system_template: z.boolean().optional(),
   name: z.string().optional(),
   notes: z.string().optional().nullable(),
   profile_id: z.string().optional().nullable(),
   route_id: z.string().optional().nullable(),
   structure: jsonSchema.optional().nullable(),
+  template_visibility: z.string().optional(),
   updated_at: z.string().optional(),
   version: z.string().optional(),
 });
@@ -492,6 +501,7 @@ export const publicEventsRowSchema = z.object({
   profile_id: z.string(),
   recurrence_rule: z.string().nullable(),
   recurrence_timezone: z.string().nullable(),
+  schedule_batch_id: z.string().nullable(),
   series_id: z.string().nullable(),
   source_provider: z.string().nullable(),
   starts_at: z.string(),
@@ -521,6 +531,7 @@ export const publicEventsInsertSchema = z.object({
   profile_id: z.string(),
   recurrence_rule: z.string().optional().nullable(),
   recurrence_timezone: z.string().optional().nullable(),
+  schedule_batch_id: z.string().optional().nullable(),
   series_id: z.string().optional().nullable(),
   source_provider: z.string().optional().nullable(),
   starts_at: z.string(),
@@ -550,6 +561,7 @@ export const publicEventsUpdateSchema = z.object({
   profile_id: z.string().optional(),
   recurrence_rule: z.string().optional().nullable(),
   recurrence_timezone: z.string().optional().nullable(),
+  schedule_batch_id: z.string().optional().nullable(),
   series_id: z.string().optional().nullable(),
   source_provider: z.string().optional().nullable(),
   starts_at: z.string().optional(),
@@ -636,6 +648,40 @@ export const publicIntegrationsUpdateSchema = z.object({
 export const publicIntegrationsRelationshipsSchema = z.tuple([
   z.object({
     foreignKeyName: z.literal("integrations_profile_id_fkey"),
+    columns: z.tuple([z.literal("profile_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+]);
+
+export const publicLibraryItemsRowSchema = z.object({
+  created_at: z.string(),
+  id: z.string(),
+  item_id: z.string(),
+  item_type: z.string(),
+  profile_id: z.string(),
+});
+
+export const publicLibraryItemsInsertSchema = z.object({
+  created_at: z.string().optional(),
+  id: z.string().optional(),
+  item_id: z.string(),
+  item_type: z.string(),
+  profile_id: z.string(),
+});
+
+export const publicLibraryItemsUpdateSchema = z.object({
+  created_at: z.string().optional(),
+  id: z.string().optional(),
+  item_id: z.string().optional(),
+  item_type: z.string().optional(),
+  profile_id: z.string().optional(),
+});
+
+export const publicLibraryItemsRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("library_items_profile_id_fkey"),
     columns: z.tuple([z.literal("profile_id")]),
     isOneToOne: z.literal(false),
     referencedRelation: z.literal("profiles"),
@@ -890,6 +936,7 @@ export const publicTrainingPlansRowSchema = z.object({
   name: z.string(),
   profile_id: z.string().nullable(),
   structure: jsonSchema,
+  template_visibility: z.string(),
   updated_at: z.string(),
 });
 
@@ -903,6 +950,7 @@ export const publicTrainingPlansInsertSchema = z.object({
   name: z.string(),
   profile_id: z.string().optional().nullable(),
   structure: jsonSchema,
+  template_visibility: z.string().optional(),
   updated_at: z.string().optional(),
 });
 
@@ -916,6 +964,7 @@ export const publicTrainingPlansUpdateSchema = z.object({
   name: z.string().optional(),
   profile_id: z.string().optional().nullable(),
   structure: jsonSchema.optional(),
+  template_visibility: z.string().optional(),
   updated_at: z.string().optional(),
 });
 

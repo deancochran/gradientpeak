@@ -43,6 +43,9 @@ type ResourceType =
   | "activities"
   | "routes";
 
+type TemplateOwnerScope = "all" | "own" | "system" | "public";
+type TemplateVisibilityFilter = "any" | "private" | "public";
+
 const VALID_RESOURCE_TYPES = new Set<ResourceType>([
   "activity_plans",
   "training_plans",
@@ -66,6 +69,25 @@ const RESOURCE_OPTIONS = [
   { value: "training_plans" as const, label: "Training Plans", icon: Calendar },
   { value: "activities" as const, label: "Past Activities", icon: Activity },
   { value: "routes" as const, label: "Routes", icon: Route },
+];
+
+const OWNER_SCOPE_OPTIONS: Array<{
+  value: TemplateOwnerScope;
+  label: string;
+}> = [
+  { value: "all", label: "All" },
+  { value: "own", label: "Mine" },
+  { value: "system", label: "System" },
+  { value: "public", label: "Public" },
+];
+
+const VISIBILITY_OPTIONS: Array<{
+  value: TemplateVisibilityFilter;
+  label: string;
+}> = [
+  { value: "any", label: "Any Visibility" },
+  { value: "public", label: "Public" },
+  { value: "private", label: "Private" },
 ];
 
 // Helper functions extracted outside component to prevent hook violations
@@ -245,6 +267,13 @@ export default function LibraryScreen() {
     routeResource ?? "activity_plans",
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [ownerScope, setOwnerScope] = useState<TemplateOwnerScope>("all");
+  const [visibilityFilter, setVisibilityFilter] =
+    useState<TemplateVisibilityFilter>("any");
+
+  const isTemplateResource =
+    selectedResource === "activity_plans" ||
+    selectedResource === "training_plans";
 
   useEffect(() => {
     if (!routeResource || routeResource === selectedResource) {
@@ -280,8 +309,8 @@ export default function LibraryScreen() {
     isFetchingNextPage: isFetchingNextActivityPlans,
   } = trpc.activityPlans.list.useInfiniteQuery(
     {
-      includeOwnOnly: true,
-      includeSystemTemplates: false,
+      ownerScope,
+      visibility: visibilityFilter === "any" ? undefined : visibilityFilter,
       limit: 20,
     },
     {
@@ -295,9 +324,15 @@ export default function LibraryScreen() {
     data: trainingPlans,
     isLoading: loadingTrainingPlans,
     refetch: refetchTrainingPlans,
-  } = trpc.trainingPlans.list.useQuery(undefined, {
-    enabled: selectedResource === "training_plans",
-  });
+  } = trpc.trainingPlans.list.useQuery(
+    {
+      ownerScope,
+      visibility: visibilityFilter === "any" ? undefined : visibilityFilter,
+    },
+    {
+      enabled: selectedResource === "training_plans",
+    },
+  );
 
   // Activities Query
   const {
@@ -629,6 +664,70 @@ export default function LibraryScreen() {
             placeholderTextColor="#888"
           />
         </View>
+
+        {isTemplateResource && (
+          <View className="mt-3 gap-2">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {OWNER_SCOPE_OPTIONS.map((option) => {
+                const isActive = ownerScope === option.value;
+                return (
+                  <TouchableOpacity
+                    key={`owner-${option.value}`}
+                    onPress={() => setOwnerScope(option.value)}
+                    activeOpacity={0.7}
+                    className={`px-3 py-1.5 rounded-full border ${
+                      isActive
+                        ? "bg-primary border-primary"
+                        : "bg-background border-border"
+                    }`}
+                  >
+                    <Text
+                      className={`text-xs font-medium ${
+                        isActive ? "text-primary-foreground" : "text-foreground"
+                      }`}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {VISIBILITY_OPTIONS.map((option) => {
+                const isActive = visibilityFilter === option.value;
+                return (
+                  <TouchableOpacity
+                    key={`visibility-${option.value}`}
+                    onPress={() => setVisibilityFilter(option.value)}
+                    activeOpacity={0.7}
+                    className={`px-3 py-1.5 rounded-full border ${
+                      isActive
+                        ? "bg-primary border-primary"
+                        : "bg-background border-border"
+                    }`}
+                  >
+                    <Text
+                      className={`text-xs font-medium ${
+                        isActive ? "text-primary-foreground" : "text-foreground"
+                      }`}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Item Count */}
         <Text className="text-sm text-muted-foreground mt-3">

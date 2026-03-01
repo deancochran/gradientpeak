@@ -16,11 +16,14 @@ const listActivityPlansSchema = z
   .object({
     includeOwnOnly: z.boolean().default(true),
     includeSystemTemplates: z.boolean().default(false),
+    ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
+    visibility: z.enum(["private", "public"]).optional(),
     activityCategory: z
       .enum(["run", "bike", "swim", "strength", "other", "all"])
       .optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: z.string().optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
@@ -31,10 +34,16 @@ function validateStructure(structure: unknown): void {
 
 const createActivityPlanInput = activityPlanCreateSchema.extend({
   structure: activityPlanStructureSchemaV2, // V2 structure only
+  template_visibility: z.enum(["private", "public"]).optional(),
+  import_provider: z.string().min(1).max(64).optional(),
+  import_external_id: z.string().min(1).max(255).optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.extend({
   structure: activityPlanStructureSchemaV2.optional(), // V2 structure only
+  template_visibility: z.enum(["private", "public"]).optional(),
+  import_provider: z.string().min(1).max(64).nullable().optional(),
+  import_external_id: z.string().min(1).max(255).nullable().optional(),
 });
 
 const updateActivityPlanWithIdInput = updateActivityPlanInput
@@ -42,6 +51,37 @@ const updateActivityPlanWithIdInput = updateActivityPlanInput
     id: z.string().uuid(),
   })
   .strict();
+
+const importedTemplateInput = z
+  .object({
+    external_id: z.string().min(1).max(255),
+    name: z.string().min(1, "Plan name is required"),
+    activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
+    description: z.string().max(1000).optional(),
+    notes: z.string().max(2000).optional(),
+    structure: activityPlanStructureSchemaV2,
+  })
+  .strict();
+
+function withIdentityFields<
+  T extends {
+    id: string;
+    profile_id: string | null;
+    template_visibility?: string | null;
+  },
+>(plan: T) {
+  return {
+    ...plan,
+    content_type: "activity_plan" as const,
+    content_id: plan.id,
+    owner_profile_id: plan.profile_id,
+    visibility:
+      plan.template_visibility === "public" ||
+      plan.template_visibility === "private"
+        ? plan.template_visibility
+        : "private",
+  };
+}
 
 export const activityPlansRouter = createTRPCRouter({
   // ------------------------------
@@ -60,20 +100,33 @@ export const activityPlansRouter = createTRPCRouter({
         .limit(limit + 1); // Fetch one extra to check if there's more
 
       // Filter by ownership
-      if (input.includeOwnOnly && !input.includeSystemTemplates) {
-        // Only user's plans
+      const ownerScope =
+        input.ownerScope ??
+        (input.includeOwnOnly && !input.includeSystemTemplates
+          ? "own"
+          : !input.includeOwnOnly && input.includeSystemTemplates
+            ? "system"
+            : input.includeOwnOnly && input.includeSystemTemplates
+              ? "all"
+              : "none");
+
+      if (ownerScope === "own") {
         query = query.eq("profile_id", ctx.session.user.id);
-      } else if (!input.includeOwnOnly && input.includeSystemTemplates) {
-        // Only system templates
+      } else if (ownerScope === "system") {
         query = query.eq("is_system_template", true);
-      } else if (input.includeOwnOnly && input.includeSystemTemplates) {
-        // Both user's plans and system templates
+      } else if (ownerScope === "public") {
+        query = query.eq("template_visibility", "public");
+      } else if (ownerScope === "all") {
         query = query.or(
-          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`,
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
         );
       } else {
         // Neither - return empty (shouldn't happen but defensive)
         return { items: [], nextCursor: undefined };
+      }
+
+      if (input.visibility) {
+        query = query.eq("template_visibility", input.visibility);
       }
 
       // Apply activity type filter
@@ -117,7 +170,9 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       return {
-        items: itemsWithEstimation,
+        items: itemsWithEstimation.map((plan) =>
+          withIdentityFields(plan as any),
+        ),
         nextCursor,
       };
     }),
@@ -132,7 +187,9 @@ export const activityPlansRouter = createTRPCRouter({
         .from("activity_plans")
         .select("*")
         .eq("id", input.id)
-        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`) // Allow user's plans or system templates
+        .or(
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
+        ) // Allow own, public, or system templates
         .single();
 
       if (error) {
@@ -163,7 +220,7 @@ export const activityPlansRouter = createTRPCRouter({
         ctx.session.user.id,
       );
 
-      return planWithEstimation;
+      return withIdentityFields(planWithEstimation as any);
     }),
 
   // ------------------------------
@@ -209,6 +266,9 @@ export const activityPlansRouter = createTRPCRouter({
           description: input.description || "",
           profile_id: ctx.session.user.id,
           version: "1.0", // Default version
+          template_visibility: input.template_visibility ?? "private",
+          import_provider: input.import_provider ?? null,
+          import_external_id: input.import_external_id ?? null,
         })
         .select("*")
         .single();
@@ -227,7 +287,7 @@ export const activityPlansRouter = createTRPCRouter({
         ctx.session.user.id,
       );
 
-      return planWithEstimation;
+      return withIdentityFields(planWithEstimation as any);
     }),
 
   // ------------------------------
@@ -294,7 +354,7 @@ export const activityPlansRouter = createTRPCRouter({
         ctx.session.user.id,
       );
 
-      return planWithEstimation;
+      return withIdentityFields(planWithEstimation as any);
     }),
 
   // ------------------------------
@@ -409,6 +469,142 @@ export const activityPlansRouter = createTRPCRouter({
         ctx.session.user.id,
       );
 
-      return planWithEstimation;
+      return withIdentityFields(planWithEstimation as any);
+    }),
+
+  importFromFitTemplate: protectedProcedure
+    .input(importedTemplateInput)
+    .mutation(async ({ ctx, input }) => {
+      const provider = "fit";
+      const externalId = input.external_id.trim();
+
+      const { data: existing } = await ctx.supabase
+        .from("activity_plans")
+        .select("*")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("import_provider", provider)
+        .eq("import_external_id", externalId)
+        .maybeSingle();
+
+      const payload = {
+        name: input.name,
+        description: input.description ?? "",
+        notes: input.notes ?? null,
+        activity_category: input.activity_category,
+        structure: input.structure,
+        version: "1.0",
+        profile_id: ctx.session.user.id,
+        template_visibility: "private",
+        import_provider: provider,
+        import_external_id: externalId,
+      };
+
+      const persisted = existing
+        ? await ctx.supabase
+            .from("activity_plans")
+            .update(payload)
+            .eq("id", existing.id)
+            .eq("profile_id", ctx.session.user.id)
+            .select("*")
+            .single()
+        : await ctx.supabase
+            .from("activity_plans")
+            .insert(payload)
+            .select("*")
+            .single();
+
+      if (persisted.error || !persisted.data) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: persisted.error?.message ?? "Failed to import FIT template",
+        });
+      }
+
+      let withEstimation: any = persisted.data;
+      try {
+        withEstimation = await addEstimationToPlan(
+          persisted.data,
+          ctx.supabase,
+          ctx.session.user.id,
+        );
+      } catch (estimationError) {
+        console.warn(
+          "Failed to estimate FIT import template; returning raw plan",
+          estimationError,
+        );
+      }
+
+      return {
+        action: existing ? "updated" : "created",
+        item: withIdentityFields(withEstimation as any),
+      };
+    }),
+
+  importFromZwoTemplate: protectedProcedure
+    .input(importedTemplateInput)
+    .mutation(async ({ ctx, input }) => {
+      const provider = "zwo";
+      const externalId = input.external_id.trim();
+
+      const { data: existing } = await ctx.supabase
+        .from("activity_plans")
+        .select("*")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("import_provider", provider)
+        .eq("import_external_id", externalId)
+        .maybeSingle();
+
+      const payload = {
+        name: input.name,
+        description: input.description ?? "",
+        notes: input.notes ?? null,
+        activity_category: input.activity_category,
+        structure: input.structure,
+        version: "1.0",
+        profile_id: ctx.session.user.id,
+        template_visibility: "private",
+        import_provider: provider,
+        import_external_id: externalId,
+      };
+
+      const persisted = existing
+        ? await ctx.supabase
+            .from("activity_plans")
+            .update(payload)
+            .eq("id", existing.id)
+            .eq("profile_id", ctx.session.user.id)
+            .select("*")
+            .single()
+        : await ctx.supabase
+            .from("activity_plans")
+            .insert(payload)
+            .select("*")
+            .single();
+
+      if (persisted.error || !persisted.data) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: persisted.error?.message ?? "Failed to import ZWO template",
+        });
+      }
+
+      let withEstimation: any = persisted.data;
+      try {
+        withEstimation = await addEstimationToPlan(
+          persisted.data,
+          ctx.supabase,
+          ctx.session.user.id,
+        );
+      } catch (estimationError) {
+        console.warn(
+          "Failed to estimate ZWO import template; returning raw plan",
+          estimationError,
+        );
+      }
+
+      return {
+        action: existing ? "updated" : "created",
+        item: withIdentityFields(withEstimation as any),
+      };
     }),
 });

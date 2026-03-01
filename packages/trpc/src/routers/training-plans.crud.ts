@@ -14,6 +14,7 @@ export const trainingPlansCrudRouter = createTRPCRouter({
     trainingPlansBaseRouter._def.procedures.applyQuickAdjustment,
   listTemplates: trainingPlansBaseRouter._def.procedures.listTemplates,
   getTemplate: trainingPlansBaseRouter._def.procedures.getTemplate,
+  applyTemplate: trainingPlansBaseRouter._def.procedures.applyTemplate,
   autoAddPeriodization:
     trainingPlansBaseRouter._def.procedures.autoAddPeriodization,
 });

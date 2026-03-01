@@ -69,6 +69,9 @@ import {
   Pressable,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { X } from "lucide-react-native";
+import { Icon } from "@/components/ui/icon";
 
 export type TrainingPlanComposerModeContract =
   | {
@@ -105,6 +108,8 @@ function assertModeContract(contract: TrainingPlanComposerModeContract): void {
 
 const HIGH_IMPACT_RECOMPUTE_DELAY_MS = 500;
 const PREVIEW_REFRESH_DELAY_MS = 350;
+const TRAINING_PLAN_HIERARCHY_EXPLAINER_DISMISS_KEY =
+  "training-plan-hierarchy-explainer-dismissed-v1";
 
 const weekDays: CreationAvailabilityConfig["days"][number]["day"][] = [
   "monday",
@@ -347,6 +352,7 @@ export function TrainingPlanComposerScreen(
   const [informationalConflicts, setInformationalConflicts] = useState<
     string[]
   >([]);
+  const [showHierarchyExplainer, setShowHierarchyExplainer] = useState(false);
   const [allowBlockingIssueOverride, setAllowBlockingIssueOverride] =
     useState(false);
   const [recomputeNonce, setRecomputeNonce] = useState(0);
@@ -826,6 +832,31 @@ export function TrainingPlanComposerScreen(
     };
   }, []);
 
+  useEffect(() => {
+    if (isEditMode) {
+      setShowHierarchyExplainer(false);
+      return;
+    }
+
+    AsyncStorage.getItem(TRAINING_PLAN_HIERARCHY_EXPLAINER_DISMISS_KEY)
+      .then((value) => {
+        if (!value) {
+          setShowHierarchyExplainer(true);
+        }
+      })
+      .catch(() => {
+        setShowHierarchyExplainer(true);
+      });
+  }, [isEditMode]);
+
+  const dismissHierarchyExplainer = useCallback(() => {
+    setShowHierarchyExplainer(false);
+    AsyncStorage.setItem(
+      TRAINING_PLAN_HIERARCHY_EXPLAINER_DISMISS_KEY,
+      "1",
+    ).catch(() => null);
+  }, []);
+
   const handleFormDataChange = (nextData: TrainingPlanFormData) => {
     form.setValue("planStartDate", nextData.planStartDate, {
       shouldDirty: true,
@@ -1159,6 +1190,33 @@ export function TrainingPlanComposerScreen(
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
       >
+        {showHierarchyExplainer ? (
+          <View className="px-4 pt-3">
+            <View className="rounded-lg border border-border bg-card p-3">
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1">
+                  <Text className="text-xs font-semibold text-foreground">
+                    Plan Hierarchy
+                  </Text>
+                  <Text className="mt-1 text-xs text-muted-foreground">
+                    Activity plans are single workouts. Training plans arrange
+                    workouts on a timeline. Templates are reusable versions of
+                    either one.
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={dismissHierarchyExplainer}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss hierarchy explainer"
+                >
+                  <Icon as={X} size={16} className="text-muted-foreground" />
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         {previewState.previewError ? (
           <View className="px-4 pt-3">
             <Text className="text-xs text-destructive">

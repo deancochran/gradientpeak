@@ -7,6 +7,7 @@ import { eventsRouter } from "./events";
 import { fitFilesRouter } from "./fit-files";
 import { homeRouter } from "./home";
 import { integrationsRouter } from "./integrations";
+import { libraryRouter } from "./library";
 import { onboardingRouter } from "./onboarding";
 import { profilesRouter } from "./profiles";
 
@@ -30,6 +31,7 @@ export const appRouter = createTRPCRouter({
   events: eventsRouter,
   fitFiles: fitFilesRouter,
   integrations: integrationsRouter,
+  library: libraryRouter,
   trainingPlans: trainingPlansRouter,
   routes: routesRouter,
   trends: trendsRouter,
