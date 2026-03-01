@@ -19,10 +19,16 @@ The implementation goal is: maximize user value with minimal schema change and m
 ## Guiding MVP Constraints
 
 1. Reuse existing tables/routes where possible.
-2. Add only essential tables; prefer one shared sync registry over multiple provider-specific tables.
+2. Add only one essential new table in MVP (`library_items`).
 3. Prefer adding columns/indexes over introducing new relational structures.
 4. Keep Phase 6 event/calendar behavior fully compatible.
 5. Prefer query simplicity over abstraction depth (no complex multi-join listing paths in MVP).
+
+### Scope resolution rules (authoritative)
+
+1. If any older note conflicts with this document, this document wins.
+2. Items listed under "Deferred" are explicit non-requirements for Phase 7 MVP.
+3. Phase 7 MVP must not include schema cutovers for existing sync paths (`synced_events`, iCal identity on `events`).
 
 ## Future-Proofing Contract (Locked in Phase 7)
 
@@ -78,7 +84,7 @@ Phase 7 must ship MVP behavior now while preserving a low-friction path to a fut
 ### Calendar Layer (already exists, extended)
 
 - `events` remains canonical schedule surface.
-- Add small lineage columns to `events` (batch/source metadata) to support apply/remove behavior without new schedule tables.
+- Add one lineage column to `events` (`schedule_batch_id`) to support apply/remove behavior without new schedule tables.
 
 ## Minimal Database Adjustments (MVP)
 
@@ -92,48 +98,23 @@ Phase 7 must ship MVP behavior now while preserving a low-friction path to a fut
 ### New tables (essential only)
 
 - `library_items` for user saved content pointers.
-- `provider_sync_records` for all third-party sync provenance and identity.
 
 ### New columns (additive, bare minimum)
 
 - `training_plans`:
   - `template_visibility` (`private` | `public`)
-  - `template_source` (short text, e.g. `user`, `system`, `import`, `coach`, `club`)
-  - `template_source_id` (UUID, nullable)
 - `activity_plans`:
   - `template_visibility` (`private` | `public`)
-  - `template_source` (short text)
-  - `template_source_id` (UUID, nullable)
+  - `import_provider` (short text, nullable)
+  - `import_external_id` (short text, nullable)
 - `events`:
   - `schedule_batch_id` (UUID)
-  - `schedule_source_id` (UUID, nullable)
 
 Notes:
 
 - Keep existing `is_system_template` / system-template semantics; do not add a second system flag.
+- Keep existing event import identity columns as-is (`source_provider`, `integration_account_id`, `external_calendar_id`, `external_event_id`, `occurrence_key`) for iCal behavior/idempotency.
 - Do not add optional discovery enrichment columns in Phase 7 MVP.
-
-### Unified provider sync registry (single table)
-
-Phase 7 uses one table to track all third-party imported/synced entities:
-
-- `provider_sync_records`
-  - `profile_id`
-  - `provider`
-  - `entity_type` (`event` | `activity_plan`)
-  - `entity_id` (local canonical id)
-  - `external_id`
-  - `external_parent_id` (optional feed/calendar id; default empty string for uniqueness)
-  - `sync_status`
-  - `last_synced_at`
-
-Uniqueness:
-
-- unique(`provider`, `profile_id`, `entity_type`, `external_id`, `external_parent_id`)
-
-Deprecation target:
-
-- Existing provider-mapping tables that duplicate this purpose (for example `synced_events`) are migrated/backfilled into `provider_sync_records` and then removed in this phase.
 
 ### Deferred (explicitly not in Phase 7)
 
@@ -141,17 +122,23 @@ Deprecation target:
 - No polymorphic mixed-content feed query in this phase.
 - No coach/club content tables in this phase.
 - No extra template metadata columns (sport, ability, weeks, popularity) in this phase.
+- No `provider_sync_records` table in this phase.
+- No `template_source` / `template_source_id` columns in this phase.
+- No `events.schedule_source_id` column in this phase.
+- No `synced_events` replacement/cutover in this phase.
+- No dual-write/backfill migration from `synced_events` into any new sync registry in this phase.
 
 ### Required indexes (performance-focused)
 
 - `library_items(profile_id, item_type, created_at desc)` for saved lists.
 - `library_items(item_type, item_id)` for reverse lookup and cleanup.
 - `training_plans(profile_id, is_active)` already exists and remains primary for user plan listing.
+- `activity_plans(profile_id, import_provider, import_external_id)` partial unique index for import dedupe.
 - `events(profile_id, schedule_batch_id)` for apply/remove batch operations.
 
-## Ownership and Visibility (Database-Enforced)
+## Ownership and Visibility (MVP Enforcement Model)
 
-Ownership and visibility must not rely only on API logic. They must be represented and enforced at the database level.
+Ownership and visibility must be explicit in schema and consistently enforced by API auth/query boundaries.
 
 ### Ownership rules
 
@@ -169,8 +156,12 @@ Ownership and visibility must not rely only on API logic. They must be represent
 ### Enforcement mechanisms required in MVP
 
 - Check constraints for ownership/visibility consistency.
-- Row Level Security policies for read/write behavior by owner and visibility.
-- Indexes aligned to RLS predicates (`profile_id`, `template_visibility`, `is_system_template`).
+- Service-role backend enforcement in protected procedures (`profile_id = ctx.session.user.id` on mutable paths).
+- Indexes aligned to hot predicates (`profile_id`, `template_visibility`, `is_system_template`).
+
+### Explicit non-requirement for Phase 7 MVP
+
+- Row Level Security policy rollout is deferred in this phase because the current architecture uses service-role server access plus protected tRPC procedures.
 
 ## Functional Requirements (MVP)
 
@@ -207,7 +198,7 @@ Ownership and visibility must not rely only on API logic. They must be represent
    - Verify: library contains pointer, no duplicate row (`UNIQUE` on user/item/type).
 
 3. As an athlete, I can apply a template by start date and see calendar events generated.
-   - Verify: created events have batch/source metadata and expected date offsets.
+   - Verify: created events have batch metadata and expected date offsets.
 
 4. As an athlete, I can remove one applied schedule without deleting source templates.
    - Verify: delete by schedule batch removes events only, source template rows remain.
@@ -228,20 +219,20 @@ Ownership and visibility must not rely only on API logic. They must be represent
 - Import safety controls: URL validation, timeout, size limit, malformed-file handling.
 - Query performance preserved via targeted indexes only.
 - Listing paths must stay simple enough for predictable query plans and straightforward API maintenance.
-- Ownership and visibility are enforceable in SQL constraints + RLS policies, not only in application code.
+- Ownership/visibility are enforced by constraints + protected API access in this phase; RLS rollout is deferred.
 
 ## Acceptance Criteria
 
 1. Template save, browse, apply, and library save are functional for `training_plan` and `activity_plan`.
-2. Applying template creates schedule events with source/batch traceability.
+2. Applying template creates schedule events with `schedule_batch_id` traceability.
 3. FIT and ZWO imports create or update native activity plan templates idempotently.
 4. iCal behavior remains read-only and idempotent.
-5. Two essential new tables are introduced (`library_items`, `provider_sync_records`), with other changes additive columns/indexes.
+5. One essential new table is introduced (`library_items`), with other changes additive columns/indexes.
 6. Existing Phase 6 tests continue to pass.
 7. Saved content listing uses index-backed simple query paths (no multi-join polymorphic query requirement).
-8. Ownership and visibility access is validated at DB level (policy behavior verified).
+8. Ownership and visibility access is validated via schema constraints + protected API paths.
 9. Phase 7 API contracts expose stable content identity fields that are compatible with a future discover index.
-10. All third-party sync identity/provenance is stored in `provider_sync_records` (single sync source of truth).
+10. Existing iCal/Wahoo sync behaviors remain intact without introducing a new sync registry table.
 
 ## Exit Criteria
 

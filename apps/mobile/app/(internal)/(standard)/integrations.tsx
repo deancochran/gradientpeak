@@ -12,7 +12,9 @@ import {
 } from "react-native";
 
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import type { PublicIntegrationProvider } from "@repo/supabase";
@@ -49,6 +51,14 @@ const INTEGRATIONS: IntegrationConfig[] = [
   },
 ];
 
+function createUuidV4(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const randomValue = Math.floor(Math.random() * 16);
+    const value = char === "x" ? randomValue : (randomValue & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
 /**
  * Get the mobile redirect URI based on environment
  */
@@ -69,6 +79,15 @@ export default function IntegrationsScreen() {
   >({});
 
   const utils = trpc.useUtils();
+  const [fitExternalId, setFitExternalId] = useState("");
+  const [fitName, setFitName] = useState("");
+  const [zwoExternalId, setZwoExternalId] = useState("");
+  const [zwoName, setZwoName] = useState("");
+  const [importSummary, setImportSummary] = useState<{
+    provider: "FIT" | "ZWO";
+    action: "created" | "updated";
+    name: string;
+  } | null>(null);
 
   // tRPC queries
   const {
@@ -83,6 +102,101 @@ export default function IntegrationsScreen() {
     invalidate: [utils.integrations],
     success: "Integration disconnected",
   });
+
+  const importFitMutation = useReliableMutation(
+    trpc.activityPlans.importFromFitTemplate,
+    {
+      invalidate: [utils.activityPlans, utils.library],
+    },
+  );
+
+  const importZwoMutation = useReliableMutation(
+    trpc.activityPlans.importFromZwoTemplate,
+    {
+      invalidate: [utils.activityPlans, utils.library],
+    },
+  );
+
+  const buildImportedStructure = (label: string) => ({
+    version: 2 as const,
+    intervals: [
+      {
+        id: createUuidV4(),
+        name: `${label} Session`,
+        repetitions: 1,
+        steps: [
+          {
+            id: createUuidV4(),
+            name: label,
+            duration: { type: "untilFinished" as const },
+            targets: [],
+          },
+        ],
+      },
+    ],
+  });
+
+  const handleFitImport = async () => {
+    const trimmedName = fitName.trim();
+    const trimmedExternalId = fitExternalId.trim();
+
+    if (!trimmedName || !trimmedExternalId) {
+      Alert.alert(
+        "Missing details",
+        "Enter both FIT template name and file ID.",
+      );
+      return;
+    }
+
+    try {
+      const result = await importFitMutation.mutateAsync({
+        external_id: trimmedExternalId,
+        name: trimmedName,
+        activity_category: "bike",
+        description: "Imported from FIT",
+        structure: buildImportedStructure(trimmedName),
+      });
+
+      setImportSummary({
+        provider: "FIT",
+        action: result.action,
+        name: result.item.name,
+      });
+    } catch {
+      Alert.alert("Import failed", "Could not import FIT template.");
+    }
+  };
+
+  const handleZwoImport = async () => {
+    const trimmedName = zwoName.trim();
+    const trimmedExternalId = zwoExternalId.trim();
+
+    if (!trimmedName || !trimmedExternalId) {
+      Alert.alert(
+        "Missing details",
+        "Enter both ZWO template name and file ID.",
+      );
+      return;
+    }
+
+    try {
+      const result = await importZwoMutation.mutateAsync({
+        external_id: trimmedExternalId,
+        name: trimmedName,
+        activity_category: "bike",
+        description: "Imported from ZWO",
+        structure: buildImportedStructure(trimmedName),
+      });
+
+      setImportSummary({
+        provider: "ZWO",
+        action: result.action,
+        name: result.item.name,
+      });
+    } catch {
+      Alert.alert("Import failed", "Could not import ZWO template.");
+    }
+  };
 
   // Handle deep link and trigger cleanup via refetch
   const handleDeepLink = useCallback(
@@ -319,6 +433,79 @@ export default function IntegrationsScreen() {
             </TouchableOpacity>
           );
         })}
+
+        <View className="mt-6">
+          <Text className="text-base font-semibold text-foreground mb-2">
+            Workout Template Imports (MVP)
+          </Text>
+          <Text className="text-xs text-muted-foreground mb-3">
+            Quick-import FIT/ZWO entries into your activity plan library.
+          </Text>
+
+          <View className="border border-border rounded-xl p-3 bg-card mb-2 gap-2">
+            <Text className="text-sm font-medium text-foreground">
+              FIT Import
+            </Text>
+            <Input
+              value={fitName}
+              onChangeText={setFitName}
+              placeholder="Template name"
+              autoCapitalize="sentences"
+            />
+            <Input
+              value={fitExternalId}
+              onChangeText={setFitExternalId}
+              placeholder="FIT file ID"
+              autoCapitalize="none"
+            />
+            <Button
+              onPress={handleFitImport}
+              disabled={importFitMutation.isPending}
+            >
+              <Text className="text-primary-foreground font-semibold">
+                {importFitMutation.isPending ? "Importing..." : "Import FIT"}
+              </Text>
+            </Button>
+          </View>
+
+          <View className="border border-border rounded-xl p-3 bg-card gap-2">
+            <Text className="text-sm font-medium text-foreground">
+              ZWO Import
+            </Text>
+            <Input
+              value={zwoName}
+              onChangeText={setZwoName}
+              placeholder="Template name"
+              autoCapitalize="sentences"
+            />
+            <Input
+              value={zwoExternalId}
+              onChangeText={setZwoExternalId}
+              placeholder="ZWO file ID"
+              autoCapitalize="none"
+            />
+            <Button
+              onPress={handleZwoImport}
+              disabled={importZwoMutation.isPending}
+            >
+              <Text className="text-primary-foreground font-semibold">
+                {importZwoMutation.isPending ? "Importing..." : "Import ZWO"}
+              </Text>
+            </Button>
+          </View>
+
+          {importSummary ? (
+            <View className="mt-3 border border-border rounded-xl p-3 bg-muted/40">
+              <Text className="text-sm text-foreground font-medium">
+                {importSummary.provider} import {importSummary.action}
+              </Text>
+              <Text className="text-xs text-muted-foreground mt-1">
+                {importSummary.name} is now available in your activity plan
+                library.
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </ScrollView>
     </View>
   );

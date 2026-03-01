@@ -99,12 +99,21 @@ create table if not exists public.training_plans (
     idx serial unique not null,
     profile_id uuid references public.profiles(id) on delete cascade,
     is_system_template boolean not null default false,
+    template_visibility text not null default 'private',
     name text not null,
     description text,
     is_active boolean not null default true,
     structure jsonb not null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
+
+    constraint training_plans_template_visibility_check check (
+        template_visibility in ('private', 'public')
+    ),
+
+    constraint training_plans_system_templates_public_check check (
+        is_system_template = false or template_visibility = 'public'
+    ),
 
     -- Constraint: system templates must have null profile_id, user plans must have profile_id
     constraint training_plans_template_profile_check check (
@@ -119,6 +128,9 @@ create index if not exists idx_training_plans_profile_id
 create index if not exists idx_training_plans_is_system_template
     on public.training_plans(is_system_template)
     where is_system_template = true;
+
+create index if not exists idx_training_plans_visibility
+    on public.training_plans(template_visibility);
 
 create index if not exists idx_training_plans_is_active
     on public.training_plans(profile_id) where is_active = true;
@@ -190,6 +202,9 @@ create table if not exists public.activity_plans (
     idx serial unique not null,
     profile_id uuid references public.profiles(id) on delete cascade,
     is_system_template boolean not null default false,
+    template_visibility text not null default 'private',
+    import_provider text,
+    import_external_id text,
     version text not null default '1.0',
     name text not null,
     notes text,
@@ -202,6 +217,18 @@ create table if not exists public.activity_plans (
     constraint activity_plans_has_content check (
         structure is not null or
         route_id is not null
+    ),
+    constraint activity_plans_template_visibility_check check (
+        template_visibility in ('private', 'public')
+    ),
+    constraint activity_plans_system_templates_public_check check (
+        is_system_template = false or template_visibility = 'public'
+    ),
+    constraint activity_plans_import_provider_non_empty_check check (
+        import_provider is null or btrim(import_provider) <> ''
+    ),
+    constraint activity_plans_import_external_id_non_empty_check check (
+        import_external_id is null or btrim(import_external_id) <> ''
     ),
     constraint activity_plans_system_template_check check (
         (is_system_template = true and profile_id is null) or
@@ -221,10 +248,35 @@ create index if not exists idx_activity_plans_route_id
     on public.activity_plans(route_id)
     where route_id is not null;
 
+create index if not exists idx_activity_plans_visibility
+    on public.activity_plans(template_visibility);
+
+create unique index if not exists idx_activity_plans_import_identity
+    on public.activity_plans(profile_id, import_provider, import_external_id)
+    where import_provider is not null and import_external_id is not null;
+
 create trigger update_activity_plans_updated_at
     before update on public.activity_plans
     for each row
     execute function update_updated_at_column();
+
+-- ============================================================================
+-- LIBRARY ITEMS
+-- ============================================================================
+create table if not exists public.library_items (
+    id uuid primary key default uuid_generate_v4(),
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    item_type text not null check (item_type in ('training_plan', 'activity_plan')),
+    item_id uuid not null,
+    created_at timestamptz not null default now(),
+    unique (profile_id, item_type, item_id)
+);
+
+create index if not exists idx_library_items_profile_type_created
+    on public.library_items(profile_id, item_type, created_at desc);
+
+create index if not exists idx_library_items_item_lookup
+    on public.library_items(item_type, item_id);
 
 -- ============================================================================
 -- EVENTS
@@ -260,6 +312,9 @@ create table if not exists public.events (
     integration_account_id uuid,
     external_calendar_id text,
     external_event_id text,
+
+    -- Schedule lineage metadata for template-apply batches
+    schedule_batch_id uuid,
 
     notes text,
     created_at timestamptz not null default now(),
@@ -325,6 +380,10 @@ create unique index if not exists idx_events_external_identity_unique
 create index if not exists idx_events_integration_calendar_updated
     on public.events(integration_account_id, external_calendar_id, updated_at)
     where integration_account_id is not null and external_calendar_id is not null;
+
+create index if not exists idx_events_schedule_batch
+    on public.events(profile_id, schedule_batch_id)
+    where schedule_batch_id is not null;
 
 create trigger update_events_updated_at
     before update on public.events
@@ -778,6 +837,17 @@ create trigger update_profile_metrics_updated_at
     execute function update_updated_at_column();
 
 -- ============================================================================
+-- PHASE 7 DATA BACKFILL
+-- ============================================================================
+update public.training_plans
+set template_visibility = 'public'
+where is_system_template = true and template_visibility <> 'public';
+
+update public.activity_plans
+set template_visibility = 'public'
+where is_system_template = true and template_visibility <> 'public';
+
+-- ============================================================================
 -- NOTIFICATIONS
 -- ============================================================================
 create table public.notifications (
@@ -859,6 +929,7 @@ alter table public.activity_routes disable row level security;
 
 alter table public.integrations disable row level security;
 alter table public.events disable row level security;
+alter table public.library_items disable row level security;
 alter table public.notifications disable row level security;
 alter table public.oauth_states disable row level security;
 alter table public.profiles disable row level security;

@@ -65,6 +65,10 @@ vi.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
   }),
 }));
 
+vi.mock("@/lib/hooks/useAuth", () => ({
+  useAuth: () => ({ profile: { id: "test-profile-id" } }),
+}));
+
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     useUtils: () => ({
@@ -73,12 +77,29 @@ vi.mock("@/lib/trpc", () => ({
           autoAddPeriodization: { mutate: vi.fn() },
         },
       },
+      library: {
+        listTrainingPlans: { invalidate: vi.fn() },
+      },
       trainingPlans: {
         invalidate: vi.fn(),
       },
     }),
     trainingPlans: {
+      applyTemplate: {
+        useMutation: () => ({
+          mutateAsync: vi.fn(),
+          isPending: false,
+        }),
+      },
       delete: {},
+    },
+    library: {
+      add: {
+        useMutation: () => ({
+          mutateAsync: vi.fn(),
+          isPending: false,
+        }),
+      },
     },
   },
 }));
@@ -93,6 +114,8 @@ vi.mock("@/lib/hooks/useReliableMutation", () => ({
 vi.mock("react-native", () => ({
   ActivityIndicator: createHost("ActivityIndicator"),
   Alert: { alert: vi.fn() },
+  NativeModules: { BlobModule: {} },
+  Platform: { OS: "ios", Version: "17" },
   RefreshControl: createHost("RefreshControl"),
   ScrollView: createHost("ScrollView"),
   TouchableOpacity: createHost("TouchableOpacity"),
@@ -168,6 +191,9 @@ vi.mock("@/components/ui/card", () => ({
 vi.mock("@/components/ui/icon", () => ({
   Icon: createHost("Icon"),
 }));
+vi.mock("@/components/ui/input", () => ({
+  Input: createHost("Input"),
+}));
 vi.mock("@/components/ui/text", () => ({
   Text: createHost("Text"),
 }));
@@ -180,6 +206,7 @@ vi.mock("lucide-react-native", () => {
     ChevronRight: Icon,
     CircleCheck: Icon,
     Gauge: Icon,
+    Library: Icon,
     Pause: Icon,
     Trash2: Icon,
     TrendingUp: Icon,

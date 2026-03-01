@@ -448,6 +448,18 @@ npm build
 npm check-types
 ```
 
+### Local AI Dev Log Monitoring
+
+Use local scripts to run core dev services with mirrored logs under `.logs/`, then scan for issues before asking the assistant to triage.
+
+```bash
+pnpm dev:monitor:local
+pnpm logs:scan
+pnpm logs:scan:json
+```
+
+Ask the assistant with a prompt like: `Triage the latest critical/high issues from .logs and suggest fixes.`
+
 **Quality Assurance:**
 
 - ✅ **Pre-commit Hooks** - Automatic linting and type checking
