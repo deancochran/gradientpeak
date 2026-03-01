@@ -1,144 +1,146 @@
-# Phase 7 Specification - Training Plans, Templates, and Third-Party Scheduling
+# Phase 7 Specification - Training Plans, Templates, and Third-Party Scheduling (MVP)
 
 Date: 2026-02-28
 Owner: Mobile + Backend + Core Logic + QA
-Status: Draft (research-backed, MVP-first)
-Type: Training hierarchy formalization, template system, and import pipeline
+Status: Draft (MVP-only)
+Type: Additive enhancement to existing training/calendar systems
 
 ## Executive Summary
 
-Phase 7 builds on the completed Phase 6 calendar/event foundation and introduces a practical MVP for:
+This Phase 7 MVP keeps the existing architecture intact and adds only the minimum required to deliver the promised user-facing behavior:
 
-- Canonical training hierarchy behavior (training plan -> phase -> collection/block -> activity plan/workout)
-- Save/apply template workflows for training plans and collections
-- Third-party import paths for FIT planned workouts, ZWO workouts, and iCal schedule ingestion
+- A clear content model (workouts/activity plans and training plans as reusable definitions)
+- A lightweight library model (save templates for quick reuse)
+- A schedule model (events as materialized calendar instances)
+- Practical import paths (FIT, ZWO, iCal) with idempotent behavior
 
-The design prioritizes additive schema evolution, backward compatibility with current calendar flows, and strict copy-on-apply immutability so template changes never mutate applied athlete instances.
+The implementation goal is: maximize user value with minimal schema change and minimal new tables.
 
-## Scope
+## Guiding MVP Constraints
 
-### In Scope
+1. Reuse existing tables/routes where possible.
+2. Add only one new table unless absolutely necessary.
+3. Prefer adding columns/indexes over introducing new relational structures.
+4. Keep Phase 6 event/calendar behavior fully compatible.
 
-- Lock and enforce Phase 7 terminology and hierarchy semantics in API and UI copy.
-- Introduce MVP template metadata and apply mechanics for training plans and collections.
-- Add database-safe lineage and linkage patterns for template application and calendar scheduling.
-- Implement import pipeline contracts and normalization strategy for FIT, ZWO, and iCal inputs.
-- Ensure idempotent dedupe/update behavior for imports and safe validation boundaries.
+## MVP Product Model (Aligned to Requested Approach)
 
-### Out of Scope
+### Content Layer (already exists, reused)
 
-- Full coach collaboration UX and permission flows (Phase 10).
-- Production-grade async outbox/worker infrastructure (post-MVP hardening).
-- Full bitemporal history or advanced branching template workflows.
-- Provider-specific OAuth scheduling imports for every third-party platform.
+- `activity_plans`: atomic workout/activity templates.
+- `training_plans`: higher-level plan templates and user plans.
+- `training_plans.structure` remains the source for ordered offsets and blocks.
 
-## Research Synthesis (Best Practices)
+### Library Layer (new, minimal)
 
-### Industry Pattern Alignment (Conceptual)
+- New `library_items` table stores saved pointers to reusable content.
+- Supports saving `activity_plan` and `training_plan` only in MVP.
+- No nested playlists in MVP (avoids recursion/cycle complexity).
 
-Public product behavior across major platforms (TrainingPeaks, TrainerRoad, Zwift, Garmin ecosystems) converges on these practices:
+### Calendar Layer (already exists, extended)
 
-1. Reusable workout definitions are independent from scheduled instances.
-2. Plans/blocks are reusable assets, while applied schedules are independent copies.
-3. Imported records require stable external identity keys and idempotent upsert behavior.
-4. Calendar scheduling stays operationally simple when event instances remain the source of truth.
+- `events` remains canonical schedule surface.
+- Add small lineage columns to `events` (batch/source metadata) to support apply/remove behavior without new schedule tables.
 
-### Database Design Best Practices Applied
+## Minimal Database Adjustments (MVP)
 
-- Keep scheduling entities and definition entities separate.
-- Use explicit many-to-many join tables for reusable composition.
-- Use immutable template versions or lineage markers for historical correctness.
-- Add additive linkage tables rather than overloading existing event records.
-- Enforce uniqueness via source identity keys and partial unique indexes for active rows.
-- Keep row-level security and tenant/user ownership constraints explicit and index-backed.
+### Reused as-is
 
-## MVP Architecture Decisions
+- `training_plans`
+- `activity_plans`
+- `events`
+- `synced_events` and existing iCal identity constraints
 
-1. `events` remains the authoritative scheduled instance model from Phase 6.
-2. Add `event_plan_links` (additive) to capture semantic linkage:
-   - link target type (`activity_plan`, `collection_item`, `training_plan_session`)
-   - source lineage (`template_source_id`, `template_version`, `generated_by`)
-3. Template apply is copy-on-apply:
-   - applying template creates new independent user-owned plan/collection instances
-   - source template records are never mutated by downstream edits
-4. Imports normalize all formats into one internal envelope before persistence.
-5. iCal remains read-only import schedule source; FIT and ZWO become native workout definitions.
+### New table (exactly one)
 
-## Data Model Requirements (Conceptual)
+- `library_items` for user saved content pointers.
 
-The implementation must represent, at minimum:
+### New columns (additive)
 
-- Template metadata: name, description, sport, ability, visibility, likes count.
-- Template lineage/version identity: stable reference to source and version at apply time.
-- Reuse composition:
-  - activity plans reusable across collections
-  - collections reusable across training plans
-- Scheduling linkage:
-  - scheduled event references content identity without collapsing event and definition concepts
-- Import identity:
-  - source type, source reference, external id, optional occurrence id, semantic hash
-- Auditability:
-  - created/updated timestamps and actor identity on mutable records
-- Soft deletion for mutable records where historical trace is required.
+- `training_plans`: template metadata for discovery and lineage.
+- `activity_plans`: template metadata + import identity metadata.
+- `events`: schedule batch/source fields to support apply/remove and traceability.
 
-## Functional Requirements
+## Functional Requirements (MVP)
 
 ### A) Phase 7.1 - Hierarchy Clarity
 
-- UI terminology is consistent for workout/activity plan, collection/training block, training plan, and template.
-- First-time creation flow includes concise hierarchy explainer with dismiss capability.
-- API contracts and payload naming use consistent hierarchy semantics.
+- UI and API use consistent terms:
+  - Workout / Activity Plan
+  - Training Plan
+  - Template
+  - Schedule
+- First-time training plan flow includes a concise explainer and dismiss flag.
 
-### B) Phase 7.2 - Template Workflows
+### B) Phase 7.2 - Templates and Library
 
-- User can save a training plan or collection as template.
-- Template save strips absolute dates and keeps relative offsets.
-- User can mark template visibility private/public.
-- User can browse/filter/search templates by sport, duration, ability, popularity.
-- User can apply template by start date or goal date.
-- Apply produces independent instance with lineage metadata and no shared mutable references.
+- User can save training plans and activity plans as templates.
+- Template visibility supports `private` and `public`.
+- User can browse/filter templates by sport, duration, and ability level.
+- User can save template pointers to personal library.
+- Applying a template creates independent schedule instances (copy-on-apply behavior in practice).
 
-### C) Phase 7.3 - Third-Party Import
+### C) Phase 7.3 - Third-Party Scheduling and Import
 
-- FIT import path converts supported planned workout structures to native activity plans.
-- ZWO import path converts XML workout structures to native activity plans.
-- iCal import path maps schedule entries to read-only calendar events with idempotent updates.
-- Import pipeline validates structure, semantics, and policy constraints before persistence.
-- Duplicate prevention uses stable external identity and semantic hash keys.
+- FIT import converts supported planned workout structures into native `activity_plans`.
+- ZWO import converts supported XML workout structures into native `activity_plans`.
+- iCal remains feed-based and maps to read-only imported `events`.
+- Imports are idempotent via source identity and/or content hash.
+
+## User Stories and Verification (Required)
+
+1. As an athlete, I can save my training plan as a template and reuse it later.
+   - Verify: template appears in template list and can be applied again.
+
+2. As an athlete, I can discover public templates and save them to my library.
+   - Verify: library contains pointer, no duplicate row (`UNIQUE` on user/item/type).
+
+3. As an athlete, I can apply a template by start date and see calendar events generated.
+   - Verify: created events have batch/source metadata and expected date offsets.
+
+4. As an athlete, I can remove one applied schedule without deleting source templates.
+   - Verify: delete by schedule batch removes events only, source template rows remain.
+
+5. As an athlete, I can import FIT and ZWO workouts into my native workout library.
+   - Verify: duplicate import updates/skips via dedupe key, no duplicate templates.
+
+6. As an athlete, I can subscribe to iCal feed and see read-only imported events.
+   - Verify: imported events remain non-editable in user mutation paths.
+
+7. As an existing user, my Phase 6 plan/calendar flows keep working.
+   - Verify: existing event CRUD tests pass unchanged.
 
 ## Non-Functional Requirements
 
-- Backward compatibility with existing Phase 6 calendar behavior.
-- Type-safe contracts via shared `@repo/core` schemas.
-- Deterministic import handling and explicit diagnostics for invalid inputs.
-- Security controls for file and URL imports (size, timeout, SSRF defense, sanitization).
-- Performance baseline acceptable for mobile-triggered imports and template apply workflows.
+- Backward compatible with current routers and mobile screens.
+- Strict input validation with shared schemas in `@repo/core`.
+- Import safety controls: URL validation, timeout, size limit, malformed-file handling.
+- Query performance preserved via targeted indexes only.
 
 ## Acceptance Criteria
 
-1. Template apply is copy-on-apply and does not mutate source templates.
-2. Relative scheduling offsets map correctly to absolute calendar dates.
-3. `event_plan_links` (or equivalent additive linkage) preserves schedule-content identity.
-4. FIT/ZWO/iCal imports are idempotent, validated, and observable with clear error states.
-5. Public/private template visibility and filtering work for MVP discovery needs.
-6. Existing planned-workout scheduling flows remain functional.
+1. Template save, browse, apply, and library save are functional for `training_plan` and `activity_plan`.
+2. Applying template creates schedule events with source/batch traceability.
+3. FIT and ZWO imports create or update native activity plan templates idempotently.
+4. iCal behavior remains read-only and idempotent.
+5. Only one new table is introduced (`library_items`), with other changes additive columns/indexes.
+6. Existing Phase 6 tests continue to pass.
 
 ## Exit Criteria
 
-- `tasks.md` checklist complete for MVP sections.
-- Required test suite for core/trpc/mobile Phase 7 contracts passes.
-- Import reliability, dedupe behavior, and timezone handling verified on representative fixtures.
+- `tasks.md` MVP checklist complete.
+- All listed quality gates pass.
+- User stories above verified in test or manual QA notes.
 
 ## References
 
 - PostgreSQL Constraints: https://www.postgresql.org/docs/current/ddl-constraints.html
 - PostgreSQL Indexes: https://www.postgresql.org/docs/current/indexes.html
 - PostgreSQL Partial Indexes: https://www.postgresql.org/docs/current/indexes-partial.html
-- PostgreSQL Row Level Security: https://www.postgresql.org/docs/current/ddl-rowsecurity.html
-- TrainingPeaks (product behavior reference): https://www.trainingpeaks.com/
-- TrainerRoad Plans (product behavior reference): https://www.trainerroad.com/features/training-plans
-- `fit-file-parser` package info: https://www.npmjs.com/package/fit-file-parser
-- `fast-xml-parser` package info: https://www.npmjs.com/package/fast-xml-parser
-- `node-ical` package info: https://www.npmjs.com/package/node-ical
+- TrainingPeaks (behavior reference): https://www.trainingpeaks.com/
+- TrainerRoad plans (behavior reference): https://www.trainerroad.com/features/training-plans
+- `fit-file-parser`: https://www.npmjs.com/package/fit-file-parser
+- `fast-xml-parser`: https://www.npmjs.com/package/fast-xml-parser
+- `node-ical`: https://www.npmjs.com/package/node-ical
 
 (End of file)

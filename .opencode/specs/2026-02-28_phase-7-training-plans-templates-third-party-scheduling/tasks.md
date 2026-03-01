@@ -1,82 +1,64 @@
-# Tasks - Phase 7 Training Plans, Templates, and Third-Party Scheduling
+# Tasks - Phase 7 MVP (Minimal Tables, Maximum Reuse)
 
-Last Updated: 2026-02-28 (initial draft from research)
+Last Updated: 2026-03-01 (MVP simplification)
 Status: Active
 Owner: Mobile + Backend + Core Logic + QA
 
 Implements `./design.md` and `./plan.md`.
 
-## 0) Contract Lock
+## 0) Contract Lock (MVP)
 
-- [ ] Lock hierarchy terminology and payload naming (workout/activity plan, collection/block, training plan, template).
-- [ ] Lock copy-on-apply immutability contract and lineage fields.
-- [ ] Lock schedule-content linkage contract (`event_plan_links` or equivalent).
-- [ ] Lock import identity keys and idempotency semantics.
-- [ ] Lock read-only behavior for imported iCal events.
+- [ ] Lock Layer model: Content (`activity_plans`,`training_plans`) / Library (`library_items`) / Calendar (`events`).
+- [ ] Lock "one new table" policy (`library_items` only).
+- [ ] Lock template apply behavior using `events.schedule_batch_id` lineage.
+- [ ] Lock read-only iCal event behavior and import idempotency rules.
 
-## 1) Current State Audit
+## 1) Additive Schema Changes
 
-- [ ] Inventory existing training plan/template structures in core/trpc/mobile.
-- [ ] Inventory existing calendar linkage points that require additive integration.
-- [ ] Inventory current iCal and Wahoo integration touchpoints relevant to Phase 7.
-- [ ] Document migration-sensitive areas and backward-compatibility guardrails.
+- [ ] Update `training_plans` with template metadata columns.
+- [ ] Update `activity_plans` with template metadata + import identity columns.
+- [ ] Update `events` with schedule batch/source columns.
+- [ ] Create `library_items` table with uniqueness constraint.
+- [ ] Add only required indexes for filters and dedupe.
 
-## 2) Data Model and Migrations (Additive)
+## 2) Core Schemas
 
-- [ ] Add template metadata/visibility fields needed for MVP discovery.
-- [ ] Add template lineage/version fields needed for apply-time traceability.
-- [ ] Add schedule-content linkage table/fields with constraints and indexes.
-- [ ] Add import job/artifact/identity tracking tables (or equivalent) with dedupe keys.
-- [ ] Add audit and soft-delete columns where required for mutable entities.
+- [ ] Add `template_library.ts` schemas for library item input and template apply input.
+- [ ] Export new schemas from `packages/core/schemas/index.ts`.
+- [ ] Add validation tests for new schema contracts.
 
-## 3) Core Schemas and Rules
+## 3) Backend APIs
 
-- [ ] Add/extend schemas for hierarchy entities and template contracts.
-- [ ] Add relative offset projection rules and validation.
-- [ ] Add import normalized envelope schema and adapter contracts.
-- [ ] Add error taxonomy for hierarchy/apply/import validation failures.
+- [ ] Extend training plan template list/filter endpoints with metadata filters.
+- [ ] Add `trainingPlans.applyTemplate` mutation generating scheduled events with `schedule_batch_id`.
+- [ ] Add `library` router (`add`, `remove`, `list`) and wire into root router.
+- [ ] Extend `activity_plans` endpoints for template visibility/import identity.
 
-## 4) Template API (Phase 7.2)
+## 4) Third-Party Import MVP
 
-- [ ] Implement save-as-template for training plans.
-- [ ] Implement save-as-template for collections.
-- [ ] Implement template browse/search/filter endpoints.
-- [ ] Implement template preview endpoint with key summary fields.
-- [ ] Implement apply endpoint creating independent user-owned instance.
+- [ ] Add FIT-to-template import endpoint using existing FIT parsing stack.
+- [ ] Add ZWO-to-template import endpoint with XML parsing + normalization.
+- [ ] Keep iCal feed sync path and confirm compatibility with new schedule metadata.
+- [ ] Add dedupe keys for FIT/ZWO imports (provider + external id/hash).
 
-## 5) Scheduling Linkage and Apply Orchestration
+## 5) Mobile MVP UX
 
-- [ ] Generate scheduled events from relative offsets during apply.
-- [ ] Persist schedule-content linkage and template lineage metadata transactionally.
-- [ ] Ensure reschedule operations preserve linkage identity correctly.
-- [ ] Add reconciliation path for missing linkage records if needed.
+- [ ] Add save-to-library actions in training plan and activity plan detail screens.
+- [ ] Add template browse filters (sport/ability/weeks) in existing list UI.
+- [ ] Add template apply entry (start date / goal date).
+- [ ] Add FIT/ZWO import entry and result summary state.
+- [ ] Add hierarchy explainer in first training plan creation flow.
 
-## 6) Third-Party Import (Phase 7.3)
+## 6) Tests
 
-- [ ] Implement FIT import endpoint and parser adapter.
-- [ ] Implement ZWO import endpoint and parser adapter.
-- [ ] Extend iCal schedule import contract for Phase 7 compatibility.
-- [ ] Implement parse-normalize-validate-dedupe-persist pipeline.
-- [ ] Enforce import security controls (size, timeout, URL policy, sanitization).
+- [ ] Core schema tests for library/apply contracts.
+- [ ] TRPC tests for library uniqueness and listing.
+- [ ] TRPC tests for apply template event generation (`schedule_batch_id`).
+- [ ] TRPC tests for FIT/ZWO import idempotency.
+- [ ] Mobile tests for save/apply/import UX paths.
+- [ ] Regression tests for Phase 6 event/calendar behavior.
 
-## 7) Mobile UX Integration
-
-- [ ] Add save-as-template actions in relevant training plan and collection screens.
-- [ ] Add template discovery and filtering UI.
-- [ ] Add template preview and apply flow.
-- [ ] Add FIT/ZWO import UI entry points and status reporting.
-- [ ] Add first-time hierarchy explainer and persistent dismissal state.
-
-## 8) Tests
-
-- [ ] Core tests for copy-on-apply immutability.
-- [ ] Core tests for offset scheduling and timezone edge cases.
-- [ ] TRPC tests for template apply transactionality and lineage persistence.
-- [ ] TRPC tests for FIT/ZWO/iCal idempotency and malformed input handling.
-- [ ] Mobile tests for template apply and import UX success/failure states.
-- [ ] Regression tests for existing Phase 6 calendar flows.
-
-## 9) Quality Gates
+## 7) Quality Gates
 
 - [ ] `pnpm --filter core check-types`
 - [ ] `pnpm --filter core test`
@@ -85,11 +67,11 @@ Implements `./design.md` and `./plan.md`.
 - [ ] `pnpm --filter mobile check-types`
 - [ ] `pnpm --filter mobile test`
 
-## 10) Completion Criteria
+## 8) Completion Criteria
 
-- [ ] All sections 0-9 complete.
-- [ ] `design.md` acceptance criteria satisfied.
-- [ ] Existing Phase 6 schedule behavior remains functional.
-- [ ] Template apply immutability and import idempotency validated end-to-end.
+- [ ] All sections 0-7 complete.
+- [ ] All user stories in `design.md` verified.
+- [ ] Only one new table introduced.
+- [ ] Existing Phase 6 schedule flows still pass.
 
 (End of file)
