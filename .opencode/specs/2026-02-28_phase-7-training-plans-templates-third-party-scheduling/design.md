@@ -22,6 +22,44 @@ The implementation goal is: maximize user value with minimal schema change and m
 2. Add only one new table unless absolutely necessary.
 3. Prefer adding columns/indexes over introducing new relational structures.
 4. Keep Phase 6 event/calendar behavior fully compatible.
+5. Prefer query simplicity over abstraction depth (no complex multi-join listing paths in MVP).
+
+## Future-Proofing Contract (Locked in Phase 7)
+
+Phase 7 must ship MVP behavior now while preserving a low-friction path to a future mixed-content Discover experience.
+
+### Required future-proof decisions
+
+1. Keep canonical entities as source of truth (`training_plans`, `activity_plans`, `events`).
+2. Introduce stable, shared content identity contracts now (type + id).
+3. Keep list/query APIs behind lightweight abstraction boundaries so implementation can swap from direct table reads to a discover index later.
+4. Defer unified discover indexing to a later phase, but ensure no Phase 7 schema choice blocks it.
+
+### Stable ID and content-type contract
+
+- Every listable entity must expose:
+  - `content_type` (MVP: `training_plan` | `activity_plan`)
+  - `content_id` (UUID from canonical table)
+  - `owner_profile_id` (or null for system templates)
+  - `visibility` (`private` | `public`)
+- Phase 7 APIs should return these normalized fields even when backed by different tables.
+
+### Lightweight abstraction boundary
+
+- Keep per-type list endpoints for MVP performance.
+- Standardize the query/input shape now (cursor, limit, filters) so later mixed discover can reuse the contract without breaking mobile clients.
+- Treat `library_items` as a membership/pointer table only; do not duplicate content payload there.
+
+## Performance and Query Simplicity Rules (MVP)
+
+1. Keep listing queries to one primary table plus at most one join.
+2. Avoid polymorphic UNION queries for mixed content lists.
+3. Use dedicated endpoints per content type (`training_plan` and `activity_plan`) instead of one heavy mixed query.
+4. Use indexed two-step reads for saved content when needed:
+   - step 1: fetch IDs from `library_items`
+   - step 2: fetch entities by `id in (...)` from target table
+5. Keep sort keys index-backed (`created_at`, `updated_at`, and `profile_id` filters).
+6. Maintain idempotency using existing unique constraints to avoid duplicate scan/cleanup work.
 
 ## MVP Product Model (Aligned to Requested Approach)
 
@@ -60,6 +98,42 @@ The implementation goal is: maximize user value with minimal schema change and m
 - `training_plans`: template metadata for discovery and lineage.
 - `activity_plans`: template metadata + import identity metadata.
 - `events`: schedule batch/source fields to support apply/remove and traceability.
+
+### Deferred (explicitly not in Phase 7)
+
+- No `content_catalog`/discover index table in this phase.
+- No polymorphic mixed-content feed query in this phase.
+- No coach/club content tables in this phase.
+
+### Required indexes (performance-focused)
+
+- `library_items(profile_id, item_type, created_at desc)` for saved lists.
+- `library_items(item_type, item_id)` for reverse lookup and cleanup.
+- `training_plans(profile_id, is_active)` already exists and remains primary for user plan listing.
+- `events(profile_id, schedule_batch_id)` for apply/remove batch operations.
+
+## Ownership and Visibility (Database-Enforced)
+
+Ownership and visibility must not rely only on API logic. They must be represented and enforced at the database level.
+
+### Ownership rules
+
+1. User-owned records must always carry `profile_id` (`activity_plans`, user `training_plans`, `library_items`, `events`).
+2. Platform/system templates are represented explicitly (`is_system_template = true` and `profile_id is null`) in existing tables.
+3. Foreign-key relationships must preserve owner scope through constrained references and query filters.
+
+### Visibility rules
+
+1. Template visibility is a database field (private/public for MVP).
+2. Private templates are readable only by owner (or service role/admin paths).
+3. Public templates are readable by authenticated users.
+4. Write/update/delete operations are always owner-only (except service role/admin).
+
+### Enforcement mechanisms required in MVP
+
+- Check constraints for ownership/visibility consistency.
+- Row Level Security policies for read/write behavior by owner and visibility.
+- Indexes aligned to RLS predicates (`profile_id`, `template_visibility`, `is_system_template`).
 
 ## Functional Requirements (MVP)
 
@@ -116,6 +190,8 @@ The implementation goal is: maximize user value with minimal schema change and m
 - Strict input validation with shared schemas in `@repo/core`.
 - Import safety controls: URL validation, timeout, size limit, malformed-file handling.
 - Query performance preserved via targeted indexes only.
+- Listing paths must stay simple enough for predictable query plans and straightforward API maintenance.
+- Ownership and visibility are enforceable in SQL constraints + RLS policies, not only in application code.
 
 ## Acceptance Criteria
 
@@ -125,6 +201,9 @@ The implementation goal is: maximize user value with minimal schema change and m
 4. iCal behavior remains read-only and idempotent.
 5. Only one new table is introduced (`library_items`), with other changes additive columns/indexes.
 6. Existing Phase 6 tests continue to pass.
+7. Saved content listing uses index-backed simple query paths (no multi-join polymorphic query requirement).
+8. Ownership and visibility access is validated at DB level (policy behavior verified).
+9. Phase 7 API contracts expose stable content identity fields that are compatible with a future discover index.
 
 ## Exit Criteria
 
