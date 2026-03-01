@@ -8,7 +8,7 @@
 export const ROUTES = {
   // Plan Tab Routes
   PLAN: {
-    INDEX: "/plan" as const,
+    INDEX: "/(internal)/(tabs)/plan" as const,
     CREATE: "/create-activity-plan" as const,
     LIBRARY: "/plan-library" as const,
     SCHEDULED: "/scheduled-activities-list" as const,

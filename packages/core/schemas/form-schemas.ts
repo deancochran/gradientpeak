@@ -21,6 +21,13 @@ import {
   goalTargetV2Schema,
   trainingPlanCreationConfigSchema,
 } from "./training_plan_structure";
+import {
+  eventMutationScopeSchema,
+  eventRecurrenceSchema,
+  eventTypeInputSchema,
+  eventLifecycleSchema,
+  importedEventSourceMetadataSchema,
+} from "./planned_activity";
 
 // ============================================================================
 // REUSABLE VALIDATION PATTERNS
@@ -810,6 +817,11 @@ export const plannedActivityScheduleFormSchema = z.object({
   scheduled_date: dateStringSchema,
   notes: activityPlanNotesSchema,
   training_plan_id: z.string().uuid().optional().nullable(),
+  event_type: eventTypeInputSchema.default("planned").optional(),
+  recurrence: eventRecurrenceSchema.optional(),
+  lifecycle: eventLifecycleSchema.optional(),
+  source: importedEventSourceMetadataSchema.optional(),
+  read_only: z.boolean().optional(),
 });
 
 export type PlannedActivityScheduleFormData = z.infer<
@@ -826,6 +838,10 @@ export const plannedActivityUpdateFormSchema = z.object({
     .optional(),
   scheduled_date: dateStringSchema.optional(),
   notes: activityPlanNotesSchema,
+  event_type: eventTypeInputSchema.optional(),
+  recurrence: eventRecurrenceSchema.optional(),
+  lifecycle: eventLifecycleSchema.optional(),
+  scope: eventMutationScopeSchema.default("single").optional(),
 });
 
 export type PlannedActivityUpdateFormData = z.infer<
@@ -841,6 +857,7 @@ export const plannedActivityRescheduleFormSchema = z.object({
     trimString,
     z.string().max(500, "Reason must be less than 500 characters").optional(),
   ),
+  scope: eventMutationScopeSchema.default("single"),
 });
 
 export type PlannedActivityRescheduleFormData = z.infer<

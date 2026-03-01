@@ -82,10 +82,7 @@ import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import {
-  plannedActivityScheduleFormSchema,
-  type PlannedActivityScheduleFormData,
-} from "@repo/core";
+import { plannedActivityScheduleFormSchema } from "@repo/core";
 import { format, parseISO } from "date-fns";
 import { Calendar, Clock, TrendingUp, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
@@ -98,6 +95,14 @@ import {
   View,
 } from "react-native";
 import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
+import { z } from "zod";
+
+type PlannedActivityScheduleFormInput = z.input<
+  typeof plannedActivityScheduleFormSchema
+>;
+type PlannedActivityScheduleFormOutput = z.output<
+  typeof plannedActivityScheduleFormSchema
+>;
 
 interface ScheduleActivityModalProps {
   visible: boolean;
@@ -114,6 +119,9 @@ interface ScheduleActivityModalProps {
 
   // Training plan context (for constraint validation)
   trainingPlanId?: string;
+
+  // Recurrence scope for edit mode updates
+  editScope?: "single" | "future" | "series";
 }
 
 export function ScheduleActivityModal({
@@ -125,6 +133,7 @@ export function ScheduleActivityModal({
   eventId,
   preselectedDate,
   trainingPlanId,
+  editScope = "single",
 }: ScheduleActivityModalProps) {
   const isEditMode = !!eventId;
   const isTemplate = !!activityPlan && !activityPlanId;
@@ -143,7 +152,11 @@ export function ScheduleActivityModal({
     watch,
     reset,
     formState: { errors },
-  } = useForm<PlannedActivityScheduleFormData>({
+  } = useForm<
+    PlannedActivityScheduleFormInput,
+    unknown,
+    PlannedActivityScheduleFormOutput
+  >({
     resolver: zodResolver(plannedActivityScheduleFormSchema),
     defaultValues: {
       scheduled_date: preselectedDate || new Date().toISOString(),
@@ -232,13 +245,14 @@ export function ScheduleActivityModal({
     },
   });
 
-  const onSubmit = (data: PlannedActivityScheduleFormData) => {
+  const onSubmit = (data: PlannedActivityScheduleFormOutput) => {
     if (isEditMode) {
       updateMutation.mutate({
         id: eventId,
         activity_plan_id: data.activity_plan_id,
         scheduled_date: format(parseISO(data.scheduled_date), "yyyy-MM-dd"),
         notes: data.notes || undefined,
+        scope: editScope,
       });
     } else {
       createMutation.mutate({

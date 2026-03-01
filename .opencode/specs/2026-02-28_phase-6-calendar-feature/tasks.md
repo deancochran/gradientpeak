@@ -1,6 +1,6 @@
 # Tasks - Phase 6 Interactive Calendar Feature
 
-Last Updated: 2026-02-28
+Last Updated: 2026-02-28 (Step 5 move interactions and Step 7 consistency complete)
 Status: Active
 Owner: Mobile + Backend + Core Logic + QA
 
@@ -23,63 +23,63 @@ Implements `./design.md` and `./plan.md`.
 
 ## 2) Event Domain and Schema
 
-- [ ] Extend core event schemas for all Phase 6 event types.
-- [ ] Define recurrence and exception schema constraints.
-- [ ] Define lifecycle fields/semantics for non-destructive delete/cancel behavior.
-- [ ] Define source metadata schema for imported iCal entries.
+- [x] Extend core event schemas for all Phase 6 event types.
+- [x] Define recurrence and exception schema constraints.
+- [x] Define lifecycle fields/semantics for non-destructive delete/cancel behavior.
+- [x] Define source metadata schema for imported iCal entries.
 
 ## 3) Events Router Generalization
 
-- [ ] Refactor list/get endpoints to return all supported event types.
-- [ ] Refactor create/update/delete to enforce type-specific rules.
-- [ ] Implement recurrence-aware scoped mutations.
-- [ ] Implement explicit event-to-activity linkage updates.
-- [ ] Keep backward compatibility for existing planned-workout clients.
+- [x] Refactor list/get endpoints to return all supported event types.
+- [x] Refactor create/update/delete to enforce type-specific rules.
+- [x] Implement recurrence-aware scoped mutations.
+- [x] Implement explicit event-to-activity linkage updates.
+- [x] Keep backward compatibility for existing planned-workout clients.
 
 ## 4) iCal Import and Sync
 
-- [ ] Add endpoints for feed add/list/update/remove.
-- [ ] Implement ICS fetch and parse pipeline.
-- [ ] Normalize imported events into canonical event records.
-- [ ] Deduplicate/update-in-place using feed source identity.
-- [ ] Mark imported events as read-only in mutation paths.
+- [x] Add endpoints for feed add/list/update/remove.
+- [x] Implement ICS fetch and parse pipeline.
+- [x] Normalize imported events into canonical event records.
+- [x] Deduplicate/update-in-place using feed source identity.
+- [x] Mark imported events as read-only in mutation paths.
 
 ## 5) Mobile Calendar Views
 
-- [ ] Implement month/week/day view toggle and rendering.
-- [ ] Build event detail bottom sheet with type-specific metadata/actions.
-- [ ] Implement event create flow with type-first selection.
-- [ ] Implement edit/delete flows with recurrence scope prompts.
-- [ ] Implement move actions (drag/drop in week/day, picker in month).
+- [x] Implement month/week/day view toggle and rendering.
+- [x] Build event detail bottom sheet with type-specific metadata/actions.
+- [x] Implement event create flow with type-first selection.
+- [x] Implement edit/delete flows with recurrence scope prompts.
+- [x] Implement move actions (drag/drop in week/day, picker in month).
 
 ## 6) Navigation and Overlay Reliability
 
-- [ ] Fix calendar route reachability from all app entry points.
-- [ ] Ensure overlays dismiss before navigation transitions.
-- [ ] Remove duplicate or stale scheduling modal states and dead routes.
-- [ ] Guard lifecycle-triggered navigation against unmounted states.
+- [x] Fix calendar route reachability from all app entry points.
+- [x] Ensure overlays dismiss before navigation transitions.
+- [x] Remove duplicate or stale scheduling modal states and dead routes.
+- [x] Guard lifecycle-triggered navigation against unmounted states.
 
 ## 7) Completion and Consistency
 
-- [ ] Replace date-only completion inference with authoritative linkage where possible.
-- [ ] Add reconciliation job/path for existing historical records.
-- [ ] Ensure moved events preserve linked planned content consistency.
-- [ ] Validate timezone consistency across create/list/render paths.
+- [x] Replace date-only completion inference with authoritative linkage where possible.
+- [x] Add reconciliation job/path for existing historical records.
+- [x] Ensure moved events preserve linked planned content consistency.
+- [x] Validate timezone consistency across create/list/render paths.
 
 ## 8) Tests
 
-- [ ] Add router tests for event type matrix CRUD behavior.
-- [ ] Add recurrence scope mutation tests.
-- [ ] Add import sync tests for idempotent updates.
-- [ ] Add mobile tests for view switching and event detail interactions.
-- [ ] Add navigation regression tests for plan/calendar entry points.
+- [x] Add router tests for event type matrix CRUD behavior.
+- [x] Add recurrence scope mutation tests.
+- [x] Add import sync tests for idempotent updates.
+- [x] Add mobile tests for view switching and event detail interactions.
+- [x] Add navigation regression tests for plan/calendar entry points.
 
 ## 9) Quality Gates
 
-- [ ] `pnpm --filter mobile check-types`
-- [ ] `pnpm --filter mobile test`
-- [ ] `pnpm --filter trpc check-types`
-- [ ] `pnpm --filter trpc test`
+- [x] `pnpm --filter mobile check-types`
+- [x] `pnpm --filter mobile test`
+- [x] `pnpm --filter trpc check-types`
+- [x] `pnpm --filter trpc test`
 
 ## 10) Completion Criteria
 
