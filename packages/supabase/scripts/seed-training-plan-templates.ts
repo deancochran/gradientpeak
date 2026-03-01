@@ -19,11 +19,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import { resolve } from "path";
-import {
-  SAMPLE_TRAINING_PLANS,
-  SAMPLE_TRAINING_PLANS_BY_TYPE,
-} from "../../core/samples";
-import type { TrainingPlanCreate } from "../../core/schemas/training_plan_structure";
+import { ALL_SAMPLE_PLANS } from "../../core/samples";
 
 // Load environment variables from root .env.local
 config({ path: resolve(__dirname, "../.env.local") });
@@ -53,9 +49,10 @@ if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
+// Filter plans by type if specified
 const TEMPLATES = planType
-  ? SAMPLE_TRAINING_PLANS_BY_TYPE[planType]
-  : SAMPLE_TRAINING_PLANS;
+  ? ALL_SAMPLE_PLANS.filter((p) => p.plan_type === planType)
+  : ALL_SAMPLE_PLANS;
 
 /**
  * Deep equality check for objects and arrays
@@ -92,7 +89,10 @@ function deepEqual(a: any, b: any): boolean {
  * Check if a local template differs from the remote DB record
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasChanges(local: TrainingPlanCreate, remote: any): boolean {
+function hasChanges(
+  local: (typeof ALL_SAMPLE_PLANS)[number],
+  remote: any,
+): boolean {
   // Normalize fields (DB might return null for undefined)
   const localDescription = local.description ?? null;
   const remoteDescription = remote.description ?? null;
@@ -114,7 +114,8 @@ function hasChanges(local: TrainingPlanCreate, remote: any): boolean {
   }
 
   // Sanitize local structure to match JSON behavior
-  const localStructureJson = JSON.parse(JSON.stringify(local.structure));
+  // The new schema uses goals/blocks at top level, store entire plan as JSON in structure column
+  const localStructureJson = JSON.parse(JSON.stringify(local));
 
   // Compare structure object deeply
   if (!deepEqual(localStructureJson, remote.structure)) {
@@ -196,7 +197,8 @@ async function seedTrainingPlanTemplates() {
               .update({
                 name: template.name,
                 description: template.description,
-                structure: template.structure,
+                // Store entire plan object (goals/blocks) as JSON in structure column
+                structure: JSON.parse(JSON.stringify(template)),
                 is_active: template.is_active,
                 updated_at: new Date().toISOString(),
               })
@@ -219,9 +221,11 @@ async function seedTrainingPlanTemplates() {
               id: template.id, // Use the static ID
               profile_id: null,
               is_system_template: true,
+              template_visibility: "public", // System templates must be public
               name: template.name,
               description: template.description,
-              structure: template.structure,
+              // Store entire plan object (goals/blocks) as JSON in structure column
+              structure: JSON.parse(JSON.stringify(template)),
               is_active: template.is_active,
             });
 
