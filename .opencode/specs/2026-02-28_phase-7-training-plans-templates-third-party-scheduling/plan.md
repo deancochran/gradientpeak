@@ -10,7 +10,7 @@ Inputs: `design.md`
 This plan intentionally minimizes schema churn:
 
 - Keep existing `training_plans`, `activity_plans`, and `events` as core entities.
-- Add one new table only: `library_items`.
+- Add only essential tables: `library_items` plus one unified provider sync table `provider_sync_records`.
 - Add additive columns/indexes for template metadata, schedule batch tracking, and import identity.
 - Reuse existing routers and screens where possible.
 
@@ -29,7 +29,8 @@ Future-proof rule:
 1. Add template metadata columns to existing tables.
 2. Add import identity columns to `activity_plans`.
 3. Add schedule batch/source lineage columns to `events`.
-4. Add new `library_items` table.
+4. Add `library_items` table.
+5. Add `provider_sync_records` table and migrate provider mappings into it.
 
 MVP SQL shape:
 
@@ -37,18 +38,16 @@ MVP SQL shape:
 -- training_plans (template metadata)
 alter table public.training_plans
   add column if not exists template_visibility text default 'private',
-  add column if not exists template_sport text,
-  add column if not exists template_ability text,
-  add column if not exists template_weeks integer,
-  add column if not exists template_source_plan_id uuid references public.training_plans(id) on delete set null,
-  add column if not exists template_version integer not null default 1;
+  add column if not exists template_source text,
+  add column if not exists template_source_id uuid;
 
 -- activity_plans (template + import identity)
 alter table public.activity_plans
   add column if not exists template_visibility text default 'private',
+  add column if not exists template_source text,
+  add column if not exists template_source_id uuid,
   add column if not exists source_provider text,
-  add column if not exists source_external_id text,
-  add column if not exists source_hash text;
+  add column if not exists source_external_id text;
 
 create unique index if not exists idx_activity_plans_import_identity
   on public.activity_plans(profile_id, source_provider, source_external_id)
@@ -58,9 +57,17 @@ alter table public.training_plans
   add constraint training_plans_template_visibility_check
   check (template_visibility in ('private', 'public'));
 
+alter table public.training_plans
+  add constraint training_plans_template_source_non_empty_check
+  check (template_source is null or btrim(template_source) <> '');
+
 alter table public.activity_plans
   add constraint activity_plans_template_visibility_check
   check (template_visibility in ('private', 'public'));
+
+alter table public.activity_plans
+  add constraint activity_plans_template_source_non_empty_check
+  check (template_source is null or btrim(template_source) <> '');
 
 create index if not exists idx_training_plans_visibility
   on public.training_plans(template_visibility);
@@ -71,7 +78,6 @@ create index if not exists idx_activity_plans_visibility
 -- events (schedule batch lineage)
 alter table public.events
   add column if not exists schedule_batch_id uuid,
-  add column if not exists schedule_source_type text,
   add column if not exists schedule_source_id uuid;
 
 create index if not exists idx_events_schedule_batch
@@ -95,10 +101,36 @@ create index if not exists idx_library_items_profile_type_created
 create index if not exists idx_library_items_item_lookup
   on public.library_items(item_type, item_id);
 
+-- unified third-party sync registry
+create table if not exists public.provider_sync_records (
+  id uuid primary key default uuid_generate_v4(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  provider text not null,
+  entity_type text not null check (entity_type in ('event', 'activity_plan')),
+  entity_id uuid not null,
+  external_id text not null,
+  external_parent_id text not null default '',
+  sync_status text not null default 'synced' check (sync_status in ('synced', 'updated', 'failed')),
+  last_synced_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_provider_sync_identity
+  on public.provider_sync_records(provider, profile_id, entity_type, external_id, external_parent_id);
+
+create index if not exists idx_provider_sync_profile_provider
+  on public.provider_sync_records(profile_id, provider, last_synced_at desc);
+
+create index if not exists idx_provider_sync_entity
+  on public.provider_sync_records(entity_type, entity_id);
+
+
 -- ownership and visibility policy enforcement (mvp)
 alter table public.training_plans enable row level security;
 alter table public.activity_plans enable row level security;
 alter table public.library_items enable row level security;
+alter table public.provider_sync_records enable row level security;
 
 create policy training_plans_select_policy on public.training_plans
 for select
@@ -130,6 +162,16 @@ create policy library_items_owner_policy on public.library_items
 for all
 using (profile_id = auth.uid())
 with check (profile_id = auth.uid());
+
+create policy provider_sync_records_owner_read_policy on public.provider_sync_records
+for select
+using (profile_id = auth.uid());
+
+create policy provider_sync_records_service_write_policy on public.provider_sync_records
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
+
 ```
 
 ### B) Core Contracts (`packages/core/schemas/*`)
@@ -179,6 +221,7 @@ Primary files:
 - `packages/trpc/src/routers/integrations.ts`
 - `packages/trpc/src/routers/index.ts`
 - `packages/trpc/src/routers/library.ts` (new)
+- `packages/trpc/src/lib/integrations/provider-sync-registry.ts` (new)
 
 #### 1) Template CRUD on existing entities
 
@@ -213,7 +256,6 @@ await ctx.supabase.from("events").insert(
     activity_plan_id: session.activityPlanId,
     training_plan_id: appliedPlanId,
     schedule_batch_id: batchId,
-    schedule_source_type: "training_plan",
     schedule_source_id: templateId,
   })),
 );
@@ -226,7 +268,7 @@ await ctx.supabase.from("events").insert(
   - `library.listTrainingPlans`
   - `library.listActivityPlans`
 - Keep endpoint input contract discover-compatible:
-  - `cursor`, `limit`, `visibility?`, `owner_scope?`, `sport?`
+  - `cursor`, `limit`, `visibility?`, `owner_scope?`
 
 ```ts
 add: protectedProcedure
@@ -288,6 +330,30 @@ return (plans ?? []).map((plan) => ({
 - Reuse `fit-files.ts` parse primitives for FIT.
 - Add ZWO parser endpoint under `activity_plans` or `integrations`.
 - Keep iCal feed sync in `integrations.ts` and `IcalSyncService` as read-only events.
+- Upsert provider identity/provenance into `provider_sync_records` for FIT/ZWO/iCal.
+
+```ts
+await ctx.supabase.from("provider_sync_records").upsert(
+  {
+    profile_id: ctx.session.user.id,
+    provider,
+    entity_type,
+    entity_id,
+    external_id,
+    external_parent_id: externalParentId ?? "",
+    sync_status: "synced",
+    last_synced_at: new Date().toISOString(),
+  },
+  {
+    onConflict:
+      "provider,profile_id,entity_type,external_id,external_parent_id",
+  },
+);
+```
+
+Migration cleanup rule:
+
+- Backfill existing mapping table rows (for example `synced_events`) into `provider_sync_records`, cut reads/writes over, then drop redundant mapping table(s).
 
 ### D) Mobile (`apps/mobile/app/*`)
 
@@ -301,7 +367,7 @@ Primary files:
 MVP UI changes:
 
 - Add save-to-library actions for training/activity templates.
-- Add template browse filters (sport/ability/weeks) with existing list screens.
+- Add template browse filters (visibility + owner scope) with existing list screens.
 - Add apply template CTA with start date/goal date picker.
 - Add FIT/ZWO import entry in integrations/library flow.
 
@@ -326,6 +392,7 @@ await saveToLibrary.mutateAsync({
 5. Regression stabilization against Phase 6.
 6. Query-plan validation and index tuning for new list paths.
 7. Contract stabilization for future discover index compatibility.
+8. Provider sync consolidation and redundant table removal.
 
 ## 4) Validation and Quality Gates
 
@@ -365,5 +432,11 @@ await saveToLibrary.mutateAsync({
 - Verify non-owners cannot update/delete other users' templates via direct SQL auth context.
 - Verify non-owners can read only `public` or `is_system_template` items.
 - Verify `library_items` cannot be created/read/modified across user boundaries.
+
+## 9) Sync Consolidation Verification (Required)
+
+- Verify FIT/ZWO/iCal all write to `provider_sync_records`.
+- Verify backfill parity from deprecated mapping tables before drop.
+- Verify deprecated sync mapping tables are no longer read/written after cutover.
 
 (End of file)

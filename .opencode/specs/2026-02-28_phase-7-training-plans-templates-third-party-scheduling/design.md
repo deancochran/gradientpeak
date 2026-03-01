@@ -19,7 +19,7 @@ The implementation goal is: maximize user value with minimal schema change and m
 ## Guiding MVP Constraints
 
 1. Reuse existing tables/routes where possible.
-2. Add only one new table unless absolutely necessary.
+2. Add only essential tables; prefer one shared sync registry over multiple provider-specific tables.
 3. Prefer adding columns/indexes over introducing new relational structures.
 4. Keep Phase 6 event/calendar behavior fully compatible.
 5. Prefer query simplicity over abstraction depth (no complex multi-join listing paths in MVP).
@@ -89,21 +89,58 @@ Phase 7 must ship MVP behavior now while preserving a low-friction path to a fut
 - `events`
 - `synced_events` and existing iCal identity constraints
 
-### New table (exactly one)
+### New tables (essential only)
 
 - `library_items` for user saved content pointers.
+- `provider_sync_records` for all third-party sync provenance and identity.
 
-### New columns (additive)
+### New columns (additive, bare minimum)
 
-- `training_plans`: template metadata for discovery and lineage.
-- `activity_plans`: template metadata + import identity metadata.
-- `events`: schedule batch/source fields to support apply/remove and traceability.
+- `training_plans`:
+  - `template_visibility` (`private` | `public`)
+  - `template_source` (short text, e.g. `user`, `system`, `import`, `coach`, `club`)
+  - `template_source_id` (UUID, nullable)
+- `activity_plans`:
+  - `template_visibility` (`private` | `public`)
+  - `template_source` (short text)
+  - `template_source_id` (UUID, nullable)
+- `events`:
+  - `schedule_batch_id` (UUID)
+  - `schedule_source_id` (UUID, nullable)
+
+Notes:
+
+- Keep existing `is_system_template` / system-template semantics; do not add a second system flag.
+- Do not add optional discovery enrichment columns in Phase 7 MVP.
+
+### Unified provider sync registry (single table)
+
+Phase 7 uses one table to track all third-party imported/synced entities:
+
+- `provider_sync_records`
+  - `profile_id`
+  - `provider`
+  - `entity_type` (`event` | `activity_plan`)
+  - `entity_id` (local canonical id)
+  - `external_id`
+  - `external_parent_id` (optional feed/calendar id; default empty string for uniqueness)
+  - `sync_status`
+  - `last_synced_at`
+
+Uniqueness:
+
+- unique(`provider`, `profile_id`, `entity_type`, `external_id`, `external_parent_id`)
+
+Deprecation target:
+
+- Existing provider-mapping tables that duplicate this purpose (for example `synced_events`) are migrated/backfilled into `provider_sync_records` and then removed in this phase.
 
 ### Deferred (explicitly not in Phase 7)
 
 - No `content_catalog`/discover index table in this phase.
 - No polymorphic mixed-content feed query in this phase.
 - No coach/club content tables in this phase.
+- No extra template metadata columns (sport, ability, weeks, popularity) in this phase.
 
 ### Required indexes (performance-focused)
 
@@ -150,7 +187,7 @@ Ownership and visibility must not rely only on API logic. They must be represent
 
 - User can save training plans and activity plans as templates.
 - Template visibility supports `private` and `public`.
-- User can browse/filter templates by sport, duration, and ability level.
+- User can browse/filter templates by visibility and owner scope.
 - User can save template pointers to personal library.
 - Applying a template creates independent schedule instances (copy-on-apply behavior in practice).
 
@@ -199,11 +236,12 @@ Ownership and visibility must not rely only on API logic. They must be represent
 2. Applying template creates schedule events with source/batch traceability.
 3. FIT and ZWO imports create or update native activity plan templates idempotently.
 4. iCal behavior remains read-only and idempotent.
-5. Only one new table is introduced (`library_items`), with other changes additive columns/indexes.
+5. Two essential new tables are introduced (`library_items`, `provider_sync_records`), with other changes additive columns/indexes.
 6. Existing Phase 6 tests continue to pass.
 7. Saved content listing uses index-backed simple query paths (no multi-join polymorphic query requirement).
 8. Ownership and visibility access is validated at DB level (policy behavior verified).
 9. Phase 7 API contracts expose stable content identity fields that are compatible with a future discover index.
+10. All third-party sync identity/provenance is stored in `provider_sync_records` (single sync source of truth).
 
 ## Exit Criteria
 
