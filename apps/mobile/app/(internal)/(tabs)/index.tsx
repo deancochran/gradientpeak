@@ -11,6 +11,7 @@ import { AppHeader } from "@/components/shared";
 import { DetailChartModal } from "@/components/shared/DetailChartModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
 import { useHomeData } from "@/lib/hooks/useHomeData";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
 import { useFocusEffect } from "@react-navigation/native";
@@ -61,7 +62,7 @@ function HomeScreen() {
     // Navigate to plan page with activity ID to open the modal
     guardNavigation(() => {
       router.replace({
-        pathname: "/(internal)/(tabs)/plan",
+        pathname: ROUTES.PLAN.INDEX,
         params: { activityId: todaysActivity.id },
       } as any);
     });
@@ -69,14 +70,14 @@ function HomeScreen() {
 
   const handleViewPlan = () => {
     guardNavigation(() => {
-      router.replace("/(internal)/(tabs)/plan");
+      router.replace(ROUTES.PLAN.INDEX);
     });
   };
 
   const handlePressActivity = (activityId: string) => {
     guardNavigation(() => {
       router.replace({
-        pathname: "/(internal)/(tabs)/plan",
+        pathname: ROUTES.PLAN.INDEX,
         params: { activityId },
       } as any);
     });

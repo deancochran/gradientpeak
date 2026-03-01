@@ -7,6 +7,10 @@ import type {
 
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import {
+  IcalSyncError,
+  IcalSyncService,
+} from "../lib/integrations/ical/sync-service";
 import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 
@@ -318,6 +322,125 @@ export const integrationsRouter = createTRPCRouter({
 
       return { success: true };
     }),
+
+  // ==============================
+  // iCal Feed Endpoints
+  // ==============================
+
+  ical: createTRPCRouter({
+    addFeed: protectedProcedure
+      .input(
+        z.object({
+          url: z.string().url(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const syncService = new IcalSyncService(ctx.supabase);
+        const feedId = crypto.randomUUID();
+
+        try {
+          return await syncService.syncFeed({
+            profileId: ctx.session.user.id,
+            feedId,
+            feedUrl: input.url,
+          });
+        } catch (error) {
+          if (error instanceof IcalSyncError) {
+            throw new TRPCError({
+              code: error.code,
+              message: error.message,
+            });
+          }
+
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to add iCal feed",
+          });
+        }
+      }),
+
+    listFeeds: protectedProcedure.input(z.object({})).query(async ({ ctx }) => {
+      const syncService = new IcalSyncService(ctx.supabase);
+
+      try {
+        return await syncService.listFeeds(ctx.session.user.id);
+      } catch (error) {
+        if (error instanceof IcalSyncError) {
+          throw new TRPCError({
+            code: error.code,
+            message: error.message,
+          });
+        }
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to list iCal feeds",
+        });
+      }
+    }),
+
+    updateFeed: protectedProcedure
+      .input(
+        z.object({
+          feed_id: z.string().uuid(),
+          url: z.string().url(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const syncService = new IcalSyncService(ctx.supabase);
+
+        try {
+          return await syncService.syncFeed({
+            profileId: ctx.session.user.id,
+            feedId: input.feed_id,
+            feedUrl: input.url,
+          });
+        } catch (error) {
+          if (error instanceof IcalSyncError) {
+            throw new TRPCError({
+              code: error.code,
+              message: error.message,
+            });
+          }
+
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to update iCal feed",
+          });
+        }
+      }),
+
+    removeFeed: protectedProcedure
+      .input(
+        z.object({
+          feed_id: z.string().uuid(),
+          purge_events: z.boolean().optional().default(true),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const syncService = new IcalSyncService(ctx.supabase);
+
+        try {
+          return await syncService.removeFeed({
+            profileId: ctx.session.user.id,
+            feedId: input.feed_id,
+            purgeEvents: input.purge_events,
+          });
+        } catch (error) {
+          if (error instanceof IcalSyncError) {
+            throw new TRPCError({
+              code: error.code,
+              message: error.message,
+            });
+          }
+
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to remove iCal feed",
+          });
+        }
+      }),
+  }),
 
   // ==============================
   // Wahoo Sync Endpoints
