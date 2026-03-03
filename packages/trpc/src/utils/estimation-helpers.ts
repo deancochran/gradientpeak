@@ -22,6 +22,7 @@ export interface ActivityPlanWithEstimation extends PublicActivityPlansRow {
   estimated_duration: number;
   estimated_calories?: number;
   estimated_distance?: number;
+  estimated_zones?: string[];
   intensity_factor: number;
   confidence: string;
   confidence_score: number;
@@ -68,12 +69,24 @@ export async function addEstimationToPlan(
   const estimation = estimateActivity(context);
   const metrics = estimateMetrics(estimation, context);
 
+  const zones: string[] = [];
+  if (estimation.estimatedPowerZones) {
+    estimation.estimatedPowerZones.forEach((secs, idx) => {
+      if (secs > 60) zones.push(`Z${idx + 1}`);
+    });
+  } else if (estimation.estimatedHRZones) {
+    estimation.estimatedHRZones.forEach((secs, idx) => {
+      if (secs > 60) zones.push(`Z${idx + 1}`);
+    });
+  }
+
   return {
     ...plan,
     estimated_tss: estimation.tss,
     estimated_duration: estimation.duration,
     estimated_calories: metrics.calories,
     estimated_distance: metrics.distance,
+    estimated_zones: [...new Set(zones)],
     intensity_factor: estimation.intensityFactor,
     confidence: estimation.confidence,
     confidence_score: estimation.confidenceScore,
@@ -137,12 +150,24 @@ export async function addEstimationToPlans(
       const estimation = estimateActivity(context);
       const metrics = estimateMetrics(estimation, context);
 
+      const zones: string[] = [];
+      if (estimation.estimatedPowerZones) {
+        estimation.estimatedPowerZones.forEach((secs, idx) => {
+          if (secs > 60) zones.push(`Z${idx + 1}`);
+        });
+      } else if (estimation.estimatedHRZones) {
+        estimation.estimatedHRZones.forEach((secs, idx) => {
+          if (secs > 60) zones.push(`Z${idx + 1}`);
+        });
+      }
+
       results.push({
         ...plan,
         estimated_tss: estimation.tss,
         estimated_duration: estimation.duration,
         estimated_calories: metrics.calories,
         estimated_distance: metrics.distance,
+        estimated_zones: [...new Set(zones)],
         intensity_factor: estimation.intensityFactor,
         confidence: estimation.confidence,
         confidence_score: estimation.confidenceScore,
@@ -154,6 +179,7 @@ export async function addEstimationToPlans(
         ...plan,
         estimated_tss: 50,
         estimated_duration: 3600,
+        estimated_zones: [],
         intensity_factor: 0.7,
         confidence: "low",
         confidence_score: 0,

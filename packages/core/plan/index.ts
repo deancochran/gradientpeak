@@ -38,3 +38,4 @@ export * from "./projectionTypes";
 export * from "./resolveConstraintConflicts";
 export * from "./trainingPlanPreview";
 export * from "./ramp-learning";
+export * from "./recommendation";

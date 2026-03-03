@@ -2,7 +2,9 @@ import {
   activityPlanCreateSchema,
   activityPlanStructureSchemaV2,
   activityPlanUpdateSchema,
+  scoreActivityPlanCandidates,
 } from "@repo/core";
+import type { ActivityPlanCandidate } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -175,6 +177,103 @@ export const activityPlansRouter = createTRPCRouter({
         ),
         nextCursor,
       };
+    }),
+
+  // ------------------------------
+  // Recommend daily activity plan
+  // ------------------------------
+  recommendDailyActivity: protectedProcedure
+    .input(
+      z.object({
+        targetTss: z.number().min(0),
+        targetZones: z.array(z.string()),
+        effortCategory: z.enum(["easy", "moderate", "hard"]),
+        currentCtl: z.number().min(0),
+        currentAtl: z.number().min(0),
+        activityCategory: z
+          .enum(["run", "bike", "swim", "strength", "other"])
+          .optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      // Fetch available activity plans (own or public templates)
+      let query = ctx.supabase
+        .from("activity_plans")
+        .select("*")
+        .or(
+          `profile_id.eq.${ctx.session.user.id},template_visibility.eq.public`,
+        );
+
+      if (input.activityCategory) {
+        query = query.eq("activity_category", input.activityCategory);
+      }
+
+      const { data: plans, error } = await query;
+
+      if (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message,
+        });
+      }
+
+      if (!plans || plans.length === 0) {
+        return [];
+      }
+
+      // Add TSS estimation and zones to the plans
+      const estimatedPlans = await addEstimationToPlans(
+        plans,
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
+      // Map to ActivityPlanCandidate
+      const candidates: ActivityPlanCandidate[] = estimatedPlans.map((plan) => {
+        const tss = plan.estimated_tss || 0;
+        const zones = plan.estimated_zones || [];
+        const ifactor = plan.intensity_factor || 0;
+
+        let effort: "easy" | "moderate" | "hard" = "moderate";
+        if (ifactor < 0.75) effort = "easy";
+        else if (ifactor >= 0.9) effort = "hard";
+
+        return {
+          id: plan.id,
+          name: plan.name,
+          tss,
+          zones,
+          effortCategory: effort,
+        };
+      });
+
+      // Score and rank candidates
+      const recommendations = scoreActivityPlanCandidates(
+        {
+          targetTss: input.targetTss,
+          targetZones: input.targetZones,
+          effortCategory: input.effortCategory,
+        },
+        candidates,
+        {
+          currentCtl: input.currentCtl,
+          currentAtl: input.currentAtl,
+        },
+      );
+
+      // Map plan details to the recommendations for the UI
+      return recommendations.map((rec) => {
+        const plan = candidates.find((p) => p.id === rec.planId)!;
+        return {
+          ...rec,
+          plan: {
+            id: plan.id,
+            name: plan.name,
+            tss: plan.tss,
+            zones: plan.zones,
+          },
+        };
+      });
     }),
 
   // ------------------------------

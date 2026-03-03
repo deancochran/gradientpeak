@@ -528,12 +528,25 @@ export const homeRouter = createTRPCRouter({
           ? Math.round((weeklyActualStats.tss / weeklyPlannedStats.tss) * 100)
           : null;
 
+      let firstTargetType = undefined;
+      const planStructure = plan?.structure as any;
+      if (
+        planStructure &&
+        planStructure.goals &&
+        planStructure.goals[0] &&
+        planStructure.goals[0].targets &&
+        planStructure.goals[0].targets[0]
+      ) {
+        firstTargetType = planStructure.goals[0].targets[0].target_type;
+      }
+
       return {
         activePlan: plan
           ? {
               id: plan.id,
               name: plan.name,
               phase: planPhase,
+              targetType: firstTargetType,
             }
           : null,
         currentStatus: todayStatus,
