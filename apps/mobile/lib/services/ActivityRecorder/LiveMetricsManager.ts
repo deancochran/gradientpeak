@@ -30,11 +30,16 @@ import {
   SessionStats,
   ZoneConfig,
 } from "./types";
+import { GLOBAL_DEFAULTS, type PerformanceMetrics } from "@repo/core";
 
 // Define event types for LiveMetricsManager
 interface LiveMetricsEvents {
   statsUpdate: (data: { stats: SessionStats; timestamp: number }) => void;
   sensorUpdate: (data: { readings: any; timestamp: number }) => void;
+  metricsUpdated: (data: {
+    profile: ProfileMetrics;
+    zones: ZoneConfig;
+  }) => void;
   persistenceError: (error: unknown) => void;
   [key: string]: (...args: any[]) => void; // Index signature for EventsMap
 }
@@ -91,7 +96,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
   constructor(
     profile: PublicProfilesRow,
-    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number },
+    metrics?: {
+      ftp?: number;
+      thresholdHr?: number;
+      weightKg?: number;
+      thresholdPaceSecondsPerKm?: number;
+    },
   ) {
     super();
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
@@ -106,6 +116,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       ftp: this.profile.ftp,
       threshold_hr: this.profile.threshold_hr,
       weight: this.profile.weight,
+      threshold_pace: this.profile.threshold_pace_seconds_per_km,
     });
   }
 
@@ -122,6 +133,32 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   public setActivityCategory(category: PublicActivityCategory): void {
     this.activityCategory = category;
     console.log("[LiveMetricsManager] Activity category set to:", category);
+  }
+
+  /**
+   * Update performance metrics reactively
+   * Re-calculates zones and updates profile values used for IF/TSS.
+   */
+  public updateMetrics(metrics: Partial<PerformanceMetrics>): void {
+    if (metrics.ftp !== undefined) this.profile.ftp = metrics.ftp;
+    if (metrics.thresholdHr !== undefined)
+      this.profile.threshold_hr = metrics.thresholdHr;
+    if (metrics.weightKg !== undefined) this.profile.weight = metrics.weightKg;
+    if (metrics.thresholdPaceSecondsPerKm !== undefined)
+      this.profile.threshold_pace_seconds_per_km =
+        metrics.thresholdPaceSecondsPerKm;
+
+    // Re-calculate zones
+    this.zones = this.calculateZones(this.profile);
+
+    this.emit("metricsUpdated", { profile: this.profile, zones: this.zones });
+
+    console.log("[LiveMetricsManager] Metrics updated:", {
+      ftp: this.profile.ftp,
+      threshold_hr: this.profile.threshold_hr,
+      weight: this.profile.weight,
+      threshold_pace: this.profile.threshold_pace_seconds_per_km,
+    });
   }
 
   /**
@@ -592,7 +629,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       const AIR_DENSITY = 1.225;
       const DRIVETRAIN_LOSS = 0.03;
       const effectivePower = powerWatts * (1 - DRIVETRAIN_LOSS);
-      const riderWeightKg = this.profile.weight || 75;
+      const riderWeightKg = this.profile.weight || GLOBAL_DEFAULTS.weightKg;
+
       const bikeWeightKg = 8;
       const totalMassKg = riderWeightKg + bikeWeightKg;
 
@@ -949,7 +987,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     const hours = this.metrics.movingTime / 3600;
-    const weight = this.profile.weight || 75; // Default 75kg
+    const weight = this.profile.weight || GLOBAL_DEFAULTS.weightKg;
 
     // TIER 1: Power + Heart Rate (most accurate)
     if (this.metrics.avgPower > 0 && this.metrics.avgHeartRate > 0) {
@@ -1329,12 +1367,19 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   private extractProfileMetrics(
     profile: PublicProfilesRow,
-    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number },
+    metrics?: {
+      ftp?: number;
+      thresholdHr?: number;
+      weightKg?: number;
+      thresholdPaceSecondsPerKm?: number;
+    },
   ): ProfileMetrics {
     return {
       ftp: metrics?.ftp ?? undefined,
       threshold_hr: metrics?.thresholdHr ?? undefined,
       weight: metrics?.weightKg ?? undefined,
+      threshold_pace_seconds_per_km:
+        metrics?.thresholdPaceSecondsPerKm ?? undefined,
       age: undefined, // Age calculation from DOB would go here if needed
     };
   }
@@ -1343,9 +1388,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Calculate zone thresholds
    */
   private calculateZones(profile: ProfileMetrics): ZoneConfig {
-    const threshold_hr = profile.threshold_hr || 150;
-    const ftp = profile.ftp || 200;
+    const threshold_hr = profile.threshold_hr || GLOBAL_DEFAULTS.thresholdHr;
+    const ftp = profile.ftp || GLOBAL_DEFAULTS.ftp;
 
+    // TODO: Add pace zones if needed in ZoneConfig
     return {
       // 5-zone HR model
       hrZones: [

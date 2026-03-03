@@ -18,7 +18,10 @@ import {
   type IntervalStepV2,
   type RecordingCapabilities,
   type RecordingConfiguration,
+  GLOBAL_DEFAULTS,
+  type PerformanceMetrics,
 } from "@repo/core";
+
 import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 
 import { FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
@@ -121,6 +124,9 @@ export interface ServiceEvents {
   // GPS tracking events
   gpsTrackingChanged: (enabled: boolean) => void;
 
+  // Performance metrics updated (base values or scale)
+  metricsUpdated: () => void;
+
   // Index signature for EventsMap
   [key: string]: (...args: any[]) => void;
 }
@@ -185,23 +191,55 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Profile ===
   private profile: PublicProfilesRow;
   private ftp?: number;
+  private _baseFtp?: number;
+  private _ftpScale: number = 1.0;
+
   private thresholdHr?: number;
+  private _baseThresholdHr?: number;
+
   private weightKg?: number;
+  private _baseWeightKg?: number;
+
+  private thresholdPaceSecondsPerKm?: number;
+  private _baseThresholdPaceSecondsPerKm?: number;
 
   constructor(
     profile: PublicProfilesRow,
-    metrics?: { ftp?: number; thresholdHr?: number; weightKg?: number },
+    metrics?: {
+      ftp?: number;
+      thresholdHr?: number;
+      weightKg?: number;
+      thresholdPaceSecondsPerKm?: number;
+    },
   ) {
     super();
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
     // If you need more listeners, consider using Node.js EventEmitter instead
     this.profile = profile;
-    this.ftp = metrics?.ftp;
-    this.thresholdHr = metrics?.thresholdHr;
-    this.weightKg = metrics?.weightKg;
+
+    // Initialize base values from passed metrics or defaults
+    this._baseFtp = metrics?.ftp ?? GLOBAL_DEFAULTS.ftp;
+    this._baseThresholdHr = metrics?.thresholdHr ?? GLOBAL_DEFAULTS.thresholdHr;
+    this._baseWeightKg = metrics?.weightKg ?? GLOBAL_DEFAULTS.weightKg;
+    this._baseThresholdPaceSecondsPerKm =
+      metrics?.thresholdPaceSecondsPerKm ??
+      GLOBAL_DEFAULTS.thresholdPaceSecondsPerKm;
+
+    this._ftpScale = 1.0;
+
+    // Apply initial scale to FTP
+    this.ftp = Math.round((this._baseFtp || 0) * this._ftpScale);
+    this.thresholdHr = this._baseThresholdHr;
+    this.weightKg = this._baseWeightKg;
+    this.thresholdPaceSecondsPerKm = this._baseThresholdPaceSecondsPerKm;
 
     // Initialize managers
-    this.liveMetricsManager = new LiveMetricsManager(profile, metrics);
+    this.liveMetricsManager = new LiveMetricsManager(profile, {
+      ftp: this.ftp,
+      thresholdHr: this.thresholdHr,
+      weightKg: this.weightKg,
+      thresholdPaceSecondsPerKm: this.thresholdPaceSecondsPerKm,
+    });
     this.locationManager = new LocationManager();
     this.sensorsManager = new SensorsManager();
 
@@ -267,6 +305,106 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public getSimplifiedMetrics(): SimplifiedMetrics {
     return this.liveMetricsManager.getSimplifiedMetrics();
+  }
+
+  /**
+   * Update performance metrics reactively
+   * Updates internal values and LiveMetricsManager calculations.
+   * If recording with a plan, re-applies ERG targets to trainer.
+   */
+  public updateMetrics(metrics: Partial<PerformanceMetrics>): void {
+    console.log("[Service] Updating metrics:", metrics);
+
+    if (metrics.ftp !== undefined) {
+      this._baseFtp = metrics.ftp;
+      this.ftp = Math.round(this._baseFtp * this._ftpScale);
+    }
+    if (metrics.thresholdHr !== undefined) {
+      this._baseThresholdHr = metrics.thresholdHr;
+      this.thresholdHr = metrics.thresholdHr;
+    }
+    if (metrics.weightKg !== undefined) {
+      this._baseWeightKg = metrics.weightKg;
+      this.weightKg = metrics.weightKg;
+    }
+    if (metrics.thresholdPaceSecondsPerKm !== undefined) {
+      this._baseThresholdPaceSecondsPerKm = metrics.thresholdPaceSecondsPerKm;
+      this.thresholdPaceSecondsPerKm = Math.round(
+        this._baseThresholdPaceSecondsPerKm / this._ftpScale,
+      );
+    }
+
+    // Update LiveMetricsManager
+    this.liveMetricsManager.updateMetrics({
+      ftp: this.ftp,
+      thresholdHr: this.thresholdHr,
+      weightKg: this.weightKg,
+      thresholdPaceSecondsPerKm: this.thresholdPaceSecondsPerKm,
+    });
+
+    // If recording and has a plan, re-apply targets (e.g. for %FTP targets in ERG mode)
+    if (this.state === "recording" && this.hasPlan && this.currentStep) {
+      console.log("[Service] Re-applying targets with new metrics");
+      this.applyStepTargets(this.currentStep).catch(console.error);
+    }
+
+    this.emit("metricsUpdated");
+  }
+
+  /**
+   * Scale the workout intensity for this session.
+   * Affects FTP and Threshold Pace reactively.
+   */
+  public setIntensityScale(scale: number): void {
+    console.log(`[Service] Setting intensity scale: ${scale * 100}%`);
+    this._ftpScale = scale;
+
+    const updates: Partial<PerformanceMetrics> = {};
+
+    if (this._baseFtp) {
+      this.ftp = Math.round(this._baseFtp * scale);
+      updates.ftp = this.ftp;
+    }
+
+    if (this._baseThresholdPaceSecondsPerKm) {
+      // Pace is seconds per km. Higher intensity = lower pace (faster).
+      this.thresholdPaceSecondsPerKm = Math.round(
+        this._baseThresholdPaceSecondsPerKm / scale,
+      );
+      updates.thresholdPaceSecondsPerKm = this.thresholdPaceSecondsPerKm;
+    }
+
+    // Update LiveMetricsManager
+    if (Object.keys(updates).length > 0) {
+      this.liveMetricsManager.updateMetrics(updates);
+
+      // Re-apply targets if recording with plan
+      if (this.state === "recording" && this.hasPlan && this.currentStep) {
+        this.applyStepTargets(this.currentStep).catch(console.error);
+      }
+    }
+
+    this.emit("metricsUpdated");
+  }
+
+  public getIntensityScale(): number {
+    return this._ftpScale;
+  }
+
+  public getBaseFtp(): number | undefined {
+    return this._baseFtp;
+  }
+
+  public getBaseThresholdPace(): number | undefined {
+    return this._baseThresholdPaceSecondsPerKm;
+  }
+
+  public getBaseThresholdHr(): number | undefined {
+    return this._baseThresholdHr;
+  }
+
+  public getBaseWeight(): number | undefined {
+    return this._baseWeightKg;
   }
 
   // ================================
@@ -1533,20 +1671,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   ): number | null {
     // Handle percentage of FTP
     if (target.type === "%FTP") {
-      if (!this.ftp) {
-        console.warn(
-          "[Service] Cannot apply %FTP target - no FTP value in profile. User should set FTP in settings.",
-        );
-        this.emit(
-          "error",
-          "Cannot apply power target: FTP not set in profile. Please set your FTP in settings.",
-        );
-        return null;
-      }
       const percentage = target.intensity;
-      const watts = Math.round((percentage / 100) * this.ftp);
+      const ftp = this.ftp || GLOBAL_DEFAULTS.ftp;
+      const watts = Math.round((percentage / 100) * ftp);
       console.log(
-        `[Service] Resolved %FTP target: ${percentage}% of ${this.ftp}W = ${watts}W`,
+        `[Service] Resolved %FTP target: ${percentage}% of ${ftp}W = ${watts}W`,
       );
       return watts;
     }

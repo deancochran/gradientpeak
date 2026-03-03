@@ -47,8 +47,8 @@ export async function addEstimationToPlan(
   let route: any = undefined;
   if (plan.route_id) {
     const { data: routeData } = await supabase
-      .from("routes")
-      .select("distance_meters, total_ascent, total_descent, average_grade")
+      .from("activity_routes")
+      .select("distance_meters:total_distance, total_ascent, total_descent")
       .eq("id", plan.route_id)
       .single();
     route = routeData;
@@ -94,6 +94,72 @@ export async function addEstimationToPlan(
 }
 
 /**
+ * Compute metrics for a plan before saving to database
+ */
+export async function computePlanMetrics(
+  planInput: {
+    activity_category: string;
+    structure: any;
+    route_id?: string | null;
+  },
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{
+  estimated_tss: number;
+  estimated_duration_seconds: number;
+  intensity_factor: number;
+  estimated_distance_meters: number;
+}> {
+  // Fetch user profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("ftp, threshold_hr, max_hr, resting_hr, weight_kg, dob")
+    .eq("id", userId)
+    .single();
+
+  // Fetch route if referenced
+  let route: any = undefined;
+  if (planInput.route_id) {
+    const { data: routeData } = await supabase
+      .from("activity_routes") // Ensure correct table name
+      .select("*")
+      .eq("id", planInput.route_id)
+      .single();
+
+    if (routeData) {
+      route = {
+        distance_meters: routeData.total_distance,
+        total_ascent: routeData.total_ascent,
+        total_descent: routeData.total_descent,
+        average_grade: (routeData as any).average_grade, // Cast if needed based on table schema
+      };
+    }
+  }
+
+  // Build estimation context
+  const context = buildEstimationContext({
+    userProfile: profile || {},
+    activityPlan: {
+      activity_category: planInput.activity_category as any,
+      structure: planInput.structure,
+      route_id: planInput.route_id ?? undefined,
+    },
+    route,
+  });
+
+  // Calculate estimation
+  const estimation = estimateActivity(context);
+  const metrics = estimateMetrics(estimation, context);
+
+  return {
+    estimated_tss: estimation.tss,
+    estimated_duration_seconds: estimation.duration,
+    intensity_factor: estimation.intensityFactor,
+    estimated_distance_meters: metrics.distance || 0,
+  };
+}
+
+/**
  * Calculate TSS and metrics for multiple activity plans
  * More efficient than calling addEstimationToPlan repeatedly
  */
@@ -121,8 +187,8 @@ export async function addEstimationToPlans(
   let routesMap = new Map<string, any>();
   if (routeIds.length > 0) {
     const { data: routes } = await supabase
-      .from("routes")
-      .select("id, distance_meters, total_ascent, total_descent, average_grade")
+      .from("activity_routes")
+      .select("id, distance_meters:total_distance, total_ascent, total_descent")
       .in("id", routeIds);
 
     if (routes) {

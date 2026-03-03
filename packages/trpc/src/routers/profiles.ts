@@ -249,6 +249,16 @@ export const profilesRouter = createTRPCRouter({
         .limit(1)
         .maybeSingle();
 
+      // Fetch latest weight from profile metrics (weight_kg)
+      const { data: weightMetric } = await ctx.supabase
+        .from("profile_metrics")
+        .select("value")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("metric_type", "weight_kg")
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       // Fetch latest FTP from activity efforts (best 20m power * 0.95)
       const cutoffDate = new Date(
         Date.now() - 90 * 24 * 60 * 60 * 1000,
@@ -265,10 +275,33 @@ export const profilesRouter = createTRPCRouter({
         .limit(1)
         .maybeSingle();
 
+      // Fetch latest threshold pace from activity efforts (best 10km proxy or similar)
+      // For now, let's look for best 1km pace as a proxy if we don't have a 10k effort
+      const { data: bestPace } = await ctx.supabase
+        .from("activity_efforts")
+        .select("value")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("activity_category", "run")
+        .eq("effort_type", "speed")
+        .gte("recorded_at", cutoffDate)
+        .order("value", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       const threshold_hr = lthrMetric?.value
         ? Number(lthrMetric.value)
         : undefined;
+      const weight_kg = weightMetric?.value
+        ? Number(weightMetric.value)
+        : undefined;
       const ftp = best20m?.value ? Math.round(best20m.value * 0.95) : undefined;
+
+      // Threshold pace proxy from speed (mps to sec/km)
+      // 1 mps = 1000 sec/km
+      // pace (sec/km) = 1000 / speed (mps)
+      const threshold_pace = bestPace?.value
+        ? Math.round(1000 / (Number(bestPace.value) * 0.9)) // Assume threshold is ~90% of best recorded speed
+        : undefined;
 
       // Calculate heart rate zones based on threshold HR
       // Threshold HR is typically at the top of Zone 3 (~85-90% of max HR)
@@ -334,6 +367,8 @@ export const profilesRouter = createTRPCRouter({
         profile: {
           threshold_hr: threshold_hr,
           ftp: ftp,
+          weight_kg: weight_kg,
+          threshold_pace: threshold_pace,
         },
       };
     } catch (error) {

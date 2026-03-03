@@ -172,6 +172,8 @@ export interface ProfileMetrics {
   threshold_hr?: number; // Lactate Threshold Heart Rate
   weight?: number; // kg
   age?: number; // years
+  threshold_pace?: number; // seconds per km (deprecated: use threshold_pace_seconds_per_km)
+  threshold_pace_seconds_per_km?: number;
 }
 
 // === Update Events ===
