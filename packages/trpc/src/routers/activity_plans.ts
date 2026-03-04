@@ -535,24 +535,12 @@ export const activityPlansRouter = createTRPCRouter({
         .eq("import_external_id", externalId)
         .maybeSingle();
 
-      // Compute metrics before saving
-      const metrics = await computePlanMetrics(
-        {
-          activity_category: input.activity_category,
-          structure: input.structure,
-          route_id: null,
-        },
-        ctx.supabase,
-        ctx.session.user.id,
-      );
-
       const payload = {
         name: input.name,
         description: input.description ?? "",
         notes: input.notes ?? null,
         activity_category: input.activity_category,
         structure: input.structure,
-        ...metrics,
         version: "1.0",
         profile_id: ctx.session.user.id,
         template_visibility: "private",
@@ -615,24 +603,12 @@ export const activityPlansRouter = createTRPCRouter({
         .eq("import_external_id", externalId)
         .maybeSingle();
 
-      // Compute metrics before saving
-      const metrics = await computePlanMetrics(
-        {
-          activity_category: input.activity_category,
-          structure: input.structure,
-          route_id: null,
-        },
-        ctx.supabase,
-        ctx.session.user.id,
-      );
-
       const payload = {
         name: input.name,
         description: input.description ?? "",
         notes: input.notes ?? null,
         activity_category: input.activity_category,
         structure: input.structure,
-        ...metrics,
         version: "1.0",
         profile_id: ctx.session.user.id,
         template_visibility: "private",
