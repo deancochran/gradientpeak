@@ -1,146 +1,91 @@
-drop trigger if exists on_auth_user_created on auth.users;
+-- Supabase seed.sql for development data
+-- This file is used to populate your database with sample data for development
 
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer set search_path = ''
-as $$
-declare
-    base_username text;
-    unique_suffix text;
-    final_username text;
-begin
-    base_username := coalesce(
-        nullif(concat_ws('',
-            new.raw_user_meta_data->>'first_name',
-            new.raw_user_meta_data->>'last_name'
-        ), ''),
-        split_part(new.email, '@', 1)
-    );
-
-    unique_suffix := substring(replace(new.id::text, '-', '') from 1 for 6);
-    final_username := left(base_username || unique_suffix, 50);
-
-    insert into public.profiles (id, username, avatar_url)
-    values (
-        new.id,
-        final_username,
-        new.raw_user_meta_data->>'avatar_url'
-    );
-
-    return new;
-end;
-$$;
-
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute procedure public.handle_new_user();
-
--- PROFILE AVATAR BUCKET
+-- Create storage bucket for profile avatars
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'profile-avatars',
   'profile-avatars',
   true,
-  5242880,  -- 5MB
-  array['image/jpeg', 'image/jpg', 'image/png']::text[]
+  5242880, -- 5MB
+  array['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']::text[]
 ) on conflict (id) do nothing;
 
--- Drop policy if exists
-drop policy if exists "Users can manage their own avatar" on storage.objects;
-create policy "Users can manage their own avatar"
+
+-- Policy: Users can upload their own avatar (folder structure: user_id/filename)
+create policy "Users can upload their own avatar"
 on storage.objects
-for all
-using (
-  bucket_id = 'profile-avatars'
-  and auth.uid()::text = (storage.foldername(name))[1]
-)
+for insert
 with check (
   bucket_id = 'profile-avatars'
   and auth.uid()::text = (storage.foldername(name))[1]
 );
 
-drop policy if exists "Anyone can view avatars" on storage.objects;
+-- Policy: Anyone can view avatars (since bucket is public)
 create policy "Anyone can view avatars"
 on storage.objects
 for select
 using (bucket_id = 'profile-avatars');
 
-
-
--- GPX ROUTES BUCKET
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values (
-  'profile-routes',
-  'profile-routes',
-  false,  -- keep private by default
-  10485760,  -- 10MB limit
-  array['application/gpx+xml', 'application/xml']::text[]
-) on conflict (id) do nothing;
-
--- Drop existing policies if any
-drop policy if exists "Users can manage their own routes" on storage.objects;
-drop policy if exists "Users can view their own routes" on storage.objects;
-
--- Users can manage their own GPX files
-create policy "Users can manage their own routes"
+-- Policy: Users can update/replace their own avatar
+create policy "Users can update their own avatar"
 on storage.objects
-for all
+for update
 using (
-  bucket_id = 'profile-routes'
+  bucket_id = 'profile-avatars'
   and auth.uid()::text = (storage.foldername(name))[1]
-)
-with check (
-  bucket_id = 'profile-routes'
+);
+
+-- Policy: Users can delete their own avatar
+create policy "Users can delete their own avatar"
+on storage.objects
+for delete
+using (
+  bucket_id = 'profile-avatars'
   and auth.uid()::text = (storage.foldername(name))[1]
 );
 
 
--- FIT FILES BUCKET
+-- Create storage bucket for activity files
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-  'fit-files',
-  'fit-files',
-  false,  -- keep private by default
-  52428800,  -- 50MB limit
-  array['application/fit', 'application/octet-stream']::text[]
+  'activity-json-files',
+  'activity-json-files',
+  false, -- keep private since these are user workouts
+  104857600, -- 100MB per activity file, adjust if needed
+  array['application/octet-stream', 'application/json']::text[]
 ) on conflict (id) do nothing;
 
--- Drop existing FIT file policies if any
-drop policy if exists "Users can upload their own FIT files" on storage.objects;
-drop policy if exists "Users can read their own FIT files" on storage.objects;
-drop policy if exists "Service role can manage all FIT files" on storage.objects;
+-- Service role can manage json files (create/read/update/delete)
+CREATE POLICY "Service role can manage json files" ON storage.objects
+FOR ALL USING (
+    bucket_id = 'activity-json-files'
+    AND auth.role() = 'service_role'
+);
 
--- Users can upload their own FIT files
-create policy "Users can upload their own FIT files"
+-- Policy: Users can upload their own activity files (folder structure: user_id/filename)
+create policy "Users can upload their own activity files"
 on storage.objects
 for insert
 with check (
-  bucket_id = 'fit-files'
+  bucket_id = 'activity-json-files'
   and auth.uid()::text = (storage.foldername(name))[1]
 );
 
--- Users can read their own FIT files
-create policy "Users can read their own FIT files"
+-- Policy: Users can read their own activity files
+create policy "Users can read their own activity files"
 on storage.objects
 for select
 using (
-  bucket_id = 'fit-files'
+  bucket_id = 'activity-json-files'
   and auth.uid()::text = (storage.foldername(name))[1]
 );
 
--- Service role can manage all FIT files
-create policy "Service role can manage all FIT files"
+-- Policy: Users can update their own activity files
+create policy "Users can update their own activity files"
 on storage.objects
-for all
-using (bucket_id = 'fit-files')
-with check (bucket_id = 'fit-files');
-
--- ============================================================================
--- SYSTEM ACTIVITY PLAN TEMPLATES
--- ============================================================================
--- Templates are now seeded via TypeScript script for better maintainability.
--- Run: pnpm seed-templates
---
--- See: packages/supabase/scripts/seed-templates.ts
--- Template definitions: packages/core/samples/index.ts
+for update
+using (
+  bucket_id = 'activity-json-files'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);

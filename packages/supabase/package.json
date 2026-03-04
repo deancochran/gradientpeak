@@ -2,26 +2,15 @@
   "name": "@repo/supabase",
   "version": "0.0.0",
   "private": true,
-  "main": "./index.ts",
+  "main": "./database.types.ts",
+  "types": "./database.types.ts",
   "exports": {
-    ".": "./index.ts"
-  },
-  "scripts": {
-    "dev": "run-s dev:supabase dev:functions",
-    "dev:supabase": "SUPABASE_PUBLIC_API_URL=${SUPABASE_PUBLIC_API_URL:-http://127.0.0.1:54321} SUPABASE_AUTH_SITE_URL=${SUPABASE_AUTH_SITE_URL:-http://127.0.0.1:3000} SUPABASE_AUTH_WEB_REDIRECT_URL=${SUPABASE_AUTH_WEB_REDIRECT_URL:-http://127.0.0.1:3000} SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE=${SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE:-https://127.0.0.1:3000} supabase start",
-    "stop:supabase": "supabase stop",
-    "dev:functions": "SUPABASE_PUBLIC_API_URL=${SUPABASE_PUBLIC_API_URL:-http://127.0.0.1:54321} SUPABASE_AUTH_SITE_URL=${SUPABASE_AUTH_SITE_URL:-http://127.0.0.1:3000} SUPABASE_AUTH_WEB_REDIRECT_URL=${SUPABASE_AUTH_WEB_REDIRECT_URL:-http://127.0.0.1:3000} SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE=${SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE:-https://127.0.0.1:3000} supabase functions serve",
-    "functions:deploy": "supabase functions deploy",
-    "functions:new": "supabase functions new",
-    "update-types": "npm run generate-types && npm run generate-schemas",
-    "generate-types": "supabase gen types typescript --local > database.types.ts",
-    "generate-schemas": "supazod -i database.types.ts -o supazod/schemas.ts -t supazod/schemas.types.ts -s public,schema_a,schema_b",
-    "seed-templates": "tsx scripts/seed-templates.ts",
-    "seed-training-plans": "tsx scripts/seed-training-plan-templates.ts"
+    ".": "./database.types.ts"
   },
   "devDependencies": {
-    "npm-run-all": "^4.1.5",
-    "supabase": "^1.0.0",
-    "supazod": "^4.5.0"
+    "@repo/typescript-config": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
   }
 }

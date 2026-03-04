@@ -2,7 +2,7 @@
 # https://supabase.com/docs/guides/local-development/cli/config
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
 # working directory name when running `supabase init`.
-project_id = "gradientpeak"
+project_id = "TurboFitLocal"
 
 [api]
 enabled = true
@@ -81,7 +81,7 @@ enabled = true
 # Port to use for Supabase Studio.
 port = 54323
 # External URL of the API server that frontend connects to.
-api_url = "env(SUPABASE_PUBLIC_API_URL)"
+api_url = "http://192.168.0.96"
 # OpenAI API Key to use for Supabase AI in the Supabase Studio.
 openai_api_key = "env(OPENAI_API_KEY)"
 
@@ -113,26 +113,23 @@ file_size_limit = "50MiB"
 # allowed_mime_types = ["image/png", "image/jpeg"]
 # objects_path = "./images"
 
-[storage.buckets.gpx-routes]
-public = false
-file_size_limit = "10MiB"
-allowed_mime_types = ["application/gpx+xml", "text/xml", "application/xml"]
-
 [auth]
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "env(SUPABASE_AUTH_SITE_URL)"
+site_url = "http://192.168.0.96:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = [
-  "env(SUPABASE_AUTH_WEB_REDIRECT_URL)",
-  "env(SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE)",
-  "gradientpeak-dev://auth/callback",
-  "gradientpeak-dev://(modal)/reset-password",
-  "gradientpeak-prev://auth/callback",
-  "gradientpeak-prev://(modal)/reset-password",
-  "gradientpeak://auth/callback",
-  "gradientpeak://(modal)/reset-password",
+    "http://127.0.0.1:3000",
+    "https://127.0.0.1:3000",
+    "http://192.168.0.96:3000",
+    "https://192.168.0.96:3000",
+    "app-scheme-dev://auth/callback",
+    "app-scheme-dev://auth/reset-password",
+    "app-scheme-prev://auth/callback",
+    "app-scheme-prev://auth/reset-password",
+    "app-scheme://auth/callback",
+    "app-scheme://auth/reset-password",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
@@ -157,7 +154,7 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 50
+email_sent = 2
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -184,7 +181,6 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-# Must be true to enforce verification-before-onboarding flow.
 enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
@@ -219,19 +215,6 @@ content_path = "./supabase/templates/invite.html"
 [auth.email.template.recovery]
 subject = "Reset your password for {{ .SiteName }}"
 content_path = "./supabase/templates/recovery.html"
-
-[auth.email.template.email_change]
-subject = "Confirm your email change for {{ .SiteName }}"
-content_path = "./supabase/templates/email_change.html"
-
-# Security Notifications
-[auth.email.notification.password_changed]
-enabled = true
-content_path = "./templates/password_changed_notification.html"
-
-[auth.email.notification.email_changed]
-enabled = true
-content_path = "./templates/email_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
@@ -353,7 +336,7 @@ deno_version = 1
 # secret_key = "env(SECRET_VALUE)"
 
 [analytics]
-enabled = false
+enabled = true
 port = 54327
 # Configure one of the supported backends: `postgres`, `bigquery`.
 backend = "postgres"
@@ -370,14 +353,3 @@ s3_region = "env(S3_REGION)"
 s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
-
-[functions.analyze-fit-file]
-enabled = true
-verify_jwt = true
-import_map = "./functions/analyze-fit-file/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
-entrypoint = "./functions/analyze-fit-file/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/analyze-fit-file/*.html" ]
