@@ -4,12 +4,8 @@
  * Validates that user profile has required metrics for plan execution
  */
 
-import type {
-  RecordingServiceActivityPlan
-} from "@repo/core";
-import type {
-  PublicProfilesRow
-} from "@repo/supabase";
+import { GLOBAL_DEFAULTS, type RecordingServiceActivityPlan } from "@repo/core";
+import type { PublicProfilesRow } from "@repo/supabase";
 
 export interface PlanValidationResult {
   isValid: boolean;
@@ -56,22 +52,16 @@ export function validatePlanRequirements(
 
   // Check if FTP is required but missing
   if (allTargetTypes.has("%FTP") && !metrics?.ftp) {
-    missingMetrics.push({
-      name: "FTP (Functional Threshold Power)",
-      description:
-        "This workout uses power targets based on your FTP. Without FTP set, automatic trainer control (ERG mode) cannot be applied.",
-      settingPath: "Settings → Profile → FTP",
-    });
+    warnings.push(
+      `Using default FTP (${GLOBAL_DEFAULTS.ftp}W). Set your FTP in Settings for more accurate training.`,
+    );
   }
 
   // Check if threshold HR is required but missing
   if (allTargetTypes.has("%ThresholdHR") && !metrics?.thresholdHr) {
-    missingMetrics.push({
-      name: "Threshold Heart Rate",
-      description:
-        "This workout uses heart rate targets based on your threshold HR. Without it set, you'll see percentage values instead of absolute BPM.",
-      settingPath: "Settings → Profile → Threshold HR",
-    });
+    warnings.push(
+      `Using default Threshold HR (${GLOBAL_DEFAULTS.thresholdHr} bpm). Set yours in Settings for more accurate training.`,
+    );
   }
 
   // // Check if max HR is required but missing (less critical)

@@ -49,20 +49,28 @@ export function useSimplifiedMetrics(
     setMetrics(initialMetrics);
 
     // Subscribe to updates from LiveMetricsManager
-    const subscription = service.liveMetricsManager.addListener(
+    const updateMetrics = () => {
+      const updatedMetrics = service.getSimplifiedMetrics();
+      setMetrics((prev) => {
+        // Deep comparison to prevent unnecessary re-renders
+        if (isEqual(prev, updatedMetrics)) return prev;
+        return updatedMetrics;
+      });
+    };
+
+    const statsSubscription = service.liveMetricsManager.addListener(
       "statsUpdate",
-      () => {
-        const updatedMetrics = service.getSimplifiedMetrics();
-        setMetrics((prev) => {
-          // Deep comparison to prevent unnecessary re-renders
-          if (isEqual(prev, updatedMetrics)) return prev;
-          return updatedMetrics;
-        });
-      },
+      updateMetrics,
+    );
+
+    const metricsSubscription = service.liveMetricsManager.addListener(
+      "metricsUpdated",
+      updateMetrics,
     );
 
     return () => {
-      subscription.remove();
+      statsSubscription.remove();
+      metricsSubscription.remove();
     };
   }, [service]);
 

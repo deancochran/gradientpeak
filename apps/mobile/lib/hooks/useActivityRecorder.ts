@@ -467,6 +467,7 @@ export function useActivityStatus(service: ActivityRecorderService | null): {
   activityCategory: PublicActivityCategory;
 } {
   useServiceEvent(service, "activitySelected");
+  useServiceEvent(service, "gpsTrackingChanged");
 
   const activityCategory = service?.selectedActivityCategory || "bike";
   const gpsRecordingEnabled = service?.isGpsRecordingEnabled() ?? true;
@@ -545,6 +546,51 @@ export function useGpsTracking(service: ActivityRecorderService | null) {
     toggleGps,
     enableGps,
     disableGps,
+  };
+}
+
+/**
+ * Hook to track and control workout intensity scaling (FTP scale)
+ */
+export function useIntensityScale(service: ActivityRecorderService | null) {
+  const [scale, setScale] = useState(service?.getIntensityScale() ?? 1.0);
+  const [baseFtp, setBaseFtp] = useState(service?.getBaseFtp());
+  const [baseThresholdHr, setBaseThresholdHr] = useState(
+    service?.getBaseThresholdHr(),
+  );
+  const [baseWeight, setBaseWeight] = useState(service?.getBaseWeight());
+  const [baseThresholdPace, setBaseThresholdPace] = useState(
+    service?.getBaseThresholdPace(),
+  );
+
+  useEffect(() => {
+    if (!service) return;
+
+    const handleUpdate = () => {
+      setScale(service.getIntensityScale());
+      setBaseFtp(service.getBaseFtp());
+      setBaseThresholdHr(service.getBaseThresholdHr());
+      setBaseWeight(service.getBaseWeight());
+      setBaseThresholdPace(service.getBaseThresholdPace());
+    };
+
+    // Initial state
+    handleUpdate();
+
+    const sub = service.addListener("metricsUpdated", handleUpdate);
+    return () => sub.remove();
+  }, [service]);
+
+  return {
+    scale,
+    baseFtp,
+    baseThresholdHr,
+    baseWeight,
+    baseThresholdPace,
+    setIntensityScale: (s: number) => service?.setIntensityScale(s),
+    updateMetrics: (
+      m: Parameters<ActivityRecorderService["updateMetrics"]>[0],
+    ) => service?.updateMetrics(m),
   };
 }
 

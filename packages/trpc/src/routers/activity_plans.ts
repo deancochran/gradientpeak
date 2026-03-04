@@ -9,6 +9,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   addEstimationToPlan,
   addEstimationToPlans,
+  computePlanMetrics,
 } from "../utils/estimation-helpers";
 
 // Input schemas for queries
@@ -259,10 +260,22 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
+      // Compute metrics before saving
+      const metrics = await computePlanMetrics(
+        {
+          activity_category: input.activity_category,
+          structure: input.structure,
+          route_id: input.route_id,
+        },
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
       const { data, error } = await ctx.supabase
         .from("activity_plans")
         .insert({
           ...input,
+          ...metrics,
           description: input.description || "",
           profile_id: ctx.session.user.id,
           version: "1.0", // Default version
@@ -327,9 +340,33 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
+      // If structure or route or activity category changed, recompute metrics
+      let metricsUpdates = {};
+      if (
+        updates.structure ||
+        updates.route_id !== undefined ||
+        updates.activity_category
+      ) {
+        const metrics = await computePlanMetrics(
+          {
+            activity_category:
+              updates.activity_category || existing.activity_category,
+            structure: updates.structure || existing.structure,
+            route_id:
+              updates.route_id !== undefined
+                ? updates.route_id
+                : existing.route_id,
+          },
+          ctx.supabase,
+          ctx.session.user.id,
+        );
+        metricsUpdates = metrics;
+      }
+
       // Handle description field - convert null to empty string if present
       const sanitizedUpdates: typeof updates & { description?: string } = {
         ...updates,
+        ...metricsUpdates,
         description: updates.description === null ? "" : updates.description,
       };
 
@@ -440,6 +477,17 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
+      // Compute metrics for the duplicate
+      const metrics = await computePlanMetrics(
+        {
+          activity_category: originalPlan.activity_category,
+          structure: originalPlan.structure,
+          route_id: originalPlan.route_id,
+        },
+        ctx.supabase,
+        ctx.session.user.id,
+      );
+
       // Create the duplicate
       const { data, error } = await ctx.supabase
         .from("activity_plans")
@@ -448,6 +496,7 @@ export const activityPlansRouter = createTRPCRouter({
           description: originalPlan.description,
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
+          ...metrics,
           version: originalPlan.version,
           route_id: originalPlan.route_id,
           profile_id: ctx.session.user.id,

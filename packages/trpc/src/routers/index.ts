@@ -3,11 +3,14 @@ import { createTRPCRouter } from "../trpc";
 import { activitiesRouter } from "./activities";
 import { activityPlansRouter } from "./activity_plans";
 import { authRouter } from "./auth";
+import { coachingRouter } from "./coaching";
 import { eventsRouter } from "./events";
 import { fitFilesRouter } from "./fit-files";
 import { homeRouter } from "./home";
 import { integrationsRouter } from "./integrations";
 import { libraryRouter } from "./library";
+import { messagingRouter } from "./messaging";
+import { notificationsRouter } from "./notifications";
 import { onboardingRouter } from "./onboarding";
 import { profilesRouter } from "./profiles";
 
@@ -21,6 +24,7 @@ import { analyticsRouter } from "./analytics";
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
+  coaching: coachingRouter,
   profiles: profilesRouter,
   analytics: analyticsRouter,
 
@@ -32,6 +36,8 @@ export const appRouter = createTRPCRouter({
   fitFiles: fitFilesRouter,
   integrations: integrationsRouter,
   library: libraryRouter,
+  messaging: messagingRouter,
+  notifications: notificationsRouter,
   trainingPlans: trainingPlansRouter,
   routes: routesRouter,
   trends: trendsRouter,

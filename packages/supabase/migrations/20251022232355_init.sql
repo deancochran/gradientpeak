@@ -793,3 +793,179 @@ grant trigger on table "public"."training_plans" to "service_role";
 grant truncate on table "public"."training_plans" to "service_role";
 
 grant update on table "public"."training_plans" to "service_role";
+
+--
+-- Enable UUID generation
+--
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+--
+-- General purpose function to update `updated_at` timestamp on tables
+--
+CREATE OR REPLACE FUNCTION trigger_set_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+--
+-- COACHING FEATURE SCHEMA
+--
+
+-- Enum for coaching invitation status
+CREATE TYPE coaching_invitation_status AS ENUM ('pending', 'accepted', 'declined');
+
+-- Table to store coaching invitations
+CREATE TABLE coaching_invitations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    athlete_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    coach_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    status coaching_invitation_status NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(athlete_id, coach_id) -- An athlete can only invite a coach once
+);
+COMMENT ON TABLE coaching_invitations IS 'Stores coaching invitations from athletes to potential coaches.';
+
+-- Table to store the relationship between coaches and athletes
+CREATE TABLE coaches_athletes (
+    coach_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    athlete_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (coach_id, athlete_id),
+    UNIQUE (athlete_id) -- Enforces that an athlete can only have one coach at a time
+);
+COMMENT ON TABLE coaches_athletes IS 'A linking table to establish the relationship between a coach and an athlete.';
+
+-- Table for audit logs to track coach edits
+CREATE TABLE audit_log (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    actor_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    target_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    target_table TEXT,
+    target_record_id UUID,
+    details JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+COMMENT ON TABLE audit_log IS 'Tracks actions performed by users, especially coaches editing athlete data.';
+
+--
+-- MESSAGING FEATURE SCHEMA
+--
+
+-- Table to store conversations (both 1-on-1 and group)
+CREATE TABLE conversations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    is_group BOOLEAN NOT NULL DEFAULT FALSE,
+    group_name TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_message_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+COMMENT ON TABLE conversations IS 'Represents a single conversation, which can be a DM or a group chat.';
+
+-- Table to link users to conversations
+CREATE TABLE conversation_participants (
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (conversation_id, user_id)
+);
+COMMENT ON TABLE conversation_participants IS 'A linking table to manage participants in a conversation.';
+
+-- Table to store messages
+CREATE TABLE messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    sender_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    content TEXT NOT NULL CHECK (char_length(content) > 0 AND char_length(content) <= 5000),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ -- for soft deletes
+);
+COMMENT ON TABLE messages IS 'Stores individual messages within a conversation.';
+
+--
+-- NOTIFICATIONS FEATURE SCHEMA
+--
+
+-- Enum for notification types
+CREATE TYPE notification_type AS ENUM (
+    'new_message',
+    'coaching_invitation',
+    'coaching_invitation_accepted',
+    'coaching_invitation_declined',
+    'new_follower'
+);
+
+-- Table for user notifications
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, -- The recipient of the notification
+    actor_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, -- The user who triggered the notification
+    type notification_type NOT NULL,
+    entity_id UUID, -- Polymorphic reference to the related entity (e.g., message id, invitation id)
+    read_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+COMMENT ON TABLE notifications IS 'Stores in-app notifications for users.';
+
+
+--
+-- INDEXES for performance
+--
+CREATE INDEX idx_coaching_invitations_athlete_id ON coaching_invitations(athlete_id);
+CREATE INDEX idx_coaching_invitations_coach_id ON coaching_invitations(coach_id);
+CREATE INDEX idx_audit_log_actor_id ON audit_log(actor_id);
+CREATE INDEX idx_audit_log_target_user_id ON audit_log(target_user_id);
+CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+
+
+--
+-- TRIGGERS for `updated_at` timestamps
+--
+CREATE TRIGGER set_coaching_invitations_timestamp
+BEFORE UPDATE ON coaching_invitations
+FOR EACH ROW
+EXECUTE PROCEDURE trigger_set_timestamp();
+
+--
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- Best practice for Supabase is to enable RLS on all tables and define policies.
+--
+
+-- Coaching
+ALTER TABLE coaching_invitations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage their own coaching invitations" ON coaching_invitations
+    FOR ALL USING (auth.uid() = athlete_id OR auth.uid() = coach_id);
+
+ALTER TABLE coaches_athletes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can see their own coaching relationships" ON coaches_athletes
+    FOR SELECT USING (auth.uid() = coach_id OR auth.uid() = athlete_id);
+
+-- Messaging
+ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can access conversations they are a part of" ON conversations
+    FOR SELECT USING (id IN (SELECT conversation_id FROM conversation_participants WHERE user_id = auth.uid()));
+
+ALTER TABLE conversation_participants ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can access participant info for conversations they are in" ON conversation_participants
+    FOR SELECT USING (conversation_id IN (SELECT conversation_id FROM conversation_participants WHERE user_id = auth.uid()));
+CREATE POLICY "Users can manage their own participation" ON conversation_participants
+    FOR ALL USING (user_id = auth.uid());
+
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can access messages in conversations they are a part of" ON messages
+    FOR SELECT USING (conversation_id IN (SELECT conversation_id FROM conversation_participants WHERE user_id = auth.uid()));
+CREATE POLICY "Users can insert messages in conversations they are a part of" ON messages
+    FOR INSERT WITH CHECK (conversation_id IN (SELECT conversation_id FROM conversation_participants WHERE user_id = auth.uid()) AND sender_id = auth.uid());
+CREATE POLICY "Users can soft-delete their own messages" ON messages
+    FOR UPDATE USING (sender_id = auth.uid()) WITH CHECK (sender_id = auth.uid());
+
+
+-- Notifications
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can view and manage their own notifications" ON notifications
+    FOR ALL USING (user_id = auth.uid());

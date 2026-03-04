@@ -9,6 +9,9 @@ import * as generated from "./schemas";
 export type PublicActivityCategory = z.infer<
   typeof generated.publicActivityCategorySchema
 >;
+export type PublicCoachingInvitationStatus = z.infer<
+  typeof generated.publicCoachingInvitationStatusSchema
+>;
 export type PublicEffortType = z.infer<typeof generated.publicEffortTypeSchema>;
 export type PublicEventStatus = z.infer<
   typeof generated.publicEventStatusSchema
@@ -17,6 +20,9 @@ export type PublicEventType = z.infer<typeof generated.publicEventTypeSchema>;
 export type PublicGender = z.infer<typeof generated.publicGenderSchema>;
 export type PublicIntegrationProvider = z.infer<
   typeof generated.publicIntegrationProviderSchema
+>;
+export type PublicNotificationType = z.infer<
+  typeof generated.publicNotificationTypeSchema
 >;
 export type PublicProfileMetricType = z.infer<
   typeof generated.publicProfileMetricTypeSchema
@@ -73,6 +79,54 @@ export type PublicActivityRoutesUpdate = z.infer<
 export type PublicActivityRoutesRelationships = z.infer<
   typeof generated.publicActivityRoutesRelationshipsSchema
 >;
+export type PublicAuditLogRow = z.infer<
+  typeof generated.publicAuditLogRowSchema
+>;
+export type PublicAuditLogInsert = z.infer<
+  typeof generated.publicAuditLogInsertSchema
+>;
+export type PublicAuditLogUpdate = z.infer<
+  typeof generated.publicAuditLogUpdateSchema
+>;
+export type PublicCoachesAthletesRow = z.infer<
+  typeof generated.publicCoachesAthletesRowSchema
+>;
+export type PublicCoachesAthletesInsert = z.infer<
+  typeof generated.publicCoachesAthletesInsertSchema
+>;
+export type PublicCoachesAthletesUpdate = z.infer<
+  typeof generated.publicCoachesAthletesUpdateSchema
+>;
+export type PublicCoachingInvitationsRow = z.infer<
+  typeof generated.publicCoachingInvitationsRowSchema
+>;
+export type PublicCoachingInvitationsInsert = z.infer<
+  typeof generated.publicCoachingInvitationsInsertSchema
+>;
+export type PublicCoachingInvitationsUpdate = z.infer<
+  typeof generated.publicCoachingInvitationsUpdateSchema
+>;
+export type PublicConversationParticipantsRow = z.infer<
+  typeof generated.publicConversationParticipantsRowSchema
+>;
+export type PublicConversationParticipantsInsert = z.infer<
+  typeof generated.publicConversationParticipantsInsertSchema
+>;
+export type PublicConversationParticipantsUpdate = z.infer<
+  typeof generated.publicConversationParticipantsUpdateSchema
+>;
+export type PublicConversationParticipantsRelationships = z.infer<
+  typeof generated.publicConversationParticipantsRelationshipsSchema
+>;
+export type PublicConversationsRow = z.infer<
+  typeof generated.publicConversationsRowSchema
+>;
+export type PublicConversationsInsert = z.infer<
+  typeof generated.publicConversationsInsertSchema
+>;
+export type PublicConversationsUpdate = z.infer<
+  typeof generated.publicConversationsUpdateSchema
+>;
 export type PublicEventsRow = z.infer<typeof generated.publicEventsRowSchema>;
 export type PublicEventsInsert = z.infer<
   typeof generated.publicEventsInsertSchema
@@ -107,6 +161,18 @@ export type PublicLibraryItemsUpdate = z.infer<
 export type PublicLibraryItemsRelationships = z.infer<
   typeof generated.publicLibraryItemsRelationshipsSchema
 >;
+export type PublicMessagesRow = z.infer<
+  typeof generated.publicMessagesRowSchema
+>;
+export type PublicMessagesInsert = z.infer<
+  typeof generated.publicMessagesInsertSchema
+>;
+export type PublicMessagesUpdate = z.infer<
+  typeof generated.publicMessagesUpdateSchema
+>;
+export type PublicMessagesRelationships = z.infer<
+  typeof generated.publicMessagesRelationshipsSchema
+>;
 export type PublicNotificationsRow = z.infer<
   typeof generated.publicNotificationsRowSchema
 >;
@@ -115,9 +181,6 @@ export type PublicNotificationsInsert = z.infer<
 >;
 export type PublicNotificationsUpdate = z.infer<
   typeof generated.publicNotificationsUpdateSchema
->;
-export type PublicNotificationsRelationships = z.infer<
-  typeof generated.publicNotificationsRelationshipsSchema
 >;
 export type PublicOauthStatesRow = z.infer<
   typeof generated.publicOauthStatesRowSchema

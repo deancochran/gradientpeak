@@ -7,6 +7,7 @@ import {
   WeeklyGoalCard,
   WeeklySnapshot,
 } from "@/components/home";
+import { RecommendedActivitySection } from "@/components/home/RecommendedActivitySection";
 import { AppHeader } from "@/components/shared";
 import { DetailChartModal } from "@/components/shared/DetailChartModal";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -140,6 +141,14 @@ function HomeScreen() {
           todaysActivity={todaysActivity}
           onStartActivity={handleStartActivity}
           onViewPlan={handleViewPlan}
+        />
+
+        {/* Recommended for Today */}
+        <RecommendedActivitySection
+          currentCtl={trainingReadiness.ctl}
+          currentAtl={trainingReadiness.atl}
+          targetType={plan?.targetType}
+          onSelectPlan={handlePressActivity}
         />
 
         {/* Upcoming Schedule */}

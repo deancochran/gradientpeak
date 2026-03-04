@@ -29,6 +29,7 @@ import { Pressable, ScrollView, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { RecordingControls } from "./RecordingControls";
+import { IntensityScaling } from "./IntensityScaling";
 
 export interface FooterExpandedContentProps {
   service: ActivityRecorderService | null;
@@ -114,6 +115,9 @@ export function FooterExpandedContent({
             onDiscard={() => {}}
           />
         </View>
+
+        {/* Intensity Scaling & Metric Overrides */}
+        <IntensityScaling service={service} />
 
         {/* Configuration Grid (2 columns) */}
         <Text className="text-sm font-medium text-muted-foreground mb-3">

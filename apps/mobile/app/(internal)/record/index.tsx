@@ -7,12 +7,14 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import {
   useActivityStatus,
+  useIntensityScale,
   usePlan,
   useRecorderActions,
   useRecordingState,
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
@@ -70,6 +72,34 @@ function RecordScreen() {
   const { start, pause, resume, finish } = useRecorderActions(service);
   const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
     useAllPermissionsGranted();
+
+  // Fetch smart initialization data (derived metrics)
+  const { data: zones } = trpc.profiles.getZones.useQuery(undefined, {
+    enabled: !!user && !!service,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+
+  // Automatically apply derived metrics on initialization
+  useEffect(() => {
+    if (!service || !zones?.profile) return;
+
+    const { ftp, threshold_hr, weight_kg, threshold_pace } = zones.profile;
+
+    if (ftp || threshold_hr || weight_kg || threshold_pace) {
+      console.log("[RecordModal] Applying derived metrics:", {
+        ftp,
+        threshold_hr,
+        weight_kg,
+        threshold_pace,
+      });
+      service.updateMetrics({
+        ftp: ftp || undefined,
+        thresholdHr: threshold_hr || undefined,
+        weightKg: weight_kg || undefined,
+        thresholdPaceSecondsPerKm: threshold_pace || undefined,
+      });
+    }
+  }, [service, zones?.profile]);
 
   // Debug: Log permission status changes
   useEffect(() => {

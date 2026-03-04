@@ -185,7 +185,7 @@ export function useHomeData() {
   );
 
   return {
-    plan,
+    plan: plan ? { ...plan, targetType: (plan as any).targetType } : null,
     todaysActivity,
     weeklyStats,
     formStatus,

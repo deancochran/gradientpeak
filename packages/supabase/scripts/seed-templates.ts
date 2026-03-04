@@ -255,6 +255,7 @@ async function seedTemplates() {
                 structure: template.structure,
                 route_id: template.route_id,
                 notes: template.notes,
+                template_visibility: "public", // Ensure system templates stay public
                 updated_at: new Date().toISOString(),
               })
               .eq("id", existing.id);
@@ -276,6 +277,7 @@ async function seedTemplates() {
               id: template.id, // Use the static ID
               profile_id: null,
               is_system_template: true,
+              template_visibility: "public", // System templates must be public
               version: template.version,
               name: template.name,
               description: template.description,

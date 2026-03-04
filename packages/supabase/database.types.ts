@@ -318,6 +318,12 @@ export type Database = {
           notes: string | null
           profile_id: string | null
           route_id: string | null
+          static_distance_meters: number | null
+          static_duration_seconds: number | null
+          static_hr_zone_seconds: Json | null
+          static_power_zone_seconds: Json | null
+          static_tss: number | null
+          static_work_kilojoules: number | null
           structure: Json | null
           template_visibility: string
           updated_at: string
@@ -336,6 +342,12 @@ export type Database = {
           notes?: string | null
           profile_id?: string | null
           route_id?: string | null
+          static_distance_meters?: number | null
+          static_duration_seconds?: number | null
+          static_hr_zone_seconds?: Json | null
+          static_power_zone_seconds?: Json | null
+          static_tss?: number | null
+          static_work_kilojoules?: number | null
           structure?: Json | null
           template_visibility?: string
           updated_at?: string
@@ -354,6 +366,12 @@ export type Database = {
           notes?: string | null
           profile_id?: string | null
           route_id?: string | null
+          static_distance_meters?: number | null
+          static_duration_seconds?: number | null
+          static_hr_zone_seconds?: Json | null
+          static_power_zone_seconds?: Json | null
+          static_tss?: number | null
+          static_work_kilojoules?: number | null
           structure?: Json | null
           template_visibility?: string
           updated_at?: string
@@ -437,6 +455,134 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      audit_log: {
+        Row: {
+          action: string
+          actor_id: string
+          created_at: string
+          details: Json | null
+          id: string
+          target_record_id: string | null
+          target_table: string | null
+          target_user_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_id: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          target_record_id?: string | null
+          target_table?: string | null
+          target_user_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          target_record_id?: string | null
+          target_table?: string | null
+          target_user_id?: string | null
+        }
+        Relationships: []
+      }
+      coaches_athletes: {
+        Row: {
+          athlete_id: string
+          coach_id: string
+          created_at: string
+        }
+        Insert: {
+          athlete_id: string
+          coach_id: string
+          created_at?: string
+        }
+        Update: {
+          athlete_id?: string
+          coach_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      coaching_invitations: {
+        Row: {
+          athlete_id: string
+          coach_id: string
+          created_at: string
+          id: string
+          status: Database["public"]["Enums"]["coaching_invitation_status"]
+          updated_at: string
+        }
+        Insert: {
+          athlete_id: string
+          coach_id: string
+          created_at?: string
+          id?: string
+          status?: Database["public"]["Enums"]["coaching_invitation_status"]
+          updated_at?: string
+        }
+        Update: {
+          athlete_id?: string
+          coach_id?: string
+          created_at?: string
+          id?: string
+          status?: Database["public"]["Enums"]["coaching_invitation_status"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      conversation_participants: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_participants_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
+        Row: {
+          created_at: string
+          group_name: string | null
+          id: string
+          is_group: boolean
+          last_message_at: string
+        }
+        Insert: {
+          created_at?: string
+          group_name?: string | null
+          id?: string
+          is_group?: boolean
+          last_message_at?: string
+        }
+        Update: {
+          created_at?: string
+          group_name?: string | null
+          id?: string
+          is_group?: boolean
+          last_message_at?: string
+        }
+        Relationships: []
       }
       events: {
         Row: {
@@ -639,40 +785,70 @@ export type Database = {
           },
         ]
       }
-      notifications: {
+      messages: {
         Row: {
+          content: string
+          conversation_id: string
           created_at: string
+          deleted_at: string | null
           id: string
-          is_read: boolean
-          message: string
-          profile_id: string
-          title: string
+          sender_id: string
         }
         Insert: {
+          content: string
+          conversation_id: string
           created_at?: string
+          deleted_at?: string | null
           id?: string
-          is_read?: boolean
-          message: string
-          profile_id: string
-          title: string
+          sender_id: string
         }
         Update: {
+          content?: string
+          conversation_id?: string
           created_at?: string
+          deleted_at?: string | null
           id?: string
-          is_read?: boolean
-          message?: string
-          profile_id?: string
-          title?: string
+          sender_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "notifications_profile_id_fkey"
-            columns: ["profile_id"]
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
             isOneToOne: false
-            referencedRelation: "profiles"
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
         ]
+      }
+      notifications: {
+        Row: {
+          actor_id: string
+          created_at: string
+          entity_id: string | null
+          id: string
+          read_at: string | null
+          type: Database["public"]["Enums"]["notification_type"]
+          user_id: string
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          entity_id?: string | null
+          id?: string
+          read_at?: string | null
+          type: Database["public"]["Enums"]["notification_type"]
+          user_id: string
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          entity_id?: string | null
+          id?: string
+          read_at?: string | null
+          type?: Database["public"]["Enums"]["notification_type"]
+          user_id?: string
+        }
+        Relationships: []
       }
       oauth_states: {
         Row: {
@@ -928,6 +1104,7 @@ export type Database = {
     }
     Enums: {
       activity_category: "run" | "bike" | "swim" | "strength" | "other"
+      coaching_invitation_status: "pending" | "accepted" | "declined"
       effort_type: "power" | "speed"
       event_status: "scheduled" | "completed" | "cancelled"
       event_type:
@@ -943,6 +1120,12 @@ export type Database = {
         | "trainingpeaks"
         | "garmin"
         | "zwift"
+      notification_type:
+        | "new_message"
+        | "coaching_invitation"
+        | "coaching_invitation_accepted"
+        | "coaching_invitation_declined"
+        | "new_follower"
       profile_metric_type:
         | "weight_kg"
         | "resting_hr"
@@ -1093,6 +1276,7 @@ export const Constants = {
   public: {
     Enums: {
       activity_category: ["run", "bike", "swim", "strength", "other"],
+      coaching_invitation_status: ["pending", "accepted", "declined"],
       effort_type: ["power", "speed"],
       event_status: ["scheduled", "completed", "cancelled"],
       event_type: [
@@ -1109,6 +1293,13 @@ export const Constants = {
         "trainingpeaks",
         "garmin",
         "zwift",
+      ],
+      notification_type: [
+        "new_message",
+        "coaching_invitation",
+        "coaching_invitation_accepted",
+        "coaching_invitation_declined",
+        "new_follower",
       ],
       profile_metric_type: [
         "weight_kg",
