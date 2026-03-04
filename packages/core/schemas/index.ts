@@ -97,6 +97,12 @@ export * from "./activity_efforts";
 // Export notification schemas
 export * from "./notifications";
 
+// Export coaching schemas
+export * from "./coaching";
+
+// Export messaging schemas
+export * from "./messaging";
+
 // Export onboarding schemas
 export * from "./onboarding";
 

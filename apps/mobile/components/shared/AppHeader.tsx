@@ -4,6 +4,10 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useRouter } from "expo-router";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
+import {
+  MessagesHeaderButton,
+  NotificationsHeaderButton,
+} from "./HeaderButtons";
 
 interface AppHeaderProps {
   showGreeting?: boolean;
@@ -37,8 +41,6 @@ export function AppHeader({ showGreeting = true, title }: AppHeaderProps) {
     } as any);
   };
 
-  // Extract timestamp from avatar URL if it exists (added during upload)
-  // This ensures React Native's image cache updates when avatar changes
   const avatarUri = profile?.avatar_url;
 
   return (
@@ -48,27 +50,28 @@ export function AppHeader({ showGreeting = true, title }: AppHeaderProps) {
           {getDisplayText()}
         </Text>
       </View>
-      <TouchableOpacity
-        onPress={handleAvatarPress}
-        className="w-10 h-10 rounded-full overflow-hidden"
-        activeOpacity={0.7}
-      >
-        <Avatar alt={profile?.username || "User"} className="w-10 h-10">
-          {avatarUri ? (
-            <AvatarImage
-              source={{ uri: avatarUri }}
-              key={avatarUri} // Key changes when URL changes, forcing re-render
-            />
-          ) : null}
-          <AvatarFallback>
-            <Text className="text-base font-semibold">
-              {profile?.username?.charAt(0)?.toUpperCase() ||
-                user?.email?.charAt(0)?.toUpperCase() ||
-                "A"}
-            </Text>
-          </AvatarFallback>
-        </Avatar>
-      </TouchableOpacity>
+      <View className="flex-row items-center">
+        <MessagesHeaderButton />
+        <NotificationsHeaderButton />
+        <TouchableOpacity
+          onPress={handleAvatarPress}
+          className="w-10 h-10 rounded-full overflow-hidden ml-2"
+          activeOpacity={0.7}
+        >
+          <Avatar alt={profile?.username || "User"} className="w-10 h-10">
+            {avatarUri ? (
+              <AvatarImage source={{ uri: avatarUri }} key={avatarUri} />
+            ) : null}
+            <AvatarFallback>
+              <Text className="text-base font-semibold">
+                {profile?.username?.charAt(0)?.toUpperCase() ||
+                  user?.email?.charAt(0)?.toUpperCase() ||
+                  "A"}
+              </Text>
+            </AvatarFallback>
+          </Avatar>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
