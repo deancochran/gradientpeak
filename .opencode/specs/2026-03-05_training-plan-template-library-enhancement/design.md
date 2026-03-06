@@ -36,7 +36,7 @@ Required columns:
 8. `target_metric text null`
 9. `target_value numeric null`
 10. `priority integer not null default 5`
-11. `status text not null` (`active`, `achieved`, `archived`, `abandoned`)
+11. `importance integer not null default 5` (0-10 scale: 0 = don't care, 10 = absolutely want to reach)
 12. timestamps
 
 Rules:
@@ -44,6 +44,10 @@ Rules:
 1. Goals are profile-owned and never cross profiles.
 2. Goals may exist without a plan (`training_plan_id` nullable).
 3. Goals may be event-anchored (`milestone_event_id`) but events remain canonical schedule records.
+4. Goals have a singular target.
+5. Goals can be on the same date.
+6. Goals don't support multi-type activity types (e.g., a triathlon goal would be 3 separate goals).
+7. Goals don't need a status column; they either exist or not. They are considered inactive if the target date has passed.
 
 ### B) `training_plans` Handles Templates And Applied Plans
 
@@ -54,11 +58,11 @@ Add minimal columns:
 1. `plan_kind text not null` (`template`, `user`)
 2. `source_template_id uuid null` FK -> `training_plans.id`
 3. `primary_goal_id uuid null` FK -> `profile_goals.id`
-4. `strategy_style text null` (`balanced`, `volume`, `intensity`, `polarized`)
-5. `aggressiveness numeric null` check between `0` and `1`
-6. `recovery_bias numeric null` check between `0` and `1`
-7. `sessions_per_week_target integer null`
-8. `status text not null` (`draft`, `active`, `paused`, `completed`, `abandoned`)
+4. `sessions_per_week_target integer null`
+5. `duration_hours numeric null` (derived from the activity plans associated with the training plan)
+6. `status text not null` (`draft`, `active`, `paused`, `completed`, `abandoned`)
+
+_Note: Training plans do not need `strategy_type`, `aggressiveness`, or `recovery` columns since the user's profile specifies this information._
 
 `structure` remains reference-first:
 
@@ -77,6 +81,7 @@ Rules:
 3. Users can modify future events without mutating template records.
 4. Historical rows are not rewritten during regeneration/handoff.
 5. Rendered workout details may change if referenced `activity_plan` changes.
+6. Rest days don't need to be explicit; they are inferred from days without planned activity events.
 
 ## Lifecycle Model
 
@@ -95,7 +100,7 @@ Rules:
 
 ### Goal Lifecycle
 
-1. Goals are soft-lifecycle entities (`active`, `achieved`, `archived`, `abandoned`).
+1. Goals are soft-lifecycle entities based on their `target_date`.
 2. Goal updates never rewrite historical events.
 3. Goal retirement does not delete historical event records.
 
@@ -103,17 +108,15 @@ Rules:
 
 1. `events` is the only schedule query surface.
 2. `planned_activity` events should reference `activity_plan_id` when available.
-3. `rest_day` events must not reference `activity_plan_id`.
-4. `training_plans` owns strategy settings; no additional strategy table in MVP.
-5. `profile_goals` is the only goal table in MVP.
-6. No duplicate schedule truth in `profile_goals` or plan metadata.
+3. Rest days are inferred dynamically, not stored as explicit events.
+4. `profile_goals` is the only goal table in MVP.
+5. No duplicate schedule truth in `profile_goals` or plan metadata.
 
 ## Out Of Scope
 
 1. Cohort/group models.
 2. Dedicated optimization-run tables.
-3. Additional user strategy table beyond plan-level strategy fields.
-4. Any new materialized projection or recommendation storage.
+3. Any new materialized projection or recommendation storage.
 
 ## Why This Refactor
 
