@@ -183,6 +183,217 @@ Desired indexes:
 6. Preserve manual future event edits during regeneration by default; support explicit overwrite option.
 7. Add rewrite-scope controls so optimization can rewrite selected week, future horizon, or full remaining plan.
 
+## Schema Details
+
+This section defines recommendation-system contracts at the domain level (database-agnostic), while remaining compatible with the MVP table model above.
+
+### Recommendation profile contract (domain)
+
+`recommendation_profile` is the canonical personalization payload persisted on `user_training_plans.personalization`.
+
+Required keys:
+
+1. `availability`: trainable windows or per-day trainable booleans.
+2. `max_sessions_per_day`: integer >= 1.
+3. `hard_rest_days`: fixed weekday/date constraints.
+4. `discipline_bias`: discipline weight map for ranking candidate sessions.
+5. `experience_level`: `beginner` | `intermediate` | `advanced` (used for tie-break ranking only in MVP).
+6. `goal_priority`: ordered list (`consistency`, `performance`, `recovery`) used to tune recommendation scoring.
+
+MVP note: this contract is represented as JSON in persistence and validated at API/domain boundaries; implementation may use any storage engine as long as contract semantics are preserved.
+
+### Recommendation run metadata contract (domain)
+
+Each apply/optimize/regenerate operation produces deterministic run metadata persisted in:
+
+1. `user_training_plans.projection_snapshot` (diagnostics + targets)
+2. `events.schedule_batch_id` (lineage for generated event set)
+
+Required run metadata shape:
+
+1. `recommendation_run_id`: UUID for the solve run.
+2. `scheduling_mode`: `default_template` | `projection_tuned`.
+3. `rewrite_scope`: `selected_week` | `future_horizon` | `full_remaining_plan`.
+4. `solver_version`: immutable algorithm/version marker.
+5. `determinism_fingerprint`: stable hash of normalized input.
+6. `target_vs_scheduled`: weekly and cumulative diagnostics.
+7. `infeasibility`: optional reason codes and constrained dimensions.
+
+### Feedback signal contract (domain)
+
+Feedback is an input stream to future recommendation runs; it does not mutate historical events.
+
+MVP feedback signal categories:
+
+1. `session_feedback`: perceived difficulty, enjoyment, confidence.
+2. `schedule_feedback`: timing fit and day-fit.
+3. `adaptation_request`: explicit request to rebalance or reduce/increase intensity.
+
+MVP persistence guidance:
+
+1. Feedback can be stored in existing event/user-plan metadata JSON fields in this phase.
+2. No dedicated recommendation/feedback tables are required in MVP.
+3. Feedback influences subsequent optimize/regenerate runs only.
+
+### API/Data contract examples (MVP)
+
+#### Apply plan request (`applyTemplate`)
+
+```json
+{
+  "training_plan_id": "e4c5b9a3-6f4b-4d03-8890-1f2a8ef779f2",
+  "start_date": "2026-03-10",
+  "scheduling_mode": "projection_tuned",
+  "personalization": {
+    "availability": {
+      "mon": [{ "start": "06:00", "end": "07:30" }],
+      "wed": [{ "start": "06:00", "end": "07:30" }],
+      "sat": [{ "start": "08:00", "end": "11:00" }]
+    },
+    "max_sessions_per_day": 1,
+    "hard_rest_days": [5],
+    "discipline_bias": { "bike": 1.0, "run": 0.7 },
+    "experience_level": "intermediate",
+    "goal_priority": ["consistency", "performance", "recovery"]
+  },
+  "optimize": {
+    "target_source": "projection",
+    "aggressiveness": "balanced",
+    "rewrite_scope": "future_horizon"
+  }
+}
+```
+
+#### Optimize request (`optimizeActivePlan`)
+
+```json
+{
+  "user_training_plan_id": "1fbb8b9e-60f9-4d25-95dc-9654571d9f81",
+  "rewrite_scope": "selected_week",
+  "week_start_date": "2026-03-16",
+  "target_bias": "exact",
+  "aggressiveness": "balanced",
+  "weekly_target_override_tss": 420,
+  "preserve_manual_edits": true
+}
+```
+
+#### Regenerate request (`rebalanceFutureWeeks`)
+
+```json
+{
+  "user_training_plan_id": "1fbb8b9e-60f9-4d25-95dc-9654571d9f81",
+  "rewrite_scope": "full_remaining_plan",
+  "effective_from": "2026-03-20",
+  "reason": "availability_change",
+  "personalization_patch": {
+    "availability": {
+      "tue": [{ "start": "18:00", "end": "19:00" }],
+      "thu": [{ "start": "18:00", "end": "19:00" }]
+    }
+  },
+  "preserve_manual_edits": true
+}
+```
+
+#### Feedback request (`submitPlanFeedback`)
+
+```json
+{
+  "user_training_plan_id": "1fbb8b9e-60f9-4d25-95dc-9654571d9f81",
+  "event_id": "ad5e4f9d-b0b1-4a7f-b29c-a63c52f2c8f3",
+  "feedback_type": "session_feedback",
+  "payload": {
+    "difficulty": "too_hard",
+    "enjoyment": 2,
+    "schedule_fit": "poor",
+    "note": "Back-to-back intensity was not recoverable"
+  },
+  "suggested_adaptation": "reduce_next_week_load"
+}
+```
+
+### Schema Details acceptance criteria
+
+1. API/domain validators enforce recommendation-profile and run-metadata contracts independent of DB engine.
+2. Existing MVP tables (`training_plans`, `user_training_plans`, `events`) can store all required recommendation inputs/outputs without new materialization tables.
+3. `scheduling_mode` remains restricted to `default_template` and `projection_tuned`.
+4. Determinism metadata (`solver_version`, `determinism_fingerprint`) is captured for each optimize/regenerate run.
+5. Feedback contracts are accepted and persisted for future adaptation without rewriting past events.
+
+### Schema Details explicitly deferred
+
+1. Dedicated recommendation embeddings/vector-store schema.
+2. Multi-plan ranking models across concurrent active plans.
+3. Autonomous real-time auto-rescheduling without explicit user action.
+
+## Data Flow Details
+
+This section defines the end-to-end MVP data flow from onboarding to adaptation, using `events` as the canonical execution ledger.
+
+### End-to-end flow
+
+1. **Onboarding/intent capture:** user submits availability, constraints, and goals -> normalized into `recommendation_profile`.
+2. **Apply recommendation:** system validates single-active-plan rule, snapshots template (`snapshot_structure` + `template_version`), selects lane (`default_template` or `projection_tuned`), and computes deterministic recommendation run metadata.
+3. **Scheduling materialization:** scheduler emits `planned_activity` and `rest_day` events with shared `schedule_batch_id` and `user_training_plan_id`.
+4. **Execution/completion loop:** user completes, skips, cancels, or manually edits future events; historical events remain immutable.
+5. **Feedback/adaptation trigger:** user feedback and observed completion patterns are read as inputs to explicit `optimize`/`regenerate` actions.
+6. **Future-only adaptation:** optimizer rewrites only selected future scope, emits new `schedule_batch_id`, preserves manual edits unless overwrite requested.
+7. **Analytics/read model:** planned-vs-completed load is queried from `events` (excluding cancelled), with projection gap diagnostics from snapshot metadata.
+
+### Deterministic flow guarantees
+
+1. Same normalized inputs + same solver version must produce identical event allocation.
+2. Deterministic tie-break order must be fixed (date -> session priority -> activity plan id).
+3. Rewrite scope boundaries are strict; out-of-scope events are not rewritten.
+4. Active-plan handoff always cancels only future scheduled events of the resolved plan.
+
+### Data Flow Details acceptance criteria
+
+1. Every generated event is attributable to exactly one `user_training_plan_id` and one `schedule_batch_id`.
+2. Apply/optimize/regenerate flows are future-only for modifications and never mutate historical completed rows.
+3. Feedback is consumed only by explicit adaptation actions (no hidden background rewrites).
+4. Planned-load dashboards can be reconstructed from `events` + active-plan context with no dependency on template totals.
+5. Single active/paused plan invariant holds across onboarding, apply, and adaptation flows.
+
+### Data Flow Details explicitly deferred
+
+1. Real-time streaming adaptation after each workout completion.
+2. Cross-user collaborative recommendations or cohort-level tuning.
+3. External provider-driven auto-optimization triggers.
+
+## Scenario Details
+
+This section defines persona and lifecycle scenarios that validate recommendation behavior while preserving MVP constraints.
+
+### Persona scenarios
+
+1. **Consistency-first commuter (default lane):** limited weekdays + fixed Friday rest day; apply in `default_template` schedules authored sessions exactly when valid and fills required rest days.
+2. **Performance-focused athlete (projection lane):** uses `projection_tuned` with `balanced` aggressiveness; system reallocates within constraints, records target-vs-scheduled gaps, and remains deterministic.
+3. **Schedule-shifted parent (regenerate):** mid-plan availability changes; user runs `rebalance_future_weeks` with `future_horizon`; future events are rewritten with new batch lineage, past events untouched.
+4. **Overloaded week feedback loop:** user submits `too_hard` feedback; next explicit optimize run reduces bounded weekly target while respecting hard rest days and sequence order.
+
+### Lifecycle scenario checks
+
+1. **Plan handoff:** user marks active plan `completed` or `abandoned`; all future scheduled events for that plan become `cancelled`; new apply is then permitted.
+2. **Manual edits preservation:** user manually swaps a future `activity_plan`; regenerate with default settings retains edit unless explicit overwrite flag is set.
+3. **Infeasible constraints:** too few available slots for target load; solver preserves hard constraints, emits gap diagnostics, and does not create unsafe overbooked days.
+4. **Reproducibility:** rerunning optimize with identical input payload and solver version yields identical schedule results and fingerprint.
+
+### Scenario Details acceptance criteria
+
+1. At least one test/validation path exists for each persona and lifecycle scenario above.
+2. Scenario outcomes prove lane behavior split: template-faithful default vs projection-tuned optimization.
+3. Scenario outcomes confirm future-only rewrite semantics and manual-edit preservation defaults.
+4. Scenario outcomes confirm explainability artifacts (`projection_snapshot`, target gap diagnostics, run metadata).
+5. Scenario outcomes confirm safety guardrails under constrained/infeasible schedules.
+
+### Scenario Details explicitly deferred
+
+1. Adaptive coaching narratives and natural-language recommendation generation.
+2. Multi-goal seasonal planning across overlapping plan horizons.
+3. Fully autonomous recommendation changes without user-initiated optimize/regenerate.
+
 ## Phase 1: Template + Schema Hardening
 
 1. Update template structure contract to require `session_type` and date anchors.
