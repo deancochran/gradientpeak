@@ -36,20 +36,18 @@ Required indexes:
 
 ### 2) Extend `training_plans`
 
-Keep existing template fields and add minimal applied-plan lifecycle fields:
+Keep existing fields and add minimal lifecycle fields. System templates are identified by `profile_id IS NULL`.
 
-1. `plan_kind text not null` check in (`template`,`user`) default `template`
-2. `source_template_id uuid null` FK -> `training_plans.id`
-3. `primary_goal_id uuid null` FK -> `profile_goals.id`
-4. `sessions_per_week_target integer null` check (`sessions_per_week_target > 0`)
-5. `duration_hours numeric null` (derived from associated activity plans)
-6. `status text not null` check in (`draft`,`active`,`paused`,`completed`,`abandoned`) default `draft`
+1. `primary_goal_id uuid null` FK -> `profile_goals.id`
+2. `sessions_per_week_target integer null` check (`sessions_per_week_target > 0`)
+3. `duration_hours numeric null` (derived from associated activity plans)
+4. `status text not null` check in (`draft`,`active`,`paused`,`completed`,`abandoned`) default `draft`
 
 Indexes and lifecycle integrity:
 
-1. `idx_training_plans_profile_kind_status` on (`profile_id`, `plan_kind`, `status`)
+1. `idx_training_plans_profile_status` on (`profile_id`, `status`)
 2. partial unique for single active/paused user plan:
-   - unique (`profile_id`) where `plan_kind = 'user' and status in ('active','paused')`
+   - unique (`profile_id`) where `profile_id IS NOT NULL and status in ('active','paused')`
 
 ### 3) Keep `events` canonical
 
@@ -64,12 +62,12 @@ Required runtime semantics:
 
 ## Data Flow
 
-### Apply Template
+### Apply / Duplicate Plan
 
-1. Validate no active/paused user plan exists.
-2. Copy template row into a new `training_plans` row with `plan_kind='user'` and `source_template_id`.
+1. Validate no active/paused plan exists for the user.
+2. Duplicate the source plan into a new `training_plans` row, setting the user's `profile_id`.
 3. Calculate and set `duration_hours` derived from the associated activity plans.
-4. Seed optional `profile_goals` from template defaults and/or user input.
+4. Seed optional `profile_goals` from defaults and/or user input.
 5. Generate future `events` from plan structure.
 
 ### Ongoing Use
@@ -86,10 +84,10 @@ Required runtime semantics:
 ## Migration Strategy (Low Risk)
 
 1. Add `profile_goals` table.
-2. Add new nullable columns to `training_plans` (`plan_kind`, `source_template_id`, `primary_goal_id`, `sessions_per_week_target`, `duration_hours`, `status`).
-3. Backfill existing template rows to `plan_kind='template'` and `status='draft'`.
+2. Add new nullable columns to `training_plans` (`primary_goal_id`, `sessions_per_week_target`, `duration_hours`, `status`).
+3. Backfill existing template rows to ensure `profile_id` is null and `status='draft'`.
 4. Add checks/indexes and then add partial unique active-plan constraint.
-5. Update apply flow to create user plan rows in `training_plans` instead of new plan-instance storage.
+5. Update apply flow to duplicate plans in `training_plans` instead of new plan-instance storage.
 6. Keep existing event generation and analytics contracts stable.
 
 ## API Contract Adjustments
@@ -123,9 +121,9 @@ Status update request:
 ## Acceptance Criteria
 
 1. `profile_goals` exists and supports multiple goals per profile.
-2. `training_plans` supports template and user-plan rows via `plan_kind`.
-3. One active/paused user plan per profile is enforced.
-4. Template apply creates a user plan row, optional goals, and future events.
+2. `training_plans` supports system templates (`profile_id IS NULL`) and user plans.
+3. One active/paused plan per profile is enforced.
+4. Duplicating a plan creates a user plan row, optional goals, and future events.
 5. Planned load and prediction inputs are computed from `events` only.
 6. Future event edits are supported without mutating template rows.
 7. Rest days are inferred dynamically.

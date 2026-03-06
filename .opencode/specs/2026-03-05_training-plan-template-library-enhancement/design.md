@@ -48,18 +48,16 @@ Rules:
 6. Goals don't support multi-type activity types (e.g., a triathlon goal would be 3 separate goals).
 7. Goals don't need a status column; they either exist or not. They are considered inactive if the target date has passed.
 
-### B) `training_plans` Handles Templates And Applied Plans
+### B) `training_plans` Handles Templates And User Plans
 
-Use one table for both system templates and user-applied plans.
+Use one table for both system templates and user plans. A plan is considered a system template if `profile_id` is null. Users simply duplicate plans to use them.
 
 Add minimal columns:
 
-1. `plan_kind text not null` (`template`, `user`)
-2. `source_template_id uuid null` FK -> `training_plans.id`
-3. `primary_goal_id uuid null` FK -> `profile_goals.id`
-4. `sessions_per_week_target integer null`
-5. `duration_hours numeric null` (derived from the activity plans associated with the training plan)
-6. `status text not null` (`draft`, `active`, `paused`, `completed`, `abandoned`)
+1. `primary_goal_id uuid null` FK -> `profile_goals.id`
+2. `sessions_per_week_target integer null`
+3. `duration_hours numeric null` (derived from the activity plans associated with the training plan)
+4. `status text not null` (`draft`, `active`, `paused`, `completed`, `abandoned`)
 
 _Note: Training plans do not need `strategy_type`, `aggressiveness`, or `recovery` columns since the user's profile specifies this information._
 
@@ -84,17 +82,17 @@ Rules:
 
 ## Lifecycle Model
 
-### Template Apply
+### Duplicating / Applying a Plan
 
-1. Select template row (`training_plans.plan_kind = 'template'`).
-2. Create user plan row (`training_plans.plan_kind = 'user'`, `source_template_id` set).
-3. Optionally create/attach `profile_goals` from template defaults.
-4. Materialize schedule into `events` linked by `training_plan_id`.
+1. Select a source plan (often a system template where `profile_id` is null).
+2. Duplicate the plan row, assigning the user's `profile_id`.
+3. Optionally create/attach `profile_goals` from defaults.
+4. Materialize schedule into `events` linked by the new `training_plan_id`.
 
 ### Active Plan Guard
 
-1. One active/paused user plan per profile.
-2. Starting a new plan requires existing active/paused user plan to be resolved.
+1. One active/paused plan per profile.
+2. Starting a new plan requires existing active/paused plan to be resolved.
 3. On complete/abandon, cancel future scheduled events for the old plan.
 
 ### Goal Lifecycle
@@ -122,4 +120,4 @@ Rules:
 1. Keeps schema minimal while enabling goals-first product UX.
 2. Uses foreign keys for integrity without adding many tables.
 3. Preserves existing event-driven analytics and prediction path.
-4. Supports template seeding and user customization in one plan table.
+4. Supports system templates and user customization in one plan table without complex lineage tracking.
