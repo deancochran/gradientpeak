@@ -4,9 +4,10 @@
 
 - [ ] Enforce schedulable session contract in `training_plans.structure` (`session_type`, date anchor, title).
 - [ ] Add/confirm `training_plans.plan_duration_days` (required, `> 0`).
-- [ ] Add optional `training_plans.goal_category` for discovery.
 - [ ] Extend `user_training_plans` with `personalization`, `template_version`, optional `projection_snapshot`.
+- [ ] Add `user_training_plans.scheduling_mode` (`default_template` | `projection_tuned`).
 - [ ] Keep `snapshot_structure` backward-compatible and required for apply replay.
+- [ ] Exclude non-scheduling metadata from MVP schema scope (pricing/merchandising fields).
 
 ## Phase 2: Single-Plan Lifecycle and Handoff
 
@@ -18,6 +19,8 @@
 ## Phase 3: Apply and Generate Scheduled Events
 
 - [ ] Update session derivation to emit both `planned_activity` and `rest_day` intents.
+- [ ] Add apply-time `scheduling_mode` with default `default_template` and optional `projection_tuned`.
+- [ ] Ensure default apply path schedules predetermined `activity_plan_id` references as-authored.
 - [ ] Enforce `planned_activity` linkage to `activity_plan_id` when template reference exists and is accessible.
 - [ ] Enforce `rest_day` generation with null `activity_plan_id`.
 - [ ] Persist generated events with shared `schedule_batch_id` per apply/regenerate run.
@@ -30,6 +33,18 @@
 - [ ] Respect availability constraints, hard rest days, and max sessions/day.
 - [ ] Add deterministic session-to-`activity_plan` matching policy.
 - [ ] Persist projection diagnostics in `user_training_plans.projection_snapshot`.
+- [ ] Persist target-vs-scheduled load gap diagnostics for constrained schedules.
+- [ ] Implement deterministic solver flow: greedy seed -> bounded search -> local repair.
+- [ ] Add deterministic tie-break policy to guarantee reproducible schedules.
+
+## Phase 4b: Post-Apply Customization
+
+- [ ] Add plan-level `rebalance_future_weeks` action (future-only regeneration).
+- [ ] Add week-level future target-load adjustment and deterministic rematch.
+- [ ] Add event-level manual future `activity_plan` swap.
+- [ ] Preserve manual edits during regeneration by default unless explicit overwrite is requested.
+- [ ] Add `rewrite_scope` controls: `selected_week`, `future_horizon`, `full_remaining_plan`.
+- [ ] Allow optimization runs to rewrite as much future schedule as user-selected scope permits.
 
 ## Phase 5: Planned-Load Analytics Alignment
 
@@ -46,6 +61,10 @@
 - [ ] Validate rest-day insertion in taper/recovery and blocked-day windows.
 - [ ] Validate impossible-schedule guardrails (availability too low for target projection).
 - [ ] Validate no drift between projection targets and generated event totals.
+- [ ] Validate template-faithful default behavior when projection mode is off.
+- [ ] Validate projection-mode customization flow across plan-level, week-level, and event-level edits.
+- [ ] Validate deterministic reproducibility (same input produces same schedule output).
+- [ ] Validate rewrite-scope boundaries are respected.
 
 ## Explicitly Deferred
 
@@ -54,3 +73,4 @@
 - [ ] Google OAuth/provider calendar integration.
 - [ ] New event materialization/projection tables.
 - [ ] Advanced permission hierarchy and ACL expansion.
+- [ ] Pricing and marketplace merchandising metadata.
