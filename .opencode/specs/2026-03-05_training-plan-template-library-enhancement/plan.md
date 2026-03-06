@@ -1,68 +1,67 @@
 # Implementation Plan: Profile Goals + Training Plans Minimal Model
 
+This plan follows a **development hard cutover strategy**. Since the database will be reset, there is no need for data migration scripts or parallel implementations. We will directly replace the old architecture with the new one.
+
+## Reference Integrity Requirement (Applies to All Phases)
+
+Every structural change in this cutover has dependent references across core, tRPC, mobile, tests, and seed scripts. Do not defer these updates.
+
+- If a schema/type/function is removed, update all imports/callers in the same phase.
+- Use `pnpm check-types` after each removal to surface unresolved references immediately.
+- Treat compiler failures as a migration checklist, not as post-phase cleanup.
+
 ## Phase 1: Database & Core Package Refactor
 
-**Objective**: Update the foundational schema and `@repo/core` typings to extract goals from the plan structure into a relational table.
+**Objective**: Establish the new database tables, update existing tables, and refactor core schemas in a single pass.
 
 1. **Supabase Migrations**:
    - Create migration script `create_profile_goals_table.sql` with columns: `id`, `profile_id`, `training_plan_id`, `milestone_event_id`, `title`, `goal_type`, `target_metric`, `target_value`, `importance`.
-   - Create migration script `update_training_plans_table.sql`:
-     - Add `sessions_per_week_target`, `duration_hours`, `is_public`.
-     - Remove `status` and `primary_goal_id` columns if they exist.
-     - Ensure `profile_id` represents the author of the template (if `NULL`, it is a system template).
-   - Run local migrations and generate updated Supabase types.
-2. **`@repo/core` Schemas**:
-   - Create `packages/core/schemas/profile_goals.ts` defining the Zod schema for the new table.
-   - Refactor `packages/core/schemas/training-plan-structure/*` to remove the embedded `goals` array (e.g., `goalV2Schema`) from the core plan schema (`periodizedPlanBaseShape`).
-   - Update `packages/core/schemas/form-schemas.ts` to reflect the separation of goals and plans.
-3. **`@repo/core` Utilities**:
-   - Build pure function `materializePlanToEvents(planStructure: any, startDate: string): ScheduledEvent[]` to generate schedule records based on `day_offset`.
-   - Update any core calculation functions (e.g., `expandMinimalGoalToPlan`) that previously relied on embedded goals to accept goals as separate arguments.
-4. **Validation**: Run `pnpm check-types` and `pnpm test` in `@repo/core`.
+   - Create migration script `create_profile_training_settings_table.sql` with columns: `profile_id` (PK), `settings` (JSONB), `updated_at`.
+   - Create migration script `update_training_plans_table.sql` to drop `status`, `primary_goal_id`, and `is_active` from `training_plans`, and add `sessions_per_week_target`, `duration_hours`, `is_public`.
+2. **`@repo/core` Schemas (New Domains & Cleanup)**:
+   - Create `packages/core/schemas/goals/profile_goals.ts` by reusing logic from `goalV2Schema`.
+   - Create `packages/core/schemas/settings/profile_settings.ts` by repurposing `TrainingPlanCreationConfig` into `AthleteTrainingSettingsSchema`.
+   - Refactor `packages/core/schemas/training-plan-structure/*` to remove embedded goals from `periodizedPlanBaseShape`.
+   - Delete legacy `goalV2Schema` and `goalTargetV2Schema`.
+   - Update all core export surfaces and form schemas that currently reference legacy goal/config types (`packages/core/schemas/index.ts`, `packages/core/schemas/form-schemas.ts`).
+3. **Core Utilities**:
+   - Build pure function `materializePlanToEvents(planStructure: any, startDate: string): ScheduledEvent[]` to generate schedule records based on `day_offset` (repurposing logic from `expandMinimalGoalToPlan.ts`).
+   - Remove outdated calculation functions that relied on embedded goals.
+   - Replace all `expandMinimalGoalToPlan` call sites in tRPC and mobile local preview logic.
 
-## Phase 2: tRPC API Layer Implementation
+## Phase 2: tRPC API Layer
 
-**Objective**: Connect the database changes to the frontend via type-safe tRPC procedures, introducing a new goals router and updating the training plans router.
+**Objective**: Build the new routers and update existing ones to match the new core schemas.
 
-1. **Goals Router (`packages/trpc/src/routers/goals.ts`)**:
-   - Create a new router with procedures: `create`, `getForProfile`, `update`, `delete`.
-2. **Training Plans Router (`packages/trpc/src/routers/training_plans.ts` and modular files)**:
-   - Update template fetching logic to query where `is_public = true` or `profile_id IS NULL`.
-   - Update user plan fetching logic to query where `profile_id = input.profile_id` (their authored templates).
-   - Refactor the plan application/creation flow (`applyPlan` or equivalent):
-     - Validate active plan constraints (query future `events` to ensure no other active plan).
-     - Create associated `profile_goals` records if provided in the request.
-     - Call `materializePlanToEvents` from core using the template's structure.
-     - Execute a batch insert into the `events` table (linking them to the template's `training_plan_id`).
-   - Implement `cancelPlan` / `abandonPlan`:
-     - Delete all future `events` linked to this plan (`training_plan_id = input.id` AND `date >= TODAY`). Do NOT delete historical events.
-3. **Validation**: Run `pnpm test` in `@repo/trpc`. Ensure tests cover the new `goals` router and the updated `applyPlan` flow.
+1. **New Routers**:
+   - Create `packages/trpc/src/routers/goals.ts` with CRUD operations.
+   - Create `packages/trpc/src/routers/profile_settings.ts` with `getForProfile` and `upsert` operations (ensure authorization logic allows both profile owner and authorized coaches).
+2. **Training Plans Router**:
+   - Refactor `packages/trpc/src/routers/training_plans.ts` to remove old procedures that relied on embedded goals.
+   - Update the `applyPlan` procedure to utilize `materializePlanToEvents` and batch inserts to `events` without relying on embedded goals.
+   - Remove/replace training plan lifecycle logic that depends on deprecated `training_plans` columns (`is_active`, `status`, `primary_goal_id`) across router, application, and repository layers.
 
-## Phase 3: Mobile App (React Native) Refactor
+## Phase 3: Mobile App Refactor
 
-**Objective**: Update the mobile app to consume the new tRPC endpoints, separating goal management from plan management in the UI and state, and completely refactoring the tab navigation structure.
+**Objective**: Overhaul the mobile app UI and state management to use the new decoupled architecture.
 
-1. **Hooks & State (`apps/mobile/lib`)**:
-   - Create hooks (e.g., `useGoals.ts`) to fetch and manage `profile_goals` via `trpc.goals.getForProfile`.
-   - Update `useTrainingPlanSnapshot.ts` and `useHomeData.ts` to fetch goals independently from the active plan structure.
-   - Refactor `training-plan-form/validation.ts` and `localPreview.ts` to handle goals as separate entities.
-2. **Tab Navigation Refactor (`apps/mobile/app/(internal)/(tabs)`)**:
-   - **Remove Library Tab**: Delete `library.tsx` and `plan-library.tsx` from the main tabs.
-   - **Create Calendar Tab**: Create a new `calendar.tsx` tab dedicated to the schedule view (moving the calendar timeline logic previously in `plan.tsx` here).
-   - **Refactor Plan Tab**: Overhaul `plan.tsx` to serve as the command center for goals, training strategy, and active plan management.
-3. **Goal & Plan UI Refactor (`apps/mobile/components` & `apps/mobile/app`)**:
-   - Refactor `TrainingPlanComposerScreen.tsx`: Separate the goal creation step. Goals should be created/selected first, then linked to the plan being composed.
-   - Update `active-plan.tsx`: Fetch and display goal metrics using the new goals hooks rather than extracting them from the plan JSON.
-   - Update `training-plan-detail.tsx` and `training-plan-edit.tsx` to reflect the decoupled data model.
-4. **User Profile & Content Discovery UI**:
-   - Update the User Profile detail screen to include navigational links to user-owned database records (completed activities, uploaded routes, activity plans, and authored training plans).
-   - Update the "Apply Plan" flow to use the refactored tRPC mutation, passing selected goals and start date (accessible when viewing a specific template).
-5. **Validation**: Run `pnpm check-types` in `apps/mobile`. Verify the plan creation, goal creation, and template application flows manually in the Expo simulator.
+1. **State Management**:
+   - Create hooks/stores for fetching `profile_goals` and `profile_settings` independently.
+2. **Component Reorganization**:
+   - Move `GoalSelectionStep.tsx` to `components/goals/` and repurpose as a standalone Add/Edit Goal modal.
+   - Move timeline views to `components/calendar/`.
+   - Move availability and training parameter forms to `components/settings/`.
+3. **Navigation & Screens**:
+   - Remove the `Library` tab (`library.tsx` and `plan-library.tsx`).
+   - Implement the new `calendar.tsx` tab fetching purely from `events`.
+   - Refactor the `Plan` tab (`plan.tsx`) into the unified dashboard with Forecasted Projection, Goal Management, Training Plan Management, and Training Preferences.
+   - Update the User Profile screen to handle private routing for authored plans and historical activities.
+   - Update mobile hooks/utilities that currently depend on embedded goals or legacy plan expansion (`useHomeData`, `useTrainingPlanSnapshot`, `training-plan-form/validation.ts`, `training-plan-form/localPreview.ts`).
 
 ## Phase 4: Web App Verification
 
-**Objective**: Ensure the web app remains unaffected, as it currently does not implement these features.
+**Objective**: Ensure the web app remains unaffected by the core package changes.
 
-1. **Verification**:
-   - Run `pnpm check-types` and `pnpm build` in `apps/web` to ensure no shared type changes from `@repo/core` or `@repo/trpc` broke the web build.
-   - No UI changes are required for `apps/web` in this phase.
+1. **Web App Verification**:
+   - Ensure `apps/web` builds successfully with the new core types.
+   - Run full monorepo CI checks.

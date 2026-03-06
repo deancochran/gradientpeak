@@ -5,48 +5,50 @@
 - [ ] Review `design.md` and `plan.md` to ensure full context understanding.
 - [ ] Ensure local database is running (`pnpm supabase start`).
 
-## Phase 1: Database & Core Package
+## Cross-Reference Safety Gate (Run During Every Phase)
+
+- [ ] After removing/replacing any core schema export, run `pnpm check-types` and fix all downstream compiler errors before continuing.
+- [ ] After DB column removals (`is_active`, `status`, `primary_goal_id`), update all repository/router/application usages in the same phase (no deferred references).
+- [ ] After replacing `expandMinimalGoalToPlan`, update all imports/callers in core, tRPC, and mobile before proceeding.
+- [ ] Update tests and seed/scripts that reference removed fields or legacy plan shape in the same commit as production code changes.
+
+## Phase 1: Database & Core Package Refactor
 
 - [ ] **DB**: Create migration for `profile_goals` table.
-- [ ] **DB**: Create migration for `training_plans` (add `is_public`, remove `status`, ensure `profile_id` is author).
+- [ ] **DB**: Create migration for `profile_training_settings` table (single JSONB column).
+- [ ] **DB**: Create migration for `training_plans` (add `is_public`, remove `status`, `primary_goal_id`, `is_active`).
 - [ ] **DB**: Generate updated Supabase types (`pnpm run generate-types`).
-- [ ] **Core**: Create `packages/core/schemas/profile_goals.ts`.
+- [ ] **Core**: Create `packages/core/schemas/goals/profile_goals.ts` (reuse `goalV2Schema` logic).
+- [ ] **Core**: Create `packages/core/schemas/settings/profile_settings.ts` (repurpose `TrainingPlanCreationConfig`).
 - [ ] **Core**: Refactor `packages/core/schemas/training-plan-structure/*` to remove embedded goals from `periodizedPlanBaseShape`.
-- [ ] **Core**: Update `packages/core/schemas/form-schemas.ts` to reflect separated goals.
+- [ ] **Core**: Delete legacy `goalV2Schema` and `goalTargetV2Schema`.
 - [ ] **Core**: Implement `materializePlanToEvents(planStructure, startDate)` pure function.
-- [ ] **Core**: Update calculation functions (e.g., `expandMinimalGoalToPlan`) to accept separated goals.
-- [ ] **Testing**: Write unit tests for `materializePlanToEvents`.
-- [ ] **Validation**: Run `pnpm --filter @repo/core check-types && pnpm --filter @repo/core test`.
+- [ ] **Core**: Remove outdated calculation functions that relied on embedded goals.
+- [ ] **Core/Refs**: Update `packages/core/schemas/index.ts` and `packages/core/schemas/form-schemas.ts` exports/usages after goal schema extraction.
+- [ ] **Validation**: Run `pnpm check-types` and `pnpm test` in `@repo/core`.
 
 ## Phase 2: tRPC API Layer
 
 - [ ] **tRPC**: Create `packages/trpc/src/routers/goals.ts` router with CRUD operations.
-- [ ] **tRPC**: Update `training_plans.ts` (and modular files) to fetch templates (`is_public = true` or `profile_id IS NULL`) and authored plans.
-- [ ] **tRPC**: Refactor plan application flow in `training_plans.ts` to create goals and batch insert `events` using `materializePlanToEvents` (without duplicating the template).
-- [ ] **tRPC**: Implement `cancelPlan` / `abandonPlan` procedure in `training_plans.ts` to soft delete future events only.
-- [ ] **Testing**: Write integration tests for the new `goals` router and the updated plan application flow.
-- [ ] **Validation**: Run `pnpm --filter @repo/trpc check-types && pnpm --filter @repo/trpc test`.
+- [ ] **tRPC**: Create `packages/trpc/src/routers/profile_settings.ts` router with `getForProfile` and `upsert` operations (ensure coach authorization).
+- [ ] **tRPC**: Refactor `training_plans.ts` to remove old procedures relying on embedded goals.
+- [ ] **tRPC**: Update `applyPlan` procedure in `training_plans.ts` using `materializePlanToEvents`.
+- [ ] **tRPC/Refs**: Update creation-config and feasibility call sites in `packages/trpc/src/application/training-plan/*` and `packages/trpc/src/routers/training-plans.base.ts`.
+- [ ] **tRPC/Refs**: Remove active-lifecycle assumptions tied to removed `training_plans` columns.
+- [ ] **Validation**: Run `pnpm check-types` and `pnpm test` in `@repo/trpc`.
 
-## Phase 3: Mobile App Refactor (React Native)
+## Phase 3: Mobile App Refactor
 
-- [ ] **State**: Create hooks/stores for fetching `profile_goals` independently (e.g., `useGoals.ts`).
-- [ ] **State**: Update `useTrainingPlanSnapshot.ts` and `useHomeData.ts` to use independent goals.
-- [ ] **State**: Refactor `training-plan-form/validation.ts` and `localPreview.ts`.
-- [ ] **Navigation**: Remove the Library tab (`library.tsx` and `plan-library.tsx`).
-- [ ] **Navigation**: Create a new Calendar tab (`calendar.tsx`) dedicated to the schedule view.
-- [ ] **Navigation**: Refactor the Plan tab (`plan.tsx`) to focus on goals, strategy, and active plan management.
-- [ ] **UI/Composer**: Refactor `TrainingPlanComposerScreen.tsx` to decouple goal creation from plan structure definition.
-- [ ] **UI/Active Plan**: Update `active-plan.tsx` to display goals from the new hooks.
-- [ ] **UI/Details**: Update `training-plan-detail.tsx` and `training-plan-edit.tsx`.
-- [ ] **UI/Profile**: Update User Profile screen with navigational links to user-owned records (activities, routes, activity plans, training plans).
-- [ ] **UI/Plan Application**: Update the "Apply Plan" flow to use the new mutation with selected goals and start date.
-- [ ] **Validation**: Run `pnpm --filter mobile check-types` and test application flows manually in simulator.
+- [ ] **Mobile/State**: Create hooks/stores for fetching `profile_goals` and `profile_settings` independently.
+- [ ] **Mobile/UI**: Reorganize components into `components/goals/`, `components/calendar/`, and `components/settings/`.
+- [ ] **Mobile/Navigation**: Remove the Library tab (`library.tsx` and `plan-library.tsx`).
+- [ ] **Mobile/Calendar**: Implement the new `calendar.tsx` tab (Month View and Schedule View with drag-and-drop).
+- [ ] **Mobile/Plan**: Refactor `plan.tsx` into the unified dashboard with Forecasted Projection, Goal Management, Training Plan Management, and Training Preferences.
+- [ ] **Mobile/Composer**: Repurpose `GoalSelectionStep.tsx` as a standalone Add/Edit Goal modal.
+- [ ] **Mobile/Profile**: Update User Profile screen with individual buttons linking to unique, private screens for user-owned records.
+- [ ] **Mobile/Refs**: Update `lib/training-plan-form/localPreview.ts`, `lib/training-plan-form/validation.ts`, `lib/hooks/useHomeData.ts`, and `lib/hooks/useTrainingPlanSnapshot.ts` to the new goal/settings sources.
 
-## Phase 4: Web App Verification
+## Phase 4: Web App Verification & Final Review
 
-- [ ] **Validation**: Run `pnpm --filter web check-types && pnpm --filter web build` to ensure no shared type changes broke the web app. (No UI changes required).
-
-## Final Review
-
-- [ ] Verify no regressions in Activity Recording (ensure `events` linkage holds).
-- [ ] Run full monorepo CI checks: `pnpm check-types && pnpm lint && pnpm test`.
+- [ ] **Web**: Run `pnpm --filter web check-types && pnpm --filter web build` to ensure no shared type changes broke the web app.
+- [ ] **Final Review**: Run full monorepo CI checks: `pnpm check-types && pnpm lint && pnpm test`.
