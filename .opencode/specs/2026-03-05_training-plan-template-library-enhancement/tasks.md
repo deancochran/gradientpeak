@@ -8,41 +8,39 @@
 ## Phase 1: Database & Core Package
 
 - [ ] **DB**: Create migration for `profile_goals` table.
-- [ ] **DB**: Create migration for `training_plans` (add `profile_id`, modify existing rows).
+- [ ] **DB**: Create migration for `training_plans` (add new columns, backfill templates with `profile_id = NULL`).
 - [ ] **DB**: Generate updated Supabase types (`pnpm run generate-types`).
 - [ ] **Core**: Create `packages/core/schemas/profile_goals.ts`.
-- [ ] **Core**: Refactor `training-plan-structure/domain-schemas.ts` (Remove embedded goals, update `is_template` logic).
-- [ ] **Core**: Implement `materializePlanToEvents(plan, startDate)` pure function.
-- [ ] **Core**: Update metric calculations to rely solely on `events`.
-- [ ] **Testing**: Write unit tests for `materializePlanToEvents` (100% coverage required).
+- [ ] **Core**: Refactor `packages/core/schemas/training-plan-structure/*` to remove embedded goals from `periodizedPlanBaseShape`.
+- [ ] **Core**: Update `packages/core/schemas/form-schemas.ts` to reflect separated goals.
+- [ ] **Core**: Implement `materializePlanToEvents(planStructure, startDate)` pure function.
+- [ ] **Core**: Update calculation functions (e.g., `expandMinimalGoalToPlan`) to accept separated goals.
+- [ ] **Testing**: Write unit tests for `materializePlanToEvents`.
 - [ ] **Validation**: Run `pnpm --filter @repo/core check-types && pnpm --filter @repo/core test`.
 
 ## Phase 2: tRPC API Layer
 
-- [ ] **tRPC**: Create `goals.ts` router with full CRUD operations.
-- [ ] **tRPC**: Update `trainingPlans.ts` -> `getTemplates` procedure.
-- [ ] **tRPC**: Update `trainingPlans.ts` -> `getUserActivePlan` procedure.
-- [ ] **tRPC**: Implement `trainingPlans.ts` -> `applyPlan` procedure (Batch insert events, enforce single-active-plan guard).
-- [ ] **tRPC**: Implement `trainingPlans.ts` -> `cancelPlan` procedure (Soft delete future events only).
-- [ ] **Testing**: Write integration tests for `applyPlan` and `cancelPlan` edge cases.
+- [ ] **tRPC**: Create `packages/trpc/src/routers/goals.ts` router with CRUD operations.
+- [ ] **tRPC**: Update `training_plans.ts` (and modular files) to fetch templates (`profile_id IS NULL`) and user plans.
+- [ ] **tRPC**: Refactor plan application flow in `training_plans.ts` to duplicate template, create goals, and batch insert `events` using `materializePlanToEvents`.
+- [ ] **tRPC**: Implement `cancelPlan` / `abandonPlan` procedure in `training_plans.ts` to soft delete future events only.
+- [ ] **Testing**: Write integration tests for the new `goals` router and the updated plan application flow.
 - [ ] **Validation**: Run `pnpm --filter @repo/trpc check-types && pnpm --filter @repo/trpc test`.
 
 ## Phase 3: Mobile App Refactor (React Native)
 
-- [ ] **State**: Create `useGoalsStore.ts` and update `usePlanStore.ts`.
-- [ ] **UI/Plan**: Update Template Library screens to consume `getTemplates`.
-- [ ] **UI/Plan**: Implement new `applyPlan` mutation flow with start date selection.
-- [ ] **UI/Goals**: Refactor goal creation UI to work independently of plans.
-- [ ] **UI/Calendar**: Clean up Calendar rendering logic to ensure zero dependency on `training_plans.structure`.
+- [ ] **State**: Create hooks/stores for fetching `profile_goals` independently (e.g., `useGoals.ts`).
+- [ ] **State**: Update `useTrainingPlanSnapshot.ts` and `useHomeData.ts` to use independent goals.
+- [ ] **State**: Refactor `training-plan-form/validation.ts` and `localPreview.ts`.
+- [ ] **UI/Composer**: Refactor `TrainingPlanComposerScreen.tsx` to decouple goal creation from plan structure definition.
+- [ ] **UI/Active Plan**: Update `active-plan.tsx` to display goals from the new hooks.
+- [ ] **UI/Details**: Update `training-plan-detail.tsx` and `training-plan-edit.tsx`.
+- [ ] **UI/Library**: Ensure `library.tsx` and `plan-library.tsx` fetch templates correctly and use the new apply mutation.
 - [ ] **Validation**: Run `pnpm --filter mobile check-types` and test application flows manually in simulator.
 
-## Phase 4: Web Dashboard Refactor (Next.js)
+## Phase 4: Web App Verification
 
-- [ ] **Admin UI**: Remove Goal definition steps from the Template Builder.
-- [ ] **Admin UI**: Ensure Template builder saves with `profile_id: null`.
-- [ ] **User UI**: Update Web Dashboard "My Goals" widget.
-- [ ] **User UI**: Update Web Dashboard "Active Plan" widget.
-- [ ] **Validation**: Run `pnpm --filter web check-types && pnpm --filter web build`.
+- [ ] **Validation**: Run `pnpm --filter web check-types && pnpm --filter web build` to ensure no shared type changes broke the web app. (No UI changes required).
 
 ## Final Review
 
