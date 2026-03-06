@@ -56,8 +56,7 @@ Extracts goals from the `training_plans` JSON structure into a discrete, relatio
 - **`id`**: UUID, Primary Key.
 - **`profile_id`**: UUID, Foreign Key to `profiles`. (Goals NEVER cross profiles).
 - **`training_plan_id`**: UUID, Foreign Key to `training_plans` (Nullable - goals can exist without a plan).
-- **`milestone_event_id`**: UUID, Foreign Key to `events` (Nullable - anchors the goal to a schedule, but `events` remains the schedule source of truth).
-- **`target_date`**: Date.
+- **`milestone_event_id`**: UUID, Foreign Key to `events` (Nullable - anchors the goal to a specific date/event in the schedule. The goal's target date is derived entirely from this event's date to prevent synchronization edge cases).
 - **`title`**: Text.
 - **`goal_type`**: Text.
 - **`target_metric`**: Text (Nullable).
@@ -66,21 +65,24 @@ Extracts goals from the `training_plans` JSON structure into a discrete, relatio
 
 ### B. `training_plans` (Updated)
 
-Consolidates system templates and user plans into one table.
+Acts strictly as a library of templates (content). There are no "user-applied plan" records.
 
 - **`id`**: UUID, Primary Key.
-- **`profile_id`**: UUID, Foreign Key to `profiles`. **CRITICAL:** If `NULL`, this record is a System Template. If populated, it is a User-Applied Plan.
-- **`primary_goal_id`**: UUID, Foreign Key to `profile_goals` (Nullable).
+- **`profile_id`**: UUID, Foreign Key to `profiles`. (The author of the template. If `NULL`, it is a system template).
 - **`sessions_per_week_target`**: Integer (Nullable).
 - **`duration_hours`**: Numeric (Nullable).
-- **`status`**: Text (`draft`, `active`, `paused`, `completed`, `abandoned`).
+- **`is_public`**: Boolean (Default false. Whether the user has shared this template to the community library).
 - **`structure`**: JSONB (Contains plan metadata, blocks, and session intents with `day_offset`, `session_type`, and `activity_plan_id`). **Embedded goals are removed.**
+
+_(Note: `status` and `primary_goal_id` are removed because templates do not have an execution lifecycle or specific user goals)._
 
 ### C. `events` (No Structural Changes)
 
-Remains the operational truth for user scheduling.
+Remains the operational truth for user scheduling and acts as the only record of a user's "active plan".
 
 - **Behavioral Change**: When a user applies a `training_plan`, the system reads the `structure` JSONB, calculates exact dates using the plan's start date and the session's `day_offset`, and materializes `events` rows. Rest days are inferred dynamically from days without planned activity events.
+- **Active Plan Tracking**: A user's "active plan" is simply determined by querying if they have future `events` with a `training_plan_id`.
+- **Abandoning a Plan**: To cancel a plan, the system simply deletes all future `events` linked to that `training_plan_id`.
 
 ## 4. Integration Strategy
 
@@ -94,8 +96,8 @@ Remains the operational truth for user scheduling.
 
 - Create a new `goals.ts` router for managing `profile_goals`.
 - Refactor `training_plans.ts` procedures (especially `applyPlan` or equivalent creation logic) to:
-  1. Create the `training_plans` record.
-  2. Create associated `profile_goals` records.
+  1. Fetch the `training_plans` template.
+  2. Create associated `profile_goals` records (if any).
   3. Call `materializePlanToEvents` and batch insert into `events`.
 - Update analytics and projection procedures to query `events` and `profile_goals` relationally rather than parsing plan JSON.
 

@@ -8,7 +8,7 @@
 ## Phase 1: Database & Core Package
 
 - [ ] **DB**: Create migration for `profile_goals` table.
-- [ ] **DB**: Create migration for `training_plans` (add new columns, backfill templates with `profile_id = NULL`).
+- [ ] **DB**: Create migration for `training_plans` (add `is_public`, remove `status`, ensure `profile_id` is author).
 - [ ] **DB**: Generate updated Supabase types (`pnpm run generate-types`).
 - [ ] **Core**: Create `packages/core/schemas/profile_goals.ts`.
 - [ ] **Core**: Refactor `packages/core/schemas/training-plan-structure/*` to remove embedded goals from `periodizedPlanBaseShape`.
@@ -21,8 +21,8 @@
 ## Phase 2: tRPC API Layer
 
 - [ ] **tRPC**: Create `packages/trpc/src/routers/goals.ts` router with CRUD operations.
-- [ ] **tRPC**: Update `training_plans.ts` (and modular files) to fetch templates (`profile_id IS NULL`) and user plans.
-- [ ] **tRPC**: Refactor plan application flow in `training_plans.ts` to duplicate template, create goals, and batch insert `events` using `materializePlanToEvents`.
+- [ ] **tRPC**: Update `training_plans.ts` (and modular files) to fetch templates (`is_public = true` or `profile_id IS NULL`) and authored plans.
+- [ ] **tRPC**: Refactor plan application flow in `training_plans.ts` to create goals and batch insert `events` using `materializePlanToEvents` (without duplicating the template).
 - [ ] **tRPC**: Implement `cancelPlan` / `abandonPlan` procedure in `training_plans.ts` to soft delete future events only.
 - [ ] **Testing**: Write integration tests for the new `goals` router and the updated plan application flow.
 - [ ] **Validation**: Run `pnpm --filter @repo/trpc check-types && pnpm --filter @repo/trpc test`.

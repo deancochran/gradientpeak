@@ -5,11 +5,11 @@
 **Objective**: Update the foundational schema and `@repo/core` typings to extract goals from the plan structure into a relational table.
 
 1. **Supabase Migrations**:
-   - Create migration script `create_profile_goals_table.sql` with columns: `id`, `profile_id`, `training_plan_id`, `milestone_event_id`, `title`, `goal_type`, `target_date`, `target_metric`, `target_value`, `importance`.
+   - Create migration script `create_profile_goals_table.sql` with columns: `id`, `profile_id`, `training_plan_id`, `milestone_event_id`, `title`, `goal_type`, `target_metric`, `target_value`, `importance`.
    - Create migration script `update_training_plans_table.sql`:
-     - Add `primary_goal_id`, `sessions_per_week_target`, `duration_hours`, `status`.
-     - Ensure `profile_id` is used to distinguish templates (`NULL`) from user plans.
-     - Backfill existing templates to have `profile_id = NULL` and `status = 'draft'`.
+     - Add `sessions_per_week_target`, `duration_hours`, `is_public`.
+     - Remove `status` and `primary_goal_id` columns if they exist.
+     - Ensure `profile_id` represents the author of the template (if `NULL`, it is a system template).
    - Run local migrations and generate updated Supabase types.
 2. **`@repo/core` Schemas**:
    - Create `packages/core/schemas/profile_goals.ts` defining the Zod schema for the new table.
@@ -27,16 +27,14 @@
 1. **Goals Router (`packages/trpc/src/routers/goals.ts`)**:
    - Create a new router with procedures: `create`, `getForProfile`, `update`, `delete`.
 2. **Training Plans Router (`packages/trpc/src/routers/training_plans.ts` and modular files)**:
-   - Update template fetching logic to query where `profile_id IS NULL`.
-   - Update user plan fetching logic to query where `profile_id = input.profile_id`.
+   - Update template fetching logic to query where `is_public = true` or `profile_id IS NULL`.
+   - Update user plan fetching logic to query where `profile_id = input.profile_id` (their authored templates).
    - Refactor the plan application/creation flow (`applyPlan` or equivalent):
-     - Validate active plan constraints (one active/paused plan per profile).
-     - Duplicate the template row, setting `profile_id` and `status = 'active'`.
+     - Validate active plan constraints (query future `events` to ensure no other active plan).
      - Create associated `profile_goals` records if provided in the request.
-     - Call `materializePlanToEvents` from core.
-     - Execute a batch insert into the `events` table.
+     - Call `materializePlanToEvents` from core using the template's structure.
+     - Execute a batch insert into the `events` table (linking them to the template's `training_plan_id`).
    - Implement `cancelPlan` / `abandonPlan`:
-     - Update plan `status = 'abandoned'`.
      - Delete all future `events` linked to this plan (`training_plan_id = input.id` AND `date >= TODAY`). Do NOT delete historical events.
 3. **Validation**: Run `pnpm test` in `@repo/trpc`. Ensure tests cover the new `goals` router and the updated `applyPlan` flow.
 
