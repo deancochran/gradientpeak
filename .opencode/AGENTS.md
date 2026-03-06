@@ -18,9 +18,17 @@ GradientPeak is a sophisticated fitness tracking platform with a **local-first, 
 
 GradientPeak uses a **task-managed, error-resistant agentic workflow**.
 
+### Context Management & Lazy Loading
+
+**CRITICAL:** Before implementing any feature, you MUST use the `Read` tool to parse the corresponding specification in `.opencode/specs/`. Do NOT preemptively load all references. Load `design.md` for context, then `plan.md` for steps, and update `tasks.md` as you progress.
+
+### Skills System
+
+When beginning implementation, agents MUST use the `skill` tool to load the relevant procedural workflow (e.g., invoke `skill(name="mobile-frontend")` when working on React Native components). Skills provide the "HOW" while specs provide the "WHAT".
+
 ### Task Management
 
-**Always read `.opencode/tasks/index.md` at session start.**
+**Always read `.opencode/specs/{specname}/tasks.md` at session start.**
 
 | Complexity | Scope                | Action                  |
 | ---------- | -------------------- | ----------------------- |
@@ -46,7 +54,7 @@ Complex tasks use the `.opencode/specs/` folder:
 2. **ANALYZE** - What went wrong?
 3. **FIX** - Apply correction
 4. **VALIDATE** - Run tests
-5. **NOTE** - Add lesson to `.opencode/tasks/index.md` if significant
+5. **NOTE** - Add lesson to `.opencode/specs/{specname}/tasks.md` if significant
 
 ### Testing
 
@@ -80,7 +88,7 @@ pnpm check-types && pnpm lint && pnpm test
 
 **Workflow:**
 
-1. Read tasks/index.md at session start
+1. Read specs/{specname}/tasks.md at session start
 2. Add task before starting work
 3. Update subtask status as `[ ]` or `[x]`
 4. Mark complete with lessons learned
@@ -106,7 +114,7 @@ Add lessons when significant errors occur:
 ### Key Files
 
 - `.opencode/AGENTS.md` - This file (custom instructions)
-- `.opencode/tasks/index.md` - Quick task tracker
+- `.opencode/specs/{specname}/tasks.md` - Quick task tracker
 - `.opencode/specs/` - Detailed task folders with research/implementation
 - `.opencode/specs/` - Agent design and planning documents
 
@@ -163,7 +171,7 @@ Task research saves to `.opencode/specs/{topic}/`.
 
 **Start of Session:**
 
-1. Read `.opencode/tasks/index.md`
+1. Read `.opencode/specs/{specname}/tasks.md`
 2. Review active task context in `.opencode/specs/`
 3. Continue with next subtask
 
@@ -172,12 +180,12 @@ Task research saves to `.opencode/specs/{topic}/`.
 1. Update task progress after each subtask
 2. Document blockers immediately
 3. Run tests after implementation
-4. Add lessons to tasks/index.md if significant
+4. Add lessons to specs/{specname}/tasks.md if significant
 
 **End of Session:**
 
 1. Verify all changes tested
-2. Update tasks/index.md with progress
+2. Update specs/{specname}/tasks.md with progress
 3. Document any incomplete work
 
 ---
@@ -592,7 +600,7 @@ For complex features requiring expert analysis and informed decision-making, Gra
 - **Execution agents** (Primary Interface & Delegating) implement based on research findings
 - **All research saved** to `.opencode/research/` for reuse across sessions
 - **Persistent knowledge base** builds institutional memory over time
-- **Task backlog** (`.opencode/tasks/index.md`) tracks progress across sessions
+- **Task backlog** (`.opencode/specs/{specname}/tasks.md`) tracks progress across sessions
 
 **When to Use:**
 
@@ -663,7 +671,7 @@ _Automatic research trigger:_
 ## Getting Help
 
 - **Workflow**: This file (AGENTS.md)
-- **Tasks**: `.opencode/tasks/index.md` + `.opencode/specs/`
+- **Tasks**: `.opencode/specs/{specname}/tasks.md` + `.opencode/specs/`
 - **Mobile App**: `apps/mobile/README.md`
 - **Web Dashboard**: `apps/web/README.md`
 

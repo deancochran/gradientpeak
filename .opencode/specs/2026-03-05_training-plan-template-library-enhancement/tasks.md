@@ -1,57 +1,51 @@
-# Tasks: Profile Goals + Training Plans (MVP)
+# Execution Plan: Profile Goals + Training Plans (MVP)
 
-## Phase 1: Schema Refactor
+## Phase 1: Schema Refactor & Migration
 
-- [ ] Create `profile_goals` table with FK links to `profiles`, optional `training_plans`, optional `events` (`milestone_event_id`).
-- [ ] Add `profile_goals.importance` integer column with check constraint (0-10).
-- [ ] Add `training_plans.primary_goal_id` FK to `profile_goals`.
-- [ ] Add `training_plans.sessions_per_week_target` and `training_plans.duration_hours` (numeric).
-- [ ] Add `training_plans.status` (`draft`, `active`, `paused`, `completed`, `abandoned`).
-- [ ] Add check constraints for numeric bounds and enum-style text constraints.
-- [ ] Add indexes for `profile_goals` and `training_plans` query paths.
-- [ ] Add partial unique constraint enforcing one active/paused plan per profile (`profile_id IS NOT NULL`).
+### Task 1.1: Create `profile_goals` table and extend `training_plans`
 
-## Phase 2: Backfill + Compatibility
+- **Description:** Create the new `profile_goals` table with all required columns, constraints (importance 0-10), and indexes. Add new columns (`primary_goal_id`, `sessions_per_week_target`, `duration_hours`, `status`) to `training_plans` with appropriate constraints and indexes (including the partial unique constraint for active/paused plans).
+- **Files to Edit:** `supabase/migrations/[timestamp]_profile_goals_and_training_plans.sql` (Create new migration file)
+- **Verification:** Run `supabase db reset` or apply migration locally and verify schema using `psql` or Supabase Studio.
 
-- [ ] Backfill existing template rows in `training_plans` to ensure `profile_id` is null.
-- [ ] Backfill existing rows with `status='draft'` where null.
-- [ ] Validate legacy queries keep working after new columns exist.
-- [ ] Keep `training_plans.structure` reference-first (`day_offset`, `session_type`, `activity_plan_id`).
+### Task 1.2: Backfill Data
 
-## Phase 3: Apply Flow Rewrite
+- **Description:** Backfill existing template rows in `training_plans` to ensure `profile_id` is null and `status='draft'` where null.
+- **Files to Edit:** `supabase/migrations/[timestamp]_backfill_training_plans.sql` (Create new migration file)
+- **Verification:** Run `supabase db reset` and query `training_plans` to ensure no null statuses and templates have null `profile_id`.
 
-- [ ] Update apply flow to duplicate the source plan into a new `training_plans` row, assigning the user's `profile_id`.
-- [ ] Calculate and set `duration_hours` based on associated activity plans during apply.
-- [ ] Seed optional `profile_goals` on apply and attach them to the new user plan.
-- [ ] Set `primary_goal_id` on the applied user plan when provided.
-- [ ] Materialize future `events` from the applied plan structure.
+## Phase 2: Core Package Updates
 
-## Phase 4: Lifecycle + Event Semantics
+### Task 2.1: Update Zod Schemas
 
-- [ ] Enforce active-plan guard using `training_plans` (`profile_id IS NOT NULL`, status active/paused).
-- [ ] On complete/abandon, cancel future scheduled events linked to that user plan.
-- [ ] Keep historical events unchanged during lifecycle transitions.
-- [ ] Ensure rest days are inferred dynamically from days without planned events (do not create explicit rest day events).
-- [ ] Ensure `planned_activity` events use referenced `activity_plan_id` when available.
+- **Description:** Update `@repo/core` schemas to reflect the new database schema. Add `profileGoalsSchema` and update `trainingPlansSchema`.
+- **Files to Edit:** `packages/core/schemas/training.ts` (or equivalent schema file)
+- **Verification:** Run `cd packages/core && pnpm check-types && pnpm test`.
 
-## Phase 5: Goals + Analytics Alignment
+## Phase 3: API Layer Updates (tRPC)
 
-- [ ] Implement profile-goal CRUD scoped to profile ownership.
-- [ ] Support optional goal milestone linkage via `milestone_event_id`.
-- [ ] Build active-goal views from `profile_goals` + event context (goals are inactive if `target_date` has passed).
-- [ ] Keep planned-load and prediction inputs computed from `events` only.
-- [ ] Exclude cancelled events from planned-load totals.
+### Task 3.1: Implement Profile Goals CRUD
 
-## Phase 6: Validation
+- **Description:** Create tRPC endpoints for managing `profile_goals`, ensuring they are scoped to the user's profile.
+- **Files to Edit:** `packages/trpc/src/routers/goals.ts` (Create or update)
+- **Verification:** Run `cd packages/trpc && pnpm check-types && pnpm test`.
 
-- [ ] Validate FK integrity and same-profile ownership checks in API paths.
-- [ ] Validate one-active-plan constraint for user plans.
-- [ ] Validate template apply creates user plan + events + optional goals.
-- [ ] Validate goal importance is constrained between 0 and 10.
-- [ ] Validate training plan duration is correctly derived from activity plans.
+### Task 3.2: Rewrite Plan Apply Flow
 
-## Explicitly Deferred
+- **Description:** Update the apply flow endpoint to duplicate the source plan, assign `profile_id`, calculate `duration_hours`, seed `profile_goals`, and materialize future `events`. Enforce the active-plan guard.
+- **Files to Edit:** `packages/trpc/src/routers/training-plans.ts`
+- **Verification:** Run `cd packages/trpc && pnpm check-types && pnpm test`. Write a specific integration test for the apply flow.
 
-- [ ] Dedicated optimization/projection run tables.
-- [ ] Cohort/group planning model.
-- [ ] Provider OAuth/integration changes.
+### Task 3.3: Implement Plan Lifecycle Management
+
+- **Description:** Update endpoints to handle plan status changes (`completed`, `abandoned`). Ensure future scheduled events are cancelled upon completion/abandonment, while historical events remain unchanged.
+- **Files to Edit:** `packages/trpc/src/routers/training-plans.ts`
+- **Verification:** Run `cd packages/trpc && pnpm check-types && pnpm test`. Write a test verifying future events are cancelled on abandonment.
+
+## Phase 4: Analytics Alignment
+
+### Task 4.1: Update Analytics Queries
+
+- **Description:** Ensure planned-load and prediction inputs are computed from `events` only, excluding cancelled events. Ensure rest days are inferred dynamically.
+- **Files to Edit:** `packages/core/calculations/` (relevant calculation files) and `packages/trpc/src/routers/analytics.ts`
+- **Verification:** Run `cd packages/core && pnpm test` and `cd packages/trpc && pnpm test`.
