@@ -2,12 +2,14 @@
 
 ## Phase 1: Template + Schema Hardening
 
-- [ ] Enforce schedulable session contract in `training_plans.structure` (`session_type`, date anchor, title).
+- [ ] Enforce reference-only session contract in `training_plans.structure` (`day_offset`, `session_type`, `activity_plan_id`).
 - [ ] Add/confirm `training_plans.plan_duration_days` (required, `> 0`).
 - [ ] Extend `user_training_plans` with `personalization`, `template_version`, optional `projection_snapshot`.
 - [ ] Add `user_training_plans.scheduling_mode` (`default_template` | `projection_tuned`).
-- [ ] Keep `snapshot_structure` backward-compatible and required for apply replay.
+- [ ] Keep `snapshot_structure` backward-compatible and required as applied-plan codification for apply/replay inputs.
 - [ ] Exclude non-scheduling metadata from MVP schema scope (pricing/merchandising fields).
+- [ ] Ensure events store only scheduling fields (`event_type`, `scheduled_start`, `activity_plan_id`, `user_training_plan_id`, `schedule_batch_id`, `status`), no embedded workout JSON.
+- [ ] Implement read-time resolution: events resolve workout details from `activity_plan_id` when rendered.
 
 ## Phase 2: Single-Plan Lifecycle and Handoff
 
@@ -57,7 +59,7 @@
 
 - [ ] Validate strict single-active-plan enforcement.
 - [ ] Validate active-plan handoff flow before allowing new plan apply.
-- [ ] Validate deterministic regeneration (future-only replacement by `schedule_batch_id`).
+- [ ] Validate deterministic regeneration (future-only schedule-row replacement by `schedule_batch_id`).
 - [ ] Validate rest-day insertion in taper/recovery and blocked-day windows.
 - [ ] Validate impossible-schedule guardrails (availability too low for target projection).
 - [ ] Validate no drift between projection targets and generated event totals.
@@ -65,6 +67,7 @@
 - [ ] Validate projection-mode customization flow across plan-level, week-level, and event-level edits.
 - [ ] Validate deterministic reproducibility (same input produces same schedule output).
 - [ ] Validate rewrite-scope boundaries are respected.
+- [ ] Validate reference-first behavior: events display updated workout details when referenced `activity_plan` changes, even for historical rows.
 
 ## Explicitly Deferred
 

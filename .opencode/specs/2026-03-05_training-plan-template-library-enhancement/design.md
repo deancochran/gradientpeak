@@ -8,14 +8,14 @@ MVP direction:
 
 1. Remove cohorts from this specification.
 2. Keep `events` as the only schedule source of truth.
-3. Treat `training_plans` as versioned template blueprints with real session content.
+3. Treat `training_plans` as versioned template blueprints with reference-only session intent.
 4. Generate `planned_activity` and `rest_day` events when a user starts a plan.
 5. Compute planned training load from scheduled `events` linked to the active plan.
 
 ## Domain Ownership (Single Source of Truth)
 
 1. `training_plans`: reusable template blueprint content and defaults.
-2. `user_training_plans`: user-specific plan enrollment/instance and personalization.
+2. `user_training_plans`: user-specific codified plan instance and personalization.
 3. `activity_plans`: reusable workout definitions referenced by plan sessions.
 4. `events`: concrete scheduled execution instances and planned-load query surface.
 
@@ -29,24 +29,46 @@ Schema scope rule for this MVP:
 
 ## Required MVP Model Changes
 
-### A) Training Plan Content Must Be Schedulable
+### A) Training Plan Sessions Are Reference-Only
 
-`training_plans.structure` must contain explicit session intents that can become events.
+`training_plans.structure` stores session intent using **ID references only**. No embedded workout JSON.
 
-Required per-session shape (inside structure):
+**Required per-session shape (minimal):**
 
-1. `session_type`: `planned_activity` | `rest_day`
-2. `offset_days` (or `day_offset`) or explicit `scheduled_date`
-3. `title`
-4. optional `activity_plan_id` (required when `session_type=planned_activity`)
-5. optional scheduling hints (`preferred_time`, `duration_min`, `load_target_tss`)
+```json
+{
+  "key": "w1_d1_endurance",
+  "day_offset": 0,
+  "session_type": "planned_activity",
+  "activity_plan_id": "uuid"
+}
+```
 
-Constraint rule:
+**Rules:**
 
-1. `rest_day` sessions never reference `activity_plan_id`.
-2. `planned_activity` sessions should reference an `activity_plan_id` when available.
+1. `session_type`: `planned_activity` | `rest_day` (required)
+2. `day_offset`: integer day from plan start (required)
+3. `activity_plan_id`:
+   - required when `session_type = planned_activity`
+   - must be null when `session_type = rest_day`
+4. No `title`, no embedded workout body, no scheduling hints in template structure
+5. All workout details are resolved from `activity_plans` at read-time
 
-### B) User Enrollment Holds Personalization Inputs
+**Constraint rule:**
+
+- `rest_day` sessions never reference `activity_plan_id`.
+- `planned_activity` sessions must reference a valid `activity_plan_id`.
+
+**Activity Plans as Source of Truth:**
+
+- `activity_plans` is the single source of truth for workout definitions
+- If an `activity_plan` is updated, all events referencing it will reflect the new details when rendered
+- Historical events are **reference views**, not immutable snapshots
+- No version pinning or content freezing required
+
+### B) User Enrollment Holds Plan Codification + Personalization
+
+`user_training_plans` is the user-level codification of an applied template for execution.
 
 Extend `user_training_plans` with minimal user-level controls:
 
@@ -55,17 +77,27 @@ Extend `user_training_plans` with minimal user-level controls:
 3. optional `projection_snapshot` JSONB (diagnostics and solved weekly targets used at apply time)
 4. `scheduling_mode`: `default_template` | `projection_tuned`
 
-Keep existing `snapshot_structure` for reproducibility.
+Keep existing `snapshot_structure` as the applied-template codification used for deterministic apply/regenerate inputs.
 
-### C) Events Become Planned Truth
+### C) Events Store Reference Only
 
 When a plan is started:
 
 1. Create one `user_training_plans` row.
-2. Generate event rows immediately from template sessions and projection-aware scheduling.
+2. Generate event rows from template session references.
 3. Write events with one `schedule_batch_id`.
 4. Set `event_type` to `planned_activity` or `rest_day` explicitly.
-5. Always populate `user_training_plan_id` on generated rows.
+5. Populate `user_training_plan_id` on generated rows.
+6. Store only scheduling fields in events:
+   - `event_type`, `scheduled_start`, `activity_plan_id` (reference only)
+   - `user_training_plan_id`, `schedule_batch_id`, `status`
+7. Do NOT embed workout details in events — resolve from `activity_plan_id` at read-time.
+
+**Reference-first history:**
+
+- Events are reference views, not frozen snapshots
+- If `activity_plan` content changes, rendered event details reflect the latest
+- This is intentional: `activity_plans` is the single source of truth
 
 Planned load analytics must sum from scheduled events for the active plan, not from template totals.
 
@@ -82,8 +114,9 @@ Runtime contract:
 Required resolution behavior:
 
 1. On `completed`/`abandoned`, all future scheduled events for that `user_training_plan_id` are set to `cancelled`.
-2. Historical and completed events remain unchanged.
-3. After resolution, user can start a new plan.
+2. Historical and completed event rows remain unchanged by lifecycle handoff/regeneration.
+3. Rendered workout details for those rows may still change if the referenced `activity_plan` changes.
+4. After resolution, user can start a new plan.
 
 ### E) Projection-Driven Scheduling Loop
 
@@ -193,6 +226,8 @@ Recommended solver style for MVP:
 10. Projection-tuned optimization is deterministic and explainable.
 11. Users can explicitly rewrite as much future schedule as they want via rewrite scope controls.
 12. Future regeneration preserves manual edits by default unless explicit overwrite is requested.
+13. Events store only `activity_plan_id` reference — workout details are resolved from `activity_plans` at read-time.
+14. Historical events may change displayed details when referenced `activity_plan` is updated — this is intentional (activity_plans is source of truth).
 
 ## Out of Scope (Explicit)
 
@@ -209,3 +244,6 @@ Recommended solver style for MVP:
 2. Aligns analytics with behavior: planned load comes from what is actually scheduled.
 3. Avoids ambiguous scheduling and keeps UX simple with one active plan.
 4. Keeps future path open: cohorts can later attach to `user_training_plans` without rewriting `events`.
+5. Minimizes data duplication: workout definitions live in one place (`activity_plans`), not denormalized across templates and events.
+6. Simplifies edits: changing a workout definition automatically updates all future scheduled events that reference it.
+7. Reference-first history is intentional: events are views, not frozen snapshots.

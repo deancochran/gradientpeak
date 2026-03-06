@@ -4,7 +4,7 @@
 
 This plan covers the minimum schema and backend behavior needed to support:
 
-1. Rich training-plan templates with schedulable session content.
+1. Reference-only training-plan templates with schedulable session intent.
 2. Single active plan lifecycle with explicit plan handoff.
 3. Automatic generation of `planned_activity` and `rest_day` events at plan start.
 4. Projection-aware scheduling using current core projection logic.
@@ -31,7 +31,7 @@ MVP constraints:
    - add `template_version` text
    - add optional `projection_snapshot` JSONB
    - add `scheduling_mode` (`default_template` | `projection_tuned`)
-   - keep `snapshot_structure` for applied-plan reproducibility
+   - keep `snapshot_structure` for applied-plan codification
 3. `events`
    - keep canonical linkage through `user_training_plan_id`
    - enforce event semantics:
@@ -55,19 +55,19 @@ Required columns and constraints:
 6. `created_at timestamptz not null default now()` (existing)
 7. `updated_at timestamptz not null default now()` (existing)
 
-`structure` required session contract (validation-level, optionally db-level via check/function):
+`structure` required session contract (reference-only, minimal):
 
 1. `session_type`: `planned_activity` | `rest_day` (required)
-2. date anchor: `offset_days` (or `day_offset`) or explicit `scheduled_date` (required)
-3. `title` (required)
-4. `activity_plan_id` optional, but required when `session_type=planned_activity` and omitted only when selector logic is explicitly supported
-5. scheduling hints optional: `preferred_time`, `duration_min`, `load_target_tss`
+2. `day_offset`: integer (required, day from plan start)
+3. `activity_plan_id`: required for `planned_activity`, null for `rest_day`
+
+No embedded title, workout body, or scheduling hints in template structure. All workout details are resolved from `activity_plans` at read-time.
 
 Desired indexes:
 
 1. `idx_training_plans_version` on (`version`)
 
-### 2) `user_training_plans` (applied plan instance)
+### 2) `user_training_plans` (codified applied plan instance)
 
 Required columns and constraints:
 
@@ -170,7 +170,7 @@ Desired indexes:
 4. Backfill `personalization` to `'{}'::jsonb` before making not null.
 5. Add constraints in non-breaking order: checks -> indexes -> unique partial index.
 6. Validate existing `events` rows before enabling strict `rest_day`/`planned_activity` checks.
-7. Keep `snapshot_structure` backward-compatible to replay old plans.
+7. Keep `snapshot_structure` backward-compatible to preserve applied-plan codification and replay inputs.
 8. Roll out API writes to new fields before enforcing hard db constraints.
 
 ### Runtime/API changes (required)
@@ -182,6 +182,8 @@ Desired indexes:
 5. Add apply-time scheduling mode contract: template-faithful default with optional projection tuning.
 6. Preserve manual future event edits during regeneration by default; support explicit overwrite option.
 7. Add rewrite-scope controls so optimization can rewrite selected week, future horizon, or full remaining plan.
+8. Events store only scheduling fields (`event_type`, `scheduled_start`, `activity_plan_id`, `user_training_plan_id`, `schedule_batch_id`, `status`) — resolve workout details from `activity_plan_id` at read-time.
+9. Accept that historical events may display updated details when referenced `activity_plan` changes — this is intentional.
 
 ## Schema Details
 
@@ -201,6 +203,14 @@ Required keys:
 6. `goal_priority`: ordered list (`consistency`, `performance`, `recovery`) used to tune recommendation scoring.
 
 MVP note: this contract is represented as JSON in persistence and validated at API/domain boundaries; implementation may use any storage engine as long as contract semantics are preserved.
+
+### Reference-first model (activity_plans as source of truth)
+
+- `training_plans.structure.sessions[]` stores only: `day_offset`, `session_type`, `activity_plan_id`
+- `events` store only scheduling fields: `event_type`, `scheduled_start`, `activity_plan_id`, `user_training_plan_id`, `schedule_batch_id`, `status`
+- Workout details (title, description, intervals, zones) are resolved from `activity_plans` at read-time
+- Historical events can change when referenced `activity_plan` is updated — this is intentional
+- No version pinning or snapshot freezing required
 
 ### Recommendation run metadata contract (domain)
 
@@ -320,6 +330,9 @@ MVP persistence guidance:
 3. `scheduling_mode` remains restricted to `default_template` and `projection_tuned`.
 4. Determinism metadata (`solver_version`, `determinism_fingerprint`) is captured for each optimize/regenerate run.
 5. Feedback contracts are accepted and persisted for future adaptation without rewriting past events.
+6. Events store only scheduling fields, no embedded workout JSON.
+7. Read-time resolution: workout details are resolved from `activity_plan_id` when events are rendered.
+8. Reference-first history: events may display updated details when referenced `activity_plan` changes.
 
 ### Schema Details explicitly deferred
 
@@ -334,9 +347,9 @@ This section defines the end-to-end MVP data flow from onboarding to adaptation,
 ### End-to-end flow
 
 1. **Onboarding/intent capture:** user submits availability, constraints, and goals -> normalized into `recommendation_profile`.
-2. **Apply recommendation:** system validates single-active-plan rule, snapshots template (`snapshot_structure` + `template_version`), selects lane (`default_template` or `projection_tuned`), and computes deterministic recommendation run metadata.
+2. **Apply recommendation:** system validates single-active-plan rule, codifies the template on `user_training_plans` (`snapshot_structure` + `template_version`), selects lane (`default_template` or `projection_tuned`), and computes deterministic recommendation run metadata.
 3. **Scheduling materialization:** scheduler emits `planned_activity` and `rest_day` events with shared `schedule_batch_id` and `user_training_plan_id`.
-4. **Execution/completion loop:** user completes, skips, cancels, or manually edits future events; historical events remain immutable.
+4. **Execution/completion loop:** user completes, skips, cancels, or manually edits future events; historical schedule rows are not rewritten, but rendered workout details may change via `activity_plan` references.
 5. **Feedback/adaptation trigger:** user feedback and observed completion patterns are read as inputs to explicit `optimize`/`regenerate` actions.
 6. **Future-only adaptation:** optimizer rewrites only selected future scope, emits new `schedule_batch_id`, preserves manual edits unless overwrite requested.
 7. **Analytics/read model:** planned-vs-completed load is queried from `events` (excluding cancelled), with projection gap diagnostics from snapshot metadata.
@@ -351,7 +364,7 @@ This section defines the end-to-end MVP data flow from onboarding to adaptation,
 ### Data Flow Details acceptance criteria
 
 1. Every generated event is attributable to exactly one `user_training_plan_id` and one `schedule_batch_id`.
-2. Apply/optimize/regenerate flows are future-only for modifications and never mutate historical completed rows.
+2. Apply/optimize/regenerate flows are future-only for schedule-row modifications and never rewrite historical completed rows.
 3. Feedback is consumed only by explicit adaptation actions (no hidden background rewrites).
 4. Planned-load dashboards can be reconstructed from `events` + active-plan context with no dependency on template totals.
 5. Single active/paused plan invariant holds across onboarding, apply, and adaptation flows.
@@ -396,7 +409,7 @@ This section defines persona and lifecycle scenarios that validate recommendatio
 
 ## Phase 1: Template + Schema Hardening
 
-1. Update template structure contract to require `session_type` and date anchors.
+1. Update template structure contract to require reference-only sessions (`day_offset`, `session_type`, `activity_plan_id`).
 2. Add/confirm `training_plans.plan_duration_days` and remove non-scheduling metadata from MVP scope.
 3. Extend `user_training_plans` with personalization/version/snapshot fields.
 4. Add DB checks/indexes for `events` semantic integrity and schedule-batch lookups.
@@ -426,7 +439,7 @@ This section defines persona and lifecycle scenarios that validate recommendatio
 3. Add event-level manual swap of future `activity_plan` references.
 4. Add rewrite-scope controls so users can rewrite as much future schedule as desired.
 5. Ensure regeneration preserves manual edits by default unless explicit overwrite is requested.
-6. Keep historical events immutable in all rebalance/regenerate flows.
+6. Keep historical schedule rows immutable in all rebalance/regenerate flows (reference-rendered workout details may still change).
 
 ## Phase 5: Analytics and Query Model Alignment
 
