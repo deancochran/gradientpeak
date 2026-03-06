@@ -1,79 +1,60 @@
-# Tasks: Event-Driven Training Plan Execution (MVP)
+# Tasks: Profile Goals + Training Plans (MVP)
 
-## Phase 1: Template + Schema Hardening
+## Phase 1: Schema Refactor
 
-- [ ] Enforce reference-only session contract in `training_plans.structure` (`day_offset`, `session_type`, `activity_plan_id`).
-- [ ] Add/confirm `training_plans.plan_duration_days` (required, `> 0`).
-- [ ] Extend `user_training_plans` with `personalization`, `template_version`, optional `projection_snapshot`.
-- [ ] Add `user_training_plans.scheduling_mode` (`default_template` | `projection_tuned`).
-- [ ] Keep `snapshot_structure` backward-compatible and required as applied-plan codification for apply/replay inputs.
-- [ ] Exclude non-scheduling metadata from MVP schema scope (pricing/merchandising fields).
-- [ ] Ensure events store only scheduling fields (`event_type`, `scheduled_start`, `activity_plan_id`, `user_training_plan_id`, `schedule_batch_id`, `status`), no embedded workout JSON.
-- [ ] Implement read-time resolution: events resolve workout details from `activity_plan_id` when rendered.
+- [ ] Create `profile_goals` table with FK links to `profiles`, optional `training_plans`, optional `events` (`milestone_event_id`).
+- [ ] Add `training_plans.plan_kind` (`template` | `user`) with default `template`.
+- [ ] Add `training_plans.source_template_id` self-FK for template lineage.
+- [ ] Add `training_plans.primary_goal_id` FK to `profile_goals`.
+- [ ] Add `training_plans` strategy fields: `strategy_style`, `aggressiveness`, `recovery_bias`, `sessions_per_week_target`.
+- [ ] Add `training_plans.status` (`draft`, `active`, `paused`, `completed`, `abandoned`).
+- [ ] Add check constraints for numeric strategy bounds and enum-style text constraints.
+- [ ] Add indexes for `profile_goals` and `training_plans` query paths.
+- [ ] Add partial unique constraint enforcing one active/paused user plan per profile.
 
-## Phase 2: Single-Plan Lifecycle and Handoff
+## Phase 2: Backfill + Compatibility
 
-- [ ] Keep single-active-plan guard in `trainingPlans.applyTemplate`.
-- [ ] Keep single-active-plan guard in `trainingPlans.updateActivePlanStatus`.
-- [ ] Add explicit handoff policy when completing/abandoning active plan.
-- [ ] Cancel future scheduled events for the old active plan during handoff.
+- [ ] Backfill existing template rows in `training_plans` to `plan_kind='template'`.
+- [ ] Backfill existing rows with `status='draft'` where null.
+- [ ] Validate legacy queries keep working after new columns exist.
+- [ ] Keep `training_plans.structure` reference-first (`day_offset`, `session_type`, `activity_plan_id`).
 
-## Phase 3: Apply and Generate Scheduled Events
+## Phase 3: Apply Flow Rewrite
 
-- [ ] Update session derivation to emit both `planned_activity` and `rest_day` intents.
-- [ ] Add apply-time `scheduling_mode` with default `default_template` and optional `projection_tuned`.
-- [ ] Ensure default apply path schedules predetermined `activity_plan_id` references as-authored.
-- [ ] Enforce `planned_activity` linkage to `activity_plan_id` when template reference exists and is accessible.
-- [ ] Enforce `rest_day` generation with null `activity_plan_id`.
-- [ ] Persist generated events with shared `schedule_batch_id` per apply/regenerate run.
-- [ ] Add/confirm DB constraints for event-type/linkage consistency.
+- [ ] Update apply flow to create a new `training_plans` row with `plan_kind='user'`.
+- [ ] Set `source_template_id` on applied user plans.
+- [ ] Accept optional strategy override payload at apply-time.
+- [ ] Seed optional `profile_goals` on apply and attach them to the new user plan.
+- [ ] Set `primary_goal_id` on the applied user plan when provided.
+- [ ] Materialize future `events` from the applied plan structure.
 
-## Phase 4: Projection-Aware Allocation
+## Phase 4: Lifecycle + Event Semantics
 
-- [ ] Build projection input from template structure + creation snapshots + user personalization.
-- [ ] Use projection weekly targets and safety caps to allocate session load.
-- [ ] Respect availability constraints, hard rest days, and max sessions/day.
-- [ ] Add deterministic session-to-`activity_plan` matching policy.
-- [ ] Persist projection diagnostics in `user_training_plans.projection_snapshot`.
-- [ ] Persist target-vs-scheduled load gap diagnostics for constrained schedules.
-- [ ] Implement deterministic solver flow: greedy seed -> bounded search -> local repair.
-- [ ] Add deterministic tie-break policy to guarantee reproducible schedules.
+- [ ] Enforce active-plan guard using `training_plans` (`plan_kind='user'`, status active/paused).
+- [ ] On complete/abandon, cancel future scheduled events linked to that user plan.
+- [ ] Keep historical events unchanged during lifecycle transitions.
+- [ ] Ensure `rest_day` events have null `activity_plan_id`.
+- [ ] Ensure `planned_activity` events use referenced `activity_plan_id` when available.
 
-## Phase 4b: Post-Apply Customization
+## Phase 5: Goals + Analytics Alignment
 
-- [ ] Add plan-level `rebalance_future_weeks` action (future-only regeneration).
-- [ ] Add week-level future target-load adjustment and deterministic rematch.
-- [ ] Add event-level manual future `activity_plan` swap.
-- [ ] Preserve manual edits during regeneration by default unless explicit overwrite is requested.
-- [ ] Add `rewrite_scope` controls: `selected_week`, `future_horizon`, `full_remaining_plan`.
-- [ ] Allow optimization runs to rewrite as much future schedule as user-selected scope permits.
-
-## Phase 5: Planned-Load Analytics Alignment
-
-- [ ] Move planned-load queries to `events`-derived aggregation.
-- [ ] Aggregate planned load from events linked to the active `user_training_plan`.
+- [ ] Implement profile-goal CRUD scoped to profile ownership.
+- [ ] Support optional goal milestone linkage via `milestone_event_id`.
+- [ ] Build active-goal views from `profile_goals` + event context.
+- [ ] Keep planned-load and prediction inputs computed from `events` only.
 - [ ] Exclude cancelled events from planned-load totals.
-- [ ] Keep planned-vs-completed comparisons stable under skipped/deleted sessions.
 
-## Phase 6: Validation and Safety
+## Phase 6: Validation
 
-- [ ] Validate strict single-active-plan enforcement.
-- [ ] Validate active-plan handoff flow before allowing new plan apply.
-- [ ] Validate deterministic regeneration (future-only schedule-row replacement by `schedule_batch_id`).
-- [ ] Validate rest-day insertion in taper/recovery and blocked-day windows.
-- [ ] Validate impossible-schedule guardrails (availability too low for target projection).
-- [ ] Validate no drift between projection targets and generated event totals.
-- [ ] Validate template-faithful default behavior when projection mode is off.
-- [ ] Validate projection-mode customization flow across plan-level, week-level, and event-level edits.
-- [ ] Validate deterministic reproducibility (same input produces same schedule output).
-- [ ] Validate rewrite-scope boundaries are respected.
-- [ ] Validate reference-first behavior: events display updated workout details when referenced `activity_plan` changes, even for historical rows.
+- [ ] Validate FK integrity and same-profile ownership checks in API paths.
+- [ ] Validate one-active-plan constraint for user plans.
+- [ ] Validate template apply creates user plan + events + optional goals.
+- [ ] Validate goal lifecycle transitions (`active`, `achieved`, `archived`, `abandoned`).
+- [ ] Validate strategy updates affect future scheduling behavior only.
 
 ## Explicitly Deferred
 
-- [ ] Cohorts and cohort lifecycle.
-- [ ] Group follow/subscription/publication models.
-- [ ] Google OAuth/provider calendar integration.
-- [ ] New event materialization/projection tables.
-- [ ] Advanced permission hierarchy and ACL expansion.
-- [ ] Pricing and marketplace merchandising metadata.
+- [ ] Dedicated strategy table.
+- [ ] Dedicated optimization/projection run tables.
+- [ ] Cohort/group planning model.
+- [ ] Provider OAuth/integration changes.

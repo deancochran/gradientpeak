@@ -1,249 +1,123 @@
-# Training Plan Execution + Projection Alignment (MVP)
+# Profile Goals + Training Plans Minimal Model (MVP)
 
 ## Goal
 
-Deliver a plan experience where users can run one active training plan at a time, instantly get scheduled events, and track planned load from real calendar events (not abstract plan totals).
+Refactor the MVP to a simpler domain model that uses only two planning records:
 
-MVP direction:
+1. `profile_goals` for user outcomes.
+2. `training_plans` for both templates and user-applied plans.
 
-1. Remove cohorts from this specification.
-2. Keep `events` as the only schedule source of truth.
-3. Treat `training_plans` as versioned template blueprints with reference-only session intent.
-4. Generate `planned_activity` and `rest_day` events when a user starts a plan.
-5. Compute planned training load from scheduled `events` linked to the active plan.
+Keep `events` as the only scheduling source of truth.
 
-## Domain Ownership (Single Source of Truth)
+## Core Ownership
 
-1. `training_plans`: reusable template blueprint content and defaults.
-2. `user_training_plans`: user-specific codified plan instance and personalization.
-3. `activity_plans`: reusable workout definitions referenced by plan sessions.
-4. `events`: concrete scheduled execution instances and planned-load query surface.
+1. `profile_goals`: user outcomes and milestones.
+2. `training_plans`: reusable templates plus user-specific applied plan records.
+3. `events`: concrete scheduled rows used for planned-load and prediction calculations.
+4. `activity_plans`: workout-definition source of truth referenced by scheduled events.
 
-No cohort/group subscription model is included in this spec.
+No new plan-instance table is introduced in this refactor.
 
-Schema scope rule for this MVP:
+## Canonical Model
 
-1. Do not add catalog/business metadata that is not required for scheduling, projection, lifecycle, or user outcomes.
-2. Template records may keep only scheduling-relevant defaults.
-3. User-instance records hold user-specific knobs and resolved scheduling state.
+### A) `profile_goals` Is The Goal System
 
-## Required MVP Model Changes
+Each profile can have multiple goals.
 
-### A) Training Plan Sessions Are Reference-Only
+Required columns:
 
-`training_plans.structure` stores session intent using **ID references only**. No embedded workout JSON.
+1. `id uuid primary key`
+2. `profile_id uuid not null` FK -> `profiles.id`
+3. `training_plan_id uuid null` FK -> `training_plans.id` (goal created by or attached to a plan)
+4. `milestone_event_id uuid null` FK -> `events.id` (optional event anchor)
+5. `title text not null`
+6. `goal_type text not null`
+7. `target_date date null`
+8. `target_metric text null`
+9. `target_value numeric null`
+10. `priority integer not null default 5`
+11. `status text not null` (`active`, `achieved`, `archived`, `abandoned`)
+12. timestamps
 
-**Required per-session shape (minimal):**
+Rules:
 
-```json
-{
-  "key": "w1_d1_endurance",
-  "day_offset": 0,
-  "session_type": "planned_activity",
-  "activity_plan_id": "uuid"
-}
-```
+1. Goals are profile-owned and never cross profiles.
+2. Goals may exist without a plan (`training_plan_id` nullable).
+3. Goals may be event-anchored (`milestone_event_id`) but events remain canonical schedule records.
 
-**Rules:**
+### B) `training_plans` Handles Templates And Applied Plans
 
-1. `session_type`: `planned_activity` | `rest_day` (required)
-2. `day_offset`: integer day from plan start (required)
-3. `activity_plan_id`:
-   - required when `session_type = planned_activity`
-   - must be null when `session_type = rest_day`
-4. No `title`, no embedded workout body, no scheduling hints in template structure
-5. All workout details are resolved from `activity_plans` at read-time
+Use one table for both system templates and user-applied plans.
 
-**Constraint rule:**
+Add minimal columns:
 
-- `rest_day` sessions never reference `activity_plan_id`.
-- `planned_activity` sessions must reference a valid `activity_plan_id`.
+1. `plan_kind text not null` (`template`, `user`)
+2. `source_template_id uuid null` FK -> `training_plans.id`
+3. `primary_goal_id uuid null` FK -> `profile_goals.id`
+4. `strategy_style text null` (`balanced`, `volume`, `intensity`, `polarized`)
+5. `aggressiveness numeric null` check between `0` and `1`
+6. `recovery_bias numeric null` check between `0` and `1`
+7. `sessions_per_week_target integer null`
+8. `status text not null` (`draft`, `active`, `paused`, `completed`, `abandoned`)
 
-**Activity Plans as Source of Truth:**
+`structure` remains reference-first:
 
-- `activity_plans` is the single source of truth for workout definitions
-- If an `activity_plan` is updated, all events referencing it will reflect the new details when rendered
-- Historical events are **reference views**, not immutable snapshots
-- No version pinning or content freezing required
+1. session intent keeps `day_offset`, `session_type`, `activity_plan_id`
+2. no embedded workout JSON in sessions
+3. workout details resolve from `activity_plans` at read-time
 
-### B) User Enrollment Holds Plan Codification + Personalization
+### C) `events` Remains Operational Truth
 
-`user_training_plans` is the user-level codification of an applied template for execution.
+No new scheduling table is introduced.
 
-Extend `user_training_plans` with minimal user-level controls:
+Rules:
 
-1. `personalization` JSONB (availability, max sessions/day, hard rest days, discipline bias)
-2. `template_version` text (or immutable version marker)
-3. optional `projection_snapshot` JSONB (diagnostics and solved weekly targets used at apply time)
-4. `scheduling_mode`: `default_template` | `projection_tuned`
+1. Applying a user plan materializes future `events` rows.
+2. Planned load and prediction inputs are computed from `events` only.
+3. Users can modify future events without mutating template records.
+4. Historical rows are not rewritten during regeneration/handoff.
+5. Rendered workout details may change if referenced `activity_plan` changes.
 
-Keep existing `snapshot_structure` as the applied-template codification used for deterministic apply/regenerate inputs.
+## Lifecycle Model
 
-### C) Events Store Reference Only
+### Template Apply
 
-When a plan is started:
+1. Select template row (`training_plans.plan_kind = 'template'`).
+2. Create user plan row (`training_plans.plan_kind = 'user'`, `source_template_id` set).
+3. Optionally create/attach `profile_goals` from template defaults.
+4. Materialize schedule into `events` linked by `training_plan_id`.
 
-1. Create one `user_training_plans` row.
-2. Generate event rows from template session references.
-3. Write events with one `schedule_batch_id`.
-4. Set `event_type` to `planned_activity` or `rest_day` explicitly.
-5. Populate `user_training_plan_id` on generated rows.
-6. Store only scheduling fields in events:
-   - `event_type`, `scheduled_start`, `activity_plan_id` (reference only)
-   - `user_training_plan_id`, `schedule_batch_id`, `status`
-7. Do NOT embed workout details in events — resolve from `activity_plan_id` at read-time.
+### Active Plan Guard
 
-**Reference-first history:**
+1. One active/paused user plan per profile.
+2. Starting a new plan requires existing active/paused user plan to be resolved.
+3. On complete/abandon, cancel future scheduled events for the old plan.
 
-- Events are reference views, not frozen snapshots
-- If `activity_plan` content changes, rendered event details reflect the latest
-- This is intentional: `activity_plans` is the single source of truth
+### Goal Lifecycle
 
-Planned load analytics must sum from scheduled events for the active plan, not from template totals.
+1. Goals are soft-lifecycle entities (`active`, `achieved`, `archived`, `abandoned`).
+2. Goal updates never rewrite historical events.
+3. Goal retirement does not delete historical event records.
 
-### D) Single Active Plan Lifecycle (Keep It Simple)
+## Runtime Rules
 
-Keep one active/paused `user_training_plans` row per user.
-
-Runtime contract:
-
-1. Applying a new template is blocked if an active/paused plan exists.
-2. User must resolve current plan first (`completed` or `abandoned`).
-3. Resolution must also address future scheduled events linked to that plan.
-
-Required resolution behavior:
-
-1. On `completed`/`abandoned`, all future scheduled events for that `user_training_plan_id` are set to `cancelled`.
-2. Historical and completed event rows remain unchanged by lifecycle handoff/regeneration.
-3. Rendered workout details for those rows may still change if the referenced `activity_plan` changes.
-4. After resolution, user can start a new plan.
-
-### E) Projection-Driven Scheduling Loop
-
-Use existing projection engine outputs to drive schedule realism.
-
-At apply (or regenerate-future) time:
-
-1. Build projection input from template structure + creation config + user personalization.
-2. Solve weekly targets and safety caps.
-3. Allocate sessions across available days.
-4. Insert required `rest_day` events for recovery and blocked days.
-5. Select best-fit `activity_plan_id` templates for each planned session.
-6. Persist diagnostics to `projection_snapshot`/metadata for explainability.
-
-## Deterministic Scheduling Policy (MVP)
-
-1. Week target: use projection weekly target from the active periodized block.
-2. Slot count: clamp by availability, max sessions/week, and min rest-day constraints.
-3. Recovery priority: recovery/taper windows reserve rest or low-load sessions first.
-4. Load allocation: distribute weekly target by fixed phase weights (base/build/peak/taper/recovery).
-5. Session matching: map target load to the nearest available `activity_plan` in allowed library scope.
-6. Overlap policy: if conflicts exist, keep deterministic ordering and mark lower-priority events as suggested-to-move, not auto-deleted.
-
-## Default + Custom Interaction Model (MVP)
-
-### Two-Lane Scheduling Model
-
-Lane A: Default for everyone (instant, low compute).
-
-Lane B: Optional optimize flow (deterministic projection-tuned scheduler).
-
-### Lane A: Default Apply Path (Template-Faithful)
-
-1. User selects a template and start date.
-2. System applies sessions exactly as authored when valid references already exist.
-3. Predetermined `activity_plan_id` references are scheduled directly (no remapping by default).
-4. Generated events use one `schedule_batch_id` and link to `user_training_plan_id`.
-5. Planned load is computed from generated events (excluding cancelled rows).
-
-### Lane B: Projection-Tuned Optimize Path
-
-At apply time, users may opt into projection tuning.
-
-Required apply-time controls:
-
-1. `scheduling_mode`: `default_template` | `projection_tuned`
-2. `target_source`: projection target (default in projection mode) or bounded manual weekly target
-3. constraints: availability, hard rest days, max sessions/day
-4. `aggressiveness`: `conservative` | `balanced` | `performance`
-
-Behavior when projection mode is enabled:
-
-1. Preserve required session/rest intent from template structure.
-2. Reallocate day placement and session load against projection targets and safety caps.
-3. Match each session to best-fit `activity_plan` by estimated load proximity within allowed scope.
-4. Persist diagnostics and target-vs-scheduled deltas to `projection_snapshot`.
-
-### Deterministic Optimization Model (MVP)
-
-Use a deterministic scheduler so identical inputs produce identical outputs.
-
-Hard constraints:
-
-1. Keep required workout/rest sequence ordering.
-2. Respect hard rest days, availability, and max sessions/day.
-3. Enforce safety caps (weekly/ramp constraints).
-4. Keep all scheduling inside plan horizon to target date.
-
-Optimization objective (soft constraints):
-
-1. Minimize weekly target-vs-scheduled load error.
-2. Minimize cumulative load drift across the full horizon.
-3. Minimize session-intent distortion and day drift.
-4. Minimize unscheduled required sessions.
-
-Recommended solver style for MVP:
-
-1. Greedy seed using hardest-to-place sessions first.
-2. Deterministic beam-style search over candidate placements/matches.
-3. Local repair pass to reduce load gap without violating hard constraints.
-
-### Post-Apply Customization (Future-Only)
-
-1. Plan-level: `rebalance_future_weeks` regenerates future events only, with new `schedule_batch_id`.
-2. Week-level: adjust weekly target load (for future dates) and rematch session events for that week.
-3. Event-level: user may manually swap a single future `activity_plan`.
-4. Users can choose rewrite scope when optimizing: `selected_week`, `future_horizon`, or `full_remaining_plan`.
-5. Manual edits are preserved by default during regeneration unless user explicitly selects overwrite behavior.
-
-### Projection Feasibility and Guardrails
-
-1. If constraints make target load infeasible, scheduler degrades safely (never violates hard constraints).
-2. Persist infeasibility diagnostics and unmet target gap in `projection_snapshot`.
-3. UX should expose planned target, scheduled total, and remaining gap for explainability.
-
-## Runtime Rules (Strict)
-
-1. `events` is the only calendar query surface for planned schedule views.
-2. Generated `planned_activity` events must reference `user_training_plan_id`.
-3. Generated `rest_day` events must not set `activity_plan_id`.
-4. Plan regeneration is future-only and batched by `schedule_batch_id`.
-5. Users may cancel/remove generated events; adherence is optional.
-6. Planned load aggregation excludes cancelled events and uses active-plan schedule context.
-7. Imported external events remain read-only and do not mutate plan templates.
-8. Starting a new plan is blocked until active-plan future events are resolved by lifecycle transition.
-9. Default apply behavior is template-faithful (`default_template`) unless user enables projection tuning.
-10. Projection-tuned optimization is deterministic and explainable.
-11. Users can explicitly rewrite as much future schedule as they want via rewrite scope controls.
-12. Future regeneration preserves manual edits by default unless explicit overwrite is requested.
-13. Events store only `activity_plan_id` reference — workout details are resolved from `activity_plans` at read-time.
-14. Historical events may change displayed details when referenced `activity_plan` is updated — this is intentional (activity_plans is source of truth).
-
-## Out of Scope (Explicit)
-
-1. Cohorts, cohort lifecycle, and cohort membership rules.
-2. Group follow/subscription/publication models.
-3. Google OAuth/provider integration.
-4. New materialized projection tables.
-5. Advanced ACL/RLS redesign.
-6. Non-scheduling catalog business fields (pricing, marketplace badges, merchandising metadata).
-
-## Why This Is Better For MVP
-
-1. Preserves modularity: templates define intent, events define reality.
-2. Aligns analytics with behavior: planned load comes from what is actually scheduled.
-3. Avoids ambiguous scheduling and keeps UX simple with one active plan.
-4. Keeps future path open: cohorts can later attach to `user_training_plans` without rewriting `events`.
-5. Minimizes data duplication: workout definitions live in one place (`activity_plans`), not denormalized across templates and events.
-6. Simplifies edits: changing a workout definition automatically updates all future scheduled events that reference it.
-7. Reference-first history is intentional: events are views, not frozen snapshots.
+1. `events` is the only schedule query surface.
+2. `planned_activity` events should reference `activity_plan_id` when available.
+3. `rest_day` events must not reference `activity_plan_id`.
+4. `training_plans` owns strategy settings; no additional strategy table in MVP.
+5. `profile_goals` is the only goal table in MVP.
+6. No duplicate schedule truth in `profile_goals` or plan metadata.
+
+## Out Of Scope
+
+1. Cohort/group models.
+2. Dedicated optimization-run tables.
+3. Additional user strategy table beyond plan-level strategy fields.
+4. Any new materialized projection or recommendation storage.
+
+## Why This Refactor
+
+1. Keeps schema minimal while enabling goals-first product UX.
+2. Uses foreign keys for integrity without adding many tables.
+3. Preserves existing event-driven analytics and prediction path.
+4. Supports template seeding and user customization in one plan table.
