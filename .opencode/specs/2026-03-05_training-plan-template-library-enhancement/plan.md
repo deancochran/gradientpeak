@@ -24,10 +24,9 @@ Required columns:
 7. `target_date date null`
 8. `target_metric text null`
 9. `target_value numeric null`
-10. `priority integer not null default 5`
-11. `importance integer not null default 5` check (`importance >= 0 and importance <= 10`)
-12. `created_at timestamptz not null default now()`
-13. `updated_at timestamptz not null default now()`
+10. `importance integer not null default 5` check (`importance >= 0 and importance <= 10`)
+11. `created_at timestamptz not null default now()`
+12. `updated_at timestamptz not null default now()`
 
 Required indexes:
 
@@ -106,7 +105,6 @@ Apply request (minimal):
       "title": "Run half marathon",
       "goal_type": "race",
       "target_date": "2026-06-01",
-      "priority": 1,
       "importance": 10
     }
   ]

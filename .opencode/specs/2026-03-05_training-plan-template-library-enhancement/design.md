@@ -35,9 +35,8 @@ Required columns:
 7. `target_date date null`
 8. `target_metric text null`
 9. `target_value numeric null`
-10. `priority integer not null default 5`
-11. `importance integer not null default 5` (0-10 scale: 0 = don't care, 10 = absolutely want to reach)
-12. timestamps
+10. `importance integer not null default 5` (0-10 scale: 0 = don't care, 10 = absolutely want to reach)
+11. timestamps
 
 Rules:
 
