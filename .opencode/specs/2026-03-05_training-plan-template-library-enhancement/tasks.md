@@ -1,51 +1,50 @@
-# Execution Plan: Profile Goals + Training Plans (MVP)
+# Tasks: Profile Goals + Training Plans Minimal Model
 
-## Phase 1: Schema Refactor & Migration
+## Pre-requisites
 
-### Task 1.1: Create `profile_goals` table and extend `training_plans`
+- [ ] Review `design.md` and `plan.md` to ensure full context understanding.
+- [ ] Ensure local database is running (`pnpm supabase start`).
 
-- **Description:** Create the new `profile_goals` table with all required columns, constraints (importance 0-10), and indexes. Add new columns (`primary_goal_id`, `sessions_per_week_target`, `duration_hours`, `status`) to `training_plans` with appropriate constraints and indexes (including the partial unique constraint for active/paused plans).
-- **Files to Edit:** `supabase/migrations/[timestamp]_profile_goals_and_training_plans.sql` (Create new migration file)
-- **Verification:** Run `supabase db reset` or apply migration locally and verify schema using `psql` or Supabase Studio.
+## Phase 1: Database & Core Package
 
-### Task 1.2: Backfill Data
+- [ ] **DB**: Create migration for `profile_goals` table.
+- [ ] **DB**: Create migration for `training_plans` (add `profile_id`, modify existing rows).
+- [ ] **DB**: Generate updated Supabase types (`pnpm run generate-types`).
+- [ ] **Core**: Create `packages/core/schemas/profile_goals.ts`.
+- [ ] **Core**: Refactor `training-plan-structure/domain-schemas.ts` (Remove embedded goals, update `is_template` logic).
+- [ ] **Core**: Implement `materializePlanToEvents(plan, startDate)` pure function.
+- [ ] **Core**: Update metric calculations to rely solely on `events`.
+- [ ] **Testing**: Write unit tests for `materializePlanToEvents` (100% coverage required).
+- [ ] **Validation**: Run `pnpm --filter @repo/core check-types && pnpm --filter @repo/core test`.
 
-- **Description:** Backfill existing template rows in `training_plans` to ensure `profile_id` is null and `status='draft'` where null.
-- **Files to Edit:** `supabase/migrations/[timestamp]_backfill_training_plans.sql` (Create new migration file)
-- **Verification:** Run `supabase db reset` and query `training_plans` to ensure no null statuses and templates have null `profile_id`.
+## Phase 2: tRPC API Layer
 
-## Phase 2: Core Package Updates
+- [ ] **tRPC**: Create `goals.ts` router with full CRUD operations.
+- [ ] **tRPC**: Update `trainingPlans.ts` -> `getTemplates` procedure.
+- [ ] **tRPC**: Update `trainingPlans.ts` -> `getUserActivePlan` procedure.
+- [ ] **tRPC**: Implement `trainingPlans.ts` -> `applyPlan` procedure (Batch insert events, enforce single-active-plan guard).
+- [ ] **tRPC**: Implement `trainingPlans.ts` -> `cancelPlan` procedure (Soft delete future events only).
+- [ ] **Testing**: Write integration tests for `applyPlan` and `cancelPlan` edge cases.
+- [ ] **Validation**: Run `pnpm --filter @repo/trpc check-types && pnpm --filter @repo/trpc test`.
 
-### Task 2.1: Update Zod Schemas
+## Phase 3: Mobile App Refactor (React Native)
 
-- **Description:** Update `@repo/core` schemas to reflect the new database schema. Add `profileGoalsSchema` and update `trainingPlansSchema`.
-- **Files to Edit:** `packages/core/schemas/training.ts` (or equivalent schema file)
-- **Verification:** Run `cd packages/core && pnpm check-types && pnpm test`.
+- [ ] **State**: Create `useGoalsStore.ts` and update `usePlanStore.ts`.
+- [ ] **UI/Plan**: Update Template Library screens to consume `getTemplates`.
+- [ ] **UI/Plan**: Implement new `applyPlan` mutation flow with start date selection.
+- [ ] **UI/Goals**: Refactor goal creation UI to work independently of plans.
+- [ ] **UI/Calendar**: Clean up Calendar rendering logic to ensure zero dependency on `training_plans.structure`.
+- [ ] **Validation**: Run `pnpm --filter mobile check-types` and test application flows manually in simulator.
 
-## Phase 3: API Layer Updates (tRPC)
+## Phase 4: Web Dashboard Refactor (Next.js)
 
-### Task 3.1: Implement Profile Goals CRUD
+- [ ] **Admin UI**: Remove Goal definition steps from the Template Builder.
+- [ ] **Admin UI**: Ensure Template builder saves with `profile_id: null`.
+- [ ] **User UI**: Update Web Dashboard "My Goals" widget.
+- [ ] **User UI**: Update Web Dashboard "Active Plan" widget.
+- [ ] **Validation**: Run `pnpm --filter web check-types && pnpm --filter web build`.
 
-- **Description:** Create tRPC endpoints for managing `profile_goals`, ensuring they are scoped to the user's profile.
-- **Files to Edit:** `packages/trpc/src/routers/goals.ts` (Create or update)
-- **Verification:** Run `cd packages/trpc && pnpm check-types && pnpm test`.
+## Final Review
 
-### Task 3.2: Rewrite Plan Apply Flow
-
-- **Description:** Update the apply flow endpoint to duplicate the source plan, assign `profile_id`, calculate `duration_hours`, seed `profile_goals`, and materialize future `events`. Enforce the active-plan guard.
-- **Files to Edit:** `packages/trpc/src/routers/training-plans.ts`
-- **Verification:** Run `cd packages/trpc && pnpm check-types && pnpm test`. Write a specific integration test for the apply flow.
-
-### Task 3.3: Implement Plan Lifecycle Management
-
-- **Description:** Update endpoints to handle plan status changes (`completed`, `abandoned`). Ensure future scheduled events are cancelled upon completion/abandonment, while historical events remain unchanged.
-- **Files to Edit:** `packages/trpc/src/routers/training-plans.ts`
-- **Verification:** Run `cd packages/trpc && pnpm check-types && pnpm test`. Write a test verifying future events are cancelled on abandonment.
-
-## Phase 4: Analytics Alignment
-
-### Task 4.1: Update Analytics Queries
-
-- **Description:** Ensure planned-load and prediction inputs are computed from `events` only, excluding cancelled events. Ensure rest days are inferred dynamically.
-- **Files to Edit:** `packages/core/calculations/` (relevant calculation files) and `packages/trpc/src/routers/analytics.ts`
-- **Verification:** Run `cd packages/core && pnpm test` and `cd packages/trpc && pnpm test`.
+- [ ] Verify no regressions in Activity Recording (ensure `events` linkage holds).
+- [ ] Run full monorepo CI checks: `pnpm check-types && pnpm lint && pnpm test`.

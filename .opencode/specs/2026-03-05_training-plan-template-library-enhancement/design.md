@@ -1,64 +1,86 @@
-# Profile Goals + Training Plans Minimal Model (MVP)
+# Design: Profile Goals + Training Plans Minimal Model (MVP)
 
-## Context & Constraints
+## 1. Architectural Vision
 
-- **Goal:** Refactor the MVP to a simpler domain model that uses only two planning records: `profile_goals` for user outcomes and `training_plans` for both templates and user-applied plans. Keep `events` as the only scheduling source of truth.
-- **Tech Stack:** Supabase (PostgreSQL), TypeScript, Zod (for schemas in `@repo/core`), tRPC (for API layer).
-- **Relevant Files:**
-  - `packages/core/schemas/` (for Zod schemas)
-  - `packages/trpc/src/routers/` (for API routes)
-  - `supabase/migrations/` (for database schema changes)
-- **Rules:**
-  1. DO NOT introduce a new plan-instance table.
-  2. DO NOT modify the structure of the `events` table in this phase.
-  3. DO NOT add `strategy_type`, `aggressiveness`, or `recovery` columns to `training_plans` (this lives in the profile).
-  4. DO NOT embed workout JSON in sessions; resolve from `activity_plans` at read-time.
-  5. DO NOT rewrite historical events during goal updates or plan retirement.
+The goal of this refactor is to dramatically simplify the planning domain model while retaining full functionality for both users and administrators. We are moving from a complex, multi-layered architecture to a highly localized, minimal model based on three core pillars:
 
-## Core Ownership
+1. **`profile_goals`**: The single source of truth for user outcomes, milestones, and targets.
+2. **`training_plans`**: A unified table for both system-wide templates and user-applied plans.
+3. **`events`**: The singular, immutable source of truth for scheduling.
 
-1. `profile_goals`: user outcomes and milestones.
-2. `training_plans`: reusable templates plus user-specific applied plan records.
-3. `events`: concrete scheduled rows used for planned-load and prediction calculations.
-4. `activity_plans`: workout-definition source of truth referenced by scheduled events.
+By strictly defining these boundaries, we eliminate redundant tables (e.g., `user_plans`, `plan_instances`), reduce schema synchronization issues, and decouple goals from rigid plan structures. This change spans the entire stack, from the database schema up to the React Native and Next.js user interfaces.
 
-## Canonical Model
+## 2. Database Schema (Supabase / PostgreSQL)
 
-### A) `profile_goals` Is The Goal System
+### A. `profile_goals` (New/Refactored)
 
-Each profile can have multiple goals.
+Extracts goals from the `training_plans` JSON structure into a discrete, relational table.
 
-- Goals are profile-owned and never cross profiles.
-- Goals may exist without a plan (`training_plan_id` nullable).
-- Goals may be event-anchored (`milestone_event_id`) but events remain canonical schedule records.
-- Goals have a singular target and can be on the same date.
-- Goals don't support multi-type activity types (e.g., a triathlon goal would be 3 separate goals).
-- Goals don't need a status column; they either exist or not. They are considered inactive if the target date has passed.
+- **`id`**: UUID, Primary Key.
+- **`profile_id`**: UUID, Foreign Key to `profiles`. (Goals NEVER cross profiles).
+- **`training_plan_id`**: UUID, Foreign Key to `training_plans` (Nullable - goals can exist without a plan).
+- **`milestone_event_id`**: UUID, Foreign Key to `events` (Nullable - anchors the goal to a schedule, but `events` remains the schedule source of truth).
+- **`target_date`**: Date.
+- **`name`**: Text.
+- **`targets`**: JSONB (Stores `GoalTargetV2` array: race performance, pace/power thresholds).
+- **`priority`**: Integer (0-10).
 
-### B) `training_plans` Handles Templates And User Plans
+### B. `training_plans` (Updated)
 
-Use one table for both system templates and user plans. A plan is considered a system template if `profile_id` is null. Users simply duplicate plans to use them.
+Consolidates system templates and user plans into one table.
 
-- `structure` remains reference-first: session intent keeps `day_offset`, `session_type`, `activity_plan_id`.
+- **`id`**: UUID, Primary Key.
+- **`profile_id`**: UUID, Foreign Key to `profiles`. **CRITICAL:** If `NULL`, this record is a System Template. If populated, it is a User-Applied Plan.
+- **`name`, `description`**: Text.
+- **`plan_type`**: Text (`periodized`, `maintenance`).
+- **`structure`**: JSONB (Contains plan metadata, blocks, and session intents with `day_offset`, `session_type`, and `activity_plan_id`).
+- **`is_active`**: Boolean (For user plans, enforces the "one active plan per profile" rule. For templates, determines discoverability).
+- **`start_date`, `end_date`**: Date (Null for templates, populated for user plans).
 
-### C) `events` Remains Operational Truth
+### C. `events` (No Structural Changes)
 
-No new scheduling table is introduced.
+Remains the operational truth for user scheduling.
 
-- Applying a user plan materializes future `events` rows.
-- Planned load and prediction inputs are computed from `events` only.
-- Users can modify future events without mutating template records.
-- Rest days are inferred dynamically from days without planned activity events.
+- **Behavioral Change**: When a user applies a `training_plan`, the system reads the `structure` JSONB, calculates exact dates using the plan's `start_date` and the session's `day_offset`, and materializes `events` rows. Rest days are inferred dynamically from days without planned activity events.
 
-## Lifecycle Model
+## 3. `@repo/core` Implications
 
-- **Duplicating / Applying a Plan:** Select source plan -> Duplicate row with user's `profile_id` -> Optionally create `profile_goals` -> Materialize schedule into `events`.
-- **Active Plan Guard:** One active/paused plan per profile. Starting a new plan requires resolving the existing one. On complete/abandon, cancel future scheduled events.
-- **Goal Lifecycle:** Soft-lifecycle based on `target_date`. Updates/retirement never rewrite historical events.
+### Zod Schemas
 
-## Out Of Scope
+- **`schemas/profile_goals.ts`**: Extract `goalV2Schema` from `training-plan-structure`. Add `profile_id` and nullable `training_plan_id`.
+- **`schemas/training_plan_structure.ts`**: Remove embedded `goals` array from `periodizedPlanBaseShape`. Update `is_template` helper logic to explicitly check for `profile_id === undefined | null`.
 
-1. Cohort/group models.
-2. Dedicated optimization-run tables.
-3. Any new materialized projection or recommendation storage.
-4. Provider/OAuth integrations.
+### Pure Functions
+
+- **Calculations**: Update prediction and load functions to strictly pull from `events` rather than iterating through training plan JSON structures.
+- **Plan Instantiation**: Add a pure function `materializePlanToEvents(planStructure, startDate) -> Event[]` to generate schedule records without DB side-effects.
+
+## 4. `@repo/trpc` Implications
+
+### Routers
+
+- **`goals.ts`**: New router for CRUD operations on `profile_goals`.
+- **`trainingPlans.ts`**:
+  - `getTemplates`: Queries `training_plans` where `profile_id IS NULL`.
+  - `getUserPlan`: Queries `training_plans` where `profile_id = input.profile_id`.
+  - `applyPlan`: The most complex procedure.
+    1. Fetches template.
+    2. Validates user has no other active plan.
+    3. Duplicates plan row, setting `profile_id` and `start_date`.
+    4. Calls core pure function to generate `events` array.
+    5. Performs a batch insert into `events`.
+  - `abandonPlan`: Marks plan `is_active = false` and deletes future materialized `events` linked to this plan.
+
+## 5. Frontend Implications
+
+### `apps/mobile` (React Native / Zustand)
+
+- **State Management**: Update Zustand stores to separate `useGoalsStore` and `usePlanStore`.
+- **Plan Discovery**: UI updates to fetch from `trpc.trainingPlans.getTemplates`.
+- **Plan Application UX**: The user flow for selecting a template now immediately asks for a `start_date`, calls the `applyPlan` mutation, and invalidates the `events` React Query cache to re-render the calendar.
+- **Calendar**: Unchanged visually, but completely decoupled from the plan structure. It only reads from `events`.
+
+### `apps/web` (Next.js Admin UI)
+
+- **Template Builder**: Admins create `training_plans` with `profile_id = null`.
+- **Goal Management**: Users' dashboards fetch `profile_goals` independently of their active plan status.

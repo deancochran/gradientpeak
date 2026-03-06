@@ -1,94 +1,67 @@
-# Implementation Plan: Profile Goals + Training Plans (MVP)
+# Implementation Plan: Profile Goals + Training Plans Minimal Model
 
-## Scope
+## Phase 1: Database & Core Package Refactor
 
-This plan implements a simplified model with minimal schema churn:
+**Objective**: Update the foundational schema and `@repo/core` typings without breaking the application build.
 
-1. Add `profile_goals` as the goal system.
-2. Use `training_plans` for both templates and user plans.
-3. Keep `events` as the only operational schedule and planned-load source.
-4. Keep `activity_plans` as workout-definition source of truth.
+1. **Supabase Migrations**:
+   - Create migration script `create_profile_goals_table.sql`.
+   - Create migration script `update_training_plans_table.sql` (Add `profile_id`, drop legacy tracking columns, migrate existing templates to `profile_id = NULL`).
+   - Run local migrations and generate updated Supabase types.
+2. **`@repo/core` Schemas**:
+   - Create `packages/core/schemas/profile_goals.ts`.
+   - Refactor `packages/core/schemas/training-plan-structure/domain-schemas.ts` to remove the embedded `goals` array from the core plan schema.
+   - Update `MinimalTrainingPlanCreate` to reflect the removal of nested goals.
+3. **`@repo/core` Utilities**:
+   - Build pure function `materializePlanToEvents(plan: TrainingPlan, startDate: string): ScheduledEvent[]`.
+   - Update compliance and metric calculators to strictly accept `events` instead of checking plan schemas.
+4. **Validation**: Run `pnpm check-types` and `pnpm test` in `@repo/core`. Achieve 100% test coverage for the new materialization pure function.
 
-## Target Schema (Architecture / Data Contracts)
+## Phase 2: tRPC API Layer Implementation
 
-### 1) Add `profile_goals`
+**Objective**: Connect the database changes to the frontend via type-safe tRPC procedures.
 
-Required columns:
+1. **Goals Router (`packages/trpc/src/routers/goals.ts`)**:
+   - Implement `create`, `getForProfile`, `update`, `delete` (soft delete or date-based expiration).
+2. **Training Plans Router (`packages/trpc/src/routers/trainingPlans.ts`)**:
+   - Update `createTemplate` (forces `profile_id: null`).
+   - Implement `getTemplates` (queries where `profile_id IS NULL`).
+   - Implement `getUserActivePlan` (queries where `profile_id = ctx.user.id AND is_active = true`).
+   - Implement `applyPlan`:
+     - Validate active plan constraints.
+     - Deep copy plan record.
+     - Call `materializePlanToEvents` from core.
+     - Execute Supabase RPC or batch insert for new `events`.
+   - Implement `cancelPlan`:
+     - Update plan `is_active = false`.
+     - Delete all `events` where `training_plan_id = input.id` AND `date >= TODAY`. Do NOT delete historical events.
+3. **Validation**: Run `pnpm test` in `@repo/trpc`. Ensure 80%+ coverage, specifically on `applyPlan` failure states.
 
-- `id uuid primary key`
-- `profile_id uuid not null` FK -> `profiles.id`
-- `training_plan_id uuid null` FK -> `training_plans.id`
-- `milestone_event_id uuid null` FK -> `events.id`
-- `title text not null`
-- `goal_type text not null`
-- `target_date date null`
-- `target_metric text null`
-- `target_value numeric null`
-- `importance integer not null default 5` check (`importance >= 0 and importance <= 10`)
-- `created_at timestamptz not null default now()`
-- `updated_at timestamptz not null default now()`
+## Phase 3: Mobile App (React Native) Refactor
 
-Required indexes:
+**Objective**: Consume new tRPC endpoints and update local UI state.
 
-- `idx_profile_goals_profile_date` on (`profile_id`, `target_date`)
-- `idx_profile_goals_plan` on (`training_plan_id`)
-- `idx_profile_goals_milestone_event` on (`milestone_event_id`)
+1. **Hooks & Stores**:
+   - Update `usePlanStore.ts` to reflect the new decoupled schema.
+   - Create `useGoalsStore.ts` to handle isolated goal fetching and caching.
+2. **Plan Discovery UI**:
+   - Update the Template Library screen to query `trpc.trainingPlans.getTemplates`.
+   - Remove any legacy "clone" local logic; replace with direct calls to `applyPlan` mutation.
+3. **Goal Setting UI**:
+   - Refactor goal creation forms to post directly to the `goals` router, allowing users to create goals without a plan.
+4. **Calendar/Event UI**:
+   - Ensure the Calendar view only relies on the `events` table (via `trpc.events.getRange`).
+   - Remove any visual parsing of `training_plans.structure` from the calendar rendering loop.
+5. **Validation**: Run `pnpm check-types` in `apps/mobile`. Verify the "Apply Plan" flow via Expo Go / Simulator.
 
-### 2) Extend `training_plans`
+## Phase 4: Web Dashboard (Next.js) Refactor
 
-Keep existing fields and add minimal lifecycle fields. System templates are identified by `profile_id IS NULL`.
+**Objective**: Update admin tooling and web dashboard to match the new schema.
 
-- `primary_goal_id uuid null` FK -> `profile_goals.id`
-- `sessions_per_week_target integer null` check (`sessions_per_week_target > 0`)
-- `duration_hours numeric null` (derived from associated activity plans)
-- `status text not null` check in (`draft`,`active`,`paused`,`completed`,`abandoned`) default `draft`
-
-Indexes and lifecycle integrity:
-
-- `idx_training_plans_profile_status` on (`profile_id`, `status`)
-- partial unique for single active/paused user plan: unique (`profile_id`) where `profile_id IS NOT NULL and status in ('active','paused')`
-
-## Data Flow & API Contracts
-
-### Apply / Duplicate Plan
-
-1. Validate no active/paused plan exists for the user.
-2. Duplicate the source plan into a new `training_plans` row, setting the user's `profile_id`.
-3. Calculate and set `duration_hours` derived from the associated activity plans.
-4. Seed optional `profile_goals` from defaults and/or user input.
-5. Generate future `events` from plan structure.
-
-**Apply Request (Minimal):**
-
-```json
-{
-  "template_id": "uuid",
-  "start_date": "2026-03-10",
-  "goals": [
-    {
-      "title": "Run half marathon",
-      "goal_type": "race",
-      "target_date": "2026-06-01",
-      "importance": 10
-    }
-  ]
-}
-```
-
-**Status Update Request:**
-
-```json
-{
-  "training_plan_id": "uuid",
-  "status": "completed"
-}
-```
-
-## Migration Strategy (Low Risk)
-
-1. Add `profile_goals` table.
-2. Add new nullable columns to `training_plans`.
-3. Backfill existing template rows to ensure `profile_id` is null and `status='draft'`.
-4. Add checks/indexes and then add partial unique active-plan constraint.
-5. Update apply flow to duplicate plans in `training_plans` instead of new plan-instance storage.
-6. Keep existing event generation and analytics contracts stable.
+1. **Admin Template Builder**:
+   - Update the plan builder UI to save to `training_plans` with `profile_id = null`.
+   - Remove the "Goals" step from the Template Builder (since goals belong to profiles, not templates).
+2. **User Dashboard**:
+   - Refactor the "My Goals" widget to fetch directly from `trpc.goals.getForProfile`.
+   - Refactor the "Active Plan" widget to use `getUserActivePlan`.
+3. **Validation**: Run `pnpm check-types` and `pnpm build` in `apps/web`.
