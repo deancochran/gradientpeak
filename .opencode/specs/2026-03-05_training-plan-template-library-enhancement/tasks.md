@@ -32,10 +32,14 @@
 - [ ] **State**: Create hooks/stores for fetching `profile_goals` independently (e.g., `useGoals.ts`).
 - [ ] **State**: Update `useTrainingPlanSnapshot.ts` and `useHomeData.ts` to use independent goals.
 - [ ] **State**: Refactor `training-plan-form/validation.ts` and `localPreview.ts`.
+- [ ] **Navigation**: Remove the Library tab (`library.tsx` and `plan-library.tsx`).
+- [ ] **Navigation**: Create a new Calendar tab (`calendar.tsx`) dedicated to the schedule view.
+- [ ] **Navigation**: Refactor the Plan tab (`plan.tsx`) to focus on goals, strategy, and active plan management.
 - [ ] **UI/Composer**: Refactor `TrainingPlanComposerScreen.tsx` to decouple goal creation from plan structure definition.
 - [ ] **UI/Active Plan**: Update `active-plan.tsx` to display goals from the new hooks.
 - [ ] **UI/Details**: Update `training-plan-detail.tsx` and `training-plan-edit.tsx`.
-- [ ] **UI/Library**: Ensure `library.tsx` and `plan-library.tsx` fetch templates correctly and use the new apply mutation.
+- [ ] **UI/Profile**: Update User Profile screen with navigational links to user-owned records (activities, routes, activity plans, training plans).
+- [ ] **UI/Plan Application**: Update the "Apply Plan" flow to use the new mutation with selected goals and start date.
 - [ ] **Validation**: Run `pnpm --filter mobile check-types` and test application flows manually in simulator.
 
 ## Phase 4: Web App Verification

@@ -32,8 +32,10 @@ Based on codebase analysis, the following areas of the system will be directly a
 ### `apps/mobile` (React Native App)
 
 - **Screens**:
-  - `app/(internal)/(tabs)/plan.tsx`: The primary calendar timeline. Will continue to fetch from `events`, but event generation logic changes.
-  - `app/(internal)/(tabs)/library.tsx` & `app/(internal)/(tabs)/plan-library.tsx`: Template browsing.
+  - `app/(internal)/(tabs)/calendar.tsx` (New): Replaces the old Library tab. A dedicated calendar timeline view fetching from `events`.
+  - `app/(internal)/(tabs)/plan.tsx`: Completely refactored. No longer the calendar view. It is now the central hub for configuring goals, training strategy, and managing the active training plan.
+  - `app/(internal)/(tabs)/library.tsx` & `app/(internal)/(tabs)/plan-library.tsx`: Removed entirely as top-level tabs.
+  - `app/(internal)/(standard)/profile.tsx` (or equivalent User Profile screen): Updated to include navigational links to view user-owned database records (completed activities, uploaded routes, activity plans, and authored training plans).
   - `app/(internal)/(standard)/active-plan.tsx`: Dashboard for the active plan. Needs to query the new `goals` router for goal metrics instead of extracting them from the plan structure.
   - `app/(internal)/(standard)/training-plan-detail.tsx` & `training-plan-edit.tsx`: Interfaces for viewing/modifying plans and their associated goals.
   - `app/(internal)/(standard)/training-plan-create.tsx`: Entry point for building a new plan.
@@ -104,5 +106,10 @@ Remains the operational truth for user scheduling and acts as the only record of
 ### `apps/mobile` Integration
 
 - **State**: Introduce a new Zustand store or React Query hooks specifically for fetching and caching `profile_goals`.
+- **Navigation Refactor**:
+  - Remove the `Library` tab.
+  - Create a new `Calendar` tab dedicated to the schedule view (moving the calendar logic previously in the Plan tab here).
+  - Refactor the `Plan` tab to act as the command center for goals, training strategy, and active plan management.
+  - Update the User Profile screen to serve as the hub for user-owned content (activities, routes, plans).
 - **UI**: Refactor `TrainingPlanComposerScreen.tsx` to separate the goal definition step from the plan structure definition. Goals should be created via the new `goals` router, and then optionally linked to a new training plan.
-- **Calendar**: The `plan.tsx` calendar screen remains largely unchanged as it already reads from `events`, but the source of those events will now be the new materialization logic.
+- **Calendar**: The new `calendar.tsx` screen will take over the timeline rendering. It remains largely unchanged in its data fetching (it already reads from `events`), but the source of those events will now be the new materialization logic.

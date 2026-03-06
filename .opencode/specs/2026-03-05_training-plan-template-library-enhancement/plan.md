@@ -40,20 +40,24 @@
 
 ## Phase 3: Mobile App (React Native) Refactor
 
-**Objective**: Update the mobile app to consume the new tRPC endpoints, separating goal management from plan management in the UI and state.
+**Objective**: Update the mobile app to consume the new tRPC endpoints, separating goal management from plan management in the UI and state, and completely refactoring the tab navigation structure.
 
 1. **Hooks & State (`apps/mobile/lib`)**:
    - Create hooks (e.g., `useGoals.ts`) to fetch and manage `profile_goals` via `trpc.goals.getForProfile`.
    - Update `useTrainingPlanSnapshot.ts` and `useHomeData.ts` to fetch goals independently from the active plan structure.
    - Refactor `training-plan-form/validation.ts` and `localPreview.ts` to handle goals as separate entities.
-2. **Goal & Plan UI Refactor (`apps/mobile/components` & `apps/mobile/app`)**:
+2. **Tab Navigation Refactor (`apps/mobile/app/(internal)/(tabs)`)**:
+   - **Remove Library Tab**: Delete `library.tsx` and `plan-library.tsx` from the main tabs.
+   - **Create Calendar Tab**: Create a new `calendar.tsx` tab dedicated to the schedule view (moving the calendar timeline logic previously in `plan.tsx` here).
+   - **Refactor Plan Tab**: Overhaul `plan.tsx` to serve as the command center for goals, training strategy, and active plan management.
+3. **Goal & Plan UI Refactor (`apps/mobile/components` & `apps/mobile/app`)**:
    - Refactor `TrainingPlanComposerScreen.tsx`: Separate the goal creation step. Goals should be created/selected first, then linked to the plan being composed.
    - Update `active-plan.tsx`: Fetch and display goal metrics using the new goals hooks rather than extracting them from the plan JSON.
    - Update `training-plan-detail.tsx` and `training-plan-edit.tsx` to reflect the decoupled data model.
-3. **Plan Discovery UI**:
-   - Ensure `library.tsx` and `plan-library.tsx` correctly fetch templates (`profile_id IS NULL`).
-   - Update the "Apply Plan" flow to use the refactored tRPC mutation, passing selected goals and start date.
-4. **Validation**: Run `pnpm check-types` in `apps/mobile`. Verify the plan creation, goal creation, and template application flows manually in the Expo simulator.
+4. **User Profile & Content Discovery UI**:
+   - Update the User Profile detail screen to include navigational links to user-owned database records (completed activities, uploaded routes, activity plans, and authored training plans).
+   - Update the "Apply Plan" flow to use the refactored tRPC mutation, passing selected goals and start date (accessible when viewing a specific template).
+5. **Validation**: Run `pnpm check-types` in `apps/mobile`. Verify the plan creation, goal creation, and template application flows manually in the Expo simulator.
 
 ## Phase 4: Web App Verification
 
