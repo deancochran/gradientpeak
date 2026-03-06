@@ -725,15 +725,16 @@ export const eventsRouter = createTRPCRouter({
         }
       }
 
-      let trainingPlanId = input.training_plan_id;
-      if (!trainingPlanId && normalizedEventType === "planned") {
+      let userTrainingPlanId =
+        (input as any).user_training_plan_id || input.training_plan_id;
+      if (!userTrainingPlanId && normalizedEventType === "planned") {
         const { data: activePlan } = await ctx.supabase
-          .from("training_plans")
-          .select("*")
+          .from("user_training_plans" as any)
+          .select("id")
           .eq("profile_id", ctx.session.user.id)
-          .eq("is_active", true)
+          .eq("status", "active")
           .single();
-        trainingPlanId = activePlan?.id;
+        userTrainingPlanId = (activePlan as any)?.id;
       }
 
       const domainInput = input as z.infer<typeof eventCreateSchema>;
@@ -772,13 +773,13 @@ export const eventsRouter = createTRPCRouter({
             normalizedEventType === "rest_day"
               ? null
               : (input.activity_plan_id ?? null),
-          training_plan_id: trainingPlanId,
+          user_training_plan_id: userTrainingPlanId as string | undefined,
           notes: input.notes ?? null,
           description,
           recurrence_rule: recurrence?.rule ?? null,
           recurrence_timezone: recurrence?.timezone ?? null,
           source_provider: sourceProvider,
-        })
+        } as any)
         .select(plannedEventSelect)
         .single();
 
@@ -1630,9 +1631,11 @@ export const eventsRouter = createTRPCRouter({
         itemsWithEstimation = events.map((event) => ({
           ...event,
           activity_plan: event.activity_plan
-            ? plansMap.get(event.activity_plan.id) || event.activity_plan
+            ? (plansMap.get(
+                event.activity_plan.id,
+              ) as unknown as typeof event.activity_plan) || event.activity_plan
             : null,
-        }));
+        })) as typeof events;
       }
 
       let nextCursor: string | undefined;

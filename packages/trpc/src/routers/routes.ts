@@ -16,6 +16,7 @@ const listRoutesSchema = z.object({
   activityCategory: z
     .enum(["run", "bike", "swim", "strength", "other", "all"])
     .optional(),
+  search: z.string().optional(),
   limit: z.number().min(1).max(100).default(20),
   cursor: z.string().optional(),
 });
@@ -51,6 +52,11 @@ export const routesRouter = createTRPCRouter({
         query = query.eq("activity_category", input.activityCategory);
       }
 
+      // Apply search filter
+      if (input.search) {
+        query = query.ilike("name", `%${input.search}%`);
+      }
+
       // Apply cursor
       if (input.cursor) {
         const [cursorDate, cursorId] = input.cursor.split("_");
@@ -78,8 +84,26 @@ export const routesRouter = createTRPCRouter({
         nextCursor = `${lastItem.created_at}_${lastItem.id}`;
       }
 
+      // Get user likes for these routes
+      const routeIds = items.map((r: any) => r.id) || [];
+      let userLikes: string[] = [];
+
+      if (routeIds.length > 0) {
+        const { data: likesData } = await (ctx.supabase as any)
+          .from("likes")
+          .select("entity_id")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("entity_type", "route")
+          .in("entity_id", routeIds);
+
+        userLikes = likesData?.map((l: any) => l.entity_id) || [];
+      }
+
       return {
-        items,
+        items: items.map((route: any) => ({
+          ...route,
+          has_liked: userLikes.includes(route.id),
+        })),
         nextCursor,
       };
     }),
@@ -104,7 +128,19 @@ export const routesRouter = createTRPCRouter({
         });
       }
 
-      return data;
+      // Check if user has liked this route
+      const { data: likeData } = await (ctx.supabase as any)
+        .from("likes")
+        .select("id")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("entity_type", "route")
+        .eq("entity_id", input.id)
+        .maybeSingle();
+
+      return {
+        ...data,
+        has_liked: !!likeData,
+      };
     }),
 
   // ------------------------------

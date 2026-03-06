@@ -203,9 +203,14 @@ function PlanScreen() {
     };
   }, [currentMonth]);
 
-  const snapshot = useTrainingPlanSnapshot();
+  const { data: rawActivePlan } = trpc.trainingPlans.getActivePlan.useQuery();
+  const activePlan = rawActivePlan as any;
 
-  const plan = snapshot.plan;
+  const snapshot = useTrainingPlanSnapshot({
+    planId: activePlan?.id,
+  });
+
+  const plan = activePlan;
   const status = snapshot.status;
   const refetchSnapshot = snapshot.refetch;
   const refetchSnapshotAll = snapshot.refetchAll;
@@ -932,7 +937,7 @@ function PlanScreen() {
           : "Create Event";
 
   const handleViewTrainingPlan = () => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.INDEX);
+    router.push(ROUTES.PLAN.ACTIVE_PLAN as any);
   };
 
   const handleOpenCalendar = useCallback(() => {
@@ -1125,17 +1130,23 @@ function PlanScreen() {
                   <Text className="text-base font-semibold">{plan.name}</Text>
                   <View
                     className={`px-2 py-1 rounded-full ${
-                      plan.is_active ? "bg-emerald-500/15" : "bg-muted"
+                      plan.status === "active"
+                        ? "bg-emerald-500/15"
+                        : "bg-muted"
                     }`}
                   >
                     <Text
                       className={`text-xs font-medium ${
-                        plan.is_active
+                        plan.status === "active"
                           ? "text-emerald-700 dark:text-emerald-300"
                           : "text-muted-foreground"
                       }`}
                     >
-                      {plan.is_active ? "Active" : "Inactive"}
+                      {plan.status === "active"
+                        ? "Active"
+                        : plan.status === "paused"
+                          ? "Paused"
+                          : "Completed"}
                     </Text>
                   </View>
                 </View>

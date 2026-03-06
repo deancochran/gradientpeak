@@ -1,4 +1,5 @@
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { Switch } from "@/components/ui/switch";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -23,14 +24,32 @@ import {
   CalendarX,
   Copy,
   Edit,
+  Eye,
+  EyeOff,
+  Heart,
   Library,
+  MessageCircle,
+  Send,
   Share2,
   Smartphone,
   Trash2,
 } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
 import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+
+function isValidUuid(value: string): boolean {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(value);
+}
 
 export default function ActivityPlanDetailPage() {
   const router = useRouter();
@@ -237,6 +256,28 @@ export default function ActivityPlanDetailPage() {
     },
   });
 
+  // Privacy update mutation
+  const updatePrivacyMutation = trpc.activityPlans.update.useMutation({
+    onSuccess: async () => {
+      await utils.activityPlans.getById.invalidate({ id: planId });
+      await utils.activityPlans.list.invalidate();
+    },
+    onError: (error) => {
+      console.error("Privacy update error:", error);
+      Alert.alert("Error", error.message || "Failed to update privacy");
+      setIsPublic(!isPublic);
+    },
+  });
+
+  const handleTogglePrivacy = () => {
+    const newVisibility = isPublic ? "private" : "public";
+    setIsPublic(!isPublic);
+    updatePrivacyMutation.mutate({
+      id: planId || activityPlan.id,
+      template_visibility: newVisibility,
+    });
+  };
+
   const removeScheduleMutation = trpc.events.delete.useMutation({
     onSuccess: async () => {
       await utils.events.invalidate();
@@ -316,6 +357,93 @@ export default function ActivityPlanDetailPage() {
     );
   };
 
+  // Like state and mutation
+  const actualPlanId = planId || activityPlan?.id;
+  const [isLiked, setIsLiked] = useState(activityPlan?.has_liked ?? false);
+  const [likesCount, setLikesCount] = useState(activityPlan?.likes_count ?? 0);
+
+  // Helper to validate UUID format
+  const isValidUUID = (id: string | undefined): boolean => {
+    if (!id) return false;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  };
+
+  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+    onError: () => {
+      setIsLiked(activityPlan?.has_liked ?? false);
+      setLikesCount(activityPlan?.likes_count ?? 0);
+    },
+  });
+
+  const handleToggleLike = () => {
+    if (!actualPlanId || !isValidUUID(actualPlanId)) {
+      Alert.alert("Error", "Cannot like this item - invalid ID");
+      return;
+    }
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    setLikesCount((prev: number) => (newLikedState ? prev + 1 : prev - 1));
+    toggleLikeMutation.mutate({
+      entity_id: actualPlanId,
+      entity_type: "activity_plan",
+    });
+  };
+
+  // Update like state when plan data loads
+  React.useEffect(() => {
+    if (activityPlan) {
+      setIsLiked(activityPlan.has_liked ?? false);
+      setLikesCount(activityPlan.likes_count ?? 0);
+    }
+  }, [activityPlan?.has_liked, activityPlan?.likes_count]);
+
+  // Comments state
+  const [newComment, setNewComment] = useState("");
+
+  // Fetch comments
+  const { data: commentsData, refetch: refetchComments } =
+    trpc.social.getComments.useQuery(
+      {
+        entity_id: planId || activityPlan?.id || "",
+        entity_type: "activity_plan",
+      },
+      {
+        enabled:
+          !!(planId || activityPlan?.id) &&
+          isValidUuid(planId || activityPlan?.id || ""),
+      },
+    );
+
+  // Add comment mutation
+  const addCommentMutation = trpc.social.addComment.useMutation({
+    onSuccess: () => {
+      setNewComment("");
+      refetchComments();
+    },
+    onError: (error) => {
+      Alert.alert("Error", `Failed to add comment: ${error.message}`);
+    },
+  });
+
+  const handleAddComment = () => {
+    const planIdToUse = planId || activityPlan?.id;
+    if (!planIdToUse || !isValidUuid(planIdToUse) || !newComment.trim()) return;
+    addCommentMutation.mutate({
+      entity_id: planIdToUse,
+      entity_type: "activity_plan",
+      content: newComment.trim(),
+    });
+  };
+
+  // Update privacy state when plan data loads
+  React.useEffect(() => {
+    if (activityPlan) {
+      setIsPublic(activityPlan.template_visibility === "public");
+    }
+  }, [activityPlan?.template_visibility]);
+
   if (loadingPlan || loadingPlannedActivity) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
@@ -346,6 +474,9 @@ export default function ActivityPlanDetailPage() {
   // Check if user owns this plan for edit permission
   // Database uses profile_id field, not user_id
   const isOwnedByUser = activityPlan.profile_id === profile?.id;
+  const [isPublic, setIsPublic] = useState(
+    activityPlan.template_visibility === "public",
+  );
 
   // Decode route coordinates if available
   const routeCoordinates = route?.polyline
@@ -418,6 +549,43 @@ export default function ActivityPlanDetailPage() {
 
             {/* Secondary Actions Row */}
             <View className="flex-row gap-2">
+              <Pressable
+                onPress={handleToggleLike}
+                className="flex-1 flex-row items-center justify-center gap-1.5 py-2 rounded-lg border border-border bg-card"
+              >
+                <Icon
+                  as={Heart}
+                  size={16}
+                  className={
+                    isLiked
+                      ? "text-red-500 fill-red-500"
+                      : "text-muted-foreground"
+                  }
+                />
+                <Text
+                  className={
+                    isLiked
+                      ? "text-red-500 text-sm font-medium"
+                      : "text-muted-foreground text-sm"
+                  }
+                >
+                  {likesCount > 0 ? likesCount : "Like"}
+                </Text>
+                {(commentsData?.total ?? 0) > 0 && (
+                  <>
+                    <Text className="text-muted-foreground text-sm">·</Text>
+                    <Icon
+                      as={MessageCircle}
+                      size={14}
+                      className="text-muted-foreground"
+                    />
+                    <Text className="text-muted-foreground text-sm">
+                      {commentsData?.total}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+
               <Button
                 onPress={handleSaveToLibrary}
                 variant="outline"
@@ -454,6 +622,24 @@ export default function ActivityPlanDetailPage() {
 
             {isOwnedByUser && (
               <View className="flex-row gap-2">
+                {/* Privacy Toggle */}
+                <View className="flex-1 flex-row items-center justify-between px-3 py-2 rounded-lg border border-border bg-card">
+                  <View className="flex-row items-center gap-2">
+                    <Icon
+                      as={isPublic ? Eye : EyeOff}
+                      size={16}
+                      className="text-muted-foreground"
+                    />
+                    <Text className="text-sm text-foreground">
+                      {isPublic ? "Public" : "Private"}
+                    </Text>
+                  </View>
+                  <Switch
+                    checked={isPublic}
+                    onCheckedChange={handleTogglePrivacy}
+                    disabled={updatePrivacyMutation.isPending}
+                  />
+                </View>
                 <Button
                   onPress={handleEdit}
                   variant="outline"
@@ -478,6 +664,49 @@ export default function ActivityPlanDetailPage() {
                 </Button>
               </View>
             )}
+          </View>
+
+          {/* Comments Section */}
+          {commentsData && commentsData.comments.length > 0 && (
+            <View className="mb-4 border-t border-border pt-4">
+              <Text className="font-semibold text-foreground mb-3">
+                Comments ({commentsData.total})
+              </Text>
+              {commentsData.comments.map((comment: any) => (
+                <View key={comment.id} className="mb-3">
+                  <View className="flex-row items-center gap-2 mb-1">
+                    <Text className="font-medium text-sm text-foreground">
+                      {comment.profile?.username || "Unknown User"}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {new Date(comment.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Text className="text-sm text-foreground">
+                    {comment.content}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Add Comment Input */}
+          <View className="flex-row items-center gap-2 mb-6">
+            <TextInput
+              className="flex-1 border border-border rounded-lg px-3 py-2 text-foreground"
+              placeholder="Add a comment..."
+              placeholderTextColor="#9ca3af"
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline
+            />
+            <Button
+              onPress={handleAddComment}
+              disabled={!newComment.trim() || addCommentMutation.isPending}
+              size="icon"
+            >
+              <Icon as={Send} size={18} className="text-primary-foreground" />
+            </Button>
           </View>
 
           {/* Scheduled Date Banner */}

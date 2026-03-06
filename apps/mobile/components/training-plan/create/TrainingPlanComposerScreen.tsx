@@ -1040,10 +1040,9 @@ export function TrainingPlanComposerScreen(
           description: description.length > 0 ? description : null,
           is_active: planMetadata.isActive,
         });
-        router.replace({
-          pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
-          params: { id: createdPlan.id, nextStep: "refine" },
-        });
+        router.replace(
+          `${ROUTES.PLAN.TRAINING_PLAN.DETAIL(createdPlan.id)}&nextStep=refine` as any,
+        );
         return;
       }
 
@@ -1074,10 +1073,9 @@ export function TrainingPlanComposerScreen(
           is_active: planMetadata.isActive,
         });
 
-        router.replace({
-          pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
-          params: { id: updatedPlan.id, nextStep: "refine" },
-        });
+        router.replace(
+          `${ROUTES.PLAN.TRAINING_PLAN.DETAIL(updatedPlan.id)}&nextStep=refine` as any,
+        );
         return;
       }
 
@@ -1092,10 +1090,9 @@ export function TrainingPlanComposerScreen(
         is_active: planMetadata.isActive,
       });
 
-      router.replace({
-        pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
-        params: { id: createdPlan.id, nextStep: "refine" },
-      });
+      router.replace(
+        `${ROUTES.PLAN.TRAINING_PLAN.DETAIL(createdPlan.id)}&nextStep=refine` as any,
+      );
     } catch (error) {
       console.error(
         "Failed to save training plan from creation config:",

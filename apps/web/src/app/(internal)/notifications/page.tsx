@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
@@ -14,12 +16,41 @@ import { Bell, Mail, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-function NotificationItem({ notification }: { notification: any }) {
+function NotificationItem({
+  notification,
+  profile,
+}: {
+  notification: any;
+  profile?: any;
+}) {
   const isUnread = !notification.read_at;
+  const [handled, setHandled] = useState(false);
+  const utils = trpc.useUtils();
+
+  const acceptMutation = trpc.social.acceptFollowRequest.useMutation({
+    onSuccess: () => {
+      toast.success("Follow request accepted");
+      setHandled(true);
+      utils.notifications.getRecent.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const rejectMutation = trpc.social.rejectFollowRequest.useMutation({
+    onSuccess: () => {
+      toast.success("Follow request rejected");
+      setHandled(true);
+      utils.notifications.getRecent.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   let Icon = Bell;
   let title = "Notification";
   let description = "Tap to view details.";
+
+  const isPrivate = profile && (profile as any).is_public === false;
+  const isFollowRequest = notification.type === "new_follower" && isPrivate;
 
   if (notification.type === "new_message") {
     Icon = Mail;
@@ -31,8 +62,10 @@ function NotificationItem({ notification }: { notification: any }) {
     description = "You have received a new coaching invitation.";
   } else if (notification.type === "new_follower") {
     Icon = UserPlus;
-    title = "New Follower";
-    description = "Someone new started following you.";
+    title = isFollowRequest ? "Follow Request" : "New Follower";
+    description = isFollowRequest
+      ? "Someone requested to follow you."
+      : "Someone new started following you.";
   }
 
   return (
@@ -43,6 +76,29 @@ function NotificationItem({ notification }: { notification: any }) {
       <div className="flex-1">
         <p className={cn("font-medium", isUnread && "font-bold")}>{title}</p>
         <p className="text-sm text-muted-foreground">{description}</p>
+        {isFollowRequest && !handled && (
+          <div className="flex gap-2 mt-2">
+            <Button
+              size="sm"
+              onClick={() =>
+                acceptMutation.mutate({ follower_id: notification.actor_id })
+              }
+              disabled={acceptMutation.isPending || rejectMutation.isPending}
+            >
+              Accept
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                rejectMutation.mutate({ follower_id: notification.actor_id })
+              }
+              disabled={acceptMutation.isPending || rejectMutation.isPending}
+            >
+              Reject
+            </Button>
+          </div>
+        )}
         <p className="text-xs text-muted-foreground mt-1">
           {new Date(notification.created_at).toLocaleString()}
         </p>
@@ -53,6 +109,7 @@ function NotificationItem({ notification }: { notification: any }) {
 }
 
 export default function NotificationsPage() {
+  const { data: profile } = trpc.profiles.get.useQuery();
   const { data: notifications = [], isLoading } =
     trpc.notifications.getRecent.useQuery({ limit: 50 });
   const utils = trpc.useUtils();
@@ -114,7 +171,11 @@ export default function NotificationsPage() {
                   </div>
                 ) : allNotifications.length > 0 ? (
                   allNotifications.map((n) => (
-                    <NotificationItem key={n.id} notification={n} />
+                    <NotificationItem
+                      key={n.id}
+                      notification={n}
+                      profile={profile}
+                    />
                   ))
                 ) : (
                   <div className="p-8 text-center text-muted-foreground">
@@ -129,7 +190,11 @@ export default function NotificationsPage() {
                   </div>
                 ) : unreadNotifications.length > 0 ? (
                   unreadNotifications.map((n) => (
-                    <NotificationItem key={n.id} notification={n} />
+                    <NotificationItem
+                      key={n.id}
+                      notification={n}
+                      profile={profile}
+                    />
                   ))
                 ) : (
                   <div className="p-8 text-center text-muted-foreground">

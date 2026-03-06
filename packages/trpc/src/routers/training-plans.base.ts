@@ -1896,7 +1896,7 @@ export const trainingPlansRouter = createTRPCRouter({
   // Get a training plan (by ID or active plan)
   // ------------------------------
   get: protectedProcedure
-    .input(z.object({ id: z.string() }).optional())
+    .input(z.object({ id: z.string().uuid().optional() }).optional())
     .query(async ({ ctx, input }) => {
       // If ID provided, get specific plan
       if (input?.id) {
@@ -1933,17 +1933,35 @@ export const trainingPlansRouter = createTRPCRouter({
           );
         }
 
-        return data;
+        // Check if user has liked this plan
+        const { data: likeData } = await (ctx.supabase as any)
+          .from("likes")
+          .select("id")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("entity_type", "training_plan")
+          .eq("entity_id", input.id)
+          .maybeSingle();
+
+        return {
+          ...data,
+          has_liked: !!likeData,
+        };
       }
 
       // Otherwise, get active plan
-      // Query for all active plans (in case there are multiple)
-      const { data: activePlans, error } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
+      const { data: activePlan, error } = await ctx.supabase
+        .from("user_training_plans" as any)
+        .select(
+          `
+          id,
+          training_plan:training_plan_id (*)
+        `,
+        )
         .eq("profile_id", ctx.session.user.id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
+        .eq("status", "active")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       if (error) {
         throw new TRPCError({
@@ -1952,49 +1970,11 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      // If no active plans, return null
-      if (!activePlans || activePlans.length === 0) {
+      if (!activePlan || !(activePlan as any).training_plan) {
         return null;
       }
 
-      // If multiple active plans exist (shouldn't happen, but handle it gracefully)
-      if (activePlans.length > 1) {
-        console.warn(
-          `User ${ctx.session.user.id} has ${activePlans.length} active training plans. Deactivating older ones.`,
-        );
-
-        // Keep the most recent, deactivate the rest
-        const mostRecentPlan = activePlans[0]!;
-        const olderPlanIds = activePlans.slice(1).map((p) => p.id);
-
-        // Deactivate older plans
-        await ctx.supabase
-          .from("training_plans")
-          .update({ is_active: false })
-          .in("id", olderPlanIds);
-
-        // Return the most recent active plan
-        const data = mostRecentPlan;
-
-        // Validate structure on read (defensive programming)
-        try {
-          if (data.structure) {
-            trainingPlanSchema.parse(data.structure);
-          }
-        } catch (validationError) {
-          console.error(
-            "Invalid structure in database for training plan",
-            data.id,
-            validationError,
-          );
-          // Don't fail the query, but log the issue
-        }
-
-        return data;
-      }
-
-      // Single active plan - normal case
-      const data = activePlans[0]!;
+      const data = (activePlan as any).training_plan as any;
 
       // Validate structure on read (defensive programming)
       try {
@@ -2007,10 +1987,21 @@ export const trainingPlansRouter = createTRPCRouter({
           data.id,
           validationError,
         );
-        // Don't fail the query, but log the issue
       }
 
-      return data;
+      // Check if user has liked this plan
+      const { data: likeData } = await (ctx.supabase as any)
+        .from("likes")
+        .select("id")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("entity_type", "training_plan")
+        .eq("entity_id", data.id)
+        .maybeSingle();
+
+      return {
+        ...data,
+        has_liked: !!likeData,
+      };
     }),
 
   // ------------------------------
@@ -2075,7 +2066,24 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      return (data || []).map((plan) => withTrainingPlanIdentity(plan as any));
+      const planIds = data?.map((p) => p.id) || [];
+      let userLikes: string[] = [];
+
+      if (planIds.length > 0) {
+        const { data: likesData } = await (ctx.supabase as any)
+          .from("likes")
+          .select("entity_id")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("entity_type", "training_plan")
+          .in("entity_id", planIds);
+
+        userLikes = likesData?.map((l: any) => l.entity_id) || [];
+      }
+
+      return (data || []).map((plan) => ({
+        ...withTrainingPlanIdentity(plan as any),
+        has_liked: userLikes.includes(plan.id),
+      }));
     }),
 
   // ------------------------------
@@ -2150,24 +2158,12 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      const shouldBeActive = input.is_active ?? true;
-
-      // If creating as active, deactivate any existing active plans
-      if (shouldBeActive) {
-        await ctx.supabase
-          .from("training_plans")
-          .update({ is_active: false })
-          .eq("profile_id", ctx.session.user.id)
-          .eq("is_active", true);
-      }
-
       const { data, error } = await ctx.supabase
         .from("training_plans")
         .insert({
           name: input.name,
           description: input.description ?? null,
           structure: structureWithId as any, // Cast to satisfy Supabase Json type
-          is_active: shouldBeActive,
           profile_id: ctx.session.user.id,
         })
         .select("*")
@@ -2402,20 +2398,12 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      // Keep behavior aligned with create: newly generated minimal plans are active
-      await ctx.supabase
-        .from("training_plans")
-        .update({ is_active: false })
-        .eq("profile_id", ctx.session.user.id)
-        .eq("is_active", true);
-
       const { data, error } = await ctx.supabase
         .from("training_plans")
         .insert({
           name: expandedPlan.name,
           description: expandedPlan.description ?? null,
           structure: structureWithId as any,
-          is_active: true,
           profile_id: ctx.session.user.id,
         })
         .select("*")
@@ -2711,13 +2699,15 @@ export const trainingPlansRouter = createTRPCRouter({
       z
         .object({
           id: z.string().uuid(),
+          template_visibility: z.enum(["private", "public"]).optional(),
         })
         .and(trainingPlanUpdateInputSchema),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...updates } = input as { id: string } & z.infer<
-        typeof trainingPlanUpdateInputSchema
-      >;
+      const { id, template_visibility, ...updates } = input as {
+        id: string;
+        template_visibility?: "private" | "public";
+      } & z.infer<typeof trainingPlanUpdateInputSchema>;
 
       // Check ownership
       const { data: existing } = await ctx.supabase
@@ -2748,23 +2738,13 @@ export const trainingPlansRouter = createTRPCRouter({
         }
       }
 
-      // If setting as active, deactivate other plans
-      if (updates.is_active === true) {
-        await ctx.supabase
-          .from("training_plans")
-          .update({ is_active: false })
-          .eq("profile_id", ctx.session.user.id)
-          .eq("is_active", true)
-          .neq("id", id);
-      }
-
       const { data, error } = await ctx.supabase
         .from("training_plans")
         .update({
           name: updates.name as string | undefined,
           description: updates.description as string | null | undefined,
           structure: updates.structure as any,
-          is_active: updates.is_active as boolean | undefined,
+          template_visibility: template_visibility,
         })
         .eq("id", id)
         .select("*")
@@ -2778,56 +2758,6 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       return data;
-    }),
-
-  // ------------------------------
-  // Activate a training plan (deactivates all others)
-  // ------------------------------
-  activate: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      // Check ownership
-      const { data: existing } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message:
-            "Training plan not found or you don't have permission to activate it",
-        });
-      }
-
-      if (existing.is_active) {
-        // Already active, no-op
-        return { success: true, message: "Plan is already active" };
-      }
-
-      // Deactivate all other plans for this user
-      await ctx.supabase
-        .from("training_plans")
-        .update({ is_active: false })
-        .eq("profile_id", ctx.session.user.id)
-        .eq("is_active", true);
-
-      // Activate this plan
-      const { error } = await ctx.supabase
-        .from("training_plans")
-        .update({ is_active: true })
-        .eq("id", input.id);
-
-      if (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error.message,
-        });
-      }
-
-      return { success: true, message: "Plan activated successfully" };
     }),
 
   // ------------------------------
@@ -2916,7 +2846,18 @@ export const trainingPlansRouter = createTRPCRouter({
         );
       }
 
-      return data;
+      const { data: likeData } = await (ctx.supabase as any)
+        .from("likes")
+        .select("id")
+        .eq("profile_id", ctx.session.user.id)
+        .eq("entity_type", "training_plan")
+        .eq("entity_id", input.id)
+        .maybeSingle();
+
+      return {
+        ...data,
+        has_liked: !!likeData,
+      };
     }),
 
   // ------------------------------
@@ -4063,44 +4004,71 @@ export const trainingPlansRouter = createTRPCRouter({
             .optional(),
           min_weeks: z.number().int().min(1).max(52).optional(),
           max_weeks: z.number().int().min(1).max(52).optional(),
+          search: z.string().optional(),
         })
         .optional(),
     )
-    .query(async ({ input }) => {
-      // Import PLAN_TEMPLATES from core package
-      const { PLAN_TEMPLATES } = await import("@repo/core");
+    .query(async ({ ctx, input }) => {
+      // Query system templates from database
+      let query = ctx.supabase
+        .from("training_plans")
+        .select(
+          "id, name, description, structure, is_system_template, template_visibility, likes_count, created_at, updated_at",
+        )
+        .eq("is_system_template", true)
+        .eq("template_visibility", "public");
 
-      // Convert to array and filter
-      let templates = Object.entries(PLAN_TEMPLATES).map(([id, template]) => ({
-        id,
-        ...template,
+      const { data: templates, error } = await query;
+
+      if (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch templates",
+        });
+      }
+
+      // Transform and filter results
+      let result = (templates || []).map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        ...(t.structure as object),
       }));
 
+      // Apply filters
       if (input?.sport) {
-        templates = templates.filter((t) =>
-          t.sport.includes(input.sport as any),
+        result = result.filter((t: any) =>
+          (t.sport || []).includes(input.sport),
         );
       }
 
       if (input?.experience_level) {
-        templates = templates.filter((t) =>
-          t.experienceLevel.includes(input.experience_level!),
+        result = result.filter((t: any) =>
+          (t.experienceLevel || []).includes(input.experience_level),
         );
       }
 
       if (input?.min_weeks) {
-        templates = templates.filter(
-          (t) => t.durationWeeks.recommended >= input.min_weeks!,
+        result = result.filter(
+          (t: any) => (t.durationWeeks?.recommended || 0) >= input.min_weeks!,
         );
       }
 
       if (input?.max_weeks) {
-        templates = templates.filter(
-          (t) => t.durationWeeks.recommended <= input.max_weeks!,
+        result = result.filter(
+          (t: any) => (t.durationWeeks?.recommended || 0) <= input.max_weeks!,
         );
       }
 
-      return templates;
+      // Apply search filter (case-insensitive)
+      if (input?.search) {
+        const searchLower = input.search.toLowerCase();
+        result = result.filter((t: any) =>
+          (t.name || "").toLowerCase().includes(searchLower),
+        );
+      }
+
+      return result;
     }),
 
   // ------------------------------
@@ -4108,12 +4076,19 @@ export const trainingPlansRouter = createTRPCRouter({
   // ------------------------------
   getTemplate: protectedProcedure
     .input(z.object({ id: z.string() }))
-    .query(async ({ input }) => {
-      const { PLAN_TEMPLATES } = await import("@repo/core");
+    .query(async ({ ctx, input }) => {
+      // Query system template from database
+      const { data: template, error } = await ctx.supabase
+        .from("training_plans")
+        .select(
+          "id, name, description, structure, is_system_template, template_visibility, likes_count, created_at, updated_at",
+        )
+        .eq("id", input.id)
+        .eq("is_system_template", true)
+        .eq("template_visibility", "public")
+        .single();
 
-      const template = PLAN_TEMPLATES[input.id];
-
-      if (!template) {
+      if (error || !template) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Template not found",
@@ -4121,8 +4096,10 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       return {
-        id: input.id,
-        ...template,
+        id: template.id,
+        name: template.name,
+        description: template.description,
+        ...(template.structure as object),
       };
     }),
 
@@ -4138,6 +4115,27 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const profileId = ctx.session.user.id;
+
+      const { data: activePlans, error: activePlansError } = await ctx.supabase
+        .from("user_training_plans" as any)
+        .select("id")
+        .eq("profile_id", profileId)
+        .in("status", ["active", "paused"]);
+
+      if (activePlansError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to check active training plans",
+        });
+      }
+
+      if (activePlans && activePlans.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "You already have an active training plan. Please complete or abandon it first.",
+        });
+      }
 
       const { data: templatePlan, error: templateError } = await ctx.supabase
         .from("training_plans")
@@ -4162,28 +4160,42 @@ export const trainingPlansRouter = createTRPCRouter({
             } as Record<string, unknown>)
           : {};
 
-      const appliedStructureId = crypto.randomUUID();
-      const appliedPlanStartDate =
-        input.start_date ??
-        (typeof structure.start_date === "string"
-          ? structure.start_date
-          : formatDateOnlyUtc(new Date()));
+      let appliedPlanStartDate = input.start_date;
 
-      structure.id = appliedStructureId;
-      if (typeof structure.start_date === "string" || input.start_date) {
-        structure.start_date = appliedPlanStartDate;
+      if (!appliedPlanStartDate && input.target_date) {
+        const dummyStart = "2000-01-01";
+        const dummySessions = deriveTemplateSessions(structure, dummyStart);
+        let maxOffsetDays = 0;
+        for (const s of dummySessions) {
+          const offset = diffDateOnlyUtcDays(dummyStart, s.date);
+          if (offset > maxOffsetDays) maxOffsetDays = offset;
+        }
+        appliedPlanStartDate = addDaysDateOnlyUtc(
+          input.target_date,
+          -maxOffsetDays,
+        );
       }
 
+      if (!appliedPlanStartDate) {
+        appliedPlanStartDate =
+          typeof structure.start_date === "string"
+            ? structure.start_date
+            : formatDateOnlyUtc(new Date());
+      }
+
+      const appliedStructureId = crypto.randomUUID();
+      structure.id = appliedStructureId;
+      structure.start_date = appliedPlanStartDate;
+
       const { data: appliedPlan, error: appliedPlanError } = await ctx.supabase
-        .from("training_plans")
+        .from("user_training_plans" as any)
         .insert({
-          name: `${templatePlan.name} (Applied)`,
-          description: templatePlan.description,
-          structure: structure as any,
-          is_active: false,
-          is_system_template: false,
-          template_visibility: "private",
           profile_id: profileId,
+          training_plan_id: templatePlan.id,
+          status: "active",
+          start_date: appliedPlanStartDate,
+          target_date: input.target_date ?? null,
+          snapshot_structure: structure as any,
         })
         .select("id")
         .single();
@@ -4191,7 +4203,7 @@ export const trainingPlansRouter = createTRPCRouter({
       if (appliedPlanError || !appliedPlan) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create applied training plan",
+          message: "Failed to apply training plan template",
         });
       }
 
@@ -4234,18 +4246,21 @@ export const trainingPlansRouter = createTRPCRouter({
             !session.activity_plan_id ||
             allowedPlanIds.has(session.activity_plan_id),
         )
-        .map((session) => ({
-          profile_id: profileId,
-          event_type: plannedEventType,
-          title: session.title,
-          all_day: session.all_day,
-          timezone: "UTC",
-          starts_at: session.starts_at,
-          ends_at: session.ends_at,
-          status: "scheduled" as const,
-          activity_plan_id: session.activity_plan_id,
-          training_plan_id: appliedPlan.id,
-        }));
+        .map(
+          (session) =>
+            ({
+              profile_id: profileId,
+              event_type: plannedEventType,
+              title: session.title,
+              all_day: session.all_day,
+              timezone: "UTC",
+              starts_at: session.starts_at,
+              ends_at: session.ends_at,
+              status: "scheduled" as const,
+              activity_plan_id: session.activity_plan_id,
+              user_training_plan_id: (appliedPlan as any).id,
+            }) as any,
+        );
 
       const schedule_batch_id = crypto.randomUUID();
       let created_event_count = 0;
@@ -4272,7 +4287,7 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       return {
-        applied_plan_id: appliedPlan.id,
+        applied_plan_id: (appliedPlan as any).id,
         schedule_batch_id,
         created_event_count,
         cache_tags: [
@@ -4282,6 +4297,99 @@ export const trainingPlansRouter = createTRPCRouter({
         ],
       };
     }),
+
+  // ------------------------------
+  // Auto-add periodization to existing plan
+  // ------------------------------
+  updateActivePlanStatus: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        status: z.enum(["active", "paused", "completed", "abandoned"]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // First check if the plan exists and belongs to the user
+      const { data: existingPlan, error: fetchError } = await ctx.supabase
+        .from("user_training_plans" as any)
+        .select("id")
+        .eq("id", input.id)
+        .eq("profile_id", ctx.session.user.id)
+        .single();
+
+      if (fetchError || !existingPlan) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Active training plan not found",
+        });
+      }
+
+      // If making it active, ensure no other plan is active/paused
+      if (input.status === "active" || input.status === "paused") {
+        const { data: otherActivePlans, error: activeCheckError } =
+          await ctx.supabase
+            .from("user_training_plans" as any)
+            .select("id")
+            .eq("profile_id", ctx.session.user.id)
+            .neq("id", input.id)
+            .in("status", ["active", "paused"]);
+
+        if (activeCheckError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to check other active plans",
+          });
+        }
+
+        if (otherActivePlans && otherActivePlans.length > 0) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "You already have another active or paused training plan. Please complete or abandon it first.",
+          });
+        }
+      }
+
+      const { data: updatedPlan, error: updateError } = await ctx.supabase
+        .from("user_training_plans" as any)
+        .update({ status: input.status })
+        .eq("id", input.id)
+        .eq("profile_id", ctx.session.user.id)
+        .select()
+        .single();
+
+      if (updateError || !updatedPlan) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update training plan status",
+        });
+      }
+
+      return updatedPlan;
+    }),
+
+  getActivePlan: protectedProcedure.query(async ({ ctx }) => {
+    const { data: activePlan, error } = await ctx.supabase
+      .from("user_training_plans" as any)
+      .select(
+        `
+        *,
+        training_plan:training_plan_id (*)
+      `,
+      )
+      .eq("profile_id", ctx.session.user.id)
+      .in("status", ["active", "paused"])
+      .maybeSingle();
+
+    if (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to fetch active training plan",
+      });
+    }
+
+    return activePlan;
+  }),
 
   // ------------------------------
   // Auto-add periodization to existing plan

@@ -83,7 +83,13 @@ vi.mock("@/components/ui/icon", () => ({ Icon: createHost("Icon") }));
 vi.mock("@/components/ui/input", () => ({ Input: createHost("Input") }));
 vi.mock("@/components/ui/text", () => ({ Text: createHost("Text") }));
 
-vi.mock("lucide-react-native", () => ({ Edit3: createHost("Edit3") }));
+vi.mock("lucide-react-native", () => ({
+  Edit3: createHost("Edit3"),
+  UserPlus: createHost("UserPlus"),
+  UserMinus: createHost("UserMinus"),
+  Clock: createHost("Clock"),
+  MessageCircle: createHost("MessageCircle"),
+}));
 
 vi.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => authState,
@@ -117,6 +123,19 @@ vi.mock("@/lib/trpc", () => ({
         useMutation: () => ({ mutate: vi.fn(), isPending: false }),
       },
       updatePassword: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+    },
+    social: {
+      followUser: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+      unfollowUser: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+    },
+    messaging: {
+      getOrCreateDM: {
         useMutation: () => ({ mutate: vi.fn(), isPending: false }),
       },
     },

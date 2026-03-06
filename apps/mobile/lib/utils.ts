@@ -1,6 +1,26 @@
-import { clsx, type ClassValue } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { clsx, type ClassValue } from "clsx";
+import { formatDistanceToNow, isToday, isYesterday, format } from "date-fns";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
+}
+
+/**
+ * Format a date as relative time (e.g., "5m ago", "Yesterday", "3/4/26")
+ * Best practice for messaging UIs - matches WhatsApp, iMessage, etc.
+ */
+export function formatRelativeTime(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+
+  if (isToday(d)) {
+    return format(d, "h:mm a");
+  }
+
+  if (isYesterday(d)) {
+    return "Yesterday";
+  }
+
+  // For older dates, show date in format like "3/4/26"
+  return format(d, "M/d/yy");
 }

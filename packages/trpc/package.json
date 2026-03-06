@@ -13,7 +13,7 @@
     "check-types": "tsc --noEmit",
     "check-boundaries": "node ./scripts/check-layer-boundaries.mjs",
     "lint": "eslint src",
-    "test": "vitest",
+    "test": "vitest run",
     "watch": "tsc --noEmit --watch --preserveWatchOutput"
   },
   "dependencies": {

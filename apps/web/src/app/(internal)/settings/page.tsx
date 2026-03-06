@@ -60,6 +60,7 @@ const profileSchema = z.object({
     .string()
     .min(2, "Name must be at least 2 characters")
     .max(50, "Name must be less than 50 characters"),
+  is_public: z.boolean(),
 });
 
 export default function SettingsPage() {
@@ -122,6 +123,7 @@ export default function SettingsPage() {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       username: "",
+      is_public: false,
     },
   });
 
@@ -130,6 +132,7 @@ export default function SettingsPage() {
     if (profile) {
       form.reset({
         username: profile.username || "",
+        is_public: (profile as any).is_public ?? false,
       });
     }
   }, [profile, form]);
@@ -176,6 +179,7 @@ export default function SettingsPage() {
     try {
       await updateProfileMutation.mutateAsync({
         username: values.username,
+        is_public: values.is_public,
       });
     } catch {
       // Error handling is done in mutation onError
@@ -359,6 +363,36 @@ export default function SettingsPage() {
                         profile.
                       </FormDescription>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="is_public"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">
+                          Public Account
+                        </FormLabel>
+                        <FormDescription>
+                          Make your profile and activities visible to everyone.
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={field.value}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            ref={field.ref}
+                          />
+                          <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                      </FormControl>
                     </FormItem>
                   )}
                 />

@@ -22,6 +22,7 @@ const listActivityPlansSchema = z
     activityCategory: z
       .enum(["run", "bike", "swim", "strength", "other", "all"])
       .optional(),
+    search: z.string().optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: z.string().optional(),
     direction: z.enum(["forward", "backward"]).optional(),
@@ -134,6 +135,14 @@ export const activityPlansRouter = createTRPCRouter({
       if (input.activityCategory && input.activityCategory !== "all") {
         query = query.eq("activity_category", input.activityCategory);
       }
+
+      // Apply search filter (name and description)
+      if (input.search) {
+        query = query.or(
+          `name.ilike.%${input.search}%,description.ilike.%${input.search}%`,
+        );
+      }
+
       // Apply cursor (if provided, fetch items after this cursor)
       if (input.cursor) {
         const [cursorDate, cursorId] = input.cursor.split("_");
@@ -170,10 +179,25 @@ export const activityPlansRouter = createTRPCRouter({
         nextCursor = `${lastItem.created_at}_${lastItem.id}`;
       }
 
+      const planIds = itemsWithEstimation.map((p: any) => p.id) || [];
+      let userLikes: string[] = [];
+
+      if (planIds.length > 0) {
+        const { data: likesData } = await (ctx.supabase as any)
+          .from("likes")
+          .select("entity_id")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("entity_type", "activity_plan")
+          .in("entity_id", planIds);
+
+        userLikes = likesData?.map((l: any) => l.entity_id) || [];
+      }
+
       return {
-        items: itemsWithEstimation.map((plan) =>
-          withIdentityFields(plan as any),
-        ),
+        items: itemsWithEstimation.map((plan) => ({
+          ...withIdentityFields(plan as any),
+          has_liked: userLikes.includes((plan as any).id),
+        })),
         nextCursor,
       };
     }),
@@ -184,26 +208,38 @@ export const activityPlansRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const { data, error } = await ctx.supabase
+      const userId = ctx.session.user.id;
+
+      // First, get the plan by ID
+      const { data: plan, error } = await ctx.supabase
         .from("activity_plans")
         .select("*")
         .eq("id", input.id)
-        .or(
-          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-        ) // Allow own, public, or system templates
         .single();
 
-      if (error) {
+      if (error || !plan) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Activity plan not found",
         });
       }
 
+      // Check if user has access to view this plan
+      const isOwner = plan.profile_id === userId;
+      const isSystemTemplate = plan.is_system_template === true;
+      const isPublic = plan.template_visibility === "public";
+
+      if (!isOwner && !isSystemTemplate && !isPublic) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "You don't have permission to view this activity plan",
+        });
+      }
+
       // Validate V2 structure on read (defensive programming)
       try {
-        if (data.structure) {
-          validateStructure(data.structure);
+        if (plan.structure) {
+          validateStructure(plan.structure);
         }
       } catch (validationError) {
         console.error(
@@ -216,12 +252,23 @@ export const activityPlansRouter = createTRPCRouter({
 
       // Add dynamic TSS estimation
       const planWithEstimation = await addEstimationToPlan(
-        data,
+        plan,
         ctx.supabase,
-        ctx.session.user.id,
+        userId,
       );
 
-      return withIdentityFields(planWithEstimation as any);
+      const { data: likeData } = await (ctx.supabase as any)
+        .from("likes")
+        .select("id")
+        .eq("profile_id", userId)
+        .eq("entity_type", "activity_plan")
+        .eq("entity_id", input.id)
+        .maybeSingle();
+
+      return {
+        ...withIdentityFields(planWithEstimation as any),
+        has_liked: !!likeData,
+      };
     }),
 
   // ------------------------------

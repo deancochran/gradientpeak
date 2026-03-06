@@ -7,12 +7,17 @@ export const templateItemTypeSchema = z.enum([
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-export const templateApplyInputSchema = z.object({
-  template_type: templateItemTypeSchema,
-  template_id: z.string().uuid(),
-  start_date: dateOnlySchema.optional(),
-  goal_date: dateOnlySchema.optional(),
-});
+export const templateApplyInputSchema = z
+  .object({
+    template_type: templateItemTypeSchema,
+    template_id: z.string().uuid(),
+    start_date: dateOnlySchema.optional(),
+    target_date: dateOnlySchema.optional(),
+  })
+  .refine((data) => !(data.start_date && data.target_date), {
+    message: "Cannot provide both start_date and target_date",
+    path: ["target_date"],
+  });
 
 export const libraryItemCreateSchema = z.object({
   item_type: templateItemTypeSchema,

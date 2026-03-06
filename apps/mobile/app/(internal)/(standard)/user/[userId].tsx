@@ -11,7 +11,13 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import { trpc } from "@/lib/trpc";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Edit3 } from "lucide-react-native";
+import {
+  Edit3,
+  MessageCircle,
+  UserMinus,
+  UserPlus,
+  Clock,
+} from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 
@@ -41,6 +47,7 @@ function UserDetailScreen() {
   const targetUserId = typeof userId === "string" ? userId : "";
   const isOwnProfile = !!user?.id && user?.id === targetUserId;
 
+  // Fetch public profile data (includes follower counts)
   const {
     data: targetProfile,
     isLoading,
@@ -50,9 +57,19 @@ function UserDetailScreen() {
     { enabled: targetUserId.length > 0 },
   );
 
+  // Merge profile data: use auth profile for own profile (has dob), merge in counts from getPublicById
   const renderedProfile = useMemo(() => {
     if (isOwnProfile && profile) {
-      return profile;
+      // For own profile, use auth profile but merge in counts from targetProfile
+      return {
+        ...profile,
+        followers_count:
+          targetProfile?.followers_count ?? profile.followers_count ?? 0,
+        following_count:
+          targetProfile?.following_count ?? profile.following_count ?? 0,
+        follow_status:
+          targetProfile?.follow_status ?? profile.follow_status ?? null,
+      };
     }
     return targetProfile;
   }, [isOwnProfile, profile, targetProfile]);
@@ -128,6 +145,46 @@ function UserDetailScreen() {
         mutationError.message || "Failed to update password",
       );
     },
+  });
+
+  const followMutation = trpc.social.followUser.useMutation({
+    onSuccess: () => {
+      utils.profiles.getPublicById.invalidate({ id: targetUserId });
+      // Invalidate followers/following lists for both users
+      utils.social.getFollowers.invalidate({ user_id: targetUserId });
+      utils.social.getFollowing.invalidate({ user_id: targetUserId });
+      // Also invalidate current user's lists if viewing someone else's profile
+      if (user?.id) {
+        utils.social.getFollowers.invalidate({ user_id: user.id });
+        utils.social.getFollowing.invalidate({ user_id: user.id });
+      }
+    },
+    onError: (err) => Alert.alert("Error", err.message || "Failed to follow"),
+  });
+
+  const unfollowMutation = trpc.social.unfollowUser.useMutation({
+    onSuccess: () => {
+      utils.profiles.getPublicById.invalidate({ id: targetUserId });
+      // Invalidate followers/following lists for both users
+      utils.social.getFollowers.invalidate({ user_id: targetUserId });
+      utils.social.getFollowing.invalidate({ user_id: targetUserId });
+      // Also invalidate current user's lists if viewing someone else's profile
+      if (user?.id) {
+        utils.social.getFollowers.invalidate({ user_id: user.id });
+        utils.social.getFollowing.invalidate({ user_id: user.id });
+      }
+    },
+    onError: (err) => Alert.alert("Error", err.message || "Failed to unfollow"),
+  });
+
+  const messageMutation = trpc.messaging.getOrCreateDM.useMutation({
+    onSuccess: (data) => {
+      if (data && "id" in data) {
+        router.push(`/messages/${(data as any).id}` as any);
+      }
+    },
+    onError: (err) =>
+      Alert.alert("Error", err.message || "Failed to start message"),
   });
 
   const handleSignOut = () => {
@@ -307,6 +364,39 @@ function UserDetailScreen() {
               </Text>
             ) : null}
 
+            {/* Followers/Following Counts - show for ALL profiles */}
+            <View className="flex-row gap-4 mb-4">
+              <Text
+                className="text-sm text-primary underline"
+                onPress={() =>
+                  router.push(`/followers?userId=${targetUserId}` as any)
+                }
+              >
+                {renderedProfile?.followers_count ?? 0} followers
+              </Text>
+              <Text
+                className="text-sm text-primary underline"
+                onPress={() =>
+                  router.push(`/following?userId=${targetUserId}` as any)
+                }
+              >
+                {renderedProfile?.following_count ?? 0} following
+              </Text>
+            </View>
+
+            {!isOwnProfile && renderedProfile?.follow_status === "pending" && (
+              <View className="flex-row items-center gap-2 mb-3 bg-amber-100 dark:bg-amber-900 px-3 py-2 rounded-lg">
+                <Icon
+                  as={Clock}
+                  size={16}
+                  className="text-amber-600 dark:text-amber-400"
+                />
+                <Text className="text-sm text-amber-700 dark:text-amber-300">
+                  Follow request pending
+                </Text>
+              </View>
+            )}
+
             {isOwnProfile ? (
               <Button
                 variant="outline"
@@ -318,64 +408,133 @@ function UserDetailScreen() {
                 <Icon as={Edit3} size={16} />
                 <Text>Edit Profile</Text>
               </Button>
-            ) : null}
+            ) : (
+              <View className="flex-row gap-3">
+                {renderedProfile?.follow_status === "accepted" ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() =>
+                      unfollowMutation.mutate({ target_user_id: targetUserId })
+                    }
+                    className="flex-row gap-2"
+                    disabled={unfollowMutation.isPending}
+                  >
+                    <Icon as={UserMinus} size={16} />
+                    <Text>Unfollow</Text>
+                  </Button>
+                ) : renderedProfile?.follow_status === "pending" ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() =>
+                      unfollowMutation.mutate({ target_user_id: targetUserId })
+                    }
+                    className="flex-row gap-2"
+                    disabled={unfollowMutation.isPending}
+                  >
+                    <Icon as={Clock} size={16} />
+                    <Text>Requested</Text>
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onPress={() =>
+                      followMutation.mutate({ target_user_id: targetUserId })
+                    }
+                    className="flex-row gap-2"
+                    disabled={followMutation.isPending}
+                  >
+                    <Icon as={UserPlus} size={16} />
+                    <Text>Follow</Text>
+                  </Button>
+                )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onPress={() =>
+                    messageMutation.mutate({ target_user_id: targetUserId })
+                  }
+                  className="flex-row gap-2"
+                  disabled={messageMutation.isPending}
+                >
+                  <Icon as={MessageCircle} size={16} />
+                  <Text>Message</Text>
+                </Button>
+              </View>
+            )}
           </View>
 
-          {hasProfileMetadata && (
-            <View className="gap-3 pt-4 border-t border-border">
-              {renderedProfile.bio && (
-                <View>
-                  <Text className="text-xs text-muted-foreground uppercase mb-1">
-                    Bio
-                  </Text>
-                  <Text className="text-sm">{renderedProfile.bio}</Text>
-                </View>
-              )}
-
-              <View className="flex-row flex-wrap gap-4">
-                {age !== null && (
-                  <View className="flex-1 min-w-[45%]">
-                    <Text className="text-xs text-muted-foreground uppercase mb-1">
-                      Age
-                    </Text>
-                    <Text className="text-sm font-medium">{age} years</Text>
-                  </View>
-                )}
-
-                {renderedProfile.gender && (
-                  <View className="flex-1 min-w-[45%]">
-                    <Text className="text-xs text-muted-foreground uppercase mb-1">
-                      Gender
-                    </Text>
-                    <Text className="text-sm font-medium capitalize">
-                      {renderedProfile.gender}
-                    </Text>
-                  </View>
-                )}
-
-                {renderedProfile.preferred_units && (
-                  <View className="flex-1 min-w-[45%]">
-                    <Text className="text-xs text-muted-foreground uppercase mb-1">
-                      Units
-                    </Text>
-                    <Text className="text-sm font-medium capitalize">
-                      {renderedProfile.preferred_units}
-                    </Text>
-                  </View>
-                )}
-
-                {renderedProfile.language && (
-                  <View className="flex-1 min-w-[45%]">
-                    <Text className="text-xs text-muted-foreground uppercase mb-1">
-                      Language
-                    </Text>
-                    <Text className="text-sm font-medium uppercase">
-                      {renderedProfile.language}
-                    </Text>
-                  </View>
-                )}
-              </View>
+          {!isOwnProfile &&
+          renderedProfile?.is_public === false &&
+          renderedProfile?.follow_status !== "accepted" ? (
+            <View className="items-center py-6 border-t border-border">
+              <Text className="text-base font-semibold">
+                This account is private
+              </Text>
+              <Text className="text-sm text-muted-foreground mt-1 text-center">
+                Follow this account to see their activities and profile details.
+              </Text>
             </View>
+          ) : (
+            hasProfileMetadata && (
+              <View className="gap-3 pt-4 border-t border-border">
+                {renderedProfile.bio && (
+                  <View>
+                    <Text className="text-xs text-muted-foreground uppercase mb-1">
+                      Bio
+                    </Text>
+                    <Text className="text-sm">{renderedProfile.bio}</Text>
+                  </View>
+                )}
+
+                <View className="flex-row flex-wrap gap-4">
+                  {age !== null && (
+                    <View className="flex-1 min-w-[45%]">
+                      <Text className="text-xs text-muted-foreground uppercase mb-1">
+                        Age
+                      </Text>
+                      <Text className="text-sm font-medium">{age} years</Text>
+                    </View>
+                  )}
+
+                  {renderedProfile.gender && (
+                    <View className="flex-1 min-w-[45%]">
+                      <Text className="text-xs text-muted-foreground uppercase mb-1">
+                        Gender
+                      </Text>
+                      <Text className="text-sm font-medium capitalize">
+                        {renderedProfile.gender}
+                      </Text>
+                    </View>
+                  )}
+
+                  {renderedProfile.preferred_units && (
+                    <View className="flex-1 min-w-[45%]">
+                      <Text className="text-xs text-muted-foreground uppercase mb-1">
+                        Units
+                      </Text>
+                      <Text className="text-sm font-medium capitalize">
+                        {renderedProfile.preferred_units}
+                      </Text>
+                    </View>
+                  )}
+
+                  {renderedProfile.language && (
+                    <View className="flex-1 min-w-[45%]">
+                      <Text className="text-xs text-muted-foreground uppercase mb-1">
+                        Language
+                      </Text>
+                      <Text className="text-sm font-medium uppercase">
+                        {renderedProfile.language}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )
           )}
         </CardContent>
       </Card>

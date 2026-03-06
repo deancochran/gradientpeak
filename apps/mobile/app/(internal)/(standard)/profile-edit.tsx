@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/form";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -55,6 +56,7 @@ const profileEditSchema = z.object({
   // threshold_hr: z.number().min(1).max(250).nullable(), // Deprecated: LTHR is now in profile_metrics
   preferred_units: z.enum(["metric", "imperial"]).nullable(),
   language: z.string().nullable(),
+  is_public: z.boolean().nullable(),
 });
 
 type ProfileEditForm = z.infer<typeof profileEditSchema>;
@@ -103,6 +105,7 @@ function ProfileEditScreen() {
       weight_kg: profile?.weight_kg || null,
       preferred_units: profile?.preferred_units || "metric",
       language: profile?.language || "en",
+      is_public: profile?.is_public ?? true,
     },
   });
 
@@ -115,6 +118,7 @@ function ProfileEditScreen() {
         weight_kg: data.weight_kg || undefined,
         preferred_units: data.preferred_units || undefined,
         language: data.language || undefined,
+        is_public: data.is_public ?? undefined,
       });
     } catch (error) {
       console.error("Failed to update profile:", error);
@@ -511,6 +515,29 @@ function ProfileEditScreen() {
                         Choose between km/kg or miles/lbs
                       </FormDescription>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="is_public"
+                  render={({ field }) => (
+                    <FormItem className="flex-row items-center justify-between rounded-lg border border-border p-4">
+                      <View className="space-y-0.5">
+                        <FormLabel className="text-base">
+                          Public Account
+                        </FormLabel>
+                        <FormDescription>
+                          Allow anyone to view your profile and activities
+                        </FormDescription>
+                      </View>
+                      <FormControl>
+                        <Switch
+                          checked={field.value ?? true}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

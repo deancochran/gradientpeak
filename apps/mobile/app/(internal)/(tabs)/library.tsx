@@ -16,6 +16,7 @@ import {
   Calendar,
   ChevronRight,
   Dumbbell,
+  Heart,
   Library,
   MapPin,
   Plus,
@@ -74,12 +75,7 @@ const RESOURCE_OPTIONS = [
 const OWNER_SCOPE_OPTIONS: Array<{
   value: TemplateOwnerScope;
   label: string;
-}> = [
-  { value: "all", label: "All" },
-  { value: "own", label: "Mine" },
-  { value: "system", label: "System" },
-  { value: "public", label: "Public" },
-];
+}> = [{ value: "own", label: "Mine" }];
 
 const VISIBILITY_OPTIONS: Array<{
   value: TemplateVisibilityFilter;
@@ -102,22 +98,39 @@ function TrainingPlanItem({
   onPress: () => void;
   onActivate?: (id: string) => void;
 }) {
+  const [isLiked, setIsLiked] = useState(item.has_liked ?? false);
+  const [likesCount, setLikesCount] = useState(item.likes_count ?? 0);
+
+  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+    onError: () => {
+      setIsLiked(item.has_liked ?? false);
+      setLikesCount(item.likes_count ?? 0);
+    },
+  });
+
+  const handleToggleLike = (e: any) => {
+    e.stopPropagation();
+    // Validate UUID format
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(item.id)) {
+      return; // Skip invalid IDs
+    }
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    setLikesCount((prev: number) => (newLikedState ? prev + 1 : prev - 1));
+    toggleLikeMutation.mutate({
+      entity_id: item.id,
+      entity_type: "training_plan",
+    });
+  };
+
   return (
     <Card className={item.is_active ? "border-primary" : ""}>
       <Pressable onPress={onPress}>
         <CardContent className="p-4">
           <View className="flex-row items-start justify-between mb-3">
             <View className="flex-1">
-              <View className="flex-row items-center gap-2 mb-2">
-                <View
-                  className={`w-2 h-2 rounded-full ${
-                    item.is_active ? "bg-green-500" : "bg-muted-foreground"
-                  }`}
-                />
-                <Text className="text-xs font-medium text-muted-foreground uppercase">
-                  {item.is_active ? "Active" : "Inactive"}
-                </Text>
-              </View>
               <Text className="text-xl font-bold mb-1">{item.name}</Text>
               {item.description && (
                 <Text className="text-sm text-muted-foreground">
@@ -145,6 +158,25 @@ function TrainingPlanItem({
                 })}
               </Text>
             </View>
+            <Pressable
+              onPress={handleToggleLike}
+              className="flex-row items-center"
+            >
+              <Icon
+                as={Heart}
+                size={18}
+                className={
+                  isLiked
+                    ? "text-red-500 fill-red-500"
+                    : "text-muted-foreground"
+                }
+              />
+              {likesCount > 0 && (
+                <Text className="ml-1.5 text-sm text-muted-foreground">
+                  {likesCount}
+                </Text>
+              )}
+            </Pressable>
           </View>
         </CardContent>
       </Pressable>
@@ -173,6 +205,33 @@ function ActivityItem({ item, onPress }: { item: any; onPress: () => void }) {
 
 function RouteItem({ item, onPress }: { item: any; onPress: () => void }) {
   const coordinates = item.polyline ? decodePolyline(item.polyline) : [];
+
+  const [isLiked, setIsLiked] = useState(item.has_liked ?? false);
+  const [likesCount, setLikesCount] = useState(item.likes_count ?? 0);
+
+  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+    onError: () => {
+      setIsLiked(item.has_liked ?? false);
+      setLikesCount(item.likes_count ?? 0);
+    },
+  });
+
+  const handleToggleLike = (e: any) => {
+    e.stopPropagation();
+    // Validate UUID format
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(item.id)) {
+      return; // Skip invalid IDs
+    }
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    setLikesCount((prev: number) => (newLikedState ? prev + 1 : prev - 1));
+    toggleLikeMutation.mutate({
+      entity_id: item.id,
+      entity_type: "route",
+    });
+  };
 
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
@@ -228,27 +287,61 @@ function RouteItem({ item, onPress }: { item: any; onPress: () => void }) {
               </Text>
             )}
 
-            <View className="flex-row gap-4">
-              <View className="flex-row items-center gap-1">
-                <Icon as={MapPin} size={16} className="text-muted-foreground" />
-                <Text className="text-sm">
-                  {(item.total_distance / 1000).toFixed(1)} km
-                </Text>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row gap-4">
+                <View className="flex-row items-center gap-1">
+                  <Icon
+                    as={MapPin}
+                    size={16}
+                    className="text-muted-foreground"
+                  />
+                  <Text className="text-sm">
+                    {(item.total_distance / 1000).toFixed(1)} km
+                  </Text>
+                </View>
+
+                {item.total_ascent > 0 && (
+                  <View className="flex-row items-center gap-1">
+                    <Icon
+                      as={TrendingUp}
+                      size={16}
+                      className="text-green-600"
+                    />
+                    <Text className="text-sm">{item.total_ascent}m</Text>
+                  </View>
+                )}
+
+                {item.total_descent > 0 && (
+                  <View className="flex-row items-center gap-1">
+                    <Icon
+                      as={TrendingDown}
+                      size={16}
+                      className="text-red-600"
+                    />
+                    <Text className="text-sm">{item.total_descent}m</Text>
+                  </View>
+                )}
               </View>
 
-              {item.total_ascent > 0 && (
-                <View className="flex-row items-center gap-1">
-                  <Icon as={TrendingUp} size={16} className="text-green-600" />
-                  <Text className="text-sm">{item.total_ascent}m</Text>
-                </View>
-              )}
-
-              {item.total_descent > 0 && (
-                <View className="flex-row items-center gap-1">
-                  <Icon as={TrendingDown} size={16} className="text-red-600" />
-                  <Text className="text-sm">{item.total_descent}m</Text>
-                </View>
-              )}
+              <Pressable
+                onPress={handleToggleLike}
+                className="flex-row items-center"
+              >
+                <Icon
+                  as={Heart}
+                  size={18}
+                  className={
+                    isLiked
+                      ? "text-red-500 fill-red-500"
+                      : "text-muted-foreground"
+                  }
+                />
+                {likesCount > 0 && (
+                  <Text className="ml-1.5 text-sm text-muted-foreground">
+                    {likesCount}
+                  </Text>
+                )}
+              </Pressable>
             </View>
           </View>
         </CardContent>
@@ -267,7 +360,7 @@ export default function LibraryScreen() {
     routeResource ?? "activity_plans",
   );
   const [searchQuery, setSearchQuery] = useState("");
-  const [ownerScope, setOwnerScope] = useState<TemplateOwnerScope>("all");
+  const [ownerScope, setOwnerScope] = useState<TemplateOwnerScope>("own");
   const [visibilityFilter, setVisibilityFilter] =
     useState<TemplateVisibilityFilter>("any");
 
@@ -285,19 +378,22 @@ export default function LibraryScreen() {
   }, [routeResource, selectedResource]);
 
   // Training plan activation mutation
-  const activateMutation = useReliableMutation(trpc.trainingPlans.activate, {
-    invalidate: [utils.trainingPlans],
-    onSuccess: () => {
-      Alert.alert("Success", "Training plan activated successfully");
-      refetchTrainingPlans();
+  const activateMutation = useReliableMutation(
+    trpc.trainingPlans.updateActivePlanStatus,
+    {
+      invalidate: [utils.trainingPlans],
+      onSuccess: () => {
+        Alert.alert("Success", "Training plan activated successfully");
+        refetchTrainingPlans();
+      },
+      onError: (error) => {
+        Alert.alert(
+          "Activation Failed",
+          error.message || "Failed to activate plan",
+        );
+      },
     },
-    onError: (error) => {
-      Alert.alert(
-        "Activation Failed",
-        error.message || "Failed to activate plan",
-      );
-    },
-  });
+  );
 
   // Activity Plans Query
   const {
@@ -489,7 +585,7 @@ export default function LibraryScreen() {
           params: { planId: id },
         });
       } else if (selectedResource === "training_plans") {
-        router.push(`${ROUTES.PLAN.TRAINING_PLAN.INDEX}?id=${id}` as any);
+        router.push(ROUTES.PLAN.TRAINING_PLAN.DETAIL(id) as any);
       } else if (selectedResource === "activities") {
         router.push(`/activity-detail?id=${id}` as any);
       } else if (selectedResource === "routes") {
@@ -513,7 +609,7 @@ export default function LibraryScreen() {
   // Handle training plan activation
   const handleActivateTrainingPlan = useCallback(
     async (planId: string) => {
-      await activateMutation.mutateAsync({ id: planId });
+      await activateMutation.mutateAsync({ id: planId, status: "active" });
     },
     [activateMutation],
   );

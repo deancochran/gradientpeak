@@ -93,6 +93,13 @@ function createCaller(queryMap: QueryMap) {
 describe("trainingPlansRouter.applyTemplate", () => {
   it("creates planned events with shared schedule_batch_id", async () => {
     const { caller, callLog } = createCaller({
+      user_training_plans: [
+        { data: [], error: null }, // Concurrency check returns empty
+        {
+          data: { id: "22222222-2222-4222-8222-222222222222" }, // Insert returns this ID
+          error: null,
+        },
+      ],
       training_plans: [
         {
           data: {
@@ -117,10 +124,6 @@ describe("trainingPlansRouter.applyTemplate", () => {
               ],
             },
           },
-          error: null,
-        },
-        {
-          data: { id: "22222222-2222-4222-8222-222222222222" },
           error: null,
         },
       ],

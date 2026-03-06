@@ -8,8 +8,7 @@ import { TouchableOpacity, View } from "react-native";
 
 export function MessagesHeaderButton() {
   const router = useRouter();
-  // Placeholder for unread count until messaging router is fully integrated in mobile
-  const unreadCount = 0;
+  const { data: unreadCount = 0 } = trpc.messaging.getUnreadCount.useQuery();
 
   return (
     <TouchableOpacity

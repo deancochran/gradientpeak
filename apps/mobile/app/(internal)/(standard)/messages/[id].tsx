@@ -7,18 +7,30 @@ import { cn } from "@/lib/utils";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Send } from "lucide-react-native";
 import React, { useState } from "react";
-import { FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  View,
+  ActivityIndicator,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function MessageBubble({
   text,
   isMe,
   timestamp,
+  isRead,
 }: {
   text: string;
   isMe: boolean;
   timestamp: string;
+  isRead: boolean;
 }) {
+  // Show status text for sender's messages
+  // Best practice: sender already knows what they sent - no need to show "unread" status
+  const statusText = isMe ? (isRead ? "Read" : "Sent") : null;
+
   return (
     <View
       className={cn("flex w-full mb-4", isMe ? "items-end" : "items-start")}
@@ -38,9 +50,14 @@ function MessageBubble({
           {text}
         </Text>
       </View>
-      <Text className="text-[10px] text-muted-foreground mt-1 mx-1">
-        {timestamp}
-      </Text>
+      <View className="flex-row items-center mt-1 mx-1">
+        <Text className="text-[10px] text-muted-foreground">{timestamp}</Text>
+        {statusText && (
+          <Text className="text-[10px] text-muted-foreground ml-1">
+            {statusText}
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -52,15 +69,32 @@ export default function ChatScreen() {
   const utils = trpc.useUtils();
   const { user } = useAuth();
 
-  const { data: messages = [] } = trpc.messaging.getMessages.useQuery(
-    { conversation_id: id },
-    { refetchInterval: 5000 },
-  );
+  const { data: messages = [], isLoading } =
+    trpc.messaging.getMessages.useQuery(
+      { conversation_id: id },
+      { refetchInterval: 5000 },
+    );
+
+  // Mark messages as read when viewing the conversation
+  const markAsReadMutation = trpc.messaging.markAsRead.useMutation({
+    onSuccess: () => {
+      utils.messaging.getConversations.invalidate();
+      utils.messaging.getUnreadCount.invalidate();
+    },
+  });
+
+  // Mark as read when messages are loaded
+  React.useEffect(() => {
+    if (id && messages.length > 0) {
+      markAsReadMutation.mutate({ conversation_id: id });
+    }
+  }, [id]);
 
   const sendMessageMutation = trpc.messaging.sendMessage.useMutation({
     onSuccess: () => {
       setInputText("");
       utils.messaging.getMessages.invalidate({ conversation_id: id });
+      utils.messaging.getConversations.invalidate();
     },
   });
 
@@ -76,22 +110,35 @@ export default function ChatScreen() {
     <View className="flex-1 bg-background">
       <Stack.Screen options={{ title: "Chat" }} />
 
-      <FlatList
-        data={[...messages].reverse()}
-        inverted
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <MessageBubble
-            text={item.content}
-            isMe={item.sender_id === user?.id}
-            timestamp={new Date(item.created_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          />
-        )}
-        contentContainerClassName="p-4"
-      />
+      {isLoading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" className="text-muted-foreground" />
+        </View>
+      ) : messages.length === 0 ? (
+        <View className="flex-1 items-center justify-center p-8">
+          <Text className="text-muted-foreground text-center">
+            No messages yet.{"\n"}Send a message to start the conversation!
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={[...messages].reverse()}
+          inverted
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <MessageBubble
+              text={item.content}
+              isMe={item.sender_id === user?.id}
+              timestamp={new Date(item.created_at).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              isRead={!!item.read_at}
+            />
+          )}
+          contentContainerClassName="p-4"
+        />
+      )}
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}

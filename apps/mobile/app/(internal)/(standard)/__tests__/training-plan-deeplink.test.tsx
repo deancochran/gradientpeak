@@ -2,7 +2,7 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { ROUTES } from "@/lib/constants/routes";
-import TrainingPlanOverview from "../training-plan";
+import TrainingPlanOverview from "../training-plan-detail";
 
 const { replaceMock, pushMock, localSearchParamsMock, snapshotState } =
   vi.hoisted(() => ({
@@ -85,6 +85,15 @@ vi.mock("@/lib/trpc", () => ({
       },
     }),
     trainingPlans: {
+      getTemplate: {
+        useQuery: () => ({ data: null, isLoading: false }),
+      },
+      getActivePlan: {
+        useQuery: () => ({ data: null }),
+      },
+      update: {
+        useMutation: () => ({ isPending: false }),
+      },
       applyTemplate: {
         useMutation: () => ({
           mutateAsync: vi.fn(),
@@ -99,6 +108,17 @@ vi.mock("@/lib/trpc", () => ({
           mutateAsync: vi.fn(),
           isPending: false,
         }),
+      },
+    },
+    social: {
+      toggleLike: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+      getComments: {
+        useQuery: () => ({ data: { comments: [] } }),
+      },
+      addComment: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
       },
     },
   },
@@ -119,6 +139,8 @@ vi.mock("react-native", () => ({
   RefreshControl: createHost("RefreshControl"),
   ScrollView: createHost("ScrollView"),
   TouchableOpacity: createHost("TouchableOpacity"),
+  Pressable: createHost("Pressable"),
+  TextInput: createHost("TextInput"),
   View: createHost("View"),
 }));
 
@@ -194,6 +216,10 @@ vi.mock("@/components/ui/icon", () => ({
 vi.mock("@/components/ui/input", () => ({
   Input: createHost("Input"),
 }));
+vi.mock("@/components/ui/switch", () => ({
+  Switch: createHost("Switch"),
+}));
+
 vi.mock("@/components/ui/text", () => ({
   Text: createHost("Text"),
 }));
@@ -210,6 +236,11 @@ vi.mock("lucide-react-native", () => {
     Pause: Icon,
     Trash2: Icon,
     TrendingUp: Icon,
+    Heart: Icon,
+    Eye: Icon,
+    EyeOff: Icon,
+    MessageCircle: Icon,
+    Send: Icon,
   };
 });
 
@@ -460,112 +491,5 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("renders insight gallery cards", () => {
-    resetTestState();
-    snapshotState.plan = {
-      id: "plan-gallery-1",
-      name: "Gallery Plan",
-      is_active: true,
-      created_at: "2026-01-01T00:00:00.000Z",
-      structure: {},
-    } as any;
-    localSearchParamsMock.id = "plan-gallery-1";
-
-    let renderer!: TestRenderer.ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(<TrainingPlanOverview />);
-    });
-
-    expect(
-      renderer.root.findAll(
-        (node: any) => node.type === "PlanAdherenceMiniChart",
-      ).length,
-    ).toBe(1);
-    expect(
-      renderer.root.findAll(
-        (node: any) => node.type === "PlanCapabilityMiniChart",
-      ).length,
-    ).toBe(1);
-  });
-
-  it("opens adherence modal and supports range toggle", () => {
-    resetTestState();
-    snapshotState.plan = {
-      id: "plan-gallery-2",
-      name: "Gallery Plan",
-      is_active: true,
-      created_at: "2026-01-01T00:00:00.000Z",
-      structure: {},
-    } as any;
-    localSearchParamsMock.id = "plan-gallery-2";
-
-    let renderer!: TestRenderer.ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(<TrainingPlanOverview />);
-    });
-
-    const adherenceCard = findInsightCardTouchable(
-      renderer,
-      "PlanAdherenceMiniChart",
-    );
-    act(() => {
-      adherenceCard.props.onPress();
-    });
-
-    expect(hasTextContaining(renderer, "Adherence")).toBe(true);
-    expect(
-      hasTextContaining(
-        renderer,
-        "Adherence interpretation from timeline summary.",
-      ),
-    ).toBe(true);
-    expect(getModalTimelineLength(renderer)).toBe(30);
-
-    const set7dButton = findTouchableByText(renderer, "Set 7D");
-    act(() => {
-      set7dButton.props.onPress();
-    });
-
-    expect(getModalTimelineLength(renderer)).toBe(7);
-  });
-
-  it("opens readiness modal and closes it", () => {
-    resetTestState();
-    snapshotState.plan = {
-      id: "plan-gallery-3",
-      name: "Gallery Plan",
-      is_active: true,
-      created_at: "2026-01-01T00:00:00.000Z",
-      structure: {},
-    } as any;
-    localSearchParamsMock.id = "plan-gallery-3";
-
-    let renderer!: TestRenderer.ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(<TrainingPlanOverview />);
-    });
-
-    const readinessCard = findInsightCardTouchable(
-      renderer,
-      "PlanCapabilityMiniChart",
-    );
-    act(() => {
-      readinessCard.props.onPress();
-    });
-
-    expect(hasTextContaining(renderer, "Readiness")).toBe(true);
-    expect(
-      hasTextContaining(
-        renderer,
-        "Readiness interpretation from timeline summary.",
-      ),
-    ).toBe(true);
-
-    const closeButton = findTouchableByText(renderer, "Close Modal");
-    act(() => {
-      closeButton.props.onPress();
-    });
-
-    expect(hasTextContaining(renderer, "Close Modal")).toBe(false);
-  });
+  // removed insight tests since they were moved to active plan
 });

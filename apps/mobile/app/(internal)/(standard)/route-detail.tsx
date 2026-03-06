@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
@@ -8,13 +9,14 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Calendar,
   Edit,
+  Heart,
   MapPin,
   Trash2,
   TrendingDown,
   TrendingUp,
 } from "lucide-react-native";
-import React, { useEffect, useMemo, useRef } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
@@ -40,6 +42,43 @@ export default function RouteDetailScreen() {
     success: "Route deleted successfully",
     onSuccess: () => router.back(),
   });
+
+  // Like state and mutation
+  const [isLiked, setIsLiked] = useState(route?.has_liked ?? false);
+  const [likesCount, setLikesCount] = useState(route?.likes_count ?? 0);
+
+  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+    onError: () => {
+      setIsLiked(route?.has_liked ?? false);
+      setLikesCount(route?.likes_count ?? 0);
+    },
+  });
+
+  const handleToggleLike = () => {
+    if (!route?.id) return;
+    // Validate UUID format
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(route.id)) {
+      Alert.alert("Error", "Cannot like this item - invalid ID");
+      return;
+    }
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    setLikesCount((prev: number) => (newLikedState ? prev + 1 : prev - 1));
+    toggleLikeMutation.mutate({
+      entity_id: route.id,
+      entity_type: "route",
+    });
+  };
+
+  // Update like state when route data loads
+  React.useEffect(() => {
+    if (route) {
+      setIsLiked(route.has_liked ?? false);
+      setLikesCount(route.likes_count ?? 0);
+    }
+  }, [route?.has_liked, route?.likes_count]);
 
   const coordinates = useMemo(
     () => (route ? decodePolyline(route.polyline) : []),
@@ -260,6 +299,35 @@ export default function RouteDetailScreen() {
 
           {/* Actions */}
           <View className="gap-3 pb-6">
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={handleToggleLike}
+                className="flex-1 flex-row items-center justify-center gap-2 py-3 rounded-lg border border-border bg-card"
+              >
+                <Icon
+                  as={Heart}
+                  size={20}
+                  className={
+                    isLiked
+                      ? "text-red-500 fill-red-500"
+                      : "text-muted-foreground"
+                  }
+                />
+                <Text
+                  className={
+                    isLiked
+                      ? "text-red-500 font-medium"
+                      : "text-foreground font-medium"
+                  }
+                >
+                  {isLiked ? "Liked" : "Like"}
+                </Text>
+                {likesCount > 0 && (
+                  <Text className="text-muted-foreground">({likesCount})</Text>
+                )}
+              </Pressable>
+            </View>
+
             <Button
               variant="outline"
               className="flex-row items-center gap-2"

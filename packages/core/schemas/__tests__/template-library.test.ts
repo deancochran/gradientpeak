@@ -19,8 +19,7 @@ describe("template library schemas", () => {
     const parsed = templateApplyInputSchema.safeParse({
       template_type: "training_plan",
       template_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      start_date: "2026-03-01",
-      goal_date: "2026-06-15",
+      target_date: "2026-06-15",
     });
 
     expect(parsed.success).toBe(true);

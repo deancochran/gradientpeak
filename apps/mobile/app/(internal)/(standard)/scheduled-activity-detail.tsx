@@ -48,7 +48,7 @@ function PlannedActivityDetailScreen() {
     if (!plannedActivity?.activity_plan) return;
 
     const payload: ActivityPayload = {
-      category: plannedActivity.activity_plan.activity_category,
+      category: plannedActivity.activity_plan.activity_category as any,
       gpsRecordingEnabled: true,
       eventId: plannedActivity.id,
       plan: plannedActivity.activity_plan as any,

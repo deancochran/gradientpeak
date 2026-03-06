@@ -62,15 +62,22 @@ export const homeRouter = createTRPCRouter({
 
       // --- 1. Fetch Active Plan ---
       const { data: plan } = await ctx.supabase
-        .from("training_plans")
-        .select("id, name, description, is_active, structure")
+        .from("user_training_plans" as any)
+        .select(
+          `
+          id,
+          snapshot_structure,
+          training_plan:training_plan_id (name, description)
+        `,
+        )
         .eq("profile_id", userId)
-        .eq("is_active", true)
+        .eq("status", "active")
         .maybeSingle();
 
       // Extract phase from structure if available
       const planPhase =
-        (plan?.structure as any)?.periodization?.currentPhase || null;
+        ((plan as any)?.snapshot_structure as any)?.periodization
+          ?.currentPhase || null;
 
       // --- 2. Calculate Dates ---
       // For trends: Need 42 days of history + 42 days buffer for CTL seeding
@@ -168,7 +175,9 @@ export const homeRouter = createTRPCRouter({
             ...pa,
             activity_plan:
               pa.activity_plan && plansMap.get(pa.activity_plan.id)
-                ? plansMap.get(pa.activity_plan.id)!
+                ? (plansMap.get(
+                    pa.activity_plan.id,
+                  )! as unknown as typeof pa.activity_plan)
                 : pa.activity_plan,
           }));
         }
@@ -401,7 +410,9 @@ export const homeRouter = createTRPCRouter({
             ...pa,
             activity_plan:
               pa.activity_plan && futurePlansMap.get(pa.activity_plan.id)
-                ? futurePlansMap.get(pa.activity_plan.id)!
+                ? (futurePlansMap.get(
+                    pa.activity_plan.id,
+                  )! as unknown as typeof pa.activity_plan)
                 : pa.activity_plan,
           }));
         }
@@ -447,8 +458,8 @@ export const homeRouter = createTRPCRouter({
       const idealFitnessCurve = [];
       let goalMetrics = null;
 
-      if (plan && plan.structure) {
-        const structure = plan.structure as any;
+      if (plan && (plan as any).snapshot_structure) {
+        const structure = (plan as any).snapshot_structure as any;
         const periodization = structure.periodization_template;
 
         if (periodization) {
@@ -529,7 +540,7 @@ export const homeRouter = createTRPCRouter({
           : null;
 
       let firstTargetType = undefined;
-      const planStructure = plan?.structure as any;
+      const planStructure = (plan as any)?.snapshot_structure as any;
       if (
         planStructure &&
         planStructure.goals &&
@@ -543,8 +554,8 @@ export const homeRouter = createTRPCRouter({
       return {
         activePlan: plan
           ? {
-              id: plan.id,
-              name: plan.name,
+              id: (plan as any).id,
+              name: (plan as any).training_plan?.name || "Active Plan",
               phase: planPhase,
               targetType: firstTargetType,
             }

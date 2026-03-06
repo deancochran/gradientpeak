@@ -6,8 +6,10 @@ import { getActivityConfig } from "@/lib/constants/activities";
 import { formatDuration } from "@/lib/utils/dates";
 import type { ActivityPlanStructureV2 } from "@repo/core";
 import { format } from "date-fns";
-import { Calendar, CheckCircle2 } from "lucide-react-native";
-import { TouchableOpacity, View } from "react-native";
+import { Heart, Calendar, CheckCircle2 } from "lucide-react-native";
+import { TouchableOpacity, View, Pressable } from "react-native";
+import { trpc } from "@/lib/trpc";
+import { useState } from "react";
 
 // ============================================
 // TYPES
@@ -27,6 +29,8 @@ export interface ActivityPlan {
   profile_id?: string | null;
   created_at?: string;
   updated_at?: string;
+  likes_count?: number;
+  has_liked?: boolean;
 }
 
 export interface PlannedActivity {
@@ -57,6 +61,9 @@ export interface ActivityPlanCardData {
   // Scheduling info (optional)
   scheduledDate?: string; // ISO date string
   isCompleted?: boolean;
+
+  likes_count?: number;
+  has_liked?: boolean;
 }
 
 interface ActivityPlanCardProps {
@@ -104,6 +111,27 @@ export function ActivityPlanCard({
 
   const CardWrapper = isInteractive ? TouchableOpacity : View;
 
+  const [isLiked, setIsLiked] = useState(activity.has_liked ?? false);
+  const [likesCount, setLikesCount] = useState(activity.likes_count ?? 0);
+
+  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+    onError: () => {
+      // Revert optimistic update on error
+      setIsLiked(activity.has_liked ?? false);
+      setLikesCount(activity.likes_count ?? 0);
+    },
+  });
+
+  const handleToggleLike = () => {
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    setLikesCount((prev) => (newLikedState ? prev + 1 : prev - 1));
+    toggleLikeMutation.mutate({
+      entity_id: activity.id,
+      entity_type: "activity_plan",
+    });
+  };
+
   return (
     <CardWrapper
       onPress={onPress}
@@ -113,7 +141,7 @@ export function ActivityPlanCard({
       <Card
         className={`${isHero ? "border-2 border-primary" : ""} ${activity.isCompleted ? "opacity-60" : ""}`}
       >
-        <CardContent className="p-2">
+        <CardContent className="p-1.5">
           {/* Header Row: Icon + Title */}
           <View className="flex-row items-start mb-1">
             {/* Small Activity Icon */}
@@ -125,16 +153,22 @@ export function ActivityPlanCard({
 
             {/* Title Column */}
             <View className="flex-1 min-w-0">
-              <Text className="font-semibold text-sm" numberOfLines={1}>
+              <Text className="font-semibold text-xs" numberOfLines={1}>
                 {activity.name}
               </Text>
 
               {/* Duration + TSS inline */}
-              <View className="flex-row items-center gap-2 mt-0.5">
+              <View className="flex-row items-center gap-1.5">
                 {activity.estimatedDuration !== undefined &&
                   activity.estimatedDuration > 0 && (
                     <Text className="text-xs text-muted-foreground">
-                      {formatDuration(activity.estimatedDuration)}
+                      {activity.estimatedDuration}
+                    </Text>
+                  )}
+                {activity.estimatedTss !== undefined &&
+                  activity.estimatedTss > 0 && (
+                    <Text className="text-xs text-muted-foreground">
+                      {Math.round(activity.estimatedTss)}
                     </Text>
                   )}
                 {activity.estimatedTss !== undefined &&
@@ -166,7 +200,7 @@ export function ActivityPlanCard({
             <View className="mb-1.5 rounded overflow-hidden">
               <TimelineChart
                 structure={activity.structure}
-                height={70}
+                height={50}
                 compact={true}
               />
             </View>
@@ -175,7 +209,7 @@ export function ActivityPlanCard({
           {/* Description (2-line clamp with ellipsis) */}
           {activity.notes && (
             <Text
-              className="text-xs text-muted-foreground leading-4"
+              className="text-[10px] text-muted-foreground leading-4"
               numberOfLines={2}
               ellipsizeMode="tail"
             >
@@ -194,6 +228,30 @@ export function ActivityPlanCard({
               <Text className="text-xs text-green-600">Completed</Text>
             </View>
           )}
+
+          {/* Social Actions (Like) */}
+          <View className="flex-row items-center mt-1 pt-1 border-t border-border">
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                handleToggleLike();
+              }}
+              className="flex-row items-center"
+            >
+              <Icon
+                as={Heart}
+                size={14}
+                className={
+                  isLiked
+                    ? "text-red-500 fill-red-500"
+                    : "text-muted-foreground"
+                }
+              />
+              <Text className="ml-1.5 text-[10px] text-muted-foreground">
+                {likesCount > 0 ? likesCount : ""}
+              </Text>
+            </Pressable>
+          </View>
         </CardContent>
       </Card>
     </CardWrapper>
@@ -236,6 +294,8 @@ function transformToCardData(
     notes: plannedActivity?.notes || plan.notes || undefined,
     scheduledDate: plannedActivity?.scheduled_date,
     isCompleted: Boolean(plannedActivity?.completed_activity_id),
+    likes_count: plan.likes_count,
+    has_liked: plan.has_liked,
   };
 }
 

@@ -16,7 +16,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /**
  * Activity plan with estimation added
  */
-export interface ActivityPlanWithEstimation extends PublicActivityPlansRow {
+export interface ActivityPlanWithEstimation {
+  // Base fields from activity plan
+  id: string;
+  profile_id: string | null;
+  name: string;
+  description: string;
+  activity_category: string;
+  // Add all other fields we need
+  [key: string]: unknown;
   // Dynamically calculated fields
   estimated_tss: number;
   estimated_duration: number;

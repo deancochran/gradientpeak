@@ -54,7 +54,7 @@ export default function TrainingPlanEditRoute() {
         </Text>
         <Pressable
           className="mt-4 rounded-md bg-primary px-4 py-2"
-          onPress={() => router.replace(ROUTES.PLAN.TRAINING_PLAN.INDEX)}
+          onPress={() => router.replace(ROUTES.PLAN.INDEX)}
         >
           <Text className="font-semibold text-primary-foreground">
             Back to plan

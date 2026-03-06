@@ -72,10 +72,10 @@ export function createSupabaseTrainingPlanRepository(
     }
 
     const { data, error } = await supabase
-      .from("training_plans")
-      .select("id, structure")
+      .from("user_training_plans" as any)
+      .select("training_plan_id, snapshot_structure")
       .eq("profile_id", input.profileId)
-      .eq("is_active", true)
+      .eq("status", "active")
       .order("updated_at", { ascending: false })
       .limit(1);
 
@@ -86,16 +86,19 @@ export function createSupabaseTrainingPlanRepository(
       });
     }
 
-    return data?.[0] ? { id: data[0].id, structure: data[0].structure } : null;
+    const row = data?.[0] as any;
+    return row
+      ? { id: row.training_plan_id, structure: row.snapshot_structure }
+      : null;
   };
 
   return {
     async deactivateActivePlans(profileId: string) {
       const { error } = await supabase
-        .from("training_plans")
-        .update({ is_active: false })
+        .from("user_training_plans" as any)
+        .update({ status: "paused" })
         .eq("profile_id", profileId)
-        .eq("is_active", true);
+        .eq("status", "active");
 
       if (error) {
         throw new TRPCError({
@@ -114,7 +117,6 @@ export function createSupabaseTrainingPlanRepository(
           name: input.name,
           description: input.description,
           structure: input.structure as Json,
-          is_active: input.isActive,
           profile_id: input.profileId,
         })
         .select("*")

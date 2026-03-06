@@ -208,6 +208,12 @@ vi.mock("@/lib/trpc", () => {
         get: {
           useQuery: () => queryResult(trainingPlanState.plan),
         },
+        getActivePlan: {
+          useQuery: () => ({ data: trainingPlanState.plan }),
+        },
+        activate: {
+          useMutation: () => ({ mutateAsync: vi.fn() }),
+        },
         getCurrentStatus: {
           useQuery: () =>
             queryResult({
@@ -548,7 +554,7 @@ describe("Plan tab CTA routing", () => {
     act(() => {
       openFullPlanButton.props.onPress();
     });
-    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.INDEX);
+    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.ACTIVE_PLAN as any);
 
     expect(hasTextContaining(renderer, "Manage Plan")).toBe(false);
     expect(hasTextContaining(renderer, "Edit Structure")).toBe(false);

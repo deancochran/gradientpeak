@@ -78,6 +78,7 @@ create table public.profiles (
     avatar_url text,
     bio text,
     onboarded boolean default false,
+    is_public boolean default false,
     created_at timestamp not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -102,8 +103,8 @@ create table if not exists public.training_plans (
     template_visibility text not null default 'private',
     name text not null,
     description text,
-    is_active boolean not null default true,
     structure jsonb not null,
+    likes_count integer default 0,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
 
@@ -132,18 +133,40 @@ create index if not exists idx_training_plans_is_system_template
 create index if not exists idx_training_plans_visibility
     on public.training_plans(template_visibility);
 
-create index if not exists idx_training_plans_is_active
-    on public.training_plans(profile_id) where is_active = true;
-
--- Ensure only one active training plan per user
-create unique index if not exists unique_active_training_plan_per_user
-    on public.training_plans(profile_id) where is_active = true;
-
 create index if not exists idx_training_plans_name
     on public.training_plans(name);
 
 create trigger update_training_plans_updated_at
     before update on public.training_plans
+    for each row
+    execute function update_updated_at_column();
+
+-- ============================================================================
+-- USER TRAINING PLANS
+-- ============================================================================
+create table if not exists public.user_training_plans (
+    id uuid primary key default uuid_generate_v4(),
+    profile_id uuid not null references public.profiles(id) on delete cascade,
+    training_plan_id uuid not null references public.training_plans(id) on delete cascade,
+    status text not null check (status in ('active', 'paused', 'completed', 'abandoned')) default 'active',
+    start_date date not null,
+    target_date date,
+    snapshot_structure jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_training_plans_profile_id
+    on public.user_training_plans(profile_id);
+
+create index if not exists idx_user_training_plans_training_plan_id
+    on public.user_training_plans(training_plan_id);
+
+create index if not exists idx_user_training_plans_status
+    on public.user_training_plans(profile_id) where status = 'active';
+
+create trigger update_user_training_plans_updated_at
+    before update on public.user_training_plans
     for each row
     execute function update_updated_at_column();
 
@@ -164,6 +187,7 @@ create table if not exists public.activity_routes (
     polyline text not null,
     elevation_polyline text,
     source text,
+    likes_count integer default 0,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -212,6 +236,7 @@ create table if not exists public.activity_plans (
     description text not null,
     structure jsonb,
     route_id uuid references public.activity_routes(id) on delete set null,
+    likes_count integer default 0,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     constraint activity_plans_has_content check (
@@ -298,6 +323,7 @@ create table if not exists public.events (
     -- Optional linkage fields for planned-activity and broader event modeling
     activity_plan_id uuid references public.activity_plans(id) on delete set null,
     training_plan_id uuid references public.training_plans(id) on delete set null,
+    user_training_plan_id uuid references public.user_training_plans(id) on delete set null,
     linked_activity_id uuid,
 
     -- Recurrence fields (series + occurrence identity)
@@ -359,6 +385,10 @@ create index if not exists idx_events_activity_plan
 create index if not exists idx_events_training_plan
     on public.events(training_plan_id)
     where training_plan_id is not null;
+
+create index if not exists idx_events_user_training_plan
+    on public.events(user_training_plan_id)
+    where user_training_plan_id is not null;
 
 create unique index if not exists idx_events_series_occurrence_unique
     on public.events(series_id, occurrence_key)
@@ -590,6 +620,7 @@ create table if not exists public.activities (
     pool_length numeric,
     device_manufacturer text,
     device_product text,
+    likes_count integer default 0,
 
     -- ============================================================================
     -- Audit timestamps
@@ -866,6 +897,95 @@ create index if not exists idx_notifications_is_read
     on public.notifications(is_read);
 
 -- ============================================================================
+-- SOCIAL NETWORK (FOLLOWS & LIKES)
+-- ============================================================================
+create table public.follows (
+    follower_id uuid references public.profiles(id) on delete cascade,
+    following_id uuid references public.profiles(id) on delete cascade,
+    status text check (status in ('pending', 'accepted')),
+    created_at timestamptz default now(),
+    updated_at timestamptz default now(),
+    primary key (follower_id, following_id)
+);
+
+create trigger update_follows_updated_at
+    before update on public.follows
+    for each row
+    execute function update_updated_at_column();
+
+create table public.likes (
+    id uuid primary key default uuid_generate_v4(),
+    profile_id uuid references public.profiles(id) on delete cascade,
+    entity_type text check (entity_type in ('activity', 'training_plan', 'activity_plan', 'route')),
+    entity_id uuid not null,
+    created_at timestamptz default now(),
+    unique (profile_id, entity_type, entity_id)
+);
+
+create index idx_likes_entity on public.likes(entity_type, entity_id);
+
+create or replace function public.update_likes_count()
+returns trigger as $$
+begin
+    if tg_op = 'INSERT' then
+        if new.entity_type = 'activity' then
+            update public.activities set likes_count = likes_count + 1 where id = new.entity_id;
+        elsif new.entity_type = 'training_plan' then
+            update public.training_plans set likes_count = likes_count + 1 where id = new.entity_id;
+        elsif new.entity_type = 'activity_plan' then
+            update public.activity_plans set likes_count = likes_count + 1 where id = new.entity_id;
+        elsif new.entity_type = 'route' then
+            update public.activity_routes set likes_count = likes_count + 1 where id = new.entity_id;
+        end if;
+        return new;
+    elsif tg_op = 'DELETE' then
+        if old.entity_type = 'activity' then
+            update public.activities set likes_count = likes_count - 1 where id = old.entity_id;
+        elsif old.entity_type = 'training_plan' then
+            update public.training_plans set likes_count = likes_count - 1 where id = old.entity_id;
+        elsif old.entity_type = 'activity_plan' then
+            update public.activity_plans set likes_count = likes_count - 1 where id = old.entity_id;
+        elsif old.entity_type = 'route' then
+            update public.activity_routes set likes_count = likes_count - 1 where id = old.entity_id;
+        end if;
+        return old;
+    end if;
+    return null;
+end;
+$$ language plpgsql;
+
+create trigger likes_insert_trigger
+    after insert on public.likes
+    for each row execute function public.update_likes_count();
+
+create trigger likes_delete_trigger
+    after delete on public.likes
+    for each row execute function public.update_likes_count();
+
+-- ============================================================================
+-- COMMENTS
+-- ============================================================================
+create table public.comments (
+    id uuid primary key default uuid_generate_v4(),
+    profile_id uuid references public.profiles(id) on delete cascade,
+    entity_type text not null check (entity_type in ('activity', 'training_plan', 'activity_plan', 'route')),
+    entity_id uuid not null,
+    content text not null,
+    created_at timestamptz default now(),
+    updated_at timestamptz default now(),
+    constraint comments_content_non_empty check (btrim(content) <> '')
+);
+
+create index idx_comments_entity on public.comments(entity_type, entity_id);
+create index idx_comments_profile_id on public.comments(profile_id, created_at desc);
+create index idx_comments_created_at on public.comments(created_at desc);
+
+create trigger update_comments_updated_at
+    before update on public.comments
+    for each row
+    execute function update_updated_at_column();
+
+-- ============================================================================
 -- RPC FUNCTIONS (AUTH & SECURITY)
 -- ============================================================================
 
@@ -936,3 +1056,7 @@ alter table public.profiles disable row level security;
 alter table public.profile_metrics disable row level security;
 alter table public.synced_events disable row level security;
 alter table public.training_plans disable row level security;
+alter table public.user_training_plans disable row level security;
+alter table public.follows disable row level security;
+alter table public.likes disable row level security;
+alter table public.comments disable row level security;

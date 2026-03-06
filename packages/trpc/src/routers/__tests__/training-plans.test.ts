@@ -286,48 +286,6 @@ describe("deriveProfileAwareCreationContext", () => {
   });
 });
 
-describe("trainingPlansRouter.create active-plan invariant", () => {
-  const maintenanceCreateInput = {
-    name: "New Plan",
-    structure: {
-      plan_type: "maintenance" as const,
-      name: "Maintenance Structure",
-      start_date: "2026-01-05",
-      activity_distribution: {
-        run: {
-          target_percentage: 1,
-        },
-      },
-    },
-  };
-
-  it("deactivates existing active plans when is_active is omitted", async () => {
-    const harness = createTrainingPlansCreateHarness();
-
-    await harness.caller.create(maintenanceCreateInput);
-
-    expect(harness.tableBuilder.update).toHaveBeenCalledWith({
-      is_active: false,
-    });
-    expect(harness.deactivationEq).toHaveBeenCalledWith(
-      "profile_id",
-      "profile-123",
-    );
-    expect(harness.deactivationEq).toHaveBeenCalledWith("is_active", true);
-  });
-
-  it("defaults inserted plan to active when is_active is omitted", async () => {
-    const harness = createTrainingPlansCreateHarness();
-
-    await harness.caller.create(maintenanceCreateInput);
-
-    expect(harness.getInsertedPayload()).toMatchObject({
-      is_active: true,
-      profile_id: "profile-123",
-    });
-  });
-});
-
 describe("trainingPlansRouter.getCreationSuggestions", () => {
   it("returns the same contract shape for context summary and suggestions", async () => {
     const caller = createTrainingPlansCaller({

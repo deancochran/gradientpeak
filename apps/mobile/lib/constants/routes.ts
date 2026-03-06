@@ -15,10 +15,11 @@ export const ROUTES = {
 
     // Training Plan Routes
     TRAINING_PLAN: {
-      INDEX: "/training-plan" as const,
+      DETAIL: (planId: string) => `/training-plan-detail?id=${planId}` as const,
       CREATE: "/training-plan-create" as const,
       EDIT: "/training-plan-edit" as const,
     },
+    ACTIVE_PLAN: "/active-plan" as const,
 
     // Create Activity Plan Routes
     CREATE_ACTIVITY_PLAN: {
