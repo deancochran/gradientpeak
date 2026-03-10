@@ -16,103 +16,37 @@ import { Bell, Mail, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-function NotificationItem({
-  notification,
-  profile,
-}: {
-  notification: any;
-  profile?: any;
-}) {
-  const isUnread = !notification.read_at;
-  const [handled, setHandled] = useState(false);
-  const utils = trpc.useUtils();
-
-  const acceptMutation = trpc.social.acceptFollowRequest.useMutation({
-    onSuccess: () => {
-      toast.success("Follow request accepted");
-      setHandled(true);
-      utils.notifications.getRecent.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const rejectMutation = trpc.social.rejectFollowRequest.useMutation({
-    onSuccess: () => {
-      toast.success("Follow request rejected");
-      setHandled(true);
-      utils.notifications.getRecent.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  let Icon = Bell;
-  let title = "Notification";
-  let description = "Tap to view details.";
-
-  const isPrivate = profile && (profile as any).is_public === false;
-  const isFollowRequest = notification.type === "new_follower" && isPrivate;
-
-  if (notification.type === "new_message") {
-    Icon = Mail;
-    title = "New Message";
-    description = "You have a new message in your inbox.";
-  } else if (notification.type === "coaching_invitation") {
-    Icon = UserPlus;
-    title = "Coaching Invite";
-    description = "You have received a new coaching invitation.";
-  } else if (notification.type === "new_follower") {
-    Icon = UserPlus;
-    title = isFollowRequest ? "Follow Request" : "New Follower";
-    description = isFollowRequest
-      ? "Someone requested to follow you."
-      : "Someone new started following you.";
+const getField = (value: unknown, key: string): unknown => {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
   }
+  return (value as Record<string, unknown>)[key];
+};
 
-  return (
-    <div className="flex items-start gap-4 p-4 border-b">
-      <div className="h-10 w-10 flex-shrink-0 rounded-full bg-muted flex items-center justify-center">
-        <Icon className="h-5 w-5 text-muted-foreground" />
-      </div>
-      <div className="flex-1">
-        <p className={cn("font-medium", isUnread && "font-bold")}>{title}</p>
-        <p className="text-sm text-muted-foreground">{description}</p>
-        {isFollowRequest && !handled && (
-          <div className="flex gap-2 mt-2">
-            <Button
-              size="sm"
-              onClick={() =>
-                acceptMutation.mutate({ follower_id: notification.actor_id })
-              }
-              disabled={acceptMutation.isPending || rejectMutation.isPending}
-            >
-              Accept
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                rejectMutation.mutate({ follower_id: notification.actor_id })
-              }
-              disabled={acceptMutation.isPending || rejectMutation.isPending}
-            >
-              Reject
-            </Button>
-          </div>
-        )}
-        <p className="text-xs text-muted-foreground mt-1">
-          {new Date(notification.created_at).toLocaleString()}
-        </p>
-      </div>
-      {isUnread && <div className="h-2 w-2 rounded-full bg-primary mt-1" />}
-    </div>
-  );
-}
+const getStringField = (value: unknown, key: string): string | undefined => {
+  const field = getField(value, key);
+  return typeof field === "string" ? field : undefined;
+};
+
+const getNullableStringField = (
+  value: unknown,
+  key: string,
+): string | null | undefined => {
+  const field = getField(value, key);
+  return typeof field === "string" || field === null ? field : undefined;
+};
+
+const getBooleanField = (value: unknown, key: string): boolean | undefined => {
+  const field = getField(value, key);
+  return typeof field === "boolean" ? field : undefined;
+};
 
 export default function NotificationsPage() {
   const { data: profile } = trpc.profiles.get.useQuery();
   const { data: notifications = [], isLoading } =
     trpc.notifications.getRecent.useQuery({ limit: 50 });
   const utils = trpc.useUtils();
+  type Notification = (typeof notifications)[number];
 
   const markReadMutation = trpc.notifications.markRead.useMutation({
     onSuccess: () => {
@@ -121,17 +55,119 @@ export default function NotificationsPage() {
     },
   });
 
+  const NotificationItem = ({
+    notification,
+    profileData,
+  }: {
+    notification: Notification;
+    profileData?: unknown;
+  }) => {
+    const [handled, setHandled] = useState(false);
+    const itemUtils = trpc.useUtils();
+
+    const readAt = getNullableStringField(notification, "read_at");
+    const isUnread = !readAt;
+    const notificationType = getStringField(notification, "type");
+    const actorId = getStringField(notification, "actor_id");
+    const createdAt = getStringField(notification, "created_at") ?? "";
+    const isPrivate = getBooleanField(profileData, "is_public") === false;
+    const isFollowRequest = notificationType === "new_follower" && isPrivate;
+
+    const acceptMutation = trpc.social.acceptFollowRequest.useMutation({
+      onSuccess: () => {
+        toast.success("Follow request accepted");
+        setHandled(true);
+        itemUtils.notifications.getRecent.invalidate();
+      },
+      onError: (err) => toast.error(err.message),
+    });
+
+    const rejectMutation = trpc.social.rejectFollowRequest.useMutation({
+      onSuccess: () => {
+        toast.success("Follow request rejected");
+        setHandled(true);
+        itemUtils.notifications.getRecent.invalidate();
+      },
+      onError: (err) => toast.error(err.message),
+    });
+
+    let Icon = Bell;
+    let title = "Notification";
+    let description = "Tap to view details.";
+
+    if (notificationType === "new_message") {
+      Icon = Mail;
+      title = "New Message";
+      description = "You have a new message in your inbox.";
+    } else if (notificationType === "coaching_invitation") {
+      Icon = UserPlus;
+      title = "Coaching Invite";
+      description = "You have received a new coaching invitation.";
+    } else if (notificationType === "new_follower") {
+      Icon = UserPlus;
+      title = isFollowRequest ? "Follow Request" : "New Follower";
+      description = isFollowRequest
+        ? "Someone requested to follow you."
+        : "Someone new started following you.";
+    }
+
+    return (
+      <div className="flex items-start gap-4 p-4 border-b">
+        <div className="h-10 w-10 flex-shrink-0 rounded-full bg-muted flex items-center justify-center">
+          <Icon className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1">
+          <p className={cn("font-medium", isUnread && "font-bold")}>{title}</p>
+          <p className="text-sm text-muted-foreground">{description}</p>
+          {isFollowRequest && !handled && (
+            <div className="flex gap-2 mt-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (actorId) {
+                    acceptMutation.mutate({ follower_id: actorId });
+                  }
+                }}
+                disabled={acceptMutation.isPending || rejectMutation.isPending}
+              >
+                Accept
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (actorId) {
+                    rejectMutation.mutate({ follower_id: actorId });
+                  }
+                }}
+                disabled={acceptMutation.isPending || rejectMutation.isPending}
+              >
+                Reject
+              </Button>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-1">
+            {new Date(createdAt).toLocaleString()}
+          </p>
+        </div>
+        {isUnread && <div className="h-2 w-2 rounded-full bg-primary mt-1" />}
+      </div>
+    );
+  };
+
   const handleReadAll = () => {
     const unreadIds = notifications
-      .filter((n: any) => !n.read_at)
-      .map((n: any) => n.id);
+      .filter((n) => !getNullableStringField(n, "read_at"))
+      .map((n) => n.id);
+
     if (unreadIds.length > 0) {
       markReadMutation.mutate({ notification_ids: unreadIds });
     }
   };
 
-  const allNotifications = notifications;
-  const unreadNotifications = notifications.filter((n: any) => !n.read_at);
+  const unreadNotifications = notifications.filter(
+    (n) => !getNullableStringField(n, "read_at"),
+  );
 
   return (
     <div className="h-full flex-1 flex-col space-y-8 p-8 md:flex">
@@ -169,12 +205,12 @@ export default function NotificationsPage() {
                   <div className="p-8 text-center text-muted-foreground">
                     Loading...
                   </div>
-                ) : allNotifications.length > 0 ? (
-                  allNotifications.map((n) => (
+                ) : notifications.length > 0 ? (
+                  notifications.map((n) => (
                     <NotificationItem
                       key={n.id}
                       notification={n}
-                      profile={profile}
+                      profileData={profile}
                     />
                   ))
                 ) : (
@@ -193,7 +229,7 @@ export default function NotificationsPage() {
                     <NotificationItem
                       key={n.id}
                       notification={n}
-                      profile={profile}
+                      profileData={profile}
                     />
                   ))
                 ) : (

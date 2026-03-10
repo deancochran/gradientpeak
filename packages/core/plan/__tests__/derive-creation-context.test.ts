@@ -11,11 +11,14 @@ describe("deriveCreationContext", () => {
 
     expect(context.history_availability_state).toBe("none");
     expect(context.recommended_baseline_tss_range.min).toBeGreaterThanOrEqual(
-      30,
+      80,
     );
-    expect(context.recommended_baseline_tss_range.max).toBeLessThanOrEqual(120);
+    expect(context.recommended_baseline_tss_range.max).toBeGreaterThan(
+      context.recommended_baseline_tss_range.min,
+    );
     expect(context.learned_ramp_rate?.max_safe_ramp_rate).toBe(40);
     expect(context.learned_ramp_rate?.confidence).toBe("low");
+    expect(context.missing_required_onboarding_fields).toContain("dob");
   });
 
   it("widens baseline recommendations upward with rich recent activity", () => {
@@ -140,5 +143,23 @@ describe("deriveCreationContext", () => {
     expect(context.training_quality?.source).toBe("power");
     expect(context.history_availability_state).toBeDefined();
     expect(context.recommended_baseline_tss_range.min).toBeDefined();
+  });
+
+  it("applies youth-safe defaults continuously from age-sensitive priors", () => {
+    const context = deriveCreationContext({
+      completed_activities: [],
+      profile: {
+        dob: "2012-02-16",
+      },
+      as_of: "2026-02-16T00:00:00.000Z",
+    });
+
+    expect(context.is_youth).toBe(true);
+    expect(context.user_age).toBe(14);
+    expect(context.max_sustainable_ctl).toBeLessThan(100);
+    expect(context.recommended_sessions_per_week_range.max).toBeLessThanOrEqual(
+      4,
+    );
+    expect(context.missing_required_onboarding_fields ?? []).toHaveLength(0);
   });
 });

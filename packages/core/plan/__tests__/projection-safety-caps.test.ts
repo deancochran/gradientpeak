@@ -96,6 +96,20 @@ describe("normalizeProjectionSafetyConfig", () => {
     expect(normalized.max_weekly_tss_ramp_pct).toBe(30);
   });
 
+  it("keeps explicit hard caps tighter than learned ramp defaults", () => {
+    const normalized = normalizeProjectionSafetyConfig({
+      max_weekly_tss_ramp_pct: 4,
+      max_ctl_ramp_per_week: 1,
+      learned_ramp_rate: {
+        max_safe_ramp_rate: 68,
+        confidence: "high",
+      },
+    });
+
+    expect(normalized.max_weekly_tss_ramp_pct).toBe(4);
+    expect(normalized.max_ctl_ramp_per_week).toBe(1);
+  });
+
   it("clamps learned ramp cap to [30, 70]", () => {
     expect(
       resolveEffectiveLearnedRampRate({

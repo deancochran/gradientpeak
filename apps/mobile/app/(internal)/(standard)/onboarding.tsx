@@ -2,6 +2,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -133,7 +140,7 @@ const TimeDurationInput = ({
     seconds ? Math.floor(seconds / 60).toString() : "",
   );
   const [secStr, setSecStr] = useState(
-    seconds ? (seconds % 60).toString().padStart(2, "0") : "",
+    seconds ? (seconds % 60).toString().padStart(2, "0") : "00",
   );
 
   // Sync effect: Only update local state if external prop changes significantly
@@ -148,16 +155,18 @@ const TimeDurationInput = ({
 
   const handleUpdate = (newMin: string, newSec: string) => {
     setMinStr(newMin);
-    setSecStr(newSec);
+    const clampedSeconds = Math.max(0, Math.min(59, parseInt(newSec, 10) || 0));
+    const normalizedSec = clampedSeconds.toString().padStart(2, "0");
+    setSecStr(normalizedSec);
 
     // If both are empty, clear the value
-    if (newMin === "" && newSec === "") {
+    if (newMin === "" && normalizedSec === "00") {
       onChange(null);
       return;
     }
 
     const minVal = parseInt(newMin) || 0;
-    const secVal = parseInt(newSec) || 0;
+    const secVal = clampedSeconds;
 
     // Only valid if positive
     if (minVal >= 0 && secVal >= 0) {
@@ -180,14 +189,33 @@ const TimeDurationInput = ({
       </View>
       <Text className="text-2xl font-bold mb-6">:</Text>
       <View className="items-center">
-        <Input
-          value={secStr}
-          onChangeText={(t) => handleUpdate(minStr, t)}
-          keyboardType="number-pad"
-          className="w-24 text-center text-2xl h-16"
-          placeholder="00"
-          maxLength={2}
-        />
+        <Select
+          value={{ value: secStr || "00", label: secStr || "00" }}
+          onValueChange={(option) => {
+            if (!option?.value) {
+              return;
+            }
+            handleUpdate(minStr, option.value);
+          }}
+        >
+          <SelectTrigger className="w-24 h-16">
+            <SelectValue placeholder="00" className="text-center text-2xl" />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from({ length: 60 }, (_, index) => {
+              const value = index.toString().padStart(2, "0");
+              return (
+                <SelectItem
+                  key={`duration-seconds-${value}`}
+                  label={value}
+                  value={value}
+                >
+                  {value}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
         <Text className="text-xs text-muted-foreground mt-1">Seconds</Text>
       </View>
     </View>

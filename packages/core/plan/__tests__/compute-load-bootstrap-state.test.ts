@@ -31,11 +31,29 @@ describe("computeLoadBootstrapState", () => {
       activities: [],
     });
 
-    expect(bootstrap.starting_ctl).toBe(0);
-    expect(bootstrap.starting_atl).toBe(0);
+    expect(bootstrap.starting_ctl).toBe(18);
+    expect(bootstrap.starting_atl).toBe(18);
     expect(bootstrap.starting_tsb).toBe(0);
     expect(bootstrap.confidence.confidence).toBe(0);
     expect(bootstrap.confidence.history_state).toBe("none");
+    expect(bootstrap.confidence.rationale_codes).toContain(
+      "age_unknown_conservative_prior",
+    );
+  });
+
+  it("applies a stricter no-history prior for youth athletes", () => {
+    const bootstrap = computeLoadBootstrapState({
+      as_of: "2026-02-16T00:00:00.000Z",
+      window_days: 21,
+      activities: [],
+      profile_age: 15,
+    });
+
+    expect(bootstrap.starting_ctl).toBeLessThan(18);
+    expect(bootstrap.starting_atl).toBe(bootstrap.starting_ctl);
+    expect(bootstrap.confidence.rationale_codes).toContain(
+      "youth_safe_prior_applied",
+    );
   });
 
   it("decays stale load and confidence when activity is old", () => {

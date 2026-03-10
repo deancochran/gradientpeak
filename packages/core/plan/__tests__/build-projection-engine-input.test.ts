@@ -1,46 +1,66 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildProjectionEngineInput,
-  expandMinimalGoalToPlan,
-  normalizeCreationConfig,
-} from "..";
+import { buildProjectionEngineInput, normalizeCreationConfig } from "..";
+
+const expandedPlan = {
+  start_date: "2026-02-24",
+  end_date: "2026-08-14",
+  blocks: [
+    {
+      name: "Base",
+      phase: "base",
+      start_date: "2026-02-24",
+      end_date: "2026-04-05",
+      target_weekly_tss_range: { min: 260, max: 320 },
+    },
+    {
+      name: "Build",
+      phase: "build",
+      start_date: "2026-04-06",
+      end_date: "2026-07-31",
+      target_weekly_tss_range: { min: 300, max: 390 },
+    },
+    {
+      name: "Taper",
+      phase: "taper",
+      start_date: "2026-08-01",
+      end_date: "2026-08-14",
+      target_weekly_tss_range: { min: 180, max: 240 },
+    },
+  ],
+  goals: [
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Race A",
+      target_date: "2026-07-10",
+      priority: 1,
+      targets: [
+        {
+          target_type: "power_threshold" as const,
+          activity_category: "bike" as const,
+          target_watts: 305,
+          test_duration_s: 1200,
+        },
+      ],
+    },
+    {
+      id: "22222222-2222-4222-8222-222222222222",
+      name: "Race B",
+      target_date: "2026-08-14",
+      priority: 2,
+      targets: [
+        {
+          target_type: "race_performance" as const,
+          activity_category: "run" as const,
+          distance_m: 10000,
+          target_time_s: 2820,
+        },
+      ],
+    },
+  ],
+};
 
 describe("buildProjectionEngineInput", () => {
   it("builds a deterministic engine input shape from expanded plan and normalized config", () => {
-    const expandedPlan = expandMinimalGoalToPlan(
-      {
-        goals: [
-          {
-            name: "Race A",
-            target_date: "2026-07-10",
-            priority: 1,
-            targets: [
-              {
-                target_type: "power_threshold",
-                activity_category: "bike",
-                target_watts: 305,
-                test_duration_s: 1200,
-              },
-            ],
-          },
-          {
-            name: "Race B",
-            target_date: "2026-08-14",
-            priority: 2,
-            targets: [
-              {
-                target_type: "race_performance",
-                activity_category: "run",
-                distance_m: 10000,
-                target_time_s: 2820,
-              },
-            ],
-          },
-        ],
-      },
-      { startingCtl: 47 },
-    );
-
     const normalizedConfig = normalizeCreationConfig({
       now_iso: "2026-02-24T00:00:00.000Z",
       user_values: {
@@ -116,22 +136,6 @@ describe("buildProjectionEngineInput", () => {
   });
 
   it("omits creation config when normalized config is not provided", () => {
-    const expandedPlan = expandMinimalGoalToPlan({
-      goals: [
-        {
-          name: "Solo Goal",
-          target_date: "2026-07-10",
-          priority: 1,
-          targets: [
-            {
-              target_type: "hr_threshold",
-              target_lthr_bpm: 170,
-            },
-          ],
-        },
-      ],
-    });
-
     const shapedInput = buildProjectionEngineInput({
       expanded_plan: expandedPlan,
     });

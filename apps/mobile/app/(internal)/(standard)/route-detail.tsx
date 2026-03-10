@@ -45,12 +45,12 @@ export default function RouteDetailScreen() {
 
   // Like state and mutation
   const [isLiked, setIsLiked] = useState(route?.has_liked ?? false);
-  const [likesCount, setLikesCount] = useState(route?.likes_count ?? 0);
+  const [likesCount, setLikesCount] = useState(route?.has_liked ? 1 : 0);
 
   const toggleLikeMutation = trpc.social.toggleLike.useMutation({
     onError: () => {
       setIsLiked(route?.has_liked ?? false);
-      setLikesCount(route?.likes_count ?? 0);
+      setLikesCount(route?.has_liked ? 1 : 0);
     },
   });
 
@@ -76,9 +76,9 @@ export default function RouteDetailScreen() {
   React.useEffect(() => {
     if (route) {
       setIsLiked(route.has_liked ?? false);
-      setLikesCount(route.likes_count ?? 0);
+      setLikesCount(route.has_liked ? 1 : 0);
     }
-  }, [route?.has_liked, route?.likes_count]);
+  }, [route?.has_liked]);
 
   const coordinates = useMemo(
     () => (route ? decodePolyline(route.polyline) : []),

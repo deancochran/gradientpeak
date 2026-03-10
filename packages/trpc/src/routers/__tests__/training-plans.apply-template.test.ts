@@ -93,10 +93,13 @@ function createCaller(queryMap: QueryMap) {
 describe("trainingPlansRouter.applyTemplate", () => {
   it("creates planned events with shared schedule_batch_id", async () => {
     const { caller, callLog } = createCaller({
-      user_training_plans: [
-        { data: [], error: null }, // Concurrency check returns empty
+      events: [
         {
-          data: { id: "22222222-2222-4222-8222-222222222222" }, // Insert returns this ID
+          data: [],
+          error: null,
+        },
+        {
+          data: [{ id: "event-1" }, { id: "event-2" }],
           error: null,
         },
       ],
@@ -109,6 +112,8 @@ describe("trainingPlansRouter.applyTemplate", () => {
             profile_id: "template-owner",
             is_system_template: false,
             template_visibility: "public",
+            sessions_per_week_target: 4,
+            duration_hours: 9,
             structure: {
               start_date: "2026-01-01",
               sessions: [
@@ -131,10 +136,6 @@ describe("trainingPlansRouter.applyTemplate", () => {
         data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
         error: null,
       },
-      events: {
-        data: [{ id: "event-1" }, { id: "event-2" }],
-        error: null,
-      },
     });
 
     const result = await caller.applyTemplate({
@@ -149,11 +150,17 @@ describe("trainingPlansRouter.applyTemplate", () => {
     const insertedRows =
       (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
 
-    expect(result.applied_plan_id).toBe("22222222-2222-4222-8222-222222222222");
+    expect(result.applied_plan_id).toBe("11111111-1111-4111-8111-111111111111");
     expect(result.created_event_count).toBe(2);
     expect(typeof result.schedule_batch_id).toBe("string");
     expect(insertedRows).toHaveLength(2);
     expect(insertedRows[0]?.schedule_batch_id).toBe(result.schedule_batch_id);
     expect(insertedRows[1]?.schedule_batch_id).toBe(result.schedule_batch_id);
+    expect(insertedRows[0]?.training_plan_id).toBe(result.applied_plan_id);
+    expect(insertedRows[1]?.training_plan_id).toBe(result.applied_plan_id);
+    const createdPlanInsert = callLog.find(
+      (call) => call.table === "training_plans" && call.operation === "insert",
+    );
+    expect(createdPlanInsert).toBeUndefined();
   });
 });

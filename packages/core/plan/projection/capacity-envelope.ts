@@ -12,6 +12,7 @@ export interface CapacityEnvelopeInput {
   weeks: CapacityEnvelopeWeekInput[];
   starting_ctl: number;
   evidence_state?: EvidenceState;
+  evidence_score?: number;
   envelope_penalties?: TrainingPlanCalibrationConfig["envelope_penalties"];
 }
 
@@ -19,6 +20,11 @@ export interface CapacityEnvelopeResult {
   envelope_score: number;
   envelope_state: EnvelopeState;
   limiting_factors: string[];
+  limiting_factor_scores?: {
+    over_high: number;
+    under_low: number;
+    over_ramp: number;
+  };
 }
 
 function clamp01(value: number): number {
@@ -33,19 +39,41 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function getHistoryMultiplier(state: EvidenceState | undefined): number {
-  if (state === "rich") return 1.08;
-  if (state === "sparse") return 0.95;
-  if (state === "stale") return 0.9;
-  return 0.84;
+function smoothstep01(value: number): number {
+  const clamped = clamp01(value);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function resolveEvidenceSupport(input: {
+  evidence_state?: EvidenceState;
+  evidence_score?: number;
+}): number {
+  if (
+    typeof input.evidence_score === "number" &&
+    Number.isFinite(input.evidence_score)
+  ) {
+    return clamp01(input.evidence_score);
+  }
+
+  const midpointByState: Record<EvidenceState, number> = {
+    none: 0.18,
+    sparse: 0.45,
+    stale: 0.32,
+    rich: 0.82,
+  };
+  return midpointByState[input.evidence_state ?? "none"];
+}
+
+function getHistoryMultiplierFromEvidence(input: {
+  evidence_state?: EvidenceState;
+  evidence_score?: number;
+}): number {
+  const support = smoothstep01(resolveEvidenceSupport(input));
+  return 0.84 + support * 0.24;
 }
 
 function deriveEliteLoadFactor(baselineWeeklyTss: number): number {
-  if (baselineWeeklyTss <= 650) {
-    return 0;
-  }
-
-  return clamp01((baselineWeeklyTss - 650) / 650);
+  return smoothstep01((baselineWeeklyTss - 500) / 800);
 }
 
 function deriveEnvelopeBounds(input: {
@@ -97,7 +125,10 @@ export function computeCapacityEnvelope(
   }
 
   const baselineWeeklyTss = Math.max(35, input.starting_ctl * 7);
-  const historyMultiplier = getHistoryMultiplier(input.evidence_state);
+  const historyMultiplier = getHistoryMultiplierFromEvidence({
+    evidence_state: input.evidence_state,
+    evidence_score: input.evidence_score,
+  });
   const envelopePenalties = input.envelope_penalties;
   const weightOverHigh = envelopePenalties?.over_high_weight ?? 0.55;
   const weightUnderLow = envelopePenalties?.under_low_weight ?? 0.2;
@@ -146,14 +177,19 @@ export function computeCapacityEnvelope(
     envelopeScore >= 85 ? "inside" : envelopeScore >= 65 ? "edge" : "outside";
 
   const weekCount = Math.max(1, input.weeks.length);
+  const factorScores = {
+    over_high: clamp01(overHighTotal / weekCount / 0.12),
+    under_low: clamp01(underLowTotal / weekCount / 0.16),
+    over_ramp: clamp01(overRampTotal / weekCount / 0.14),
+  };
   const limitingFactors: string[] = [];
-  if (overHighTotal / weekCount > 0.04) {
+  if (factorScores.over_high > 0.3) {
     limitingFactors.push("over_high");
   }
-  if (underLowTotal / weekCount > 0.08) {
+  if (factorScores.under_low > 0.3) {
     limitingFactors.push("under_low");
   }
-  if (overRampTotal / weekCount > 0.05) {
+  if (factorScores.over_ramp > 0.3) {
     limitingFactors.push("over_ramp");
   }
 
@@ -161,5 +197,6 @@ export function computeCapacityEnvelope(
     envelope_score: envelopeScore,
     envelope_state: envelopeState,
     limiting_factors: limitingFactors,
+    limiting_factor_scores: factorScores,
   };
 }

@@ -1,6 +1,6 @@
 ---
 description: Updates all relevant documentation files when code changes are made, ensuring documentation stays in sync with the codebase.
-agent: code-improvement-reviewer
+agent: build
 subtask: true
 ---
 

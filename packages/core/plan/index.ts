@@ -7,7 +7,7 @@ export * from "./deriveCreationSuggestions";
 export * from "./computeLoadBootstrapState";
 export * from "./buildProjectionEngineInput";
 export * from "./derivePlanTimeline";
-export * from "./expandMinimalGoalToPlan";
+export * from "./materializePlanToEvents";
 export * from "./goalPriorityWeighting";
 export * from "./normalizeCreationConfig";
 export * from "./normalizeGoalInput";

@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  profileGoalLegacySchema,
+  profileGoalTargetSchema,
+  type ProfileGoalLegacy,
+  type ProfileGoalTarget,
+} from "../goals/profile_goals";
 
 export const trainingPhaseEnum = z.enum([
   "base",
@@ -25,54 +31,10 @@ export const intensityDistributionSchema = z
 
 export type IntensityDistribution = z.infer<typeof intensityDistributionSchema>;
 
-const targetActivityCategoryEnum = z.enum(["run", "bike", "swim", "other"]);
-const targetWeightSchema = z.number().positive().finite().optional();
+export const trainingGoalSchema = profileGoalLegacySchema;
 
-export const goalTargetV2Schema = z.discriminatedUnion("target_type", [
-  z.object({
-    target_type: z.literal("race_performance"),
-    distance_m: z.number().positive(),
-    target_time_s: z.number().int().positive(),
-    activity_category: targetActivityCategoryEnum,
-    weight: targetWeightSchema,
-  }),
-  z.object({
-    target_type: z.literal("pace_threshold"),
-    target_speed_mps: z.number().positive(),
-    test_duration_s: z.number().int().positive(),
-    activity_category: targetActivityCategoryEnum,
-    weight: targetWeightSchema,
-  }),
-  z.object({
-    target_type: z.literal("power_threshold"),
-    target_watts: z.number().positive(),
-    test_duration_s: z.number().int().positive(),
-    activity_category: targetActivityCategoryEnum,
-    weight: targetWeightSchema,
-  }),
-  z.object({
-    target_type: z.literal("hr_threshold"),
-    target_lthr_bpm: z.number().int().positive(),
-    weight: targetWeightSchema,
-  }),
-]);
-
-export type GoalTargetV2 = z.infer<typeof goalTargetV2Schema>;
-
-export const goalV2Schema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1).max(100),
-  target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  priority: z.number().int().min(0).max(10).default(5),
-  targets: z.array(goalTargetV2Schema).min(1),
-  target_performance: z.string().max(200).optional(),
-  notes: z.string().max(1000).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const trainingGoalSchema = goalV2Schema;
-
-export type GoalV2 = z.infer<typeof goalV2Schema>;
+export type GoalV2 = ProfileGoalLegacy;
+export type GoalTargetV2 = ProfileGoalTarget;
 
 export type TrainingGoal = z.infer<typeof trainingGoalSchema>;
 
@@ -80,7 +42,7 @@ export const minimalTrainingGoalCreateSchema = z.object({
   name: z.string().max(100).default(""),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   priority: z.number().int().min(0).max(10).default(5),
-  targets: z.array(goalTargetV2Schema).min(1),
+  targets: z.array(profileGoalTargetSchema).min(1),
 });
 
 export type MinimalTrainingGoalCreate = z.infer<
@@ -277,7 +239,6 @@ const periodizedPlanBaseShape = {
   description: z.string().max(2000).optional(),
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  goals: z.array(trainingGoalSchema).min(1),
   fitness_progression: fitnessProgressionSchema,
   activity_distribution: activityDistributionSchema,
   constraints: trainingConstraintsSchema.optional(),
@@ -291,8 +252,7 @@ const periodizedPlanBaseShape = {
 type PeriodizedPlanRefinementInput = {
   start_date: string;
   end_date: string;
-  goals: Array<{ id: string }>;
-  blocks: Array<{ start_date: string; end_date: string; goal_ids: string[] }>;
+  blocks: Array<{ start_date: string; end_date: string }>;
 };
 
 function hasNoOverlappingBlocks(data: PeriodizedPlanRefinementInput): boolean {
@@ -327,14 +287,6 @@ function blocksAreWithinPlanDateBounds(
   });
 }
 
-function blocksReferenceExistingGoalIds(
-  data: PeriodizedPlanRefinementInput,
-): boolean {
-  const goalIds = new Set(data.goals.map((g) => g.id));
-  const referencedIds = data.blocks.flatMap((b) => b.goal_ids);
-  return referencedIds.every((id) => goalIds.has(id));
-}
-
 function applyPeriodizedBlockRefinements<
   T extends z.ZodType<PeriodizedPlanRefinementInput>,
 >(schema: T) {
@@ -344,9 +296,6 @@ function applyPeriodizedBlockRefinements<
     })
     .refine((data) => blocksAreWithinPlanDateBounds(data), {
       message: "All blocks must fall within plan dates",
-    })
-    .refine((data) => blocksReferenceExistingGoalIds(data), {
-      message: "Blocks reference non-existent goal IDs",
     });
 }
 
@@ -411,7 +360,7 @@ export type TrainingPlan = z.infer<typeof trainingPlanSchema>;
 export const wizardGoalInputSchema = z.object({
   name: z.string().max(100).default(""),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  targets: z.array(goalTargetV2Schema).min(1),
+  targets: z.array(profileGoalTargetSchema).min(1),
 });
 
 export type WizardGoalInput = z.infer<typeof wizardGoalInputSchema>;

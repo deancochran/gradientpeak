@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
 import { getDurationMs } from "@/lib/utils/durationConversion";
+import { skipToken } from "@tanstack/react-query";
 import {
   ActivityPayload,
   buildEstimationContext,
@@ -58,6 +59,7 @@ export default function ActivityPlanDetailPage() {
   const planId = params.planId as string | undefined;
   const eventId = params.eventId as string | undefined;
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -358,7 +360,7 @@ export default function ActivityPlanDetailPage() {
   };
 
   // Like state and mutation
-  const actualPlanId = planId || activityPlan?.id;
+  const actualPlanId = (planId || activityPlan?.id)?.trim();
   const [isLiked, setIsLiked] = useState(activityPlan?.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(activityPlan?.likes_count ?? 0);
 
@@ -401,19 +403,18 @@ export default function ActivityPlanDetailPage() {
 
   // Comments state
   const [newComment, setNewComment] = useState("");
+  const commentEntityId = actualPlanId ?? "";
+  const isCommentEntityIdValid = isValidUuid(commentEntityId);
 
   // Fetch comments
   const { data: commentsData, refetch: refetchComments } =
     trpc.social.getComments.useQuery(
-      {
-        entity_id: planId || activityPlan?.id || "",
-        entity_type: "activity_plan",
-      },
-      {
-        enabled:
-          !!(planId || activityPlan?.id) &&
-          isValidUuid(planId || activityPlan?.id || ""),
-      },
+      isCommentEntityIdValid
+        ? {
+            entity_id: commentEntityId,
+            entity_type: "activity_plan",
+          }
+        : skipToken,
     );
 
   // Add comment mutation
@@ -428,7 +429,7 @@ export default function ActivityPlanDetailPage() {
   });
 
   const handleAddComment = () => {
-    const planIdToUse = planId || activityPlan?.id;
+    const planIdToUse = (planId || activityPlan?.id)?.trim();
     if (!planIdToUse || !isValidUuid(planIdToUse) || !newComment.trim()) return;
     addCommentMutation.mutate({
       entity_id: planIdToUse,
@@ -474,9 +475,6 @@ export default function ActivityPlanDetailPage() {
   // Check if user owns this plan for edit permission
   // Database uses profile_id field, not user_id
   const isOwnedByUser = activityPlan.profile_id === profile?.id;
-  const [isPublic, setIsPublic] = useState(
-    activityPlan.template_visibility === "public",
-  );
 
   // Decode route coordinates if available
   const routeCoordinates = route?.polyline

@@ -92,7 +92,6 @@ export interface TrainingPlanFormData {
 export interface TrainingPlanMetadataFormData {
   name: string;
   description: string;
-  isActive: boolean;
 }
 
 export interface TrainingPlanConfigFormData {
@@ -158,7 +157,7 @@ type FormTabKey =
   | "calibration"
   | "review";
 
-const formTabs: { key: FormTabKey; label: string }[] = [
+const allFormTabs: { key: FormTabKey; label: string }[] = [
   { key: "plan", label: "Plan" },
   { key: "goals", label: "Goals" },
   { key: "availability", label: "Availability" },
@@ -796,7 +795,6 @@ export function SinglePageForm({
     ({
       name: "",
       description: "",
-      isActive: true,
     } satisfies TrainingPlanMetadataFormData);
   const handlePlanMetadataChange = (next: TrainingPlanMetadataFormData) => {
     onPlanMetadataChange?.(next);
@@ -808,15 +806,41 @@ export function SinglePageForm({
   );
   const [editingTargetRef, setEditingTargetRef] =
     useState<EditingTargetRef | null>(null);
-  const [activeTab, setActiveTab] = useState<FormTabKey>(initialTab ?? "goals");
+  const visibleTabKeys = useMemo<FormTabKey[]>(
+    () =>
+      showCreationConfig
+        ? allFormTabs.filter((tab) => tab.key !== "goals").map((tab) => tab.key)
+        : ["plan"],
+    [showCreationConfig],
+  );
+
+  const resolveActiveTab = useCallback(
+    (tab: FormTabKey | undefined): FormTabKey => {
+      const fallbackTab = "plan" as const;
+      if (!tab) {
+        return fallbackTab;
+      }
+
+      return visibleTabKeys.includes(tab) ? tab : fallbackTab;
+    },
+    [visibleTabKeys],
+  );
+
+  const [activeTab, setActiveTab] = useState<FormTabKey>(() =>
+    resolveActiveTab(initialTab ?? "plan"),
+  );
 
   useEffect(() => {
     if (!initialTab) {
       return;
     }
 
-    setActiveTab(initialTab);
-  }, [initialTab]);
+    setActiveTab(resolveActiveTab(initialTab));
+  }, [initialTab, resolveActiveTab]);
+
+  useEffect(() => {
+    setActiveTab((current) => resolveActiveTab(current));
+  }, [resolveActiveTab]);
 
   const handleTabChange = useCallback((tab: FormTabKey) => {
     setActiveTab(tab);
@@ -876,8 +900,20 @@ export function SinglePageForm({
     : "No";
   const noHistoryAvailabilityClampLabel =
     noHistoryMetadata?.floor_clamped_by_availability ? "Yes" : "No";
+  const noHistoryFitnessSignal =
+    typeof noHistoryMetadata?.fitness_signal_0_1 === "number"
+      ? Math.round(noHistoryMetadata.fitness_signal_0_1 * 100)
+      : null;
+  const noHistoryDemandScore =
+    typeof noHistoryMetadata?.goal_demand_score_0_1 === "number"
+      ? Math.round(noHistoryMetadata.goal_demand_score_0_1 * 100)
+      : null;
+  const projectionRiskScore =
+    typeof projectionChart?.risk_score === "number"
+      ? Math.round(projectionChart.risk_score)
+      : null;
   const noHistoryAccessibilitySummary = noHistoryMetadata
-    ? `No-history cues. Confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}.`
+    ? `No-history cues. Confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}.${noHistoryFitnessSignal !== null ? ` Fitness signal ${noHistoryFitnessSignal} percent.` : ""}${noHistoryDemandScore !== null ? ` Goal demand ${noHistoryDemandScore} percent.` : ""}${projectionRiskScore !== null ? ` Risk score ${projectionRiskScore} percent.` : ""}`
     : undefined;
 
   useEffect(() => {
@@ -1120,9 +1156,13 @@ export function SinglePageForm({
 
     return counts;
   }, [formValidationErrors, resolvedPlanMetadata.name, reviewNoticeCount]);
+  const visibleTabs = useMemo(
+    () => allFormTabs.filter((tab) => visibleTabKeys.includes(tab.key)),
+    [visibleTabKeys],
+  );
   const tabsWithIssues = useMemo(
-    () => formTabs.filter((tab) => tabIssueCounts[tab.key] > 0),
-    [tabIssueCounts],
+    () => visibleTabs.filter((tab) => tabIssueCounts[tab.key] > 0),
+    [tabIssueCounts, visibleTabs],
   );
   const goalAssessments = projectionChart?.goal_assessments ?? [];
   const hasBlockingIssues = blockingIssues.length > 0;
@@ -1168,7 +1208,7 @@ export function SinglePageForm({
           accessibilityLabel="Training plan setup sections"
           accessibilityHint="Swipe horizontally to browse sections, then double tap to open one"
         >
-          {formTabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const isActive = tab.key === activeTab;
             const issueCount = tabIssueCounts[tab.key];
             const hasIssues = issueCount > 0;
@@ -1272,28 +1312,10 @@ export function SinglePageForm({
                 maxLength={500}
               />
             </View>
-            <View className="gap-2 rounded-md border border-border bg-muted/20 p-3">
-              <View className="flex-row items-center justify-between gap-3">
-                <View className="flex-1 gap-1">
-                  <Text className="text-sm font-medium">Active plan</Text>
-                  <Text className="text-xs text-muted-foreground">
-                    {resolvedPlanMetadata.isActive
-                      ? "This plan is active and drives your current training."
-                      : "This plan is inactive. Turn it on to use it as your active plan."}
-                  </Text>
-                </View>
-                <Switch
-                  checked={resolvedPlanMetadata.isActive}
-                  onCheckedChange={(checked) => {
-                    handlePlanMetadataChange({
-                      ...resolvedPlanMetadata,
-                      isActive: checked,
-                    });
-                  }}
-                  accessibilityLabel="Active plan"
-                />
-              </View>
-            </View>
+            <Text className="text-xs text-muted-foreground">
+              Training plan activation is controlled when you apply a template
+              to your schedule.
+            </Text>
           </View>
         )}
 
@@ -1362,6 +1384,21 @@ export function SinglePageForm({
                 <Text className="text-xs text-muted-foreground">
                   Availability clamp: {noHistoryAvailabilityClampLabel}
                 </Text>
+                {noHistoryFitnessSignal !== null ? (
+                  <Text className="text-xs text-muted-foreground">
+                    Fitness signal: {noHistoryFitnessSignal}%
+                  </Text>
+                ) : null}
+                {noHistoryDemandScore !== null ? (
+                  <Text className="text-xs text-muted-foreground">
+                    Goal demand: {noHistoryDemandScore}%
+                  </Text>
+                ) : null}
+                {projectionRiskScore !== null ? (
+                  <Text className="text-xs text-muted-foreground">
+                    Risk score: {projectionRiskScore}%
+                  </Text>
+                ) : null}
                 {noHistoryReasons.slice(0, 2).map((reason) => (
                   <Text key={reason} className="text-xs text-muted-foreground">
                     - {formatCodeAsSentence(reason)}

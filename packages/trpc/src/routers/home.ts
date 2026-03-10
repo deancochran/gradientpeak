@@ -61,23 +61,56 @@ export const homeRouter = createTRPCRouter({
         : undefined;
 
       // --- 1. Fetch Active Plan ---
-      const { data: plan } = await ctx.supabase
-        .from("user_training_plans" as any)
-        .select(
-          `
-          id,
-          snapshot_structure,
-          training_plan:training_plan_id (name, description)
-        `,
-        )
-        .eq("profile_id", userId)
-        .eq("status", "active")
-        .maybeSingle();
+      const { data: nextPlannedEvent, error: nextPlannedEventError } =
+        await ctx.supabase
+          .from("events")
+          .select("training_plan_id, starts_at")
+          .eq("profile_id", userId)
+          .eq("event_type", "planned_activity")
+          .not("training_plan_id", "is", null)
+          .gte("starts_at", today.toISOString())
+          .order("starts_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+      if (nextPlannedEventError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: nextPlannedEventError.message,
+        });
+      }
+
+      let plan: {
+        id: string;
+        name: string;
+        description: string | null;
+        structure: unknown;
+      } | null = null;
+
+      if (nextPlannedEvent?.training_plan_id) {
+        const { data: activePlan, error: activePlanError } = await ctx.supabase
+          .from("training_plans")
+          .select("id, name, description, structure")
+          .eq("id", nextPlannedEvent.training_plan_id)
+          .or(
+            `profile_id.eq.${userId},is_system_template.eq.true,template_visibility.eq.public`,
+          )
+          .maybeSingle();
+
+        if (activePlanError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: activePlanError.message,
+          });
+        }
+
+        plan = activePlan;
+      }
+
+      const planStructure = (plan?.structure as any) ?? null;
 
       // Extract phase from structure if available
-      const planPhase =
-        ((plan as any)?.snapshot_structure as any)?.periodization
-          ?.currentPhase || null;
+      const planPhase = planStructure?.periodization?.currentPhase ?? null;
 
       // --- 2. Calculate Dates ---
       // For trends: Need 42 days of history + 42 days buffer for CTL seeding
@@ -458,8 +491,8 @@ export const homeRouter = createTRPCRouter({
       const idealFitnessCurve = [];
       let goalMetrics = null;
 
-      if (plan && (plan as any).snapshot_structure) {
-        const structure = (plan as any).snapshot_structure as any;
+      if (planStructure) {
+        const structure = planStructure;
         const periodization = structure.periodization_template;
 
         if (periodization) {
@@ -540,7 +573,6 @@ export const homeRouter = createTRPCRouter({
           : null;
 
       let firstTargetType = undefined;
-      const planStructure = (plan as any)?.snapshot_structure as any;
       if (
         planStructure &&
         planStructure.goals &&
@@ -554,8 +586,8 @@ export const homeRouter = createTRPCRouter({
       return {
         activePlan: plan
           ? {
-              id: (plan as any).id,
-              name: (plan as any).training_plan?.name || "Active Plan",
+              id: plan.id,
+              name: plan.name || "Active Plan",
               phase: planPhase,
               targetType: firstTargetType,
             }

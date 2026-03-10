@@ -25,8 +25,9 @@ import {
   READINESS_CALCULATION,
   DISTANCE_TO_CTL,
   PACE_TO_CTL,
-  TARGET_TYPE_CTL,
   getPaceBaseline,
+  getMaxSustainableCTL,
+  resolveNoHistoryStartingPrior,
 } from "./calibration-constants";
 import {
   buildCurvatureEnvelope,
@@ -39,6 +40,7 @@ import {
   blendDemandWithConfidence,
   computeCompositeReadiness,
   computeDurabilityScore,
+  computePlanningConfidence,
   computeProjectionFeasibilityMetadata,
   computeProjectionPointReadinessScores,
   getDemandRhythmMultiplier,
@@ -69,6 +71,7 @@ export {
   blendDemandWithConfidence,
   computeCompositeReadiness,
   computeDurabilityScore,
+  computePlanningConfidence,
   computeProjectionFeasibilityMetadata,
   computeProjectionPointReadinessScores,
   getDemandRhythmMultiplier,
@@ -140,6 +143,9 @@ export interface NoHistoryAvailabilityContext {
 
 export interface NoHistoryIntensityModel {
   version: string;
+  min_supported_if?: number;
+  max_supported_if?: number;
+  fallback_if?: number;
   weak_if: number;
   strong_if: number;
   conservative_if: number;
@@ -147,8 +153,10 @@ export interface NoHistoryIntensityModel {
 
 export interface NoHistoryAnchorContext {
   history_availability_state: "none" | "sparse" | "rich";
-  goal_tier: NoHistoryGoalTier;
+  goal_tier?: NoHistoryGoalTier;
   weeks_to_event: number;
+  age?: number | null;
+  gender?: "male" | "female" | null;
   goal_targets?: NoHistoryGoalTargetInput[];
   total_horizon_weeks?: number;
   goal_count?: number;
@@ -177,16 +185,23 @@ export type NoHistoryGoalTargetInput =
 export interface NoHistoryEvidence {
   strong_signal_tokens: string[];
   rationale_codes: string[];
+  signal_quality?: number;
+  recent_consistency_marker?: "low" | "moderate" | "high";
+  effort_confidence_marker?: "low" | "moderate" | "high";
+  profile_metric_completeness_marker?: "low" | "moderate" | "high";
 }
 
 export interface NoHistoryFitnessInference {
   fitnessLevel: NoHistoryFitnessLevel;
+  fitnessSignal: number;
   reasons: string[];
 }
 
 export interface NoHistoryProjectionFloor {
   goalTier: NoHistoryGoalTier;
   fitnessLevel: NoHistoryFitnessLevel;
+  fitness_signal_0_1?: number;
+  goal_demand_score_0_1?: number;
   start_ctl_floor: number;
   start_weekly_tss_floor: number;
   target_event_ctl: number;
@@ -207,6 +222,7 @@ export interface NoHistoryAnchorResolution {
     start_weekly_tss: number;
   } | null;
   fitness_level: NoHistoryFitnessLevel | null;
+  fitness_signal_0_1?: number | null;
   fitness_inference_reasons: string[];
   projection_floor_confidence: ProjectionFloorConfidence | null;
   floor_clamped_by_availability: boolean;
@@ -221,6 +237,7 @@ export interface NoHistoryAnchorResolution {
   starting_weekly_tss_for_projection: number | null;
   required_event_demand_range: DemandBand | null;
   required_peak_weekly_tss: DemandBand | null;
+  goal_demand_score_0_1?: number;
   evidence_confidence: EvidenceWeightingResult | null;
   demand_confidence: ProjectionFloorConfidence | null;
   projection_feasibility: ReadinessProjectionFeasibilityMetadata | null;
@@ -228,12 +245,13 @@ export interface NoHistoryAnchorResolution {
 
 const NO_HISTORY_DEFAULT_INTENSITY_MODEL: NoHistoryIntensityModel = {
   version: "no_history_intensity_v1",
+  min_supported_if: 0.68,
+  max_supported_if: 0.75,
+  fallback_if: 0.65,
   weak_if: 0.68,
   strong_if: 0.75,
   conservative_if: 0.65,
 };
-
-const NO_HISTORY_DEFAULT_STARTING_CTL = 0;
 
 function resolveProjectionCalibration(input: {
   calibration?: ProjectionCalibrationConfigInput;
@@ -258,22 +276,6 @@ function resolveProjectionCalibration(input: {
     usedDefaults: true,
   };
 }
-
-const NO_HISTORY_PROJECTION_FLOOR_MATRIX: Record<
-  NoHistoryFitnessLevel,
-  Record<NoHistoryGoalTier, { start_ctl_floor: number }>
-> = {
-  weak: {
-    low: { start_ctl_floor: 20 },
-    medium: { start_ctl_floor: 28 },
-    high: { start_ctl_floor: 35 },
-  },
-  strong: {
-    low: { start_ctl_floor: 30 },
-    medium: { start_ctl_floor: 40 },
-    high: { start_ctl_floor: 50 },
-  },
-};
 
 export function weeklyLoadFromBlockAndBaseline(
   block:
@@ -345,6 +347,11 @@ export function collectNoHistoryEvidence(
   return {
     strong_signal_tokens: [...new Set(strongSignals)],
     rationale_codes: summary?.rationale_codes ?? [],
+    signal_quality: summary?.signal_quality,
+    recent_consistency_marker: summary?.recent_consistency_marker,
+    effort_confidence_marker: summary?.effort_confidence_marker,
+    profile_metric_completeness_marker:
+      summary?.profile_metric_completeness_marker,
   };
 }
 
@@ -355,21 +362,40 @@ export function collectNoHistoryEvidence(
 export function determineNoHistoryFitnessLevel(
   evidence: NoHistoryEvidence,
 ): NoHistoryFitnessInference {
-  if (evidence.strong_signal_tokens.length >= 2) {
+  const markerValue = (marker?: "low" | "moderate" | "high") =>
+    marker === "high" ? 1 : marker === "moderate" ? 0.58 : 0.2;
+  const tokenSupport = clamp01(evidence.strong_signal_tokens.length / 3);
+  const signalQuality = clamp01(evidence.signal_quality ?? 0.35);
+  const consistency = markerValue(evidence.recent_consistency_marker);
+  const effort = markerValue(evidence.effort_confidence_marker);
+  const metrics = markerValue(evidence.profile_metric_completeness_marker);
+  const fitnessSignal = round3(
+    clamp01(
+      tokenSupport * 0.35 +
+        signalQuality * 0.3 +
+        consistency * 0.15 +
+        effort * 0.1 +
+        metrics * 0.1,
+    ),
+  );
+
+  if (fitnessSignal >= 0.62) {
     return {
       fitnessLevel: "strong",
+      fitnessSignal,
       reasons: [
         ...evidence.strong_signal_tokens,
-        "fitness_promoted_to_strong_two_independent_signals",
+        "fitness_promoted_to_strong_supportive_continuous_signal",
       ],
     };
   }
 
   return {
     fitnessLevel: "weak",
+    fitnessSignal,
     reasons: [
       ...evidence.strong_signal_tokens,
-      "fitness_defaulted_to_weak_insufficient_strong_signals",
+      "fitness_defaulted_to_weak_supportive_signal_below_threshold",
     ],
   };
 }
@@ -380,9 +406,18 @@ export function determineNoHistoryFitnessLevel(
 export function deriveNoHistoryProjectionFloor(
   goalTier: NoHistoryGoalTier,
   fitnessLevel: NoHistoryFitnessLevel,
+  goalDemandScore = goalTier === "high"
+    ? 1
+    : goalTier === "medium"
+      ? 0.55
+      : 0.2,
+  fitnessSignal = fitnessLevel === "strong" ? 0.78 : 0.35,
 ): NoHistoryProjectionFloor {
-  const row = NO_HISTORY_PROJECTION_FLOOR_MATRIX[fitnessLevel][goalTier];
-  const startCtlFloor = row.start_ctl_floor;
+  const fitnessBase = 20 + smoothstep01(fitnessSignal) * 10;
+  const fitnessGrowth = 15 + smoothstep01(fitnessSignal) * 5;
+  const startCtlFloor = round1(
+    fitnessBase + fitnessGrowth * smoothstep01(goalDemandScore),
+  );
   const targetEventCtl = round1(
     Math.max(35, Math.min(95, startCtlFloor * 1.85)),
   );
@@ -390,6 +425,8 @@ export function deriveNoHistoryProjectionFloor(
   return {
     goalTier,
     fitnessLevel,
+    fitness_signal_0_1: fitnessSignal,
+    goal_demand_score_0_1: goalDemandScore,
     start_ctl_floor: startCtlFloor,
     start_weekly_tss_floor: deriveWeeklyTssFromCtl(startCtlFloor),
     target_event_ctl: targetEventCtl,
@@ -408,6 +445,12 @@ export function clampNoHistoryFloorByAvailability(
     ...NO_HISTORY_DEFAULT_INTENSITY_MODEL,
     ...intensityModel,
   };
+  const minSupportedIf =
+    mergedIntensityModel.min_supported_if ?? mergedIntensityModel.weak_if;
+  const maxSupportedIf =
+    mergedIntensityModel.max_supported_if ?? mergedIntensityModel.strong_if;
+  const fallbackIf =
+    mergedIntensityModel.fallback_if ?? mergedIntensityModel.conservative_if;
 
   if (!availabilityContext) {
     return {
@@ -452,12 +495,15 @@ export function clampNoHistoryFloorByAvailability(
   );
 
   const intensityFactor =
-    floor.fitnessLevel === "strong"
-      ? mergedIntensityModel.strong_if
-      : mergedIntensityModel.weak_if;
+    minSupportedIf +
+    (maxSupportedIf - minSupportedIf) *
+      smoothstep01(
+        floor.fitness_signal_0_1 ??
+          (floor.fitnessLevel === "strong" ? 0.78 : 0.35),
+      );
   const safeIntensityFactor = Number.isFinite(intensityFactor)
     ? intensityFactor
-    : mergedIntensityModel.conservative_if;
+    : fallbackIf;
 
   const feasibleWeeklyTss = Math.max(
     0,
@@ -473,8 +519,10 @@ export function clampNoHistoryFloorByAvailability(
 
   const reasons = [`availability_training_days_${availableTrainingDays}`];
   if (
-    intensityModel?.weak_if === undefined ||
-    intensityModel?.strong_if === undefined
+    (intensityModel?.min_supported_if === undefined &&
+      intensityModel?.weak_if === undefined) ||
+    (intensityModel?.max_supported_if === undefined &&
+      intensityModel?.strong_if === undefined)
   ) {
     reasons.push("intensity_model_missing_using_conservative_baseline");
   }
@@ -572,6 +620,26 @@ function confidenceToScoreFloor(input: {
   return input.calibration?.confidence_floor_low ?? 0.45;
 }
 
+function smoothstep01(value: number): number {
+  const clamped = clamp01(value);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+export function computeBuildTimeFeasibilityScore(input: {
+  goalTier?: NoHistoryGoalTier;
+  goalDemandScore?: number;
+  weeksToEvent: number;
+}): number {
+  const safeWeeks = roundWeeksToEvent(input.weeksToEvent);
+  const demandScore =
+    input.goalDemandScore ??
+    (input.goalTier === "high" ? 1 : input.goalTier === "medium" ? 0.55 : 0.2);
+  const limited = 6 + demandScore * 6;
+  const full = 8 + demandScore * 8;
+
+  return smoothstep01((safeWeeks - limited) / Math.max(1, full - limited));
+}
+
 export function deriveGoalDemandProfileFromTargets(input: {
   goalTargets: NoHistoryGoalTargetInput[];
   goalTier: NoHistoryGoalTier;
@@ -580,13 +648,11 @@ export function deriveGoalDemandProfileFromTargets(input: {
 }): {
   required_event_demand_range: DemandBand;
   required_peak_weekly_tss: DemandBand;
+  goal_demand_score_0_1: number;
   demand_confidence: ProjectionFloorConfidence;
   minimum_confidence_score: number;
   rationale_codes: string[];
 } {
-  const tierRank =
-    input.goalTier === "low" ? 0 : input.goalTier === "medium" ? 1 : 2;
-  const tierBiasCtl = tierRank * 4;
   const reasons = [
     "demand_model_dynamic_continuous_v1",
     `goal_tier_${input.goalTier}`,
@@ -596,14 +662,44 @@ export function deriveGoalDemandProfileFromTargets(input: {
   const candidateWeights: number[] = [];
   let hasRacePaceTarget = false;
 
+  const thresholdDemandCtl = (input: {
+    modality: "pace" | "power" | "hr";
+    weeksToEvent: number;
+  }): number => {
+    const horizonSupport = smoothstep01((input.weeksToEvent - 4) / 20);
+    const modalityBase =
+      input.modality === "power" ? 56 : input.modality === "pace" ? 53 : 49;
+    const modalityGrowth =
+      input.modality === "power" ? 10 : input.modality === "pace" ? 8 : 6;
+    return modalityBase + modalityGrowth * horizonSupport;
+  };
+
+  const smoothRaceDistanceCtl = (distanceKm: number): number => {
+    const baseCtl =
+      DISTANCE_TO_CTL.DISTANCE_CTL_BASE +
+      DISTANCE_TO_CTL.DISTANCE_CTL_SCALE * Math.log(1 + distanceKm);
+    const enduranceBias =
+      clamp01((distanceKm - 10) / 32) * 4 +
+      clamp01((distanceKm - 42.2) / 57.8) * 5;
+    return baseCtl + enduranceBias;
+  };
+
+  const smoothPaceBoostCtl = (input: {
+    speedKph: number;
+    paceBaseline: number;
+  }): number => {
+    const surplus = Math.max(0, input.speedKph - input.paceBaseline);
+    return Math.min(
+      PACE_TO_CTL.PACE_BOOST_CAP,
+      PACE_TO_CTL.PACE_BOOST_CAP * (1 - Math.exp(-surplus / 3.2)),
+    );
+  };
+
   for (const target of input.goalTargets) {
     if (target.target_type === "race_performance") {
       const distanceKm = Math.max(1, Math.min(100, target.distance_m / 1000));
 
-      // Calculate base CTL from distance using documented formula
-      const distanceCtl =
-        DISTANCE_TO_CTL.DISTANCE_CTL_BASE +
-        DISTANCE_TO_CTL.DISTANCE_CTL_SCALE * Math.log(1 + distanceKm);
+      const distanceCtl = smoothRaceDistanceCtl(distanceKm);
 
       let paceCtlBoost = 0;
 
@@ -614,24 +710,16 @@ export function deriveGoalDemandProfileFromTargets(input: {
       ) {
         const speedKph = (distanceKm * 3600) / target.target_time_s;
 
-        // Use activity-specific pace baseline (default to "run" for NoHistoryGoalTargetInput)
         const paceBaseline = getPaceBaseline("run", distanceKm);
 
-        // Calculate pace boost with documented constants
-        paceCtlBoost = Math.max(
-          0,
-          Math.min(
-            PACE_TO_CTL.PACE_BOOST_CAP,
-            (speedKph - paceBaseline) * PACE_TO_CTL.PACE_BOOST_MULTIPLIER,
-          ),
-        );
+        paceCtlBoost = smoothPaceBoostCtl({ speedKph, paceBaseline });
         hasRacePaceTarget = true;
         reasons.push("race_performance_target_with_pace");
       } else {
         reasons.push("race_performance_target_without_pace");
       }
 
-      targetCtlCandidates.push(distanceCtl + paceCtlBoost + tierBiasCtl);
+      targetCtlCandidates.push(distanceCtl + paceCtlBoost);
       candidateWeights.push(
         1 + Math.min(0.8, distanceKm / 60) + (paceCtlBoost > 0 ? 0.25 : 0),
       );
@@ -639,25 +727,37 @@ export function deriveGoalDemandProfileFromTargets(input: {
     }
 
     if (target.target_type === "pace_threshold") {
-      targetCtlCandidates.push(TARGET_TYPE_CTL.PACE_THRESHOLD + tierBiasCtl);
+      targetCtlCandidates.push(
+        thresholdDemandCtl({
+          modality: "pace",
+          weeksToEvent: input.weeksToEvent,
+        }),
+      );
       candidateWeights.push(1);
       reasons.push("pace_threshold_target_included");
       continue;
     }
 
     if (target.target_type === "power_threshold") {
-      targetCtlCandidates.push(TARGET_TYPE_CTL.POWER_THRESHOLD + tierBiasCtl);
+      targetCtlCandidates.push(
+        thresholdDemandCtl({
+          modality: "power",
+          weeksToEvent: input.weeksToEvent,
+        }),
+      );
       candidateWeights.push(1.05);
       reasons.push("power_threshold_target_included");
       continue;
     }
 
-    targetCtlCandidates.push(TARGET_TYPE_CTL.HR_THRESHOLD + tierBiasCtl);
+    targetCtlCandidates.push(
+      thresholdDemandCtl({ modality: "hr", weeksToEvent: input.weeksToEvent }),
+    );
     candidateWeights.push(0.95);
     reasons.push("hr_threshold_target_included");
   }
 
-  let intrinsicDemandCtl = 48 + tierRank * 8;
+  let intrinsicDemandCtl = 54;
   if (targetCtlCandidates.length === 0) {
     reasons.push("goal_targets_missing_using_dynamic_tier_baseline");
   } else {
@@ -675,15 +775,17 @@ export function deriveGoalDemandProfileFromTargets(input: {
         : "single_goal_demand_applied",
     );
   }
+  const continuousDemandScore = smoothstep01((intrinsicDemandCtl - 42) / 36);
+  intrinsicDemandCtl += -2 + continuousDemandScore * 6;
 
   const weeks = roundWeeksToEvent(input.weeksToEvent);
   const horizonPressureScale =
     input.calibration?.demand_tier_time_pressure_scale ?? 1;
-  const horizonPressure = Math.max(
-    -0.35,
-    Math.min(0.7, ((20 - weeks) / 20) * horizonPressureScale),
-  );
-  const horizonDemandMultiplier = 1 + horizonPressure * 0.12;
+  const shortHorizonPressure = clamp01((18 - weeks) / 12) * 0.09;
+  const longHorizonRelaxation = clamp01((weeks - 30) / 28) * 0.035;
+  const horizonDemandMultiplier =
+    1 + shortHorizonPressure * horizonPressureScale - longHorizonRelaxation;
+  const horizonPressure = shortHorizonPressure - longHorizonRelaxation;
   reasons.push(`event_horizon_weeks_${weeks}`);
   reasons.push(
     horizonPressure > 0.25
@@ -698,8 +800,13 @@ export function deriveGoalDemandProfileFromTargets(input: {
   );
   const targetPeakWeeklyTss = targetEventCtl * 7;
 
+  const horizonConfidenceSignal = clamp01((weeks - 8) / 12);
   const confidence: ProjectionFloorConfidence =
-    weeks >= 16 ? "high" : weeks >= 10 ? "medium" : "low";
+    horizonConfidenceSignal >= 0.7
+      ? "high"
+      : horizonConfidenceSignal >= 0.35
+        ? "medium"
+        : "low";
   const intrinsicConfidenceFloor = clamp01((targetEventCtl - 45) / 55);
   const demandBasedConfidenceFloor = Math.min(
     0.94,
@@ -717,6 +824,7 @@ export function deriveGoalDemandProfileFromTargets(input: {
   return {
     required_event_demand_range: toDemandBand(targetEventCtl),
     required_peak_weekly_tss: toDemandBand(targetPeakWeeklyTss),
+    goal_demand_score_0_1: continuousDemandScore,
     demand_confidence: confidence,
     minimum_confidence_score: minimumConfidenceScore,
     rationale_codes: [...new Set(reasons)],
@@ -787,11 +895,47 @@ export function resolveNoHistoryAnchor(
   context: NoHistoryAnchorContext,
   calibration?: TrainingPlanCalibrationConfig["no_history"],
 ): NoHistoryAnchorResolution {
+  const startingPrior = resolveNoHistoryStartingPrior({ age: context.age });
+  const resolvedGoalTier =
+    context.goal_tier ??
+    deriveNoHistoryGoalTierFromTargets(context.goal_targets ?? []);
   const evidence = collectNoHistoryEvidence(context);
   const fitness = determineNoHistoryFitnessLevel(evidence);
+  const hasStartingCtlOverride =
+    Number.isFinite(context.starting_ctl_override) &&
+    (context.starting_ctl_override ?? 0) >= 0;
+  const startingCtlForProjection = round1(
+    hasStartingCtlOverride
+      ? (context.starting_ctl_override ?? startingPrior.starting_ctl)
+      : startingPrior.starting_ctl,
+  );
+  const startingWeeklyTssForProjection = deriveWeeklyTssFromCtl(
+    startingCtlForProjection,
+  );
+  const rawGoalDemandProfile = deriveGoalDemandProfileFromTargets({
+    goalTargets: context.goal_targets ?? [],
+    goalTier: resolvedGoalTier,
+    weeksToEvent: context.weeks_to_event,
+    calibration,
+  });
+  const maxSustainableCtl = getMaxSustainableCTL(context.age ?? undefined);
+  const goalDemandProfile =
+    rawGoalDemandProfile.required_event_demand_range.target > maxSustainableCtl
+      ? {
+          ...rawGoalDemandProfile,
+          required_event_demand_range: toDemandBand(maxSustainableCtl),
+          required_peak_weekly_tss: toDemandBand(maxSustainableCtl * 7),
+          rationale_codes: [
+            ...rawGoalDemandProfile.rationale_codes,
+            "goal_demand_capped_by_age_safe_ctl_ceiling",
+          ],
+        }
+      : rawGoalDemandProfile;
   const floor = deriveNoHistoryProjectionFloor(
-    context.goal_tier,
+    resolvedGoalTier,
     fitness.fitnessLevel,
+    goalDemandProfile.goal_demand_score_0_1,
+    fitness.fitnessSignal,
   );
   const clamped = clampNoHistoryFloorByAvailability(
     floor,
@@ -799,15 +943,19 @@ export function resolveNoHistoryAnchor(
     context.intensity_model,
   );
   const periodizationFeasibility = classifyBuildTimeFeasibility(
-    context.goal_tier,
+    resolvedGoalTier,
     context.weeks_to_event,
   );
+  const buildTimeFeasibilityScore = computeBuildTimeFeasibilityScore({
+    goalDemandScore: goalDemandProfile.goal_demand_score_0_1,
+    weeksToEvent: context.weeks_to_event,
+  });
   let confidence = mapFeasibilityToConfidence(periodizationFeasibility);
   const confidenceReasons: string[] = [];
 
-  if (fitness.fitnessLevel === "weak" && confidence === "high") {
+  if (fitness.fitnessSignal < 0.45 && confidence === "high") {
     confidence = "medium";
-    confidenceReasons.push("confidence_downgraded_weak_fitness_inference");
+    confidenceReasons.push("confidence_downgraded_low_fitness_signal");
   }
 
   if ((context.goal_count ?? 1) > 1) {
@@ -828,24 +976,6 @@ export function resolveNoHistoryAnchor(
     confidence = "medium";
     confidenceReasons.push("confidence_downgraded_availability_clamped");
   }
-
-  const hasStartingCtlOverride =
-    Number.isFinite(context.starting_ctl_override) &&
-    (context.starting_ctl_override ?? 0) >= 0;
-  const startingCtlForProjection = round1(
-    hasStartingCtlOverride
-      ? (context.starting_ctl_override ?? NO_HISTORY_DEFAULT_STARTING_CTL)
-      : NO_HISTORY_DEFAULT_STARTING_CTL,
-  );
-  const startingWeeklyTssForProjection = deriveWeeklyTssFromCtl(
-    startingCtlForProjection,
-  );
-  const goalDemandProfile = deriveGoalDemandProfileFromTargets({
-    goalTargets: context.goal_targets ?? [],
-    goalTier: context.goal_tier,
-    weeksToEvent: context.weeks_to_event,
-    calibration,
-  });
   const evidenceConfidence = deriveEvidenceWeighting({
     historyAvailabilityState: context.history_availability_state,
     rationaleCodes: evidence.rationale_codes,
@@ -861,6 +991,7 @@ export function resolveNoHistoryAnchor(
   const effectiveEvidenceScore = Math.max(
     evidenceConfidence.score,
     demandConfidenceFloor,
+    0.45 + buildTimeFeasibilityScore * 0.35,
     goalDemandProfile.minimum_confidence_score,
   );
   const enrichedEvidenceReasons =
@@ -881,19 +1012,21 @@ export function resolveNoHistoryAnchor(
         }
       : null,
     fitness_level: fitness.fitnessLevel,
+    fitness_signal_0_1: fitness.fitnessSignal,
     fitness_inference_reasons: [
       ...fitness.reasons,
       ...evidence.rationale_codes,
       ...goalDemandProfile.rationale_codes,
       ...clamped.reasons,
+      ...startingPrior.rationale_codes,
       ...confidenceReasons,
       hasStartingCtlOverride
         ? "starting_ctl_override_applied"
-        : "starting_ctl_defaulted_never_trained",
+        : "starting_ctl_defaulted_shared_prior",
     ],
     projection_floor_confidence: confidence,
     floor_clamped_by_availability: clamped.floor_clamped_by_availability,
-    projection_floor_tier: context.goal_tier,
+    projection_floor_tier: resolvedGoalTier,
     starting_state_is_prior: projectionFloorApplied,
     target_event_ctl: goalDemandProfile.required_event_demand_range.target,
     weeks_to_event: roundWeeksToEvent(context.weeks_to_event),
@@ -911,6 +1044,7 @@ export function resolveNoHistoryAnchor(
     starting_weekly_tss_for_projection: startingWeeklyTssForProjection,
     required_event_demand_range: goalDemandProfile.required_event_demand_range,
     required_peak_weekly_tss: goalDemandProfile.required_peak_weekly_tss,
+    goal_demand_score_0_1: goalDemandProfile.goal_demand_score_0_1,
     evidence_confidence: {
       score: effectiveEvidenceScore,
       state: evidenceConfidence.state,
@@ -1191,11 +1325,13 @@ export interface DeterministicProjectionPayload {
     | "projection_floor_applied"
     | "projection_floor_values"
     | "fitness_level"
+    | "fitness_signal_0_1"
     | "fitness_inference_reasons"
     | "projection_floor_confidence"
     | "floor_clamped_by_availability"
     | "starting_ctl_for_projection"
     | "starting_weekly_tss_for_projection"
+    | "goal_demand_score_0_1"
     | "required_event_demand_range"
     | "required_peak_weekly_tss"
     | "demand_confidence"
@@ -1203,14 +1339,23 @@ export interface DeterministicProjectionPayload {
     | "projection_feasibility"
   >;
   readiness_score: number;
+  physiological_readiness_score?: number;
   readiness_confidence?: number;
+  planning_confidence?: number;
+  planning_confidence_reasons?: string[];
   readiness_rationale_codes?: string[];
   capacity_envelope?: {
     envelope_score: number;
     envelope_state: "inside" | "edge" | "outside";
     limiting_factors: string[];
+    limiting_factor_scores?: {
+      over_high: number;
+      under_low: number;
+      over_ramp: number;
+    };
   };
   feasibility_band?: FeasibilityBand;
+  risk_score?: number;
   risk_level?: "low" | "moderate" | "high" | "extreme";
   risk_flags?: string[];
   caps_applied?: string[];
@@ -1867,7 +2012,19 @@ function serializeObjectiveContributionsPayload(input: {
 }
 
 function applyWeeklyTssCaps(input: WeeklyTssCapInput): WeeklyTssCapResult {
-  const rampCaps = resolveInvariantRampCaps();
+  const effectiveRampCaps = resolveEffectiveRampCaps({
+    effectiveControls: input.effectiveControls,
+  });
+  const rampCaps = {
+    max_weekly_tss_ramp_pct: Math.min(
+      resolveInvariantRampCaps().max_weekly_tss_ramp_pct,
+      effectiveRampCaps.max_weekly_tss_ramp_pct,
+    ),
+    max_ctl_ramp_per_week: Math.min(
+      resolveInvariantRampCaps().max_ctl_ramp_per_week,
+      effectiveRampCaps.max_ctl_ramp_per_week,
+    ),
+  };
   const maxAllowedByTssRamp = round1(
     input.previousWeekTss * (1 + rampCaps.max_weekly_tss_ramp_pct / 100),
   );
@@ -2626,7 +2783,9 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
   });
   const normalizedGoalReadiness =
     weightedGoalCount <= 0 ? 0 : weightedGoalReadiness / weightedGoalCount;
-  const preparednessTowardTarget = clamp01(normalizedGoalReadiness / 100);
+  const preparednessTowardTarget = normalizeReadinessTowardTarget(
+    normalizedGoalReadiness,
+  );
   const preparednessPrimary = preparednessTowardTarget;
   const preparednessSecondary = preparednessTowardTarget;
 
@@ -2801,13 +2960,43 @@ function resolveSparsityPenalty(
 
 function resolveRiskLevel(input: {
   feasibilityBand: FeasibilityBand;
-}): "low" | "moderate" | "high" | "extreme" {
-  if (input.feasibilityBand === "infeasible") return "extreme";
-  if (input.feasibilityBand === "nearly_impossible") return "high";
-  if (input.feasibilityBand === "aggressive") return "high";
-  if (input.feasibilityBand === "stretch") return "moderate";
+  projectionFeasibilityScore?: number;
+  envelopeScore?: number;
+  clampCount?: number;
+}): { riskScore: number; riskLevel: "low" | "moderate" | "high" | "extreme" } {
+  const bandPenalty =
+    input.feasibilityBand === "infeasible"
+      ? 90
+      : input.feasibilityBand === "nearly_impossible"
+        ? 72
+        : input.feasibilityBand === "aggressive"
+          ? 58
+          : input.feasibilityBand === "stretch"
+            ? 40
+            : 18;
+  const readinessPenalty = Math.max(
+    0,
+    100 - (input.projectionFeasibilityScore ?? 75),
+  );
+  const envelopePenalty = Math.max(0, 100 - (input.envelopeScore ?? 85));
+  const clampPenalty = Math.min(25, (input.clampCount ?? 0) * 4);
+  const riskScore = Math.round(
+    bandPenalty * 0.45 +
+      readinessPenalty * 0.3 +
+      envelopePenalty * 0.2 +
+      clampPenalty * 0.05,
+  );
 
-  return "low";
+  const riskLevel =
+    riskScore >= 80
+      ? "extreme"
+      : riskScore >= 58
+        ? "high"
+        : riskScore >= 34
+          ? "moderate"
+          : "low";
+
+  return { riskScore, riskLevel };
 }
 
 function toDateTimeUtc(date: string): string {
@@ -3562,10 +3751,21 @@ export function buildDeterministicProjectionPayload(
     confidence: evidenceConfidenceScore,
     projectionWeeks: Math.max(1, microcycles.length),
   });
+  const clampPressure =
+    (tssRampClampWeeks + ctlRampClampWeeks) / Math.max(1, microcycles.length);
+  const planningConfidence = computePlanningConfidence({
+    evidence_score: evidenceConfidenceScore * 100,
+    evidence_state: noHistory?.evidence_confidence?.state,
+    unmet_ratio: projectionFeasibility.demand_gap.unmet_ratio,
+    clamp_pressure: clampPressure,
+    projection_weeks: Math.max(1, microcycles.length),
+    goal_count: goalMarkers.length,
+  });
   const pointReadinessForScoring = computeProjectionPointReadinessScores({
     points,
     goals: goalMarkers,
     timeline_calibration: calibration.readiness_timeline,
+    athlete_gender: input.no_history_context?.gender,
   });
   const pointsForScoring = points.map((point, index) => ({
     ...point,
@@ -3639,6 +3839,7 @@ export function buildDeterministicProjectionPayload(
     })),
     starting_ctl: startingCtl,
     evidence_state: noHistory?.evidence_confidence?.state,
+    evidence_score: evidenceConfidenceScore,
     envelope_penalties: calibration.envelope_penalties,
   });
   const compositeReadiness = computeCompositeReadiness({
@@ -3667,7 +3868,14 @@ export function buildDeterministicProjectionPayload(
       };
     }),
     timeline_calibration: calibration.readiness_timeline,
+    athlete_gender: input.no_history_context?.gender,
   });
+  const physiologicalReadinessScore = round1(
+    computeWeightedGoalDateReadiness({
+      points: pointsForScoring,
+      goals: goalMarkers,
+    }),
+  );
   const pointsWithReadiness = pointsForScoring.map((point, i) => ({
     ...point,
     readiness_score: finalPointReadinessScores[i] ?? point.readiness_score,
@@ -3681,8 +3889,16 @@ export function buildDeterministicProjectionPayload(
       specificity: round3(compositeReadiness.durability_score / 100),
       execution_confidence: round3(compositeReadiness.evidence_score / 100),
     },
-    readiness_rationale_codes: compositeReadiness.readiness_rationale_codes,
+    readiness_rationale_codes: [
+      ...new Set([
+        ...(projectionFeasibility.readiness_rationale_codes ?? []),
+        ...compositeReadiness.readiness_rationale_codes,
+      ]),
+    ],
   };
+
+  const readinessRationaleCodes =
+    cappedProjectionFeasibility.readiness_rationale_codes;
 
   const goalFeasibilityById = new Map(
     goalGdi.map((goal) => [goal.goal_id, goal.feasibility_band]),
@@ -3723,14 +3939,21 @@ export function buildDeterministicProjectionPayload(
   const riskFlags = [
     `feasibility_band_${planGdi.feasibility_band}`,
     ...projectionFeasibility.dominant_limiters,
-    `capacity_envelope_${capacityEnvelope.envelope_state}`,
+    ...(capacityEnvelope.envelope_score < 65
+      ? ["capacity_envelope_score_outside"]
+      : capacityEnvelope.envelope_score < 85
+        ? ["capacity_envelope_score_edge"]
+        : ["capacity_envelope_score_inside"]),
     ...capacityEnvelope.limiting_factors.map(
       (factor) => `capacity_envelope_${factor}`,
     ),
   ];
   const uniqueRiskFlags = [...new Set(riskFlags)];
-  const riskLevel = resolveRiskLevel({
+  const riskAssessment = resolveRiskLevel({
     feasibilityBand: planGdi.feasibility_band,
+    projectionFeasibilityScore: projectionFeasibility.readiness_score,
+    envelopeScore: capacityEnvelope.envelope_score,
+    clampCount: tssRampClampWeeks + ctlRampClampWeeks,
   });
 
   const optimizedPayload: DeterministicProjectionPayload = {
@@ -3758,6 +3981,7 @@ export function buildDeterministicProjectionPayload(
       projection_floor_applied: noHistory?.projection_floor_applied ?? false,
       projection_floor_values: noHistory?.projection_floor_values ?? null,
       fitness_level: noHistory?.fitness_level ?? null,
+      fitness_signal_0_1: noHistory?.fitness_signal_0_1 ?? undefined,
       fitness_inference_reasons: noHistory?.fitness_inference_reasons ?? [],
       projection_floor_confidence:
         noHistory?.projection_floor_confidence ?? null,
@@ -3767,6 +3991,7 @@ export function buildDeterministicProjectionPayload(
         noHistory?.starting_ctl_for_projection ?? null,
       starting_weekly_tss_for_projection:
         noHistory?.starting_weekly_tss_for_projection ?? null,
+      goal_demand_score_0_1: noHistory?.goal_demand_score_0_1 ?? undefined,
       required_event_demand_range:
         noHistory?.required_event_demand_range ?? null,
       required_peak_weekly_tss: noHistory?.required_peak_weekly_tss ?? null,
@@ -3775,11 +4000,15 @@ export function buildDeterministicProjectionPayload(
       projection_feasibility: cappedProjectionFeasibility,
     },
     readiness_score: compositeReadiness.readiness_score,
+    physiological_readiness_score: physiologicalReadinessScore,
     readiness_confidence: compositeReadiness.readiness_confidence,
+    planning_confidence: planningConfidence.score,
+    planning_confidence_reasons: planningConfidence.rationale_codes,
     capacity_envelope: capacityEnvelope,
-    readiness_rationale_codes: compositeReadiness.readiness_rationale_codes,
+    readiness_rationale_codes: readinessRationaleCodes,
     feasibility_band: planGdi.feasibility_band,
-    risk_level: riskLevel,
+    risk_score: riskAssessment.riskScore,
+    risk_level: riskAssessment.riskLevel,
     risk_flags: uniqueRiskFlags,
     caps_applied: [],
     projection_diagnostics: projectionDiagnostics,
@@ -3952,6 +4181,16 @@ function round1(value: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+const TARGET_GOAL_READINESS_SCORE = 100;
+
+function normalizeReadinessTowardTarget(readinessScore: number): number {
+  const readinessGap = Math.max(
+    0,
+    TARGET_GOAL_READINESS_SCORE - Math.max(0, readinessScore),
+  );
+  return clamp01(1 - readinessGap / TARGET_GOAL_READINESS_SCORE);
 }
 
 function clampNumber(

@@ -9,17 +9,18 @@ export const ROUTES = {
   // Plan Tab Routes
   PLAN: {
     INDEX: "/(internal)/(tabs)/plan" as const,
+    CALENDAR: "/(internal)/(tabs)/calendar" as const,
     CREATE: "/create-activity-plan" as const,
-    LIBRARY: "/plan-library" as const,
     SCHEDULED: "/scheduled-activities-list" as const,
 
     // Training Plan Routes
     TRAINING_PLAN: {
+      LIST: "/training-plans-list" as const,
       DETAIL: (planId: string) => `/training-plan-detail?id=${planId}` as const,
       CREATE: "/training-plan-create" as const,
       EDIT: "/training-plan-edit" as const,
     },
-    ACTIVE_PLAN: "/active-plan" as const,
+    TRAINING_PREFERENCES: "/training-preferences" as const,
 
     // Create Activity Plan Routes
     CREATE_ACTIVITY_PLAN: {
@@ -31,6 +32,11 @@ export const ROUTES = {
       `/activity-plan-detail?id=${planId}` as const,
     ACTIVITY_DETAIL: (activityId: string) =>
       `/scheduled-activity-detail?id=${activityId}` as const,
+    EVENT_DETAIL: (eventId: string, mode?: "view" | "edit") =>
+      mode
+        ? (`/event-detail?id=${eventId}&mode=${mode}` as const)
+        : (`/event-detail?id=${eventId}` as const),
+    GOAL_DETAIL: (goalId: string) => `/goal-detail?id=${goalId}` as const,
   },
 
   // Activities Routes
@@ -49,10 +55,7 @@ export const ROUTES = {
 
   // Other Tab Routes
   DISCOVER: "/(internal)/(tabs)/discover" as const,
-  LIBRARY: "/(internal)/(tabs)/library" as const,
-  LIBRARY_WITH_RESOURCE: (
-    resource: "activity_plans" | "training_plans" | "activities" | "routes",
-  ) => `/(internal)/(tabs)/library?resource=${resource}` as const,
+  CALENDAR: "/(internal)/(tabs)/calendar" as const,
 
   // Profile
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,

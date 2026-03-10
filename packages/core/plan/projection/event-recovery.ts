@@ -13,6 +13,7 @@
 
 import type { GoalTargetV2 } from "../../schemas/training_plan_structure";
 import type { ProjectionPointReadinessInput } from "./readiness";
+import { getGenderAdjustedRecoveryLoadMultiplier } from "../calibration-constants";
 
 /**
  * Utility: Round to 1 decimal place
@@ -64,6 +65,7 @@ export interface EventRecoveryInput {
   target: GoalTargetV2;
   projected_ctl_at_event: number;
   projected_atl_at_event: number;
+  athlete_gender?: "male" | "female" | null;
 }
 
 /**
@@ -77,6 +79,7 @@ export interface PostEventFatigueInput {
     targets: GoalTargetV2[];
     projected_ctl: number;
     projected_atl: number;
+    athlete_gender?: "male" | "female" | null;
   };
 }
 
@@ -105,22 +108,11 @@ function estimateRaceIntensity(input: {
   activity: "run" | "bike" | "swim" | "other";
 }): number {
   const durationHours = input.duration_s / 3600;
-
-  // Base intensity from duration
-  let baseIntensity = 100;
-  if (durationHours > 24) {
-    baseIntensity = 70;
-  } else if (durationHours > 12) {
-    baseIntensity = 75;
-  } else if (durationHours > 6) {
-    baseIntensity = 80;
-  } else if (durationHours > 3) {
-    baseIntensity = 85;
-  } else if (durationHours > 1) {
-    baseIntensity = 90;
-  } else {
-    baseIntensity = 95;
-  }
+  const baseIntensity = clamp(
+    96 - Math.log1p(Math.max(0.1, durationHours)) * 7.5,
+    70,
+    96,
+  );
 
   // Adjust for activity type
   const activityFactor =
@@ -133,6 +125,34 @@ function estimateRaceIntensity(input: {
           : 0.85;
 
   return Math.round(baseIntensity * activityFactor);
+}
+
+function computeThresholdRecoveryProfile(input: {
+  durationHours: number;
+  modalityFactor: number;
+  intensityScore: number;
+  genderMultiplier: number;
+}): EventRecoveryProfile {
+  const recoveryLoad =
+    input.modalityFactor *
+    Math.pow(Math.max(0.1, input.durationHours), 0.65) *
+    (0.7 + input.intensityScore / 100) *
+    input.genderMultiplier;
+  const recoveryDaysFull = Math.round(clamp(1.5 + 4.5 * recoveryLoad, 2, 14));
+  const recoveryDaysFunctional = Math.round(
+    clamp(recoveryDaysFull * 0.42, 1, 7),
+  );
+  const fatigueIntensity = Math.round(clamp(50 + 22 * recoveryLoad, 55, 85));
+  const atlSpikeFactor = Number(
+    clamp(1 + recoveryLoad * 0.28, 1.05, 1.8).toFixed(2),
+  );
+
+  return {
+    recovery_days_full: recoveryDaysFull,
+    recovery_days_functional: recoveryDaysFunctional,
+    fatigue_intensity: fatigueIntensity,
+    atl_spike_factor: atlSpikeFactor,
+  };
 }
 
 /**
@@ -157,6 +177,9 @@ export function computeEventRecoveryProfile(
   input: EventRecoveryInput,
 ): EventRecoveryProfile {
   const { target } = input;
+  const genderRecoveryMultiplier = getGenderAdjustedRecoveryLoadMultiplier(
+    input.athlete_gender,
+  );
 
   // Handle race_performance targets
   if (target.target_type === "race_performance") {
@@ -181,14 +204,19 @@ export function computeEventRecoveryProfile(
     // Adjust for intensity (harder efforts need more recovery)
     const intensityFactor = intensity / 100;
     const recoveryDaysFull = Math.round(
-      baseDays * (0.7 + intensityFactor * 0.3),
+      baseDays * (0.7 + intensityFactor * 0.3) * genderRecoveryMultiplier,
     );
 
     // Functional recovery is ~40% of full recovery
-    const recoveryDaysFunctional = Math.round(baseDays * 0.4);
+    const recoveryDaysFunctional = Math.round(
+      baseDays * 0.4 * Math.sqrt(genderRecoveryMultiplier),
+    );
 
     // ATL spike factor: longer events cause bigger spikes
-    const atlSpikeFactor = Math.min(2.5, 1 + durationHours * 0.15);
+    const atlSpikeFactor = Math.min(
+      2.5,
+      (1 + durationHours * 0.15) * (0.96 + genderRecoveryMultiplier * 0.04),
+    );
 
     return {
       recovery_days_full: recoveryDaysFull,
@@ -201,37 +229,33 @@ export function computeEventRecoveryProfile(
   // Handle pace_threshold targets
   if (target.target_type === "pace_threshold") {
     const testDurationHours = target.test_duration_s / 3600;
-    const baseDays = 3 + testDurationHours * 2;
-
-    return {
-      recovery_days_full: Math.round(baseDays),
-      recovery_days_functional: Math.round(baseDays * 0.35),
-      fatigue_intensity: 75,
-      atl_spike_factor: 1.2,
-    };
+    return computeThresholdRecoveryProfile({
+      durationHours: testDurationHours,
+      modalityFactor: 1,
+      intensityScore: 78,
+      genderMultiplier: genderRecoveryMultiplier,
+    });
   }
 
   // Handle power_threshold targets
   if (target.target_type === "power_threshold") {
     const testDurationHours = target.test_duration_s / 3600;
-    const baseDays = 3 + testDurationHours * 2;
-
-    return {
-      recovery_days_full: Math.round(baseDays),
-      recovery_days_functional: Math.round(baseDays * 0.35),
-      fatigue_intensity: 75,
-      atl_spike_factor: 1.2,
-    };
+    return computeThresholdRecoveryProfile({
+      durationHours: testDurationHours,
+      modalityFactor: 0.94,
+      intensityScore: 80,
+      genderMultiplier: genderRecoveryMultiplier,
+    });
   }
 
   // Handle hr_threshold targets
   if (target.target_type === "hr_threshold") {
-    return {
-      recovery_days_full: 3,
-      recovery_days_functional: 1,
-      fatigue_intensity: 65,
-      atl_spike_factor: 1.1,
-    };
+    return computeThresholdRecoveryProfile({
+      durationHours: 0.33,
+      modalityFactor: 0.82,
+      intensityScore: 68,
+      genderMultiplier: genderRecoveryMultiplier,
+    });
   }
 
   // Fallback (should never reach here with proper typing)
@@ -289,6 +313,7 @@ export function computePostEventFatiguePenalty(
     target: primaryTarget,
     projected_ctl_at_event: input.eventGoal.projected_ctl,
     projected_atl_at_event: input.eventGoal.projected_atl,
+    athlete_gender: input.eventGoal.athlete_gender,
   });
 
   // Exponential decay curve (simple, no bi-phasic complexity)

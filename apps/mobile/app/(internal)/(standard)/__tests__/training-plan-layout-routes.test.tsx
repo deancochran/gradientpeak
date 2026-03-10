@@ -49,7 +49,8 @@ describe("standard layout training-plan route declarations", () => {
 
     expect(routeNames).toEqual(
       expect.arrayContaining([
-        "training-plan",
+        "training-plan-detail",
+        "training-plans-list",
         "training-plan-create",
         "training-plan-edit",
       ]),
@@ -68,7 +69,6 @@ describe("standard layout training-plan route declarations", () => {
         "training-plan-method-selector",
         "training-plan-wizard",
         "training-plan-review",
-        "training-plans-list",
       ]),
     );
   });

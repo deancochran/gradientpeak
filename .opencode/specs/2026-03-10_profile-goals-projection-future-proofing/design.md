@@ -6,11 +6,13 @@ The application should be able to accept a wide range of athlete contexts and st
 
 The current system has the right intent but the wrong long-term boundary. `@repo/core` already contains a richer typed target model for projections, while persisted `profile_goals` records remain flatter and more ambiguous. This creates translation heuristics, hidden assumptions, and lossy fallbacks between storage, API, and calculation layers.
 
+This improvement may assume a database reset and fresh seed data. The design should prefer a clean canonical contract over compatibility shims, legacy mirrors, migration adapters, or transitional versioning.
+
 The target architecture is a canonical athlete-planning domain made of four stable concepts:
 
 1. **Goal**: the user's intent, priority, timing, and ownership.
 2. **Goal Objective**: a typed target payload that fully describes what success means.
-3. **Athlete Snapshot**: the athlete's measurable capability, constraints, and context.
+3. **Athlete Snapshot**: the athlete's measurable capability, constraints, and context. In code/planning internals this maps to `AthleteCapabilitySnapshot`.
 4. **Preference Profile**: the athlete's training preferences, availability, and planning tolerances.
 
 Projection and recommendation logic should consume those canonical inputs directly and return plan-level and goal-level outputs that distinguish:
@@ -36,9 +38,19 @@ Projection and recommendation logic should consume those canonical inputs direct
 
 The system should persist enough structured data so that projections do not need to infer discipline, units, or distance from `title`, `goal_type`, or `target_metric` strings.
 
+For this project, canonical shapes should be adopted directly rather than introduced through compatibility-safe dual representations.
+
 ### B. User intent should stay separate from engine policy
 
 Stable user-facing preferences should not be stored as a thin alias of the internal training-plan creation config. User settings, engine calibration, and generated planning diagnostics are different concerns and should remain separate over time.
+
+This also applies to goal ambition semantics. The system should distinguish between:
+
+- how aggressively training load ramps,
+- how risk-tolerant the optimizer is,
+- and how much surplus beyond the stated goal the athlete wants to optimize for.
+
+Those are related but not identical preferences.
 
 ### C. Capability modeling should be continuous and sport-aware
 
@@ -89,7 +101,7 @@ The goal record should remain simple enough for current CRUD flows.
 
 ### B. Goal Objective
 
-The objective describes what the athlete is trying to achieve. It should be a versioned discriminated union that can grow over time.
+The objective describes what the athlete is trying to achieve. It should be a discriminated union that can grow over time.
 
 Initial supported families should include:
 
@@ -126,14 +138,36 @@ Preferences should represent how the athlete wants to train, not how the engine 
 - recovery conservatism,
 - workout density preferences,
 - plan churn tolerance,
-- event prioritization behavior.
+- event prioritization behavior,
+- target surplus preference.
+
+`target surplus preference` should be continuous, not bucketed. It should represent how much the athlete wants the engine to optimize beyond the stated goal target when doing so is feasible and safe.
+
+The preference profile should be normalized around a small number of stable user-intent concepts rather than exposing the full training-plan creation config shape. The preferred long-term structure is:
+
+1. `availability`: when training can happen.
+2. `dose_limits`: how much training can fit.
+3. `training_style`: how the athlete prefers progression and week shape to feel.
+4. `recovery_preferences`: how protective the plan should be around fatigue and post-goal downtime.
+5. `adaptation_preferences`: how much the plan should react to recent execution and how much churn is acceptable.
+6. `goal_strategy_preferences`: how the athlete wants the planner to trade off reliability, priority, and bounded upside beyond the target.
+
+The following should not be treated as first-class user preferences even if they currently live in adjacent settings/config objects:
+
+- optimizer search policy,
+- internal curve-shaping controls,
+- model confidence knobs,
+- provenance/diagnostic payloads,
+- field locks and workflow state.
+
+Those belong to internal planner policy, derived athlete capability, or request-scoped diagnostics.
 
 ## 5. Functional Requirements
 
 ### A. Goal representation
 
 - A goal must support a first-class `activity_category` or equivalent discipline field.
-- A goal must support a typed target payload with versioning.
+- A goal must support a typed target payload.
 - A goal must support explicit source attribution for manual and imported flows.
 - A goal must support either explicit target timing or event-derived timing with a clear invariant.
 - A goal objective must be rich enough to derive a continuous demand profile rather than only a categorical goal type.
@@ -146,6 +180,10 @@ Preferences should represent how the athlete wants to train, not how the engine 
 - Projection must support multiple simultaneous goals.
 - Projection must support per-sport rolling load state and discipline-specific evidence quality.
 - Projection must support method-aware load provenance (`power`, `pace`, `swim_threshold`, `heart_rate`, `manual`).
+- Projection must support a continuous target-surplus preference that modifies internal optimization targets without changing the user-visible goal value.
+- Projection must distinguish profile-level preference defaults from plan-level overrides.
+- Projection must treat athlete capability/confidence as derived input, not as a user-edited preference.
+- Projection must use canonical persisted shapes directly rather than rebuilding canonical meaning from legacy compatibility fields.
 
 ### C. Projection outputs
 
@@ -158,6 +196,7 @@ Preferences should represent how the athlete wants to train, not how the engine 
 - Return recommendation ranges in both load terms and user-facing dose terms.
 - Return fallback mode, confidence breakdown, and calculation provenance.
 - Return per-goal limiter shares and plain-language change levers where possible.
+- Return whether surplus optimization was applied and the effective internal target used for scoring.
 
 ## 6. Modeling Requirements
 
@@ -173,6 +212,14 @@ The projection engine should prefer these patterns when expanding or replacing e
 - uncertainty propagation over point-estimate-only scoring,
 - partial transfer coefficients over all-or-nothing cross-sport assumptions.
 
+Preference modeling should follow parallel normalization rules:
+
+- one stable user-facing concept per control,
+- no duplicated ambition/risk semantics across multiple settings,
+- profile defaults separate from plan-specific overrides,
+- user-editable intent separate from engine policy and diagnostics,
+- constraints expressed in lived-experience terms where possible.
+
 ### B. Current calculation weaknesses to correct
 
 The current system contains several patterns that should be reduced over time:
@@ -182,7 +229,21 @@ The current system contains several patterns that should be reduced over time:
 - hard feasibility thresholds that create abrupt output jumps,
 - single-plan demand-gap logic applied too broadly to multiple goals,
 - generic TSS-like reasoning used where sport-specific stress would be more accurate,
-- hidden fallback behavior that is not surfaced to the user.
+- hidden fallback behavior that is not surfaced to the user,
+- ambition semantics currently spread across `aggressiveness`, `optimization_profile`, and `goal_difficulty_preference` without a dedicated continuous target-surplus control,
+- profile settings currently aliased to the full creation-config contract instead of a normalized preference model,
+- user-facing controls currently mixed with engine controls such as curve shaping, model-confidence, locks, provenance, and calibration state.
+
+### D. Missing specification details to make explicit
+
+The implementation spec should explicitly define:
+
+- the canonical source of truth for goals, preferences, overrides, capability snapshots, and planner policy,
+- ownership and persistence boundaries for each domain object,
+- timing and event-link lifecycle invariants,
+- canonical units, enums, and required-field rules for goal objectives,
+- capability snapshot freshness and invalidation rules,
+- operational validation requirements for parser failures, fallback rates, and malformed canonical data.
 
 ### C. Minimum additive improvements
 
@@ -195,14 +256,16 @@ The following improvements should be treated as the minimum future-proofing pack
 5. separate target attainment, event readiness, and plan feasibility in outputs,
 6. add per-goal limiter decomposition,
 7. add a simple mechanical-stress channel for impact-heavy sports,
-8. upgrade sparse-data priors from binary classes to continuous capability factors.
+8. upgrade sparse-data priors from binary classes to continuous capability factors,
+9. add a continuous target-surplus preference separate from aggressiveness.
 
 ## 7. Non-Goals
 
 - This spec does not require a full multi-target consumer UI immediately.
 - This spec does not require supporting every athletic domain in the first implementation.
 - This spec does not require replacing the current MVP goal editor in one cutover.
-- This spec does not require removing current compatibility columns on day one.
+- This spec does not require preserving backward compatibility with the current database schema.
+- This spec does not require migration code, transitional adapters, or schema versioning machinery.
 
 ## 8. Success Criteria
 

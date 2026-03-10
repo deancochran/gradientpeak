@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/lib/hooks/useAuth";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
+import { skipToken } from "@tanstack/react-query";
 import { decodePolyline } from "@repo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -81,6 +82,12 @@ function formatPace(metersPerSecond: number): string {
 function formatSpeed(metersPerSecond: number): string {
   const kmh = (metersPerSecond * 3.6).toFixed(1);
   return `${kmh} km/h`;
+}
+
+function isValidUuid(value: string): boolean {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(value);
 }
 
 function formatSwimPace(metersPerSecond: number): string {
@@ -196,12 +203,15 @@ function ActivityDetailScreen() {
 
   // Comments state
   const [newComment, setNewComment] = useState("");
+  const commentEntityId =
+    typeof activity?.id === "string" ? activity.id.trim() : "";
 
   // Fetch comments
   const { data: commentsData, refetch: refetchComments } =
     trpc.social.getComments.useQuery(
-      { entity_id: activity?.id ?? "", entity_type: "activity" },
-      { enabled: !!activity?.id },
+      isValidUuid(commentEntityId)
+        ? { entity_id: commentEntityId, entity_type: "activity" }
+        : skipToken,
     );
 
   // Add comment mutation
@@ -216,9 +226,9 @@ function ActivityDetailScreen() {
   });
 
   const handleAddComment = () => {
-    if (!activity || !newComment.trim()) return;
+    if (!isValidUuid(commentEntityId) || !newComment.trim()) return;
     addCommentMutation.mutate({
-      entity_id: activity.id,
+      entity_id: commentEntityId,
       entity_type: "activity",
       content: newComment.trim(),
     });

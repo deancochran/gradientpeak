@@ -155,6 +155,15 @@ describe("CreationProjectionChart metadata", () => {
               microcycles: [],
               readiness_score: 74,
               readiness_confidence: 68,
+              risk_score: 52,
+              no_history: {
+                fitness_signal_0_1: 0.44,
+                goal_demand_score_0_1: 0.71,
+                projection_floor_confidence: "medium",
+                projection_floor_applied: true,
+                floor_clamped_by_availability: false,
+                fitness_inference_reasons: [],
+              },
               capacity_envelope: {
                 envelope_score: 61,
                 envelope_state: "edge",
@@ -183,6 +192,9 @@ describe("CreationProjectionChart metadata", () => {
     expect(textNodes.some((text) => text.includes("limiter: ramp_limit"))).toBe(
       false,
     );
+    expect(textNodes).toContain("Risk score: 52%");
+    expect(textNodes).toContain("Fitness signal: 44%");
+    expect(textNodes).toContain("Goal demand: 71%");
   });
 
   it("shows non-blocking uncertainty hint when prediction uncertainty is available", () => {

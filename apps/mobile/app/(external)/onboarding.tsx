@@ -22,8 +22,16 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { router } from "expo-router";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   ArrowLeft,
   ArrowRight,
@@ -33,7 +41,7 @@ import {
   Zap,
 } from "lucide-react-native";
 import { useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { Alert, Platform, ScrollView, View } from "react-native";
 
 // ================================
 // Types
@@ -326,7 +334,87 @@ interface StepProps {
   errors: Record<string, string>;
 }
 
+function PaceInput({
+  seconds,
+  onChange,
+}: {
+  seconds: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  const minuteValue = seconds === null ? "" : String(Math.floor(seconds / 60));
+  const secondValue =
+    seconds === null ? "00" : String(seconds % 60).padStart(2, "0");
+
+  return (
+    <View className="flex-row items-end gap-2">
+      <View className="flex-1">
+        <Label>Minutes</Label>
+        <Input
+          placeholder="5"
+          keyboardType="number-pad"
+          value={minuteValue}
+          onChangeText={(text) => {
+            if (!text.trim()) {
+              onChange(null);
+              return;
+            }
+
+            const nextMinutes = parseInt(text, 10);
+            if (Number.isNaN(nextMinutes) || nextMinutes < 0) {
+              return;
+            }
+
+            onChange(nextMinutes * 60 + ((seconds ?? 0) % 60));
+          }}
+        />
+      </View>
+      <View className="flex-1">
+        <Label>Seconds</Label>
+        <Select
+          value={{ value: secondValue, label: `${secondValue} sec` }}
+          onValueChange={(option) => {
+            if (!option?.value) {
+              return;
+            }
+
+            const nextSeconds = parseInt(option.value, 10);
+            if (Number.isNaN(nextSeconds)) {
+              return;
+            }
+
+            const minutes = seconds === null ? 0 : Math.floor(seconds / 60);
+            onChange(minutes * 60 + nextSeconds);
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Seconds" />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from({ length: 60 }, (_, index) => {
+              const optionValue = String(index).padStart(2, "0");
+              return (
+                <SelectItem
+                  key={`pace-second-${optionValue}`}
+                  label={`${optionValue} sec`}
+                  value={optionValue}
+                >
+                  {optionValue} sec
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </View>
+    </View>
+  );
+}
+
 function Step1BasicProfile({ data, updateData, errors }: StepProps) {
+  const [showDobPicker, setShowDobPicker] = useState(false);
+  const parsedDob = data.dob
+    ? new Date(`${data.dob}T12:00:00.000Z`)
+    : new Date("2000-01-01T12:00:00.000Z");
+
   return (
     <Card>
       <CardHeader>
@@ -337,11 +425,37 @@ function Step1BasicProfile({ data, updateData, errors }: StepProps) {
         {/* Date of Birth */}
         <View>
           <Label>Date of Birth *</Label>
-          <Input
-            placeholder="YYYY-MM-DD"
-            value={data.dob || ""}
-            onChangeText={(text) => updateData({ dob: text })}
-          />
+          <Button
+            variant="outline"
+            onPress={() => setShowDobPicker(true)}
+            className="justify-start"
+          >
+            <Text>{data.dob || "Select date of birth"}</Text>
+          </Button>
+          {showDobPicker ? (
+            <DateTimePicker
+              value={Number.isNaN(parsedDob.getTime()) ? new Date() : parsedDob}
+              mode="date"
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              maximumDate={new Date()}
+              onChange={(_, selectedDate) => {
+                if (Platform.OS === "android") {
+                  setShowDobPicker(false);
+                }
+
+                if (!selectedDate) {
+                  return;
+                }
+
+                updateData({
+                  dob: selectedDate.toISOString().split("T")[0] ?? null,
+                });
+                if (Platform.OS === "ios") {
+                  setShowDobPicker(false);
+                }
+              }}
+            />
+          ) : null}
           {errors.dob && (
             <Text className="text-destructive text-sm mt-1">{errors.dob}</Text>
           )}
@@ -627,24 +741,9 @@ function Step3SportSpecificMetrics({ data, updateData, errors }: StepProps) {
             <Text className="text-xs text-muted-foreground mb-2">
               Pace you can sustain for ~1 hour
             </Text>
-            <Input
-              placeholder="5:00 (5 min per km)"
-              value={
-                data.threshold_pace
-                  ? `${Math.floor(data.threshold_pace / 60)}:${(data.threshold_pace % 60).toString().padStart(2, "0")}`
-                  : ""
-              }
-              onChangeText={(text) => {
-                // Parse "M:SS" format to seconds
-                const parts = text.split(":");
-                if (parts.length === 2) {
-                  const mins = parseInt(parts[0]);
-                  const secs = parseInt(parts[1]);
-                  if (!isNaN(mins) && !isNaN(secs)) {
-                    updateData({ threshold_pace: mins * 60 + secs });
-                  }
-                }
-              }}
+            <PaceInput
+              seconds={data.threshold_pace}
+              onChange={(value) => updateData({ threshold_pace: value })}
             />
           </View>
         )}

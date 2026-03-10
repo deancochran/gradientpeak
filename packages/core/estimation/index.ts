@@ -292,6 +292,7 @@ export function buildEstimationContext(params: {
     resting_hr?: number | null;
     weight_kg?: number | null;
     dob?: string | null;
+    threshold_pace_seconds_per_km?: number | null;
   };
 
   // Current fitness (from trends calculation)
@@ -334,6 +335,11 @@ export function buildEstimationContext(params: {
   // The profile parameter should match PublicProfilesRow from the database
   return {
     profile: userProfile as any, // Cast to match PublicProfilesRow
+    ftp: userProfile.ftp ?? undefined,
+    thresholdHr: userProfile.threshold_hr ?? undefined,
+    weightKg: userProfile.weight_kg ?? undefined,
+    thresholdPaceSecondsPerKm:
+      userProfile.threshold_pace_seconds_per_km ?? undefined,
     fitnessState,
     activityCategory: activityPlan.activity_category as any,
     structure: activityPlan.structure,

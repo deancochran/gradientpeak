@@ -30,7 +30,6 @@ import { ChevronLeft } from "lucide-react-native";
  * ACTIVITY PLANS:
  * - activity-plan-detail - View/edit activity plan details
  * - create-activity-plan - Main activity plan builder
- * - plan-library - Browse and manage activity plans
  *
  * SCHEDULED ACTIVITIES:
  * - schedule-activity - Schedule activity to calendar
@@ -38,7 +37,8 @@ import { ChevronLeft } from "lucide-react-native";
  * - scheduled-activity-detail - Individual scheduled activity details
  *
  * TRAINING PLANS:
- * - training-plan - Training plan overview
+ * - training-plans-list - Training plan management
+ * - training-plan-detail - Training plan overview
  * - training-plan-create - Create new training plan
  * - training-plan-edit - Edit training plan structure
  *
@@ -123,13 +123,6 @@ export default function StandardLayout() {
           title: "Create Activity Plan",
         }}
       />
-      <Stack.Screen
-        name="plan-library"
-        options={{
-          title: "Plan Library",
-        }}
-      />
-
       {/* SCHEDULED ACTIVITIES */}
       <Stack.Screen
         name="scheduled-activities-list"
@@ -143,10 +136,28 @@ export default function StandardLayout() {
           title: "Activity Details",
         }}
       />
+      <Stack.Screen
+        name="event-detail"
+        options={{
+          title: "Event Details",
+        }}
+      />
+      <Stack.Screen
+        name="goal-detail"
+        options={{
+          title: "Goal Details",
+        }}
+      />
 
       {/* TRAINING PLANS */}
       <Stack.Screen
-        name="training-plan"
+        name="training-plans-list"
+        options={{
+          title: "Training Plans",
+        }}
+      />
+      <Stack.Screen
+        name="training-plan-detail"
         options={{
           title: "Training Plan",
         }}
@@ -204,6 +215,12 @@ export default function StandardLayout() {
         name="profile-edit"
         options={{
           title: "Edit Profile",
+        }}
+      />
+      <Stack.Screen
+        name="training-preferences"
+        options={{
+          title: "Training Preferences",
         }}
       />
     </Stack>

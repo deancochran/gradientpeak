@@ -2,7 +2,9 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { ROUTES } from "@/lib/constants/routes";
-import TrainingPlanOverview from "../training-plan-detail";
+
+const loadTrainingPlanOverview = async () =>
+  (await import("../training-plan-detail")).default;
 
 const { replaceMock, pushMock, localSearchParamsMock, snapshotState } =
   vi.hoisted(() => ({
@@ -121,6 +123,15 @@ vi.mock("@/lib/trpc", () => ({
         useMutation: () => ({ mutate: vi.fn(), isPending: false }),
       },
     },
+    activityPlans: {
+      list: {
+        useQuery: () => ({
+          data: { items: [] },
+          isLoading: false,
+          refetch: vi.fn(),
+        }),
+      },
+    },
   },
 }));
 
@@ -135,6 +146,10 @@ vi.mock("react-native", () => ({
   ActivityIndicator: createHost("ActivityIndicator"),
   Alert: { alert: vi.fn() },
   NativeModules: { BlobModule: {} },
+  TurboModuleRegistry: {
+    get: vi.fn(() => ({ installTurboModule: vi.fn() })),
+    getEnforcing: vi.fn(() => ({ installTurboModule: vi.fn() })),
+  },
   Platform: { OS: "ios", Version: "17" },
   RefreshControl: createHost("RefreshControl"),
   ScrollView: createHost("ScrollView"),
@@ -152,6 +167,9 @@ vi.mock("@/components/training-plan/TrainingPlanKpiRow", () => ({
 }));
 vi.mock("@/components/training-plan/TrainingPlanSummaryHeader", () => ({
   TrainingPlanSummaryHeader: createHost("TrainingPlanSummaryHeader"),
+}));
+vi.mock("@/components/ActivityPlan/TimelineChart", () => ({
+  TimelineChart: createHost("TimelineChart"),
 }));
 vi.mock("@/components/training-plan/WeeklyProgressCard", () => ({
   WeeklyProgressCard: createHost("WeeklyProgressCard"),
@@ -204,6 +222,16 @@ vi.mock("@/components/shared/DetailChartModal", () => ({
 vi.mock("@/components/ui/button", () => ({
   Button: createHost("Button"),
 }));
+vi.mock("@/components/ui/dialog", () => ({
+  Dialog: createHost("Dialog"),
+  DialogClose: createHost("DialogClose"),
+  DialogContent: createHost("DialogContent"),
+  DialogDescription: createHost("DialogDescription"),
+  DialogFooter: createHost("DialogFooter"),
+  DialogHeader: createHost("DialogHeader"),
+  DialogTitle: createHost("DialogTitle"),
+  DialogTrigger: createHost("DialogTrigger"),
+}));
 vi.mock("@/components/ui/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
@@ -212,6 +240,9 @@ vi.mock("@/components/ui/card", () => ({
 }));
 vi.mock("@/components/ui/icon", () => ({
   Icon: createHost("Icon"),
+}));
+vi.mock("@/components/training-plan/create/inputs/DateField", () => ({
+  DateField: createHost("DateField"),
 }));
 vi.mock("@/components/ui/input", () => ({
   Input: createHost("Input"),
@@ -241,6 +272,9 @@ vi.mock("lucide-react-native", () => {
     EyeOff: Icon,
     MessageCircle: Icon,
     Send: Icon,
+    Link2: Icon,
+    Plus: Icon,
+    X: Icon,
   };
 });
 
@@ -353,17 +387,26 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
   it("redirects to create when no selected plan id exists", () => {
     resetTestState();
+    let TrainingPlanOverview: Awaited<
+      ReturnType<typeof loadTrainingPlanOverview>
+    >;
 
-    act(() => {
-      TestRenderer.create(<TrainingPlanOverview />);
+    return loadTrainingPlanOverview().then((Component) => {
+      TrainingPlanOverview = Component;
+      act(() => {
+        TestRenderer.create(<TrainingPlanOverview />);
+      });
+
+      expect(replaceMock).toHaveBeenCalledWith(
+        ROUTES.PLAN.TRAINING_PLAN.CREATE,
+      );
     });
-
-    expect(replaceMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   });
 
-  it("keeps deep-link context when selected plan id is provided", () => {
+  it("keeps deep-link context when selected plan id is provided", async () => {
     resetTestState();
     localSearchParamsMock.id = "plan-library-selection-1";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
 
     let renderer!: TestRenderer.ReactTestRenderer;
     act(() => {
@@ -377,17 +420,19 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("renders focused banner and routes manage intent", () => {
+  it("renders focused banner and routes manage intent", async () => {
     resetTestState();
     snapshotState.plan = {
       id: "plan-1",
       name: "Plan One",
+      profile_id: "test-profile-id",
       is_active: true,
       created_at: "2026-01-01T00:00:00.000Z",
       structure: {},
     } as any;
     localSearchParamsMock.id = "plan-1";
     localSearchParamsMock.nextStep = "settings";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
 
     let renderer!: TestRenderer.ReactTestRenderer;
     act(() => {
@@ -407,17 +452,19 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
   });
 
-  it("routes edit-structure intent CTA to structure section", () => {
+  it("routes edit-structure intent CTA to structure section", async () => {
     resetTestState();
     snapshotState.plan = {
       id: "plan-2",
       name: "Plan Two",
+      profile_id: "test-profile-id",
       is_active: true,
       created_at: "2026-01-01T00:00:00.000Z",
       structure: {},
     } as any;
     localSearchParamsMock.id = "plan-2";
     localSearchParamsMock.nextStep = "edit-structure";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
 
     let renderer!: TestRenderer.ReactTestRenderer;
     act(() => {
@@ -433,11 +480,11 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
-      params: { id: "plan-2", initialTab: "goals" },
+      params: { id: "plan-2", initialTab: "plan" },
     });
   });
 
-  it("routes review-activity intent CTA to activity detail", () => {
+  it("routes review-activity intent CTA to activity detail", async () => {
     resetTestState();
     snapshotState.plan = {
       id: "plan-3",
@@ -449,6 +496,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     localSearchParamsMock.id = "plan-3";
     localSearchParamsMock.nextStep = "review-activity";
     localSearchParamsMock.activityId = "activity-99";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
 
     let renderer!: TestRenderer.ReactTestRenderer;
     act(() => {
@@ -467,7 +515,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     );
   });
 
-  it("does not show focus banner for unknown nextStep", () => {
+  it("does not show focus banner for unknown nextStep", async () => {
     resetTestState();
     snapshotState.plan = {
       id: "plan-4",
@@ -478,6 +526,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     } as any;
     localSearchParamsMock.id = "plan-4";
     localSearchParamsMock.nextStep = "totally-unsupported-intent";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
 
     let renderer!: TestRenderer.ReactTestRenderer;
     act(() => {

@@ -11,17 +11,18 @@ import {
   creationConfigValueSchema,
   creationNormalizationInputSchema,
   countAvailableTrainingDays,
+  derivePlanTimeline,
   deriveCreationContext,
   deriveCreationSuggestions,
   deriveNoHistoryGoalTierFromTargets,
   deterministicUuidFromSeed,
   diffDateOnlyUtcDays,
   getCreationSuggestionsInputSchema,
-  expandMinimalGoalToPlan,
   formatDateOnlyUtc,
   getFormStatus,
   getTrainingIntensityZone,
   inferredStateSnapshotSchema,
+  materializePlanToEvents,
   minimalTrainingPlanCreateSchema,
   normalizeCreationConfig,
   normalizeProjectionSafetyConfig,
@@ -44,6 +45,7 @@ import {
   type NoHistoryProjectionMetadata,
   type LoadBootstrapState,
   type PreviewReadinessSnapshot,
+  type MinimalTrainingPlanCreate,
   type NoHistoryGoalTargetInput,
   type ProjectionChartPayload as CoreProjectionChartPayload,
   type ProjectionConstraintSummary,
@@ -70,18 +72,11 @@ import { addEstimationToPlans } from "../utils/estimation-helpers";
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
 const plannedEventType = "planned_activity" as const;
+const conservativeStarterWeeklyTss = 140;
+const conservativeStarterDailyTss = conservativeStarterWeeklyTss / 7;
 
 type FeasibilityState = z.infer<typeof feasibilityStateSchema>;
 type SafetyState = z.infer<typeof safetyStateSchema>;
-
-type DerivableSession = {
-  date: string;
-  title: string;
-  activity_plan_id: string | null;
-  all_day: boolean;
-  starts_at: string;
-  ends_at: string | null;
-};
 
 function toDayStartIso(dateOnly: string): string {
   return `${dateOnly}T00:00:00.000Z`;
@@ -100,120 +95,86 @@ function isUuidString(value: unknown): value is string {
   );
 }
 
-function deriveTemplateSessions(
-  structure: unknown,
-  fallbackStartDate: string,
-): DerivableSession[] {
-  if (!structure || typeof structure !== "object") {
-    return [];
+function todayStartIsoUtc(): string {
+  return toDayStartIso(formatDateOnlyUtc(new Date()));
+}
+
+type ActivePlanLookup = {
+  trainingPlanId: string;
+  trainingPlan: Record<string, any>;
+  nextEventAt: string;
+};
+
+async function getActivePlanFromFutureEvents(input: {
+  supabase: SupabaseClient;
+  profileId: string;
+}): Promise<ActivePlanLookup | null> {
+  let eventsQuery: any = input.supabase
+    .from("events")
+    .select("training_plan_id, starts_at")
+    .eq("profile_id", input.profileId)
+    .eq("event_type", plannedEventType);
+
+  if (typeof eventsQuery.gte === "function") {
+    eventsQuery = eventsQuery.gte("starts_at", todayStartIsoUtc());
   }
 
-  const root = structure as Record<string, unknown>;
-  const sessions: DerivableSession[] = [];
-  const seen = new Set<string>();
+  if (typeof eventsQuery.order === "function") {
+    eventsQuery = eventsQuery.order("starts_at", { ascending: true });
+  }
 
-  const rootStartDate =
-    typeof root.start_date === "string" ? root.start_date : fallbackStartDate;
+  if (typeof eventsQuery.limit === "function") {
+    eventsQuery = eventsQuery.limit(50);
+  }
 
-  const pushSession = (session: DerivableSession) => {
-    const key = `${session.date}|${session.activity_plan_id ?? "none"}|${session.title}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    sessions.push(session);
-  };
+  const { data: upcomingEvents, error: eventsError } = await eventsQuery;
 
-  const rootSessions = Array.isArray(root.sessions)
-    ? (root.sessions as Array<Record<string, unknown>>)
-    : [];
-
-  for (const session of rootSessions) {
-    const activityPlanId = isUuidString(session.activity_plan_id)
-      ? session.activity_plan_id
-      : null;
-    const offset =
-      typeof session.offset_days === "number"
-        ? session.offset_days
-        : typeof session.day_offset === "number"
-          ? session.day_offset
-          : null;
-    const explicitDate =
-      typeof session.scheduled_date === "string"
-        ? session.scheduled_date
-        : null;
-
-    const date =
-      explicitDate ??
-      (typeof offset === "number"
-        ? addDaysDateOnlyUtc(rootStartDate, offset)
-        : null);
-
-    if (!date) continue;
-
-    pushSession({
-      date,
-      title:
-        typeof session.title === "string" && session.title.trim().length > 0
-          ? session.title
-          : "Planned Session",
-      activity_plan_id: activityPlanId,
-      all_day: true,
-      starts_at: toDayStartIso(date),
-      ends_at: toNextDayStartIso(date),
+  if (eventsError) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: eventsError.message,
     });
   }
 
-  const blocks = Array.isArray(root.blocks)
-    ? (root.blocks as Array<Record<string, unknown>>)
-    : [];
+  const nextScheduledPlanEvent = (upcomingEvents ?? []).find(
+    (event: any) =>
+      isUuidString((event as any).training_plan_id) &&
+      typeof (event as any).starts_at === "string",
+  );
 
-  for (const block of blocks) {
-    const blockStart =
-      typeof block.start_date === "string" ? block.start_date : rootStartDate;
-    const blockSessions = Array.isArray(block.sessions)
-      ? (block.sessions as Array<Record<string, unknown>>)
-      : [];
-
-    for (const session of blockSessions) {
-      const activityPlanId = isUuidString(session.activity_plan_id)
-        ? session.activity_plan_id
-        : null;
-      const offset =
-        typeof session.offset_days === "number"
-          ? session.offset_days
-          : typeof session.day_offset === "number"
-            ? session.day_offset
-            : null;
-      const explicitDate =
-        typeof session.scheduled_date === "string"
-          ? session.scheduled_date
-          : null;
-
-      const date =
-        explicitDate ??
-        (typeof offset === "number"
-          ? addDaysDateOnlyUtc(blockStart, offset)
-          : null);
-
-      if (!date) continue;
-
-      pushSession({
-        date,
-        title:
-          typeof session.title === "string" && session.title.trim().length > 0
-            ? session.title
-            : typeof block.name === "string" && block.name.trim().length > 0
-              ? block.name
-              : "Planned Session",
-        activity_plan_id: activityPlanId,
-        all_day: true,
-        starts_at: toDayStartIso(date),
-        ends_at: toNextDayStartIso(date),
-      });
-    }
+  if (!nextScheduledPlanEvent) {
+    return null;
   }
 
-  sessions.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  return sessions;
+  const trainingPlanId = (nextScheduledPlanEvent as any)
+    .training_plan_id as string;
+  const nextEventAt = (nextScheduledPlanEvent as any).starts_at as string;
+
+  const { data: trainingPlan, error: planError } = await input.supabase
+    .from("training_plans")
+    .select("*")
+    .eq("id", trainingPlanId)
+    .or(
+      `profile_id.eq.${input.profileId},is_system_template.eq.true,template_visibility.eq.public`,
+    )
+    .maybeSingle();
+
+  if (planError) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: planError.message,
+    });
+  }
+
+  if (!trainingPlan) {
+    return null;
+  }
+
+  return {
+    trainingPlanId,
+    trainingPlan: trainingPlan as Record<string, any>,
+    nextEventAt,
+  };
 }
 
 function withTrainingPlanIdentity<
@@ -252,6 +213,17 @@ type InsightSummaryContributor = {
 type InsightSummary = {
   score: number;
   contributors: InsightSummaryContributor[];
+  interpretation: string;
+};
+
+type LoadGuidanceMode = "baseline" | "goal_driven";
+
+type LoadGuidanceSummary = {
+  mode: LoadGuidanceMode;
+  goal_count: number;
+  dated_goal_count: number;
+  has_activity_history: boolean;
+  weekly_cap_tss: number | null;
   interpretation: string;
 };
 
@@ -314,6 +286,241 @@ type ProjectionChartPayload = Omit<
   recovery_segments: ProjectionRecoverySegment[];
   constraint_summary: ProjectionConstraintSummary;
 };
+
+type ExpandedProjectionGoal = MinimalTrainingPlanCreate["goals"][number] & {
+  id: string;
+};
+
+type ExpandedProjectionPlan = {
+  plan_type: "periodized";
+  name: string;
+  description?: string;
+  start_date: string;
+  end_date: string;
+  fitness_progression: {
+    starting_ctl: number;
+    target_ctl_at_peak?: number;
+  };
+  activity_distribution: Record<
+    string,
+    {
+      target_percentage: number;
+    }
+  >;
+  blocks: Array<{
+    id: string;
+    name: string;
+    phase: "base" | "build" | "peak" | "taper";
+    start_date: string;
+    end_date: string;
+    goal_ids: string[];
+    target_weekly_tss_range: { min: number; max: number };
+    target_sessions_per_week_range: { min: number; max: number };
+  }>;
+  goals: ExpandedProjectionGoal[];
+};
+
+const phaseBlueprintByWeeks = {
+  short: [
+    { name: "Base", phase: "base", ratio: 0.5 },
+    { name: "Build", phase: "build", ratio: 0.35 },
+    { name: "Taper", phase: "taper", ratio: 0.15 },
+  ],
+  medium: [
+    { name: "Base", phase: "base", ratio: 0.4 },
+    { name: "Build", phase: "build", ratio: 0.4 },
+    { name: "Peak", phase: "peak", ratio: 0.1 },
+    { name: "Taper", phase: "taper", ratio: 0.1 },
+  ],
+  long: [
+    { name: "Base", phase: "base", ratio: 0.35 },
+    { name: "Build", phase: "build", ratio: 0.4 },
+    { name: "Peak", phase: "peak", ratio: 0.15 },
+    { name: "Taper", phase: "taper", ratio: 0.1 },
+  ],
+} as const;
+
+function allocateBlockWeeks(totalWeeks: number, blockCount: number): number[] {
+  const safeWeeks = Math.max(totalWeeks, blockCount);
+  const base = Math.floor(safeWeeks / blockCount);
+  const remainder = safeWeeks % blockCount;
+  return Array.from(
+    { length: blockCount },
+    (_, index) => base + (index < remainder ? 1 : 0),
+  );
+}
+
+function resolveActivityDistribution(
+  goals: MinimalTrainingPlanCreate["goals"],
+): ExpandedProjectionPlan["activity_distribution"] {
+  const categoryCounts = new Map<string, number>();
+
+  for (const goal of goals) {
+    for (const target of goal.targets) {
+      const category =
+        "activity_category" in target && target.activity_category
+          ? target.activity_category
+          : "other";
+      categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
+    }
+  }
+
+  if (categoryCounts.size === 0) {
+    return { other: { target_percentage: 1 } };
+  }
+
+  const total = Array.from(categoryCounts.values()).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  const entries = Array.from(categoryCounts.entries()).sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  );
+
+  let runningTotal = 0;
+  const distribution: ExpandedProjectionPlan["activity_distribution"] = {};
+  for (let index = 0; index < entries.length; index += 1) {
+    const [category, count] = entries[index]!;
+    const value =
+      index === entries.length - 1
+        ? Math.max(0, Math.round((1 - runningTotal) * 1000) / 1000)
+        : Math.round((count / total) * 1000) / 1000;
+    distribution[category] = { target_percentage: value };
+    runningTotal += value;
+  }
+
+  return distribution;
+}
+
+function buildExpandedPlanFromMinimalGoal(
+  minimalPlan: MinimalTrainingPlanCreate,
+  input?: { startingCtl?: number },
+): ExpandedProjectionPlan {
+  const canonicalMinimalPlan =
+    canonicalizeMinimalTrainingPlanCreate(minimalPlan);
+  const timeline = derivePlanTimeline({
+    goals: canonicalMinimalPlan.goals,
+    plan_start_date:
+      canonicalMinimalPlan.plan_start_date ?? formatDateOnlyUtc(new Date()),
+  });
+
+  const goals = canonicalMinimalPlan.goals
+    .map((goal, index) => ({
+      ...goal,
+      id: deterministicUuidFromSeed(
+        `server-preview-goal|${timeline.start_date}|${goal.target_date}|${goal.name}|${index}`,
+      ),
+    }))
+    .sort((a, b) => a.target_date.localeCompare(b.target_date));
+
+  const planDurationDays =
+    diffDateOnlyUtcDays(timeline.start_date, timeline.end_date) + 1;
+  const totalWeeks = Math.max(1, Math.ceil(planDurationDays / 7));
+  const phaseBlueprint =
+    totalWeeks < 8
+      ? phaseBlueprintByWeeks.short
+      : totalWeeks < 16
+        ? phaseBlueprintByWeeks.medium
+        : phaseBlueprintByWeeks.long;
+
+  const blockWeeks = allocateBlockWeeks(totalWeeks, phaseBlueprint.length);
+  const startingCtl = input?.startingCtl ?? 45;
+  const baselineWeeklyTss = Math.max(140, Math.round(startingCtl * 7));
+  const tssMultiplierByPhase: Record<
+    ExpandedProjectionPlan["blocks"][number]["phase"],
+    number
+  > = {
+    base: 1,
+    build: 1.12,
+    peak: 1.05,
+    taper: 0.72,
+  };
+
+  const blocks: ExpandedProjectionPlan["blocks"] = [];
+  let blockStart = timeline.start_date;
+
+  for (let index = 0; index < phaseBlueprint.length; index += 1) {
+    const phase = phaseBlueprint[index]!;
+    const weeks = blockWeeks[index]!;
+    const isLast = index === phaseBlueprint.length - 1;
+    const computedEnd = addDaysDateOnlyUtc(blockStart, weeks * 7 - 1);
+    const blockEnd = isLast
+      ? timeline.end_date
+      : computedEnd < timeline.end_date
+        ? computedEnd
+        : timeline.end_date;
+
+    const goalIds = goals
+      .filter(
+        (goal) =>
+          goal.target_date >= blockStart && goal.target_date <= blockEnd,
+      )
+      .map((goal) => goal.id);
+
+    if (isLast && goalIds.length === 0 && goals.length > 0) {
+      goalIds.push(goals[goals.length - 1]!.id);
+    }
+
+    const targetWeeklyTss = Math.round(
+      baselineWeeklyTss * tssMultiplierByPhase[phase.phase],
+    );
+
+    blocks.push({
+      id: deterministicUuidFromSeed(
+        `server-preview-block|${timeline.start_date}|${timeline.end_date}|${index}|${phase.name}`,
+      ),
+      name: phase.name,
+      phase: phase.phase,
+      start_date: blockStart,
+      end_date: blockEnd,
+      goal_ids: goalIds,
+      target_weekly_tss_range: {
+        min: Math.max(60, Math.round(targetWeeklyTss * 0.85)),
+        max: Math.max(90, Math.round(targetWeeklyTss * 1.15)),
+      },
+      target_sessions_per_week_range:
+        phase.phase === "taper" ? { min: 2, max: 4 } : { min: 3, max: 6 },
+    });
+
+    if (!isLast) {
+      blockStart = addDaysDateOnlyUtc(blockEnd, 1);
+    }
+  }
+
+  const peakTargetCtl =
+    blocks.length > 0
+      ? Math.round(
+          Math.max(
+            ...blocks.map(
+              (block) =>
+                (block.target_weekly_tss_range.min +
+                  block.target_weekly_tss_range.max) /
+                14,
+            ),
+          ),
+        )
+      : undefined;
+
+  return {
+    plan_type: "periodized",
+    name:
+      goals.length === 1
+        ? `${goals[0]!.name} Plan`
+        : "Multi-goal Training Plan",
+    start_date: timeline.start_date,
+    end_date: timeline.end_date,
+    fitness_progression: {
+      starting_ctl: startingCtl,
+      ...(typeof peakTargetCtl === "number"
+        ? { target_ctl_at_peak: peakTargetCtl }
+        : {}),
+    },
+    activity_distribution: resolveActivityDistribution(goals),
+    blocks,
+    goals,
+    description: undefined,
+  };
+}
 
 type PreviewCreationConfigResponse = {
   normalized_creation_config: Awaited<
@@ -836,6 +1043,304 @@ function estimateIdealDailyTss(
   return Math.round((weeklyMidpoint / 7) * 10) / 10;
 }
 
+function deriveWeeklyTssFromBounds(input: {
+  exact?: unknown;
+  min?: unknown;
+  max?: unknown;
+}): number | null {
+  if (typeof input.exact === "number" && Number.isFinite(input.exact)) {
+    return Math.max(0, input.exact);
+  }
+
+  const min =
+    typeof input.min === "number" && Number.isFinite(input.min)
+      ? Math.max(0, input.min)
+      : null;
+  const max =
+    typeof input.max === "number" && Number.isFinite(input.max)
+      ? Math.max(0, input.max)
+      : null;
+
+  if (min !== null && max !== null) {
+    return (min + max) / 2;
+  }
+
+  return min ?? max;
+}
+
+function deriveStructureWeeklyTssTarget(
+  structure: Record<string, unknown> | null | undefined,
+  date: string,
+): number | null {
+  if (!structure) {
+    return null;
+  }
+
+  const blocks = Array.isArray(structure.blocks)
+    ? (structure.blocks as Array<Record<string, unknown>>)
+    : [];
+
+  const currentBlock = blocks.find((block) => {
+    return (
+      typeof block.start_date === "string" &&
+      typeof block.end_date === "string" &&
+      block.start_date <= date &&
+      block.end_date >= date
+    );
+  });
+
+  if (currentBlock) {
+    const blockRange =
+      currentBlock.target_weekly_tss_range &&
+      typeof currentBlock.target_weekly_tss_range === "object"
+        ? (currentBlock.target_weekly_tss_range as Record<string, unknown>)
+        : null;
+
+    const blockWeeklyTss = deriveWeeklyTssFromBounds({
+      min: blockRange?.min,
+      max: blockRange?.max,
+    });
+
+    if (blockWeeklyTss !== null) {
+      return blockWeeklyTss;
+    }
+  }
+
+  const rootRange =
+    structure.target_weekly_tss_range &&
+    typeof structure.target_weekly_tss_range === "object"
+      ? (structure.target_weekly_tss_range as Record<string, unknown>)
+      : null;
+
+  return deriveWeeklyTssFromBounds({
+    exact: structure.target_weekly_tss,
+    min: rootRange?.min ?? structure.target_weekly_tss_min,
+    max: rootRange?.max ?? structure.target_weekly_tss_max,
+  });
+}
+
+function getWeekStartDateOnly(dateOnly: string): string {
+  const date = parseDateOnlyUtc(dateOnly);
+  const dayOfWeek = date.getUTCDay();
+  const offsetToMonday = (dayOfWeek + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - offsetToMonday);
+  return formatDateOnlyUtc(date);
+}
+
+function estimateWeeklyTssFromDailyMap(
+  dailyTss: Map<string, number>,
+): number | null {
+  if (dailyTss.size === 0) {
+    return null;
+  }
+
+  const weeklyTotals = new Map<string, number>();
+  for (const [date, tss] of dailyTss.entries()) {
+    if (!(typeof tss === "number") || !Number.isFinite(tss) || tss <= 0) {
+      continue;
+    }
+
+    const weekStart = getWeekStartDateOnly(date);
+    weeklyTotals.set(weekStart, (weeklyTotals.get(weekStart) || 0) + tss);
+  }
+
+  if (weeklyTotals.size === 0) {
+    return null;
+  }
+
+  const total = [...weeklyTotals.values()].reduce(
+    (sum, value) => sum + value,
+    0,
+  );
+  return total / weeklyTotals.size;
+}
+
+async function estimateWeeklyTssFromStructuredActivities(input: {
+  supabase: SupabaseClient;
+  profileId: string;
+  structure: Record<string, unknown> | null | undefined;
+  startDate: string;
+}): Promise<{
+  weeklyTss: number | null;
+  latestScheduledDate: string | null;
+}> {
+  if (!input.structure) {
+    return { weeklyTss: null, latestScheduledDate: null };
+  }
+
+  const materializedEvents = materializePlanToEvents(
+    input.structure,
+    input.startDate,
+  ).filter(
+    (event) =>
+      event.event_type === "planned" &&
+      typeof event.activity_plan_id === "string",
+  );
+
+  const latestScheduledDate =
+    materializedEvents
+      .map((event) => event.scheduled_date)
+      .filter((date) => typeof date === "string" && date.length > 0)
+      .sort((a, b) => a.localeCompare(b))
+      .at(-1) ?? null;
+
+  const activityPlanIds = [
+    ...new Set(materializedEvents.map((event) => event.activity_plan_id)),
+  ];
+  if (activityPlanIds.length === 0) {
+    return {
+      weeklyTss: null,
+      latestScheduledDate,
+    };
+  }
+
+  const { data: activityPlans, error } = await input.supabase
+    .from("activity_plans")
+    .select("*")
+    .in("id", activityPlanIds);
+
+  if (error || !activityPlans || activityPlans.length === 0) {
+    return {
+      weeklyTss: null,
+      latestScheduledDate,
+    };
+  }
+
+  const plansWithEstimations = await addEstimationToPlans(
+    activityPlans as any,
+    input.supabase,
+    input.profileId,
+  );
+
+  const estimatedTssByPlanId = new Map(
+    plansWithEstimations.map((plan) => [plan.id, plan.estimated_tss || 0]),
+  );
+
+  const dailyTss = new Map<string, number>();
+  for (const event of materializedEvents) {
+    if (!event.activity_plan_id) {
+      continue;
+    }
+
+    const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id) || 0;
+    if (estimatedTss <= 0) {
+      continue;
+    }
+
+    dailyTss.set(
+      event.scheduled_date,
+      (dailyTss.get(event.scheduled_date) || 0) + estimatedTss,
+    );
+  }
+
+  return {
+    weeklyTss: estimateWeeklyTssFromDailyMap(dailyTss),
+    latestScheduledDate,
+  };
+}
+
+function resolveIdealDailyTss(input: {
+  date: string;
+  projectedIdealTss?: number;
+  blocks: Array<{
+    start_date: string;
+    end_date: string;
+    target_weekly_tss_range?: { min: number; max: number };
+  }>;
+  structure: Record<string, unknown> | null | undefined;
+  scheduledTss: number;
+}): number {
+  if (
+    typeof input.projectedIdealTss === "number" &&
+    Number.isFinite(input.projectedIdealTss)
+  ) {
+    return Math.round(Math.max(0, input.projectedIdealTss) * 10) / 10;
+  }
+
+  const structureWeeklyTss = deriveStructureWeeklyTssTarget(
+    input.structure,
+    input.date,
+  );
+  if (structureWeeklyTss !== null) {
+    return Math.round((structureWeeklyTss / 7) * 10) / 10;
+  }
+
+  const blockDailyTss = estimateIdealDailyTss(input.date, input.blocks);
+  if (blockDailyTss > 0) {
+    return blockDailyTss;
+  }
+
+  if (input.scheduledTss > 0) {
+    return Math.round(input.scheduledTss * 10) / 10;
+  }
+
+  return conservativeStarterDailyTss;
+}
+
+function buildWeeklyTotalsByWeekStart(
+  dailyTss: Map<string, number>,
+): Map<string, number> {
+  const weeklyTotals = new Map<string, number>();
+
+  for (const [date, tss] of dailyTss.entries()) {
+    if (!Number.isFinite(tss) || tss <= 0) {
+      continue;
+    }
+
+    const weekStart = getWeekStartDateOnly(date);
+    weeklyTotals.set(weekStart, (weeklyTotals.get(weekStart) || 0) + tss);
+  }
+
+  return weeklyTotals;
+}
+
+function resolveBaselineDailyTss(input: {
+  date: string;
+  scheduledTss: number;
+  scheduledWeeklyTotals: Map<string, number>;
+  structure: Record<string, unknown> | null | undefined;
+  blocks: Array<{
+    start_date: string;
+    end_date: string;
+    target_weekly_tss_range?: { min: number; max: number };
+  }>;
+  hasActivityHistory: boolean;
+}): number {
+  if (!input.hasActivityHistory && input.scheduledTss > 0) {
+    const scheduledWeekTotal =
+      input.scheduledWeeklyTotals.get(getWeekStartDateOnly(input.date)) || 0;
+    if (scheduledWeekTotal > 0) {
+      const scale = Math.min(
+        1,
+        conservativeStarterWeeklyTss / scheduledWeekTotal,
+      );
+      return Math.round(input.scheduledTss * scale * 10) / 10;
+    }
+  }
+
+  const structuredWeeklyTss = deriveStructureWeeklyTssTarget(
+    input.structure,
+    input.date,
+  );
+  if (structuredWeeklyTss !== null) {
+    const boundedWeeklyTss = input.hasActivityHistory
+      ? structuredWeeklyTss
+      : Math.min(structuredWeeklyTss, conservativeStarterWeeklyTss);
+    return Math.round((boundedWeeklyTss / 7) * 10) / 10;
+  }
+
+  const blockDailyTss = estimateIdealDailyTss(input.date, input.blocks);
+  if (blockDailyTss > 0) {
+    return input.hasActivityHistory
+      ? blockDailyTss
+      : Math.min(blockDailyTss, conservativeStarterDailyTss);
+  }
+
+  return input.hasActivityHistory
+    ? Math.max(input.scheduledTss, conservativeStarterDailyTss)
+    : conservativeStarterDailyTss;
+}
+
 function collectBlockRampWarnings(
   blocks: Array<{ target_weekly_tss_range?: { min: number; max: number } }>,
 ): string[] {
@@ -876,7 +1381,7 @@ function findBlockForDate(
 }
 
 function buildProjectionChartPayload(input: {
-  expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
+  expandedPlan: ExpandedProjectionPlan;
   startingCtl?: number;
   startingAtl?: number;
   priorInferredSnapshot?: InferredStateSnapshot;
@@ -944,6 +1449,7 @@ function buildProjectionChartPayload(input: {
       deterministicProjection.readiness_rationale_codes,
     capacity_envelope: deterministicProjection.capacity_envelope,
     feasibility_band: deterministicProjection.feasibility_band,
+    risk_score: deterministicProjection.risk_score,
     risk_level: deterministicProjection.risk_level,
     risk_flags: deterministicProjection.risk_flags,
     caps_applied: deterministicProjection.caps_applied,
@@ -973,7 +1479,7 @@ function toNoHistoryMetadataOrUndefined(
 }
 
 function deriveNoHistoryAnchorContext(input: {
-  expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
+  expandedPlan: ExpandedProjectionPlan;
   contextSummary: CreationContextSummary;
   finalConfig: Awaited<
     ReturnType<typeof evaluateCreationConfig>
@@ -1007,6 +1513,8 @@ function deriveNoHistoryAnchorContext(input: {
 
   return {
     history_availability_state: input.contextSummary.history_availability_state,
+    age: input.contextSummary.user_age,
+    gender: input.contextSummary.user_gender,
     goal_tier: deriveNoHistoryGoalTierFromTargets(
       input.expandedPlan.goals.flatMap(
         (goal) => goal.targets ?? [],
@@ -1125,7 +1633,7 @@ function buildProjectionFeasibilitySummary(
 }
 
 function deriveProjectionDrivenConflicts(input: {
-  expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
+  expandedPlan: ExpandedProjectionPlan;
   projectionChart: ProjectionChartPayload;
   postGoalRecoveryDays: number;
 }): CreationConflictItem[] {
@@ -1207,6 +1715,423 @@ const insightTimelineInputSchema = z.object({
   end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   timezone: z.string().min(1),
 });
+
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+const safeFallbackHrThresholdBpm = 160;
+const projectionTargetTestDurationSeconds = 1200;
+
+const profileGoalProjectionSourceSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().nullable().optional(),
+  goal_type: z.string().nullable().optional(),
+  target_metric: z.string().nullable().optional(),
+  target_value: z.number().finite().nullable().optional(),
+  metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  importance: z.number().int().nullable().optional(),
+  target_date: z.string().regex(dateOnlyPattern).nullable().optional(),
+});
+
+type ProfileGoalProjectionSource = z.infer<
+  typeof profileGoalProjectionSourceSchema
+>;
+
+function resolveGoalActivityCategory(
+  ...signals: Array<string | null | undefined>
+): "run" | "bike" | "swim" | "other" {
+  const combined = signals
+    .filter((signal): signal is string => typeof signal === "string")
+    .join(" ")
+    .toLowerCase();
+
+  if (combined.includes("run")) return "run";
+  if (combined.includes("bike") || combined.includes("ride")) return "bike";
+  if (combined.includes("swim")) return "swim";
+  return "other";
+}
+
+function buildSafeHrThresholdFallbackTarget(input?: {
+  preferredValue?: number | null;
+}): MinimalTrainingPlanCreate["goals"][number]["targets"][number] {
+  const preferred = input?.preferredValue;
+  const targetLthrBpm =
+    typeof preferred === "number" && Number.isFinite(preferred) && preferred > 0
+      ? clampNumber(Math.round(preferred), 120, 220)
+      : safeFallbackHrThresholdBpm;
+
+  return {
+    target_type: "hr_threshold",
+    target_lthr_bpm: targetLthrBpm,
+  };
+}
+
+function inferRaceDistanceMetersFromGoal(
+  goal: ProfileGoalProjectionSource,
+): number | null {
+  const metadataDistance = goal.metadata?.distance_m;
+  if (
+    typeof metadataDistance === "number" &&
+    Number.isFinite(metadataDistance)
+  ) {
+    return metadataDistance > 0 ? metadataDistance : null;
+  }
+
+  const normalizedTitle = goal.title?.trim().toLowerCase() ?? "";
+  if (!normalizedTitle) return null;
+  if (normalizedTitle.includes("half marathon")) return 21097;
+  if (normalizedTitle.includes("marathon")) return 42195;
+  if (/\b5k\b/.test(normalizedTitle)) return 5000;
+  if (/\b10k\b/.test(normalizedTitle)) return 10000;
+  if (/\b15k\b/.test(normalizedTitle)) return 15000;
+  if (/\b50k\b/.test(normalizedTitle)) return 50000;
+  if (normalizedTitle.includes("century")) return 160934;
+  return null;
+}
+
+function inferFallbackRaceTargetSpeedMps(input: {
+  activityCategory: "run" | "bike" | "swim" | "other";
+  distanceMeters: number;
+}): number {
+  const distanceKm = input.distanceMeters / 1000;
+
+  if (input.activityCategory === "bike") {
+    if (distanceKm >= 150) return 7.8;
+    if (distanceKm >= 80) return 8.5;
+    return 9.2;
+  }
+
+  if (input.activityCategory === "swim") {
+    return 0.75;
+  }
+
+  if (distanceKm >= 42) return 2.7;
+  if (distanceKm >= 21) return 3;
+  if (distanceKm >= 10) return 3.3;
+  return 3.6;
+}
+
+function buildRacePerformanceTarget(input: {
+  distanceMeters: number;
+  activityCategory: "run" | "bike" | "swim" | "other";
+  targetMetric: string | undefined;
+  targetValue: number | null;
+}): MinimalTrainingPlanCreate["goals"][number]["targets"][number] {
+  const speedMps =
+    input.targetMetric === "target_speed_mps" &&
+    input.targetValue !== null &&
+    input.targetValue > 0
+      ? input.targetValue
+      : inferFallbackRaceTargetSpeedMps({
+          activityCategory: input.activityCategory,
+          distanceMeters: input.distanceMeters,
+        });
+
+  const targetTimeSeconds =
+    input.targetMetric === "target_time_s" &&
+    input.targetValue !== null &&
+    input.targetValue > 0
+      ? Math.round(input.targetValue)
+      : Math.max(1, Math.round(input.distanceMeters / Math.max(0.1, speedMps)));
+
+  return {
+    target_type: "race_performance",
+    distance_m: input.distanceMeters,
+    target_time_s: targetTimeSeconds,
+    activity_category: input.activityCategory,
+  };
+}
+
+function mapProfileGoalToMinimalPlanGoal(
+  goal: ProfileGoalProjectionSource,
+): MinimalTrainingPlanCreate["goals"][number] | null {
+  if (!goal.target_date || !dateOnlyPattern.test(goal.target_date)) {
+    return null;
+  }
+
+  const goalType = goal.goal_type?.toLowerCase();
+  const targetMetric = goal.target_metric?.toLowerCase();
+  const targetValue =
+    typeof goal.target_value === "number" && Number.isFinite(goal.target_value)
+      ? goal.target_value
+      : null;
+  const raceDistanceMeters = inferRaceDistanceMetersFromGoal(goal);
+  const activityCategory = resolveGoalActivityCategory(
+    goal.goal_type,
+    goal.title,
+  );
+
+  let target:
+    | MinimalTrainingPlanCreate["goals"][number]["targets"][number]
+    | null = null;
+
+  if (goalType === "race_performance" && raceDistanceMeters !== null) {
+    target = buildRacePerformanceTarget({
+      distanceMeters: raceDistanceMeters,
+      activityCategory,
+      targetMetric: targetMetric ?? undefined,
+      targetValue,
+    });
+  }
+
+  if (
+    target === null &&
+    targetValue !== null &&
+    targetValue > 0 &&
+    (targetMetric === "target_speed_mps" || goalType === "pace_threshold")
+  ) {
+    target = {
+      target_type: "pace_threshold",
+      target_speed_mps: targetValue,
+      test_duration_s: projectionTargetTestDurationSeconds,
+      activity_category: activityCategory,
+    };
+  }
+
+  if (
+    target === null &&
+    targetValue !== null &&
+    targetValue > 0 &&
+    (targetMetric === "target_watts" || goalType === "power_threshold")
+  ) {
+    target = {
+      target_type: "power_threshold",
+      target_watts: targetValue,
+      test_duration_s: projectionTargetTestDurationSeconds,
+      activity_category: activityCategory,
+    };
+  }
+
+  if (
+    target === null &&
+    targetValue !== null &&
+    targetValue > 0 &&
+    (targetMetric === "target_lthr_bpm" || goalType === "hr_threshold")
+  ) {
+    target = buildSafeHrThresholdFallbackTarget({
+      preferredValue: targetValue,
+    });
+  }
+
+  if (target === null) {
+    target = buildSafeHrThresholdFallbackTarget();
+  }
+
+  return {
+    name: goal.title?.trim() || "Goal",
+    target_date: goal.target_date,
+    priority:
+      typeof goal.importance === "number"
+        ? clampNumber(Math.round(goal.importance), 0, 10)
+        : 5,
+    targets: [target],
+  };
+}
+
+async function loadProfileGoalsWithTargetDates(input: {
+  supabase: SupabaseClient;
+  profileId: string;
+  startDate: string;
+}): Promise<ProfileGoalProjectionSource[]> {
+  let query: any = input.supabase
+    .from("profile_goals")
+    .select(
+      "id, title, goal_type, target_metric, target_value, metadata, importance, target_date",
+    )
+    .eq("profile_id", input.profileId)
+    .not("target_date", "is", null)
+    .order("target_date", { ascending: true })
+    .limit(40);
+
+  if (typeof query.gte === "function") {
+    query = query.gte("target_date", input.startDate);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.warn(
+      "Failed to load profile goals for insight timeline projection fallback.",
+      error.message,
+    );
+    return [];
+  }
+
+  const rows: unknown[] = data ?? [];
+  type GoalParseResult = ReturnType<
+    typeof profileGoalProjectionSourceSchema.safeParse
+  >;
+
+  return rows
+    .map((item: unknown) => profileGoalProjectionSourceSchema.safeParse(item))
+    .filter(
+      (
+        result: GoalParseResult,
+      ): result is { success: true; data: ProfileGoalProjectionSource } =>
+        result.success,
+    )
+    .map(
+      (result: { success: true; data: ProfileGoalProjectionSource }) =>
+        result.data,
+    );
+}
+
+async function loadProfileTrainingSettingsCreationDefaults(input: {
+  supabase: SupabaseClient;
+  profileId: string;
+}): Promise<z.infer<typeof creationNormalizationInputSchema>> {
+  const { data, error } = await input.supabase
+    .from("profile_training_settings")
+    .select("settings")
+    .eq("profile_id", input.profileId)
+    .maybeSingle();
+
+  if (error || !data?.settings) {
+    return {};
+  }
+
+  const defaults = extractCreationDefaultsFromProfileSettings(data.settings);
+
+  if (Object.keys(defaults).length === 0) {
+    return {};
+  }
+
+  return { defaults };
+}
+
+function mapProjectionMicrocyclesToIdealTssByDate(
+  microcycles: ProjectionChartPayload["microcycles"],
+): Map<string, number> {
+  const map = new Map<string, number>();
+
+  for (const microcycle of microcycles || []) {
+    const startDate = microcycle.week_start_date;
+    const endDate = microcycle.week_end_date;
+
+    if (!startDate || !endDate) continue;
+
+    if (
+      typeof microcycle.planned_weekly_tss !== "number" ||
+      !Number.isFinite(microcycle.planned_weekly_tss)
+    ) {
+      continue;
+    }
+
+    const dates = buildDateRange(startDate, endDate);
+    if (dates.length === 0) continue;
+
+    const dailyTss =
+      Math.round(
+        (Math.max(0, microcycle.planned_weekly_tss) / dates.length) * 10,
+      ) / 10;
+
+    for (const date of dates) {
+      map.set(date, dailyTss);
+    }
+  }
+
+  return map;
+}
+
+async function deriveInsightTimelineProjectionIdealTssByDate(input: {
+  supabase: SupabaseClient;
+  profileId: string;
+  startDate: string;
+}): Promise<{
+  idealTssByDate: Map<string, number> | null;
+  goalCount: number;
+  datedGoalCount: number;
+}> {
+  try {
+    const rawGoals = await loadProfileGoalsWithTargetDates({
+      supabase: input.supabase,
+      profileId: input.profileId,
+      startDate: input.startDate,
+    });
+
+    const goalCount = rawGoals.length;
+
+    if (rawGoals.length === 0) {
+      return {
+        idealTssByDate: null,
+        goalCount,
+        datedGoalCount: 0,
+      };
+    }
+
+    const mappedGoals = rawGoals
+      .map((goal) => mapProfileGoalToMinimalPlanGoal(goal))
+      .filter(
+        (goal): goal is MinimalTrainingPlanCreate["goals"][number] =>
+          goal !== null,
+      );
+
+    if (mappedGoals.length === 0) {
+      return {
+        idealTssByDate: null,
+        goalCount,
+        datedGoalCount: 0,
+      };
+    }
+
+    const minimalPlanResult = minimalTrainingPlanCreateSchema.safeParse({
+      plan_start_date: input.startDate,
+      goals: mappedGoals,
+    });
+
+    if (!minimalPlanResult.success) {
+      console.warn(
+        "Failed to map profile goals into minimal training plan for insight projection.",
+      );
+      return {
+        idealTssByDate: null,
+        goalCount,
+        datedGoalCount: mappedGoals.length,
+      };
+    }
+
+    const creationInput = await loadProfileTrainingSettingsCreationDefaults({
+      supabase: input.supabase,
+      profileId: input.profileId,
+    });
+
+    const profileContext = await deriveProfileAwareCreationContext({
+      supabase: input.supabase,
+      profileId: input.profileId,
+    });
+
+    const creationConfig = await evaluateCreationConfig({
+      supabase: input.supabase,
+      profileId: input.profileId,
+      creationInput,
+    });
+
+    const projectionArtifacts = buildCreationProjectionArtifacts({
+      minimalPlan: minimalPlanResult.data,
+      loadBootstrapState: profileContext.loadBootstrapState,
+      finalConfig: creationConfig.finalConfig,
+      contextSummary: profileContext.contextSummary,
+    });
+
+    const idealTssByDate = mapProjectionMicrocyclesToIdealTssByDate(
+      projectionArtifacts.projectionChart.microcycles,
+    );
+
+    return {
+      idealTssByDate: idealTssByDate.size > 0 ? idealTssByDate : null,
+      goalCount,
+      datedGoalCount: mappedGoals.length,
+    };
+  } catch (error) {
+    console.warn(
+      "Insight timeline projection derivation failed. Falling back to block-based ideal TSS.",
+      error,
+    );
+    return {
+      idealTssByDate: null,
+      goalCount: 0,
+      datedGoalCount: 0,
+    };
+  }
+}
 
 async function estimateCurrentCtl(
   supabase: SupabaseClient,
@@ -1444,7 +2369,7 @@ function buildCreationProjectionArtifacts(input: {
   >["finalConfig"];
   contextSummary: CreationContextSummary;
 }): {
-  expandedPlan: ReturnType<typeof expandMinimalGoalToPlan>;
+  expandedPlan: ExpandedProjectionPlan;
   projectionChart: ProjectionChartPayload;
   projectionFeasibility: ProjectionFeasibilitySummary;
 } {
@@ -1453,7 +2378,7 @@ function buildCreationProjectionArtifacts(input: {
   const effectiveStartingAtl =
     input.startingAtlOverride ?? input.loadBootstrapState.starting_atl;
 
-  const expandedPlan = expandMinimalGoalToPlan(input.minimalPlan, {
+  const expandedPlan = buildExpandedPlanFromMinimalGoal(input.minimalPlan, {
     startingCtl: effectiveStartingCtl,
   });
 
@@ -1668,6 +2593,7 @@ export async function deriveProfileAwareCreationContext(input: {
     activities: completedActivities,
     as_of: input.asOfIso,
     window_days: 90,
+    profile_age: contextSummary.user_age,
   });
 
   return {
@@ -1682,6 +2608,9 @@ function buildConfirmedSuggestionsFromContext(input: {
   nowIso: string;
 }) {
   const suggestedOptimizationProfile =
+    input.contextSummary.is_youth ||
+    (input.contextSummary.missing_required_onboarding_fields?.length ?? 0) >
+      0 ||
     input.contextSummary.history_availability_state === "none"
       ? "sustainable"
       : input.contextSummary.signal_quality >= 0.75
@@ -1891,6 +2820,399 @@ async function evaluateCreationConfig(input: {
   };
 }
 
+function extractCreationDefaultsFromProfileSettings(
+  settings: unknown,
+): Partial<z.infer<typeof creationConfigValueSchema>> {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return {};
+  }
+
+  const settingsObject = settings as Record<string, unknown>;
+  const parsedDefaults = creationConfigValueSchema.partial().safeParse({
+    availability_config: settingsObject.availability_config,
+    recent_influence: settingsObject.recent_influence,
+    recent_influence_action: settingsObject.recent_influence_action,
+    constraints: settingsObject.constraints,
+    optimization_profile: settingsObject.optimization_profile,
+    post_goal_recovery_days: settingsObject.post_goal_recovery_days,
+    behavior_controls_v1: settingsObject.behavior_controls_v1,
+    calibration_composite_locks: settingsObject.calibration_composite_locks,
+    calibration: settingsObject.calibration,
+  });
+
+  if (!parsedDefaults.success) {
+    return {};
+  }
+
+  return parsedDefaults.data;
+}
+
+function mergeCreationDefaults(input: {
+  profileDefaults: Partial<z.infer<typeof creationConfigValueSchema>>;
+  inputDefaults?: z.infer<typeof creationNormalizationInputSchema>["defaults"];
+}): z.infer<typeof creationNormalizationInputSchema>["defaults"] {
+  const profileDefaults = input.profileDefaults;
+  const inputDefaults = input.inputDefaults;
+
+  if (!inputDefaults) {
+    return profileDefaults;
+  }
+
+  return {
+    ...profileDefaults,
+    ...inputDefaults,
+    constraints: inputDefaults.constraints ?? profileDefaults.constraints,
+    calibration_composite_locks:
+      inputDefaults.calibration_composite_locks ??
+      profileDefaults.calibration_composite_locks,
+    calibration: mergeCalibrationInput(
+      profileDefaults.calibration,
+      inputDefaults.calibration,
+    ),
+  };
+}
+
+async function withProfileTrainingSettingsDefaults(input: {
+  supabase: SupabaseClient;
+  profileId: string;
+  creationInput: z.infer<typeof creationNormalizationInputSchema>;
+}): Promise<z.infer<typeof creationNormalizationInputSchema>> {
+  const { data, error } = await input.supabase
+    .from("profile_training_settings")
+    .select("settings")
+    .eq("profile_id", input.profileId)
+    .maybeSingle();
+
+  if (error || !data?.settings) {
+    return input.creationInput;
+  }
+
+  const profileDefaults = extractCreationDefaultsFromProfileSettings(
+    data.settings,
+  );
+  if (Object.keys(profileDefaults).length === 0) {
+    return input.creationInput;
+  }
+
+  return {
+    ...input.creationInput,
+    defaults: mergeCreationDefaults({
+      profileDefaults,
+      inputDefaults: input.creationInput.defaults,
+    }),
+  };
+}
+
+export async function getPlanTabProjectionService({
+  supabase,
+  profileId,
+  input,
+}: {
+  supabase: SupabaseClient;
+  profileId: string;
+  input: {
+    training_plan_id: string;
+    start_date: string;
+    end_date: string;
+    timezone: string;
+  };
+}) {
+  const windowDays = diffDateOnlyUtcDays(input.start_date, input.end_date) + 1;
+  if (windowDays <= 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "end_date must be on or after start_date",
+    });
+  }
+
+  if (windowDays > 400) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Date range too large. Use 400 days or fewer.",
+    });
+  }
+
+  const { data: plan, error: planError } = await supabase
+    .from("training_plans")
+    .select("*")
+    .eq("id", input.training_plan_id)
+    .or(
+      `profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`,
+    )
+    .single();
+
+  if (planError || !plan) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Training plan not found",
+    });
+  }
+
+  const parsedStructure = trainingPlanSchema.safeParse(plan.structure);
+  const looseStructure =
+    (plan.structure as {
+      goals?: unknown;
+      blocks?: unknown;
+      fitness_progression?: { target_ctl_at_peak?: number };
+      activity_distribution?: Record<string, unknown>;
+    }) ?? {};
+
+  const parsedGoals = z
+    .array(goalSnapshotSchema)
+    .safeParse(looseStructure.goals);
+  const fallbackGoals = parsedGoals.success ? parsedGoals.data : [];
+
+  const goals = fallbackGoals
+    .filter((goal) => goal.name && goal.target_date)
+    .map((goal, index) => ({
+      id:
+        goal.id ??
+        deterministicUuidFromSeed(
+          `${plan.id}|goal|${index}|${goal.name}|${goal.target_date}`,
+        ),
+      name: goal.name ?? `Goal ${index + 1}`,
+      target_date: goal.target_date ?? input.end_date,
+      priority: goal.priority,
+    }));
+
+  const parsedBlocks = z
+    .array(blockSnapshotSchema)
+    .safeParse(looseStructure.blocks);
+  const blocks = parsedBlocks.success ? parsedBlocks.data : [];
+
+  const planWarnings =
+    parsedStructure.success && parsedStructure.data.plan_type === "periodized"
+      ? validatePlanFeasibility(parsedStructure.data).warnings
+      : [];
+
+  const estimatedCurrentCtl = await estimateCurrentCtl(supabase, profileId);
+
+  const targetCtlAtPeak =
+    parsedStructure.success && parsedStructure.data.plan_type === "periodized"
+      ? parsedStructure.data.fitness_progression.target_ctl_at_peak
+      : looseStructure.fitness_progression?.target_ctl_at_peak;
+
+  const blockRampWarnings = collectBlockRampWarnings(blocks);
+  const assessments = buildPlanAssessments({
+    goals,
+    referenceDate: formatDateOnlyUtc(new Date()),
+    currentCtl: estimatedCurrentCtl,
+    targetCtlAtPeak,
+    planWarnings,
+    blockRampWarnings,
+  });
+
+  const { data: plannedActivitiesEventsRaw } = await supabase
+    .from("events")
+    .select("starts_at, activity_plan:activity_plans (*)")
+    .eq("profile_id", profileId)
+    .eq("event_type", plannedEventType)
+    .gte("starts_at", toDayStartIso(input.start_date))
+    .lt("starts_at", toNextDayStartIso(input.end_date));
+
+  const plannedActivitiesRaw = (plannedActivitiesEventsRaw || []).map(
+    (item) => ({
+      ...item,
+      scheduled_date: item.starts_at?.split("T")[0] ?? "",
+      activity_plan: item.activity_plan as any,
+    }),
+  );
+
+  const activityPlans = (plannedActivitiesRaw || [])
+    .map((item) => item.activity_plan)
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+
+  const plansWithEstimations =
+    activityPlans.length > 0
+      ? await addEstimationToPlans(activityPlans, supabase, profileId)
+      : [];
+
+  const estimatedTssByPlanId = new Map(
+    plansWithEstimations.map((item) => [item.id, item.estimated_tss]),
+  );
+
+  const scheduledByDate = new Map<string, number>();
+  for (const planned of plannedActivitiesRaw || []) {
+    const scheduledDate = planned.scheduled_date;
+    if (!scheduledDate) continue;
+
+    const planId = planned.activity_plan?.id;
+    const estimatedTss = planId ? estimatedTssByPlanId.get(planId) || 0 : 0;
+    scheduledByDate.set(
+      scheduledDate,
+      (scheduledByDate.get(scheduledDate) || 0) + estimatedTss,
+    );
+  }
+
+  const endExclusive = new Date(parseDateOnlyUtc(input.end_date));
+  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+
+  const { data: actualActivities } = await supabase
+    .from("activities")
+    .select("started_at, training_stress_score")
+    .eq("profile_id", profileId)
+    .gte("started_at", `${input.start_date}T00:00:00.000Z`)
+    .lt("started_at", endExclusive.toISOString());
+
+  const actualByDate = new Map<string, number>();
+  for (const activity of actualActivities || []) {
+    if (!activity.started_at) continue;
+    const date = formatDateOnlyUtc(new Date(activity.started_at));
+    const tss = activity.training_stress_score || 0;
+    actualByDate.set(date, (actualByDate.get(date) || 0) + tss);
+  }
+
+  const projectionGoalContext =
+    await deriveInsightTimelineProjectionIdealTssByDate({
+      supabase,
+      profileId,
+      startDate: input.start_date,
+    });
+  const projectionIdealTssByDate = projectionGoalContext.idealTssByDate;
+  const hasActivityHistory = (actualActivities?.length || 0) > 0;
+  const loadGuidanceMode: LoadGuidanceMode =
+    projectionGoalContext.datedGoalCount > 0 ? "goal_driven" : "baseline";
+  const scheduledWeeklyTotals = buildWeeklyTotalsByWeekStart(scheduledByDate);
+
+  const timelineDates = buildDateRange(input.start_date, input.end_date);
+  const timeline = timelineDates.map((date) => {
+    const projectedIdealTss = projectionIdealTssByDate?.get(date);
+    const scheduled_tss =
+      Math.round((scheduledByDate.get(date) || 0) * 10) / 10;
+    const ideal_tss =
+      loadGuidanceMode === "goal_driven"
+        ? resolveIdealDailyTss({
+            date,
+            projectedIdealTss,
+            blocks,
+            structure: looseStructure as Record<string, unknown>,
+            scheduledTss: scheduled_tss,
+          })
+        : resolveBaselineDailyTss({
+            date,
+            scheduledTss: scheduled_tss,
+            scheduledWeeklyTotals,
+            structure: looseStructure as Record<string, unknown>,
+            blocks,
+            hasActivityHistory,
+          });
+    const actual_tss = Math.round((actualByDate.get(date) || 0) * 10) / 10;
+    const boundary = classifyBoundaryState(
+      ideal_tss,
+      scheduled_tss,
+      actual_tss,
+    );
+
+    return {
+      date,
+      ideal_tss,
+      scheduled_tss,
+      actual_tss,
+      adherence_score: adherenceScore(ideal_tss, scheduled_tss, actual_tss),
+      boundary_state: boundary.state,
+      boundary_reasons: boundary.reasons,
+    };
+  });
+
+  const timelineBoundaryState = getWorstSafetyState(
+    timeline.map((point) => point.boundary_state),
+  );
+  const timelineBoundaryReasons = uniqueReasons(
+    timeline.flatMap((point) => point.boundary_reasons),
+  );
+
+  const planSafetyState = getWorstSafetyState([
+    assessments.planSafety.state,
+    timelineBoundaryState,
+  ]);
+
+  const primaryCategory =
+    parsedStructure.success && parsedStructure.data.plan_type === "periodized"
+      ? (Object.keys(parsedStructure.data.activity_distribution)[0] ?? "run")
+      : (Object.keys(looseStructure.activity_distribution ?? {})[0] ?? "run");
+
+  const adherenceAverage =
+    timeline.length > 0
+      ? timeline.reduce((sum, point) => sum + point.adherence_score, 0) /
+        timeline.length
+      : 0;
+
+  const adherenceSummary = buildAdherenceSummary(timeline);
+
+  const projectionDrivers = [
+    "mvp_baseline_projection",
+    adherenceAverage < 70
+      ? "low_adherence_reduces_projection_confidence"
+      : "adherence_within_expected_range",
+  ];
+
+  const projectionConfidence =
+    adherenceAverage <= 0 ? 0.2 : clampNumber(adherenceAverage / 100, 0.2, 0.8);
+
+  const readinessSummary = buildReadinessSummary({
+    planFeasibilityState: assessments.planFeasibility.state,
+    planSafetyState,
+    adherenceConfidence: projectionConfidence,
+    capabilityConfidence: clampNumber(
+      (actualActivities?.length || 0) / 30,
+      0.1,
+      0.9,
+    ),
+    adherenceScore: adherenceSummary.score,
+  });
+
+  const loadGuidance: LoadGuidanceSummary = {
+    mode: loadGuidanceMode,
+    goal_count: projectionGoalContext.goalCount,
+    dated_goal_count: projectionGoalContext.datedGoalCount,
+    has_activity_history: hasActivityHistory,
+    weekly_cap_tss:
+      loadGuidanceMode === "baseline" && !hasActivityHistory
+        ? conservativeStarterWeeklyTss
+        : null,
+    interpretation:
+      loadGuidanceMode === "goal_driven"
+        ? "Recommended load is anchored to your dated goals and current plan context."
+        : hasActivityHistory
+          ? "Recommended load is a baseline estimate from your recent training and active plan, not a dated goal."
+          : "Recommended load is a conservative baseline estimate because no dated goal or usable history was found.",
+  };
+
+  return {
+    window: {
+      start_date: input.start_date,
+      end_date: input.end_date,
+      timezone: input.timezone,
+    },
+    plan_feasibility: assessments.planFeasibility,
+    goal_feasibility: assessments.goalFeasibility,
+    plan_safety: {
+      state: planSafetyState,
+      reasons: uniqueReasons([
+        ...assessments.planSafety.reasons,
+        ...timelineBoundaryReasons,
+      ]),
+    },
+    goal_safety: assessments.goalSafety,
+    capability: {
+      category: primaryCategory,
+      cp_or_cs: null,
+      confidence: clampNumber((actualActivities?.length || 0) / 30, 0.1, 0.9),
+    },
+    projection: {
+      at_goal_date: {
+        projected_goal_metric: null,
+        confidence: projectionConfidence,
+      },
+      drivers: projectionDrivers,
+    },
+    adherence_summary: adherenceSummary,
+    readiness_summary: readinessSummary,
+    load_guidance: loadGuidance,
+    timeline,
+  };
+}
+
 export const trainingPlansRouter = createTRPCRouter({
   // ------------------------------
   // Get a training plan (by ID or active plan)
@@ -1904,7 +3226,9 @@ export const trainingPlansRouter = createTRPCRouter({
           .from("training_plans")
           .select("*")
           .eq("id", input.id)
-          .eq("profile_id", ctx.session.user.id)
+          .or(
+            `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
+          )
           .single();
 
         if (error) {
@@ -1948,33 +3272,17 @@ export const trainingPlansRouter = createTRPCRouter({
         };
       }
 
-      // Otherwise, get active plan
-      const { data: activePlan, error } = await ctx.supabase
-        .from("user_training_plans" as any)
-        .select(
-          `
-          id,
-          training_plan:training_plan_id (*)
-        `,
-        )
-        .eq("profile_id", ctx.session.user.id)
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // Otherwise, get active plan from future scheduled events
+      const activePlanLookup = await getActivePlanFromFutureEvents({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+      });
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
-
-      if (!activePlan || !(activePlan as any).training_plan) {
+      if (!activePlanLookup) {
         return null;
       }
 
-      const data = (activePlan as any).training_plan as any;
+      const data = activePlanLookup.trainingPlan;
 
       // Validate structure on read (defensive programming)
       try {
@@ -2189,7 +3497,7 @@ export const trainingPlansRouter = createTRPCRouter({
         ctx.supabase,
         ctx.session.user.id,
       );
-      const expandedPlan = expandMinimalGoalToPlan(input, {
+      const expandedPlan = buildExpandedPlanFromMinimalGoal(input, {
         startingCtl: estimatedCurrentCtl,
       });
       const normalizedGoals = expandedPlan.goals;
@@ -2302,10 +3610,20 @@ export const trainingPlansRouter = createTRPCRouter({
   previewCreationConfig: protectedProcedure
     .input(previewCreationConfigRouterInputSchema)
     .query(async ({ ctx, input }) => {
+      const creationInputWithProfileDefaults =
+        await withProfileTrainingSettingsDefaults({
+          supabase: ctx.supabase,
+          profileId: ctx.session.user.id,
+          creationInput: input.creation_input,
+        });
+
       const result = await previewCreationConfigUseCase({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
-        params: input,
+        params: {
+          ...input,
+          creation_input: creationInputWithProfileDefaults,
+        },
         repository: createSupabaseTrainingPlanRepository(ctx.supabase),
         deps: {
           enforceCreationConfigFeatureEnabled,
@@ -2327,10 +3645,20 @@ export const trainingPlansRouter = createTRPCRouter({
   createFromCreationConfig: protectedProcedure
     .input(createFromCreationConfigRouterInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const creationInputWithProfileDefaults =
+        await withProfileTrainingSettingsDefaults({
+          supabase: ctx.supabase,
+          profileId: ctx.session.user.id,
+          creationInput: input.creation_input,
+        });
+
       return createFromCreationConfigUseCase({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
-        params: input,
+        params: {
+          ...input,
+          creation_input: creationInputWithProfileDefaults,
+        },
         repository: createSupabaseTrainingPlanRepository(ctx.supabase),
         deps: {
           enforceCreationConfigFeatureEnabled,
@@ -2350,10 +3678,20 @@ export const trainingPlansRouter = createTRPCRouter({
   updateFromCreationConfig: protectedProcedure
     .input(updateFromCreationConfigRouterInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const creationInputWithProfileDefaults =
+        await withProfileTrainingSettingsDefaults({
+          supabase: ctx.supabase,
+          profileId: ctx.session.user.id,
+          creationInput: input.creation_input,
+        });
+
       return updateFromCreationConfigUseCase({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
-        params: input,
+        params: {
+          ...input,
+          creation_input: creationInputWithProfileDefaults,
+        },
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
@@ -2378,7 +3716,7 @@ export const trainingPlansRouter = createTRPCRouter({
         ctx.supabase,
         ctx.session.user.id,
       );
-      const expandedPlan = expandMinimalGoalToPlan(input, {
+      const expandedPlan = buildExpandedPlanFromMinimalGoal(input, {
         startingCtl: estimatedCurrentCtl,
       });
 
@@ -2425,270 +3763,11 @@ export const trainingPlansRouter = createTRPCRouter({
   getInsightTimeline: protectedProcedure
     .input(insightTimelineInputSchema)
     .query(async ({ ctx, input }) => {
-      const windowDays =
-        diffDateOnlyUtcDays(input.start_date, input.end_date) + 1;
-      if (windowDays <= 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "end_date must be on or after start_date",
-        });
-      }
-
-      if (windowDays > 400) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Date range too large. Use 400 days or fewer.",
-        });
-      }
-
-      const { data: plan, error: planError } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.training_plan_id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
-
-      if (planError || !plan) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found",
-        });
-      }
-
-      const parsedStructure = trainingPlanSchema.safeParse(plan.structure);
-      const looseStructure =
-        (plan.structure as {
-          goals?: unknown;
-          blocks?: unknown;
-          fitness_progression?: { target_ctl_at_peak?: number };
-          activity_distribution?: Record<string, unknown>;
-        }) ?? {};
-
-      const parsedGoals = z
-        .array(goalSnapshotSchema)
-        .safeParse(looseStructure.goals);
-      const fallbackGoals = parsedGoals.success ? parsedGoals.data : [];
-
-      const goals = fallbackGoals
-        .filter((goal) => goal.name && goal.target_date)
-        .map((goal, index) => ({
-          id:
-            goal.id ??
-            deterministicUuidFromSeed(
-              `${plan.id}|goal|${index}|${goal.name}|${goal.target_date}`,
-            ),
-          name: goal.name ?? `Goal ${index + 1}`,
-          target_date: goal.target_date ?? input.end_date,
-          priority: goal.priority,
-        }));
-
-      const parsedBlocks = z
-        .array(blockSnapshotSchema)
-        .safeParse(looseStructure.blocks);
-      const blocks = parsedBlocks.success ? parsedBlocks.data : [];
-
-      const planWarnings =
-        parsedStructure.success &&
-        parsedStructure.data.plan_type === "periodized"
-          ? validatePlanFeasibility(parsedStructure.data).warnings
-          : [];
-
-      const estimatedCurrentCtl = await estimateCurrentCtl(
-        ctx.supabase,
-        ctx.session.user.id,
-      );
-
-      const targetCtlAtPeak =
-        parsedStructure.success &&
-        parsedStructure.data.plan_type === "periodized"
-          ? parsedStructure.data.fitness_progression.target_ctl_at_peak
-          : looseStructure.fitness_progression?.target_ctl_at_peak;
-
-      const blockRampWarnings = collectBlockRampWarnings(blocks);
-      const assessments = buildPlanAssessments({
-        goals,
-        referenceDate: formatDateOnlyUtc(new Date()),
-        currentCtl: estimatedCurrentCtl,
-        targetCtlAtPeak,
-        planWarnings,
-        blockRampWarnings,
+      return getPlanTabProjectionService({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        input,
       });
-
-      const { data: plannedActivitiesEventsRaw } = await ctx.supabase
-        .from("events")
-        .select("starts_at, activity_plan:activity_plans (*)")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("event_type", plannedEventType)
-        .eq("training_plan_id", input.training_plan_id)
-        .gte("starts_at", toDayStartIso(input.start_date))
-        .lt("starts_at", toNextDayStartIso(input.end_date));
-
-      const plannedActivitiesRaw = (plannedActivitiesEventsRaw || []).map(
-        (item) => ({
-          ...item,
-          scheduled_date: item.starts_at?.split("T")[0] ?? "",
-        }),
-      );
-
-      const activityPlans = (plannedActivitiesRaw || [])
-        .map((item) => item.activity_plan)
-        .filter((item): item is NonNullable<typeof item> => item !== null);
-
-      const plansWithEstimations =
-        activityPlans.length > 0
-          ? await addEstimationToPlans(
-              activityPlans,
-              ctx.supabase,
-              ctx.session.user.id,
-            )
-          : [];
-
-      const estimatedTssByPlanId = new Map(
-        plansWithEstimations.map((item) => [item.id, item.estimated_tss]),
-      );
-
-      const scheduledByDate = new Map<string, number>();
-      for (const planned of plannedActivitiesRaw || []) {
-        const scheduledDate = planned.scheduled_date;
-        if (!scheduledDate) continue;
-
-        const planId = planned.activity_plan?.id;
-        const estimatedTss = planId ? estimatedTssByPlanId.get(planId) || 0 : 0;
-        scheduledByDate.set(
-          scheduledDate,
-          (scheduledByDate.get(scheduledDate) || 0) + estimatedTss,
-        );
-      }
-
-      const endExclusive = new Date(parseDateOnlyUtc(input.end_date));
-      endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
-
-      const { data: actualActivities } = await ctx.supabase
-        .from("activities")
-        .select("started_at, training_stress_score")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", `${input.start_date}T00:00:00.000Z`)
-        .lt("started_at", endExclusive.toISOString());
-
-      const actualByDate = new Map<string, number>();
-      for (const activity of actualActivities || []) {
-        if (!activity.started_at) continue;
-        const date = formatDateOnlyUtc(new Date(activity.started_at));
-        const tss = activity.training_stress_score || 0;
-        actualByDate.set(date, (actualByDate.get(date) || 0) + tss);
-      }
-
-      const timelineDates = buildDateRange(input.start_date, input.end_date);
-      const timeline = timelineDates.map((date) => {
-        const ideal_tss = estimateIdealDailyTss(date, blocks);
-        const scheduled_tss =
-          Math.round((scheduledByDate.get(date) || 0) * 10) / 10;
-        const actual_tss = Math.round((actualByDate.get(date) || 0) * 10) / 10;
-        const boundary = classifyBoundaryState(
-          ideal_tss,
-          scheduled_tss,
-          actual_tss,
-        );
-
-        return {
-          date,
-          ideal_tss,
-          scheduled_tss,
-          actual_tss,
-          adherence_score: adherenceScore(ideal_tss, scheduled_tss, actual_tss),
-          boundary_state: boundary.state,
-          boundary_reasons: boundary.reasons,
-        };
-      });
-
-      const timelineBoundaryState = getWorstSafetyState(
-        timeline.map((point) => point.boundary_state),
-      );
-      const timelineBoundaryReasons = uniqueReasons(
-        timeline.flatMap((point) => point.boundary_reasons),
-      );
-
-      const planSafetyState = getWorstSafetyState([
-        assessments.planSafety.state,
-        timelineBoundaryState,
-      ]);
-
-      const primaryCategory =
-        parsedStructure.success &&
-        parsedStructure.data.plan_type === "periodized"
-          ? (Object.keys(parsedStructure.data.activity_distribution)[0] ??
-            "run")
-          : (Object.keys(looseStructure.activity_distribution ?? {})[0] ??
-            "run");
-
-      const adherenceAverage =
-        timeline.length > 0
-          ? timeline.reduce((sum, point) => sum + point.adherence_score, 0) /
-            timeline.length
-          : 0;
-
-      const adherenceSummary = buildAdherenceSummary(timeline);
-
-      const projectionDrivers = [
-        "mvp_baseline_projection",
-        adherenceAverage < 70
-          ? "low_adherence_reduces_projection_confidence"
-          : "adherence_within_expected_range",
-      ];
-
-      const projectionConfidence =
-        adherenceAverage <= 0
-          ? 0.2
-          : clampNumber(adherenceAverage / 100, 0.2, 0.8);
-
-      const readinessSummary = buildReadinessSummary({
-        planFeasibilityState: assessments.planFeasibility.state,
-        planSafetyState,
-        adherenceConfidence: projectionConfidence,
-        capabilityConfidence: clampNumber(
-          (actualActivities?.length || 0) / 30,
-          0.1,
-          0.9,
-        ),
-        adherenceScore: adherenceSummary.score,
-      });
-
-      return {
-        window: {
-          start_date: input.start_date,
-          end_date: input.end_date,
-          timezone: input.timezone,
-        },
-        plan_feasibility: assessments.planFeasibility,
-        goal_feasibility: assessments.goalFeasibility,
-        plan_safety: {
-          state: planSafetyState,
-          reasons: uniqueReasons([
-            ...assessments.planSafety.reasons,
-            ...timelineBoundaryReasons,
-          ]),
-        },
-        goal_safety: assessments.goalSafety,
-        capability: {
-          category: primaryCategory,
-          cp_or_cs: null,
-          confidence: clampNumber(
-            (actualActivities?.length || 0) / 30,
-            0.1,
-            0.9,
-          ),
-        },
-        projection: {
-          at_goal_date: {
-            projected_goal_metric: null,
-            confidence: projectionConfidence,
-          },
-          drivers: projectionDrivers,
-        },
-        adherence_summary: adherenceSummary,
-        readiness_summary: readinessSummary,
-        timeline,
-      };
     }),
 
   // ------------------------------
@@ -2823,7 +3902,9 @@ export const trainingPlansRouter = createTRPCRouter({
         .from("training_plans")
         .select("*")
         .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
+        .or(
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
+        )
         .single();
 
       if (error) {
@@ -3087,7 +4168,9 @@ export const trainingPlansRouter = createTRPCRouter({
         .from("training_plans")
         .select("*")
         .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
+        .or(
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
+        )
         .single();
 
       if (planError || !plan) {
@@ -3097,16 +4180,24 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      const structure = plan.structure as any;
+      const structure =
+        (plan.structure as Record<string, unknown> | null) ?? {};
 
-      // ✅ FIX: Support both legacy fitness_progression and modern periodization_template
-      const hasPeriodization =
-        structure?.periodization_template?.target_ctl &&
-        structure?.periodization_template?.target_date;
+      const structuredWeeklyTss =
+        await estimateWeeklyTssFromStructuredActivities({
+          supabase: ctx.supabase,
+          profileId: ctx.session.user.id,
+          structure,
+          startDate: input.start_date,
+        });
 
-      if (!hasPeriodization && !structure?.fitness_progression) {
-        return null;
-      }
+      const derivedWeeklyTss =
+        deriveStructureWeeklyTssTarget(
+          structure,
+          formatDateOnlyUtc(new Date()),
+        ) ??
+        structuredWeeklyTss.weeklyTss ??
+        conservativeStarterWeeklyTss;
 
       // ✅ FIX: Get user's CURRENT CTL (not plan's starting_ctl)
       const { data: actualCurve } = await ctx.supabase
@@ -3117,7 +4208,11 @@ export const trainingPlansRouter = createTRPCRouter({
         .order("started_at", { ascending: false })
         .limit(42);
 
-      let currentCTL = structure?.periodization_template?.starting_ctl || 40;
+      let currentCTL =
+        typeof (structure.periodization_template as any)?.starting_ctl ===
+        "number"
+          ? (structure.periodization_template as any).starting_ctl
+          : Math.max(10, Math.round((derivedWeeklyTss / 7) * 0.75));
 
       if (actualCurve && actualCurve.length > 0) {
         const tssData = actualCurve.map((a) => a.training_stress_score || 0);
@@ -3126,38 +4221,63 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const targetCTL =
-        structure.periodization_template?.target_ctl ||
-        structure.fitness_progression?.target_ctl ||
-        100;
+        typeof (structure.periodization_template as any)?.target_ctl ===
+        "number"
+          ? (structure.periodization_template as any).target_ctl
+          : typeof (structure.fitness_progression as any)?.target_ctl ===
+              "number"
+            ? (structure.fitness_progression as any).target_ctl
+            : Math.max(
+                currentCTL,
+                Math.round(Math.max(derivedWeeklyTss / 6, currentCTL + 4)),
+              );
+
+      const targetDateCandidates = [
+        (structure.periodization_template as any)?.target_date,
+        (structure.fitness_progression as any)?.peak_date,
+        structuredWeeklyTss.latestScheduledDate,
+        input.end_date,
+      ].filter(
+        (value): value is string =>
+          typeof value === "string" && value.length > 0,
+      );
 
       const targetDate =
-        structure.periodization_template?.target_date ||
-        structure.fitness_progression?.peak_date ||
+        targetDateCandidates.sort((a, b) => a.localeCompare(b)).at(-1) ??
         input.end_date;
 
       // ✅ FIX: Start projection from TODAY (not query start_date)
       const projectionStartDate = new Date();
       const projectionEndDate = new Date(targetDate);
-      const daysToTarget = Math.floor(
-        (projectionEndDate.getTime() - projectionStartDate.getTime()) /
-          (24 * 60 * 60 * 1000),
+      const daysToTarget = Math.max(
+        0,
+        Math.floor(
+          (projectionEndDate.getTime() - projectionStartDate.getTime()) /
+            (24 * 60 * 60 * 1000),
+        ),
       );
 
       // ✅ FIX: Use plan's target_weekly_tss for projection
-      const weeklyTSS =
-        structure.target_weekly_tss || (targetCTL - currentCTL) * 7;
+      const weeklyTSS = Math.max(
+        conservativeStarterWeeklyTss,
+        derivedWeeklyTss,
+        (targetCTL - currentCTL) * 7,
+      );
       const dailyTSS = weeklyTSS / 7;
 
       // Build projection curve via shared load-series primitive
       const projectionDatePoints: string[] = [];
       const projectedDailyTss: number[] = [];
+      const structureBlocks = Array.isArray(structure.blocks)
+        ? structure.blocks
+        : [];
 
       for (let day = 0; day <= daysToTarget; day++) {
         const date = new Date(projectionStartDate);
         date.setDate(date.getDate() + day);
 
         // Apply phase multipliers if blocks exist
-        const currentBlock = structure.blocks?.find((block: any) => {
+        const currentBlock = structureBlocks.find((block: any) => {
           const blockStart = new Date(block.start_date);
           const blockEnd = new Date(block.end_date);
           return date >= blockStart && date <= blockEnd;
@@ -4116,20 +5236,12 @@ export const trainingPlansRouter = createTRPCRouter({
 
       const profileId = ctx.session.user.id;
 
-      const { data: activePlans, error: activePlansError } = await ctx.supabase
-        .from("user_training_plans" as any)
-        .select("id")
-        .eq("profile_id", profileId)
-        .in("status", ["active", "paused"]);
+      const activePlanLookup = await getActivePlanFromFutureEvents({
+        supabase: ctx.supabase,
+        profileId,
+      });
 
-      if (activePlansError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to check active training plans",
-        });
-      }
-
-      if (activePlans && activePlans.length > 0) {
+      if (activePlanLookup) {
         throw new TRPCError({
           code: "CONFLICT",
           message:
@@ -4164,10 +5276,10 @@ export const trainingPlansRouter = createTRPCRouter({
 
       if (!appliedPlanStartDate && input.target_date) {
         const dummyStart = "2000-01-01";
-        const dummySessions = deriveTemplateSessions(structure, dummyStart);
+        const dummySessions = materializePlanToEvents(structure, dummyStart);
         let maxOffsetDays = 0;
         for (const s of dummySessions) {
-          const offset = diffDateOnlyUtcDays(dummyStart, s.date);
+          const offset = diffDateOnlyUtcDays(dummyStart, s.scheduled_date);
           if (offset > maxOffsetDays) maxOffsetDays = offset;
         }
         appliedPlanStartDate = addDaysDateOnlyUtc(
@@ -4187,34 +5299,16 @@ export const trainingPlansRouter = createTRPCRouter({
       structure.id = appliedStructureId;
       structure.start_date = appliedPlanStartDate;
 
-      const { data: appliedPlan, error: appliedPlanError } = await ctx.supabase
-        .from("user_training_plans" as any)
-        .insert({
-          profile_id: profileId,
-          training_plan_id: templatePlan.id,
-          status: "active",
-          start_date: appliedPlanStartDate,
-          target_date: input.target_date ?? null,
-          snapshot_structure: structure as any,
-        })
-        .select("id")
-        .single();
+      const appliedPlanId = templatePlan.id as string;
 
-      if (appliedPlanError || !appliedPlan) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to apply training plan template",
-        });
-      }
-
-      const derivableSessions = deriveTemplateSessions(
+      const materializedSessions = materializePlanToEvents(
         structure,
         appliedPlanStartDate,
       );
 
       const candidatePlanIds = Array.from(
         new Set(
-          derivableSessions
+          materializedSessions
             .map((session) => session.activity_plan_id)
             .filter((id): id is string => Boolean(id)),
         ),
@@ -4240,7 +5334,8 @@ export const trainingPlansRouter = createTRPCRouter({
         allowedPlanIds = new Set((accessiblePlans ?? []).map((row) => row.id));
       }
 
-      const eventRows = derivableSessions
+      const eventRows = materializedSessions
+        .filter((session) => session.event_type === "planned")
         .filter(
           (session) =>
             !session.activity_plan_id ||
@@ -4258,7 +5353,7 @@ export const trainingPlansRouter = createTRPCRouter({
               ends_at: session.ends_at,
               status: "scheduled" as const,
               activity_plan_id: session.activity_plan_id,
-              user_training_plan_id: (appliedPlan as any).id,
+              training_plan_id: appliedPlanId,
             }) as any,
         );
 
@@ -4287,7 +5382,8 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       return {
-        applied_plan_id: (appliedPlan as any).id,
+        applied_plan_id: appliedPlanId,
+        training_plan_id: templatePlan.id,
         schedule_batch_id,
         created_event_count,
         cache_tags: [
@@ -4309,86 +5405,120 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // First check if the plan exists and belongs to the user
-      const { data: existingPlan, error: fetchError } = await ctx.supabase
-        .from("user_training_plans" as any)
-        .select("id")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const profileId = ctx.session.user.id;
+      const windowStartIso = todayStartIsoUtc();
 
-      if (fetchError || !existingPlan) {
+      const { data: futurePlanEvents, error: futurePlanEventsError } =
+        await ctx.supabase
+          .from("events")
+          .select("id, training_plan_id")
+          .eq("profile_id", profileId)
+          .eq("event_type", plannedEventType)
+          .eq("training_plan_id", input.id)
+          .gte("starts_at", windowStartIso);
+
+      if (futurePlanEventsError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to inspect active plan events",
+        });
+      }
+
+      const hasFutureEventsForPlan = (futurePlanEvents?.length ?? 0) > 0;
+      if (
+        !hasFutureEventsForPlan &&
+        (input.status === "active" || input.status === "paused")
+      ) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Active training plan not found",
         });
       }
 
-      // If making it active, ensure no other plan is active/paused
       if (input.status === "active" || input.status === "paused") {
-        const { data: otherActivePlans, error: activeCheckError } =
+        const { data: allFuturePlanEvents, error: allFuturePlanEventsError } =
           await ctx.supabase
-            .from("user_training_plans" as any)
-            .select("id")
-            .eq("profile_id", ctx.session.user.id)
-            .neq("id", input.id)
-            .in("status", ["active", "paused"]);
+            .from("events")
+            .select("training_plan_id")
+            .eq("profile_id", profileId)
+            .eq("event_type", plannedEventType)
+            .gte("starts_at", windowStartIso)
+            .limit(200);
 
-        if (activeCheckError) {
+        if (allFuturePlanEventsError) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "Failed to check other active plans",
           });
         }
 
-        if (otherActivePlans && otherActivePlans.length > 0) {
+        const hasOtherActivePlan = (allFuturePlanEvents ?? []).some(
+          (event) =>
+            isUuidString((event as any).training_plan_id) &&
+            (event as any).training_plan_id !== input.id,
+        );
+
+        if (hasOtherActivePlan) {
           throw new TRPCError({
             code: "CONFLICT",
             message:
               "You already have another active or paused training plan. Please complete or abandon it first.",
           });
         }
+
+        return {
+          id: input.id,
+          training_plan_id: input.id,
+          profile_id: profileId,
+          status: input.status,
+          updated_event_count: 0,
+        };
       }
 
-      const { data: updatedPlan, error: updateError } = await ctx.supabase
-        .from("user_training_plans" as any)
-        .update({ status: input.status })
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .select()
-        .single();
+      const { data: deletedEvents, error: deleteEventsError } =
+        await ctx.supabase
+          .from("events")
+          .delete()
+          .eq("profile_id", profileId)
+          .eq("event_type", plannedEventType)
+          .eq("training_plan_id", input.id)
+          .gte("starts_at", windowStartIso)
+          .select("id");
 
-      if (updateError || !updatedPlan) {
+      if (deleteEventsError) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update training plan status",
         });
       }
 
-      return updatedPlan;
+      return {
+        id: input.id,
+        training_plan_id: input.id,
+        profile_id: profileId,
+        status: input.status,
+        updated_event_count: deletedEvents?.length ?? 0,
+      };
     }),
 
   getActivePlan: protectedProcedure.query(async ({ ctx }) => {
-    const { data: activePlan, error } = await ctx.supabase
-      .from("user_training_plans" as any)
-      .select(
-        `
-        *,
-        training_plan:training_plan_id (*)
-      `,
-      )
-      .eq("profile_id", ctx.session.user.id)
-      .in("status", ["active", "paused"])
-      .maybeSingle();
+    const activePlanLookup = await getActivePlanFromFutureEvents({
+      supabase: ctx.supabase,
+      profileId: ctx.session.user.id,
+    });
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to fetch active training plan",
-      });
+    if (!activePlanLookup) {
+      return null;
     }
 
-    return activePlan;
+    return {
+      id: activePlanLookup.trainingPlanId,
+      profile_id: ctx.session.user.id,
+      training_plan_id: activePlanLookup.trainingPlanId,
+      status: "active",
+      next_event_at: activePlanLookup.nextEventAt,
+      training_plan: activePlanLookup.trainingPlan,
+    };
   }),
 
   // ------------------------------

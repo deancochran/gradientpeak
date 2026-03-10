@@ -1,5 +1,6 @@
 import { calculateTrainingLoadSeries } from "../calculations";
 import { addDaysDateOnlyUtc, formatDateOnlyUtc } from "./dateOnlyUtc";
+import { resolveNoHistoryStartingPrior } from "./calibration-constants";
 
 const DEFAULT_BOOTSTRAP_WINDOW_DAYS = 90;
 const DEFAULT_STALE_AFTER_DAYS = 10;
@@ -32,6 +33,7 @@ export interface ComputeLoadBootstrapStateInput {
   as_of?: string;
   window_days?: number;
   stale_after_days?: number;
+  profile_age?: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -138,9 +140,10 @@ export function computeLoadBootstrapState(
       : daysBetween(safeAsOf, latestActivityDate);
 
   if (activeDays === 0) {
+    const prior = resolveNoHistoryStartingPrior({ age: input.profile_age });
     return {
-      starting_ctl: 0,
-      starting_atl: 0,
+      starting_ctl: prior.starting_ctl,
+      starting_atl: prior.starting_ctl,
       starting_tsb: 0,
       confidence: {
         confidence: 0,
@@ -149,7 +152,7 @@ export function computeLoadBootstrapState(
         active_days: 0,
         zero_fill_days: windowDays,
         days_since_last_activity: null,
-        rationale_codes: ["no_recent_activity"],
+        rationale_codes: ["no_recent_activity", ...prior.rationale_codes],
       },
     };
   }

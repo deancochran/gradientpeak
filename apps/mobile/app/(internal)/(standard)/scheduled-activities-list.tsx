@@ -49,7 +49,7 @@ export default function ScheduledScreen() {
   };
 
   const handleScheduleNew = () => {
-    router.push("/plan-library" as any);
+    router.push("/(internal)/(tabs)/discover" as any);
   };
 
   if (isLoading) {
@@ -72,8 +72,8 @@ export default function ScheduledScreen() {
           <EmptyStateCard
             icon={Calendar}
             title="No Activities Scheduled"
-            description="Browse the library to get started with your training plan"
-            actionLabel="Browse Library"
+            description="Browse discover to get started with your training plan"
+            actionLabel="Open Discover"
             onAction={handleScheduleNew}
             iconSize={64}
             iconColor="text-primary"

@@ -10,6 +10,7 @@ import { trpc } from "@/lib/trpc";
 import { getActivityBgClass, getActivityColor } from "@/lib/utils/plan/colors";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import { ActivityPayload } from "@repo/core";
+import { formatDurationSec } from "@repo/core/utils/dates";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -201,11 +202,15 @@ function PlannedActivityDetailScreen() {
                           Duration
                         </Text>
                         <Text className="font-semibold">
-                          {
-                            (plannedActivity.activity_plan as any)
-                              .estimated_duration
-                          }{" "}
-                          min
+                          {formatDurationSec(
+                            Math.max(
+                              0,
+                              Number(
+                                (plannedActivity.activity_plan as any)
+                                  .estimated_duration,
+                              ) || 0,
+                            ),
+                          )}
                         </Text>
                       </View>
                     )}

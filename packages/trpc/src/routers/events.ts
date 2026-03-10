@@ -725,16 +725,26 @@ export const eventsRouter = createTRPCRouter({
         }
       }
 
-      let userTrainingPlanId =
-        (input as any).user_training_plan_id || input.training_plan_id;
-      if (!userTrainingPlanId && normalizedEventType === "planned") {
-        const { data: activePlan } = await ctx.supabase
-          .from("user_training_plans" as any)
-          .select("id")
-          .eq("profile_id", ctx.session.user.id)
-          .eq("status", "active")
-          .single();
-        userTrainingPlanId = (activePlan as any)?.id;
+      const trainingPlanId =
+        "training_plan_id" in input
+          ? (input.training_plan_id ?? null)
+          : (null as string | null);
+
+      if (trainingPlanId) {
+        const { data: trainingPlan, error: trainingPlanError } =
+          await ctx.supabase
+            .from("training_plans")
+            .select("id")
+            .eq("id", trainingPlanId)
+            .eq("profile_id", ctx.session.user.id)
+            .maybeSingle();
+
+        if (trainingPlanError || !trainingPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Training plan not found or not accessible",
+          });
+        }
       }
 
       const domainInput = input as z.infer<typeof eventCreateSchema>;
@@ -773,7 +783,7 @@ export const eventsRouter = createTRPCRouter({
             normalizedEventType === "rest_day"
               ? null
               : (input.activity_plan_id ?? null),
-          user_training_plan_id: userTrainingPlanId as string | undefined,
+          training_plan_id: trainingPlanId,
           notes: input.notes ?? null,
           description,
           recurrence_rule: recurrence?.rule ?? null,
@@ -920,6 +930,23 @@ export const eventsRouter = createTRPCRouter({
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Activity plan not found or not accessible",
+          });
+        }
+      }
+
+      if (typeof patchAny.training_plan_id === "string") {
+        const { data: trainingPlan, error: trainingPlanError } =
+          await ctx.supabase
+            .from("training_plans")
+            .select("id")
+            .eq("id", patchAny.training_plan_id)
+            .eq("profile_id", ctx.session.user.id)
+            .maybeSingle();
+
+        if (trainingPlanError || !trainingPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Training plan not found or not accessible",
           });
         }
       }

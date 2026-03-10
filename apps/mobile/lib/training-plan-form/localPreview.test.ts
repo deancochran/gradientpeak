@@ -7,10 +7,12 @@ import {
   buildDeterministicProjectionPayload,
   buildProjectionEngineInput,
   deterministicUuidFromSeed,
-  expandMinimalGoalToPlan,
   normalizeCreationConfig,
 } from "@repo/core";
-import { computeLocalCreationPreview } from "./localPreview";
+import {
+  buildExpandedPlanFromMinimalGoal,
+  computeLocalCreationPreview,
+} from "./localPreview";
 
 const minimalPlan = {
   goals: [
@@ -248,7 +250,7 @@ function buildServerRecomputeProjectionChartLike(input: {
   startingAtlOverride?: number;
 }) {
   const finalConfig = normalizeCreationConfig(input.creationInput);
-  const expandedPlan = expandMinimalGoalToPlan(input.minimalPlan, {
+  const expandedPlan = buildExpandedPlanFromMinimalGoal(input.minimalPlan, {
     startingCtl: input.startingCtlOverride,
   });
 

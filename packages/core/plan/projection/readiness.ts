@@ -24,6 +24,10 @@ type ProjectionMicrocyclePattern =
   | "recovery";
 
 export type ReadinessBand = "low" | "medium" | "high";
+export type LowReadinessLimiterMode =
+  | "timeline_limited"
+  | "capacity_limited"
+  | "mixed_limiters";
 
 export interface ProjectionDemandGap {
   required_weekly_tss_target: number;
@@ -36,6 +40,7 @@ export interface ProjectionFeasibilityMetadata {
   demand_gap: ProjectionDemandGap;
   readiness_band: ReadinessBand;
   dominant_limiters: string[];
+  low_readiness_limiter_mode?: LowReadinessLimiterMode | null;
   readiness_score?: number;
   readiness_components?: {
     load_state: number;
@@ -68,6 +73,27 @@ function clampScore(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function smoothstep01(value: number): number {
+  const clamped = clamp01(value);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function resolveEvidenceSupportLevel(input: {
+  evidence_score: number;
+  evidence_state?: EvidenceState;
+}): number {
+  const baseSupport = clamp01(input.evidence_score / 100);
+  const freshnessPenalty =
+    input.evidence_state === "stale"
+      ? 0.14
+      : input.evidence_state === "none"
+        ? 0.22
+        : input.evidence_state === "sparse"
+          ? 0.08
+          : 0;
+  return clamp01(baseSupport - freshnessPenalty);
+}
+
 export interface CompositeReadinessInput {
   target_attainment_score: number;
   durability_score: number;
@@ -85,6 +111,21 @@ export interface CompositeReadinessResult {
   readiness_score: number;
   readiness_confidence: number;
   readiness_rationale_codes: string[];
+}
+
+export interface PlanningConfidenceInput {
+  evidence_score: number;
+  evidence_state?: EvidenceState;
+  unmet_ratio: number;
+  clamp_pressure: number;
+  projection_weeks: number;
+  goal_count?: number;
+  adherence_confidence?: number;
+}
+
+export interface PlanningConfidenceResult {
+  score: number;
+  rationale_codes: string[];
 }
 
 export function computeDurabilityScore(input: {
@@ -144,24 +185,23 @@ export function computeCompositeReadiness(
   const envelopeWeight = compositeWeights?.envelope_weight ?? 0.3;
   const durabilityWeight = compositeWeights?.durability_weight ?? 0.15;
   const evidenceWeight = compositeWeights?.evidence_weight ?? 0.1;
+  const evidenceSupport = resolveEvidenceSupportLevel({
+    evidence_score: evidenceScore,
+    evidence_state: input.evidence_state,
+  });
+  const effectiveEvidenceContribution =
+    evidenceScore * (0.3 + evidenceSupport * 0.4);
 
   const readinessRaw =
     targetAttainmentScore * targetWeight +
     envelopeScore * envelopeWeight +
     durabilityScore * durabilityWeight +
-    evidenceScore * evidenceWeight;
+    effectiveEvidenceContribution * evidenceWeight;
   const readinessScore = clampScore(readinessRaw);
 
   const baseConfidence =
-    evidenceScore * 0.7 + envelopeScore * 0.2 + durabilityScore * 0.1;
-  const evidenceCap =
-    input.evidence_state === "none"
-      ? 58
-      : input.evidence_state === "sparse"
-        ? 72
-        : input.evidence_state === "stale"
-          ? 68
-          : 92;
+    evidenceScore * 0.62 + envelopeScore * 0.24 + durabilityScore * 0.14;
+  const evidenceCap = Math.round(58 + smoothstep01(evidenceSupport) * 34);
   const readinessConfidence = clampScore(Math.min(evidenceCap, baseConfidence));
 
   const rationaleCodes = [
@@ -192,6 +232,55 @@ export function computeCompositeReadiness(
     readiness_score: readinessScore,
     readiness_confidence: readinessConfidence,
     readiness_rationale_codes: [...new Set(rationaleCodes)],
+  };
+}
+
+export function computePlanningConfidence(
+  input: PlanningConfidenceInput,
+): PlanningConfidenceResult {
+  const evidenceScore = clampScore(input.evidence_score);
+  const evidenceSupport = resolveEvidenceSupportLevel({
+    evidence_score: evidenceScore,
+    evidence_state: input.evidence_state,
+  });
+  const unmetRatio = clamp01(input.unmet_ratio);
+  const clampPressure = clamp01(input.clamp_pressure);
+  const adherenceConfidence = clampScore(
+    Math.round((input.adherence_confidence ?? 0.5) * 100),
+  );
+  const horizonSupport = clampScore(
+    Math.round(clamp01(Math.min(1, input.projection_weeks / 20)) * 100),
+  );
+  const complexityPenalty = Math.min(
+    18,
+    Math.max(0, (input.goal_count ?? 1) - 1) * 6,
+  );
+  const evidenceCap = Math.round(52 + smoothstep01(evidenceSupport) * 40);
+
+  const rawScore =
+    evidenceScore * 0.4 +
+    adherenceConfidence * 0.2 +
+    horizonSupport * 0.15 +
+    (1 - unmetRatio) * 100 * 0.15 +
+    (1 - clampPressure) * 100 * 0.1 -
+    complexityPenalty;
+  const score = clampScore(Math.min(evidenceCap, rawScore));
+  const rationaleCodes = [
+    ...(evidenceScore < 55
+      ? ["planning_confidence_penalty_evidence_low"]
+      : ["planning_confidence_credit_evidence_supportive"]),
+    ...(clampPressure > 0.15
+      ? ["planning_confidence_penalty_clamp_pressure"]
+      : []),
+    ...(unmetRatio > 0.1 ? ["planning_confidence_penalty_demand_gap"] : []),
+    ...((input.goal_count ?? 1) > 1
+      ? ["planning_confidence_penalty_multi_goal_complexity"]
+      : []),
+  ];
+
+  return {
+    score,
+    rationale_codes: [...new Set(rationaleCodes)],
   };
 }
 
@@ -227,19 +316,14 @@ export function getDemandRhythmMultiplier(input: {
   const weeksRemaining = Math.max(0, input.weeksToEvent - input.weekIndex - 1);
 
   if (input.weekPattern === "taper") {
-    if (weeksRemaining <= 1) return 0.7;
-    if (weeksRemaining <= 2) return 0.8;
-    return 0.88;
+    return 0.7 + smoothstep01(Math.min(1, weeksRemaining / 3)) * 0.18;
   }
 
   if (input.weekPattern === "deload") {
     return 0.82;
   }
 
-  const wave = input.weekIndex % 3;
-  if (wave === 0) return 0.9;
-  if (wave === 1) return 1;
-  return 1.08;
+  return 0.99 + Math.sin((input.weekIndex / 3) * Math.PI * 2) * 0.08;
 }
 
 export function computeProjectionFeasibilityMetadata(input: {
@@ -272,6 +356,7 @@ export function computeProjectionFeasibilityMetadata(input: {
             input.requiredPeakWeeklyTssTarget,
         );
   const confidence = clamp01(input.confidence);
+  const evidenceSupport = smoothstep01(confidence);
 
   const loadState = clamp01(
     demandFulfillment * 0.75 + (1 - unmetRatio) * 0.25 - clampPressure * 0.35,
@@ -283,7 +368,7 @@ export function computeProjectionFeasibilityMetadata(input: {
     demandFulfillment * 0.85 + (1 - clampPressure) * 0.15,
   );
   const executionConfidence = clamp01(
-    confidence * 0.8 + (1 - clampPressure) * 0.2,
+    evidenceSupport * 0.7 + (1 - clampPressure) * 0.3,
   );
   const readinessScore = Math.round(
     (loadState * 0.35 +
@@ -300,6 +385,26 @@ export function computeProjectionFeasibilityMetadata(input: {
     readiness = "medium";
   }
 
+  const hasDemandGap = unmetWeeklyTss > 0;
+  const highTimelinePressure =
+    clampPressure >= 0.18 ||
+    (input.tssRampClampWeeks + input.ctlRampClampWeeks >= 3 &&
+      clampPressure >= 0.12);
+  const lowTimelinePressure =
+    clampPressure <= 0.08 ||
+    (clampPressure <= 0.1 && input.projectionWeeks >= 16);
+
+  let lowReadinessLimiterMode: LowReadinessLimiterMode | null = null;
+  if (hasDemandGap) {
+    if (highTimelinePressure) {
+      lowReadinessLimiterMode = "timeline_limited";
+    } else if (lowTimelinePressure) {
+      lowReadinessLimiterMode = "capacity_limited";
+    } else {
+      lowReadinessLimiterMode = "mixed_limiters";
+    }
+  }
+
   const dominantLimiters: string[] = [];
   if (unmetWeeklyTss > 0) dominantLimiters.push("required_growth_exceeds_caps");
   if (input.tssRampClampWeeks > 0)
@@ -307,6 +412,13 @@ export function computeProjectionFeasibilityMetadata(input: {
   if (input.ctlRampClampWeeks > 0)
     dominantLimiters.push("ctl_ramp_cap_pressure");
   if (input.confidence < 0.5) dominantLimiters.push("low_evidence_confidence");
+  if (lowReadinessLimiterMode === "timeline_limited") {
+    dominantLimiters.push("timeline_limited_goal_too_soon");
+  } else if (lowReadinessLimiterMode === "capacity_limited") {
+    dominantLimiters.push("capacity_limited_sustainable_capacity");
+  } else if (lowReadinessLimiterMode === "mixed_limiters") {
+    dominantLimiters.push("mixed_timeline_and_capacity_limits");
+  }
 
   const readinessRationaleCodes: string[] = [];
   if (demandFulfillment < 0.85) {
@@ -318,10 +430,17 @@ export function computeProjectionFeasibilityMetadata(input: {
   if (confidence >= 0.75) {
     readinessRationaleCodes.push("readiness_credit_evidence_confidence_high");
   }
+  if (lowReadinessLimiterMode === "timeline_limited") {
+    readinessRationaleCodes.push("readiness_limiter_timeline_limited");
+  } else if (lowReadinessLimiterMode === "capacity_limited") {
+    readinessRationaleCodes.push("readiness_limiter_capacity_limited");
+  } else if (lowReadinessLimiterMode === "mixed_limiters") {
+    readinessRationaleCodes.push("readiness_limiter_mixed_constraints");
+  }
 
   const uncertaintyPct = Math.min(
     0.28,
-    Math.max(0.08, 0.06 + (1 - confidence) * 0.18 + clampPressure * 0.05),
+    Math.max(0.08, 0.06 + (1 - evidenceSupport) * 0.18 + clampPressure * 0.05),
   );
   const likelyTss = round1(Math.max(0, input.feasiblePeakWeeklyTssApplied));
   const uncertaintyDelta = round1(likelyTss * uncertaintyPct);
@@ -335,6 +454,7 @@ export function computeProjectionFeasibilityMetadata(input: {
     },
     readiness_band: readiness,
     dominant_limiters: dominantLimiters,
+    low_readiness_limiter_mode: lowReadinessLimiterMode,
     readiness_score: readinessScore,
     readiness_components: {
       load_state: round3(loadState),
@@ -380,6 +500,7 @@ export function computeProjectionPointReadinessScores(input: {
   planReadinessScore?: number;
   goals?: ProjectionPointReadinessGoalInput[];
   timeline_calibration?: TrainingPlanCalibrationConfig["readiness_timeline"];
+  athlete_gender?: "male" | "female" | null;
 }): number[] {
   if (input.points.length === 0) {
     return [];
@@ -530,6 +651,7 @@ export function computeProjectionPointReadinessScores(input: {
           targets: goal.targets,
           projected_ctl: eventPoint.predicted_fitness_ctl,
           projected_atl: eventPoint.predicted_fatigue_atl,
+          athlete_gender: input.athlete_gender,
         },
       });
 
@@ -556,6 +678,7 @@ export function computeProjectionPointReadinessScores(input: {
         target: primaryTarget,
         projected_ctl_at_event: goalPoint?.predicted_fitness_ctl ?? 50,
         projected_atl_at_event: goalPoint?.predicted_fatigue_atl ?? 50,
+        athlete_gender: input.athlete_gender,
       });
     }
 

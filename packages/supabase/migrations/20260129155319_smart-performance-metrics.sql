@@ -91,6 +91,9 @@ create type "public"."profile_metric_type" as enum ('weight_kg', 'resting_hr', '
 
 
 
+drop table if exists "public"."notifications" cascade;
+
+
   create table "public"."notifications" (
     "id" uuid not null default extensions.uuid_generate_v4(),
     "profile_id" uuid not null,
@@ -310,5 +313,4 @@ grant truncate on table "public"."profile_metrics" to "service_role";
 grant update on table "public"."profile_metrics" to "service_role";
 
 CREATE TRIGGER update_profile_metrics_updated_at BEFORE UPDATE ON public.profile_metrics FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
 

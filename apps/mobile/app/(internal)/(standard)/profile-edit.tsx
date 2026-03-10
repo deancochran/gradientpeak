@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
@@ -389,16 +390,21 @@ function ProfileEditScreen() {
                   name="dob"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date of Birth</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="YYYY-MM-DD"
-                          value={field.value || ""}
-                          onChangeText={field.onChange}
+                        <DateField
+                          id="profile-edit-dob"
+                          label="Date of Birth"
+                          value={field.value ?? undefined}
+                          onChange={(nextDate) =>
+                            field.onChange(nextDate ?? null)
+                          }
+                          placeholder="Select date"
+                          clearable
+                          accessibilityHint="Set your date of birth"
                         />
                       </FormControl>
                       <FormDescription>
-                        Format: YYYY-MM-DD (e.g., 1990-01-15)
+                        Used to estimate age-based training metrics.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

@@ -1,6 +1,6 @@
 ---
 description: Generates comprehensive test suites for files, functions, components, or features, ensuring proper test coverage and quality.
-agent: code-improvement-reviewer
+agent: build
 subtask: true
 ---
 

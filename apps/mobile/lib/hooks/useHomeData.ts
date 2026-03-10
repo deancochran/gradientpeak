@@ -1,6 +1,8 @@
 import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { useMemo } from "react";
+import { useProfileGoals } from "./useProfileGoals";
+import { useProfileSettings } from "./useProfileSettings";
 
 /**
  * useHomeData Hook
@@ -12,6 +14,8 @@ export function useHomeData() {
   const { data, isLoading, refetch } = trpc.home.getDashboard.useQuery({
     days: 7,
   });
+  const profileGoals = useProfileGoals();
+  const profileSettings = useProfileSettings();
 
   const plan = useMemo(() => data?.activePlan, [data?.activePlan]);
 
@@ -203,5 +207,9 @@ export function useHomeData() {
     consistency: data?.consistency || { streak: 0, weeklyCount: 0 },
     schedule: data?.schedule || [],
     weeklySummary: data?.weeklySummary,
+    profileGoals: profileGoals.goals,
+    profileGoalsCount: profileGoals.goalsCount,
+    profileSettings: profileSettings.settings,
+    profileSettingsRecord: profileSettings.settingsRecord,
   };
 }

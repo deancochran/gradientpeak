@@ -35,6 +35,9 @@ export interface EstimationContext {
   // Profile metrics (from profile_metric_logs)
   weightKg?: number | null; // Weight in kilograms
 
+  // Running performance anchors
+  thresholdPaceSecondsPerKm?: number | null;
+
   // Current fitness state
   fitnessState?: FitnessState;
 

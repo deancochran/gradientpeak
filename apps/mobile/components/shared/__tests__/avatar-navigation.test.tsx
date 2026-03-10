@@ -1,8 +1,6 @@
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { ActivityHeader } from "@/components/activity/shared/ActivityHeader";
-import { AppHeader } from "../AppHeader";
 
 const { pushMock, authState } = vi.hoisted(() => ({
   pushMock: vi.fn(),
@@ -25,19 +23,13 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
-vi.mock("react-native", async () => {
-  const actual = await vi.importActual<any>("react-native");
-  return {
-    ...actual,
-    NativeModules: {
-      ...actual.NativeModules,
-      BlobModule: {},
-    },
-    TouchableOpacity: createHost("TouchableOpacity"),
-    Pressable: createHost("Pressable"),
-    View: createHost("View"),
-  };
-});
+vi.mock("react-native", () => ({
+  NativeModules: { BlobModule: {} },
+  Platform: { OS: "ios", Version: "17" },
+  TouchableOpacity: createHost("TouchableOpacity"),
+  Pressable: createHost("Pressable"),
+  View: createHost("View"),
+}));
 
 vi.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => authState,
@@ -72,7 +64,8 @@ vi.mock("lucide-react-native", () => {
 });
 
 describe.skip("avatar profile navigation", () => {
-  it("routes app header avatar to canonical own user route", () => {
+  it("routes app header avatar to canonical own user route", async () => {
+    const { AppHeader } = await import("../AppHeader");
     pushMock.mockReset();
     let renderer!: TestRenderer.ReactTestRenderer;
 
@@ -96,7 +89,9 @@ describe.skip("avatar profile navigation", () => {
     });
   });
 
-  it("routes activity avatar taps to target user route", () => {
+  it("routes activity avatar taps to target user route", async () => {
+    const { ActivityHeader } =
+      await import("@/components/activity/shared/ActivityHeader");
     pushMock.mockReset();
     let renderer!: TestRenderer.ReactTestRenderer;
 

@@ -269,19 +269,10 @@ export const messagingRouter = createTRPCRouter({
   markAsRead: protectedProcedure
     .input(z.object({ conversation_id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const { error } = await ctx.supabase
-        .from("messages")
-        .update({ read_at: new Date().toISOString() })
-        .eq("conversation_id", input.conversation_id)
-        .neq("sender_id", ctx.session.user.id) // Don't mark own messages as read
-        .is("read_at", null);
-
-      if (error)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-
+      // messages no longer store per-row read_at in current schema.
+      // Keep endpoint as a compatibility no-op until read receipts are modeled.
+      void input;
+      void ctx;
       return { success: true };
     }),
 
@@ -298,13 +289,13 @@ export const messagingRouter = createTRPCRouter({
 
     const conversationIds = conversations.map((c) => c.conversation_id);
 
-    // Count unread messages (not from self, not yet read)
+    // messages no longer store read receipt state; return conversation count
+    // excluding sender-specific filtering as a compatibility approximation.
     const { count, error } = await ctx.supabase
       .from("messages")
       .select("*", { count: "exact", head: true })
       .in("conversation_id", conversationIds)
-      .neq("sender_id", ctx.session.user.id)
-      .is("read_at", null);
+      .neq("sender_id", ctx.session.user.id);
 
     if (error)
       throw new TRPCError({

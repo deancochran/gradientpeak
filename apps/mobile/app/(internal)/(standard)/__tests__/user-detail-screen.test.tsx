@@ -1,6 +1,7 @@
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+import { ROUTES } from "@/lib/constants/routes";
 import UserDetailScreenWithErrorBoundary from "../user/[userId]";
 
 const {
@@ -144,6 +145,7 @@ vi.mock("@/lib/trpc", () => ({
 
 describe("user detail own vs other controls", () => {
   it("shows own-only controls on own profile", () => {
+    pushMock.mockReset();
     localSearchParamsMock.userId = authState.user.id;
     authState.profile.username = "Owner";
     profileQueryState.data.username = "Owner";
@@ -162,6 +164,18 @@ describe("user detail own vs other controls", () => {
 
     expect(ownEdit.length).toBeGreaterThan(0);
     expect(accountSections.length).toBeGreaterThan(0);
+
+    const myTrainingPlans = renderer.root.findAll(
+      (node: any) => node.props?.testID === "my-training-plans",
+    )[0];
+
+    expect(myTrainingPlans).toBeDefined();
+
+    act(() => {
+      myTrainingPlans.props.onPress();
+    });
+
+    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.LIST);
   });
 
   it("hides own-only controls on other user profile", () => {

@@ -130,6 +130,29 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
     expect(suggestions.constraints.hard_rest_days).not.toContain("thursday");
   });
 
+  it("keeps youth and missing-dob contexts in a conservative mode", () => {
+    const youth = deriveCreationSuggestions({
+      context: buildContext({
+        is_youth: true,
+        user_age: 15,
+      }),
+    });
+    const unknownAge = deriveCreationSuggestions({
+      context: buildContext({
+        missing_required_onboarding_fields: ["dob"],
+      }),
+    });
+
+    expect(
+      youth.constraints.max_single_session_duration_minutes,
+    ).toBeLessThanOrEqual(75);
+    expect(youth.constraints.goal_difficulty_preference).toBe("conservative");
+    expect(
+      unknownAge.constraints.max_single_session_duration_minutes,
+    ).toBeLessThanOrEqual(90);
+    expect(unknownAge.recent_influence_action).toBe("disabled");
+  });
+
   it("matches baseline fixture matrix acceptance ordering", () => {
     const fixtures = [
       {

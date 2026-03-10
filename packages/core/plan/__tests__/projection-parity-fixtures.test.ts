@@ -452,8 +452,14 @@ describe("projection parity fixtures", () => {
           },
           no_history_context: {
             history_availability_state: "none",
-            goal_tier: "medium",
             weeks_to_event: 35,
+            goal_targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 42195,
+                target_time_s: 11100,
+              },
+            ],
           },
           normalized_creation_config: {
             optimization_profile: "balanced",

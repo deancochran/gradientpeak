@@ -1,5 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { useCallback, useMemo } from "react";
+import { useProfileGoals } from "./useProfileGoals";
+import { useProfileSettings } from "./useProfileSettings";
 
 interface DateRangeInput {
   start_date: string;
@@ -15,6 +17,31 @@ interface UseTrainingPlanSnapshotOptions {
   curveWindow?: "tab" | "overview";
 }
 
+type TrainingPlanSnapshotData = {
+  id: string;
+  created_at: string;
+  structure?: {
+    periodization_template?: {
+      target_date?: string;
+    };
+  };
+};
+
+const isTrainingPlanSnapshotData = (
+  value: unknown,
+): value is TrainingPlanSnapshotData => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return (
+    "id" in value &&
+    typeof value.id === "string" &&
+    "created_at" in value &&
+    typeof value.created_at === "string"
+  );
+};
+
 const toDateKey = (value: Date) => value.toISOString().split("T")[0]!;
 
 export function useTrainingPlanSnapshot(
@@ -28,19 +55,38 @@ export function useTrainingPlanSnapshot(
     timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     curveWindow = "tab",
   } = options;
+  const profileGoals = useProfileGoals();
+  const profileSettings = useProfileSettings();
 
   const today = useMemo(() => new Date(), []);
 
   const defaultInsightWindow = useMemo(() => {
-    const endDate = new Date(today);
-    const startDate = new Date(endDate);
-    startDate.setDate(endDate.getDate() - 29);
+    const latestGoalTargetDate = [...profileGoals.goals]
+      .map((goal) => goal.target_date)
+      .filter((value): value is string => !!value)
+      .sort((a, b) => a.localeCompare(b))
+      .at(-1);
+
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - 30);
+
+    const fallbackEndDate = new Date(today);
+    fallbackEndDate.setDate(today.getDate() + 365);
+
+    const endDate = latestGoalTargetDate
+      ? new Date(`${latestGoalTargetDate}T12:00:00.000Z`)
+      : fallbackEndDate;
+
+    const normalizedEndDate =
+      Number.isNaN(endDate.getTime()) || endDate < startDate
+        ? fallbackEndDate
+        : endDate;
 
     return {
       start_date: toDateKey(startDate),
-      end_date: toDateKey(endDate),
+      end_date: toDateKey(normalizedEndDate),
     };
-  }, [today]);
+  }, [profileGoals.goals, today]);
 
   const {
     data: plan,
@@ -50,6 +96,14 @@ export function useTrainingPlanSnapshot(
     refetch: refetchPlan,
   } = trpc.trainingPlans.get.useQuery(planId ? { id: planId } : undefined);
 
+  const planSnapshot = useMemo(() => {
+    if (!isTrainingPlanSnapshotData(plan)) {
+      return undefined;
+    }
+
+    return plan;
+  }, [plan]);
+
   const {
     data: status,
     isLoading: isLoadingStatus,
@@ -57,7 +111,7 @@ export function useTrainingPlanSnapshot(
     error: statusError,
     refetch: refetchStatus,
   } = trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
-    enabled: !!plan,
+    enabled: !!planSnapshot,
   });
 
   const actualCurveRange = useMemo(() => {
@@ -65,14 +119,14 @@ export function useTrainingPlanSnapshot(
       const ninetyDaysAgo = new Date(today);
       ninetyDaysAgo.setDate(today.getDate() - 90);
 
-      if (!plan) {
+      if (!planSnapshot) {
         return {
           start_date: toDateKey(ninetyDaysAgo),
           end_date: toDateKey(today),
         };
       }
 
-      const planStartDate = new Date(plan.created_at);
+      const planStartDate = new Date(planSnapshot.created_at);
       return {
         start_date: toDateKey(
           planStartDate < ninetyDaysAgo ? planStartDate : ninetyDaysAgo,
@@ -88,23 +142,29 @@ export function useTrainingPlanSnapshot(
       start_date: toDateKey(startDate),
       end_date: toDateKey(today),
     };
-  }, [curveWindow, plan, today]);
+  }, [curveWindow, planSnapshot, today]);
 
   const idealCurveRange = useMemo(() => {
+    const latestGoalTargetDate = [...profileGoals.goals]
+      .map((goal) => goal.target_date)
+      .filter((value): value is string => !!value)
+      .sort((a, b) => a.localeCompare(b))
+      .at(-1);
+
     if (curveWindow === "overview") {
       const fallbackEndDate = new Date(today);
       fallbackEndDate.setDate(today.getDate() + 90);
 
-      const structure = plan?.structure as
-        | { periodization_template?: { target_date?: string } }
-        | undefined;
+      const structure = planSnapshot?.structure;
 
       return {
         start_date: actualCurveRange.start_date,
         end_date: toDateKey(
-          structure?.periodization_template?.target_date
-            ? new Date(structure.periodization_template.target_date)
-            : fallbackEndDate,
+          latestGoalTargetDate
+            ? new Date(`${latestGoalTargetDate}T12:00:00.000Z`)
+            : structure?.periodization_template?.target_date
+              ? new Date(structure.periodization_template.target_date)
+              : fallbackEndDate,
         ),
       };
     }
@@ -116,7 +176,13 @@ export function useTrainingPlanSnapshot(
       start_date: actualCurveRange.start_date,
       end_date: toDateKey(endDate),
     };
-  }, [actualCurveRange.start_date, curveWindow, plan?.structure, today]);
+  }, [
+    actualCurveRange.start_date,
+    curveWindow,
+    planSnapshot?.structure,
+    profileGoals.goals,
+    today,
+  ]);
 
   const timelineWindow = insightWindow ?? defaultInsightWindow;
 
@@ -128,13 +194,13 @@ export function useTrainingPlanSnapshot(
     refetch: refetchInsightTimeline,
   } = trpc.trainingPlans.getInsightTimeline.useQuery(
     {
-      training_plan_id: plan?.id || "",
+      training_plan_id: planSnapshot?.id || "",
       start_date: timelineWindow.start_date,
       end_date: timelineWindow.end_date,
       timezone,
     },
     {
-      enabled: !!plan?.id,
+      enabled: !!planSnapshot?.id,
     },
   );
 
@@ -145,7 +211,7 @@ export function useTrainingPlanSnapshot(
     error: actualCurveError,
     refetch: refetchActualCurve,
   } = trpc.trainingPlans.getActualCurve.useQuery(actualCurveRange, {
-    enabled: !!plan,
+    enabled: !!planSnapshot,
   });
 
   const {
@@ -156,11 +222,11 @@ export function useTrainingPlanSnapshot(
     refetch: refetchIdealCurve,
   } = trpc.trainingPlans.getIdealCurve.useQuery(
     {
-      id: plan?.id || "",
+      id: planSnapshot?.id || "",
       ...idealCurveRange,
     },
     {
-      enabled: !!plan?.id,
+      enabled: !!planSnapshot?.id,
     },
   );
 
@@ -172,11 +238,11 @@ export function useTrainingPlanSnapshot(
     refetch: refetchWeeklySummaries,
   } = trpc.trainingPlans.getWeeklySummary.useQuery(
     {
-      training_plan_id: plan?.id || "",
+      training_plan_id: planSnapshot?.id || "",
       weeks_back: weeklySummariesWeeksBack,
     },
     {
-      enabled: includeWeeklySummaries && !!plan?.id,
+      enabled: includeWeeklySummaries && !!planSnapshot?.id,
     },
   );
 
@@ -185,12 +251,14 @@ export function useTrainingPlanSnapshot(
   }, [refetchPlan, refetchStatus]);
 
   const refetchAll = useCallback(async () => {
-    const insightRefresh = plan?.id
+    const insightRefresh = planSnapshot?.id
       ? refetchInsightTimeline()
       : Promise.resolve();
-    const idealRefresh = plan?.id ? refetchIdealCurve() : Promise.resolve();
+    const idealRefresh = planSnapshot?.id
+      ? refetchIdealCurve()
+      : Promise.resolve();
     const weeklyRefresh =
-      includeWeeklySummaries && plan?.id
+      includeWeeklySummaries && planSnapshot?.id
         ? refetchWeeklySummaries()
         : Promise.resolve();
 
@@ -204,7 +272,7 @@ export function useTrainingPlanSnapshot(
     ]);
   }, [
     includeWeeklySummaries,
-    plan?.id,
+    planSnapshot?.id,
     refetchActualCurve,
     refetchIdealCurve,
     refetchInsightTimeline,
@@ -234,7 +302,7 @@ export function useTrainingPlanSnapshot(
   const sharedDependencyError = errors.plan ?? errors.status;
 
   return {
-    plan,
+    plan: planSnapshot,
     status,
     insightTimeline,
     actualCurveData,
@@ -270,5 +338,7 @@ export function useTrainingPlanSnapshot(
       idealCurve: refetchIdealCurve,
       weeklySummaries: refetchWeeklySummaries,
     },
+    profileGoals: profileGoals.goals,
+    profileSettings: profileSettings.settings,
   };
 }

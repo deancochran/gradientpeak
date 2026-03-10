@@ -850,14 +850,12 @@ export const fitFilesRouter = createTRPCRouter({
               recorded_at: startTime.toISOString(),
             });
 
-            // Create notification for new LTHR detection
-            // Note: notifications table uses user_id, not profile_id
-            // We'll use new_message type as a placeholder since this is a metric notification
-            // In a real app, you might want a separate notification type for metrics
+            // Create notification for new LTHR detection.
             await supabase.from("notifications").insert({
-              user_id: userId,
-              actor_id: userId, // Self-notification
-              type: "new_message",
+              profile_id: userId,
+              title: "New LTHR detected",
+              message: `Detected lactate threshold heart rate: ${Math.round(detectedLTHR)} bpm`,
+              is_read: false,
             });
           }
         }

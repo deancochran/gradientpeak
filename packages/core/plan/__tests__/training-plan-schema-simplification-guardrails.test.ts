@@ -18,34 +18,6 @@ const periodizedBase = {
   name: "Two-goal build plan",
   start_date: "2026-01-05",
   end_date: "2026-04-20",
-  goals: [
-    {
-      id: goalOneId,
-      name: "Goal A",
-      target_date: "2026-03-15",
-      priority: 2,
-      targets: [
-        {
-          target_type: "hr_threshold" as const,
-          target_lthr_bpm: 168,
-        },
-      ],
-    },
-    {
-      id: goalTwoId,
-      name: "Goal B",
-      target_date: "2026-04-20",
-      priority: 1,
-      targets: [
-        {
-          target_type: "race_performance" as const,
-          distance_m: 10000,
-          target_time_s: 2580,
-          activity_category: "run" as const,
-        },
-      ],
-    },
-  ],
   fitness_progression: {
     starting_ctl: 44,
   },
@@ -108,22 +80,9 @@ describe("training plan schema simplification guardrails", () => {
     expect(invalid.success).toBe(false);
   });
 
-  it("preserves multi-goal periodized block reference integrity", () => {
+  it("accepts periodized plan structures without embedded goals", () => {
     const valid = periodizedPlanCreateSchema.safeParse(periodizedBase);
     expect(valid.success).toBe(true);
-
-    const invalidGoalRef = periodizedPlanCreateSchema.safeParse({
-      ...periodizedBase,
-      blocks: [
-        {
-          ...periodizedBase.blocks[0],
-          goal_ids: ["99999999-9999-4999-8999-999999999999"],
-        },
-        periodizedBase.blocks[1],
-      ],
-    });
-
-    expect(invalidGoalRef.success).toBe(false);
   });
 
   it("preserves no-overlap invariant for periodized blocks", () => {

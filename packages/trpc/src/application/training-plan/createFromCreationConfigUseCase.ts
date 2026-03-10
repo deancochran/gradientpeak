@@ -311,24 +311,11 @@ export async function createFromCreationConfigUseCase<
     });
   }
 
-  if (input.params.is_active) {
-    if (input.repository) {
-      await input.repository.deactivateActivePlans(input.profileId);
-    } else {
-      await input.supabase
-        .from("training_plans")
-        .update({ is_active: false })
-        .eq("profile_id", input.profileId)
-        .eq("is_active", true);
-    }
-  }
-
   const data = input.repository
     ? await input.repository.createTrainingPlan({
         name: expandedPlan.name,
         description: expandedPlan.description ?? null,
         structure: structureWithId,
-        isActive: input.params.is_active ?? true,
         profileId: input.profileId,
       })
     : await (async () => {
@@ -338,7 +325,6 @@ export async function createFromCreationConfigUseCase<
             name: expandedPlan.name,
             description: expandedPlan.description ?? null,
             structure: structureWithId,
-            is_active: input.params.is_active ?? true,
             profile_id: input.profileId,
           })
           .select("*")

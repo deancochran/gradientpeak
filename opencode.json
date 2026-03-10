@@ -49,6 +49,23 @@
       "hidden": false,
       "temperature": 0.2,
       "permission": {
+        "task": {
+          "*": "deny",
+          "architecture-research-expert": "allow",
+          "technology-research-expert": "allow",
+          "quality-assurance-advisor": "allow",
+          "integration-analyst": "allow",
+          "performance-specialist": "allow",
+          "documentation-strategist": "allow",
+          "code-improvement-reviewer": "allow",
+          "database-migration-assistant": "allow",
+          "trpc-router-generator": "allow",
+          "web-page-generator": "allow",
+          "mobile-component-generator": "allow",
+          "core-logic-assistant": "allow",
+          "performance-optimizer": "allow",
+          "accessibility-auditor": "allow"
+        },
         "edit": {
           "*": "ask",
           ".opencode/specs/**/tasks.md": "allow"
@@ -204,8 +221,29 @@
     }
   },
   "permission": {
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "bash": {
+      "*": "ask",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "pnpm *": "allow",
+      "rm *": "deny",
+      "chmod *": "deny",
+      "chown *": "deny"
+    },
     "skill": {
-      "*": "allow"
+      "*": "ask",
+      "backend": "allow",
+      "testing": "allow",
+      "mobile-frontend": "allow",
+      "web-frontend": "allow",
+      "core-package": "allow",
+      "documentation": "allow",
+      "brainstorming": "allow",
+      "explaining-code": "allow",
+      "managing-context-window": "allow"
     }
   }
 }

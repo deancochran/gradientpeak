@@ -94,6 +94,49 @@ vi.mock("@/lib/trpc", () => ({
   },
 }));
 
+vi.mock("../useProfileGoals", () => ({
+  useProfileGoals: () => ({
+    goals: [],
+    goalsCount: 0,
+    profileId: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("../useProfileSettings", () => ({
+  useProfileSettings: () => ({
+    settings: {
+      availability_config: { days: [] },
+      behavior_controls_v1: {
+        aggressiveness: 0.5,
+        recovery_priority: 0.5,
+        variability: 0.5,
+      },
+      constraints: {
+        hard_rest_days: [],
+      },
+      locks: {
+        volume_by_day: false,
+        intensity_distribution: false,
+      },
+      post_goal_recovery_days: 5,
+      microcycle_pattern: {
+        hard_days: [],
+        medium_days: [],
+        easy_days: [],
+      },
+      progression_preferences: {
+        weekly_progression_cap: 0.08,
+      },
+      diagnostics: {
+        include_readiness_codes: true,
+      },
+    },
+    settingsRecord: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 function HookProbe(props: {
   options: Parameters<typeof useTrainingPlanSnapshot>[0];
   onSnapshot: (snapshot: ReturnType<typeof useTrainingPlanSnapshot>) => void;

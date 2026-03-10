@@ -270,7 +270,7 @@ export default function DiscoverPage() {
         <View className="flex-row items-center gap-2 mt-2">
           <Icon as={Search} size={14} className="text-muted-foreground" />
           <Text className="text-sm text-muted-foreground">
-            Searching: "{debouncedSearch}"
+            Searching: {`"${debouncedSearch}"`}
           </Text>
           <TouchableOpacity onPress={() => setSearchQuery("")}>
             <Text className="text-sm text-primary font-medium">Clear</Text>

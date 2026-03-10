@@ -19,8 +19,11 @@ interface ReviewTabProps {
     projection_floor_confidence?: string | null;
     projection_floor_applied?: boolean;
     floor_clamped_by_availability?: boolean;
+    fitness_signal_0_1?: number | null;
+    goal_demand_score_0_1?: number | null;
     fitness_inference_reasons?: string[];
   };
+  riskScore?: number | null;
   noHistoryConfidenceLabel: string;
   noHistoryFloorAppliedLabel: string;
   noHistoryAvailabilityClampLabel: string;
@@ -36,6 +39,7 @@ export function ReviewTab({
   showContextDetails,
   setShowContextDetails,
   noHistoryMetadata,
+  riskScore,
   noHistoryConfidenceLabel,
   noHistoryFloorAppliedLabel,
   noHistoryAvailabilityClampLabel,
@@ -98,6 +102,23 @@ export function ReviewTab({
           <Text className="text-xs text-muted-foreground">
             Availability clamp: {noHistoryAvailabilityClampLabel}
           </Text>
+          {typeof noHistoryMetadata.fitness_signal_0_1 === "number" ? (
+            <Text className="text-xs text-muted-foreground">
+              Fitness signal:{" "}
+              {(noHistoryMetadata.fitness_signal_0_1 * 100).toFixed(0)}%
+            </Text>
+          ) : null}
+          {typeof noHistoryMetadata.goal_demand_score_0_1 === "number" ? (
+            <Text className="text-xs text-muted-foreground">
+              Goal demand:{" "}
+              {(noHistoryMetadata.goal_demand_score_0_1 * 100).toFixed(0)}%
+            </Text>
+          ) : null}
+          {typeof riskScore === "number" ? (
+            <Text className="text-xs text-muted-foreground">
+              Risk score: {Math.round(riskScore)}%
+            </Text>
+          ) : null}
           {noHistoryReasons.slice(0, 2).map((reason) => (
             <Text key={reason} className="text-xs text-muted-foreground">
               - {reason}

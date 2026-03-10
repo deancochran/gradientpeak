@@ -7,6 +7,7 @@ import { SAMPLE_TREADMILL_ACTIVITIES } from "./indoor-treadmill";
 import { SAMPLE_OTHER_ACTIVITIES } from "./other-activity";
 import { SAMPLE_OUTDOOR_BIKE_ACTIVITIES } from "./outdoor-bike";
 import { SAMPLE_OUTDOOR_RUN_ACTIVITIES } from "./outdoor-run";
+import { normalizeSystemActivityTemplateId } from "./template-ids";
 import { ALL_SAMPLE_PLANS } from "./training-plans";
 
 // Export individual activity type modules
@@ -102,10 +103,16 @@ export type SystemTemplate = RecordingServiceActivityPlan & { id: string };
  * Helper to map raw sample plans to SystemTemplate
  */
 function mapToTemplate(plan: RecordingServiceActivityPlan): SystemTemplate {
-  if (!plan.id) {
-    throw new Error(`System template "${plan.name}" must have an ID`);
-  }
-  return plan as SystemTemplate;
+  const normalizedId = normalizeSystemActivityTemplateId({
+    id: plan.id,
+    activityCategory: plan.activity_category ?? "other",
+    name: plan.name ?? "template",
+  });
+
+  return {
+    ...plan,
+    id: normalizedId,
+  } as SystemTemplate;
 }
 
 // Convert samples to templates with appropriate tags

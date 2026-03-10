@@ -1131,6 +1131,14 @@ export const CreationProjectionChart = React.memo(
       noHistoryMetadata?.projection_floor_applied ? "Yes" : "No";
     const noHistoryAvailabilityClampLabel =
       noHistoryMetadata?.floor_clamped_by_availability ? "On" : "Off";
+    const fitnessSignal =
+      typeof noHistoryMetadata?.fitness_signal_0_1 === "number"
+        ? Math.round(noHistoryMetadata.fitness_signal_0_1 * 100)
+        : null;
+    const goalDemandScore =
+      typeof noHistoryMetadata?.goal_demand_score_0_1 === "number"
+        ? Math.round(noHistoryMetadata.goal_demand_score_0_1 * 100)
+        : null;
     const evidenceConfidenceScore =
       noHistoryMetadata?.evidence_confidence?.score;
     const evidenceConfidenceState =
@@ -1141,8 +1149,12 @@ export const CreationProjectionChart = React.memo(
       noHistoryMetadata?.projection_feasibility?.demand_gap.unmet_weekly_tss;
     const dominantLimiters =
       noHistoryMetadata?.projection_feasibility?.dominant_limiters ?? [];
+    const projectionRiskScore =
+      typeof projectionChart?.risk_score === "number"
+        ? Math.round(projectionChart.risk_score)
+        : null;
     const noHistoryAccessibilitySummary = noHistoryMetadata
-      ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Demand floor enabled ${noHistoryFloorEnabledLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.`
+      ? `Adaptive demand confidence ${noHistoryConfidenceLabel}. Demand floor enabled ${noHistoryFloorEnabledLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}. Evidence confidence ${evidenceConfidenceState ?? "n/a"} ${evidenceConfidenceScore !== undefined ? evidenceConfidenceScore.toFixed(2) : "n/a"}. Readiness ${readinessBand ?? "n/a"}.${fitnessSignal !== null ? ` Fitness signal ${fitnessSignal} percent.` : ""}${goalDemandScore !== null ? ` Goal demand ${goalDemandScore} percent.` : ""}${projectionRiskScore !== null ? ` Risk score ${projectionRiskScore} percent.` : ""}`
       : undefined;
     const continuousDiagnostics = useMemo(
       () => resolveContinuousProjectionDiagnostics(projectionChart),
@@ -1218,6 +1230,21 @@ export const CreationProjectionChart = React.memo(
             <Text className="text-[11px] text-muted-foreground">
               Availability clamp: {noHistoryAvailabilityClampLabel}
             </Text>
+            {fitnessSignal !== null ? (
+              <Text className="text-[11px] text-muted-foreground">
+                Fitness signal: {fitnessSignal}%
+              </Text>
+            ) : null}
+            {goalDemandScore !== null ? (
+              <Text className="text-[11px] text-muted-foreground">
+                Goal demand: {goalDemandScore}%
+              </Text>
+            ) : null}
+            {projectionRiskScore !== null ? (
+              <Text className="text-[11px] text-muted-foreground">
+                Risk score: {projectionRiskScore}%
+              </Text>
+            ) : null}
             {dominantLimiters.slice(0, 2).map((limiter) => (
               <Text key={limiter} className="text-[11px] text-muted-foreground">
                 limiter: {limiter}

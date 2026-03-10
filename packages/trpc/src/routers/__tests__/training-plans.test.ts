@@ -19,12 +19,15 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
         delete: vi.fn(() => builder),
         eq: vi.fn(() => builder),
         neq: vi.fn(() => builder),
+        not: vi.fn(() => builder),
+        or: vi.fn(() => builder),
         gte: vi.fn(() => builder),
         lte: vi.fn(() => builder),
         lt: vi.fn(() => builder),
         in: vi.fn(() => builder),
         order: vi.fn(() => builder),
         single: vi.fn(() => Promise.resolve(result)),
+        maybeSingle: vi.fn(() => Promise.resolve(result)),
         limit: vi.fn(() => builder),
         then: (onFulfilled: (value: QueryResult) => unknown) =>
           Promise.resolve(result).then(onFulfilled),
@@ -638,16 +641,15 @@ describe("trainingPlansRouter plan_start_date support", () => {
       goals: [minimalGoal],
     };
 
-    let previewThrown: unknown;
-    try {
-      await caller.getFeasibilityPreview(lateStartInput);
-    } catch (error) {
-      previewThrown = error;
-    }
-
-    expect(previewThrown).toBeInstanceOf(TRPCError);
-    expect((previewThrown as TRPCError).code).toBe("BAD_REQUEST");
-    expect((previewThrown as TRPCError).message).toContain("plan_start_date");
+    await expect(
+      caller.previewCreationConfig({
+        minimal_plan: lateStartInput,
+        creation_input: {},
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("plan_start_date"),
+    });
 
     let createThrown: unknown;
     try {
@@ -711,6 +713,41 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(
       result.normalized_creation_config.behavior_controls_v1.recovery_priority,
     ).toBeGreaterThan(0.6);
+  });
+
+  it("merges profile settings defaults without overriding explicit user values", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      profile_training_settings: {
+        data: {
+          profile_id: "profile-123",
+          settings: {
+            optimization_profile: "sustainable",
+            post_goal_recovery_days: 11,
+          },
+        },
+        error: null,
+      },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first",
+        },
+      },
+    });
+
+    expect(result.normalized_creation_config.optimization_profile).toBe(
+      "outcome_first",
+    );
+    expect(result.normalized_creation_config.post_goal_recovery_days).toBe(11);
   });
 
   it("applies strict cap tuning without forcing blocking or unsafe feasibility", async () => {

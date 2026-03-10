@@ -71,43 +71,48 @@ export function createSupabaseTrainingPlanRepository(
       return data ? { id: data.id, structure: data.structure } : null;
     }
 
-    const { data, error } = await supabase
-      .from("user_training_plans" as any)
-      .select("training_plan_id, snapshot_structure")
+    const { data: activeEvents, error: eventsError } = await supabase
+      .from("events")
+      .select("training_plan_id, starts_at")
       .eq("profile_id", input.profileId)
-      .eq("status", "active")
-      .order("updated_at", { ascending: false })
+      .eq("event_type", "planned_activity")
+      .not("training_plan_id", "is", null)
+      .gte("starts_at", new Date().toISOString())
+      .order("starts_at", { ascending: true })
       .limit(1);
 
-    if (error) {
+    if (eventsError) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: error.message,
+        message: eventsError.message,
       });
     }
 
-    const row = data?.[0] as any;
-    return row
-      ? { id: row.training_plan_id, structure: row.snapshot_structure }
+    const activePlanId = activeEvents?.[0]?.training_plan_id;
+    if (!activePlanId) {
+      return null;
+    }
+
+    const { data: activePlan, error: activePlanError } = await supabase
+      .from("training_plans")
+      .select("id, structure")
+      .eq("id", activePlanId)
+      .eq("profile_id", input.profileId)
+      .maybeSingle();
+
+    if (activePlanError) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: activePlanError.message,
+      });
+    }
+
+    return activePlan
+      ? { id: activePlan.id, structure: activePlan.structure }
       : null;
   };
 
   return {
-    async deactivateActivePlans(profileId: string) {
-      const { error } = await supabase
-        .from("user_training_plans" as any)
-        .update({ status: "paused" })
-        .eq("profile_id", profileId)
-        .eq("status", "active");
-
-      if (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error.message,
-        });
-      }
-    },
-
     async createTrainingPlan(
       input: CreateTrainingPlanRecordInput,
     ): Promise<CreatedTrainingPlanRecord> {

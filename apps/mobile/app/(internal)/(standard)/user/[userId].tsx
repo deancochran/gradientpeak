@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
@@ -541,6 +542,51 @@ function UserDetailScreen() {
 
       {isOwnProfile ? (
         <>
+          <SettingsGroup
+            title="My Records"
+            description="Private views for your training data"
+            testID="my-records-section"
+          >
+            <SettingItem
+              type="button"
+              label="Activities"
+              description="View your completed workouts"
+              buttonLabel="Open"
+              variant="outline"
+              onPress={() => router.push(ROUTES.ACTIVITIES.LIST as any)}
+              testID="my-activities"
+            />
+            <SettingItem
+              type="button"
+              label="Training Plans"
+              description="Create and manage your training plans"
+              buttonLabel="Open"
+              variant="outline"
+              onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.LIST as any)}
+              testID="my-training-plans"
+            />
+            <SettingItem
+              type="button"
+              label="Activity Plans"
+              description="Create or edit your plan templates"
+              buttonLabel="Open"
+              variant="outline"
+              onPress={() =>
+                router.push(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX as any)
+              }
+              testID="my-activity-plans"
+            />
+            <SettingItem
+              type="button"
+              label="Routes"
+              description="Browse your uploaded routes"
+              buttonLabel="Open"
+              variant="outline"
+              onPress={() => router.push(ROUTES.ROUTES.LIST as any)}
+              testID="my-routes"
+            />
+          </SettingsGroup>
+
           <SettingsGroup
             title="Account"
             description="Manage your account settings"

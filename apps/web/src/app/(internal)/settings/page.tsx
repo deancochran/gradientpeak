@@ -130,9 +130,11 @@ export default function SettingsPage() {
   // Update form when profile data loads
   useEffect(() => {
     if (profile) {
+      const isPublicField = (profile as unknown as { is_public?: unknown })
+        .is_public;
       form.reset({
         username: profile.username || "",
-        is_public: (profile as any).is_public ?? false,
+        is_public: typeof isPublicField === "boolean" ? isPublicField : false,
       });
     }
   }, [profile, form]);

@@ -163,9 +163,17 @@ function deriveBehaviorControlSuggestions(input: {
   const profileMultiplier =
     profileMode === "no_data" ? 0.9 : profileMode === "rich_data" ? 1.1 : 1;
   const certaintyMultiplier = 0.9 + rangeCertaintyScore * 0.18;
+  const safetySuppression =
+    context.is_youth ||
+    (context.missing_required_onboarding_fields?.length ?? 0) > 0
+      ? 0.72
+      : 1;
 
   const aggressiveSignal = clamp(
-    aggressivenessScore * profileMultiplier * certaintyMultiplier,
+    aggressivenessScore *
+      profileMultiplier *
+      certaintyMultiplier *
+      safetySuppression,
     0,
     1,
   );
@@ -193,10 +201,44 @@ function deriveBehaviorControlSuggestions(input: {
             ? 0.62
             : 0.45,
         0,
-        1,
+        context.is_youth ? 0.6 : 1,
       ).toFixed(3),
     ),
   });
+}
+
+function resolveProfileMode(
+  context: CreationContextSummary,
+): "no_data" | "rich_data" | "mixed" {
+  if (
+    context.history_availability_state === "none" ||
+    context.is_youth ||
+    (context.missing_required_onboarding_fields?.length ?? 0) > 0
+  ) {
+    return "no_data";
+  }
+
+  return context.history_availability_state === "rich" &&
+    context.signal_quality >= 0.7
+    ? "rich_data"
+    : "mixed";
+}
+
+function deriveSuggestedMaxSingleDuration(input: {
+  baselineMidpoint: number;
+  sessionsMidpoint: number;
+  context: CreationContextSummary;
+}): number {
+  const rawDuration = Math.round(
+    clamp((input.baselineMidpoint / input.sessionsMidpoint) * 0.9, 60, 180),
+  );
+  const hardCap = input.context.is_youth
+    ? 75
+    : (input.context.missing_required_onboarding_fields?.length ?? 0) > 0
+      ? 90
+      : 180;
+
+  return Math.min(rawDuration, hardCap);
 }
 
 /**
@@ -211,13 +253,7 @@ export function deriveCreationSuggestions(
   const nowIso = input.now_iso ?? new Date().toISOString();
   const context = input.context;
 
-  const profileMode =
-    context.history_availability_state === "none"
-      ? "no_data"
-      : context.history_availability_state === "rich" &&
-          context.signal_quality >= 0.7
-        ? "rich_data"
-        : "mixed";
+  const profileMode = resolveProfileMode(context);
 
   const influenceMidpoint =
     (context.recommended_recent_influence_range.min +
@@ -270,9 +306,11 @@ export function deriveCreationSuggestions(
     (day) => !preferredDaysFromContext.includes(day),
   ).slice(0, Math.max(1, 7 - sessionsMax));
 
-  const suggestedMaxSingleDuration = Math.round(
-    clamp((baselineMidpoint / sessionsMidpoint) * 0.9, 60, 180),
-  );
+  const suggestedMaxSingleDuration = deriveSuggestedMaxSingleDuration({
+    baselineMidpoint,
+    sessionsMidpoint,
+    context,
+  });
 
   const constraintsSuggestion = creationConstraintsSchema.parse({
     hard_rest_days:
@@ -287,11 +325,14 @@ export function deriveCreationSuggestions(
     max_sessions_per_week: sessionsMax,
     max_single_session_duration_minutes: suggestedMaxSingleDuration,
     goal_difficulty_preference:
-      profileMode === "rich_data" && baselineMidpoint > 450
-        ? "stretch"
-        : profileMode === "rich_data"
-          ? "balanced"
-          : "conservative",
+      context.is_youth ||
+      (context.missing_required_onboarding_fields?.length ?? 0) > 0
+        ? "conservative"
+        : profileMode === "rich_data" && baselineMidpoint > 450
+          ? "stretch"
+          : profileMode === "rich_data"
+            ? "balanced"
+            : "conservative",
   });
 
   const availableTrainingDays = countAvailableTrainingDays({

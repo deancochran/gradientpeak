@@ -133,7 +133,7 @@ export default function ChatScreen() {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
-              isRead={!!item.read_at}
+              isRead={item.sender_id === user?.id}
             />
           )}
           contentContainerClassName="p-4"

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
@@ -34,8 +34,6 @@ import {
   EyeOff,
   Heart,
   Library,
-  MessageCircle,
-  Send,
   Trash2,
   TrendingUp,
 } from "lucide-react-native";
@@ -46,7 +44,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -55,6 +52,206 @@ function isValidUuid(value: string): boolean {
   const uuidRegex =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(value);
+}
+
+type StructureSessionRow = {
+  key: string;
+  title: string;
+  activityPlanId: string | null;
+  dayOffset: number;
+  sourcePath: Array<string | number>;
+};
+
+type ActivityPlanListItem = {
+  id: string;
+  name: string;
+  activity_category?: string | null;
+  estimated_tss?: number | null;
+  estimated_duration?: number | null;
+  structure?: unknown;
+};
+
+type GroupedMicrocycleSessions = {
+  microcycle: number;
+  days: Array<{
+    dayOffset: number;
+    sessions: StructureSessionRow[];
+  }>;
+};
+
+const weekDayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function readText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function readFiniteNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return 0;
+}
+
+function hasIntervals(structure: unknown): boolean {
+  if (!structure || typeof structure !== "object") {
+    return false;
+  }
+
+  const intervals = (structure as Record<string, unknown>).intervals;
+  return Array.isArray(intervals) && intervals.length > 0;
+}
+
+function extractSessionRows(structure: unknown): StructureSessionRow[] {
+  if (!structure || typeof structure !== "object") {
+    return [];
+  }
+
+  const rows: StructureSessionRow[] = [];
+  const root = structure as Record<string, unknown>;
+
+  const pushSession = (
+    session: Record<string, unknown>,
+    index: number,
+    sourcePath: Array<string | number>,
+    inheritedTitle?: string,
+    inheritedOffsetDays = 0,
+  ) => {
+    const sessionOffset =
+      readNumber(session.offset_days) ?? readNumber(session.day_offset);
+    if (sessionOffset === undefined) {
+      return;
+    }
+
+    const dayOffset = inheritedOffsetDays + sessionOffset;
+    const title =
+      readText(session.title) ??
+      readText(session.name) ??
+      inheritedTitle ??
+      `Session ${index + 1}`;
+
+    rows.push({
+      key: `${dayOffset}-${title}-${index}`,
+      title,
+      activityPlanId: readText(session.activity_plan_id) ?? null,
+      dayOffset,
+      sourcePath,
+    });
+  };
+
+  const traverse = (
+    node: Record<string, unknown>,
+    basePath: Array<string | number>,
+    inheritedTitle?: string,
+    inheritedOffsetDays = 0,
+  ) => {
+    const sessions = Array.isArray(node.sessions)
+      ? (node.sessions as Record<string, unknown>[])
+      : [];
+    sessions.forEach((session, sessionIndex) => {
+      pushSession(
+        session,
+        sessionIndex,
+        [...basePath, "sessions", sessionIndex],
+        inheritedTitle,
+        inheritedOffsetDays,
+      );
+    });
+
+    const blocks = Array.isArray(node.blocks)
+      ? (node.blocks as Record<string, unknown>[])
+      : [];
+
+    blocks.forEach((block, blockIndex) => {
+      const blockOffset =
+        readNumber(block.offset_days) ?? readNumber(block.day_offset) ?? 0;
+      const blockTitle = readText(block.name) ?? inheritedTitle;
+      traverse(
+        block,
+        [...basePath, "blocks", blockIndex],
+        blockTitle,
+        inheritedOffsetDays + blockOffset,
+      );
+    });
+  };
+
+  traverse(root, []);
+
+  return rows.sort((a, b) => a.dayOffset - b.dayOffset);
+}
+
+function cloneStructure(structure: unknown): Record<string, unknown> | null {
+  if (!structure || typeof structure !== "object") {
+    return null;
+  }
+
+  return JSON.parse(JSON.stringify(structure)) as Record<string, unknown>;
+}
+
+function readSessionFromPath(
+  structure: Record<string, unknown>,
+  sourcePath: Array<string | number>,
+): Record<string, unknown> | null {
+  let current: unknown = structure;
+
+  for (const segment of sourcePath) {
+    if (typeof segment === "number") {
+      if (!Array.isArray(current) || !current[segment]) {
+        return null;
+      }
+      current = current[segment];
+      continue;
+    }
+
+    if (!current || typeof current !== "object") {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+
+  return current && typeof current === "object"
+    ? (current as Record<string, unknown>)
+    : null;
+}
+
+function groupSessionsByMicrocycle(
+  sessions: StructureSessionRow[],
+): GroupedMicrocycleSessions[] {
+  const byMicrocycle = new Map<number, Map<number, StructureSessionRow[]>>();
+
+  sessions.forEach((session) => {
+    const microcycle = Math.floor(session.dayOffset / 7) + 1;
+    const byDay =
+      byMicrocycle.get(microcycle) ?? new Map<number, StructureSessionRow[]>();
+    const dayRows = byDay.get(session.dayOffset) ?? [];
+    dayRows.push(session);
+    byDay.set(session.dayOffset, dayRows);
+    byMicrocycle.set(microcycle, byDay);
+  });
+
+  return [...byMicrocycle.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([microcycle, byDay]) => ({
+      microcycle,
+      days: [...byDay.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([dayOffset, daySessions]) => ({
+          dayOffset,
+          sessions: daySessions,
+        })),
+    }));
+}
+
+function formatCompactDayLabel(dayOffset: number) {
+  const weekdayLabel = weekDayLabels[((dayOffset % 7) + 7) % 7] ?? "Day";
+  return `${weekdayLabel} · Day ${dayOffset + 1}`;
 }
 
 export default function TrainingPlanOverview() {
@@ -93,6 +290,7 @@ export default function TrainingPlanOverview() {
   const loadingPlan = isSystemTemplateId
     ? isLoadingTemplate
     : snapshot.isLoadingSharedDependencies;
+  const isOwnedByUser = plan?.profile_id === profile?.id;
 
   const [refreshing, setRefreshing] = React.useState(false);
   const [templateStartDate, setTemplateStartDate] = React.useState("");
@@ -104,6 +302,9 @@ export default function TrainingPlanOverview() {
     startDate: string;
     goalDate: string;
   } | null>(null);
+  const [showActivityPicker, setShowActivityPicker] = React.useState(false);
+  const [selectedSessionRow, setSelectedSessionRow] =
+    React.useState<StructureSessionRow | null>(null);
 
   const saveToLibraryMutation = trpc.library.add.useMutation({
     onSuccess: async () => {
@@ -185,7 +386,67 @@ export default function TrainingPlanOverview() {
 
   const [isLiked, setIsLiked] = useState(plan?.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(plan?.likes_count ?? 0);
-  const [newComment, setNewComment] = useState("");
+
+  const {
+    data: activityPlansData,
+    isLoading: isLoadingActivityPlans,
+    refetch: refetchActivityPlans,
+  } = trpc.activityPlans.list.useQuery(
+    {
+      ownerScope: "own",
+      limit: 100,
+    },
+    {
+      enabled: !!plan?.id && !!isOwnedByUser,
+    },
+  );
+
+  const structureSessionRows = useMemo(
+    () => extractSessionRows(plan?.structure),
+    [plan?.structure],
+  );
+  const linkedActivityPlanIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          structureSessionRows
+            .map((session) => session.activityPlanId)
+            .filter((id): id is string => !!id),
+        ),
+      ),
+    [structureSessionRows],
+  );
+
+  const { data: linkedActivityPlansData, isLoading: isLoadingLinkedPlans } =
+    trpc.activityPlans.list.useQuery(
+      linkedActivityPlanIds.length > 0
+        ? {
+            ownerScope: "all",
+            limit: 100,
+          }
+        : skipToken,
+      {
+        enabled: linkedActivityPlanIds.length > 0,
+      },
+    );
+
+  const updatePlanStructureMutation = trpc.trainingPlans.update.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.trainingPlans.invalidate(),
+        snapshot.refetchAll(),
+      ]);
+      Alert.alert("Session updated", "Training plan structure was saved.");
+      setShowActivityPicker(false);
+      setSelectedSessionRow(null);
+    },
+    onError: (error) => {
+      Alert.alert(
+        "Update failed",
+        error.message || "Could not update this session assignment.",
+      );
+    },
+  });
 
   const toggleLikeMutation = trpc.social.toggleLike.useMutation({
     onError: () => {
@@ -209,38 +470,6 @@ export default function TrainingPlanOverview() {
     });
   }, [plan?.id, isLiked, toggleLikeMutation]);
 
-  const { data: commentsData, refetch: refetchComments } =
-    trpc.social.getComments.useQuery(
-      { entity_id: id || "", entity_type: "training_plan" },
-      { enabled: !!id && isValidUuid(id) },
-    );
-
-  const addCommentMutation = trpc.social.addComment.useMutation({
-    onSuccess: () => {
-      setNewComment("");
-      refetchComments();
-    },
-    onError: (error) => {
-      Alert.alert("Error", `Failed to add comment: ${error.message}`);
-    },
-  });
-
-  const handleAddComment = () => {
-    if (!id || !isValidUuid(id) || !newComment.trim()) return;
-    addCommentMutation.mutate({
-      entity_id: id,
-      entity_type: "training_plan",
-      content: newComment.trim(),
-    });
-  };
-
-  const handleOpenSettings = useCallback(() => {
-    router.push({
-      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
-      params: { id: plan?.id, initialTab: "plan" },
-    });
-  }, [plan?.id, router]);
-
   const handleOpenActivity = useCallback(() => {
     if (typeof activityId !== "string") return;
     router.push(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
@@ -257,11 +486,18 @@ export default function TrainingPlanOverview() {
   };
 
   const handleEditStructure = useCallback(() => {
+    if (!isOwnedByUser) {
+      Alert.alert(
+        "Template is read-only",
+        "Only the template owner can edit structure.",
+      );
+      return;
+    }
     router.push({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
-      params: { id: plan?.id, initialTab: "goals" },
+      params: { id: plan?.id, initialTab: "plan" },
     });
-  }, [plan?.id, router]);
+  }, [isOwnedByUser, plan?.id, router]);
 
   const handleDeletePlan = useCallback(() => {
     if (!plan) return;
@@ -356,8 +592,155 @@ export default function TrainingPlanOverview() {
     setPendingApplyDates(null);
   };
 
+  const activityPlanItems =
+    ((activityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
+  const linkedActivityPlanItems =
+    ((linkedActivityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
+  const linkedActivityPlanById = useMemo(
+    () => new Map(linkedActivityPlanItems.map((item) => [item.id, item])),
+    [linkedActivityPlanItems],
+  );
+  const activityPlanNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    linkedActivityPlanItems.forEach((item) => {
+      map.set(item.id, item.name);
+    });
+    activityPlanItems.forEach((item) => {
+      map.set(item.id, item.name);
+    });
+    return map;
+  }, [activityPlanItems, linkedActivityPlanItems]);
+  const groupedStructureSessions = useMemo(
+    () => groupSessionsByMicrocycle(structureSessionRows),
+    [structureSessionRows],
+  );
+
+  const weeklyLoadSummary = useMemo(
+    () =>
+      groupedStructureSessions.map((microcycle) => {
+        const estimatedTss = microcycle.days.reduce((weekTotal, day) => {
+          const dayTotal = day.sessions.reduce((sessionTotal, session) => {
+            if (!session.activityPlanId) {
+              return sessionTotal;
+            }
+
+            const linkedPlan = linkedActivityPlanById.get(
+              session.activityPlanId,
+            );
+            return sessionTotal + readFiniteNumber(linkedPlan?.estimated_tss);
+          }, 0);
+
+          return weekTotal + dayTotal;
+        }, 0);
+
+        return {
+          microcycle: microcycle.microcycle,
+          estimatedTss,
+        };
+      }),
+    [groupedStructureSessions, linkedActivityPlanById],
+  );
+
+  const maxWeeklyLoad = useMemo(
+    () => Math.max(1, ...weeklyLoadSummary.map((week) => week.estimatedTss)),
+    [weeklyLoadSummary],
+  );
+
+  const uniqueLinkedActivityPlans = useMemo(
+    () =>
+      linkedActivityPlanIds
+        .map((linkedPlanId) => linkedActivityPlanById.get(linkedPlanId))
+        .filter((planItem): planItem is ActivityPlanListItem => !!planItem),
+    [linkedActivityPlanById, linkedActivityPlanIds],
+  );
+
+  const commitSessionActivityPlan = useCallback(
+    async (
+      sessionRow: StructureSessionRow,
+      nextActivityPlanId: string | null,
+      fallbackSessionTitle?: string,
+    ) => {
+      if (!plan?.id || !plan?.structure) {
+        Alert.alert("Update failed", "Training plan structure is unavailable.");
+        return;
+      }
+
+      const nextStructure = cloneStructure(plan.structure);
+      if (!nextStructure) {
+        Alert.alert("Update failed", "Training plan structure is invalid.");
+        return;
+      }
+
+      const targetSession = readSessionFromPath(
+        nextStructure,
+        sessionRow.sourcePath,
+      );
+      if (!targetSession) {
+        Alert.alert("Update failed", "Could not locate the selected session.");
+        return;
+      }
+
+      targetSession.activity_plan_id = nextActivityPlanId;
+      if (!readText(targetSession.title) && fallbackSessionTitle) {
+        targetSession.title = fallbackSessionTitle;
+      }
+
+      await updatePlanStructureMutation.mutateAsync({
+        id: plan.id,
+        structure: nextStructure as any,
+      });
+    },
+    [plan?.id, plan?.structure, updatePlanStructureMutation],
+  );
+
+  const handleOpenActivityPickerForSession = useCallback(
+    (sessionRow: StructureSessionRow) => {
+      setSelectedSessionRow(sessionRow);
+      setShowActivityPicker(true);
+    },
+    [],
+  );
+
+  const handleSelectActivityForSession = useCallback(
+    async (activityPlan: ActivityPlanListItem) => {
+      if (!selectedSessionRow) {
+        return;
+      }
+
+      await commitSessionActivityPlan(
+        selectedSessionRow,
+        activityPlan.id,
+        activityPlan.name,
+      );
+    },
+    [commitSessionActivityPlan, selectedSessionRow],
+  );
+
+  const handleRemoveActivityFromSession = useCallback(
+    (sessionRow: StructureSessionRow) => {
+      Alert.alert(
+        "Remove linked activity?",
+        "This session will no longer reference an activity plan.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: () => {
+              void commitSessionActivityPlan(sessionRow, null);
+            },
+          },
+        ],
+      );
+    },
+    [commitSessionActivityPlan],
+  );
+
   const focusContext = useMemo(() => {
-    if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.REFINE) {
+    if (
+      normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.REFINE &&
+      isOwnedByUser
+    ) {
       return {
         title: "Refine Plan",
         description:
@@ -366,7 +749,10 @@ export default function TrainingPlanOverview() {
         onPress: handleEditStructure,
       };
     }
-    if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.EDIT) {
+    if (
+      normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.EDIT &&
+      isOwnedByUser
+    ) {
       return {
         title: "Edit Plan Structure",
         description:
@@ -375,13 +761,16 @@ export default function TrainingPlanOverview() {
         onPress: handleEditStructure,
       };
     }
-    if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.MANAGE) {
+    if (
+      normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.MANAGE &&
+      isOwnedByUser
+    ) {
       return {
         title: "Manage Plan",
         description:
           "Review status, activation, and defaults in edit so the execution tab stays focused.",
         ctaLabel: "Manage Plan",
-        onPress: handleOpenSettings,
+        onPress: handleEditStructure,
       };
     }
     if (
@@ -401,7 +790,7 @@ export default function TrainingPlanOverview() {
     activityId,
     handleEditStructure,
     handleOpenActivity,
-    handleOpenSettings,
+    isOwnedByUser,
     normalizedNextStepIntent,
   ]);
 
@@ -532,8 +921,6 @@ export default function TrainingPlanOverview() {
     );
   }
 
-  const isOwnedByUser = plan.profile_id === profile?.id;
-
   return (
     <ScrollView
       className="flex-1 bg-background"
@@ -600,7 +987,7 @@ export default function TrainingPlanOverview() {
                 </Pressable>
                 {isOwnedByUser && (
                   <TouchableOpacity
-                    onPress={handleOpenSettings}
+                    onPress={handleEditStructure}
                     className="ml-1"
                   >
                     <View className="bg-primary/10 rounded-full p-2">
@@ -619,15 +1006,15 @@ export default function TrainingPlanOverview() {
           <Card className="mt-3">
             <CardContent className="p-3 gap-3">
               <View className="gap-1">
-                <Text className="text-sm font-semibold">Template Actions</Text>
+                <Text className="text-sm font-semibold">Plan Actions</Text>
                 <Text className="text-xs text-muted-foreground">
-                  Save this plan for quick reuse, or apply it to create a new
-                  scheduled copy.
+                  Keep the main actions close: edit if you own it, or apply it
+                  to your schedule.
                 </Text>
                 {!isOwnedByUser ? (
                   <Text className="text-xs text-muted-foreground">
-                    This is a shared template. Applying creates your own private
-                    plan copy.
+                    Shared templates stay read-only. Applying this plan only
+                    schedules your events.
                   </Text>
                 ) : null}
               </View>
@@ -659,19 +1046,40 @@ export default function TrainingPlanOverview() {
                 </View>
               )}
 
-              <Button
-                variant="outline"
-                onPress={handleSaveToLibrary}
-                disabled={saveToLibraryMutation.isPending}
-                className="flex-row items-center justify-center gap-2"
-              >
-                <Icon as={Library} size={16} className="text-foreground" />
-                <Text className="text-foreground font-medium">
-                  {saveToLibraryMutation.isPending
-                    ? "Saving..."
-                    : "Save to Library"}
-                </Text>
-              </Button>
+              <View className="flex-row gap-2">
+                {isOwnedByUser ? (
+                  <Button
+                    variant="outline"
+                    onPress={handleEditStructure}
+                    className="flex-1"
+                  >
+                    <Text>Edit Structure</Text>
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onPress={handleSaveToLibrary}
+                    disabled={saveToLibraryMutation.isPending}
+                    className="flex-1"
+                  >
+                    <Icon
+                      as={Library}
+                      size={16}
+                      className="text-foreground mr-2"
+                    />
+                    <Text className="text-foreground font-medium">
+                      {saveToLibraryMutation.isPending ? "Saving..." : "Save"}
+                    </Text>
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onPress={() => router.push(ROUTES.CALENDAR as any)}
+                  className="flex-1"
+                >
+                  <Text>Calendar</Text>
+                </Button>
+              </View>
 
               <Dialog open={showApplyModal} onOpenChange={setShowApplyModal}>
                 <DialogTrigger asChild>
@@ -692,22 +1100,27 @@ export default function TrainingPlanOverview() {
                   <View className="gap-4 py-4">
                     <View className="gap-2">
                       <Text className="text-sm font-medium">Start Date</Text>
-                      <Input
-                        value={templateStartDate}
-                        onChangeText={setTemplateStartDate}
-                        placeholder="YYYY-MM-DD"
-                        autoCapitalize="none"
+                      <DateField
+                        id="apply-template-start-date"
+                        label="Start Date"
+                        value={templateStartDate || undefined}
+                        onChange={(nextDate) =>
+                          setTemplateStartDate(nextDate ?? "")
+                        }
+                        placeholder="Select start date"
+                        clearable
                       />
                     </View>
                     <View className="gap-2">
-                      <Text className="text-sm font-medium">
-                        Target Date (Optional)
-                      </Text>
-                      <Input
-                        value={templateGoalDate}
-                        onChangeText={setTemplateGoalDate}
-                        placeholder="YYYY-MM-DD"
-                        autoCapitalize="none"
+                      <DateField
+                        id="apply-template-target-date"
+                        label="Target Date (Optional)"
+                        value={templateGoalDate || undefined}
+                        onChange={(nextDate) =>
+                          setTemplateGoalDate(nextDate ?? "")
+                        }
+                        placeholder="Select target date"
+                        clearable
                       />
                     </View>
                   </View>
@@ -734,63 +1147,6 @@ export default function TrainingPlanOverview() {
               </Dialog>
             </CardContent>
           </Card>
-
-          <Card className="mt-3">
-            <CardContent className="p-3 gap-3">
-              <View className="flex-row items-center gap-2">
-                <Icon as={MessageCircle} size={18} className="text-primary" />
-                <Text className="text-sm font-semibold">
-                  Comments ({commentsData?.comments?.length ?? 0})
-                </Text>
-              </View>
-
-              {commentsData?.comments && commentsData.comments.length > 0 ? (
-                <View className="gap-2">
-                  {commentsData.comments.map((comment: any) => (
-                    <View
-                      key={comment.id}
-                      className="bg-muted/30 rounded-lg p-2"
-                    >
-                      <View className="flex-row justify-between items-center mb-1">
-                        <Text className="text-xs font-semibold">
-                          {comment.profile?.username || "User"}
-                        </Text>
-                        <Text className="text-xs text-muted-foreground">
-                          {new Date(comment.created_at).toLocaleDateString()}
-                        </Text>
-                      </View>
-                      <Text className="text-sm">{comment.content}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text className="text-xs text-muted-foreground">
-                  No comments yet. Be the first to comment!
-                </Text>
-              )}
-
-              <View className="flex-row items-center gap-2 mt-2">
-                <TextInput
-                  value={newComment}
-                  onChangeText={setNewComment}
-                  placeholder="Add a comment..."
-                  className="flex-1 bg-muted/30 rounded-lg px-3 py-2 text-sm"
-                  placeholderTextColor="muted-foreground"
-                />
-                <TouchableOpacity
-                  onPress={handleAddComment}
-                  disabled={!newComment.trim() || addCommentMutation.isPending}
-                  className="bg-primary rounded-full p-2"
-                >
-                  <Icon
-                    as={Send}
-                    size={18}
-                    className="text-primary-foreground"
-                  />
-                </TouchableOpacity>
-              </View>
-            </CardContent>
-          </Card>
         </View>
 
         <Card>
@@ -801,41 +1157,32 @@ export default function TrainingPlanOverview() {
             <View className="gap-3">
               {plan.structure && (
                 <>
-                  <View className="flex-row justify-between items-center">
-                    <Text className="text-muted-foreground">
-                      Weekly TSS Target
-                    </Text>
-                    <Text className="font-semibold">
-                      {(plan.structure as any).target_weekly_tss_min} -{" "}
-                      {(plan.structure as any).target_weekly_tss_max}
-                    </Text>
-                  </View>
-                  <View className="h-px bg-border" />
-                  <View className="flex-row justify-between items-center">
-                    <Text className="text-muted-foreground">
-                      Activities per Week
-                    </Text>
-                    <Text className="font-semibold">
-                      {(plan.structure as any).target_activities_per_week}
-                    </Text>
-                  </View>
-                  <View className="h-px bg-border" />
-                  <View className="flex-row justify-between items-center">
-                    <Text className="text-muted-foreground">
-                      Max Consecutive Days
-                    </Text>
-                    <Text className="font-semibold">
-                      {(plan.structure as any).max_consecutive_days}
-                    </Text>
-                  </View>
-                  <View className="h-px bg-border" />
-                  <View className="flex-row justify-between items-center">
-                    <Text className="text-muted-foreground">
-                      Min Rest Days per Week
-                    </Text>
-                    <Text className="font-semibold">
-                      {(plan.structure as any).min_rest_days_per_week}
-                    </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                      <Text className="text-xs font-medium text-foreground">
+                        {(plan.structure as any).target_weekly_tss_min} -{" "}
+                        {(plan.structure as any).target_weekly_tss_max} weekly
+                        TSS
+                      </Text>
+                    </View>
+                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                      <Text className="text-xs font-medium text-foreground">
+                        {(plan.structure as any).target_activities_per_week}{" "}
+                        sessions/week
+                      </Text>
+                    </View>
+                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                      <Text className="text-xs font-medium text-foreground">
+                        {(plan.structure as any).max_consecutive_days} max
+                        consecutive days
+                      </Text>
+                    </View>
+                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                      <Text className="text-xs font-medium text-foreground">
+                        {(plan.structure as any).min_rest_days_per_week} rest
+                        days/week
+                      </Text>
+                    </View>
                   </View>
                   {(plan.structure as any).periodization_template && (
                     <>
@@ -889,6 +1236,216 @@ export default function TrainingPlanOverview() {
                   )}
                 </>
               )}
+
+              <View className="h-px bg-border" />
+              <View className="gap-2">
+                <Text className="text-sm font-semibold">
+                  Microcycle weekly load (estimated)
+                </Text>
+                {weeklyLoadSummary.length === 0 ? (
+                  <Text className="text-xs text-muted-foreground">
+                    Add linked activity plans to see estimated weekly TSS.
+                  </Text>
+                ) : (
+                  <View className="gap-2">
+                    {weeklyLoadSummary.map((week) => {
+                      const widthPercent = Math.max(
+                        6,
+                        (week.estimatedTss / maxWeeklyLoad) * 100,
+                      );
+
+                      return (
+                        <View
+                          key={`week-load-${week.microcycle}`}
+                          className="gap-1"
+                        >
+                          <View className="flex-row items-center justify-between">
+                            <Text className="text-xs font-medium text-foreground">
+                              Week {week.microcycle}
+                            </Text>
+                            <Text className="text-xs text-muted-foreground">
+                              {Math.round(week.estimatedTss)} TSS
+                            </Text>
+                          </View>
+                          <View className="h-2 rounded-full bg-muted/60 overflow-hidden">
+                            <View
+                              className="h-2 rounded-full bg-primary"
+                              style={{ width: `${widthPercent}%` }}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+
+              <View className="h-px bg-border" />
+              <View className="gap-2">
+                <Text className="text-sm font-semibold">
+                  Linked activity plan structures
+                </Text>
+                {isLoadingLinkedPlans ? (
+                  <Text className="text-xs text-muted-foreground">
+                    Loading linked activity plans...
+                  </Text>
+                ) : uniqueLinkedActivityPlans.length === 0 ? (
+                  <Text className="text-xs text-muted-foreground">
+                    No linked activity plans in this template yet.
+                  </Text>
+                ) : (
+                  <View className="gap-2">
+                    {uniqueLinkedActivityPlans.map((linkedPlan) => (
+                      <View
+                        key={`linked-plan-${linkedPlan.id}`}
+                        className="rounded-md border border-border/60 bg-background px-2 py-2 gap-1"
+                      >
+                        <Text className="text-xs font-semibold text-foreground">
+                          {linkedPlan.name}
+                        </Text>
+                        <Text className="text-[11px] text-muted-foreground">
+                          {(
+                            linkedPlan.activity_category ?? "other"
+                          ).toUpperCase()}{" "}
+                          ·{" "}
+                          {Math.round(
+                            readFiniteNumber(linkedPlan.estimated_tss),
+                          )}{" "}
+                          TSS ·{" "}
+                          {Math.round(
+                            readFiniteNumber(linkedPlan.estimated_duration),
+                          )}{" "}
+                          min
+                        </Text>
+                        <Text className="text-[11px] text-muted-foreground">
+                          {hasIntervals(linkedPlan.structure)
+                            ? "Includes interval structure"
+                            : "No interval structure available"}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              <View className="h-px bg-border" />
+              <View className="gap-2">
+                <Text className="text-sm font-semibold">
+                  Sessions by microcycle and day
+                </Text>
+                {groupedStructureSessions.length === 0 ? (
+                  <Text className="text-xs text-muted-foreground">
+                    No structured sessions found in this template yet.
+                  </Text>
+                ) : (
+                  groupedStructureSessions.map((microcycle) => (
+                    <View
+                      key={`microcycle-${microcycle.microcycle}`}
+                      className="gap-2 rounded-md border border-border bg-muted/20 p-2"
+                    >
+                      <View className="flex-row items-center justify-between gap-2">
+                        <Text className="text-sm font-semibold text-foreground">
+                          Week {microcycle.microcycle}
+                        </Text>
+                        <Text className="text-[11px] text-muted-foreground">
+                          {microcycle.days.reduce(
+                            (count, day) => count + day.sessions.length,
+                            0,
+                          )}{" "}
+                          session
+                          {microcycle.days.reduce(
+                            (count, day) => count + day.sessions.length,
+                            0,
+                          ) === 1
+                            ? ""
+                            : "s"}
+                        </Text>
+                      </View>
+                      {microcycle.days.map((day) => {
+                        return (
+                          <View
+                            key={`day-${day.dayOffset}`}
+                            className="gap-1 rounded-md border border-border/50 bg-background/70 p-2"
+                          >
+                            <View className="flex-row items-center justify-between gap-2">
+                              <Text className="text-xs font-medium text-muted-foreground">
+                                {formatCompactDayLabel(day.dayOffset)}
+                              </Text>
+                              <Text className="text-[11px] text-muted-foreground">
+                                {day.sessions.length} item
+                                {day.sessions.length === 1 ? "" : "s"}
+                              </Text>
+                            </View>
+                            {day.sessions.map((session) => (
+                              <View
+                                key={session.key}
+                                className="rounded-md border border-border/60 bg-background px-2 py-2"
+                              >
+                                <View className="flex-row items-start justify-between gap-3">
+                                  <View className="flex-1 gap-1">
+                                    <Text className="text-xs font-medium text-foreground">
+                                      {session.title}
+                                    </Text>
+                                    <Text className="text-[11px] text-muted-foreground">
+                                      {session.activityPlanId
+                                        ? (activityPlanNameById.get(
+                                            session.activityPlanId,
+                                          ) ?? "Linked activity plan")
+                                        : "No linked activity plan"}
+                                    </Text>
+                                  </View>
+                                  {isOwnedByUser ? (
+                                    <TouchableOpacity
+                                      onPress={() =>
+                                        handleOpenActivityPickerForSession(
+                                          session,
+                                        )
+                                      }
+                                      disabled={
+                                        updatePlanStructureMutation.isPending
+                                      }
+                                      className="rounded-full border border-border px-2 py-1"
+                                      activeOpacity={0.8}
+                                    >
+                                      <Text className="text-[11px] font-medium text-primary">
+                                        {session.activityPlanId
+                                          ? "Change"
+                                          : "Add"}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  ) : null}
+                                </View>
+                                {isOwnedByUser ? (
+                                  <View className="mt-2 flex-row items-center gap-2">
+                                    {session.activityPlanId ? (
+                                      <TouchableOpacity
+                                        onPress={() =>
+                                          handleRemoveActivityFromSession(
+                                            session,
+                                          )
+                                        }
+                                        disabled={
+                                          updatePlanStructureMutation.isPending
+                                        }
+                                        className="flex-row items-center gap-1 rounded-full border border-destructive/30 px-2 py-1"
+                                        activeOpacity={0.8}
+                                      >
+                                        <Text className="text-[11px] font-medium text-destructive">
+                                          Remove
+                                        </Text>
+                                      </TouchableOpacity>
+                                    ) : null}
+                                  </View>
+                                ) : null}
+                              </View>
+                            ))}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))
+                )}
+              </View>
             </View>
           </CardContent>
         </Card>
@@ -921,6 +1478,93 @@ export default function TrainingPlanOverview() {
           </Card>
         )}
       </View>
+
+      <Dialog
+        open={showActivityPicker}
+        onOpenChange={(open) => {
+          setShowActivityPicker(open);
+          if (!open) {
+            setSelectedSessionRow(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedSessionRow?.activityPlanId
+                ? "Replace activity plan"
+                : "Assign activity plan"}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedSessionRow
+                ? `Select an activity plan for ${selectedSessionRow.title}.`
+                : "Select an activity plan for this session."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <View className="max-h-80">
+            {isLoadingActivityPlans ? (
+              <View className="py-6 items-center gap-2">
+                <ActivityIndicator size="small" />
+                <Text className="text-xs text-muted-foreground">
+                  Loading activity plans...
+                </Text>
+              </View>
+            ) : activityPlanItems.length === 0 ? (
+              <View className="py-6 items-center gap-2">
+                <Text className="text-sm text-muted-foreground text-center">
+                  You do not have any activity plans yet.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView>
+                <View className="gap-2 py-1">
+                  {activityPlanItems.map((activityPlan) => (
+                    <TouchableOpacity
+                      key={activityPlan.id}
+                      className="rounded-md border border-border px-3 py-2"
+                      activeOpacity={0.8}
+                      disabled={updatePlanStructureMutation.isPending}
+                      onPress={() => {
+                        void handleSelectActivityForSession(activityPlan);
+                      }}
+                    >
+                      <Text className="text-sm font-medium text-foreground">
+                        {activityPlan.name}
+                      </Text>
+                      <Text className="text-[11px] text-muted-foreground">
+                        {activityPlan.id}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+          </View>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button
+                variant="outline"
+                disabled={updatePlanStructureMutation.isPending}
+              >
+                <Text className="text-foreground font-medium">Close</Text>
+              </Button>
+            </DialogClose>
+            <Button
+              variant="outline"
+              disabled={
+                isLoadingActivityPlans || updatePlanStructureMutation.isPending
+              }
+              onPress={() => {
+                void refetchActivityPlans();
+              }}
+            >
+              <Text className="text-foreground font-medium">Refresh</Text>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={showConcurrencyWarning}

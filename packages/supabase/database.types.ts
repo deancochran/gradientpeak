@@ -326,12 +326,6 @@ export type Database = {
           notes: string | null
           profile_id: string | null
           route_id: string | null
-          static_distance_meters: number | null
-          static_duration_seconds: number | null
-          static_hr_zone_seconds: Json | null
-          static_power_zone_seconds: Json | null
-          static_tss: number | null
-          static_work_kilojoules: number | null
           structure: Json | null
           template_visibility: string
           updated_at: string
@@ -352,12 +346,6 @@ export type Database = {
           notes?: string | null
           profile_id?: string | null
           route_id?: string | null
-          static_distance_meters?: number | null
-          static_duration_seconds?: number | null
-          static_hr_zone_seconds?: Json | null
-          static_power_zone_seconds?: Json | null
-          static_tss?: number | null
-          static_work_kilojoules?: number | null
           structure?: Json | null
           template_visibility?: string
           updated_at?: string
@@ -378,12 +366,6 @@ export type Database = {
           notes?: string | null
           profile_id?: string | null
           route_id?: string | null
-          static_distance_meters?: number | null
-          static_duration_seconds?: number | null
-          static_hr_zone_seconds?: Json | null
-          static_power_zone_seconds?: Json | null
-          static_tss?: number | null
-          static_work_kilojoules?: number | null
           structure?: Json | null
           template_visibility?: string
           updated_at?: string
@@ -669,7 +651,6 @@ export type Database = {
           title: string
           training_plan_id: string | null
           updated_at: string
-          user_training_plan_id: string | null
         }
         Insert: {
           activity_plan_id?: string | null
@@ -699,7 +680,6 @@ export type Database = {
           title: string
           training_plan_id?: string | null
           updated_at?: string
-          user_training_plan_id?: string | null
         }
         Update: {
           activity_plan_id?: string | null
@@ -729,7 +709,6 @@ export type Database = {
           title?: string
           training_plan_id?: string | null
           updated_at?: string
-          user_training_plan_id?: string | null
         }
         Relationships: [
           {
@@ -760,36 +739,29 @@ export type Database = {
             referencedRelation: "training_plans"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "events_user_training_plan_id_fkey"
-            columns: ["user_training_plan_id"]
-            isOneToOne: false
-            referencedRelation: "user_training_plans"
-            referencedColumns: ["id"]
-          },
         ]
       }
       follows: {
         Row: {
-          created_at: string | null
+          created_at: string
           follower_id: string
           following_id: string
-          status: string | null
-          updated_at: string | null
+          status: string
+          updated_at: string
         }
         Insert: {
-          created_at?: string | null
+          created_at?: string
           follower_id: string
           following_id: string
-          status?: string | null
-          updated_at?: string | null
+          status: string
+          updated_at?: string
         }
         Update: {
-          created_at?: string | null
+          created_at?: string
           follower_id?: string
           following_id?: string
-          status?: string | null
-          updated_at?: string | null
+          status?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -892,25 +864,25 @@ export type Database = {
       }
       likes: {
         Row: {
-          created_at: string | null
+          created_at: string
           entity_id: string
-          entity_type: string | null
+          entity_type: string
           id: string
-          profile_id: string | null
+          profile_id: string
         }
         Insert: {
-          created_at?: string | null
+          created_at?: string
           entity_id: string
-          entity_type?: string | null
+          entity_type: string
           id?: string
-          profile_id?: string | null
+          profile_id: string
         }
         Update: {
-          created_at?: string | null
+          created_at?: string
           entity_id?: string
-          entity_type?: string | null
+          entity_type?: string
           id?: string
-          profile_id?: string | null
+          profile_id?: string
         }
         Relationships: [
           {
@@ -929,7 +901,6 @@ export type Database = {
           created_at: string
           deleted_at: string | null
           id: string
-          read_at: string | null
           sender_id: string
         }
         Insert: {
@@ -938,7 +909,6 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
-          read_at?: string | null
           sender_id: string
         }
         Update: {
@@ -947,7 +917,6 @@ export type Database = {
           created_at?: string
           deleted_at?: string | null
           id?: string
-          read_at?: string | null
           sender_id?: string
         }
         Relationships: [
@@ -962,33 +931,38 @@ export type Database = {
       }
       notifications: {
         Row: {
-          actor_id: string
           created_at: string
-          entity_id: string | null
           id: string
-          read_at: string | null
-          type: Database["public"]["Enums"]["notification_type"]
-          user_id: string
+          is_read: boolean
+          message: string
+          profile_id: string
+          title: string
         }
         Insert: {
-          actor_id: string
           created_at?: string
-          entity_id?: string | null
           id?: string
-          read_at?: string | null
-          type: Database["public"]["Enums"]["notification_type"]
-          user_id: string
+          is_read?: boolean
+          message: string
+          profile_id: string
+          title: string
         }
         Update: {
-          actor_id?: string
           created_at?: string
-          entity_id?: string | null
           id?: string
-          read_at?: string | null
-          type?: Database["public"]["Enums"]["notification_type"]
-          user_id?: string
+          is_read?: boolean
+          message?: string
+          profile_id?: string
+          title?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "notifications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       oauth_states: {
         Row: {
@@ -1027,6 +1001,76 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_goals: {
+        Row: {
+          created_at: string
+          goal_type: string
+          id: string
+          idx: number
+          importance: number
+          milestone_event_id: string | null
+          profile_id: string
+          target_date: string | null
+          target_metric: string | null
+          target_value: number | null
+          title: string
+          training_plan_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          goal_type: string
+          id?: string
+          idx?: number
+          importance?: number
+          milestone_event_id?: string | null
+          profile_id: string
+          target_date?: string | null
+          target_metric?: string | null
+          target_value?: number | null
+          title: string
+          training_plan_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          goal_type?: string
+          id?: string
+          idx?: number
+          importance?: number
+          milestone_event_id?: string | null
+          profile_id?: string
+          target_date?: string | null
+          target_metric?: string | null
+          target_value?: number | null
+          title?: string
+          training_plan_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_goals_milestone_event_id_fkey"
+            columns: ["milestone_event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_goals_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_goals_training_plan_id_fkey"
+            columns: ["training_plan_id"]
+            isOneToOne: false
+            referencedRelation: "training_plans"
             referencedColumns: ["id"]
           },
         ]
@@ -1088,6 +1132,32 @@ export type Database = {
           },
         ]
       }
+      profile_training_settings: {
+        Row: {
+          profile_id: string
+          settings: Json
+          updated_at: string
+        }
+        Insert: {
+          profile_id: string
+          settings?: Json
+          updated_at?: string
+        }
+        Update: {
+          profile_id?: string
+          settings?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_training_settings_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -1097,7 +1167,7 @@ export type Database = {
           gender: string | null
           id: string
           idx: number
-          is_public: boolean | null
+          is_public: boolean
           language: string | null
           onboarded: boolean | null
           preferred_units: string | null
@@ -1112,7 +1182,7 @@ export type Database = {
           gender?: string | null
           id: string
           idx?: number
-          is_public?: boolean | null
+          is_public?: boolean
           language?: string | null
           onboarded?: boolean | null
           preferred_units?: string | null
@@ -1127,7 +1197,7 @@ export type Database = {
           gender?: string | null
           id?: string
           idx?: number
-          is_public?: boolean | null
+          is_public?: boolean
           language?: string | null
           onboarded?: boolean | null
           preferred_units?: string | null
@@ -1192,12 +1262,16 @@ export type Database = {
           comments_count: number | null
           created_at: string
           description: string | null
+          duration_hours: number | null
           id: string
           idx: number
+          is_active: boolean
+          is_public: boolean
           is_system_template: boolean
           likes_count: number | null
           name: string
           profile_id: string | null
+          sessions_per_week_target: number | null
           structure: Json
           template_visibility: string
           updated_at: string
@@ -1206,12 +1280,16 @@ export type Database = {
           comments_count?: number | null
           created_at?: string
           description?: string | null
+          duration_hours?: number | null
           id?: string
           idx?: number
+          is_active?: boolean
+          is_public?: boolean
           is_system_template?: boolean
           likes_count?: number | null
           name: string
           profile_id?: string | null
+          sessions_per_week_target?: number | null
           structure: Json
           template_visibility?: string
           updated_at?: string
@@ -1220,12 +1298,16 @@ export type Database = {
           comments_count?: number | null
           created_at?: string
           description?: string | null
+          duration_hours?: number | null
           id?: string
           idx?: number
+          is_active?: boolean
+          is_public?: boolean
           is_system_template?: boolean
           likes_count?: number | null
           name?: string
           profile_id?: string | null
+          sessions_per_week_target?: number | null
           structure?: Json
           template_visibility?: string
           updated_at?: string
@@ -1236,57 +1318,6 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      user_training_plans: {
-        Row: {
-          created_at: string
-          id: string
-          profile_id: string
-          snapshot_structure: Json | null
-          start_date: string
-          status: string
-          target_date: string | null
-          training_plan_id: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          profile_id: string
-          snapshot_structure?: Json | null
-          start_date: string
-          status?: string
-          target_date?: string | null
-          training_plan_id: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          profile_id?: string
-          snapshot_structure?: Json | null
-          start_date?: string
-          status?: string
-          target_date?: string | null
-          training_plan_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_training_plans_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "user_training_plans_training_plan_id_fkey"
-            columns: ["training_plan_id"]
-            isOneToOne: false
-            referencedRelation: "training_plans"
             referencedColumns: ["id"]
           },
         ]

@@ -31,6 +31,7 @@ export const creationContextSummarySchema = z.object({
   recent_consistency_marker: creationSignalMarkerEnum,
   effort_confidence_marker: creationSignalMarkerEnum,
   profile_metric_completeness_marker: creationSignalMarkerEnum,
+  is_youth: z.boolean().optional(),
   signal_quality: z.number().min(0).max(1),
   recommended_baseline_tss_range: creationRangeSchema,
   recommended_recent_influence_range: creationRangeSchema,
@@ -38,6 +39,12 @@ export const creationContextSummarySchema = z.object({
   user_age: z.number().int().min(0).max(120).optional(),
   user_gender: z.enum(["male", "female"]).nullable().optional(),
   max_sustainable_ctl: z.number().min(0).max(300).optional(),
+  missing_required_onboarding_fields: z
+    .array(z.string().min(1).max(120))
+    .optional(),
+  missing_optional_calibration_fields: z
+    .array(z.string().min(1).max(120))
+    .optional(),
   learned_ramp_rate: z
     .object({
       max_safe_ramp_rate: z.number().min(30).max(70),

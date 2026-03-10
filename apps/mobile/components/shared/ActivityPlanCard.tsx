@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { getActivityConfig } from "@/lib/constants/activities";
-import { formatDuration } from "@/lib/utils/dates";
+import { formatDurationSec } from "@repo/core/utils/dates";
 import type { ActivityPlanStructureV2 } from "@repo/core";
 import { format } from "date-fns";
 import { Heart, Calendar, CheckCircle2 } from "lucide-react-native";
@@ -22,7 +22,7 @@ export interface ActivityPlan {
   activity_category: string;
   description?: string | null;
   structure?: ActivityPlanStructureV2;
-  estimated_duration?: number | null; // in minutes
+  estimated_duration?: number | null; // in seconds
   estimated_tss?: number | null;
   route_id?: string | null;
   notes?: string | null;
@@ -51,7 +51,7 @@ export interface ActivityPlanCardData {
   name: string;
   activityType: string; // activity_category
   structure?: ActivityPlanStructureV2;
-  estimatedDuration?: number; // in minutes
+  estimatedDuration?: number; // in seconds
   estimatedTss?: number;
   estimatedDistance?: number; // in km, if route provided
   routeId?: string;
@@ -162,13 +162,9 @@ export function ActivityPlanCard({
                 {activity.estimatedDuration !== undefined &&
                   activity.estimatedDuration > 0 && (
                     <Text className="text-xs text-muted-foreground">
-                      {activity.estimatedDuration}
-                    </Text>
-                  )}
-                {activity.estimatedTss !== undefined &&
-                  activity.estimatedTss > 0 && (
-                    <Text className="text-xs text-muted-foreground">
-                      {Math.round(activity.estimatedTss)}
+                      {formatDurationSec(
+                        Math.round(activity.estimatedDuration),
+                      )}
                     </Text>
                   )}
                 {activity.estimatedTss !== undefined &&

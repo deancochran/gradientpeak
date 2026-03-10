@@ -24,6 +24,10 @@ export interface ProjectionGoalMarker {
 
 export type ReadinessBand = "low" | "medium" | "high";
 export type DemandConfidence = "high" | "medium" | "low";
+export type LowReadinessLimiterMode =
+  | "timeline_limited"
+  | "capacity_limited"
+  | "mixed_limiters";
 
 export interface DemandBand {
   min: number;
@@ -42,6 +46,7 @@ export interface ProjectionFeasibilityMetadata {
   demand_gap: ProjectionDemandGap;
   readiness_band: ReadinessBand;
   dominant_limiters: string[];
+  low_readiness_limiter_mode?: LowReadinessLimiterMode | null;
   readiness_score?: number;
   readiness_components?: {
     load_state: number;
@@ -65,11 +70,13 @@ export interface NoHistoryProjectionMetadata {
     start_weekly_tss: number;
   } | null;
   fitness_level: "weak" | "strong" | null;
+  fitness_signal_0_1?: number | null;
   fitness_inference_reasons: string[];
   projection_floor_confidence: "high" | "medium" | "low" | null;
   floor_clamped_by_availability: boolean;
   starting_ctl_for_projection?: number | null;
   starting_weekly_tss_for_projection?: number | null;
+  goal_demand_score_0_1?: number;
   required_event_demand_range?: DemandBand | null;
   required_peak_weekly_tss?: DemandBand | null;
   demand_confidence?: DemandConfidence | null;
@@ -136,12 +143,20 @@ export interface ProjectionChartPayload {
   inferred_current_state?: ProjectionInferredCurrentState;
   no_history?: NoHistoryProjectionMetadata;
   readiness_score?: number;
+  physiological_readiness_score?: number;
   readiness_confidence?: number;
+  planning_confidence?: number;
+  planning_confidence_reasons?: string[];
   readiness_rationale_codes?: string[];
   capacity_envelope?: {
     envelope_score: number;
     envelope_state: "inside" | "edge" | "outside";
     limiting_factors: string[];
+    limiting_factor_scores?: {
+      over_high: number;
+      under_low: number;
+      over_ramp: number;
+    };
   };
   feasibility_band?:
     | "feasible"
@@ -149,6 +164,7 @@ export interface ProjectionChartPayload {
     | "aggressive"
     | "nearly_impossible"
     | "infeasible";
+  risk_score?: number;
   risk_level?: "low" | "moderate" | "high" | "extreme";
   risk_flags?: string[];
   caps_applied?: string[];

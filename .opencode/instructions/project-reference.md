@@ -1,0 +1,149 @@
+# Project Reference (GradientPeak)
+
+Detailed, task-relevant project context for lazy loading.
+
+## Project Overview
+
+GradientPeak is a local-first fitness platform with mobile + web clients and shared core logic.
+
+Architectural principles:
+
+- JSON as source of truth for activity payloads.
+- Local-first recording on mobile, cloud sync when available.
+- `@repo/core` is database-independent.
+- End-to-end type safety via TypeScript + Zod.
+- Monorepo with Turborepo + pnpm.
+
+## Monorepo Structure
+
+```text
+gradientpeak/
+├── apps/
+│   ├── mobile/
+│   └── web/
+├── packages/
+│   ├── core/
+│   ├── trpc/
+│   ├── supabase/
+│   ├── eslint-config/
+│   └── typescript-config/
+```
+
+## Key Commands
+
+Root:
+
+```bash
+pnpm dev
+pnpm build
+pnpm lint
+pnpm check-types
+pnpm test
+```
+
+Mobile:
+
+```bash
+pnpm --dir apps/mobile dev
+pnpm --dir apps/mobile check-types
+pnpm --dir apps/mobile test
+```
+
+Web:
+
+```bash
+pnpm --dir apps/web dev:next
+pnpm --dir apps/web check-types
+pnpm --dir apps/web test
+```
+
+Core:
+
+```bash
+pnpm --dir packages/core check-types
+pnpm --dir packages/core lint
+pnpm --dir packages/core test
+```
+
+## Testing Requirements
+
+- `@repo/core`: 100%
+- `@repo/trpc`: 80%
+- `apps/mobile`: 60%
+- `apps/web`: 60%
+
+## Core Package Rules
+
+- No database or ORM imports in `packages/core`.
+- Prefer pure deterministic functions.
+- Use Zod schemas for runtime validation.
+- Keep shared business logic in `@repo/core` and reuse from apps/trpc.
+
+## Mobile Architecture Notes
+
+- Activity recorder service is lifecycle-scoped to recording screen.
+- Use granular hooks for recorder state, readings, stats, sensors, plan, and actions.
+- Optimize UI for 1-4Hz sensor updates.
+
+Important paths:
+
+- `apps/mobile/lib/services/ActivityRecorder/`
+- `apps/mobile/lib/hooks/`
+- `apps/mobile/components/`
+
+### Mobile Styling Gotchas
+
+- React Native text does not inherit styles; style each `Text` explicitly.
+- Use semantic tokens (`bg-background`, `text-foreground`, etc.).
+- Ensure modal/dialog infrastructure has required `PortalHost` setup.
+
+## Web Architecture Notes
+
+- Next.js App Router with Server Components by default.
+- Add `"use client"` only where interactivity/hooks are required.
+- Keep tRPC usage and schema typing aligned with core exports.
+
+Important paths:
+
+- `apps/web/src/app/`
+- `apps/web/src/components/`
+- `apps/web/src/lib/`
+
+## tRPC Layer Notes
+
+- Routers live in `packages/trpc/src/routers/`.
+- Use core schemas/calculations for shared domain behavior.
+- Keep auth and error handling explicit per procedure.
+
+## Data and Sync Notes
+
+Mobile to cloud flow:
+
+1. Record locally (SQLite/file storage).
+2. Upload JSON to Supabase Storage.
+3. Persist metadata records in database.
+4. Generate streams/analytics from JSON.
+
+Conflict handling is timestamp-based; JSON remains source of truth.
+
+## Supabase and Auth Notes
+
+- PostgreSQL with RLS.
+- Storage for activity JSON payloads.
+- Supabase Auth with JWT used by mobile/web.
+
+## Common Implementation Guardrails
+
+- Do not duplicate calculation logic outside `@repo/core`.
+- Prefer existing patterns/components/hooks before introducing new abstractions.
+- Keep type imports from core when possible.
+- Run relevant tests before finalizing.
+
+## Version Snapshot
+
+- Node.js 18+
+- Expo SDK 54
+- React Native 0.81.4
+- Next.js 15
+- React 19
+- TypeScript 5.9.2

@@ -18,7 +18,7 @@ const finalConfigFixture: any = {
       target_tsb: 8,
       form_tolerance: 20,
       fatigue_overflow_scale: 0.4,
-      feasibility_blend_weight: 0.15,
+      feasibility_blend_weight: 0,
       smoothing_iterations: 24,
       smoothing_lambda: 0.28,
       max_step_delta: 9,
@@ -202,7 +202,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     expect(deps.buildCreationPreviewSnapshotToken).toHaveBeenCalled();
   });
 
-  it("deactivates active plans before creating a new active plan", async () => {
+  it("ignores legacy is_active flags and creates directly", async () => {
     const deps = createDeps();
     const repository = {
       deactivateActivePlans: vi.fn(async () => undefined),
@@ -231,17 +231,8 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       deps: deps as any,
     });
 
-    expect(repository.deactivateActivePlans).toHaveBeenCalledWith(
-      "profile-123",
-    );
+    expect(repository.deactivateActivePlans).not.toHaveBeenCalled();
     expect(repository.createTrainingPlan).toHaveBeenCalledTimes(1);
-
-    const deactivateCallOrder =
-      repository.deactivateActivePlans.mock.invocationCallOrder[0] ?? 0;
-    const createCallOrder =
-      repository.createTrainingPlan.mock.invocationCallOrder[0] ?? 0;
-
-    expect(deactivateCallOrder).toBeLessThan(createCallOrder);
   });
 
   it("does not persist override metadata in structure or create summary", async () => {

@@ -285,6 +285,188 @@ export const READINESS_TIMELINE = {
   PEAK_CTL_SCALING: 1.15,
 } as const;
 
+export interface NoHistoryStartingPrior {
+  starting_ctl: number;
+  starting_weekly_tss: number;
+  recommended_sessions_per_week_range: {
+    min: number;
+    max: number;
+  };
+  max_single_session_duration_minutes: number;
+  is_youth: boolean;
+  age_band: "youth" | "adult" | "unknown";
+  rationale_codes: string[];
+}
+
+interface AgeCurvePoint {
+  age: number;
+  value: number;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  if (edge1 <= edge0) {
+    return 0;
+  }
+
+  const normalized = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return normalized * normalized * (3 - 2 * normalized);
+}
+
+function interpolateAgeCurve(
+  points: AgeCurvePoint[],
+  age?: number | null,
+): number | undefined {
+  if (age === undefined || age === null || !Number.isFinite(age)) {
+    return undefined;
+  }
+
+  const sorted = [...points].sort((a, b) => a.age - b.age);
+  if (age <= sorted[0]!.age) {
+    return sorted[0]!.value;
+  }
+
+  const last = sorted[sorted.length - 1]!;
+  if (age >= last.age) {
+    return last.value;
+  }
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const left = sorted[index - 1]!;
+    const right = sorted[index]!;
+    if (age > right.age) {
+      continue;
+    }
+
+    const progress = smoothstep(left.age, right.age, age);
+    return left.value + (right.value - left.value) * progress;
+  }
+
+  return last.value;
+}
+
+function interpolateContinuousCurve(
+  points: Array<{ input: number; value: number }>,
+  input: number | undefined,
+): number | undefined {
+  if (input === undefined || !Number.isFinite(input)) {
+    return undefined;
+  }
+
+  const sorted = [...points].sort((a, b) => a.input - b.input);
+  if (input <= sorted[0]!.input) {
+    return sorted[0]!.value;
+  }
+
+  const last = sorted[sorted.length - 1]!;
+  if (input >= last.input) {
+    return last.value;
+  }
+
+  for (let index = 1; index < sorted.length; index += 1) {
+    const left = sorted[index - 1]!;
+    const right = sorted[index]!;
+    if (input > right.input) {
+      continue;
+    }
+
+    const progress = smoothstep(left.input, right.input, input);
+    return left.value + (right.value - left.value) * progress;
+  }
+
+  return last.value;
+}
+
+export function isYouthAthlete(age?: number | null): boolean {
+  return (
+    typeof age === "number" && Number.isFinite(age) && age >= 0 && age < 18
+  );
+}
+
+export function resolveNoHistoryStartingPrior(input: {
+  age?: number | null;
+}): NoHistoryStartingPrior {
+  const ageKnown =
+    typeof input.age === "number" && Number.isFinite(input.age)
+      ? input.age
+      : null;
+  const sustainableCtl = getMaxSustainableCTL(ageKnown ?? undefined);
+  const startingCtl = Math.round(clamp(sustainableCtl * 0.15, 16, 22));
+  const sessionMax = Math.round(
+    interpolateAgeCurve(
+      [
+        { age: 13, value: 4 },
+        { age: 18, value: 4 },
+        { age: 30, value: 5 },
+        { age: 50, value: 4 },
+        { age: 65, value: 4 },
+      ],
+      ageKnown,
+    ) ?? 4,
+  );
+  const durationCap = Math.round(
+    interpolateAgeCurve(
+      [
+        { age: 13, value: 75 },
+        { age: 18, value: 90 },
+        { age: 30, value: 105 },
+        { age: 50, value: 95 },
+        { age: 65, value: 90 },
+      ],
+      ageKnown,
+    ) ?? 90,
+  );
+
+  if (isYouthAthlete(input.age)) {
+    return {
+      starting_ctl: startingCtl,
+      starting_weekly_tss: startingCtl * 7,
+      recommended_sessions_per_week_range: {
+        min: 3,
+        max: Math.max(4, sessionMax),
+      },
+      max_single_session_duration_minutes: durationCap,
+      is_youth: true,
+      age_band: "youth",
+      rationale_codes: ["no_history_shared_prior", "youth_safe_prior_applied"],
+    };
+  }
+
+  if (typeof input.age === "number" && Number.isFinite(input.age)) {
+    return {
+      starting_ctl: startingCtl,
+      starting_weekly_tss: startingCtl * 7,
+      recommended_sessions_per_week_range: {
+        min: 3,
+        max: Math.max(4, sessionMax),
+      },
+      max_single_session_duration_minutes: durationCap,
+      is_youth: false,
+      age_band: "adult",
+      rationale_codes: [
+        "no_history_shared_prior",
+        "adult_conservative_prior_applied",
+      ],
+    };
+  }
+
+  return {
+    starting_ctl: 18,
+    starting_weekly_tss: 126,
+    recommended_sessions_per_week_range: { min: 3, max: 4 },
+    max_single_session_duration_minutes: 90,
+    is_youth: false,
+    age_band: "unknown",
+    rationale_codes: [
+      "no_history_shared_prior",
+      "age_unknown_conservative_prior",
+    ],
+  };
+}
+
 /**
  * Helper function to get event-duration-aware optimal TSB
  *
@@ -299,11 +481,18 @@ export function computeOptimalTsb(durationHours: number | undefined): number {
     return READINESS_TIMELINE.TARGET_TSB_DEFAULT;
   }
 
-  if (durationHours < 0.5) return 15; // Sprint events (< 30min)
-  if (durationHours < 1.5) return 12; // 5K-10K
-  if (durationHours < 3) return 8; // Half marathon
-  if (durationHours < 5) return 5; // Marathon
-  return 3; // Ultra marathons
+  return Math.round(
+    interpolateContinuousCurve(
+      [
+        { input: 0.25, value: 15 },
+        { input: 1, value: 12 },
+        { input: 2.5, value: 8 },
+        { input: 4.5, value: 5 },
+        { input: 10, value: 3 },
+      ],
+      durationHours,
+    ) ?? READINESS_TIMELINE.TARGET_TSB_DEFAULT,
+  );
 }
 
 /**
@@ -318,17 +507,38 @@ export function getPaceBaseline(
   distanceKm: number,
 ): number {
   if (activityCategory === "run") {
-    if (distanceKm < 10) return PACE_TO_CTL.BASELINES.run.short;
-    if (distanceKm < 25) return PACE_TO_CTL.BASELINES.run.medium;
-    if (distanceKm < 50) return PACE_TO_CTL.BASELINES.run.long;
-    return PACE_TO_CTL.BASELINES.run.ultra;
+    return Number(
+      (
+        interpolateContinuousCurve(
+          [
+            { input: 3, value: 14.5 },
+            { input: 5, value: PACE_TO_CTL.BASELINES.run.short },
+            { input: 10, value: 11.2 },
+            { input: 21.1, value: PACE_TO_CTL.BASELINES.run.medium },
+            { input: 42.2, value: PACE_TO_CTL.BASELINES.run.long },
+            { input: 80, value: PACE_TO_CTL.BASELINES.run.ultra },
+          ],
+          distanceKm,
+        ) ?? PACE_TO_CTL.BASELINES.run.medium
+      ).toFixed(2),
+    );
   }
 
   if (activityCategory === "bike" || activityCategory === "cycle") {
-    if (distanceKm < 40) return PACE_TO_CTL.BASELINES.bike.sprint;
-    if (distanceKm < 100) return PACE_TO_CTL.BASELINES.bike.short;
-    if (distanceKm < 160) return PACE_TO_CTL.BASELINES.bike.medium;
-    return PACE_TO_CTL.BASELINES.bike.long;
+    return Number(
+      (
+        interpolateContinuousCurve(
+          [
+            { input: 20, value: 36 },
+            { input: 40, value: PACE_TO_CTL.BASELINES.bike.sprint },
+            { input: 100, value: PACE_TO_CTL.BASELINES.bike.short },
+            { input: 160, value: PACE_TO_CTL.BASELINES.bike.medium },
+            { input: 220, value: PACE_TO_CTL.BASELINES.bike.long },
+          ],
+          distanceKm,
+        ) ?? PACE_TO_CTL.BASELINES.bike.medium
+      ).toFixed(2),
+    );
   }
 
   if (activityCategory === "swim") {
@@ -374,10 +584,19 @@ export function computeDynamicFormWeight(daysUntilGoal: number): number {
  * Falls back to standard 7-day constant when age is unavailable.
  */
 export function getAgeAdjustedATLTimeConstant(age?: number): number {
-  if (age === undefined || age < 30) return 7;
-  if (age < 40) return 8;
-  if (age < 50) return 11;
-  return 13;
+  return Math.round(
+    interpolateAgeCurve(
+      [
+        { age: 13, value: 8 },
+        { age: 18, value: 7 },
+        { age: 30, value: 7 },
+        { age: 40, value: 8 },
+        { age: 50, value: 11 },
+        { age: 65, value: 13 },
+      ],
+      age,
+    ) ?? 7,
+  );
 }
 
 /**
@@ -385,28 +604,56 @@ export function getAgeAdjustedATLTimeConstant(age?: number): number {
  * Falls back to standard 42-day constant when age is unavailable.
  */
 export function getAgeAdjustedCTLTimeConstant(age?: number): number {
-  if (age === undefined || age < 40) return 42;
-  if (age < 50) return 45;
-  return 48;
+  return Math.round(
+    interpolateAgeCurve(
+      [
+        { age: 13, value: 45 },
+        { age: 18, value: 42 },
+        { age: 40, value: 42 },
+        { age: 50, value: 45 },
+        { age: 65, value: 48 },
+      ],
+      age,
+    ) ?? 42,
+  );
 }
 
 /**
  * Age-adjusted sustainable CTL ceiling.
  */
 export function getMaxSustainableCTL(age?: number): number {
-  if (age === undefined || age < 30) return 150;
-  if (age < 40) return 130;
-  if (age < 50) return 110;
-  return 90;
+  return Math.round(
+    interpolateAgeCurve(
+      [
+        { age: 13, value: 75 },
+        { age: 18, value: 110 },
+        { age: 30, value: 150 },
+        { age: 40, value: 130 },
+        { age: 50, value: 110 },
+        { age: 65, value: 90 },
+      ],
+      age,
+    ) ?? 120,
+  );
 }
 
 /**
  * Age-adjusted ramp rate multiplier.
  */
 export function getAgeAdjustedRampRateMultiplier(age?: number): number {
-  if (age === undefined || age < 40) return 1;
-  if (age < 50) return 0.85;
-  return 0.7;
+  const value =
+    interpolateAgeCurve(
+      [
+        { age: 13, value: 0.55 },
+        { age: 18, value: 0.75 },
+        { age: 30, value: 1 },
+        { age: 40, value: 0.85 },
+        { age: 50, value: 0.7 },
+        { age: 65, value: 0.62 },
+      ],
+      age,
+    ) ?? 0.8;
+  return Math.round(value * 1000) / 1000;
 }
 
 /**
@@ -419,6 +666,16 @@ export function getGenderAdjustedFatigueTimeMultiplier(
   gender?: "male" | "female" | null,
 ): number {
   if (gender === "female") return 1.08;
+  return 1;
+}
+
+export function getGenderAdjustedRecoveryLoadMultiplier(
+  gender?: "male" | "female" | null,
+): number {
+  if (gender === "female") {
+    return 1.04;
+  }
+
   return 1;
 }
 

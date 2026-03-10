@@ -23,7 +23,6 @@ export default function TrainingPlanEditRoute() {
     const tab = (initialTab || "").toLowerCase();
     if (
       tab === "plan" ||
-      tab === "goals" ||
       tab === "availability" ||
       tab === "constraints" ||
       tab === "calibration" ||
@@ -31,7 +30,6 @@ export default function TrainingPlanEditRoute() {
     ) {
       return tab as
         | "plan"
-        | "goals"
         | "availability"
         | "constraints"
         | "calibration"
@@ -42,7 +40,7 @@ export default function TrainingPlanEditRoute() {
       return "plan" as const;
     }
 
-    return "goals" as const;
+    return "plan" as const;
   })();
 
   if (!hasValidId) {
