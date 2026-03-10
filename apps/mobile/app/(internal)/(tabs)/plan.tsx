@@ -7,39 +7,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
+import {
+  buildGoalCreatePayload,
+  buildGoalDraftFromGoal,
+  buildGoalUpdatePayload,
+  buildMilestoneEventCreateInput,
+  buildMilestoneEventUpdatePatch,
+  formatGoalTypeLabel,
+} from "@/lib/goals/goalDraft";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import { Settings } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   RefreshControl,
   ScrollView,
   TouchableOpacity,
   View,
 } from "react-native";
-
-function buildGoalDraftFromRecord(goal: any): GoalEditorDraft {
-  const storedDistanceMeters =
-    typeof goal?.metadata?.distance_m === "number" &&
-    Number.isFinite(goal.metadata.distance_m)
-      ? goal.metadata.distance_m
-      : null;
-
-  return {
-    title: goal?.title ?? "",
-    targetDate: goal?.target_date ?? "",
-    importance: typeof goal?.importance === "number" ? goal.importance : 5,
-    goalType: goal?.goal_type ?? "general",
-    targetMetric: goal?.target_metric ?? null,
-    targetValue: goal?.target_value ?? null,
-    raceDistanceKm:
-      storedDistanceMeters !== null
-        ? Math.round((storedDistanceMeters / 1000) * 10) / 10
-        : null,
-  };
-}
 
 function getDateKey(value: Date) {
   return value.toISOString().split("T")[0] ?? "";
@@ -63,13 +51,56 @@ function formatScore(value: number | null | undefined) {
 }
 
 function formatLoadModeLabel(mode: string | null | undefined) {
-  return mode === "goal_driven"
-    ? "Goal-driven weekly load"
-    : "Baseline weekly load";
+  return mode === "goal_driven" ? "Based on your goal" : "Based on recent load";
 }
 
-function formatGoalTypeLabel(goalType: string | null | undefined) {
-  return String(goalType || "general").replace(/_/g, " ");
+function formatReasonLabel(reason: string) {
+  const map: Record<string, string> = {
+    boundary_overreach: "Keep workouts steady this week",
+    capacity_pressure: "Increase weekly volume slowly",
+    timeline_pressure: "Goal date is aggressive",
+    low_confidence: "Need more training data",
+  };
+  return map[reason] ?? reason.replace(/_/g, " ");
+}
+
+function formatFallbackMode(mode: string | null | undefined) {
+  if (!mode) {
+    return null;
+  }
+
+  return mode.replace(/_/g, " ");
+}
+
+function formatPriorityLabel(priority: number | undefined | null) {
+  if (typeof priority !== "number") return "Medium";
+  if (priority >= 8) return "High";
+  if (priority >= 5) return "Medium";
+  return "Low";
+}
+
+function formatEffectiveTargetCopy(goalAssessment: any) {
+  const firstTarget = Array.isArray(goalAssessment?.target_scores)
+    ? goalAssessment.target_scores[0]
+    : null;
+  const effectiveTarget = firstTarget?.effective_target;
+
+  if (!effectiveTarget) {
+    return null;
+  }
+
+  if (effectiveTarget.surplus_applied) {
+    return "Planning slightly above your target to build a buffer.";
+  }
+
+  if (
+    effectiveTarget.rationale_code ===
+    "effective_target_surplus_suppressed_low_support"
+  ) {
+    return "Keeping target steady until readiness improves.";
+  }
+
+  return "On track for your target.";
 }
 
 function getWeekStart(value: Date) {
@@ -133,10 +164,15 @@ function PlanDashboardScreen() {
 
   const snapshot = useTrainingPlanSnapshot({ planId: activePlan?.id });
   const goals = useProfileGoals();
+  const lastProjectionRefreshKeyRef = useRef<string | null>(null);
 
   const createGoalMutation = trpc.goals.create.useMutation({
     onSuccess: async () => {
-      await Promise.all([goals.refetch(), utils.goals.list.invalidate()]);
+      await Promise.all([
+        goals.refetch(),
+        utils.goals.list.invalidate(),
+        utils.events.list.invalidate(),
+      ]);
       setShowGoalModal(false);
       setEditingGoalId(null);
     },
@@ -144,11 +180,18 @@ function PlanDashboardScreen() {
 
   const updateGoalMutation = trpc.goals.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([goals.refetch(), utils.goals.list.invalidate()]);
+      await Promise.all([
+        goals.refetch(),
+        utils.goals.list.invalidate(),
+        utils.events.list.invalidate(),
+        utils.events.getById.invalidate(),
+      ]);
       setShowGoalModal(false);
       setEditingGoalId(null);
     },
   });
+  const createMilestoneEventMutation = trpc.events.create.useMutation();
+  const updateMilestoneEventMutation = trpc.events.update.useMutation();
 
   const draftGoal = useMemo(() => {
     if (!editingGoalId) {
@@ -161,11 +204,26 @@ function PlanDashboardScreen() {
     }
 
     const goal = goals.goals.find((item) => item.id === editingGoalId);
-    return buildGoalDraftFromRecord(goal);
+    if (!goal) {
+      return {
+        title: "",
+        targetDate: "",
+        importance: 5,
+        goalType: "general",
+      } satisfies GoalEditorDraft;
+    }
+
+    return buildGoalDraftFromGoal({
+      goal,
+      targetDate: goal.target_date,
+    });
   }, [editingGoalId, goals.goals]);
 
   const isGoalSaving =
-    createGoalMutation.isPending || updateGoalMutation.isPending;
+    createGoalMutation.isPending ||
+    updateGoalMutation.isPending ||
+    createMilestoneEventMutation.isPending ||
+    updateMilestoneEventMutation.isPending;
 
   const fitnessHistory = useMemo(
     () => snapshot.actualCurveData?.dataPoints ?? [],
@@ -310,12 +368,12 @@ function PlanDashboardScreen() {
     const isBaselineMode = loadGuidance?.mode !== "goal_driven";
     if (currentRecommended <= 0 && currentPlanned <= 0) {
       return isBaselineMode
-        ? "Add planned workouts to shape a conservative baseline recommendation for this week."
+        ? "Add planned workouts to shape a baseline recommendation for this week."
         : "Add planned workouts to compare your week against your recommended load.";
     }
 
     if (currentRecommended <= 0) {
-      return "Recommended load is still calibrating. Keep logging sessions this week.";
+      return "Recommended load is calibrating. Keep logging sessions this week.";
     }
 
     const delta = currentPlanned - currentRecommended;
@@ -324,20 +382,14 @@ function PlanDashboardScreen() {
     );
 
     if (Math.abs(delta) <= currentRecommended * 0.1) {
-      return isBaselineMode
-        ? "You are on track this week. Planned workouts are aligned with your conservative baseline load."
-        : "You are on track this week. Planned workouts are aligned with your recommended load.";
+      return "You're on track. Planned workouts align with your recommendation.";
     }
 
     if (delta > 0) {
-      return isBaselineMode
-        ? `Planned load is ${deltaPercent}% above your conservative baseline this week.`
-        : `Planned load is ${deltaPercent}% above your recommended range this week.`;
+      return `Planned load is ${deltaPercent}% above your recommended range this week.`;
     }
 
-    return isBaselineMode
-      ? `Planned load is ${deltaPercent}% below your conservative baseline this week.`
-      : `Planned load is ${deltaPercent}% below your recommended range this week.`;
+    return `Planned load is ${deltaPercent}% below your recommended range this week.`;
   }, [loadGuidance?.mode, weeklyLoadSummary]);
 
   const fallbackGoalReadinessScore = useMemo(() => {
@@ -439,6 +491,70 @@ function PlanDashboardScreen() {
     };
   }, [snapshot.insightTimeline?.readiness_summary]);
 
+  const projectionGoalAssessments =
+    ((snapshot.idealCurveData as any)?.goal_assessments as any[]) ?? [];
+
+  const projectionExplainability = useMemo(() => {
+    const diagnostics = snapshot.insightTimeline?.projection?.diagnostics;
+    const fallback = formatFallbackMode(diagnostics?.fallback_mode);
+    const confidence = diagnostics?.confidence;
+    const confidencePercent =
+      typeof confidence?.overall === "number"
+        ? Math.round(confidence.overall * 100)
+        : null;
+    const evidenceState = confidence?.evidence_state ?? null;
+    const feasibility = snapshot.insightTimeline?.plan_feasibility;
+    const feasibilityReason = feasibility?.reasons?.[0]
+      ? formatReasonLabel(feasibility.reasons[0])
+      : null;
+    const firstGoalAssessment = projectionGoalAssessments[0];
+
+    return {
+      fallback,
+      confidencePercent,
+      evidenceState,
+      feasibilityState: feasibility?.state ?? null,
+      feasibilityReason,
+      effectiveTargetCopy: formatEffectiveTargetCopy(firstGoalAssessment),
+    };
+  }, [projectionGoalAssessments, snapshot.insightTimeline]);
+
+  const goalExplainabilityById = useMemo(() => {
+    const goalFeasibilityById = new Map(
+      (snapshot.insightTimeline?.goal_feasibility ?? []).map(
+        (goalAssessment) => [goalAssessment.goal_id, goalAssessment],
+      ),
+    );
+    const goalAssessmentById = new Map(
+      projectionGoalAssessments.map((goalAssessment) => [
+        goalAssessment.goal_id,
+        goalAssessment,
+      ]),
+    );
+
+    return new Map(
+      goals.goals.map((goal) => {
+        const feasibility = goalFeasibilityById.get(goal.id);
+        const assessment = goalAssessmentById.get(goal.id);
+
+        return [
+          goal.id,
+          {
+            feasibilityState: feasibility?.state ?? null,
+            feasibilityReason: feasibility?.reasons?.[0]
+              ? formatReasonLabel(feasibility.reasons[0])
+              : null,
+            effectiveTargetCopy: formatEffectiveTargetCopy(assessment),
+          },
+        ];
+      }),
+    );
+  }, [
+    goals.goals,
+    projectionGoalAssessments,
+    snapshot.insightTimeline?.goal_feasibility,
+  ]);
+
   const activePlansInProgress = useMemo(() => {
     const upcomingEvents = upcomingPlannedEventsQuery.data?.items ?? [];
     const recentEvents = recentPlannedEventsQuery.data?.items ?? [];
@@ -515,6 +631,39 @@ function PlanDashboardScreen() {
     upcomingPlannedEventsQuery.data?.items,
   ]);
 
+  useEffect(() => {
+    const refreshKey = [
+      activePlan?.id ?? "",
+      String(upcomingPlannedEventsQuery.dataUpdatedAt ?? 0),
+      String(recentPlannedEventsQuery.dataUpdatedAt ?? 0),
+    ].join(":");
+
+    if (!activePlan?.id) {
+      lastProjectionRefreshKeyRef.current = refreshKey;
+      return;
+    }
+
+    if (
+      !upcomingPlannedEventsQuery.dataUpdatedAt &&
+      !recentPlannedEventsQuery.dataUpdatedAt
+    ) {
+      return;
+    }
+
+    if (lastProjectionRefreshKeyRef.current === refreshKey) {
+      return;
+    }
+
+    lastProjectionRefreshKeyRef.current = refreshKey;
+    void Promise.all([refetchActivePlan(), snapshot.refetchAll()]);
+  }, [
+    activePlan?.id,
+    recentPlannedEventsQuery.dataUpdatedAt,
+    refetchActivePlan,
+    snapshot.refetchAll,
+    upcomingPlannedEventsQuery.dataUpdatedAt,
+  ]);
+
   const planSnapshotSummary = useMemo(() => {
     const primaryPlan = activePlansInProgress[0] ?? null;
     return {
@@ -536,38 +685,62 @@ function PlanDashboardScreen() {
     setRefreshing(false);
   };
 
-  const handleSubmitGoal = (draft: GoalEditorDraft) => {
+  const handleSubmitGoal = async (draft: GoalEditorDraft) => {
     if (!goals.profileId) {
       return;
     }
 
-    const payload = {
-      training_plan_id: activePlan?.id ?? null,
-      milestone_event_id: null,
-      title: draft.title.trim(),
-      goal_type: draft.goalType,
-      target_metric: draft.targetMetric ?? null,
-      target_value: draft.targetValue ?? null,
-      importance: Math.max(0, Math.min(10, draft.importance)),
-      target_date: draft.targetDate,
-      metadata:
-        draft.goalType === "race_performance" &&
-        typeof draft.raceDistanceKm === "number" &&
-        Number.isFinite(draft.raceDistanceKm) &&
-        draft.raceDistanceKm > 0
-          ? { distance_m: Math.round(draft.raceDistanceKm * 1000) }
-          : undefined,
-    };
+    try {
+      const existingGoal = editingGoalId
+        ? goals.goals.find((goal) => goal.id === editingGoalId)
+        : null;
 
-    if (editingGoalId) {
-      updateGoalMutation.mutate({ id: editingGoalId, data: payload });
-      return;
+      const milestoneEventId = existingGoal?.milestone_event_id;
+      const resolvedMilestoneEventId = milestoneEventId
+        ? milestoneEventId
+        : (
+            await createMilestoneEventMutation.mutateAsync(
+              buildMilestoneEventCreateInput({
+                draft,
+                trainingPlanId: activePlan?.id ?? null,
+              }),
+            )
+          ).id;
+
+      if (milestoneEventId) {
+        await updateMilestoneEventMutation.mutateAsync({
+          id: milestoneEventId,
+          patch: buildMilestoneEventUpdatePatch({
+            draft,
+            trainingPlanId: activePlan?.id ?? null,
+          }),
+        });
+      }
+
+      if (editingGoalId) {
+        await updateGoalMutation.mutateAsync({
+          id: editingGoalId,
+          data: buildGoalUpdatePayload({
+            draft,
+            milestoneEventId: resolvedMilestoneEventId,
+          }),
+        });
+        return;
+      }
+
+      await createGoalMutation.mutateAsync(
+        buildGoalCreatePayload({
+          draft,
+          profileId: goals.profileId,
+          milestoneEventId: resolvedMilestoneEventId,
+        }),
+      );
+    } catch (error) {
+      Alert.alert(
+        "Unable to save goal",
+        error instanceof Error ? error.message : "Please try again.",
+      );
     }
-
-    createGoalMutation.mutate({
-      ...payload,
-      profile_id: goals.profileId,
-    });
   };
 
   return (
@@ -595,77 +768,60 @@ function PlanDashboardScreen() {
               </TouchableOpacity>
             </CardHeader>
             <CardContent className="gap-3">
-              <View className="flex-row flex-wrap gap-2">
-                <View className="rounded-full border border-border/60 bg-muted/20 px-3 py-1.5">
-                  <Text className="text-xs font-medium text-foreground">
-                    {planSnapshotSummary.goalCount} goal
-                    {planSnapshotSummary.goalCount === 1 ? "" : "s"}
-                  </Text>
-                </View>
-                <View className="rounded-full border border-border/60 bg-muted/20 px-3 py-1.5">
-                  <Text className="text-xs font-medium text-foreground">
-                    {planSnapshotSummary.planLabel}
-                  </Text>
-                </View>
-                {planSnapshotSummary.upcomingCount > 0 ? (
-                  <View className="rounded-full border border-border/60 bg-muted/20 px-3 py-1.5">
-                    <Text className="text-xs font-medium text-foreground">
-                      {planSnapshotSummary.upcomingCount} upcoming
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
               {weeklyLoadSummary ? (
-                <View className="flex-row items-end justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2">
-                  <View>
+                <View className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
+                  <View className="flex-row items-end justify-between">
                     <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                      This week&apos;s load
+                      This week's load
                     </Text>
-                    <Text className="text-lg font-semibold text-foreground">
-                      {weeklyLoadSummary.primaryLoad} TSS
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {formatLoadModeLabel(loadGuidance?.mode)}:{" "}
-                      {Math.round(weeklyLoadSummary.currentRecommended)} TSS.{" "}
-                      {loadGuidance?.interpretation ??
-                        "Weekly guidance is estimated from your current plan and available training signals."}
+                    <Text
+                      className={`text-xs font-medium ${weeklyLoadSummary.vsLastWeek >= 0 ? "text-emerald-600" : "text-muted-foreground"}`}
+                    >
+                      {weeklyLoadSummary.vsLastWeek >= 0 ? "+" : ""}
+                      {weeklyLoadSummary.vsLastWeek} vs last week
                     </Text>
                   </View>
-                  <Text
-                    className={`text-xs font-medium ${weeklyLoadSummary.vsLastWeek >= 0 ? "text-emerald-600" : "text-muted-foreground"}`}
-                  >
-                    {weeklyLoadSummary.vsLastWeek >= 0 ? "+" : ""}
-                    {weeklyLoadSummary.vsLastWeek} vs last week
+                  <Text className="text-2xl font-semibold text-foreground">
+                    {weeklyLoadSummary.primaryLoad} TSS
+                  </Text>
+                  <Text className="text-sm text-muted-foreground mt-1">
+                    Recommended this week:{" "}
+                    {Math.round(weeklyLoadSummary.currentRecommended)} TSS.{" "}
+                    {formatLoadModeLabel(loadGuidance?.mode)}.
                   </Text>
                 </View>
               ) : null}
-              <View className="flex-row gap-3">
-                <View className="flex-1 rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
-                  <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Physiological readiness
-                  </Text>
-                  <Text className="text-lg font-semibold text-foreground">
-                    {formatScore(physiologicalReadinessSummary.score)}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    {physiologicalReadinessSummary.interpretation}
-                  </Text>
-                </View>
-                <View className="flex-1 rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
-                  <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Planning confidence
-                  </Text>
-                  <Text className="text-lg font-semibold text-foreground">
-                    {formatScore(planningConfidenceSummary.score)}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    {planningConfidenceSummary.interpretation}
-                  </Text>
-                </View>
-              </View>
-              <Text className="text-xs text-muted-foreground">
-                {projectionInsight}
-              </Text>
+
+              {(() => {
+                const nextGoal = [...goalReadiness]
+                  .filter((g) => g.goal.target_date)
+                  .sort((a, b) =>
+                    a.goal.target_date!.localeCompare(b.goal.target_date!),
+                  )[0];
+
+                if (!nextGoal) return null;
+
+                return (
+                  <View className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
+                    <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      Next Goal
+                    </Text>
+                    <Text className="text-sm font-semibold text-foreground">
+                      {nextGoal.goal.title}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {new Date(
+                        nextGoal.goal.target_date + "T12:00:00.000Z",
+                      ).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </Text>
+                  </View>
+                );
+              })()}
+
               <PlanVsActualChart
                 timeline={insightTimelinePoints}
                 actualData={fitnessHistory}
@@ -705,46 +861,54 @@ function PlanDashboardScreen() {
                       className="rounded-md border border-border bg-card px-3 py-3"
                       activeOpacity={0.8}
                     >
-                      <View className="flex-row items-start justify-between gap-3">
-                        <View className="flex-1 gap-1">
-                          <Text className="text-sm font-semibold text-foreground">
-                            {goal.title}
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            {formatGoalTypeLabel(goal.goal_type)} · Importance{" "}
-                            {goal.importance}
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            {goal.target_date
-                              ? `Target ${goal.target_date}`
-                              : "No target date set"}
-                          </Text>
-                        </View>
-                        <View className="items-end gap-2">
-                          <Text className="text-base font-semibold text-primary">
-                            {formatReadiness(readinessPercent)}
-                          </Text>
-                          <Text className="text-[11px] text-muted-foreground">
-                            Readiness
-                          </Text>
-                          {projectedCtl != null ? (
-                            <Text className="text-[11px] text-muted-foreground">
-                              CTL {Math.round(projectedCtl)}
-                            </Text>
-                          ) : null}
-                          {projectedCtl == null ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onPress={() =>
-                                router.push(ROUTES.CALENDAR as any)
-                              }
-                            >
-                              <Text>Log</Text>
-                            </Button>
-                          ) : null}
-                        </View>
-                      </View>
+                      {(() => {
+                        const explainability = goalExplainabilityById.get(
+                          goal.id,
+                        );
+
+                        return (
+                          <View className="flex-row items-start justify-between gap-3">
+                            <View className="flex-1 gap-1">
+                              <Text className="text-sm font-semibold text-foreground">
+                                {goal.title}
+                              </Text>
+                              <Text className="text-xs text-muted-foreground">
+                                {formatGoalTypeLabel(goal)} · Priority:{" "}
+                                {formatPriorityLabel(goal.priority)}
+                              </Text>
+                              <Text className="text-xs text-muted-foreground">
+                                {goal.target_date
+                                  ? `Target: ${new Date(goal.target_date + "T12:00:00.000Z").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`
+                                  : "No target date set"}
+                              </Text>
+                            </View>
+                            <View className="items-end gap-2">
+                              <Text className="text-base font-semibold text-primary">
+                                {formatReadiness(readinessPercent)}
+                              </Text>
+                              <Text className="text-[11px] text-muted-foreground">
+                                Readiness
+                              </Text>
+                              {projectedCtl != null ? (
+                                <Text className="text-[11px] text-muted-foreground">
+                                  CTL {Math.round(projectedCtl)}
+                                </Text>
+                              ) : null}
+                              {projectedCtl == null ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onPress={() =>
+                                    router.push(ROUTES.CALENDAR as any)
+                                  }
+                                >
+                                  <Text>Log</Text>
+                                </Button>
+                              ) : null}
+                            </View>
+                          </View>
+                        );
+                      })()}
                     </TouchableOpacity>
                   ),
                 )

@@ -4,8 +4,18 @@ import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import PlanScreenWithErrorBoundary from "../plan";
 
-const { pushMock } = vi.hoisted(() => ({
+const {
+  pushMock,
+  refetchActivePlanMock,
+  refetchSnapshotMock,
+  recentEventsUpdatedAtRef,
+  upcomingEventsUpdatedAtRef,
+} = vi.hoisted(() => ({
   pushMock: vi.fn(),
+  refetchActivePlanMock: vi.fn(async () => undefined),
+  refetchSnapshotMock: vi.fn(async () => undefined),
+  recentEventsUpdatedAtRef: { current: 1 },
+  upcomingEventsUpdatedAtRef: { current: 1 },
 }));
 
 function createHost(type: string) {
@@ -72,9 +82,17 @@ vi.mock("@/lib/hooks/useProfileGoals", () => ({
       {
         id: "goal-1",
         title: "Race A",
-        goal_type: "race_performance",
-        importance: 8,
+        priority: 8,
         target_date: "2026-08-01",
+        milestone_event_id: "event-1",
+        profile_id: "profile-1",
+        activity_category: "run",
+        objective: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 5000,
+          target_time_s: 1400,
+        },
       },
     ],
     goalsCount: 1,
@@ -85,27 +103,30 @@ vi.mock("@/lib/hooks/useProfileGoals", () => ({
 vi.mock("@/lib/hooks/useProfileSettings", () => ({
   useProfileSettings: () => ({
     settings: {
-      availability_config: { days: [] },
-      behavior_controls_v1: {
-        aggressiveness: 0.5,
+      availability: { weekly_windows: [], hard_rest_days: [] },
+      dose_limits: {
+        min_sessions_per_week: 2,
+        max_sessions_per_week: 6,
+      },
+      training_style: {
+        progression_pace: 0.5,
+        week_pattern_preference: 0.5,
+        key_session_density_preference: 0.5,
+      },
+      recovery_preferences: {
         recovery_priority: 0.5,
-        variability: 0.5,
+        post_goal_recovery_days: 5,
+        double_day_tolerance: 0.25,
+        long_session_fatigue_tolerance: 0.5,
       },
-      constraints: { hard_rest_days: [] },
-      locks: {
-        volume_by_day: false,
-        intensity_distribution: false,
+      adaptation_preferences: {
+        recency_adaptation_preference: 0.5,
+        plan_churn_tolerance: 0.4,
       },
-      post_goal_recovery_days: 5,
-      microcycle_pattern: {
-        hard_days: [],
-        medium_days: [],
-        easy_days: [],
+      goal_strategy_preferences: {
+        target_surplus_preference: 0.25,
+        priority_tradeoff_preference: 0.5,
       },
-      progression_preferences: {
-        weekly_progression_cap: 0.08,
-      },
-      diagnostics: { include_readiness_codes: true },
     },
     settingsRecord: null,
     refetch: vi.fn(async () => undefined),
@@ -122,8 +143,44 @@ vi.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         { date: "2026-04-01", ctl: 45 },
         { date: "2026-08-01", ctl: 55 },
       ],
+      goal_assessments: [
+        {
+          goal_id: "goal-1",
+          target_scores: [
+            {
+              effective_target: {
+                surplus_applied: true,
+                applied_surplus_pct: 0.02,
+              },
+            },
+          ],
+        },
+      ],
     },
     insightTimeline: {
+      plan_feasibility: {
+        state: "stretch",
+        reasons: ["timeline_pressure"],
+      },
+      goal_feasibility: [
+        {
+          goal_id: "goal-1",
+          goal_name: "Race A",
+          state: "stretch",
+          reasons: ["capacity_pressure"],
+        },
+      ],
+      projection: {
+        diagnostics: {
+          fallback_mode: "conservative_baseline",
+          confidence: {
+            overall: 0.62,
+            adherence: 0.62,
+            capability: 0.55,
+            evidence_state: "medium",
+          },
+        },
+      },
       load_guidance: {
         mode: "goal_driven",
         goal_count: 1,
@@ -145,7 +202,7 @@ vi.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         },
       ],
     },
-    refetchAll: vi.fn(async () => undefined),
+    refetchAll: refetchSnapshotMock,
   }),
 }));
 
@@ -163,7 +220,7 @@ vi.mock("@/lib/trpc", () => ({
             next_event_at: "2026-04-05T00:00:00.000Z",
             training_plan: { name: "Current Plan" },
           },
-          refetch: vi.fn(async () => undefined),
+          refetch: refetchActivePlanMock,
         }),
       },
       list: {
@@ -187,7 +244,23 @@ vi.mock("@/lib/trpc", () => ({
                   ],
                 }
               : { items: [] },
+          dataUpdatedAt:
+            input?.date_from === "2026-02-15"
+              ? recentEventsUpdatedAtRef.current
+              : upcomingEventsUpdatedAtRef.current,
           refetch: vi.fn(async () => undefined),
+        }),
+      },
+      create: {
+        useMutation: () => ({
+          isPending: false,
+          mutateAsync: vi.fn(),
+        }),
+      },
+      update: {
+        useMutation: () => ({
+          isPending: false,
+          mutateAsync: vi.fn(),
         }),
       },
     },
@@ -223,6 +296,18 @@ vi.mock("@/lib/trpc", () => ({
 }));
 
 describe("plan dashboard navigation", () => {
+  it("refreshes the projection snapshot when planned events change", () => {
+    refetchActivePlanMock.mockClear();
+    refetchSnapshotMock.mockClear();
+
+    act(() => {
+      TestRenderer.create(<PlanScreenWithErrorBoundary />);
+    });
+
+    expect(refetchActivePlanMock).toHaveBeenCalled();
+    expect(refetchSnapshotMock).toHaveBeenCalled();
+  });
+
   it("renders dashboard sections", () => {
     let renderer!: TestRenderer.ReactTestRenderer;
 
@@ -251,28 +336,6 @@ describe("plan dashboard navigation", () => {
           return typeof value === "string" ? value : "";
         }),
     ).toContain("150%");
-    expect(
-      renderer.root
-        .findAll((node: any) => node.type === "Text")
-        .map((node) => {
-          const value = node.props.children;
-          if (Array.isArray(value)) {
-            return value.join("");
-          }
-          return typeof value === "string" ? value : "";
-        }),
-    ).toContain("Physiological readiness");
-    expect(
-      renderer.root
-        .findAll((node: any) => node.type === "Text")
-        .map((node) => {
-          const value = node.props.children;
-          if (Array.isArray(value)) {
-            return value.join("");
-          }
-          return typeof value === "string" ? value : "";
-        }),
-    ).toContain("Planning confidence");
     expect(
       renderer.root
         .findAll((node: any) => node.type === "Text")
