@@ -190,7 +190,7 @@ const eventListSchema = z
     include_adhoc: z.boolean().default(true),
     date_from: z.string().optional(),
     date_to: z.string().optional(),
-    limit: z.number().min(1).max(100).default(20),
+    limit: z.number().min(1).max(500).default(20),
     cursor: z.string().optional(),
   })
   .strict();
@@ -996,6 +996,22 @@ export const eventsRouter = createTRPCRouter({
       if (scheduledDate !== undefined) {
         eventUpdates.starts_at = toDayStartIso(scheduledDate);
         eventUpdates.ends_at = toNextDayStartIso(scheduledDate);
+      }
+
+      const nextAllDay =
+        patchAny.all_day !== undefined
+          ? Boolean(patchAny.all_day)
+          : existingEvent.all_day;
+
+      if (
+        nextAllDay &&
+        patchAny.starts_at !== undefined &&
+        patchAny.ends_at === undefined &&
+        scheduledDate === undefined
+      ) {
+        eventUpdates.ends_at = toNextDayStartIso(
+          toDateKey(patchAny.starts_at as string),
+        );
       }
 
       if (

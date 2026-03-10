@@ -1,5 +1,10 @@
 import { Text } from "@/components/ui/text";
-import { DashPathEffect, useFont } from "@shopify/react-native-skia";
+import {
+  DashPathEffect,
+  useFont,
+  Line as SkiaLine,
+  vec,
+} from "@shopify/react-native-skia";
 import { useColorScheme } from "nativewind";
 import React, { useMemo, useState } from "react";
 import {
@@ -58,13 +63,13 @@ type ChartDatum = Record<string, unknown> & {
   index: number;
   projection: number;
   planned: number;
-  actual: number;
+  actual: number | null;
   goal: number;
 };
 
 const chartYKeys: ChartYKey[] = ["projection", "planned", "actual", "goal"];
-const chartPadding = { left: 42, right: 14, top: 14, bottom: 28 };
-const chartDomainPadding = { left: 0, right: 0, top: 18, bottom: 10 };
+const chartPadding = { left: 0, right: 14, top: 14, bottom: 28 };
+const chartDomainPadding = { left: 0, right: 0, top: 10, bottom: 0 };
 
 const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
   try {
@@ -278,44 +283,83 @@ export function PlanVsActualChart({
   const axisFont = useFont(getAxisFontSource(), 9);
   const useInsightTimeline = !!timeline && timeline.length > 0;
 
-  const normalizedPoints = useMemo<NormalizedPoint[]>(() => {
-    if (useInsightTimeline && timeline) {
-      return aggregateTimelineByWeek(timeline);
+  const framedPoints = useMemo<NormalizedPoint[]>(() => {
+    let base =
+      useInsightTimeline && timeline
+        ? aggregateTimelineByWeek(timeline)
+        : buildFallbackPoints({
+            actualData,
+            projectedData,
+            idealData: idealData ?? [],
+          });
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayWeek = getWeekStartDateKey(todayStr);
+
+    let startIndex = 0;
+    let endIndex = base.length - 1;
+
+    if (goalMetrics?.targetDate) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const thirtyDaysAgoWeek = getWeekStartDateKey(
+        thirtyDaysAgo.toISOString().split("T")[0],
+      );
+
+      const goalDateObj = new Date(`${goalMetrics.targetDate}T12:00:00.000Z`);
+      if (!Number.isNaN(goalDateObj.getTime())) {
+        goalDateObj.setDate(goalDateObj.getDate() + 30);
+      }
+      const goalPlusThirtyWeek = getWeekStartDateKey(
+        goalDateObj.toISOString().split("T")[0],
+      );
+
+      const sIdx = base.findIndex((p) => p.date >= thirtyDaysAgoWeek);
+      const eIdx = base.findIndex((p) => p.date >= goalPlusThirtyWeek);
+
+      if (sIdx !== -1) startIndex = sIdx;
+      if (eIdx !== -1) endIndex = eIdx;
+      else if (base.length > 0) endIndex = base.length - 1;
+    } else {
+      const sIdx = base.findIndex(
+        (p) => (p.planned ?? 0) > 0 || (p.actual ?? 0) > 0,
+      );
+      const revBase = [...base].reverse();
+      const revEIdx = revBase.findIndex(
+        (p) => (p.planned ?? 0) > 0 || (p.actual ?? 0) > 0,
+      );
+      if (sIdx !== -1) startIndex = sIdx;
+      if (revEIdx !== -1) endIndex = base.length - 1 - revEIdx;
     }
 
-    return buildFallbackPoints({
-      actualData,
-      projectedData,
-      idealData: idealData ?? [],
-    });
-  }, [actualData, idealData, projectedData, timeline, useInsightTimeline]);
+    startIndex = Math.max(0, startIndex - 1);
+    endIndex = Math.min(base.length - 1, endIndex + 1);
 
-  const [visibleSeries, setVisibleSeries] = useState<
-    Record<SeriesKey, boolean>
-  >({
-    projection: true,
-    planned: true,
-    actual: true,
-  });
+    if (startIndex > endIndex) return base;
+    return base
+      .slice(startIndex, endIndex + 1)
+      .map((p, i) => ({ ...p, index: i }));
+  }, [
+    actualData,
+    idealData,
+    projectedData,
+    timeline,
+    useInsightTimeline,
+    goalMetrics?.targetDate,
+  ]);
+
   const hasSeriesData = {
-    projection: normalizedPoints.some(
+    projection: framedPoints.some(
       (point) => typeof point.projection === "number",
     ),
-    planned: normalizedPoints.some(
-      (point) => typeof point.planned === "number",
-    ),
-    actual: normalizedPoints.some((point) => typeof point.actual === "number"),
+    planned: framedPoints.some((point) => typeof point.planned === "number"),
+    actual: framedPoints.some((point) => typeof point.actual === "number"),
   };
 
-  const isEmpty = normalizedPoints.length === 0;
-  const hasAnyVisibleSeries = (Object.keys(visibleSeries) as SeriesKey[]).some(
-    (series) => visibleSeries[series] && hasSeriesData[series],
-  );
+  const isEmpty = framedPoints.length === 0;
+  const hasAnyVisibleSeries = true;
 
-  const labels = useMemo(
-    () => buildSparseLabels(normalizedPoints),
-    [normalizedPoints],
-  );
+  const labels = useMemo(() => buildSparseLabels(framedPoints), [framedPoints]);
   const todayLabel = useMemo(
     () =>
       new Date().toLocaleDateString(undefined, {
@@ -325,8 +369,8 @@ export function PlanVsActualChart({
     [],
   );
   const xTickIndexes = useMemo(
-    () => buildAxisTickIndexes(normalizedPoints.length, 6),
-    [normalizedPoints.length],
+    () => buildAxisTickIndexes(framedPoints.length, 6),
+    [framedPoints.length],
   );
 
   const goalLineValue =
@@ -336,26 +380,24 @@ export function PlanVsActualChart({
 
   const chartData = useMemo<ChartDatum[]>(() => {
     const projectionValues = fillSeries(
-      normalizedPoints.map((point) => point.projection),
+      framedPoints.map((point) => point.projection),
     );
     const plannedValues = fillSeries(
-      normalizedPoints.map((point) => point.planned),
+      framedPoints.map((point) => point.planned),
     );
-    const actualValues = fillSeries(
-      normalizedPoints.map((point) => point.actual),
-    );
+    const actualValues = framedPoints.map((point) => point.actual);
 
-    return normalizedPoints.map((point, index) => ({
+    return framedPoints.map((point, index) => ({
       index,
       projection: projectionValues[index] ?? 0,
       planned: plannedValues[index] ?? 0,
-      actual: actualValues[index] ?? 0,
+      actual: actualValues[index] ?? null,
       goal: goalLineValue ?? 0,
     }));
-  }, [goalLineValue, normalizedPoints]);
+  }, [goalLineValue, framedPoints]);
 
   const yAxisMax = useMemo(() => {
-    const observedValues = normalizedPoints.flatMap((point) => {
+    const observedValues = framedPoints.flatMap((point) => {
       const values = [point.projection, point.planned, point.actual].filter(
         (value): value is number => typeof value === "number" && value >= 0,
       );
@@ -367,7 +409,7 @@ export function PlanVsActualChart({
     }
 
     return computeYAxisMax(observedValues);
-  }, [goalLineValue, normalizedPoints]);
+  }, [goalLineValue, framedPoints]);
 
   const onChartLayout = (event: LayoutChangeEvent) => {
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
@@ -381,41 +423,6 @@ export function PlanVsActualChart({
 
   return (
     <View className="py-1">
-      <View className="mb-1 flex-row items-center justify-between">
-        <Text className="text-[10px] uppercase tracking-wide text-muted-foreground">
-          Toggle visibility
-        </Text>
-        <Text className="text-[10px] text-muted-foreground">
-          Today: {todayLabel}
-        </Text>
-      </View>
-      <View className="flex-row flex-wrap gap-1.5 mb-2">
-        {(Object.keys(SERIES_META) as SeriesKey[]).map((series) => {
-          const isEnabled = visibleSeries[series];
-          const isAvailable = hasSeriesData[series];
-          return (
-            <Pressable
-              key={series}
-              disabled={!isAvailable}
-              onPress={() =>
-                setVisibleSeries((current) => ({
-                  ...current,
-                  [series]: !current[series],
-                }))
-              }
-              className={`rounded-full border px-2.5 py-0.5 ${isEnabled && isAvailable ? "border-primary/60 bg-primary/10" : "border-border/70 bg-background/70"}`}
-            >
-              <Text
-                className={`text-[11px] ${isEnabled && isAvailable ? "text-primary font-semibold" : "text-muted-foreground"}`}
-              >
-                {(isEnabled && isAvailable ? "[x] " : "[ ] ") +
-                  SERIES_META[series].label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
       <View style={{ height: chartContainerHeight }} onLayout={onChartLayout}>
         {isEmpty || !hasAnyVisibleSeries ? (
           <View className="flex-1 items-center justify-center bg-muted/20 rounded-md">
@@ -460,12 +467,14 @@ export function PlanVsActualChart({
                   {
                     yKeys: chartYKeys,
                     axisSide: "left",
-                    labelPosition: "outset",
+                    labelPosition: "inset",
                     labelOffset: 4,
                     domain: [0, yAxisMax] as [number, number],
                     tickCount: 6,
                     font: axisFont,
-                    labelColor: isDark ? "#e2e8f0" : "#334155",
+                    labelColor: isDark
+                      ? "rgba(71, 85, 105, 0.8)"
+                      : "rgba(148, 163, 184, 0.8)",
                     lineColor: isDark
                       ? "rgba(71, 85, 105, 0.4)"
                       : "rgba(148, 163, 184, 0.45)",
@@ -484,69 +493,65 @@ export function PlanVsActualChart({
               >
                 {({ points, chartBounds }) => (
                   <>
-                    {visibleSeries.projection && hasSeriesData.projection ? (
-                      <>
-                        <Area
-                          points={points.projection}
-                          y0={chartBounds.bottom}
-                          color={SERIES_META.projection.color.replace(
-                            "0.95)",
-                            "0.15)",
-                          )}
-                          curveType="natural"
-                          animate={{ type: "timing", duration: 180 }}
-                        />
-                        <Line
-                          points={points.projection}
-                          color={SERIES_META.projection.color}
-                          strokeWidth={SERIES_META.projection.strokeWidth}
-                          curveType="natural"
-                          animate={{ type: "timing", duration: 180 }}
-                        />
-                      </>
-                    ) : null}
-                    {visibleSeries.planned && hasSeriesData.planned ? (
-                      <>
-                        <Line
-                          points={points.planned}
-                          color={SERIES_META.planned.color}
-                          strokeWidth={SERIES_META.planned.strokeWidth}
-                          curveType="natural"
-                          animate={{ type: "timing", duration: 180 }}
-                        />
-                        <Scatter
-                          points={points.planned}
-                          radius={3}
-                          color={SERIES_META.planned.color}
-                          animate={{ type: "timing", duration: 180 }}
-                        />
-                      </>
-                    ) : null}
-                    {visibleSeries.actual && hasSeriesData.actual ? (
-                      <>
-                        <Line
-                          points={points.actual}
-                          color={SERIES_META.actual.color}
-                          strokeWidth={SERIES_META.actual.strokeWidth}
-                          curveType="natural"
-                          animate={{ type: "timing", duration: 180 }}
-                        />
-                        <Scatter
-                          points={points.actual}
-                          radius={3.5}
-                          color={SERIES_META.actual.color}
-                          animate={{ type: "timing", duration: 180 }}
-                        />
-                      </>
-                    ) : null}
-                    {goalLineValue !== null ? (
-                      <Line
-                        points={points.goal}
-                        color="rgba(34, 197, 94, 0.72)"
-                        strokeWidth={1.4}
-                        curveType="linear"
+                    {hasSeriesData.projection ? (
+                      <Area
+                        points={points.projection}
+                        y0={chartBounds.bottom}
+                        color={SERIES_META.projection.color.replace(
+                          "0.95)",
+                          "0.15)",
+                        )}
+                        curveType="natural"
+                        animate={{ type: "timing", duration: 180 }}
                       />
                     ) : null}
+
+                    {hasSeriesData.planned ? (
+                      <Line
+                        points={points.planned}
+                        color={SERIES_META.planned.color}
+                        strokeWidth={SERIES_META.planned.strokeWidth}
+                        curveType="natural"
+                        animate={{ type: "timing", duration: 180 }}
+                      />
+                    ) : null}
+
+                    {hasSeriesData.actual ? (
+                      <Scatter
+                        points={points.actual.filter(
+                          (p) => p.yValue != null && p.yValue > 0,
+                        )}
+                        color={SERIES_META.actual.color}
+                        radius={4}
+                        animate={{ type: "timing", duration: 180 }}
+                      />
+                    ) : null}
+
+                    {(() => {
+                      if (!goalMetrics?.targetDate) return null;
+                      const goalWeek = getWeekStartDateKey(
+                        goalMetrics.targetDate,
+                      );
+                      const goalIndex = framedPoints.findIndex(
+                        (p) => p.date >= goalWeek,
+                      );
+                      if (goalIndex === -1) return null;
+                      const targetPoint =
+                        points.projection[goalIndex] ||
+                        points.planned[goalIndex];
+                      if (!targetPoint) return null;
+
+                      return (
+                        <SkiaLine
+                          p1={vec(targetPoint.x, chartBounds.bottom)}
+                          p2={vec(targetPoint.x, chartBounds.top)}
+                          color="rgba(34, 197, 94, 0.6)"
+                          strokeWidth={2}
+                        >
+                          <DashPathEffect intervals={[4, 4]} />
+                        </SkiaLine>
+                      );
+                    })()}
                   </>
                 )}
               </CartesianChart>

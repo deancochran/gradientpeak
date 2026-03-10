@@ -83,7 +83,7 @@ import { trpc } from "@/lib/trpc";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { plannedActivityScheduleFormSchema } from "@repo/core";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 import { Calendar, Clock, TrendingUp, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -124,6 +124,37 @@ interface ScheduleActivityModalProps {
   editScope?: "single" | "future" | "series";
 }
 
+function toDateOnlyString(value: Date): string {
+  return format(value, "yyyy-MM-dd");
+}
+
+function toPickerDate(value: string | null | undefined): Date {
+  if (!value) {
+    return new Date();
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (match) {
+    const [, year, month, day] = match;
+    return new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+
+  return new Date(
+    parsed.getFullYear(),
+    parsed.getMonth(),
+    parsed.getDate(),
+    12,
+    0,
+    0,
+    0,
+  );
+}
+
 export function ScheduleActivityModal({
   visible,
   onClose,
@@ -136,6 +167,7 @@ export function ScheduleActivityModal({
   editScope = "single",
 }: ScheduleActivityModalProps) {
   const isEditMode = !!eventId;
+  const resolvedActivityPlanId = activityPlanId ?? activityPlan?.id ?? "";
   const isTemplate = !!activityPlan && !activityPlanId;
 
   // Validation: Must have either activityPlanId, activityPlan, or eventId
@@ -159,9 +191,9 @@ export function ScheduleActivityModal({
   >({
     resolver: zodResolver(plannedActivityScheduleFormSchema),
     defaultValues: {
-      scheduled_date: preselectedDate || new Date().toISOString(),
+      scheduled_date: preselectedDate || toDateOnlyString(new Date()),
       notes: null,
-      activity_plan_id: activityPlanId || "",
+      activity_plan_id: resolvedActivityPlanId,
       training_plan_id: trainingPlanId || null,
     },
   });
@@ -169,12 +201,9 @@ export function ScheduleActivityModal({
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const scheduledDateString = watch("scheduled_date");
-  const scheduledDate =
-    scheduledDateString && !isNaN(Date.parse(scheduledDateString))
-      ? new Date(scheduledDateString)
-      : new Date();
+  const scheduledDate = toPickerDate(scheduledDateString);
   const currentActivityPlanId = watch("activity_plan_id");
-  const scheduledDateForApi = format(scheduledDate, "yyyy-MM-dd");
+  const scheduledDateForApi = toDateOnlyString(scheduledDate);
 
   // Fetch existing activity if editing
   const { data: existingActivity, isLoading: loadingExistingActivity } =
@@ -216,6 +245,14 @@ export function ScheduleActivityModal({
     }
   }, [visible, reset]);
 
+  useEffect(() => {
+    if (!isEditMode && resolvedActivityPlanId) {
+      setValue("activity_plan_id", resolvedActivityPlanId, {
+        shouldValidate: false,
+      });
+    }
+  }, [isEditMode, resolvedActivityPlanId, setValue]);
+
   // Load existing activity data (edit mode)
   useEffect(() => {
     if (existingActivity && existingActivity.activity_plan) {
@@ -250,14 +287,14 @@ export function ScheduleActivityModal({
       updateMutation.mutate({
         id: eventId,
         activity_plan_id: data.activity_plan_id,
-        scheduled_date: format(parseISO(data.scheduled_date), "yyyy-MM-dd"),
+        scheduled_date: data.scheduled_date,
         notes: data.notes || undefined,
         scope: editScope,
       });
     } else {
       createMutation.mutate({
         activity_plan_id: data.activity_plan_id,
-        scheduled_date: format(parseISO(data.scheduled_date), "yyyy-MM-dd"),
+        scheduled_date: data.scheduled_date,
         notes: data.notes || undefined,
         training_plan_id: data.training_plan_id || undefined,
       });
@@ -267,7 +304,7 @@ export function ScheduleActivityModal({
   const handleDateChange = (event: any, date?: Date) => {
     setShowDatePicker(false);
     if (date) {
-      setValue("scheduled_date", date.toISOString());
+      setValue("scheduled_date", toDateOnlyString(date));
     }
   };
 
@@ -297,6 +334,7 @@ export function ScheduleActivityModal({
   const canSchedule =
     !isLoading &&
     displayPlan &&
+    !!currentActivityPlanId &&
     (!trainingPlanId || validation?.canSchedule !== false) &&
     !isSubmitting;
 
@@ -490,6 +528,17 @@ export function ScheduleActivityModal({
                 </View>
 
                 {/* Error Messages */}
+                {!currentActivityPlanId ? (
+                  <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+                    <Text className="text-destructive font-medium">
+                      This activity cannot be scheduled yet
+                    </Text>
+                    <Text className="text-destructive/80 text-sm mt-1">
+                      Save or duplicate the activity plan first, then schedule
+                      it from its detail screen.
+                    </Text>
+                  </View>
+                ) : null}
                 {(createMutation.error || updateMutation.error) && (
                   <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                     <Text className="text-destructive font-medium">

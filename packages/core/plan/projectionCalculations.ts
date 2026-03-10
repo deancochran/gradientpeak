@@ -10,6 +10,7 @@ import type {
   TrainingPlanCalibrationConfig,
 } from "../schemas/training_plan_structure";
 import { trainingPlanCalibrationConfigSchema } from "../schemas/training_plan_structure";
+import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import {
@@ -115,6 +116,18 @@ export type NoHistoryFitnessLevel = "weak" | "strong";
 export type NoHistoryGoalTier = "low" | "medium" | "high";
 export type BuildTimeFeasibility = "full" | "limited" | "insufficient";
 export type ProjectionFloorConfidence = "high" | "medium" | "low";
+export type ProjectionSport = "run" | "bike" | "swim" | "other";
+export type ProjectionLoadMethod =
+  | "bike_power"
+  | "run_pace"
+  | "swim_threshold_speed"
+  | "heart_rate"
+  | "manual_estimate";
+export type ProjectionFallbackMode =
+  | "primary_method"
+  | "same_sport_fallback"
+  | "sparse_evidence"
+  | "manual_conservative";
 
 interface DemandBand {
   min: number;
@@ -125,7 +138,17 @@ interface DemandBand {
 export interface EvidenceWeightingResult {
   score: number;
   state: "none" | "sparse" | "stale" | "rich";
+  support_signal: number;
+  evidence_recency_days: number;
   reasons: string[];
+}
+
+export interface ContinuousCapabilityFactors {
+  aerobic_base: number;
+  durability: number;
+  recovery_speed: number;
+  intensity_support: number;
+  evidence_quality: number;
 }
 
 export interface NoHistoryAvailabilityContext {
@@ -194,6 +217,7 @@ export interface NoHistoryEvidence {
 export interface NoHistoryFitnessInference {
   fitnessLevel: NoHistoryFitnessLevel;
   fitnessSignal: number;
+  capability_factors: ContinuousCapabilityFactors;
   reasons: string[];
 }
 
@@ -239,8 +263,37 @@ export interface NoHistoryAnchorResolution {
   required_peak_weekly_tss: DemandBand | null;
   goal_demand_score_0_1?: number;
   evidence_confidence: EvidenceWeightingResult | null;
+  capability_factors: ContinuousCapabilityFactors | null;
   demand_confidence: ProjectionFloorConfidence | null;
   projection_feasibility: ReadinessProjectionFeasibilityMetadata | null;
+}
+
+export interface ProjectionSportLoadState {
+  sport: ProjectionSport;
+  load_method: ProjectionLoadMethod;
+  load_confidence: number;
+  fallback_mode: ProjectionFallbackMode;
+  source_quality: number;
+  rolling_load_7d: number;
+  rolling_load_28d: number;
+  ctl_equivalent: number;
+  mechanical_stress_score: number;
+}
+
+export interface ProjectionDoseRecommendation {
+  recommended_weekly_load: number;
+  recommended_weekly_duration_minutes: number;
+  recommended_sessions_per_week: number;
+  key_session_count: number;
+  long_session_ceiling_minutes: number;
+  intensity_distribution_target: {
+    easy: number;
+    moderate: number;
+    hard: number;
+  };
+  ramp_pressure: number;
+  recovery_pressure: number;
+  notes: string[];
 }
 
 const NO_HISTORY_DEFAULT_INTENSITY_MODEL: NoHistoryIntensityModel = {
@@ -378,11 +431,21 @@ export function determineNoHistoryFitnessLevel(
         metrics * 0.1,
     ),
   );
+  const capability_factors: ContinuousCapabilityFactors = {
+    aerobic_base: round3(clamp01(fitnessSignal * 0.82 + consistency * 0.18)),
+    durability: round3(clamp01(fitnessSignal * 0.55 + consistency * 0.45)),
+    recovery_speed: round3(clamp01(0.35 + consistency * 0.35 + effort * 0.3)),
+    intensity_support: round3(clamp01(fitnessSignal * 0.5 + effort * 0.5)),
+    evidence_quality: round3(
+      clamp01(signalQuality * 0.55 + metrics * 0.25 + tokenSupport * 0.2),
+    ),
+  };
 
   if (fitnessSignal >= 0.62) {
     return {
       fitnessLevel: "strong",
       fitnessSignal,
+      capability_factors,
       reasons: [
         ...evidence.strong_signal_tokens,
         "fitness_promoted_to_strong_supportive_continuous_signal",
@@ -393,6 +456,7 @@ export function determineNoHistoryFitnessLevel(
   return {
     fitnessLevel: "weak",
     fitnessSignal,
+    capability_factors,
     reasons: [
       ...evidence.strong_signal_tokens,
       "fitness_defaulted_to_weak_supportive_signal_below_threshold",
@@ -856,7 +920,16 @@ export function deriveEvidenceWeighting(input: {
     ...(hasStaleMarker ? ["confidence_discount_stale_history"] : []),
   ];
   const quality = clamp01(input.signalQuality ?? 0.4);
-  let confidence = baseByState[state] * 0.7 + quality * 0.3;
+  const evidence_recency_days = hasStaleMarker
+    ? 56
+    : state === "none"
+      ? 120
+      : state === "sparse"
+        ? 35
+        : 10;
+  const recencySupport = Math.exp(-evidence_recency_days / 90);
+  let confidence =
+    baseByState[state] * 0.45 + quality * 0.35 + recencySupport * 0.2;
 
   if (input.effortConfidenceMarker === "high") {
     confidence += 0.08;
@@ -881,9 +954,13 @@ export function deriveEvidenceWeighting(input: {
     rich: 0.5,
   };
 
+  const boundedScore = Math.max(minByState[state], clamp01(confidence));
+
   return {
-    score: Math.max(minByState[state], clamp01(confidence)),
+    score: boundedScore,
     state,
+    support_signal: round3(clamp01(boundedScore * 0.7 + recencySupport * 0.3)),
+    evidence_recency_days,
     reasons,
   };
 }
@@ -1048,8 +1125,11 @@ export function resolveNoHistoryAnchor(
     evidence_confidence: {
       score: effectiveEvidenceScore,
       state: evidenceConfidence.state,
+      support_signal: evidenceConfidence.support_signal,
+      evidence_recency_days: evidenceConfidence.evidence_recency_days,
       reasons: enrichedEvidenceReasons,
     },
+    capability_factors: fitness.capability_factors,
     demand_confidence: goalDemandProfile.demand_confidence,
     projection_feasibility: null,
   };
@@ -1336,6 +1416,7 @@ export interface DeterministicProjectionPayload {
     | "required_peak_weekly_tss"
     | "demand_confidence"
     | "evidence_confidence"
+    | "capability_factors"
     | "projection_feasibility"
   >;
   readiness_score: number;
@@ -1361,6 +1442,8 @@ export interface DeterministicProjectionPayload {
   caps_applied?: string[];
   projection_diagnostics?: ProjectionDiagnostics;
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
+  sport_load_states?: ProjectionSportLoadState[];
+  dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
@@ -1368,12 +1451,29 @@ export interface DeterministicProjectionPayload {
     state_readiness_score?: number;
     goal_alignment_loss_0_100?: number;
     feasibility_band: FeasibilityBand;
+    limiter_shares?: {
+      timeline_pressure: number;
+      capacity_pressure: number;
+      evidence_weakness: number;
+      recovery_strain: number;
+      mechanical_stress: number;
+      goal_interference: number;
+    };
+    interference_notes?: string[];
     target_scores: Array<{
       kind: GoalTargetV2["target_type"];
       score_0_100: number;
       target_weight?: number;
       unmet_gap?: number;
       rationale_codes: string[];
+      effective_target?: {
+        raw_target: number;
+        effective_scoring_target: number;
+        applied_surplus_pct: number;
+        surplus_support_factor: number;
+        surplus_applied: boolean;
+        rationale_code: string;
+      };
     }>;
     conflict_notes: string[];
   }>;
@@ -1402,6 +1502,7 @@ export interface BuildDeterministicProjectionInput {
   starting_atl?: number;
   starting_tsb?: number;
   creation_config?: ProjectionSafetyConfigInput;
+  preference_profile?: AthletePreferenceProfile;
   no_history_context?: NoHistoryAnchorContext;
   prior_inferred_snapshot?: PriorInferredStateSnapshotInput;
   disable_weekly_tss_optimizer?: boolean;
@@ -2951,11 +3052,288 @@ function computeGoalReadinessScore(input: {
 
 function resolveSparsityPenalty(
   state: "none" | "sparse" | "stale" | "rich" | undefined,
+  evidenceScore?: number,
 ): number {
-  if (state === "none") return 0.2;
-  if (state === "stale") return 0.16;
-  if (state === "sparse") return 0.12;
-  return 0.04;
+  const basePenalty = clamp01(1 - clamp01(evidenceScore ?? 0.7)) * 0.18;
+  const stateBias =
+    state === "none"
+      ? 0.04
+      : state === "stale"
+        ? 0.03
+        : state === "sparse"
+          ? 0.02
+          : 0.01;
+  return round3(basePenalty + stateBias);
+}
+
+function resolveTargetSport(
+  targets: GoalTargetV2[] | undefined,
+): ProjectionSport {
+  const sportCounts: Record<ProjectionSport, number> = {
+    run: 0,
+    bike: 0,
+    swim: 0,
+    other: 0,
+  };
+
+  for (const target of targets ?? []) {
+    if (target.target_type === "hr_threshold") {
+      sportCounts.other += 0.5;
+      continue;
+    }
+    sportCounts[target.activity_category] += 1;
+  }
+
+  return (Object.entries(sportCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ??
+    "other") as ProjectionSport;
+}
+
+function resolveSportLoadMethod(input: {
+  sport: ProjectionSport;
+  targets: GoalTargetV2[];
+  evidenceScore: number;
+}): {
+  load_method: ProjectionLoadMethod;
+  fallback_mode: ProjectionFallbackMode;
+  base_confidence: number;
+} {
+  const hasPowerTarget = input.targets.some(
+    (target) => target.target_type === "power_threshold",
+  );
+  const hasRunPaceTarget = input.targets.some(
+    (target) =>
+      target.target_type === "pace_threshold" ||
+      (target.target_type === "race_performance" &&
+        target.activity_category === "run"),
+  );
+  const hasSwimTarget = input.targets.some(
+    (target) =>
+      target.target_type === "pace_threshold" ||
+      (target.target_type === "race_performance" &&
+        target.activity_category === "swim"),
+  );
+  const weakEvidence = input.evidenceScore < 0.22;
+
+  if (input.sport === "bike" && hasPowerTarget) {
+    return {
+      load_method: "bike_power",
+      fallback_mode:
+        input.evidenceScore >= 0.38 ? "primary_method" : "sparse_evidence",
+      base_confidence: input.evidenceScore >= 0.38 ? 0.92 : 0.78,
+    };
+  }
+  if (input.sport === "run" && hasRunPaceTarget) {
+    return {
+      load_method: "run_pace",
+      fallback_mode:
+        input.evidenceScore >= 0.38 ? "primary_method" : "sparse_evidence",
+      base_confidence: input.evidenceScore >= 0.38 ? 0.88 : 0.74,
+    };
+  }
+  if (input.sport === "swim" && hasSwimTarget) {
+    return {
+      load_method: "swim_threshold_speed",
+      fallback_mode:
+        input.evidenceScore >= 0.38 ? "primary_method" : "sparse_evidence",
+      base_confidence: input.evidenceScore >= 0.38 ? 0.85 : 0.72,
+    };
+  }
+  if (input.sport !== "other" && input.evidenceScore >= 0.28) {
+    return {
+      load_method: "heart_rate",
+      fallback_mode: weakEvidence ? "sparse_evidence" : "same_sport_fallback",
+      base_confidence: weakEvidence ? 0.48 : 0.58,
+    };
+  }
+
+  return {
+    load_method: "manual_estimate",
+    fallback_mode: weakEvidence ? "manual_conservative" : "same_sport_fallback",
+    base_confidence: weakEvidence ? 0.32 : 0.42,
+  };
+}
+
+function computeGoalInterferenceNote(input: {
+  goalId: string;
+  sport: ProjectionSport;
+  targetDate: string;
+  goals: Array<{ id: string; target_date: string; sport: ProjectionSport }>;
+}): string[] {
+  const notes: string[] = [];
+  for (const goal of input.goals) {
+    if (goal.id === input.goalId) continue;
+    const daysBetween = Math.abs(diffDays(input.targetDate, goal.target_date));
+    const interferenceWindowDays = goal.sport === input.sport ? 21 : 56;
+    if (daysBetween > interferenceWindowDays) continue;
+    notes.push(
+      goal.sport === input.sport
+        ? "shared_peak_window_limits_simultaneous_peak"
+        : "cross_sport_goal_interference_requires_split_focus",
+    );
+  }
+
+  return [...new Set(notes)];
+}
+
+function buildSportLoadStates(input: {
+  microcycles: DeterministicProjectionMicrocycle[];
+  goals: BuildDeterministicProjectionInput["goals"];
+  evidenceConfidenceScore: number;
+  capabilityFactors?: ContinuousCapabilityFactors | null;
+}): ProjectionSportLoadState[] {
+  const sports: ProjectionSport[] = ["run", "bike", "swim", "other"];
+  const weights = new Map<ProjectionSport, number>(
+    sports.map((sport) => [sport, 0]),
+  );
+
+  for (const goal of input.goals) {
+    const sport = resolveTargetSport(goal.targets);
+    weights.set(
+      sport,
+      (weights.get(sport) ?? 0) + getPriorityInfluenceWeight(goal.priority),
+    );
+  }
+
+  const totalWeight =
+    [...weights.values()].reduce((sum, value) => sum + value, 0) ||
+    sports.length;
+  const last4 = input.microcycles.slice(-4);
+  const last1 = input.microcycles.slice(-1);
+
+  return sports.map((sport) => {
+    const sportWeight = Math.max(0.08, (weights.get(sport) ?? 0) / totalWeight);
+    const sportGoals = input.goals.filter(
+      (goal) => resolveTargetSport(goal.targets) === sport,
+    );
+    const { load_method, fallback_mode, base_confidence } =
+      resolveSportLoadMethod({
+        sport,
+        targets: sportGoals.flatMap((goal) => goal.targets ?? []),
+        evidenceScore: input.evidenceConfidenceScore,
+      });
+    const rolling7 = round1(
+      last1.reduce(
+        (sum, cycle) => sum + cycle.planned_weekly_tss * sportWeight,
+        0,
+      ),
+    );
+    const rolling28 = round1(
+      last4.length === 0
+        ? 0
+        : last4.reduce(
+            (sum, cycle) => sum + cycle.planned_weekly_tss * sportWeight,
+            0,
+          ) / last4.length,
+    );
+    const source_quality = round3(
+      clamp01(
+        input.evidenceConfidenceScore * 0.75 +
+          (input.capabilityFactors?.evidence_quality ??
+            input.evidenceConfidenceScore) *
+            0.25,
+      ),
+    );
+    const load_confidence = round3(clamp01(base_confidence * source_quality));
+    const mechanicalMultiplier =
+      sport === "run"
+        ? 0.34
+        : sport === "other"
+          ? 0.16
+          : sport === "bike"
+            ? 0.08
+            : 0.05;
+
+    return {
+      sport,
+      load_method,
+      load_confidence,
+      fallback_mode,
+      source_quality,
+      rolling_load_7d: rolling7,
+      rolling_load_28d: rolling28,
+      ctl_equivalent: round1(rolling28 / 7),
+      mechanical_stress_score: round1(
+        clamp01((rolling28 / 220) * mechanicalMultiplier * 4) * 100,
+      ),
+    };
+  });
+}
+
+function buildDoseRecommendation(input: {
+  microcycles: DeterministicProjectionMicrocycle[];
+  preferenceProfile?: AthletePreferenceProfile;
+  clampPressure: number;
+  recoveryWeeks: number;
+  goalAssessmentsCount: number;
+  surplusApplied: boolean;
+}): ProjectionDoseRecommendation {
+  const trailingWeeks = input.microcycles.slice(-3);
+  const averageLoad =
+    trailingWeeks.length === 0
+      ? 0
+      : trailingWeeks.reduce(
+          (sum, cycle) => sum + cycle.planned_weekly_tss,
+          0,
+        ) / trailingWeeks.length;
+  const maxWeeklyDuration =
+    input.preferenceProfile?.dose_limits.max_weekly_duration_minutes;
+  const recommendedMinutes = round1(
+    Math.max(
+      90,
+      maxWeeklyDuration === undefined
+        ? averageLoad * 0.58
+        : Math.min(maxWeeklyDuration, averageLoad * 0.58),
+    ),
+  );
+  const recommendedSessions = Math.max(
+    input.preferenceProfile?.dose_limits.min_sessions_per_week ?? 3,
+    Math.min(
+      input.preferenceProfile?.dose_limits.max_sessions_per_week ?? 6,
+      Math.round(recommendedMinutes / 75),
+    ),
+  );
+  const keySessionCount = Math.max(
+    1,
+    Math.min(3, Math.round(recommendedSessions * 0.4)),
+  );
+  const longSessionCeilingMinutes = Math.round(
+    Math.min(
+      input.preferenceProfile?.dose_limits
+        .max_single_session_duration_minutes ?? 180,
+      Math.max(75, recommendedMinutes * 0.32),
+    ),
+  );
+  const recoveryPressure = round3(
+    clamp01(
+      input.recoveryWeeks / Math.max(1, input.microcycles.length) +
+        input.clampPressure * 0.45,
+    ),
+  );
+
+  return {
+    recommended_weekly_load: round1(averageLoad),
+    recommended_weekly_duration_minutes: recommendedMinutes,
+    recommended_sessions_per_week: recommendedSessions,
+    key_session_count: keySessionCount,
+    long_session_ceiling_minutes: longSessionCeilingMinutes,
+    intensity_distribution_target: {
+      easy: 0.76,
+      moderate: 0.17,
+      hard: 0.07,
+    },
+    ramp_pressure: round3(
+      clamp01(input.clampPressure + input.goalAssessmentsCount * 0.04),
+    ),
+    recovery_pressure: recoveryPressure,
+    notes: [
+      input.surplusApplied
+        ? "planning_to_slightly_exceed_raw_target_when_supported"
+        : "planning_to_reliably_meet_raw_target",
+      recoveryPressure > 0.45
+        ? "recovery_pressure_elevated"
+        : "recovery_pressure_managed",
+    ],
+  };
 }
 
 function resolveRiskLevel(input: {
@@ -3761,6 +4139,15 @@ export function buildDeterministicProjectionPayload(
     projection_weeks: Math.max(1, microcycles.length),
     goal_count: goalMarkers.length,
   });
+  const sportLoadStates = buildSportLoadStates({
+    microcycles,
+    goals: input.goals,
+    evidenceConfidenceScore,
+    capabilityFactors: noHistory?.capability_factors,
+  });
+  const sportLoadStateBySport = new Map(
+    sportLoadStates.map((state) => [state.sport, state]),
+  );
   const pointReadinessForScoring = computeProjectionPointReadinessScores({
     points,
     goals: goalMarkers,
@@ -3779,19 +4166,73 @@ export function buildDeterministicProjectionPayload(
     ]),
   );
   const goalReadinessById = new Map<string, number>();
+  const goalContextById = new Map(
+    goalMarkers.map((marker) => {
+      const sourceGoal =
+        goalInputById.get(marker.id) ??
+        input.goals.find(
+          (goal) =>
+            goal.name === marker.name &&
+            goal.target_date === marker.target_date,
+        );
+      const sport = resolveTargetSport(sourceGoal?.targets);
+      return [
+        marker.id,
+        {
+          sourceGoal,
+          sport,
+          weeksToGoal: Math.max(0, diffDays(startDate, marker.target_date)) / 7,
+          interferenceNotes: computeGoalInterferenceNote({
+            goalId: marker.id,
+            sport,
+            targetDate: marker.target_date,
+            goals: goalMarkers.map((goalMarker) => {
+              const goalSource =
+                goalInputById.get(goalMarker.id) ??
+                input.goals.find(
+                  (goal) =>
+                    goal.name === goalMarker.name &&
+                    goal.target_date === goalMarker.target_date,
+                );
+              return {
+                id: goalMarker.id,
+                target_date: goalMarker.target_date,
+                sport: resolveTargetSport(goalSource?.targets),
+              };
+            }),
+          }),
+        },
+      ] as const;
+    }),
+  );
   const goalAssessmentsRaw = goalMarkers.map((marker) => {
-    const sourceGoal =
-      goalInputById.get(marker.id) ??
-      input.goals.find(
-        (goal) =>
-          goal.name === marker.name && goal.target_date === marker.target_date,
-      );
+    const goalContext = goalContextById.get(marker.id);
+    const sourceGoal = goalContext?.sourceGoal;
 
     const readinessAtGoal = resolveGoalDateReadiness(
       pointsForScoring,
       marker.target_date,
     );
     goalReadinessById.set(marker.id, readinessAtGoal);
+    const timelinePressure = clamp01(1 - (goalContext?.weeksToGoal ?? 0) / 24);
+    const evidenceWeakness = clamp01(1 - evidenceConfidenceScore);
+    const goalInterference = clamp01(
+      (goalContext?.interferenceNotes.length ?? 0) * 0.45,
+    );
+    const mechanicalStress = clamp01(
+      (sportLoadStateBySport.get(goalContext?.sport ?? "other")
+        ?.mechanical_stress_score ?? 0) / 100,
+    );
+    const capacityPressure = clamp01(
+      projectionFeasibility.demand_gap.unmet_ratio * 0.6 + clampPressure * 0.4,
+    );
+    const limiterShare = clamp01(
+      timelinePressure * 0.28 +
+        capacityPressure * 0.32 +
+        evidenceWeakness * 0.18 +
+        goalInterference * 0.12 +
+        mechanicalStress * 0.1,
+    );
 
     return scoreGoalAssessment({
       goal_id: marker.id,
@@ -3800,6 +4241,12 @@ export function buildDeterministicProjectionPayload(
       projection: {
         readiness_score: readinessAtGoal,
         readiness_confidence: evidenceConfidenceScore,
+        plan_feasibility_confidence: planningConfidence.score / 100,
+        target_surplus_preference:
+          input.preference_profile?.goal_strategy_preferences
+            .target_surplus_preference ?? 0,
+        weeks_to_goal: goalContext?.weeksToGoal,
+        limiter_share: limiterShare,
       },
     });
   });
@@ -3820,6 +4267,7 @@ export function buildDeterministicProjectionPayload(
       timeline_pressure: timelinePressure,
       sparsity_penalty: resolveSparsityPenalty(
         noHistory?.evidence_confidence?.state,
+        noHistory?.evidence_confidence?.score,
       ),
     });
   });
@@ -3904,6 +4352,12 @@ export function buildDeterministicProjectionPayload(
     goalGdi.map((goal) => [goal.goal_id, goal.feasibility_band]),
   );
   const goalAssessments = goalAssessmentsRaw.map((goal) => {
+    const goalContext = goalContextById.get(goal.goal_id);
+    const timelinePressure = clamp01(1 - (goalContext?.weeksToGoal ?? 0) / 24);
+    const capacityPressure = clamp01(
+      projectionFeasibility.demand_gap.unmet_ratio * 0.6 + clampPressure * 0.4,
+    );
+    const evidenceWeakness = clamp01(1 - evidenceConfidenceScore);
     const stateReadinessScore = round1(
       goalReadinessById.get(goal.goal_id) ?? 0,
     );
@@ -3920,6 +4374,16 @@ export function buildDeterministicProjectionPayload(
       targetAttainmentScore,
       goalAlignmentLoss: alignmentLoss,
     });
+    const mechanicalStress = clamp01(
+      (sportLoadStateBySport.get(goalContext?.sport ?? "other")
+        ?.mechanical_stress_score ?? 0) / 100,
+    );
+    const goalInterference = clamp01(
+      (goalContext?.interferenceNotes.length ?? 0) * 0.45,
+    );
+    const recoveryStrain = clamp01(
+      (alignmentLoss / 100) * 0.6 + goalInterference * 0.4,
+    );
 
     return {
       goal_id: goal.goal_id,
@@ -3928,12 +4392,36 @@ export function buildDeterministicProjectionPayload(
       state_readiness_score: stateReadinessScore,
       goal_alignment_loss_0_100: alignmentLoss,
       feasibility_band: goalFeasibilityById.get(goal.goal_id) ?? "feasible",
-      target_scores: goal.target_scores,
+      limiter_shares: {
+        timeline_pressure: round3(timelinePressure),
+        capacity_pressure: round3(capacityPressure),
+        evidence_weakness: round3(evidenceWeakness),
+        recovery_strain: round3(recoveryStrain),
+        mechanical_stress: round3(mechanicalStress),
+        goal_interference: round3(goalInterference),
+      },
+      interference_notes: goalContext?.interferenceNotes ?? [],
+      target_scores: goal.target_scores.map((targetScore) => ({
+        ...targetScore,
+        effective_target: targetScore.effective_target,
+      })),
       conflict_notes:
         alignmentLoss >= 8
           ? [...goal.conflict_notes, "goal_alignment_loss_elevated"]
           : goal.conflict_notes,
     };
+  });
+  const doseRecommendation = buildDoseRecommendation({
+    microcycles,
+    preferenceProfile: input.preference_profile,
+    clampPressure,
+    recoveryWeeks,
+    goalAssessmentsCount: goalAssessments.length,
+    surplusApplied: goalAssessments.some((goal) =>
+      goal.target_scores.some(
+        (target) => target.effective_target?.surplus_applied,
+      ),
+    ),
   });
 
   const riskFlags = [
@@ -3997,6 +4485,7 @@ export function buildDeterministicProjectionPayload(
       required_peak_weekly_tss: noHistory?.required_peak_weekly_tss ?? null,
       demand_confidence: noHistory?.demand_confidence ?? null,
       evidence_confidence: noHistory?.evidence_confidence ?? null,
+      capability_factors: noHistory?.capability_factors ?? null,
       projection_feasibility: cappedProjectionFeasibility,
     },
     readiness_score: compositeReadiness.readiness_score,
@@ -4014,6 +4503,8 @@ export function buildDeterministicProjectionPayload(
     projection_diagnostics: projectionDiagnostics,
     optimization_tradeoff_summary:
       projectionDiagnostics.optimization_tradeoff_summary,
+    sport_load_states: sportLoadStates,
+    dose_recommendation: doseRecommendation,
     goal_assessments: goalAssessments,
   };
 

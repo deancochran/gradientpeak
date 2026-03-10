@@ -1,37 +1,31 @@
+import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { IntegerStepper } from "@/components/training-plan/create/inputs/IntegerStepper";
 import { PercentSliderInput } from "@/components/training-plan/create/inputs/PercentSliderInput";
-import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
-import {
-  normalizeCreationConfig,
-  type AthleteTrainingSettings,
-} from "@repo/core";
+import type { AthleteTrainingSettings } from "@repo/core";
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 
-type PreferencesTabKey = "profile" | "behavior" | "availability" | "limits";
+type PreferencesTabKey =
+  | "schedule"
+  | "training-style"
+  | "recovery"
+  | "goal-strategy";
 
 const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = [
-  { key: "profile", label: "Recovery" },
-  { key: "behavior", label: "Style" },
-  { key: "availability", label: "Schedule" },
-  { key: "limits", label: "Session Size" },
+  { key: "schedule", label: "Schedule" },
+  { key: "training-style", label: "Training style" },
+  { key: "recovery", label: "Recovery" },
+  { key: "goal-strategy", label: "Goal strategy" },
 ];
 
 function toFractionFromPercent(value: number, decimals = 2) {
   return Number((value / 100).toFixed(decimals));
-}
-
-function toLockState(locked: boolean) {
-  return locked
-    ? { locked: true as const, locked_by: "user" as const }
-    : { locked: false as const };
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -46,21 +40,20 @@ function deriveProjectionPreview(
     return baseCurve;
   }
 
-  const aggressivenessFactor =
-    (draft.behavior_controls_v1.aggressiveness - 0.5) * 0.8;
+  const progressionFactor = (draft.training_style.progression_pace - 0.5) * 0.8;
   const recoveryFactor =
-    (draft.behavior_controls_v1.recovery_priority - 0.5) * 0.6;
+    (draft.recovery_preferences.recovery_priority - 0.5) * 0.6;
   const sessionRange =
-    (draft.constraints.max_sessions_per_week ?? 7) -
-    (draft.constraints.min_sessions_per_week ?? 0);
+    (draft.dose_limits.max_sessions_per_week ?? 7) -
+    (draft.dose_limits.min_sessions_per_week ?? 0);
   const sessionFactor = (sessionRange - 4) / 20;
   const durationFactor =
-    ((draft.constraints.max_single_session_duration_minutes ?? 180) - 180) /
+    ((draft.dose_limits.max_single_session_duration_minutes ?? 180) - 180) /
     420;
 
   const growthFactor = clamp(
     1 +
-      aggressivenessFactor -
+      progressionFactor -
       recoveryFactor +
       sessionFactor * 0.2 +
       durationFactor * 0.2,
@@ -68,7 +61,7 @@ function deriveProjectionPreview(
     1.5,
   );
   const variabilityAmplitude =
-    (draft.behavior_controls_v1.variability - 0.5) * 0.35;
+    (draft.training_style.week_pattern_preference - 0.5) * 0.35;
 
   const preview = [baseCurve[0]!];
 
@@ -76,7 +69,6 @@ function deriveProjectionPreview(
     const previousBase = baseCurve[index - 1]!;
     const currentBase = baseCurve[index]!;
     const previousPreview = preview[index - 1]!;
-
     const baseDelta = currentBase.ctl - previousBase.ctl;
     const wave = 1 + variabilityAmplitude * Math.sin(index * 0.75);
     const adjustedDelta = baseDelta * growthFactor * wave;
@@ -94,8 +86,7 @@ export default function TrainingPreferencesScreen() {
   const utils = trpc.useUtils();
   const { data: activePlan } = trpc.trainingPlans.getActivePlan.useQuery();
   const settingsQuery = useProfileSettings();
-  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("profile");
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("schedule");
   const [draft, setDraft] = useState<AthleteTrainingSettings>(
     settingsQuery.settings,
   );
@@ -161,7 +152,7 @@ export default function TrainingPreferencesScreen() {
 
   const projectionPreviewSummary = useMemo(() => {
     if (previewIdealCurve.length < 2) {
-      return "Adjust preferences to preview how your projection can shift.";
+      return "Adjust your schedule, style, recovery, or goal strategy to preview how projection support can shift.";
     }
 
     const firstPoint = previewIdealCurve[0];
@@ -182,10 +173,7 @@ export default function TrainingPreferencesScreen() {
 
     upsertMutation.mutate({
       profile_id: settingsQuery.profileId,
-      settings: normalizeCreationConfig({
-        user_values: draft,
-        defaults: draft,
-      }),
+      settings: draft,
     });
   };
 
@@ -193,7 +181,7 @@ export default function TrainingPreferencesScreen() {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
-        <Text className="text-sm text-muted-foreground mt-3">
+        <Text className="mt-3 text-sm text-muted-foreground">
           Loading preferences...
         </Text>
       </View>
@@ -220,8 +208,9 @@ export default function TrainingPreferencesScreen() {
               {projectionPreviewSummary}
             </Text>
             <Text className="text-xs text-muted-foreground">
-              This preview follows your draft choices and only updates your
-              saved setup after you tap Save.
+              Progression pace changes how fast training builds. Target surplus
+              is separate and only nudges scoring beyond your stated goal when
+              the model has enough support.
             </Text>
           </CardContent>
         </Card>
@@ -254,227 +243,296 @@ export default function TrainingPreferencesScreen() {
         </ScrollView>
 
         <Card>
-          <CardContent className="gap-4">
-            <View className="flex-row items-center justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2">
-              <View className="flex-1 pr-3">
-                <Text className="text-sm font-medium text-foreground">
-                  Keep this simple
-                </Text>
+          <CardContent className="gap-5">
+            {activeTab === "schedule" ? (
+              <>
                 <Text className="text-xs text-muted-foreground">
-                  Everyday coaching controls stay up front. Advanced locks stay
-                  hidden unless you need them.
+                  Shape when and how much training can fit. Planner-only locks
+                  and tuning stay out of this profile view.
                 </Text>
-              </View>
-              <Button
-                variant="outline"
-                size="sm"
-                onPress={() => setShowAdvanced((current) => !current)}
-              >
-                <Text>{showAdvanced ? "Hide advanced" : "Show advanced"}</Text>
-              </Button>
-            </View>
-
-            {activeTab === "profile" ? (
-              <View className="gap-5">
-                <IntegerStepper
-                  id="preferences-recovery-days"
-                  label="Recovery days after a goal"
-                  value={draft.post_goal_recovery_days}
-                  min={0}
-                  max={21}
-                  onChange={(value) =>
-                    setDraft((current) => ({
-                      ...current,
-                      post_goal_recovery_days: value,
-                    }))
-                  }
-                />
-              </View>
-            ) : null}
-
-            {activeTab === "behavior" ? (
-              <View className="gap-5">
-                <PercentSliderInput
-                  id="preferences-aggressiveness"
-                  label="Build speed"
-                  value={draft.behavior_controls_v1.aggressiveness * 100}
-                  min={0}
-                  max={100}
-                  step={1}
-                  decimals={0}
-                  helperText="Higher moves training forward faster."
-                  onChange={(value) =>
-                    setDraft((current) => ({
-                      ...current,
-                      behavior_controls_v1: {
-                        ...current.behavior_controls_v1,
-                        aggressiveness: toFractionFromPercent(value),
-                      },
-                    }))
-                  }
-                />
-
-                <PercentSliderInput
-                  id="preferences-recovery-priority"
-                  label="Recovery focus"
-                  value={draft.behavior_controls_v1.recovery_priority * 100}
-                  min={0}
-                  max={100}
-                  step={1}
-                  decimals={0}
-                  helperText="Higher gives easier days more room."
-                  onChange={(value) =>
-                    setDraft((current) => ({
-                      ...current,
-                      behavior_controls_v1: {
-                        ...current.behavior_controls_v1,
-                        recovery_priority: toFractionFromPercent(value),
-                      },
-                    }))
-                  }
-                />
-
-                <PercentSliderInput
-                  id="preferences-variability"
-                  label="Week-to-week variety"
-                  value={draft.behavior_controls_v1.variability * 100}
-                  min={0}
-                  max={100}
-                  step={1}
-                  decimals={0}
-                  helperText="Higher adds more variation across weeks."
-                  onChange={(value) =>
-                    setDraft((current) => ({
-                      ...current,
-                      behavior_controls_v1: {
-                        ...current.behavior_controls_v1,
-                        variability: toFractionFromPercent(value),
-                      },
-                    }))
-                  }
-                />
-              </View>
-            ) : null}
-
-            {activeTab === "availability" ? (
-              <View className="gap-5">
                 <IntegerStepper
                   id="preferences-min-sessions"
                   label="Fewest sessions per week"
-                  value={draft.constraints.min_sessions_per_week ?? 0}
+                  value={draft.dose_limits.min_sessions_per_week ?? 0}
                   min={0}
                   max={14}
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
-                      constraints: {
-                        ...current.constraints,
+                      dose_limits: {
+                        ...current.dose_limits,
                         min_sessions_per_week: value,
                       },
                     }))
                   }
                 />
-
                 <IntegerStepper
                   id="preferences-max-sessions"
                   label="Most sessions per week"
-                  value={draft.constraints.max_sessions_per_week ?? 7}
+                  value={draft.dose_limits.max_sessions_per_week ?? 7}
                   min={0}
                   max={21}
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
-                      constraints: {
-                        ...current.constraints,
+                      dose_limits: {
+                        ...current.dose_limits,
                         max_sessions_per_week: value,
                       },
                     }))
                   }
                 />
-              </View>
-            ) : null}
-
-            {activeTab === "limits" ? (
-              <View className="gap-5">
                 <IntegerStepper
                   id="preferences-max-duration"
                   label="Longest workout (minutes)"
                   value={
-                    draft.constraints.max_single_session_duration_minutes ?? 180
+                    draft.dose_limits.max_single_session_duration_minutes ?? 180
                   }
                   min={20}
                   max={600}
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
-                      constraints: {
-                        ...current.constraints,
+                      dose_limits: {
+                        ...current.dose_limits,
                         max_single_session_duration_minutes: value,
                       },
                     }))
                   }
                 />
+                <IntegerStepper
+                  id="preferences-max-weekly-duration"
+                  label="Weekly time budget (minutes)"
+                  value={draft.dose_limits.max_weekly_duration_minutes ?? 360}
+                  min={30}
+                  max={10080}
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      dose_limits: {
+                        ...current.dose_limits,
+                        max_weekly_duration_minutes: value,
+                      },
+                    }))
+                  }
+                />
+              </>
+            ) : null}
 
-                {showAdvanced ? (
-                  <View className="gap-4 rounded-md border border-border/60 bg-muted/10 p-3">
-                    <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Advanced locks
-                    </Text>
+            {activeTab === "training-style" ? (
+              <>
+                <Text className="text-xs text-muted-foreground">
+                  Training style is about progression and week feel, not bounded
+                  upside beyond the goal target.
+                </Text>
+                <PercentSliderInput
+                  id="preferences-progression-pace"
+                  label="Progression pace"
+                  value={draft.training_style.progression_pace * 100}
+                  min={0}
+                  max={100}
+                  step={1}
+                  decimals={0}
+                  helperText="Higher builds faster week to week."
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      training_style: {
+                        ...current.training_style,
+                        progression_pace: toFractionFromPercent(value),
+                      },
+                    }))
+                  }
+                />
+                <PercentSliderInput
+                  id="preferences-week-pattern"
+                  label="Week pattern"
+                  value={draft.training_style.week_pattern_preference * 100}
+                  min={0}
+                  max={100}
+                  step={1}
+                  decimals={0}
+                  helperText="Lower stays steadier. Higher varies week shape more."
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      training_style: {
+                        ...current.training_style,
+                        week_pattern_preference: toFractionFromPercent(value),
+                      },
+                    }))
+                  }
+                />
+                <PercentSliderInput
+                  id="preferences-key-session-density"
+                  label="Key session density"
+                  value={
+                    (draft.training_style.key_session_density_preference ??
+                      0.5) * 100
+                  }
+                  min={0}
+                  max={100}
+                  step={1}
+                  decimals={0}
+                  helperText="Higher packs more demanding sessions into a week."
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      training_style: {
+                        ...current.training_style,
+                        key_session_density_preference:
+                          toFractionFromPercent(value),
+                      },
+                    }))
+                  }
+                />
+              </>
+            ) : null}
 
-                    <View className="flex-row items-center justify-between rounded-md border border-border bg-card px-3 py-3">
-                      <View className="pr-4 flex-1">
-                        <Text className="text-sm font-medium text-foreground">
-                          Lock style settings
-                        </Text>
-                        <Text className="text-xs text-muted-foreground">
-                          Keep build speed, recovery focus, and variety fixed.
-                        </Text>
-                      </View>
-                      <Switch
-                        checked={draft.locks.behavior_controls_v1.locked}
-                        onCheckedChange={(checked) =>
-                          setDraft((current) => ({
-                            ...current,
-                            locks: {
-                              ...current.locks,
-                              behavior_controls_v1: toLockState(checked),
-                            },
-                          }))
-                        }
-                      />
-                    </View>
+            {activeTab === "recovery" ? (
+              <>
+                <PercentSliderInput
+                  id="preferences-recovery-priority"
+                  label="Recovery priority"
+                  value={draft.recovery_preferences.recovery_priority * 100}
+                  min={0}
+                  max={100}
+                  step={1}
+                  decimals={0}
+                  helperText="Higher protects easy days and recovery space more strongly."
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      recovery_preferences: {
+                        ...current.recovery_preferences,
+                        recovery_priority: toFractionFromPercent(value),
+                      },
+                    }))
+                  }
+                />
+                <IntegerStepper
+                  id="preferences-recovery-days"
+                  label="Recovery days after a goal"
+                  value={draft.recovery_preferences.post_goal_recovery_days}
+                  min={0}
+                  max={21}
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      recovery_preferences: {
+                        ...current.recovery_preferences,
+                        post_goal_recovery_days: value,
+                      },
+                    }))
+                  }
+                />
+                <PercentSliderInput
+                  id="preferences-double-day-tolerance"
+                  label="Double day tolerance"
+                  value={
+                    (draft.recovery_preferences.double_day_tolerance ?? 0.25) *
+                    100
+                  }
+                  min={0}
+                  max={100}
+                  step={1}
+                  decimals={0}
+                  helperText="Higher allows stacked sessions more often."
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      recovery_preferences: {
+                        ...current.recovery_preferences,
+                        double_day_tolerance: toFractionFromPercent(value),
+                      },
+                    }))
+                  }
+                />
+                <PercentSliderInput
+                  id="preferences-long-session-fatigue"
+                  label="Long session fatigue tolerance"
+                  value={
+                    (draft.recovery_preferences
+                      .long_session_fatigue_tolerance ?? 0.5) * 100
+                  }
+                  min={0}
+                  max={100}
+                  step={1}
+                  decimals={0}
+                  helperText="Lower keeps long-session fatigue more tightly bounded."
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      recovery_preferences: {
+                        ...current.recovery_preferences,
+                        long_session_fatigue_tolerance:
+                          toFractionFromPercent(value),
+                      },
+                    }))
+                  }
+                />
+              </>
+            ) : null}
 
-                    <View className="flex-row items-center justify-between rounded-md border border-border bg-card px-3 py-3">
-                      <View className="pr-4 flex-1">
-                        <Text className="text-sm font-medium text-foreground">
-                          Lock recovery days
-                        </Text>
-                        <Text className="text-xs text-muted-foreground">
-                          Keep your recovery-days setting fixed.
-                        </Text>
-                      </View>
-                      <Switch
-                        checked={draft.locks.post_goal_recovery_days.locked}
-                        onCheckedChange={(checked) =>
-                          setDraft((current) => ({
-                            ...current,
-                            locks: {
-                              ...current.locks,
-                              post_goal_recovery_days: toLockState(checked),
-                            },
-                          }))
-                        }
-                      />
-                    </View>
-                  </View>
-                ) : null}
-              </View>
+            {activeTab === "goal-strategy" ? (
+              <>
+                <Text className="text-xs text-muted-foreground">
+                  Goal strategy changes how closely the planner hugs the stated
+                  target versus aiming for bounded upside when confidence
+                  supports it. This is separate from progression pace.
+                </Text>
+                <PercentSliderInput
+                  id="preferences-target-surplus"
+                  label="Target surplus preference"
+                  value={
+                    draft.goal_strategy_preferences.target_surplus_preference *
+                    100
+                  }
+                  min={0}
+                  max={100}
+                  step={1}
+                  decimals={0}
+                  helperText="Higher asks the system to plan for a little more than the stated target when it is safe and well supported."
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      goal_strategy_preferences: {
+                        ...current.goal_strategy_preferences,
+                        target_surplus_preference: toFractionFromPercent(value),
+                      },
+                    }))
+                  }
+                />
+                <PercentSliderInput
+                  id="preferences-priority-tradeoff"
+                  label="Priority tradeoff"
+                  value={
+                    (draft.goal_strategy_preferences
+                      .priority_tradeoff_preference ?? 0.5) * 100
+                  }
+                  min={0}
+                  max={100}
+                  step={1}
+                  decimals={0}
+                  helperText="Higher lets priority goals pull more strongly on shared training capacity."
+                  onChange={(value) =>
+                    setDraft((current) => ({
+                      ...current,
+                      goal_strategy_preferences: {
+                        ...current.goal_strategy_preferences,
+                        priority_tradeoff_preference:
+                          toFractionFromPercent(value),
+                      },
+                    }))
+                  }
+                />
+              </>
             ) : null}
           </CardContent>
         </Card>
       </ScrollView>
 
-      <View className="px-4 py-4 border-t border-border bg-background">
+      <View className="border-t border-border bg-background px-4 py-4">
         <View className="flex-row gap-2">
           <Button
             variant="outline"

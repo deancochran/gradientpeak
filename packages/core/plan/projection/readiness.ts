@@ -83,15 +83,15 @@ function resolveEvidenceSupportLevel(input: {
   evidence_state?: EvidenceState;
 }): number {
   const baseSupport = clamp01(input.evidence_score / 100);
-  const freshnessPenalty =
+  const stateBias =
     input.evidence_state === "stale"
-      ? 0.14
+      ? -0.08
       : input.evidence_state === "none"
-        ? 0.22
+        ? -0.12
         : input.evidence_state === "sparse"
-          ? 0.08
-          : 0;
-  return clamp01(baseSupport - freshnessPenalty);
+          ? -0.05
+          : 0.03;
+  return clamp01(baseSupport * 0.9 + 0.1 * (baseSupport + stateBias));
 }
 
 export interface CompositeReadinessInput {

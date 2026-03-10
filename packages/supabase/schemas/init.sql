@@ -442,16 +442,12 @@ create trigger update_events_updated_at
 -- ============================================================================
 create table if not exists public.profile_goals (
     id uuid primary key default uuid_generate_v4(),
-    idx serial unique not null,
     profile_id uuid not null references public.profiles(id) on delete cascade,
-    training_plan_id uuid references public.training_plans(id) on delete set null,
-    milestone_event_id uuid references public.events(id) on delete set null,
+    milestone_event_id uuid not null references public.events(id) on delete cascade,
     title text not null,
-    goal_type text not null,
-    target_metric text,
-    target_value numeric,
-    importance integer not null default 5 check (importance >= 0 and importance <= 10),
-    target_date date,
+    priority integer not null default 5 check (priority >= 0 and priority <= 10),
+    activity_category text,
+    target_payload jsonb,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -459,13 +455,8 @@ create table if not exists public.profile_goals (
 create index if not exists idx_profile_goals_profile_id
     on public.profile_goals(profile_id);
 
-create index if not exists idx_profile_goals_training_plan_id
-    on public.profile_goals(training_plan_id)
-    where training_plan_id is not null;
-
 create index if not exists idx_profile_goals_milestone_event_id
-    on public.profile_goals(milestone_event_id)
-    where milestone_event_id is not null;
+    on public.profile_goals(milestone_event_id);
 
 create trigger update_profile_goals_updated_at
     before update on public.profile_goals

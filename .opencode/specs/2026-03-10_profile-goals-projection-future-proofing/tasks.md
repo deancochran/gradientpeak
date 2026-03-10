@@ -1,86 +1,49 @@
 # Tasks: Profile Goals + Projection Future-Proofing
 
-## Phase 0: Spec Alignment
+## Coordination Rules
 
-- [ ] Review `design.md`.
-- [ ] Review `plan.md`.
-- [ ] Confirm canonical terms: `Goal`, `Goal Objective`, `Athlete Snapshot`, `Preference Profile`.
+- [ ] Every implementation task is owned by one subagent and updated in this file by that subagent.
+- [ ] A task is only marked complete when code changes land, focused tests pass, and the success check in the task text is satisfied.
+- [ ] Each subagent must leave the task unchecked if blocked and add a short blocker note inline.
 
-## Phase 1: Persistence + Core Schema Foundation
+## Phase 1: Persistence + Canonical Schemas
 
-- [ ] Replace the current `profile_goals` contract with canonical fields for `activity_category`, `target_payload`, source fields, and `metadata`.
-- [ ] Update Supabase schema/types to match the new `profile_goals` contract.
-- [ ] Refactor `packages/core/schemas/goals/profile_goals.ts` to introduce a canonical typed objective schema.
-- [ ] Define and document the goal timing invariant (`target_date` vs `milestone_event_id`).
-- [ ] Define canonical units, enums, and required-field invariants for each goal objective type.
-- [ ] Define sport-specific load-method enums and provenance contracts.
-- [ ] Replace the profile-settings alias to full creation config with a canonical `AthletePreferenceProfile` schema.
-- [ ] Define canonical preference sections: `availability`, `dose_limits`, `training_style`, `recovery_preferences`, `adaptation_preferences`, `goal_strategy_preferences`.
-- [ ] Add `target_surplus_preference` under canonical goal strategy preferences.
-- [ ] Define explicit separation between profile defaults, plan overrides, planner policy, and derived diagnostics.
-- [ ] Define the ownership/persistence rules for canonical goals, preferences, overrides, capability snapshots, and planner policy.
+- [x] Task A - Canonical `profile_goals` schema. Success: `profile_goals` stores only the canonical fields from `plan.md`, `milestone_event_id` is required, and deleting the linked event cascades to the goal.
+- [x] Task B - Supabase migration workflow. Success: the schema diff is generated with `supabase db diff -f <filename>`, applied with `supabase migration up`, and `pnpm run update-types` completes with updated generated types checked in.
+- [x] Task C - Canonical goal schema in `@repo/core`. Success: `packages/core/schemas/goals/profile_goals.ts` defines the typed objective union, canonical units/enums/invariants, and fixture-backed validation for supported goal types.
+- [x] Task D - Canonical athlete preference schema. Success: `packages/core/schemas/settings/profile_settings.ts` persists `AthletePreferenceProfile` sections only, including `goal_strategy_preferences.target_surplus_preference`, with planner-only fields excluded from canonical persistence.
+- [x] Task E - Ownership contracts. Success: core types/helpers clearly separate profile defaults, plan overrides, planner policy, and derived diagnostics, with tests covering accepted and rejected shapes.
 
 ## Phase 2: Canonical Core Adapters
 
-- [ ] Create canonical goal parsing and resolution helpers in `@repo/core`.
-- [ ] Add tests for canonical goal parsing, validation, and timing resolution.
-- [ ] Add canonical derivation of continuous `goal_demand_profile` from typed objectives.
-- [ ] Add effective-preference resolution for profile defaults plus plan-level overrides.
-- [ ] Add capability-snapshot derivation and freshness/invalidation rules in core.
+- [x] Task F - Goal parsing helpers. Success: `@repo/core` exposes canonical goal parsing, event-date resolution, and demand-profile derivation helpers with passing unit tests for valid and invalid records.
+- [x] Task G - Preference resolution helpers. Success: `@repo/core` resolves effective preferences from profile defaults plus plan overrides with deterministic tests for merge behavior.
+- [x] Task H - Capability snapshot contract. Success: `@repo/core` defines `AthleteCapabilitySnapshot` with per-sport slices, freshness metadata, and tests covering invalidation/freshness rules.
 
 ## Phase 3: tRPC Integration
 
-- [ ] Update `packages/trpc/src/routers/goals.ts` to read/write additive goal fields.
-- [ ] Remove router-level goal reconstruction heuristics from `packages/trpc/src/routers/training-plans.base.ts`.
-- [ ] Refactor projection-related procedures to consume canonical goals from `@repo/core`.
-- [ ] Add focused `@repo/trpc` tests for canonical goal projection inputs.
-- [ ] Return fallback mode, load provenance, and richer confidence metadata through projection APIs.
-- [ ] Plumb canonical profile preferences through settings reads and projection request assembly.
-- [ ] Ensure planner internals (`optimization_profile`, calibration, locks, diagnostics) are not treated as canonical profile preferences.
+- [x] Task I - Goals router cutover. Success: `packages/trpc/src/routers/goals.ts` reads and writes canonical goal fields directly and focused router tests pass.
+- [x] Task J - Projection input cutover. Success: `packages/trpc/src/routers/training-plans.base.ts` and related projection procedures consume canonical core helpers instead of router-level goal reconstruction, with focused integration tests passing.
+- [x] Task K - Canonical preference plumbing. Success: settings/projection procedures persist and read canonical profile preferences only, and planner-internal fields are excluded by schema tests.
+- [x] Task L - Projection API diagnostics. Success: projection responses include fallback mode, load provenance, and richer confidence metadata with test coverage.
 
-## Phase 4: Athlete Context Separation
+## Phase 4: Projection Modeling
 
-- [ ] Split current profile training settings into user preferences vs engine policy concepts in `@repo/core`.
-- [ ] Define an `AthleteCapabilitySnapshot` contract for projection inputs.
-- [ ] Preserve current settings UX while switching it to canonical preference persistence.
-- [ ] Add per-sport capability slices and evidence-recency fields.
-- [ ] Move model-confidence and starting-state controls out of canonical user preference persistence.
-- [ ] Move provenance, locks, and feasibility/context summaries out of canonical user preference persistence.
-- [ ] Define `PlanPreferenceOverrides` for plan-specific deviations from profile defaults.
+- [x] Task M - Effective target scoring. Success: `resolveEffectiveScoringTarget(...)` is implemented, surplus stays separate from aggressiveness, and unit tests cover applied and suppressed surplus cases.
+- [x] Task N - Continuous evidence + sparse-data modeling. Success: projection inputs and outputs use continuous evidence/capability factors instead of binary buckets, and sparse-data tests still return bounded non-null outputs.
+- [x] Task O - Sport-specific load modeling. Success: projection logic emits per-sport rolling load state, `load_method`, `load_confidence`, `fallback_mode`, and `mechanical_stress_score` with passing tests.
+- [x] Task P - Goal feasibility decomposition. Success: goal scoring exposes per-goal limiter shares, interference notes, effective-target metadata, and multi-goal tests show materially different goal explanations.
+- [x] Task Q - Dose-based recommendation outputs. Success: projection outputs include user-facing dose recommendations alongside load outputs with focused tests.
 
-## Phase 5: Projection Modeling Improvements
+## Phase 5: Mobile App Integration
 
-- [ ] Add per-sport rolling load state before any combined load summary.
-- [ ] Add sport-specific load-family calculations and method-aware confidence.
-- [ ] Add continuous evidence decay and metric reliability weighting.
-- [ ] Add simple `mechanical_stress_score` for impact-heavy sports.
-- [ ] Add `resolveEffectiveScoringTarget(...)` helper with smooth bounded surplus logic.
-- [ ] Refactor target scoring to prefer explicit projected metrics over readiness-proxy estimates.
-- [ ] Upgrade sparse-data athlete modeling from binary buckets to a small continuous capability profile.
-- [ ] Add dose-based recommendation outputs alongside existing load outputs.
-- [ ] Add per-goal feasibility decomposition with limiters, confidence, and interference notes.
-- [ ] Add continuous limiter-share outputs instead of only dominant limiter labels.
-- [ ] Add continuous goal demand profiles by objective and sport.
-- [ ] Replace remaining hard threshold cliffs in feasibility and readiness with smooth curves where appropriate.
-- [ ] Attenuate target surplus automatically when confidence, time horizon, or limiter pressure is weak.
-- [ ] Include effective-target metadata and rationale codes in target, goal, and plan scoring outputs.
-- [ ] Extend projection tests for multi-goal and multi-discipline scenarios.
+- [x] Task R - Goal editor persistence. Success: the current mobile goal flow continues to work while writing canonical goal payloads directly, with focused mobile tests passing.
+- [x] Task S - Training preferences UX cutover. Success: the training preferences screen uses the canonical user-language sections, includes a dedicated `target_surplus_preference` control, and removes planner-internal controls from canonical settings UX.
+- [x] Task T - Projection explainability UX. Success: mobile projection surfaces show readiness/feasibility explanations plus fallback, confidence, and effective-target copy backed by focused tests.
 
-## Phase 6: Mobile UX Follow-Up
+## Validation Gate
 
-- [ ] Keep current goal editor working while writing canonical goal payloads directly.
-- [ ] Add goal-type-aware form controls backed by the typed objective payload.
-- [ ] Surface richer goal readiness and feasibility explanations where useful.
-- [ ] Surface fallback mode, calculation method, confidence, and plain-language next-best-action guidance.
-- [ ] Rework training preferences UI around user-language sections (`Schedule`, `Training style`, `Recovery`, `Goal strategy`).
-- [ ] Add a dedicated training-preferences control for `target_surplus_preference` separate from progression pace/aggressiveness.
-- [ ] Remove engine-internal controls from canonical profile settings UX.
-- [ ] Explain when the engine is optimizing to slightly exceed the visible goal target.
-
-## Validation
-
-- [ ] Run `pnpm --filter @repo/core check-types`.
-- [ ] Run `pnpm --filter @repo/trpc check-types`.
-- [ ] Run focused `vitest` coverage for goal parsing, invalid canonical payload rejection, projection scoring, effective-target surplus logic, sport-specific load methods, and multi-goal feasibility.
-- [ ] Run `pnpm --filter mobile check-types` after any mobile contract changes.
-- [ ] Verify structured diagnostics/logging for parse failures, fallback frequency, and canonical load-method/provenance outputs.
+- [x] Validation 1 - Core validation. Success: `pnpm --filter @repo/core check-types` and focused core vitest suites pass for canonical goals, preferences, parsing, and projection logic.
+- [x] Validation 2 - tRPC validation. Success: `pnpm --filter @repo/trpc check-types` and focused router/integration tests pass.
+- [x] Validation 3 - Mobile validation. Success: `pnpm --filter mobile check-types` and focused mobile vitest suites pass for updated goal and preference flows.
+- [x] Validation 4 - Diagnostics validation. Success: parse-failure handling, fallback frequency reporting, and canonical load-method/provenance outputs are exercised by automated tests.

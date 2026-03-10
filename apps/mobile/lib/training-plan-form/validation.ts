@@ -445,18 +445,21 @@ export function getCreateDisabledReason(
 }
 
 export function mapProfileGoalsToValidationGoals(
-  profileGoals: ProfileGoal[],
+  profileGoals: Array<ProfileGoal & { target_date?: string | null }>,
 ): GoalForValidation[] {
   return profileGoals.map((goal) => ({
     id: goal.id,
     name: goal.title,
     targetDate: goal.target_date ?? "",
-    priority: goal.importance,
+    priority: goal.priority,
     targets: [
       {
         id: `${goal.id}-fallback-target`,
         targetType: "hr_threshold",
-        targetLthrBpm: goal.target_value ? Math.round(goal.target_value) : 160,
+        targetLthrBpm:
+          goal.objective.type === "threshold" && goal.objective.metric === "hr"
+            ? Math.round(goal.objective.value)
+            : 160,
       },
     ],
   }));
@@ -465,7 +468,7 @@ export function mapProfileGoalsToValidationGoals(
 export function getPlanStartDateFromProfileSettings(
   settings: AthleteTrainingSettings,
 ): string | undefined {
-  const firstAvailableDay = settings.availability_config.days.find(
+  const firstAvailableDay = settings.availability.weekly_windows.find(
     (day) => day.windows.length > 0,
   );
 

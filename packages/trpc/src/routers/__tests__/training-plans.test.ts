@@ -724,8 +724,28 @@ describe("trainingPlansRouter plan_start_date support", () => {
         data: {
           profile_id: "profile-123",
           settings: {
+            availability: {
+              weekly_windows: [],
+              hard_rest_days: ["friday"],
+            },
+            dose_limits: {
+              min_sessions_per_week: 2,
+              max_sessions_per_week: 5,
+              max_single_session_duration_minutes: 95,
+            },
+            training_style: {
+              progression_pace: 0.72,
+              week_pattern_preference: 0.33,
+            },
+            recovery_preferences: {
+              recovery_priority: 0.81,
+              post_goal_recovery_days: 11,
+            },
+            adaptation_preferences: {},
+            goal_strategy_preferences: {
+              target_surplus_preference: 0.4,
+            },
             optimization_profile: "sustainable",
-            post_goal_recovery_days: 11,
           },
         },
         error: null,
@@ -748,6 +768,16 @@ describe("trainingPlansRouter plan_start_date support", () => {
       "outcome_first",
     );
     expect(result.normalized_creation_config.post_goal_recovery_days).toBe(11);
+    expect(
+      result.normalized_creation_config.constraints.hard_rest_days,
+    ).toEqual(["friday"]);
+    expect(
+      result.normalized_creation_config.behavior_controls_v1,
+    ).toMatchObject({
+      aggressiveness: 0.72,
+      variability: 0.33,
+      recovery_priority: 0.81,
+    });
   });
 
   it("applies strict cap tuning without forcing blocking or unsafe feasibility", async () => {

@@ -90,14 +90,15 @@ The engine should expose how it arrived at its conclusions. Every major recommen
 The persisted goal record should represent the stable header for a user goal:
 
 - identity and ownership,
-- title and status,
-- priority/importance,
+- title,
+- priority,
 - discipline/activity category,
-- timing strategy,
-- source metadata,
-- a typed objective payload reference or inline payload.
+- milestone-event timing,
+- and an inline typed objective payload.
 
 The goal record should remain simple enough for current CRUD flows.
+
+`profile_goals` should stay intentionally minimal. Avoid plan-coupling fields and legacy decomposition fields when the same meaning already lives in the typed objective payload or linked milestone event.
 
 ### B. Goal Objective
 
@@ -168,8 +169,9 @@ Those belong to internal planner policy, derived athlete capability, or request-
 
 - A goal must support a first-class `activity_category` or equivalent discipline field.
 - A goal must support a typed target payload.
-- A goal must support explicit source attribution for manual and imported flows.
-- A goal must support either explicit target timing or event-derived timing with a clear invariant.
+- A goal must be linked to a milestone event through `milestone_event_id`.
+- A goal must use the linked milestone event as its only canonical timing source.
+- Removing the linked milestone event must remove the goal.
 - A goal objective must be rich enough to derive a continuous demand profile rather than only a categorical goal type.
 
 ### B. Projection inputs

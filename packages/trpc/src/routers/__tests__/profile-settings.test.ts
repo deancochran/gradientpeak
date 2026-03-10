@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
-import { normalizeCreationConfig } from "@repo/core";
+import { defaultAthletePreferenceProfile } from "@repo/core";
 import { profileSettingsRouter } from "../profile_settings";
 
 type QueryResult = {
@@ -10,7 +10,7 @@ type QueryResult = {
 
 type QueryMap = Record<string, QueryResult | QueryResult[]>;
 
-const baseSettings = normalizeCreationConfig({});
+const baseSettings = defaultAthletePreferenceProfile;
 
 function createSupabaseMock(queryMap: QueryMap) {
   const counters = new Map<string, number>();
@@ -116,5 +116,191 @@ describe("profileSettingsRouter", () => {
 
     expect(result.profile_id).toBe(profileId);
     expect(result.cache_tags).toContain("profileSettings.getForProfile");
+  });
+
+  it("coerces legacy stored training settings into canonical profile preferences", async () => {
+    const profileId = "11111111-1111-4111-8111-111111111111";
+    const { caller } = createCaller({
+      userId: profileId,
+      queryMap: {
+        profile_training_settings: {
+          data: {
+            profile_id: profileId,
+            settings: {
+              availability_config: {
+                template: "custom",
+                days: [
+                  {
+                    day: "monday",
+                    windows: [
+                      { start_minute_of_day: 360, end_minute_of_day: 420 },
+                    ],
+                    max_sessions: 1,
+                  },
+                  ...[
+                    "tuesday",
+                    "wednesday",
+                    "thursday",
+                    "friday",
+                    "saturday",
+                    "sunday",
+                  ].map((day) => ({ day, windows: [] })),
+                ],
+              },
+              recent_influence: { influence_score: 0.2 },
+              recent_influence_action: "accepted",
+              constraints: {
+                hard_rest_days: ["friday"],
+                min_sessions_per_week: 3,
+                max_sessions_per_week: 5,
+                max_single_session_duration_minutes: 120,
+              },
+              optimization_profile: "balanced",
+              post_goal_recovery_days: 6,
+              behavior_controls_v1: {
+                aggressiveness: 0.55,
+                variability: 0.4,
+                spike_frequency: 0.3,
+                shape_target: 0,
+                shape_strength: 0.35,
+                recovery_priority: 0.7,
+                starting_fitness_confidence: 0.6,
+              },
+              calibration_composite_locks: {
+                target_attainment_weight: false,
+                envelope_weight: false,
+                durability_weight: false,
+                evidence_weight: false,
+              },
+              calibration: {},
+            },
+            updated_at: "2026-03-06T00:00:00.000Z",
+          },
+          error: null,
+        },
+      },
+    });
+
+    const result = await caller.getForProfile({ profile_id: profileId });
+
+    expect(result?.settings.availability.hard_rest_days).toEqual(["friday"]);
+    expect(result?.settings.training_style.progression_pace).toBe(0.55);
+    expect(result?.settings.recovery_preferences.post_goal_recovery_days).toBe(
+      6,
+    );
+    expect(
+      result?.settings.goal_strategy_preferences.target_surplus_preference,
+    ).toBe(0);
+  });
+
+  it("coerces legacy stored settings even when extra legacy metadata keys are present", async () => {
+    const profileId = "11111111-1111-4111-8111-111111111111";
+    const { caller } = createCaller({
+      userId: profileId,
+      queryMap: {
+        profile_training_settings: {
+          data: {
+            profile_id: profileId,
+            settings: {
+              availability_config: {
+                template: "moderate",
+                days: [
+                  {
+                    day: "monday",
+                    windows: [
+                      { start_minute_of_day: 360, end_minute_of_day: 450 },
+                    ],
+                    max_sessions: 1,
+                  },
+                  {
+                    day: "tuesday",
+                    windows: [
+                      { start_minute_of_day: 360, end_minute_of_day: 450 },
+                    ],
+                    max_sessions: 1,
+                  },
+                  { day: "wednesday", windows: [], max_sessions: 0 },
+                  {
+                    day: "thursday",
+                    windows: [
+                      { start_minute_of_day: 360, end_minute_of_day: 450 },
+                    ],
+                    max_sessions: 1,
+                  },
+                  { day: "friday", windows: [], max_sessions: 0 },
+                  {
+                    day: "saturday",
+                    windows: [
+                      { start_minute_of_day: 450, end_minute_of_day: 570 },
+                    ],
+                    max_sessions: 1,
+                  },
+                  { day: "sunday", windows: [], max_sessions: 0 },
+                ],
+              },
+              recent_influence: { influence_score: 0 },
+              recent_influence_action: "disabled",
+              constraints: {
+                hard_rest_days: ["wednesday", "friday", "sunday"],
+                max_sessions_per_week: 4,
+                min_sessions_per_week: 3,
+                goal_difficulty_preference: "conservative",
+                max_single_session_duration_minutes: 90,
+              },
+              optimization_profile: "balanced",
+              post_goal_recovery_days: 5,
+              behavior_controls_v1: {
+                variability: 0.5,
+                shape_target: 0,
+                aggressiveness: 0.48,
+                shape_strength: 0.35,
+                spike_frequency: 0.35,
+                recovery_priority: 0.45,
+                starting_fitness_confidence: 0.6,
+              },
+              locks: {
+                hard_rest_days: { locked: false },
+              },
+              calibration: {
+                version: 1,
+                readiness_timeline: {
+                  target_tsb: 8,
+                  form_tolerance: 20,
+                  max_step_delta: 9,
+                  smoothing_lambda: 0.28,
+                  smoothing_iterations: 24,
+                  fatigue_overflow_scale: 0.4,
+                  feasibility_blend_weight: 0.15,
+                },
+              },
+              availability_provenance: {
+                source: "user",
+              },
+              recent_influence_provenance: {
+                source: "user",
+              },
+              calibration_composite_locks: {
+                envelope_weight: false,
+                evidence_weight: false,
+                durability_weight: false,
+                target_attainment_weight: false,
+              },
+            },
+            updated_at: "2026-03-10T00:51:07.995Z",
+          },
+          error: null,
+        },
+      },
+    });
+
+    const result = await caller.getForProfile({ profile_id: profileId });
+
+    expect(result?.settings.availability.hard_rest_days).toEqual([
+      "wednesday",
+      "friday",
+      "sunday",
+    ]);
+    expect(result?.settings.dose_limits.max_sessions_per_week).toBe(4);
+    expect(result?.settings.training_style.progression_pace).toBe(0.48);
   });
 });

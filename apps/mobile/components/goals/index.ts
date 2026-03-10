@@ -1,1 +1,2 @@
-export { GoalEditorModal, type GoalEditorDraft } from "./GoalEditorModal";
+export { GoalEditorModal } from "./GoalEditorModal";
+export type { GoalEditorDraft } from "@/lib/goals/goalDraft";

@@ -4,6 +4,12 @@
 
 Use a clean canonical redesign. A full database reset and seed reinitialization are acceptable, so the implementation should prefer one clear source of truth instead of compatibility-safe dual shapes.
 
+Database schema changes must follow the Supabase migration workflow:
+
+1. generate migrations with `supabase db diff -f <filename>`
+2. apply migrations with `supabase migration up`
+3. update generated database types with `pnpm run update-types`
+
 Implementation should proceed in layers:
 
 1. define canonical persistence,
@@ -47,13 +53,22 @@ Add the following fields to `profile_goals`:
 
 - `activity_category text null`
 - `target_payload jsonb null`
-- `source_type text null`
-- `source_provider text null`
-- `source_external_id text null`
-- `metadata jsonb null`
-- `status text not null` constrained to the canonical lifecycle enum
 
+Keep the canonical `profile_goals` table minimal. Do not add `source_type`, `source_provider`, `source_external_id`, `metadata`, or `status` to this spec.
+Also remove plan-coupling and legacy decomposition fields that are no longer canonical: `training_plan_id`, `goal_type`, `target_metric`, `target_value`, and `target_date`.
 Do not preserve legacy goal columns as canonical mirrors. The new schema should store the canonical shape directly.
+
+Recommended canonical `profile_goals` shape:
+
+- `id`
+- `profile_id`
+- `milestone_event_id`
+- `title`
+- `priority`
+- `activity_category`
+- `target_payload`
+- `created_at`
+- `updated_at`
 
 ### Additional canonical fields for modeling quality
 
@@ -67,26 +82,22 @@ Add or derive fields needed for better calculation quality with low complexity:
 
 ### Timing invariant
 
-Canonical goal timing must use exactly one of these strategies:
-
-- explicit target date on the goal, or
-- event-derived target date via `milestone_event_id`
+Canonical goal timing must be event-linked through `milestone_event_id`.
 
 Normative rules:
 
-- `timing.mode = explicit_date` requires `target_date` and forbids `milestone_event_id`
-- `timing.mode = event_linked` requires `milestone_event_id` and derives `target_date` from the linked event
-- if neither is present, the goal is invalid and must fail validation
-- if both are present in persisted data, the record is invalid and must fail validation rather than relying on fallback precedence
-- all persisted canonical dates should be normalized to date-only UTC values for planning
-- if a linked event date changes, the resolved goal date changes with it until the goal is completed or archived
-- completed goals should retain the resolved target date used at completion time in derived history/analytics payloads
+- `milestone_event_id` is required for every goal
+- `target_date` should not be stored on `profile_goals` as a canonical field
+- the resolved planning date comes from the linked event
+- if the linked event date changes, the goal timing changes with it
+- deleting the linked milestone event must delete the goal row
+- the database foreign key should use `on delete cascade` for `milestone_event_id`
 
 ## 4. Core Package Refactor
 
 ### A. Canonical goal contract
 
-Create a new canonical goal domain in `@repo/core` with shapes equivalent to:
+Create the canonical goal domain in `@repo/core` with this shape:
 
 ```ts
 type CanonicalGoal = {
@@ -94,20 +105,9 @@ type CanonicalGoal = {
   profile_id: string;
   title: string;
   priority: number;
-  status?: "active" | "completed" | "archived";
-  activity_category?: string | null;
-  timing: {
-    mode: "explicit_date" | "event_linked";
-    target_date?: string;
-    milestone_event_id?: string;
-  };
-  source?: {
-    type?: string;
-    provider?: string;
-    external_id?: string;
-  };
+  activity_category: "run" | "bike" | "swim" | "other";
+  milestone_event_id: string;
   objective: CanonicalGoalObjective;
-  metadata?: Record<string, unknown>;
 };
 ```
 
@@ -145,11 +145,14 @@ type CanonicalGoalObjective =
     };
 ```
 
-Keep the initial union intentionally small. Add extensibility, not premature exhaustiveness.
+The initial union is intentionally small. Add new objective variants only when a concrete supported product flow requires them.
 
 Normative invariants:
 
 - `activity_category` is a closed enum: `run | bike | swim | other`
+- `activity_category` has one canonical storage location: the top-level `profile_goals.activity_category` field
+- objective payload variants that include sport context must match the top-level `activity_category` exactly
+- payload variants that do not need sport-specific fields must derive sport from the top-level `activity_category`
 - canonical units are `meters`, `seconds`, `m/s`, `watts`, and `bpm`
 - `event_performance` requires `activity_category` and at least one target outcome field that can be scored deterministically
 - `threshold` requires exactly one `metric` and one numeric `value`
@@ -175,18 +178,18 @@ Worked canonical examples:
   - `activity_category: <sport>`
   - timing via `milestone_event_id`
 
-The implementation should include fixture coverage for these examples so serialization and projection inputs stay deterministic.
+The implementation must include fixture coverage for these examples so serialization and projection inputs stay deterministic.
 
 ### B. Core parsers and resolvers
 
 Add pure domain helpers in `@repo/core`:
 
 - `parseProfileGoalRecord(record)`
-- `resolveCanonicalGoalDate(goal, linkedEvent?)`
+- `resolveGoalEventDate(goal, linkedEvent)`
 - `deriveGoalDemandProfile(goal)`
 - `resolveEffectivePreferences(profileDefaults, planOverrides?)`
 
-All tRPC and mobile consumers should rely on these helpers instead of duplicating heuristics.
+All tRPC and mobile consumers must rely on these helpers instead of duplicating heuristics.
 
 ### C. Athlete context split
 
@@ -196,11 +199,11 @@ Split current profile settings into:
 - `AthleteCapabilitySnapshot`
 - `PlannerPolicyConfig`
 
-`AthletePreferenceProfile` should remain user-editable and persisted as the canonical profile settings contract.
-`AthleteCapabilitySnapshot` should be derived from profile/history/metrics and may be cached, but not directly user-edited.
-`PlannerPolicyConfig` should remain internal and server-owned.
+`AthletePreferenceProfile` is user-editable and persisted as the canonical profile settings contract.
+`AthleteCapabilitySnapshot` is derived from profile/history/metrics and is never directly user-edited.
+`PlannerPolicyConfig` is internal and server-owned.
 
-`AthletePreferenceProfile` should absorb user-intent fields that are currently only approximated indirectly. Add a continuous field with semantics equivalent to:
+`AthletePreferenceProfile` must include a continuous field with these semantics:
 
 ```ts
 target_surplus_preference: number; // 0..1
@@ -211,7 +214,7 @@ Interpretation:
 - `0` = optimize to reliably meet the stated goal target.
 - `1` = optimize toward a bounded surplus beyond the stated goal when confidence, time horizon, and feasibility support it.
 
-This field should be separate from:
+This field is separate from:
 
 - `aggressiveness` (load/ramp behavior),
 - `optimization_profile` (risk/stability tradeoff),
@@ -221,7 +224,7 @@ This field should be separate from:
 
 Do not let `AthletePreferenceProfile` remain a thin alias of `trainingPlanCreationConfigSchema`.
 
-The canonical profile-level preference shape should be intentionally smaller and centered on stable user intent. A preferred additive shape is:
+The canonical profile-level preference shape is smaller and centered on stable user intent. Use this shape:
 
 ```ts
 type AthletePreferenceProfile = {
@@ -264,7 +267,7 @@ type AthletePreferenceProfile = {
 };
 ```
 
-This should become the canonical persisted profile preference contract.
+This is the canonical persisted profile preference contract.
 
 The following should explicitly stay outside that user-facing schema:
 
@@ -288,6 +291,14 @@ The system should use these canonical ownership boundaries:
 | `AthleteCapabilitySnapshot`                | projection domain    | derived/cache only       | no                    | summarized only         |
 | `PlannerPolicyConfig`                      | server/core          | code/config only         | no                    | no                      |
 | diagnostics / provenance / fallback detail | projection domain    | request output and logs  | no                    | selected summaries only |
+
+Goal lifecycle rule:
+
+- a goal exists only while its linked milestone event exists
+- deleting the linked milestone event deletes the goal rather than orphaning it
+- there is no separate goal `status` field in this spec
+- goals are profile-owned, not training-plan-owned; `profile_goals` must not store `training_plan_id`
+- training plans that need goal linkage must reference goals from the training-plan side through explicit goal ids or a join structure outside `profile_goals`
 
 Classification rule:
 
@@ -332,13 +343,13 @@ Use the following mapping as the canonical field classification contract.
 
 ### G. Profile defaults vs plan overrides
 
-The system should distinguish three layers clearly:
+The system distinguishes three layers:
 
 1. `AthletePreferenceProfile`: stable profile defaults set by the user.
 2. `PlanPreferenceOverrides`: optional plan-specific deviations from profile defaults.
 3. `PlannerPolicyConfig`: internal engine policy and calibration.
 
-The planner should resolve effective preference inputs with an order equivalent to:
+The planner must resolve effective preference inputs with this order:
 
 ```ts
 effective_preferences = applyPlanOverrides({
@@ -360,14 +371,14 @@ projection_inputs = {
 
 This prevents profile settings from silently becoming engine config and makes plan-specific tuning explicit.
 
-The first useful additive shape for `AthleteCapabilitySnapshot` should support per-sport slices such as:
+`AthleteCapabilitySnapshot` must support these per-sport slices:
 
 - `run`,
 - `bike`,
 - `swim`,
 - `other`.
 
-Each slice should be able to hold continuous factors like:
+Each slice holds continuous factors such as:
 
 - `aerobic_base`,
 - `threshold_capacity`,
@@ -380,7 +391,7 @@ Each slice should be able to hold continuous factors like:
 
 ### H. Capability snapshot lifecycle
 
-`AthleteCapabilitySnapshot` should be treated as derived state with explicit freshness rules.
+`AthleteCapabilitySnapshot` is derived state with explicit freshness rules.
 
 Normative rules:
 
@@ -742,6 +753,14 @@ Required checks after each phase:
 pnpm --filter @repo/core check-types
 pnpm --filter @repo/trpc check-types
 pnpm --filter mobile check-types
+```
+
+Required database workflow after any schema change:
+
+```bash
+supabase db diff -f <filename>
+supabase migration up
+pnpm run update-types
 ```
 
 Required focused test areas:

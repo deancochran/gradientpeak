@@ -3,6 +3,8 @@ import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
+import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { ROUTES } from "@/lib/constants/routes";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { formatDurationSec } from "@repo/core/utils/dates";
@@ -36,6 +38,19 @@ function buildAllDayStartIso(value: Date) {
   return `${toDateOnly(value)}T00:00:00.000Z`;
 }
 
+function parseEventDateForEditor(event: {
+  starts_at: string;
+  all_day?: boolean | null;
+}) {
+  if (event.all_day) {
+    const dateOnly = event.starts_at.slice(0, 10);
+    const [year, month, day] = dateOnly.split("-").map(Number);
+    return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
+  }
+
+  return new Date(event.starts_at);
+}
+
 function readMetric(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -62,11 +77,20 @@ export default function EventDetailScreen() {
   const eventId = typeof id === "string" ? id : "";
   const startsInEditMode = mode === "edit";
 
+  const { beginRedirect, isRedirecting, redirectOnNotFound } =
+    useDeletedDetailRedirect({
+      onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    });
+
   const {
     data: event,
+    error,
     isLoading,
     refetch,
-  } = trpc.events.getById.useQuery({ id: eventId }, { enabled: !!eventId });
+  } = trpc.events.getById.useQuery(
+    { id: eventId },
+    { enabled: !!eventId && !isRedirecting },
+  );
 
   const [isEditing, setIsEditing] = useState(startsInEditMode);
   const [title, setTitle] = useState("");
@@ -77,6 +101,10 @@ export default function EventDetailScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   useEffect(() => {
+    redirectOnNotFound(error);
+  }, [error, redirectOnNotFound]);
+
+  useEffect(() => {
     if (!event) {
       return;
     }
@@ -84,7 +112,7 @@ export default function EventDetailScreen() {
     setTitle(event.title ?? "");
     setNotes(event.notes ?? "");
     setAllDay(!!event.all_day);
-    setStartsAt(new Date(event.starts_at));
+    setStartsAt(parseEventDateForEditor(event));
     setIsEditing(startsInEditMode);
   }, [event, startsInEditMode]);
 
@@ -100,12 +128,13 @@ export default function EventDetailScreen() {
   });
 
   const deleteMutation = trpc.events.delete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.events.invalidate(),
+    onSuccess: () => {
+      beginRedirect();
+      void Promise.all([
+        utils.events.list.invalidate(),
+        utils.events.getToday.invalidate(),
         utils.trainingPlans.invalidate(),
       ]);
-      router.back();
     },
   });
 
@@ -201,12 +230,12 @@ export default function EventDetailScreen() {
     ]);
   };
 
-  if (isLoading) {
+  if (isLoading || isRedirecting) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
         <Text className="text-sm text-muted-foreground mt-3">
-          Loading event...
+          {isRedirecting ? "Closing event..." : "Loading event..."}
         </Text>
       </View>
     );

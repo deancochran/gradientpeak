@@ -1,7 +1,7 @@
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { trpc } from "@/lib/trpc";
 import {
-  normalizeCreationConfig,
+  defaultAthletePreferenceProfile,
   profileTrainingSettingsRecordSchema,
   type AthleteTrainingSettings,
   type ProfileTrainingSettingsRecord,
@@ -9,7 +9,7 @@ import {
 import { useCallback, useMemo } from "react";
 
 const DEFAULT_PROFILE_SETTINGS: AthleteTrainingSettings =
-  normalizeCreationConfig({});
+  defaultAthletePreferenceProfile;
 
 export function useProfileSettings() {
   const profileId = useAuthStore((state) => state.profile?.id ?? null);

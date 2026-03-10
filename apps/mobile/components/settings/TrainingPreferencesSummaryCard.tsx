@@ -21,24 +21,31 @@ export function TrainingPreferencesSummaryCard({
       </CardHeader>
       <CardContent className="gap-3">
         <View className="rounded-md border border-border bg-muted/40 px-3 py-2">
-          <Text className="text-xs text-muted-foreground">Aggressiveness</Text>
+          <Text className="text-xs text-muted-foreground">
+            Progression pace
+          </Text>
           <Text className="text-sm font-medium text-foreground">
-            {(settings.behavior_controls_v1.aggressiveness * 100).toFixed(0)}%
+            {(settings.training_style.progression_pace * 100).toFixed(0)}%
           </Text>
         </View>
         <View className="rounded-md border border-border bg-muted/40 px-3 py-2">
           <Text className="text-xs text-muted-foreground">
-            Recovery Priority
+            Recovery priority
           </Text>
           <Text className="text-sm font-medium text-foreground">
-            {(settings.behavior_controls_v1.recovery_priority * 100).toFixed(0)}
+            {(settings.recovery_preferences.recovery_priority * 100).toFixed(0)}
             %
           </Text>
         </View>
         <View className="rounded-md border border-border bg-muted/40 px-3 py-2">
-          <Text className="text-xs text-muted-foreground">Variability</Text>
+          <Text className="text-xs text-muted-foreground">
+            Target surplus preference
+          </Text>
           <Text className="text-sm font-medium text-foreground">
-            {(settings.behavior_controls_v1.variability * 100).toFixed(0)}%
+            {(
+              settings.goal_strategy_preferences.target_surplus_preference * 100
+            ).toFixed(0)}
+            %
           </Text>
         </View>
         <Button variant="outline" onPress={onOpen}>

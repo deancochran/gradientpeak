@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
+import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
@@ -22,7 +24,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react-native";
-import { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 
 function PlannedActivityDetailScreen() {
@@ -31,18 +33,30 @@ function PlannedActivityDetailScreen() {
   const eventId = params.id as string;
   const utils = trpc.useUtils();
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const { beginRedirect, isRedirecting, redirectOnNotFound } =
+    useDeletedDetailRedirect({
+      onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    });
 
   // Query planned activity with plan details
-  const { data: plannedActivity, isLoading } = trpc.events.getById.useQuery(
+  const {
+    data: plannedActivity,
+    error,
+    isLoading,
+  } = trpc.events.getById.useQuery(
     { id: eventId },
-    { enabled: !!eventId },
+    { enabled: !!eventId && !isRedirecting },
   );
+
+  useEffect(() => {
+    redirectOnNotFound(error);
+  }, [error, redirectOnNotFound]);
 
   // Delete mutation
   const deleteMutation = useReliableMutation(trpc.events.delete, {
-    invalidate: [utils.events, utils.trainingPlans],
+    invalidate: [utils.events.list, utils.events.getToday, utils.trainingPlans],
     success: "Activity removed from your schedule",
-    onSuccess: () => router.back(),
+    onSuccess: () => beginRedirect(),
   });
 
   const handleStartActivity = () => {
@@ -95,11 +109,13 @@ function PlannedActivityDetailScreen() {
   return (
     <View className="flex-1 bg-background">
       {/* Content */}
-      {isLoading ? (
+      {isLoading || isRedirecting ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
           <Text className="text-muted-foreground mt-4">
-            Loading activity details...
+            {isRedirecting
+              ? "Closing activity..."
+              : "Loading activity details..."}
           </Text>
         </View>
       ) : !plannedActivity ? (

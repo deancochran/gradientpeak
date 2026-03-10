@@ -245,18 +245,30 @@ function PlanDashboardScreen() {
 
   const goalMetrics = useMemo(() => {
     if (
-      !snapshot.idealCurveData?.targetCTL ||
-      !snapshot.idealCurveData?.targetDate
+      snapshot.idealCurveData?.targetCTL &&
+      snapshot.idealCurveData?.targetDate
     ) {
-      return null;
+      return {
+        targetCTL: snapshot.idealCurveData.targetCTL,
+        targetDate: snapshot.idealCurveData.targetDate,
+        description: `Target: ${snapshot.idealCurveData.targetCTL} CTL by ${new Date(snapshot.idealCurveData.targetDate).toLocaleDateString()}`,
+      };
     }
 
-    return {
-      targetCTL: snapshot.idealCurveData.targetCTL,
-      targetDate: snapshot.idealCurveData.targetDate,
-      description: `Target: ${snapshot.idealCurveData.targetCTL} CTL by ${new Date(snapshot.idealCurveData.targetDate).toLocaleDateString()}`,
-    };
-  }, [snapshot.idealCurveData]);
+    const nextGoal = [...goals.goals]
+      .filter((g) => g.target_date)
+      .sort((a, b) => a.target_date!.localeCompare(b.target_date!))[0];
+
+    if (nextGoal?.target_date) {
+      return {
+        targetCTL: 0,
+        targetDate: nextGoal.target_date,
+        description: `Target: ${nextGoal.title} by ${new Date(nextGoal.target_date + "T12:00:00.000Z").toLocaleDateString()}`,
+      };
+    }
+
+    return null;
+  }, [snapshot.idealCurveData, goals.goals]);
 
   const goalReadiness = useMemo(() => {
     const idealCurve = snapshot.idealCurveData;
@@ -772,7 +784,7 @@ function PlanDashboardScreen() {
                 <View className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
                   <View className="flex-row items-end justify-between">
                     <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                      This week's load
+                      This week&apos;s load
                     </Text>
                     <Text
                       className={`text-xs font-medium ${weeklyLoadSummary.vsLastWeek >= 0 ? "text-emerald-600" : "text-muted-foreground"}`}

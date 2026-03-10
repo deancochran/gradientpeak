@@ -1085,50 +1085,38 @@ export const publicOauthStatesRelationshipsSchema = z.tuple([
 ]);
 
 export const publicProfileGoalsRowSchema = z.object({
+  activity_category: z.string().nullable(),
   created_at: z.string(),
-  goal_type: z.string(),
   id: z.string(),
-  idx: z.number(),
-  importance: z.number(),
-  milestone_event_id: z.string().nullable(),
+  milestone_event_id: z.string(),
+  priority: z.number(),
   profile_id: z.string(),
-  target_date: z.string().nullable(),
-  target_metric: z.string().nullable(),
-  target_value: z.number().nullable(),
+  target_payload: jsonSchema.nullable(),
   title: z.string(),
-  training_plan_id: z.string().nullable(),
   updated_at: z.string(),
 });
 
 export const publicProfileGoalsInsertSchema = z.object({
+  activity_category: z.string().optional().nullable(),
   created_at: z.string().optional(),
-  goal_type: z.string(),
   id: z.string().optional(),
-  idx: z.number().optional(),
-  importance: z.number().optional(),
-  milestone_event_id: z.string().optional().nullable(),
+  milestone_event_id: z.string(),
+  priority: z.number().optional(),
   profile_id: z.string(),
-  target_date: z.string().optional().nullable(),
-  target_metric: z.string().optional().nullable(),
-  target_value: z.number().optional().nullable(),
+  target_payload: jsonSchema.optional().nullable(),
   title: z.string(),
-  training_plan_id: z.string().optional().nullable(),
   updated_at: z.string().optional(),
 });
 
 export const publicProfileGoalsUpdateSchema = z.object({
+  activity_category: z.string().optional().nullable(),
   created_at: z.string().optional(),
-  goal_type: z.string().optional(),
   id: z.string().optional(),
-  idx: z.number().optional(),
-  importance: z.number().optional(),
-  milestone_event_id: z.string().optional().nullable(),
+  milestone_event_id: z.string().optional(),
+  priority: z.number().optional(),
   profile_id: z.string().optional(),
-  target_date: z.string().optional().nullable(),
-  target_metric: z.string().optional().nullable(),
-  target_value: z.number().optional().nullable(),
+  target_payload: jsonSchema.optional().nullable(),
   title: z.string().optional(),
-  training_plan_id: z.string().optional().nullable(),
   updated_at: z.string().optional(),
 });
 
@@ -1145,13 +1133,6 @@ export const publicProfileGoalsRelationshipsSchema = z.tuple([
     columns: z.tuple([z.literal("profile_id")]),
     isOneToOne: z.literal(false),
     referencedRelation: z.literal("profiles"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-  z.object({
-    foreignKeyName: z.literal("profile_goals_training_plan_id_fkey"),
-    columns: z.tuple([z.literal("training_plan_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("training_plans"),
     referencedColumns: z.tuple([z.literal("id")]),
   }),
 ]);

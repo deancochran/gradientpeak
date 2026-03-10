@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
 import {
   buildDeterministicProjectionPayload,
   clampNoHistoryFloorByAvailability,
@@ -1697,6 +1698,258 @@ describe("phase 1 scoring integration", () => {
         ).toBeLessThanOrEqual(12);
       }
     }
+  });
+
+  it("applies surplus to effective target metadata separately from aggressiveness", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-03-16",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-16",
+          target_weekly_tss_range: { min: 220, max: 260 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-surplus",
+          name: "FTP",
+          target_date: "2026-03-16",
+          priority: 2,
+          targets: [
+            {
+              target_type: "power_threshold",
+              target_watts: 300,
+              test_duration_s: 1200,
+              activity_category: "bike",
+            },
+          ],
+        },
+      ],
+      starting_ctl: 42,
+      creation_config: {
+        behavior_controls_v1: {
+          aggressiveness: 0.1,
+        },
+      },
+      preference_profile: {
+        ...defaultAthletePreferenceProfile,
+        goal_strategy_preferences: {
+          ...defaultAthletePreferenceProfile.goal_strategy_preferences,
+          target_surplus_preference: 1,
+        },
+      },
+    });
+
+    const targetScore = projection.goal_assessments?.[0]?.target_scores[0];
+    expect(targetScore?.effective_target?.surplus_applied).toBe(true);
+    expect(
+      targetScore?.effective_target?.effective_scoring_target ?? 0,
+    ).toBeGreaterThan(targetScore?.effective_target?.raw_target ?? 0);
+  });
+
+  it("keeps sparse-data projections bounded with continuous evidence and capability signals", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-02-16",
+      },
+      blocks: [
+        {
+          name: "Base",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-02-16",
+          target_weekly_tss_range: { min: 80, max: 120 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-sparse",
+          name: "5k",
+          target_date: "2026-03-15",
+          priority: 1,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 5000,
+              target_time_s: 1320,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+      no_history_context: {
+        history_availability_state: "none",
+        goal_tier: "medium",
+        weeks_to_event: 10,
+        context_summary: {
+          history_availability_state: "none",
+          recent_consistency_marker: "low",
+          effort_confidence_marker: "low",
+          profile_metric_completeness_marker: "low",
+          signal_quality: 0.08,
+          recommended_baseline_tss_range: { min: 20, max: 50 },
+          recommended_recent_influence_range: { min: -0.5, max: 0.4 },
+          recommended_sessions_per_week_range: { min: 2, max: 4 },
+          rationale_codes: ["history_none"],
+        },
+      },
+    });
+
+    expect(projection.readiness_score).toBeGreaterThanOrEqual(0);
+    expect(projection.readiness_score).toBeLessThanOrEqual(100);
+    expect(projection.readiness_confidence).toBeGreaterThanOrEqual(0);
+    expect(projection.readiness_confidence).toBeLessThanOrEqual(100);
+    expect(
+      projection.no_history.evidence_confidence?.support_signal,
+    ).toBeGreaterThan(0);
+    expect(
+      projection.no_history.capability_factors?.aerobic_base,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      projection.no_history.capability_factors?.evidence_quality,
+    ).toBeLessThanOrEqual(1);
+  });
+
+  it("emits sport-specific load provenance and dose recommendations", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-03-16",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-16",
+          target_weekly_tss_range: { min: 240, max: 280 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-run",
+          name: "10k",
+          target_date: "2026-03-16",
+          priority: 2,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 10000,
+              target_time_s: 2520,
+              activity_category: "run",
+            },
+          ],
+        },
+        {
+          id: "goal-bike",
+          name: "FTP",
+          target_date: "2026-03-30",
+          priority: 1,
+          targets: [
+            {
+              target_type: "power_threshold",
+              target_watts: 290,
+              test_duration_s: 1200,
+              activity_category: "bike",
+            },
+          ],
+        },
+      ],
+      starting_ctl: 38,
+      preference_profile: defaultAthletePreferenceProfile,
+    });
+
+    const runLoad = projection.sport_load_states?.find(
+      (state) => state.sport === "run",
+    );
+    const bikeLoad = projection.sport_load_states?.find(
+      (state) => state.sport === "bike",
+    );
+
+    expect(runLoad?.load_method).toBe("run_pace");
+    expect(bikeLoad?.load_method).toBe("bike_power");
+    expect(runLoad?.mechanical_stress_score ?? 0).toBeGreaterThan(
+      bikeLoad?.mechanical_stress_score ?? 0,
+    );
+    expect(
+      projection.dose_recommendation?.recommended_weekly_load ?? 0,
+    ).toBeGreaterThan(0);
+    expect(
+      projection.dose_recommendation?.recommended_weekly_duration_minutes ?? 0,
+    ).toBeGreaterThan(0);
+  });
+
+  it("gives materially different limiter shares and interference notes for different goals", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-03-22",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-03-22",
+          target_weekly_tss_range: { min: 180, max: 220 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-near",
+          name: "Near 5k",
+          target_date: "2026-02-01",
+          priority: 2,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 5000,
+              target_time_s: 1260,
+              activity_category: "run",
+            },
+          ],
+        },
+        {
+          id: "goal-far",
+          name: "Far FTP",
+          target_date: "2026-03-22",
+          priority: 1,
+          targets: [
+            {
+              target_type: "power_threshold",
+              target_watts: 305,
+              test_duration_s: 1200,
+              activity_category: "bike",
+            },
+          ],
+        },
+      ],
+      starting_ctl: 26,
+    });
+
+    const near = projection.goal_assessments?.find(
+      (goal) => goal.goal_id === "goal-near",
+    );
+    const far = projection.goal_assessments?.find(
+      (goal) => goal.goal_id === "goal-far",
+    );
+
+    expect(near?.limiter_shares?.timeline_pressure).not.toBe(
+      far?.limiter_shares?.timeline_pressure,
+    );
+    expect(near?.interference_notes).toContain(
+      "cross_sport_goal_interference_requires_split_focus",
+    );
+    expect(far?.interference_notes).toContain(
+      "cross_sport_goal_interference_requires_split_focus",
+    );
   });
 });
 

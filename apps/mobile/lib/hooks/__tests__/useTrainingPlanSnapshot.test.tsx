@@ -207,4 +207,40 @@ describe("useTrainingPlanSnapshot", () => {
     expect(refetchIdealCurve).toHaveBeenCalledTimes(1);
     expect(refetchWeeklySummary).toHaveBeenCalledTimes(0);
   });
+
+  it("requests insight timeline without a training plan id when no active plan exists", async () => {
+    getPlanQuery.mockImplementationOnce(() => ({
+      data: null as any,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchPlan,
+    }));
+    getInsightTimelineQuery.mockClear();
+    refetchInsightTimeline.mockClear();
+
+    let latestSnapshot: ReturnType<typeof useTrainingPlanSnapshot> | undefined;
+
+    await act(async () => {
+      TestRenderer.create(
+        <HookProbe
+          options={{}}
+          onSnapshot={(snapshot) => {
+            latestSnapshot = snapshot;
+          }}
+        />,
+      );
+    });
+
+    expect(getInsightTimelineQuery).toHaveBeenCalledWith(
+      expect.not.objectContaining({ training_plan_id: expect.anything() }),
+      expect.objectContaining({ enabled: true }),
+    );
+
+    await act(async () => {
+      await latestSnapshot!.refetchAll();
+    });
+
+    expect(refetchInsightTimeline).toHaveBeenCalledTimes(1);
+  });
 });

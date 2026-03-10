@@ -1007,48 +1007,36 @@ export type Database = {
       }
       profile_goals: {
         Row: {
+          activity_category: string | null
           created_at: string
-          goal_type: string
           id: string
-          idx: number
-          importance: number
-          milestone_event_id: string | null
+          milestone_event_id: string
+          priority: number
           profile_id: string
-          target_date: string | null
-          target_metric: string | null
-          target_value: number | null
+          target_payload: Json | null
           title: string
-          training_plan_id: string | null
           updated_at: string
         }
         Insert: {
+          activity_category?: string | null
           created_at?: string
-          goal_type: string
           id?: string
-          idx?: number
-          importance?: number
-          milestone_event_id?: string | null
+          milestone_event_id: string
+          priority?: number
           profile_id: string
-          target_date?: string | null
-          target_metric?: string | null
-          target_value?: number | null
+          target_payload?: Json | null
           title: string
-          training_plan_id?: string | null
           updated_at?: string
         }
         Update: {
+          activity_category?: string | null
           created_at?: string
-          goal_type?: string
           id?: string
-          idx?: number
-          importance?: number
-          milestone_event_id?: string | null
+          milestone_event_id?: string
+          priority?: number
           profile_id?: string
-          target_date?: string | null
-          target_metric?: string | null
-          target_value?: number | null
+          target_payload?: Json | null
           title?: string
-          training_plan_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1064,13 +1052,6 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "profile_goals_training_plan_id_fkey"
-            columns: ["training_plan_id"]
-            isOneToOne: false
-            referencedRelation: "training_plans"
             referencedColumns: ["id"]
           },
         ]

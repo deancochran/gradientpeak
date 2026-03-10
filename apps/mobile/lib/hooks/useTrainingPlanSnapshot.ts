@@ -194,13 +194,13 @@ export function useTrainingPlanSnapshot(
     refetch: refetchInsightTimeline,
   } = trpc.trainingPlans.getInsightTimeline.useQuery(
     {
-      training_plan_id: planSnapshot?.id || "",
+      ...(planSnapshot?.id ? { training_plan_id: planSnapshot.id } : {}),
       start_date: timelineWindow.start_date,
       end_date: timelineWindow.end_date,
       timezone,
     },
     {
-      enabled: !!planSnapshot?.id,
+      enabled: true,
     },
   );
 
@@ -251,9 +251,7 @@ export function useTrainingPlanSnapshot(
   }, [refetchPlan, refetchStatus]);
 
   const refetchAll = useCallback(async () => {
-    const insightRefresh = planSnapshot?.id
-      ? refetchInsightTimeline()
-      : Promise.resolve();
+    const insightRefresh = refetchInsightTimeline();
     const idealRefresh = planSnapshot?.id
       ? refetchIdealCurve()
       : Promise.resolve();

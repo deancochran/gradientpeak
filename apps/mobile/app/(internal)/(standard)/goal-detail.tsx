@@ -1,39 +1,21 @@
-import {
-  GoalEditorModal,
-  type GoalEditorDraft,
-} from "@/components/goals/GoalEditorModal";
+import { GoalEditorModal } from "@/components/goals/GoalEditorModal";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
+import {
+  buildGoalDraftFromGoal,
+  buildGoalUpdatePayload,
+  buildMilestoneEventCreateInput,
+  buildMilestoneEventUpdatePatch,
+  formatGoalTypeLabel,
+  getGoalMetricSummary,
+  type GoalEditorDraft,
+} from "@/lib/goals/goalDraft";
 import { trpc } from "@/lib/trpc";
+import { parseProfileGoalRecord } from "@repo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
-
-function buildGoalDraft(goal: any): GoalEditorDraft {
-  const storedDistanceMeters =
-    typeof goal?.metadata?.distance_m === "number" &&
-    Number.isFinite(goal.metadata.distance_m)
-      ? goal.metadata.distance_m
-      : null;
-
-  return {
-    title: goal?.title ?? "",
-    targetDate: goal?.target_date ?? "",
-    importance: typeof goal?.importance === "number" ? goal.importance : 5,
-    goalType: goal?.goal_type ?? "general",
-    targetMetric: goal?.target_metric ?? null,
-    targetValue: goal?.target_value ?? null,
-    raceDistanceKm:
-      storedDistanceMeters !== null
-        ? Math.round((storedDistanceMeters / 1000) * 10) / 10
-        : null,
-  };
-}
-
-function formatGoalType(goalType: string | null | undefined) {
-  return String(goalType || "general").replace(/_/g, " ");
-}
 
 export default function GoalDetailScreen() {
   const router = useRouter();
@@ -47,19 +29,45 @@ export default function GoalDetailScreen() {
     isLoading,
     refetch,
   } = trpc.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
-  const goalRecord = goal as any;
+  const goalRecord = useMemo(() => {
+    if (!goal) {
+      return null;
+    }
+
+    try {
+      return parseProfileGoalRecord(goal);
+    } catch {
+      return null;
+    }
+  }, [goal]);
+  const milestoneEventQuery = trpc.events.getById.useQuery(
+    { id: goalRecord?.milestone_event_id ?? "" },
+    { enabled: !!goalRecord?.milestone_event_id },
+  );
 
   const updateGoalMutation = trpc.goals.update.useMutation({
     onSuccess: async () => {
       await Promise.all([
         utils.goals.list.invalidate(),
         utils.goals.getById.invalidate({ id: goalId }),
+        utils.events.list.invalidate(),
+        utils.events.getById.invalidate(),
         refetch(),
       ]);
       setShowEditor(false);
     },
   });
-
+  const createMilestoneEventMutation = trpc.events.create.useMutation();
+  const updateMilestoneEventMutation = trpc.events.update.useMutation();
+  const deleteMilestoneEventMutation = trpc.events.delete.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.goals.list.invalidate(),
+        utils.events.list.invalidate(),
+      ]);
+      router.back();
+    },
+  });
   const deleteGoalMutation = trpc.goals.delete.useMutation({
     onSuccess: async () => {
       await Promise.all([utils.goals.list.invalidate()]);
@@ -67,7 +75,20 @@ export default function GoalDetailScreen() {
     },
   });
 
-  const initialDraft = useMemo(() => buildGoalDraft(goalRecord), [goalRecord]);
+  const targetDate = milestoneEventQuery.data?.starts_at?.slice(0, 10) ?? null;
+  const initialDraft = useMemo(() => {
+    if (!goalRecord) {
+      return {
+        title: "",
+        targetDate: "",
+        importance: 5,
+        goalType: "general",
+      } satisfies GoalEditorDraft;
+    }
+
+    return buildGoalDraftFromGoal({ goal: goalRecord, targetDate });
+  }, [goalRecord, targetDate]);
+  const metricSummary = goalRecord ? getGoalMetricSummary(goalRecord) : null;
 
   const handleDeleteGoal = () => {
     if (!goalRecord) {
@@ -79,45 +100,61 @@ export default function GoalDetailScreen() {
       {
         text: "Delete",
         style: "destructive",
-        onPress: () => deleteGoalMutation.mutate({ id: goalRecord.id }),
+        onPress: () => {
+          if (goalRecord.milestone_event_id) {
+            deleteMilestoneEventMutation.mutate({
+              id: goalRecord.milestone_event_id,
+            });
+            return;
+          }
+
+          deleteGoalMutation.mutate({ id: goalRecord.id });
+        },
       },
     ]);
   };
 
-  const handleSubmitGoal = (draft: GoalEditorDraft) => {
+  const handleSubmitGoal = async (draft: GoalEditorDraft) => {
     if (!goalRecord) {
       return;
     }
 
-    updateGoalMutation.mutate({
-      id: goalRecord.id,
-      data: {
-        title: draft.title.trim(),
-        goal_type: draft.goalType,
-        target_date: draft.targetDate,
-        target_metric: draft.targetMetric?.trim() || null,
-        target_value:
-          typeof draft.targetValue === "number" &&
-          Number.isFinite(draft.targetValue)
-            ? draft.targetValue
-            : null,
-        importance: Math.max(0, Math.min(10, draft.importance)),
-        metadata:
-          draft.goalType === "race_performance" &&
-          typeof draft.raceDistanceKm === "number" &&
-          Number.isFinite(draft.raceDistanceKm) &&
-          draft.raceDistanceKm > 0
-            ? { distance_m: Math.round(draft.raceDistanceKm * 1000) }
-            : undefined,
-      },
-    });
+    try {
+      const milestoneEventId = goalRecord.milestone_event_id
+        ? goalRecord.milestone_event_id
+        : (
+            await createMilestoneEventMutation.mutateAsync(
+              buildMilestoneEventCreateInput({ draft }),
+            )
+          ).id;
+
+      if (goalRecord.milestone_event_id) {
+        await updateMilestoneEventMutation.mutateAsync({
+          id: goalRecord.milestone_event_id,
+          patch: buildMilestoneEventUpdatePatch({ draft }),
+        });
+      }
+
+      await updateGoalMutation.mutateAsync({
+        id: goalRecord.id,
+        data: buildGoalUpdatePayload({
+          draft,
+          milestoneEventId,
+        }),
+      });
+    } catch (error) {
+      Alert.alert(
+        "Unable to save goal",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    }
   };
 
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
-        <Text className="text-sm text-muted-foreground mt-3">
+        <Text className="mt-3 text-sm text-muted-foreground">
           Loading goal...
         </Text>
       </View>
@@ -126,11 +163,11 @@ export default function GoalDetailScreen() {
 
   if (!goalRecord) {
     return (
-      <View className="flex-1 items-center justify-center px-6 bg-background">
+      <View className="flex-1 items-center justify-center bg-background px-6">
         <Text className="text-lg font-semibold text-foreground">
           Goal not found
         </Text>
-        <Text className="text-sm text-muted-foreground text-center mt-2">
+        <Text className="mt-2 text-center text-sm text-muted-foreground">
           This goal may have been removed.
         </Text>
         <Button className="mt-4" onPress={() => router.back()}>
@@ -144,37 +181,36 @@ export default function GoalDetailScreen() {
     <View className="flex-1 bg-background">
       <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
         <Card>
-          <CardContent className="p-4 gap-4">
+          <CardContent className="gap-4 p-4">
             <View className="gap-1">
               <CardTitle>{goalRecord.title}</CardTitle>
               <Text className="text-sm text-muted-foreground">
-                {formatGoalType(goalRecord.goal_type)} goal
-                {goalRecord.target_date
-                  ? ` · target ${goalRecord.target_date}`
-                  : ""}
+                {formatGoalTypeLabel(goalRecord)} goal
+                {targetDate ? ` · target ${targetDate}` : ""}
               </Text>
             </View>
 
             <View className="flex-row flex-wrap gap-2">
               <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                 <Text className="text-xs font-medium text-foreground">
-                  Importance {goalRecord.importance}/10
+                  Importance {goalRecord.priority}/10
                 </Text>
               </View>
-              {typeof goalRecord?.metadata?.distance_m === "number" ? (
+              <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                <Text className="text-xs font-medium capitalize text-foreground">
+                  {goalRecord.activity_category}
+                </Text>
+              </View>
+              {goalRecord.objective.type === "event_performance" &&
+              typeof goalRecord.objective.distance_m === "number" ? (
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                   <Text className="text-xs font-medium text-foreground">
-                    {Math.round((goalRecord.metadata.distance_m / 1000) * 10) /
-                      10}
+                    {Math.round((goalRecord.objective.distance_m / 1000) * 10) /
+                      10}{" "}
                     km
                   </Text>
                 </View>
               ) : null}
-              <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                <Text className="text-xs font-medium text-foreground capitalize">
-                  {formatGoalType(goalRecord.goal_type)}
-                </Text>
-              </View>
             </View>
 
             <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
@@ -183,35 +219,21 @@ export default function GoalDetailScreen() {
                   Target date
                 </Text>
                 <Text className="text-sm font-medium text-foreground">
-                  {goalRecord.target_date || "Not set"}
+                  {targetDate || "Not set"}
+                </Text>
+              </View>
+              <View className="flex-row items-center justify-between gap-3">
+                <Text className="text-xs text-muted-foreground">Goal type</Text>
+                <Text className="text-sm font-medium text-foreground">
+                  {formatGoalTypeLabel(goalRecord)}
                 </Text>
               </View>
               <View className="flex-row items-center justify-between gap-3">
                 <Text className="text-xs text-muted-foreground">
-                  Target metric
+                  {metricSummary?.label}
                 </Text>
                 <Text className="text-sm font-medium text-foreground">
-                  {goalRecord.target_metric || "Not set"}
-                </Text>
-              </View>
-              <View className="flex-row items-center justify-between gap-3">
-                <Text className="text-xs text-muted-foreground">
-                  Target value
-                </Text>
-                <Text className="text-sm font-medium text-foreground">
-                  {typeof goalRecord.target_value === "number"
-                    ? goalRecord.target_value
-                    : "Not set"}
-                </Text>
-              </View>
-              <View className="flex-row items-center justify-between gap-3">
-                <Text className="text-xs text-muted-foreground">
-                  Race distance
-                </Text>
-                <Text className="text-sm font-medium text-foreground">
-                  {typeof goalRecord?.metadata?.distance_m === "number"
-                    ? `${Math.round((goalRecord.metadata.distance_m / 1000) * 10) / 10} km`
-                    : "Not set"}
+                  {metricSummary?.value}
                 </Text>
               </View>
             </View>
@@ -219,7 +241,7 @@ export default function GoalDetailScreen() {
         </Card>
       </ScrollView>
 
-      <View className="px-4 py-4 border-t border-border bg-background">
+      <View className="border-t border-border bg-background px-4 py-4">
         <View className="flex-row gap-2">
           <Button
             variant="outline"
@@ -232,10 +254,16 @@ export default function GoalDetailScreen() {
             variant="outline"
             className="flex-1"
             onPress={handleDeleteGoal}
-            disabled={deleteGoalMutation.isPending}
+            disabled={
+              deleteGoalMutation.isPending ||
+              deleteMilestoneEventMutation.isPending
+            }
           >
             <Text className="text-destructive">
-              {deleteGoalMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteGoalMutation.isPending ||
+              deleteMilestoneEventMutation.isPending
+                ? "Deleting..."
+                : "Delete"}
             </Text>
           </Button>
         </View>
@@ -246,9 +274,15 @@ export default function GoalDetailScreen() {
         initialValue={initialDraft}
         title="Edit Goal"
         submitLabel="Save Changes"
-        isSubmitting={updateGoalMutation.isPending}
+        isSubmitting={
+          updateGoalMutation.isPending ||
+          createMilestoneEventMutation.isPending ||
+          updateMilestoneEventMutation.isPending
+        }
         onClose={() => setShowEditor(false)}
-        onSubmit={handleSubmitGoal}
+        onSubmit={(draft) => {
+          void handleSubmitGoal(draft);
+        }}
       />
     </View>
   );

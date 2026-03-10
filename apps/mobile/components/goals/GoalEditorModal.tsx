@@ -19,16 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-export interface GoalEditorDraft {
-  title: string;
-  targetDate: string;
-  importance: number;
-  goalType: string;
-  targetMetric?: string | null;
-  targetValue?: number | null;
-  raceDistanceKm?: number | null;
-}
+import type { GoalEditorDraft } from "@/lib/goals/goalDraft";
 
 interface GoalEditorModalProps {
   visible: boolean;

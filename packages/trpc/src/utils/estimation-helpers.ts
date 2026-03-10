@@ -266,16 +266,21 @@ export async function computePlanMetrics(
  * More efficient than calling addEstimationToPlan repeatedly
  */
 export async function addEstimationToPlans(
-  plans: PublicActivityPlansRow[],
+  plans: Array<PublicActivityPlansRow | null | undefined>,
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ActivityPlanWithEstimation[]> {
-  if (plans.length === 0) return [];
+  const normalizedPlans = plans.filter(
+    (plan): plan is PublicActivityPlansRow =>
+      !!plan && typeof plan === "object",
+  );
+
+  if (normalizedPlans.length === 0) return [];
 
   const profile = await getEstimationProfileInputs(supabase, userId);
 
   // Collect all route IDs
-  const routeIds = plans
+  const routeIds = normalizedPlans
     .filter((p) => p.route_id)
     .map((p) => p.route_id)
     .filter((id, index, self) => self.indexOf(id) === index); // Unique
@@ -296,7 +301,7 @@ export async function addEstimationToPlans(
   // Calculate estimation for each plan
   const results: ActivityPlanWithEstimation[] = [];
 
-  for (const plan of plans) {
+  for (const plan of normalizedPlans) {
     try {
       const route = plan.route_id ? routesMap.get(plan.route_id) : undefined;
 

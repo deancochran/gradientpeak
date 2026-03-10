@@ -4,6 +4,8 @@ import type {
   DeterministicProjectionPoint,
   ProjectionRecoverySegment,
   ProjectionSafetyConfig,
+  ProjectionDoseRecommendation,
+  ProjectionSportLoadState,
 } from "./projectionCalculations";
 
 export interface ProjectionPeriodizationPhase {
@@ -84,7 +86,16 @@ export interface NoHistoryProjectionMetadata {
   evidence_confidence?: {
     score: number;
     state: "none" | "sparse" | "stale" | "rich";
+    support_signal: number;
+    evidence_recency_days: number;
     reasons: string[];
+  } | null;
+  capability_factors?: {
+    aerobic_base: number;
+    durability: number;
+    recovery_speed: number;
+    intensity_support: number;
+    evidence_quality: number;
   } | null;
 }
 
@@ -172,6 +183,8 @@ export interface ProjectionChartPayload {
   prediction_uncertainty?: ProjectionPredictionUncertainty;
   goal_target_distributions?: ProjectionGoalTargetDistribution[];
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
+  sport_load_states?: ProjectionSportLoadState[];
+  dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
@@ -184,12 +197,29 @@ export interface ProjectionChartPayload {
       | "aggressive"
       | "nearly_impossible"
       | "infeasible";
+    limiter_shares?: {
+      timeline_pressure: number;
+      capacity_pressure: number;
+      evidence_weakness: number;
+      recovery_strain: number;
+      mechanical_stress: number;
+      goal_interference: number;
+    };
+    interference_notes?: string[];
     target_scores: Array<{
       kind: string;
       score_0_100: number;
       target_weight?: number;
       unmet_gap?: number;
       rationale_codes: string[];
+      effective_target?: {
+        raw_target: number;
+        effective_scoring_target: number;
+        applied_surplus_pct: number;
+        surplus_support_factor: number;
+        surplus_applied: boolean;
+        rationale_code: string;
+      };
     }>;
     conflict_notes: string[];
   }>;

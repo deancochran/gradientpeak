@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 import { skipToken } from "@tanstack/react-query";
@@ -62,14 +64,28 @@ export default function ActivityPlanDetailPage() {
   const [isPublic, setIsPublic] = useState(false);
 
   const utils = trpc.useUtils();
+  const { beginRedirect, isRedirecting, redirectOnNotFound } =
+    useDeletedDetailRedirect({
+      onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    });
 
   // Fetch plan from database if planId is provided
   const { data: fetchedPlan, isLoading: loadingPlan } =
     trpc.activityPlans.getById.useQuery({ id: planId! }, { enabled: !!planId });
 
   // Fetch planned activity if eventId is provided
-  const { data: plannedActivity, isLoading: loadingPlannedActivity } =
-    trpc.events.getById.useQuery({ id: eventId! }, { enabled: !!eventId });
+  const {
+    data: plannedActivity,
+    error: plannedActivityError,
+    isLoading: loadingPlannedActivity,
+  } = trpc.events.getById.useQuery(
+    { id: eventId! },
+    { enabled: !!eventId && !isRedirecting },
+  );
+
+  React.useEffect(() => {
+    redirectOnNotFound(plannedActivityError);
+  }, [plannedActivityError, redirectOnNotFound]);
 
   // Fetch route if plan has one
   const routeId =
@@ -185,6 +201,13 @@ export default function ActivityPlanDetailPage() {
 
   const handleSchedule = () => {
     if (!activityPlan) return;
+    if (!planId && !activityPlan.id) {
+      Alert.alert(
+        "Scheduling unavailable",
+        "Save or duplicate this activity plan first, then schedule it from its detail screen.",
+      );
+      return;
+    }
     setShowScheduleModal(true);
   };
 
@@ -281,11 +304,14 @@ export default function ActivityPlanDetailPage() {
   };
 
   const removeScheduleMutation = trpc.events.delete.useMutation({
-    onSuccess: async () => {
-      await utils.events.invalidate();
-      await utils.trainingPlans.invalidate();
+    onSuccess: () => {
+      beginRedirect();
       setShowScheduleModal(false);
-      router.back();
+      void Promise.all([
+        utils.events.list.invalidate(),
+        utils.events.getToday.invalidate(),
+        utils.trainingPlans.invalidate(),
+      ]);
     },
     onError: (error) => {
       Alert.alert(
@@ -445,12 +471,12 @@ export default function ActivityPlanDetailPage() {
     }
   }, [activityPlan?.template_visibility]);
 
-  if (loadingPlan || loadingPlannedActivity) {
+  if (loadingPlan || loadingPlannedActivity || isRedirecting) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
         <ActivityIndicator size="large" />
         <Text className="text-muted-foreground mt-4">
-          Loading activity plan...
+          {isRedirecting ? "Closing activity..." : "Loading activity plan..."}
         </Text>
       </View>
     );

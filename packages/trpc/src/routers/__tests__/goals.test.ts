@@ -93,6 +93,16 @@ describe("goalsRouter", () => {
             {
               id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
               profile_id: profileId,
+              milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+              title: "10K Goal",
+              priority: 7,
+              activity_category: "run",
+              target_payload: {
+                type: "event_performance",
+                activity_category: "run",
+                distance_m: 10000,
+                target_time_s: 3000,
+              },
             },
           ],
           error: null,
@@ -123,6 +133,17 @@ describe("goalsRouter", () => {
             {
               id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
               profile_id: profileId,
+              milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+              title: "Coach Goal",
+              priority: 5,
+              activity_category: "bike",
+              target_payload: {
+                type: "threshold",
+                metric: "power",
+                activity_category: "bike",
+                value: 280,
+                test_duration_s: 1200,
+              },
             },
           ],
           error: null,
@@ -165,6 +186,16 @@ describe("goalsRouter", () => {
             data: {
               id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
               profile_id: "11111111-1111-4111-8111-111111111111",
+              milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+              title: "Original Goal",
+              priority: 5,
+              activity_category: "run",
+              target_payload: {
+                type: "event_performance",
+                activity_category: "run",
+                distance_m: 10000,
+                target_time_s: 3300,
+              },
             },
             error: null,
           },
@@ -173,6 +204,15 @@ describe("goalsRouter", () => {
               id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
               profile_id: "11111111-1111-4111-8111-111111111111",
               title: "Updated Goal",
+              milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+              priority: 5,
+              activity_category: "run",
+              target_payload: {
+                type: "event_performance",
+                activity_category: "run",
+                distance_m: 10000,
+                target_time_s: 3150,
+              },
             },
             error: null,
           },
@@ -182,7 +222,15 @@ describe("goalsRouter", () => {
 
     const result = await caller.update({
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      data: { title: "Updated Goal" },
+      data: {
+        title: "Updated Goal",
+        target_payload: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 10000,
+          target_time_s: 3150,
+        },
+      },
     });
 
     expect(result.title).toBe("Updated Goal");
@@ -208,15 +256,79 @@ describe("goalsRouter", () => {
     await expect(
       caller.create({
         profile_id: profileId,
+        milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         title: "A Goal",
-        goal_type: "race",
-        importance: 5,
-        target_date: "2026-09-01",
+        priority: 5,
+        activity_category: "run",
+        target_payload: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 5000,
+          target_time_s: 1500,
+        },
       }),
     ).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
       message:
         "Failed to create goal: [PGRST204] Could not find the 'target_date' column of 'profile_goals' in the schema cache",
     } as Partial<TRPCError>);
+  });
+
+  it("writes canonical goal fields on create", async () => {
+    const profileId = "11111111-1111-4111-8111-111111111111";
+    const { caller, callLog } = createCaller({
+      userId: profileId,
+      queryMap: {
+        profile_goals: {
+          data: {
+            id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            profile_id: profileId,
+            milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            title: "Canonical Goal",
+            priority: 6,
+            activity_category: "run",
+            target_payload: {
+              type: "event_performance",
+              activity_category: "run",
+              distance_m: 5000,
+              target_time_s: 1500,
+            },
+          },
+          error: null,
+        },
+      },
+    });
+
+    await caller.create({
+      profile_id: profileId,
+      milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      title: "Canonical Goal",
+      priority: 6,
+      activity_category: "run",
+      target_payload: {
+        type: "event_performance",
+        activity_category: "run",
+        distance_m: 5000,
+        target_time_s: 1500,
+      },
+    });
+
+    expect(callLog).toContainEqual({
+      table: "profile_goals",
+      operation: "insert",
+      payload: {
+        profile_id: profileId,
+        milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        title: "Canonical Goal",
+        priority: 6,
+        activity_category: "run",
+        target_payload: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 5000,
+          target_time_s: 1500,
+        },
+      },
+    });
   });
 });

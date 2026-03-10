@@ -193,3 +193,19 @@
   - [x] Update training-plan publish script to sync canonical training-plan fields
   - [x] Reset local Supabase DB and run template publish scripts for activity plans and training plans
 - **Blockers**: None
+
+---
+
+### [20260310-000001] Profile Goals + Projection Future-Proofing Implementation
+
+- **Status**: in_progress
+- **Complexity**: high
+- **Subtasks**:
+  - [x] Phase 1: Persistence + Canonical Schemas
+  - [x] Phase 2: Canonical Core Adapters
+  - [x] Phase 3: tRPC Integration
+  - [x] Phase 4: Projection Modeling
+  - [x] Phase 5: Mobile App Integration
+  - [x] Validation Gate
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-10_profile-goals-projection-future-proofing/`
