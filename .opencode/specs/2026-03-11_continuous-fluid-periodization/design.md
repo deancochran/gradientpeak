@@ -1,41 +1,42 @@
-# Design: Continuous Fluid Periodization
+# Design: Continuous Fluid Periodization (MVP Architecture)
 
 ## Vision
 
-Evolve the GradientPeak projection engine from a traditional, rigid, phase-based model (Base, Build, Peak, Taper buckets) into a **continuous, dynamic, and fluid periodization model**. This approach treats fitness as a continuous mathematical function of applied stress and time, where phases are emergent properties of mathematical curves rather than hardcoded rules.
+Evolve the GradientPeak projection engine from a traditional, rigid, phase-based model (Base, Build, Peak, Taper buckets) into a **continuous, dynamic, and fluid periodization model**.
 
-## Core Concepts
+After evaluating advanced mathematical frameworks (Bi-level Bayesian Optimization, Reinforcement Learning, Tri-level Optimization), the most robust, computationally feasible, and mathematically sound approach for the current TypeScript/Node.js stack is a **Heuristic-Guided Model Predictive Control (MPC)** architecture.
 
-### 1. Continuous Scaling via Mathematical Modeling
+## Core Architecture: Heuristic + Single-Level MPC
 
-Instead of assigning rigid phases based on calendar weeks, the algorithm generates a **Target Continuous Fitness Curve** using the Banister Impulse-Response Model and Exponentially Weighted Moving Averages (EWMA):
+Instead of relying on a supercomputer to blindly "discover" periodization via Bayesian Optimization, we will leverage the known laws of human physiology (Banister Impulse-Response, EWMA) and established sports science heuristics to guide a deterministic optimizer.
 
-- **CTL (Chronic Training Load / Fitness):** 42-day rolling average of TSS.
-- **ATL (Acute Training Load / Fatigue):** 7-day rolling average of TSS.
-- **TSB (Training Stress Balance / Form):** CTL - ATL.
-  The duration and intensity of training are determined by the required $\Delta CTL$ (change in fitness needed) and the athlete's safe maximum weekly Ramp Rate. The "Build Phase" simply becomes the mathematical slope of the CTL curve required to bridge the gap between today's fitness and the goal's demand.
+### 1. The Heuristic Layer (The "Envelope")
 
-### 2. Holistic Input & Multi-Goal Periodization
+The algorithm first uses rules-based sports science to draw an ideal **Target Continuous Fitness Curve (Reference Trajectory)**.
 
-A training plan should be a single, unified representation of _all_ profile goals, rather than separate plans stitched together. The algorithm must view the entire season as a **single, multi-objective optimization problem**:
+- It calculates the required Chronic Training Load (CTL) for the user's goals.
+- It works backward from the goal dates, applying safe maximum weekly ramp rates (e.g., +3 to +5 CTL/week).
+- It dynamically calculates taper durations (7 to 28 days based on event distance/duration) and recovery windows.
+- This creates a mathematically perfect, but rigid, reference line from today until race day.
 
-- **Input Vector:** Accept an array of all events (e.g., `[{date: t1, priority: B, demand: 150}, {date: t2, priority: A, demand: 300}]`).
-- **Reverse Curve Generation:** Start at the furthest `A-priority` event, set the target TSB (e.g., +20), calculate the required ATL drop (the taper), and work backward in time, tracing the CTL curve down at the optimal ramp rate.
+### 2. The MPC Layer (The "Fluidity")
 
-### 3. Shared Phases & Residual Training Effects
+We feed this Reference Trajectory into the existing `solveDeterministicBoundedMpc` engine.
 
-Goals that are close together should NOT each get their own isolated Base/Build/Peak/Taper cycle. Physiological systems retain adaptations for different durations (e.g., Aerobic base ~30 days, Anaerobic threshold ~18 days).
+- The MPC acts as a **trajectory tracker**. It evaluates discrete weekly Training Stress Score (TSS) candidates over a rolling horizon (e.g., 3-4 weeks ahead).
+- **The Objective Function:** The MPC seeks to minimize the error between the _projected_ CTL and the _Heuristic Target_ CTL, while strictly enforcing safety constraints (keeping Acute Training Load / ATL below injury thresholds).
+- **The Result:** By adjusting objective weights dynamically (e.g., heavily penalizing load when the user's `readiness_score` drops), the MPC will naturally weave, bob, and adapt around the heuristic reference line. This creates fluid, non-rigid periodization that responds to the user's actual state without ever violating the macro-strategy.
 
-- **Training Through:** When tracing backward from an A-race, if a B-race is encountered, the algorithm calculates a localized "micro-taper" (flattening the CTL curve slightly for 4-5 days to clear some ATL) rather than a full taper. The athlete carries the broader "Build" fatigue through the B-race.
-- **Continuous Top-Ups:** The algorithm injects targeted workouts to top up fast-decaying anaerobic reservoirs while maintaining the slow-decaying aerobic reservoir.
+## Handling Multi-Goal Scenarios
 
-### 4. Dynamic Taper & Recovery Scaling
+The Heuristic Layer views the entire season holistically.
 
-Taper and recovery durations must scale dynamically based on the specific demands of the goal (distance, duration, TSS):
+- It plots the required CTL peaks for all 'A' and 'B' priority goals on a single timeline.
+- If a 'B' race occurs during the build phase of an 'A' race, the heuristic draws a "micro-taper" (a slight flattening of the CTL curve for 4-5 days) rather than a full reset.
+- The MPC then smoothly tracks this complex, multi-peak reference trajectory, ensuring the athlete "trains through" minor events while peaking perfectly for major ones.
 
-- **Taper Scaling:** 5K/10K (7-10 days), Half Marathon (10-14 days), Marathon (14-21 days), Ultramarathon (21-28 days).
-- **Recovery Scaling:** Based on the Distance Formula (1 day per mile) or TSS Formula (1 day per 100 TSS), scaling non-linearly with event muscle damage and duration.
+## Why this is the optimal MVP
 
-### 5. Daily Undulating Periodization (DUP)
-
-Once daily mathematical targets (Target TSS, Target CTL, Target ATL) are plotted as a continuous time-series, a secondary micro-cycle algorithm reads the daily TSS target and uses DUP principles to select specific workout structures (e.g., 1x Long, 1x Threshold, 1x VO2max) while satisfying 80/20 Polarized Training constraints.
+1. **Computational Speed:** The deterministic MPC lattice solver executes in single-digit milliseconds in Node.js, making it perfect for real-time mobile application updates. Bayesian Optimization would require thousands of heavy simulations.
+2. **Physiological Safety:** Reinforcement Learning agents often exploit mathematical loopholes to suggest physically impossible workouts. By using heuristics to bracket the search space, we guarantee the generated plans are physiologically safe and realistic.
+3. **Leverages Existing Code:** This architecture builds directly upon the robust constraint engine (`projection/safety-caps`), readiness modifiers (`projection/readiness`), and MPC solver (`projection/mpc/solver`) already present in the `@repo/core` package.
