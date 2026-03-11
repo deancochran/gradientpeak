@@ -5,6 +5,7 @@
 - **Objective:** Build the engine that draws the ideal, continuous Target CTL curve based on sports science rules.
 - **Strategy:**
   - Create a new module to generate a `ReferenceTrajectory` (an array of daily target CTL values).
+  - Architect the generator as a pure mathematical projection service that outputs a continuous array of smoothed daily TSS and CTL values, completely decoupled from the user's actual planned or completed calendar events.
   - Implement dynamic taper scaling (7-28 days) based on the maximum distance/duration extracted from `GoalTargetV2`.
   - Implement reverse curve generation: start at the goal date's target CTL and trace backward using the user's maximum safe weekly ramp rate.
 

@@ -27,6 +27,13 @@ We feed this Reference Trajectory into the existing `solveDeterministicBoundedMp
 - **The Objective Function:** The MPC seeks to minimize the error between the _projected_ CTL and the _Heuristic Target_ CTL, while strictly enforcing safety constraints (keeping Acute Training Load / ATL below injury thresholds).
 - **The Result:** By adjusting objective weights dynamically (e.g., heavily penalizing load when the user's `readiness_score` drops), the MPC will naturally weave, bob, and adapt around the heuristic reference line. This creates fluid, non-rigid periodization that responds to the user's actual state without ever violating the macro-strategy.
 
+### 3. Independent Ideal Load Generator (Baseline Projection)
+
+The heuristic engine must be capable of generating an "Ideal Recommended Load" curve that is completely independent of the user's actual planned or completed calendar events.
+
+- **Pure Mathematical Projection:** It outputs a continuous array of smoothed daily TSS and target CTL values based solely on the user's goals, current fitness, and physiological constraints.
+- **UI Integration:** This decoupled baseline curve can be plotted on the UI (e.g., the projection chart on the plan tab) to provide a visual "target tracking" experience. It allows the user to see how their actual/planned schedule weaves around the mathematically ideal trajectory, similar to a financial burndown/burnup chart.
+
 ## Handling Multi-Goal Scenarios
 
 The Heuristic Layer views the entire season holistically.

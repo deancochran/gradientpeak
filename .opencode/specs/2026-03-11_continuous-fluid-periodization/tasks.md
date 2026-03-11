@@ -5,6 +5,7 @@
 - [ ] Create `resolveEventDemand` helper to extract max distance/duration from `GoalTargetV2`.
 - [ ] Implement dynamic taper duration logic (7-28 days) based on event demand.
 - [ ] Create `generateReferenceTrajectory` function that outputs an array of daily target CTL values.
+- [ ] Architect the `generateReferenceTrajectory` to be completely independent of planned/completed calendar events, outputting a smoothed daily baseline.
 - [ ] Implement reverse curve generation logic (tracing backward from goal date using max safe ramp rate).
 
 ## Phase 2: Multi-Goal Trajectory Merging
