@@ -96,7 +96,7 @@ const SERIES_META: Record<
     label: "Planned",
     color: "rgba(96, 165, 250, 0.95)",
     strokeWidth: 2,
-    hint: "Planned workouts",
+    hint: "Planned load",
   },
   actual: {
     label: "Completed",
