@@ -41,7 +41,7 @@ export function useProfileGoals() {
   }, [today]);
   const milestoneEventsQuery = trpc.events.list.useQuery(
     {
-      event_types: ["custom", "race_target"],
+      event_types: ["custom", "race_target", "race"],
       include_adhoc: true,
       date_from: milestoneWindow.date_from,
       date_to: milestoneWindow.date_to,

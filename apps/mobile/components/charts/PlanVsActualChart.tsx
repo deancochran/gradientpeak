@@ -3,6 +3,7 @@ import {
   DashPathEffect,
   useFont,
   Line as SkiaLine,
+  Text as SkiaText,
   vec,
 } from "@shopify/react-native-skia";
 import { useColorScheme } from "nativewind";
@@ -68,7 +69,7 @@ type ChartDatum = Record<string, unknown> & {
 };
 
 const chartYKeys: ChartYKey[] = ["projection", "planned", "actual", "goal"];
-const chartPadding = { left: 0, right: 14, top: 14, bottom: 28 };
+const chartPadding = { left: 16, right: 16, top: 24, bottom: 28 };
 const chartDomainPadding = { left: 0, right: 0, top: 10, bottom: 0 };
 
 const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
@@ -93,13 +94,13 @@ const SERIES_META: Record<
   },
   planned: {
     label: "Planned",
-    color: "rgba(37, 99, 235, 0.95)",
+    color: "rgba(96, 165, 250, 0.95)",
     strokeWidth: 2,
     hint: "Planned workouts",
   },
   actual: {
     label: "Completed",
-    color: "rgba(5, 150, 105, 1)",
+    color: "rgba(15, 23, 42, 1)",
     strokeWidth: 2.25,
     hint: "Completed workouts",
   },
@@ -321,15 +322,37 @@ export function PlanVsActualChart({
       if (eIdx !== -1) endIndex = eIdx;
       else if (base.length > 0) endIndex = base.length - 1;
     } else {
-      const sIdx = base.findIndex(
-        (p) => (p.planned ?? 0) > 0 || (p.actual ?? 0) > 0,
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const thirtyDaysAgoWeek = getWeekStartDateKey(
+        thirtyDaysAgo.toISOString().split("T")[0],
       );
+
+      const sIdx = base.findIndex((p) => p.date >= thirtyDaysAgoWeek);
+
       const revBase = [...base].reverse();
       const revEIdx = revBase.findIndex(
         (p) => (p.planned ?? 0) > 0 || (p.actual ?? 0) > 0,
       );
+
       if (sIdx !== -1) startIndex = sIdx;
       if (revEIdx !== -1) endIndex = base.length - 1 - revEIdx;
+
+      const thirtyDaysFuture = new Date();
+      thirtyDaysFuture.setDate(thirtyDaysFuture.getDate() + 30);
+      const thirtyDaysFutureWeek = getWeekStartDateKey(
+        thirtyDaysFuture.toISOString().split("T")[0],
+      );
+      const futureIdx = base.findIndex((p) => p.date >= thirtyDaysFutureWeek);
+      if (futureIdx !== -1 && futureIdx > endIndex) {
+        endIndex = futureIdx;
+      } else if (
+        futureIdx === -1 &&
+        base.length > 0 &&
+        base.length - 1 > endIndex
+      ) {
+        endIndex = base.length - 1;
+      }
     }
 
     startIndex = Math.max(0, startIndex - 1);
@@ -507,22 +530,33 @@ export function PlanVsActualChart({
                     ) : null}
 
                     {hasSeriesData.planned ? (
-                      <Line
-                        points={points.planned}
-                        color={SERIES_META.planned.color}
-                        strokeWidth={SERIES_META.planned.strokeWidth}
-                        curveType="natural"
-                        animate={{ type: "timing", duration: 180 }}
-                      />
+                      <>
+                        <Area
+                          points={points.planned}
+                          y0={chartBounds.bottom}
+                          color={SERIES_META.planned.color.replace(
+                            "0.95)",
+                            "0.15)",
+                          )}
+                          curveType="natural"
+                          animate={{ type: "timing", duration: 180 }}
+                        />
+                        <Line
+                          points={points.planned}
+                          color={SERIES_META.planned.color}
+                          strokeWidth={SERIES_META.planned.strokeWidth}
+                          curveType="natural"
+                          animate={{ type: "timing", duration: 180 }}
+                        />
+                      </>
                     ) : null}
 
                     {hasSeriesData.actual ? (
-                      <Scatter
-                        points={points.actual.filter(
-                          (p) => p.yValue != null && p.yValue > 0,
-                        )}
-                        color={SERIES_META.actual.color}
-                        radius={4}
+                      <Line
+                        points={points.actual.filter((p) => p.yValue != null)}
+                        color={isDark ? "#f8fafc" : "#0f172a"}
+                        strokeWidth={SERIES_META.actual.strokeWidth}
+                        curveType="natural"
                         animate={{ type: "timing", duration: 180 }}
                       />
                     ) : null}
@@ -541,15 +575,36 @@ export function PlanVsActualChart({
                         points.planned[goalIndex];
                       if (!targetPoint) return null;
 
+                      const goalDateStr = new Date(
+                        `${goalMetrics.targetDate}T12:00:00.000Z`,
+                      ).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      });
+
                       return (
-                        <SkiaLine
-                          p1={vec(targetPoint.x, chartBounds.bottom)}
-                          p2={vec(targetPoint.x, chartBounds.top)}
-                          color="rgba(34, 197, 94, 0.6)"
-                          strokeWidth={2}
-                        >
-                          <DashPathEffect intervals={[4, 4]} />
-                        </SkiaLine>
+                        <React.Fragment key="goal-line">
+                          <SkiaLine
+                            p1={vec(targetPoint.x, chartBounds.bottom)}
+                            p2={vec(targetPoint.x, chartBounds.top + 12)}
+                            color="rgba(34, 197, 94, 0.6)"
+                            strokeWidth={2}
+                          >
+                            <DashPathEffect intervals={[4, 4]} />
+                          </SkiaLine>
+                          {axisFont ? (
+                            <SkiaText
+                              x={
+                                targetPoint.x -
+                                axisFont.getTextWidth(goalDateStr) / 2
+                              }
+                              y={chartBounds.top + 8}
+                              text={goalDateStr}
+                              font={axisFont}
+                              color={isDark ? "#e2e8f0" : "#334155"}
+                            />
+                          ) : null}
+                        </React.Fragment>
                       );
                     })()}
                   </>
@@ -570,7 +625,14 @@ export function PlanVsActualChart({
               <View key={`${series}-legend`} className="flex-row items-center">
                 <View
                   className="w-3.5 h-0.5 mr-1"
-                  style={{ backgroundColor: SERIES_META[series].color }}
+                  style={{
+                    backgroundColor:
+                      series === "actual"
+                        ? isDark
+                          ? "#f8fafc"
+                          : "#0f172a"
+                        : SERIES_META[series].color,
+                  }}
                 />
                 <Text className="text-[10px] text-muted-foreground">
                   {SERIES_META[series].hint}

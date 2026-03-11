@@ -73,9 +73,14 @@ export function useTrainingPlanSnapshot(
     const fallbackEndDate = new Date(today);
     fallbackEndDate.setDate(today.getDate() + 365);
 
-    const endDate = latestGoalTargetDate
-      ? new Date(`${latestGoalTargetDate}T12:00:00.000Z`)
-      : fallbackEndDate;
+    let endDate = fallbackEndDate;
+    if (latestGoalTargetDate) {
+      const goalDate = new Date(`${latestGoalTargetDate}T12:00:00.000Z`);
+      if (!Number.isNaN(goalDate.getTime())) {
+        endDate = goalDate;
+        endDate.setDate(endDate.getDate() + 30);
+      }
+    }
 
     const normalizedEndDate =
       Number.isNaN(endDate.getTime()) || endDate < startDate
@@ -170,7 +175,17 @@ export function useTrainingPlanSnapshot(
     }
 
     const endDate = new Date(today);
-    endDate.setDate(today.getDate() + 14);
+    if (latestGoalTargetDate) {
+      const goalDate = new Date(`${latestGoalTargetDate}T12:00:00.000Z`);
+      if (!Number.isNaN(goalDate.getTime())) {
+        endDate.setTime(goalDate.getTime());
+        endDate.setDate(endDate.getDate() + 30);
+      } else {
+        endDate.setDate(today.getDate() + 30);
+      }
+    } else {
+      endDate.setDate(today.getDate() + 30);
+    }
 
     return {
       start_date: actualCurveRange.start_date,
