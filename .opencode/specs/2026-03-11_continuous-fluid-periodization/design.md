@@ -34,6 +34,22 @@ The heuristic engine must be capable of generating an "Ideal Recommended Load" c
 - **Pure Mathematical Projection:** It outputs a continuous array of smoothed daily TSS and target CTL values based solely on the user's goals, current fitness, and physiological constraints.
 - **UI Integration:** This decoupled baseline curve can be plotted on the UI (e.g., the projection chart on the plan tab) to provide a visual "target tracking" experience. It allows the user to see how their actual/planned schedule weaves around the mathematically ideal trajectory, similar to a financial burndown/burnup chart.
 
+### 4. Infeasibility Detection & The "Best Effort" Curve
+
+When a user sets a goal that is physiologically unreachable within the timeframe (e.g., a beginner wanting to run a marathon in 2 weeks), the engine must detect this and adapt:
+
+- **Detection:** The algorithm calculates the required ramp rate ($Ramp_{req} = (CTL_{target} - CTL_{current}) / Weeks$). If $Ramp_{req}$ exceeds the user's maximum safe ramp rate, the goal is flagged as infeasible.
+- **State Shift:** The engine shifts from _Target-Seeking Mode_ (reverse-engineering from the goal) to _Capacity-Bounded Mode_ (forward-simulating at maximum safe capacity).
+- **The "Best Effort" Curve:** The engine draws a curve that safely gets the user as close to the goal as possible without violating safety constraints, and calculates a "Readiness Gap" ($CTL_{target} - CTL_{achievable}$) to communicate the reality to the user.
+
+### 5. Adjustable Risk Thresholds
+
+User risk tolerance directly maps to the constraint variables in the optimization model. By exposing a "Risk Profile" setting (e.g., Conservative, Moderate, Aggressive), the bounding box of the heuristic engine is mathematically altered:
+
+- **Conservative:** Max Ramp Rate +3 CTL/wk, Max ACWR 1.2, TSB Floor -15.
+- **Aggressive:** Max Ramp Rate +7 CTL/wk, Max ACWR 1.5, TSB Floor -35.
+  Changing this preference triggers a recalculation, potentially turning a "Feasible" goal into an "Infeasible" one if the algorithm is no longer allowed to ramp CTL aggressively.
+
 ## Handling Multi-Goal Scenarios
 
 The Heuristic Layer views the entire season holistically.

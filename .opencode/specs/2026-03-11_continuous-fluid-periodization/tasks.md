@@ -6,7 +6,10 @@
 - [ ] Implement dynamic taper duration logic (7-28 days) based on event demand.
 - [ ] Create `generateReferenceTrajectory` function that outputs an array of daily target CTL values.
 - [ ] Architect the `generateReferenceTrajectory` to be completely independent of planned/completed calendar events, outputting a smoothed daily baseline.
-- [ ] Implement reverse curve generation logic (tracing backward from goal date using max safe ramp rate).
+- [ ] Implement `ConstraintResolver` to map user Risk Profile (Conservative, Moderate, Aggressive) to Max Ramp, Max ACWR, and Min TSB.
+- [ ] Implement `FeasibilityEngine` to detect if required ramp rate exceeds the user's Max Ramp limit.
+- [ ] Implement _Target-Seeking Mode_ (reverse curve generation tracing backward from goal date) for feasible goals.
+- [ ] Implement _Capacity-Bounded Mode_ (forward simulation "Best Effort" curve) for infeasible goals, calculating the "Readiness Gap".
 
 ## Phase 2: Multi-Goal Trajectory Merging
 
