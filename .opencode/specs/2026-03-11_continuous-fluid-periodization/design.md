@@ -42,13 +42,17 @@ When a user sets a goal that is physiologically unreachable within the timeframe
 - **State Shift:** The engine shifts from _Target-Seeking Mode_ (reverse-engineering from the goal) to _Capacity-Bounded Mode_ (forward-simulating at maximum safe capacity).
 - **The "Best Effort" Curve:** The engine draws a curve that safely gets the user as close to the goal as possible without violating safety constraints, and calculates a "Readiness Gap" ($CTL_{target} - CTL_{achievable}$) to communicate the reality to the user.
 
-### 5. Adjustable Risk Thresholds
+### 5. Adjustable Risk Thresholds (UI to Math Mapping)
 
-User risk tolerance directly maps to the constraint variables in the optimization model. By exposing a "Risk Profile" setting (e.g., Conservative, Moderate, Aggressive), the bounding box of the heuristic engine is mathematically altered:
+User risk tolerance directly maps to the constraint variables in the optimization model. By exposing a "Risk Profile" setting in the UI (e.g., a slider from Conservative to Aggressive), the bounding box of the heuristic engine is mathematically altered.
 
-- **Conservative:** Max Ramp Rate +3 CTL/wk, Max ACWR 1.2, TSB Floor -15.
-- **Aggressive:** Max Ramp Rate +7 CTL/wk, Max ACWR 1.5, TSB Floor -35.
-  Changing this preference triggers a recalculation, potentially turning a "Feasible" goal into an "Infeasible" one if the algorithm is no longer allowed to ramp CTL aggressively.
+These UI inputs map to continuous values ($0.0 - 1.0$) in the `AthletePreferenceProfile` schema, which are then interpolated into rigid constraints:
+
+- **Max CTL Ramp Rate:** $Ramp_{max} = 2 + (x \times 4)$ (Yields 2 to 6 CTL/wk)
+- **Max ACWR:** $ACWR_{max} = 1.1 + (x \times 0.4)$ (Yields 1.1 to 1.5)
+- **TSB Floor:** $TSB_{floor} = -10 - (x \times 20)$ (Yields -10 to -30)
+
+**Dynamic Recalculation:** If a user changes their preference mid-season (e.g., from Aggressive to Conservative), the engine instantly recalculates. A goal that was previously "Feasible" might become "Infeasible" because the algorithm is no longer allowed to ramp CTL aggressively. The UI will then display the new "Best Effort" curve and the resulting "Readiness Gap" alert.
 
 ## Handling Multi-Goal Scenarios
 
