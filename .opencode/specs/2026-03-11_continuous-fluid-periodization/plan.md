@@ -36,7 +36,16 @@
   - Implement a `SplitDecisionMaker` to handle multiple activities per day (two-a-days) based on TSS ceilings and time constraints.
   - Build a Forward-Simulating State Machine to generate the "perfect execution" calendar from start to finish.
 
-## Phase 5: Validation & Testing
+## Phase 5: Sport-Aware Load Modeling
+
+- **Objective:** Ensure the engine correctly models the different physiological tolls of running, cycling, swimming, and strength training.
+- **Strategy:**
+  - Implement sport-specific ATL decay constants ($\tau_{ATL}$) to account for mechanical vs. metabolic recovery times.
+  - Implement sport-specific Max ACWR ceilings (e.g., lower for running to prevent impact injuries).
+  - Build a Dual-Tracking system for multisport athletes: track Global Systemic Load (central fatigue) alongside Local Peripheral Load (sport-specific tissue fatigue).
+  - Implement a `Mechanical Fatigue Score (MFS)` system for strength training to prevent it from falsely inflating cardiovascular CTL.
+
+## Phase 6: Validation & Testing
 
 - **Objective:** Ensure the Heuristic + MPC architecture generates safe, fluid, and mathematically sound training plans.
 - **Strategy:**

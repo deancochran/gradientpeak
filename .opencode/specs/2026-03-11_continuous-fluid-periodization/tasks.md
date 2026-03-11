@@ -33,9 +33,17 @@
 - [ ] Build Forward-Simulating State Machine to generate the full "perfect execution" calendar.
 - [ ] Enforce 80/20 Polarized Training constraints across the generated micro-cycles.
 
-## Phase 5: Validation & Testing
+## Phase 5: Sport-Aware Load Modeling
+
+- [ ] Define `SportProfile` configurations (decay constants, ACWR ceilings, impact factors) for Run, Bike, Swim, Strength.
+- [ ] Update EWMA state tracking to maintain both Global Systemic Load and Local Peripheral Load arrays.
+- [ ] Implement `Mechanical Fatigue Score (MFS)` generation and decay logic for strength workouts.
+- [ ] Add multisport scheduling constraints (e.g., prohibit high-impact runs when MFS is high; prevent back-to-back high-impact days).
+
+## Phase 6: Validation & Testing
 
 - [ ] Write unit tests for dynamic taper scaling based on distance/duration.
 - [ ] Write unit tests for multi-goal reference curve generation (e.g., A-race 4 weeks after a B-race).
 - [ ] Write integration tests for the MPC trajectory tracker (normal state vs. high fatigue state).
+- [ ] Write unit tests verifying sport-specific ATL decay rates (e.g., running ATL decays slower than cycling ATL).
 - [ ] Benchmark MPC execution time to ensure it remains under 50ms per projection.
