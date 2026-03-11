@@ -25,9 +25,12 @@
 - [ ] Tune objective weights: balance trajectory tracking vs. safety/fatigue penalties.
 - [ ] Verify the MPC receding horizon correctly anticipates upcoming tapers on the reference curve.
 
-## Phase 4: Micro-cycle Instantiation (DUP)
+## Phase 4: Workout Instantiation (The Allocation Engine)
 
-- [ ] Implement Daily Undulating Periodization (DUP) workout selection logic based on daily TSS targets.
+- [ ] Implement Top-Down Hierarchical Allocator to distribute weekly TSS into daily targets based on user availability templates.
+- [ ] Build Multi-Pass Constraint Solver to query, filter, and score workouts from the database against daily targets.
+- [ ] Implement `SplitDecisionMaker` logic to handle two-a-days (TSS ceilings, duration overflow, multisport synergy).
+- [ ] Build Forward-Simulating State Machine to generate the full "perfect execution" calendar.
 - [ ] Enforce 80/20 Polarized Training constraints across the generated micro-cycles.
 
 ## Phase 5: Validation & Testing

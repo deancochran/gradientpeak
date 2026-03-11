@@ -54,7 +54,15 @@ These UI inputs map to continuous values ($0.0 - 1.0$) in the `AthletePreference
 
 **Dynamic Recalculation:** If a user changes their preference mid-season (e.g., from Aggressive to Conservative), the engine instantly recalculates. A goal that was previously "Feasible" might become "Infeasible" because the algorithm is no longer allowed to ramp CTL aggressively. The UI will then display the new "Best Effort" curve and the resulting "Readiness Gap" alert.
 
-## Handling Multi-Goal Scenarios
+### 6. Workout Instantiation (The Allocation Engine)
+
+To translate the continuous ideal load curve into a concrete, scheduled training plan, the engine uses a **Top-Down Hierarchical Allocator** combined with a **Multi-Pass Constraint Solver**:
+
+- **Macro/Meso-Cycle:** The engine breaks the target CTL into weekly TSS budgets, applying standard periodization patterns (e.g., 3 weeks building, 1 week recovery).
+- **Micro-Cycle (Week):** The weekly TSS is distributed into daily targets based on a template matrix (e.g., Tuesday Intervals 15%, Saturday Long 30%) and the user's availability profile.
+- **Workout Selection:** For a given daily target (e.g., 95 TSS, VO2 Max, 60 mins), the engine queries the workout database. It filters out impossibilities (hard constraints like duration) and scores the remaining workouts based on how closely they match the target TSS and energy system (soft constraints).
+- **Handling Multiple Activities:** If a daily target exceeds a single session threshold (e.g., >150 TSS) or the user's available time block, the engine splits the load into multiple activities (e.g., AM/PM sessions) using a Biomechanics Conflict Matrix to ensure safe pairings.
+- **Perfect Execution Assumption:** The engine forward-simulates the entire plan from start to finish, assuming perfect compliance, to generate the ultimate "perfect" calendar. If the user misses a workout in reality, the engine simply recalculates the EWMA state for today and regenerates the blueprint forward.
 
 The Heuristic Layer views the entire season holistically.
 
