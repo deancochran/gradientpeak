@@ -7,8 +7,11 @@ import {
   buildGoalUpdatePayload,
   buildMilestoneEventCreateInput,
   buildMilestoneEventUpdatePatch,
+  createEmptyGoalDraft,
   formatGoalTypeLabel,
+  getGoalDistanceBadge,
   getGoalMetricSummary,
+  getGoalObjectiveSummary,
   type GoalEditorDraft,
 } from "@/lib/goals/goalDraft";
 import { trpc } from "@/lib/trpc";
@@ -78,17 +81,16 @@ export default function GoalDetailScreen() {
   const targetDate = milestoneEventQuery.data?.starts_at?.slice(0, 10) ?? null;
   const initialDraft = useMemo(() => {
     if (!goalRecord) {
-      return {
-        title: "",
-        targetDate: "",
-        importance: 5,
-        goalType: "general",
-      } satisfies GoalEditorDraft;
+      return createEmptyGoalDraft() satisfies GoalEditorDraft;
     }
 
     return buildGoalDraftFromGoal({ goal: goalRecord, targetDate });
   }, [goalRecord, targetDate]);
   const metricSummary = goalRecord ? getGoalMetricSummary(goalRecord) : null;
+  const distanceBadge = goalRecord ? getGoalDistanceBadge(goalRecord) : null;
+  const objectiveSummary = goalRecord
+    ? getGoalObjectiveSummary(goalRecord)
+    : null;
 
   const handleDeleteGoal = () => {
     if (!goalRecord) {
@@ -188,6 +190,11 @@ export default function GoalDetailScreen() {
                 {formatGoalTypeLabel(goalRecord)} goal
                 {targetDate ? ` · target ${targetDate}` : ""}
               </Text>
+              {objectiveSummary ? (
+                <Text className="text-sm text-foreground">
+                  {objectiveSummary}
+                </Text>
+              ) : null}
             </View>
 
             <View className="flex-row flex-wrap gap-2">
@@ -201,13 +208,10 @@ export default function GoalDetailScreen() {
                   {goalRecord.activity_category}
                 </Text>
               </View>
-              {goalRecord.objective.type === "event_performance" &&
-              typeof goalRecord.objective.distance_m === "number" ? (
+              {distanceBadge ? (
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                   <Text className="text-xs font-medium text-foreground">
-                    {Math.round((goalRecord.objective.distance_m / 1000) * 10) /
-                      10}{" "}
-                    km
+                    {distanceBadge}
                   </Text>
                 </View>
               ) : null}

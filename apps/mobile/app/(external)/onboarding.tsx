@@ -1,15 +1,3 @@
-/**
- * Comprehensive Onboarding Flow
- *
- * Multi-step wizard for collecting user profile information and performance metrics.
- *
- * Steps:
- * 1. Basic Profile (Required): DOB, weight, gender, primary sport
- * 2. Heart Rate Metrics (Optional): Max HR, Resting HR, LTHR
- * 3. Sport-Specific Metrics (Optional): FTP/Threshold Pace/VO2max
- * 4. Activity & Equipment (Optional): Training frequency, equipment, goals
- */
-
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,36 +7,23 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PaceSecondsField } from "@/components/profile/PaceSecondsField";
+import { WeightInputField } from "@/components/profile/WeightInputField";
+import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
+import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { Text } from "@/components/ui/text";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  estimateFtpFromWeight,
+  estimateMaxHrFromDob,
+} from "@/lib/profile/metricUnits";
 import { trpc } from "@/lib/trpc";
 import { router } from "expo-router";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import {
-  ArrowLeft,
-  ArrowRight,
-  Calendar,
-  Check,
-  Heart,
-  Zap,
-} from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react-native";
 import { useState } from "react";
-import { Alert, Platform, ScrollView, View } from "react-native";
-
-// ================================
-// Types
-// ================================
+import { Alert, ScrollView, View } from "react-native";
 
 interface OnboardingData {
-  // Step 1: Basic Profile (Required)
   dob: string | null;
   weight_kg: number | null;
   weight_unit: "kg" | "lbs";
@@ -60,21 +35,15 @@ interface OnboardingData {
     | "triathlon"
     | "other"
     | null;
-
-  // Step 2: Heart Rate Metrics (Optional)
   max_hr: number | null;
   resting_hr: number | null;
   lthr: number | null;
-
-  // Step 3: Sport-Specific Metrics (Optional)
-  ftp: number | null; // watts (cycling)
-  threshold_pace: number | null; // seconds per km (running)
-  vo2max: number | null; // ml/kg/min
-
-  // Step 4: Activity & Equipment (Optional)
+  ftp: number | null;
+  threshold_pace: number | null;
+  vo2max: number | null;
   training_frequency: "1-2" | "3-4" | "5-6" | "7+" | null;
-  equipment: string[]; // multi-select
-  goals: string[]; // multi-select
+  equipment: string[];
+  goals: string[];
 }
 
 const INITIAL_DATA: OnboardingData = {
@@ -94,105 +63,62 @@ const INITIAL_DATA: OnboardingData = {
   goals: [],
 };
 
-// ================================
-// Main Component
-// ================================
-
 export default function OnboardingScreen() {
   const [currentStep, setCurrentStep] = useState(1);
   const [data, setData] = useState<OnboardingData>(INITIAL_DATA);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Fetch user profile to get ID
   const { data: profile } = trpc.profiles.get.useQuery();
+  const createProfileMetricsMutation = trpc.profileMetrics.create.useMutation();
+  const updateProfileMutation = trpc.profiles.update.useMutation();
 
   const totalSteps = 4;
 
-  // Update data helper
   const updateData = (updates: Partial<OnboardingData>) => {
     setData((prev) => ({ ...prev, ...updates }));
-    // Clear errors for updated fields
     Object.keys(updates).forEach((key) => {
       if (errors[key]) {
         setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors[key];
-          return newErrors;
+          const nextErrors = { ...prev };
+          delete nextErrors[key];
+          return nextErrors;
         });
       }
     });
   };
 
-  // Navigation handlers
-  const goNext = () => {
-    if (validate()) {
-      if (currentStep < totalSteps) {
-        setCurrentStep((prev) => prev + 1);
-      } else {
-        handleComplete();
-      }
-    }
-  };
-
-  const goBack = () => {
-    if (currentStep > 1) {
-      setCurrentStep((prev) => prev - 1);
-    }
-  };
-
-  const skip = () => {
-    if (currentStep < totalSteps) {
-      setCurrentStep((prev) => prev + 1);
-    } else {
-      handleComplete();
-    }
-  };
-
-  // Validation
   const validate = (): boolean => {
-    const newErrors: Record<string, string> = {};
+    const nextErrors: Record<string, string> = {};
 
     if (currentStep === 1) {
-      // Step 1 is required
-      if (!data.dob) newErrors.dob = "Date of birth is required";
+      if (!data.dob) nextErrors.dob = "Date of birth is required";
       if (!data.weight_kg || data.weight_kg <= 0) {
-        newErrors.weight_kg = "Weight must be greater than 0";
+        nextErrors.weight_kg = "Weight must be greater than 0";
       }
-      if (!data.gender) newErrors.gender = "Gender is required";
-      if (!data.primary_sport)
-        newErrors.primary_sport = "Primary sport is required";
+      if (!data.gender) nextErrors.gender = "Gender is required";
+      if (!data.primary_sport) {
+        nextErrors.primary_sport = "Primary sport is required";
+      }
     }
 
-    // Steps 2-4 are optional, no validation needed
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
-
-  // Completion handler
-  const createProfileMetricsMutation = trpc.profileMetrics.create.useMutation();
-
-  const updateProfileMutation = trpc.profiles.update.useMutation();
 
   const handleComplete = async () => {
     try {
-      console.log("[Onboarding] Submitting profile data:", data);
-
       if (!profile?.id) {
         Alert.alert("Error", "User profile not found. Please try again.");
         return;
       }
-      const profileId = profile.id;
 
-      // 1. Update profile with basic info
       await updateProfileMutation.mutateAsync({
         dob: data.dob || undefined,
       });
 
-      // 2. Create profile metrics (weight)
       if (data.weight_kg) {
         await createProfileMetricsMutation.mutateAsync({
-          profile_id: profileId,
+          profile_id: profile.id,
           metric_type: "weight_kg",
           value: data.weight_kg,
           unit: "kg",
@@ -200,8 +126,6 @@ export default function OnboardingScreen() {
         });
       }
 
-      // Navigate to main app
-      console.log("[Onboarding] Profile setup complete");
       Alert.alert(
         "Welcome to GradientPeak!",
         "Your profile has been set up successfully.",
@@ -220,44 +144,32 @@ export default function OnboardingScreen() {
     }
   };
 
-  // Render current step
-  const renderStep = () => {
-    switch (currentStep) {
-      case 1:
-        return (
-          <Step1BasicProfile
-            data={data}
-            updateData={updateData}
-            errors={errors}
-          />
-        );
-      case 2:
-        return (
-          <Step2HeartRateMetrics
-            data={data}
-            updateData={updateData}
-            errors={errors}
-          />
-        );
-      case 3:
-        return (
-          <Step3SportSpecificMetrics
-            data={data}
-            updateData={updateData}
-            errors={errors}
-          />
-        );
-      case 4:
-        return (
-          <Step4ActivityEquipment
-            data={data}
-            updateData={updateData}
-            errors={errors}
-          />
-        );
-      default:
-        return null;
+  const goNext = () => {
+    if (!validate()) {
+      return;
     }
+
+    if (currentStep < totalSteps) {
+      setCurrentStep((prev) => prev + 1);
+      return;
+    }
+
+    void handleComplete();
+  };
+
+  const goBack = () => {
+    if (currentStep > 1) {
+      setCurrentStep((prev) => prev - 1);
+    }
+  };
+
+  const skip = () => {
+    if (currentStep < totalSteps) {
+      setCurrentStep((prev) => prev + 1);
+      return;
+    }
+
+    void handleComplete();
   };
 
   const isLastStep = currentStep === totalSteps;
@@ -267,154 +179,81 @@ export default function OnboardingScreen() {
   return (
     <ScrollView className="flex-1 bg-background">
       <View className="p-4 pb-8">
-        {/* Progress Indicator */}
         <View className="mb-6">
           <Text className="text-sm text-muted-foreground mb-2">
             Step {currentStep} of {totalSteps}
           </Text>
           <View className="flex-row gap-2">
-            {Array.from({ length: totalSteps }).map((_, i) => (
+            {Array.from({ length: totalSteps }).map((_, index) => (
               <View
-                key={i}
+                key={index}
                 className={`flex-1 h-2 rounded-full ${
-                  i < currentStep ? "bg-primary" : "bg-muted"
+                  index < currentStep ? "bg-primary" : "bg-muted"
                 }`}
               />
             ))}
           </View>
         </View>
 
-        {/* Step Content */}
-        {renderStep()}
+        {currentStep === 1 ? (
+          <Step1BasicProfile
+            data={data}
+            updateData={updateData}
+            errors={errors}
+          />
+        ) : null}
+        {currentStep === 2 ? (
+          <Step2HeartRateMetrics data={data} updateData={updateData} />
+        ) : null}
+        {currentStep === 3 ? (
+          <Step3SportSpecificMetrics data={data} updateData={updateData} />
+        ) : null}
+        {currentStep === 4 ? (
+          <Step4ActivityEquipment data={data} updateData={updateData} />
+        ) : null}
 
-        {/* Navigation Buttons */}
         <View className="mt-6 gap-3">
-          {/* Next/Complete Button */}
           <Button onPress={goNext} size="lg">
             <Text className="text-primary-foreground font-semibold">
               {isLastStep ? "Complete Setup" : "Next"}
             </Text>
-            {!isLastStep && (
-              <Icon as={ArrowRight} className="text-primary-foreground ml-2" />
-            )}
-            {isLastStep && (
+            {isLastStep ? (
               <Icon as={Check} className="text-primary-foreground ml-2" />
+            ) : (
+              <Icon as={ArrowRight} className="text-primary-foreground ml-2" />
             )}
           </Button>
 
-          {/* Skip Button (optional steps only) */}
-          {isOptionalStep && (
+          {isOptionalStep ? (
             <Button variant="ghost" onPress={skip}>
               <Text className="text-muted-foreground">
                 {isLastStep ? "Skip & Finish" : "Skip for Now"}
               </Text>
             </Button>
-          )}
+          ) : null}
 
-          {/* Back Button */}
-          {!isFirstStep && (
+          {!isFirstStep ? (
             <Button variant="outline" onPress={goBack}>
               <Icon as={ArrowLeft} className="text-foreground mr-2" />
               <Text className="text-foreground">Back</Text>
             </Button>
-          )}
+          ) : null}
         </View>
       </View>
     </ScrollView>
   );
 }
 
-// ================================
-// Step Components
-// ================================
-
 interface StepProps {
   data: OnboardingData;
   updateData: (updates: Partial<OnboardingData>) => void;
+}
+
+interface RequiredStepProps extends StepProps {
   errors: Record<string, string>;
 }
 
-function PaceInput({
-  seconds,
-  onChange,
-}: {
-  seconds: number | null;
-  onChange: (value: number | null) => void;
-}) {
-  const minuteValue = seconds === null ? "" : String(Math.floor(seconds / 60));
-  const secondValue =
-    seconds === null ? "00" : String(seconds % 60).padStart(2, "0");
-
-  return (
-    <View className="flex-row items-end gap-2">
-      <View className="flex-1">
-        <Label>Minutes</Label>
-        <Input
-          placeholder="5"
-          keyboardType="number-pad"
-          value={minuteValue}
-          onChangeText={(text) => {
-            if (!text.trim()) {
-              onChange(null);
-              return;
-            }
-
-            const nextMinutes = parseInt(text, 10);
-            if (Number.isNaN(nextMinutes) || nextMinutes < 0) {
-              return;
-            }
-
-            onChange(nextMinutes * 60 + ((seconds ?? 0) % 60));
-          }}
-        />
-      </View>
-      <View className="flex-1">
-        <Label>Seconds</Label>
-        <Select
-          value={{ value: secondValue, label: `${secondValue} sec` }}
-          onValueChange={(option) => {
-            if (!option?.value) {
-              return;
-            }
-
-            const nextSeconds = parseInt(option.value, 10);
-            if (Number.isNaN(nextSeconds)) {
-              return;
-            }
-
-            const minutes = seconds === null ? 0 : Math.floor(seconds / 60);
-            onChange(minutes * 60 + nextSeconds);
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Seconds" />
-          </SelectTrigger>
-          <SelectContent>
-            {Array.from({ length: 60 }, (_, index) => {
-              const optionValue = String(index).padStart(2, "0");
-              return (
-                <SelectItem
-                  key={`pace-second-${optionValue}`}
-                  label={`${optionValue} sec`}
-                  value={optionValue}
-                >
-                  {optionValue} sec
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </View>
-    </View>
-  );
-}
-
-function Step1BasicProfile({ data, updateData, errors }: StepProps) {
-  const [showDobPicker, setShowDobPicker] = useState(false);
-  const parsedDob = data.dob
-    ? new Date(`${data.dob}T12:00:00.000Z`)
-    : new Date("2000-01-01T12:00:00.000Z");
-
+function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
   return (
     <Card>
       <CardHeader>
@@ -422,79 +261,40 @@ function Step1BasicProfile({ data, updateData, errors }: StepProps) {
         <CardDescription>Let&apos;s start with the essentials</CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
-        {/* Date of Birth */}
         <View>
-          <Label>Date of Birth *</Label>
-          <Button
-            variant="outline"
-            onPress={() => setShowDobPicker(true)}
-            className="justify-start"
-          >
-            <Text>{data.dob || "Select date of birth"}</Text>
-          </Button>
-          {showDobPicker ? (
-            <DateTimePicker
-              value={Number.isNaN(parsedDob.getTime()) ? new Date() : parsedDob}
-              mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              maximumDate={new Date()}
-              onChange={(_, selectedDate) => {
-                if (Platform.OS === "android") {
-                  setShowDobPicker(false);
-                }
-
-                if (!selectedDate) {
-                  return;
-                }
-
-                updateData({
-                  dob: selectedDate.toISOString().split("T")[0] ?? null,
-                });
-                if (Platform.OS === "ios") {
-                  setShowDobPicker(false);
-                }
-              }}
-            />
-          ) : null}
-          {errors.dob && (
+          <DateField
+            id="external-onboarding-dob"
+            label="Date of Birth"
+            value={data.dob ?? undefined}
+            onChange={(nextDate) => updateData({ dob: nextDate ?? null })}
+            helperText="Used for age-based estimates and training zones."
+            placeholder="Select date of birth"
+            maximumDate={new Date()}
+          />
+          {errors.dob ? (
             <Text className="text-destructive text-sm mt-1">{errors.dob}</Text>
-          )}
+          ) : null}
         </View>
 
-        {/* Weight */}
         <View>
-          <Label>Weight *</Label>
-          <View className="flex-row gap-2">
-            <Input
-              placeholder="70"
-              keyboardType="numeric"
-              value={data.weight_kg?.toString() || ""}
-              onChangeText={(text) => {
-                const value = parseFloat(text);
-                updateData({ weight_kg: isNaN(value) ? null : value });
-              }}
-              className="flex-1"
-            />
-            <Button
-              variant="outline"
-              onPress={() =>
-                updateData({
-                  weight_unit: data.weight_unit === "kg" ? "lbs" : "kg",
-                })
-              }
-              className="px-4"
-            >
-              <Text>{data.weight_unit}</Text>
-            </Button>
-          </View>
-          {errors.weight_kg && (
+          <WeightInputField
+            id="external-onboarding-weight"
+            label="Weight"
+            valueKg={data.weight_kg}
+            onChangeKg={(weight_kg) => updateData({ weight_kg })}
+            unit={data.weight_unit}
+            onUnitChange={(weight_unit) => updateData({ weight_unit })}
+            helperText="Use kg or lbs. We keep the saved metric aligned either way."
+            placeholder={data.weight_unit === "kg" ? "70.0" : "154.3"}
+            required
+          />
+          {errors.weight_kg ? (
             <Text className="text-destructive text-sm mt-1">
               {errors.weight_kg}
             </Text>
-          )}
+          ) : null}
         </View>
 
-        {/* Gender */}
         <View>
           <Label>Gender *</Label>
           <View className="flex-row gap-2">
@@ -517,14 +317,13 @@ function Step1BasicProfile({ data, updateData, errors }: StepProps) {
               </Button>
             ))}
           </View>
-          {errors.gender && (
+          {errors.gender ? (
             <Text className="text-destructive text-sm mt-1">
               {errors.gender}
             </Text>
-          )}
+          ) : null}
         </View>
 
-        {/* Primary Sport */}
         <View>
           <Label>Primary Sport *</Label>
           <View className="flex-row flex-wrap gap-2">
@@ -549,47 +348,39 @@ function Step1BasicProfile({ data, updateData, errors }: StepProps) {
               </Button>
             ))}
           </View>
-          {errors.primary_sport && (
+          {errors.primary_sport ? (
             <Text className="text-destructive text-sm mt-1">
               {errors.primary_sport}
             </Text>
-          )}
+          ) : null}
         </View>
       </CardContent>
     </Card>
   );
 }
 
-function Step2HeartRateMetrics({ data, updateData, errors }: StepProps) {
-  // Calculate age from DOB for estimation
-  const calculateAge = (): number => {
-    if (!data.dob) return 30; // Default
-    const birthDate = new Date(data.dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (
-      monthDiff < 0 ||
-      (monthDiff === 0 && today.getDate() < birthDate.getDate())
-    ) {
-      age--;
-    }
-    return age;
-  };
+function Step2HeartRateMetrics({ data, updateData }: StepProps) {
+  const estimatedMaxHr = estimateMaxHrFromDob(data.dob);
 
   const estimateMaxHR = () => {
-    const age = calculateAge();
-    const estimated = 220 - age;
-    updateData({ max_hr: estimated });
+    if (!estimatedMaxHr) {
+      Alert.alert(
+        "Date of Birth Required",
+        "Add your date of birth in Step 1 to estimate max heart rate.",
+      );
+      return;
+    }
+
+    updateData({ max_hr: estimatedMaxHr });
   };
 
   const estimateLTHR = () => {
-    if (data.max_hr) {
-      const estimated = Math.round(data.max_hr * 0.85);
-      updateData({ lthr: estimated });
-    } else {
+    if (!data.max_hr) {
       Alert.alert("Max HR Required", "Please enter your max heart rate first.");
+      return;
     }
+
+    updateData({ lthr: Math.round(data.max_hr * 0.85) });
   };
 
   return (
@@ -597,102 +388,136 @@ function Step2HeartRateMetrics({ data, updateData, errors }: StepProps) {
       <CardHeader>
         <CardTitle>Heart Rate Metrics</CardTitle>
         <CardDescription>
-          Optional - We can estimate these for you
+          Optional - Add tested values now or estimate later
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
-        {/* Max Heart Rate */}
         <View>
           <Label>Max Heart Rate (bpm)</Label>
           <Text className="text-xs text-muted-foreground mb-2">
-            Your max HR during hardest effort
+            Your highest heart rate during an all-out effort.
           </Text>
           <View className="flex-row gap-2">
-            <Input
-              placeholder="190"
-              keyboardType="numeric"
-              value={data.max_hr?.toString() || ""}
-              onChangeText={(text) => {
-                const value = parseInt(text);
-                updateData({ max_hr: isNaN(value) ? null : value });
-              }}
-              className="flex-1"
-            />
+            <View className="flex-1">
+              <BoundedNumberInput
+                id="external-onboarding-max-hr"
+                label=""
+                value={data.max_hr?.toString() ?? ""}
+                onChange={(value) => {
+                  if (!value.trim()) {
+                    updateData({ max_hr: null });
+                  }
+                }}
+                onNumberChange={(value) =>
+                  updateData({ max_hr: value ? Math.round(value) : null })
+                }
+                min={100}
+                max={220}
+                decimals={0}
+                unitLabel="bpm"
+                placeholder="190"
+                helperText=""
+              />
+            </View>
             <Button variant="outline" onPress={estimateMaxHR} className="px-4">
               <Text>Estimate</Text>
             </Button>
           </View>
           <Text className="text-xs text-muted-foreground mt-1">
-            Formula: 220 - age = {220 - calculateAge()} bpm
+            {estimatedMaxHr
+              ? `Age-based estimate: ${estimatedMaxHr} bpm`
+              : "Add date of birth in Step 1 for an age-based estimate."}
           </Text>
         </View>
 
-        {/* Resting Heart Rate */}
         <View>
           <Label>Resting Heart Rate (bpm)</Label>
           <Text className="text-xs text-muted-foreground mb-2">
-            Measure first thing in the morning
+            Best measured first thing in the morning.
           </Text>
-          <Input
-            placeholder="60"
-            keyboardType="numeric"
-            value={data.resting_hr?.toString() || ""}
-            onChangeText={(text) => {
-              const value = parseInt(text);
-              updateData({ resting_hr: isNaN(value) ? null : value });
+          <BoundedNumberInput
+            id="external-onboarding-resting-hr"
+            label=""
+            value={data.resting_hr?.toString() ?? ""}
+            onChange={(value) => {
+              if (!value.trim()) {
+                updateData({ resting_hr: null });
+              }
             }}
+            onNumberChange={(value) =>
+              updateData({ resting_hr: value ? Math.round(value) : null })
+            }
+            min={30}
+            max={100}
+            decimals={0}
+            unitLabel="bpm"
+            placeholder="60"
+            helperText=""
           />
         </View>
 
-        {/* Lactate Threshold HR */}
         <View>
           <Label>Lactate Threshold HR (LTHR)</Label>
           <Text className="text-xs text-muted-foreground mb-2">
-            HR you can sustain for ~1 hour
+            Optional. Usually close to the best heart rate you can hold for
+            about an hour.
           </Text>
           <View className="flex-row gap-2">
-            <Input
-              placeholder="170"
-              keyboardType="numeric"
-              value={data.lthr?.toString() || ""}
-              onChangeText={(text) => {
-                const value = parseInt(text);
-                updateData({ lthr: isNaN(value) ? null : value });
-              }}
-              className="flex-1"
-            />
+            <View className="flex-1">
+              <BoundedNumberInput
+                id="external-onboarding-lthr"
+                label=""
+                value={data.lthr?.toString() ?? ""}
+                onChange={(value) => {
+                  if (!value.trim()) {
+                    updateData({ lthr: null });
+                  }
+                }}
+                onNumberChange={(value) =>
+                  updateData({ lthr: value ? Math.round(value) : null })
+                }
+                min={80}
+                max={210}
+                decimals={0}
+                unitLabel="bpm"
+                placeholder="170"
+                helperText=""
+              />
+            </View>
             <Button variant="outline" onPress={estimateLTHR} className="px-4">
               <Text>Estimate</Text>
             </Button>
           </View>
-          {data.max_hr && (
+          {data.max_hr ? (
             <Text className="text-xs text-muted-foreground mt-1">
-              Formula: 85% of max HR = {Math.round(data.max_hr * 0.85)} bpm
+              Quick estimate: about 85% of max HR ={" "}
+              {Math.round(data.max_hr * 0.85)} bpm
             </Text>
-          )}
+          ) : null}
         </View>
       </CardContent>
     </Card>
   );
 }
 
-function Step3SportSpecificMetrics({ data, updateData, errors }: StepProps) {
-  const estimateFTP = () => {
-    if (data.weight_kg) {
-      const estimated = Math.round(data.weight_kg * 2.5); // 2.5 W/kg for recreational
-      updateData({ ftp: estimated });
-    } else {
-      Alert.alert(
-        "Weight Required",
-        "Please enter your weight in Step 1 first.",
-      );
-    }
-  };
-
+function Step3SportSpecificMetrics({ data, updateData }: StepProps) {
+  const estimatedFtp = estimateFtpFromWeight(data.weight_kg);
   const showCyclingMetrics =
     data.primary_sport === "cycling" || data.primary_sport === "triathlon";
   const showRunningMetrics =
     data.primary_sport === "running" || data.primary_sport === "triathlon";
+
+  const estimateFTP = () => {
+    if (!estimatedFtp) {
+      Alert.alert(
+        "Weight Required",
+        "Please enter your weight in Step 1 first.",
+      );
+      return;
+    }
+
+    updateData({ ftp: estimatedFtp });
+  };
 
   return (
     <Card>
@@ -703,83 +528,97 @@ function Step3SportSpecificMetrics({ data, updateData, errors }: StepProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
-        {/* FTP (Cycling/Triathlon) */}
-        {showCyclingMetrics && (
+        {showCyclingMetrics ? (
           <View>
             <Label>FTP - Functional Threshold Power (watts)</Label>
             <Text className="text-xs text-muted-foreground mb-2">
-              Power you can sustain for ~1 hour
+              Optional. Use a tested value or start with a conservative
+              estimate.
             </Text>
             <View className="flex-row gap-2">
-              <Input
-                placeholder="250"
-                keyboardType="numeric"
-                value={data.ftp?.toString() || ""}
-                onChangeText={(text) => {
-                  const value = parseInt(text);
-                  updateData({ ftp: isNaN(value) ? null : value });
-                }}
-                className="flex-1"
-              />
+              <View className="flex-1">
+                <BoundedNumberInput
+                  id="external-onboarding-ftp"
+                  label=""
+                  value={data.ftp?.toString() ?? ""}
+                  onChange={(value) => {
+                    if (!value.trim()) {
+                      updateData({ ftp: null });
+                    }
+                  }}
+                  onNumberChange={(value) =>
+                    updateData({ ftp: value ? Math.round(value) : null })
+                  }
+                  min={50}
+                  max={500}
+                  decimals={0}
+                  unitLabel="W"
+                  placeholder="250"
+                  helperText=""
+                />
+              </View>
               <Button variant="outline" onPress={estimateFTP} className="px-4">
                 <Text>Estimate</Text>
               </Button>
             </View>
-            {data.weight_kg && (
-              <Text className="text-xs text-muted-foreground mt-1">
-                Formula: 2.5 W/kg × {data.weight_kg} kg ={" "}
-                {Math.round(data.weight_kg * 2.5)} watts
-              </Text>
-            )}
-          </View>
-        )}
-
-        {/* Threshold Pace (Running/Triathlon) */}
-        {showRunningMetrics && (
-          <View>
-            <Label>Threshold Pace (min/km)</Label>
-            <Text className="text-xs text-muted-foreground mb-2">
-              Pace you can sustain for ~1 hour
+            <Text className="text-xs text-muted-foreground mt-1">
+              {estimatedFtp && data.weight_kg
+                ? `Quick estimate: 2.5 W/kg x ${data.weight_kg} kg = ${estimatedFtp} W`
+                : "Add your weight in Step 1 for a quick estimate."}
             </Text>
-            <PaceInput
-              seconds={data.threshold_pace}
-              onChange={(value) => updateData({ threshold_pace: value })}
-            />
           </View>
-        )}
+        ) : null}
 
-        {/* VO2max (Optional for all) */}
+        {showRunningMetrics ? (
+          <PaceSecondsField
+            id="external-onboarding-threshold-pace"
+            label="Threshold Pace"
+            valueSeconds={data.threshold_pace}
+            onChangeSeconds={(threshold_pace) => updateData({ threshold_pace })}
+            helperText="Optional. Enter your hard 20-40 minute pace in mm:ss per kilometer."
+            placeholder="4:30"
+          />
+        ) : null}
+
         <View>
           <Label>VO2max (ml/kg/min)</Label>
           <Text className="text-xs text-muted-foreground mb-2">
-            Optional - Advanced metric
+            Optional if you know it from a recent test or wearable estimate.
           </Text>
-          <Input
-            placeholder="45"
-            keyboardType="numeric"
-            value={data.vo2max?.toString() || ""}
-            onChangeText={(text) => {
-              const value = parseFloat(text);
-              updateData({ vo2max: isNaN(value) ? null : value });
+          <BoundedNumberInput
+            id="external-onboarding-vo2max"
+            label=""
+            value={data.vo2max?.toString() ?? ""}
+            onChange={(value) => {
+              if (!value.trim()) {
+                updateData({ vo2max: null });
+              }
             }}
+            onNumberChange={(value) => updateData({ vo2max: value ?? null })}
+            min={20}
+            max={90}
+            decimals={1}
+            unitLabel="ml/kg/min"
+            placeholder="45"
+            helperText=""
           />
         </View>
 
-        {!showCyclingMetrics && !showRunningMetrics && (
+        {!showCyclingMetrics && !showRunningMetrics ? (
           <View className="p-4 bg-muted rounded-lg">
             <Text className="text-sm text-muted-foreground">
               Sport-specific metrics are available for cycling, running, and
-              triathlon. Select one of these sports in Step 1 to enter
-              performance metrics.
+              triathlon. Select one of those sports in Step 1 to add them now,
+              or skip and update later.
             </Text>
           </View>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
 }
 
-function Step4ActivityEquipment({ data, updateData, errors }: StepProps) {
+function Step4ActivityEquipment({ data, updateData }: StepProps) {
   return (
     <Card>
       <CardHeader>
@@ -789,7 +628,6 @@ function Step4ActivityEquipment({ data, updateData, errors }: StepProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
-        {/* Training Frequency */}
         <View>
           <Label>Training Frequency (days per week)</Label>
           <View className="flex-row flex-wrap gap-2 mt-2">
@@ -816,11 +654,10 @@ function Step4ActivityEquipment({ data, updateData, errors }: StepProps) {
           </View>
         </View>
 
-        {/* Equipment - Coming soon placeholder */}
         <View className="p-4 bg-muted rounded-lg">
           <Text className="text-sm text-muted-foreground">
-            Equipment tracking and goals selection will be available soon. You
-            can update these in settings after onboarding.
+            Equipment tracking and goal selection will be available soon. You
+            can update them later in settings.
           </Text>
         </View>
       </CardContent>

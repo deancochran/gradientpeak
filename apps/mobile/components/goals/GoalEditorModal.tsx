@@ -1,25 +1,25 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Text } from "@/components/ui/text";
+import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
+import { DateField } from "@/components/training-plan/create/inputs/DateField";
+import { DurationInput } from "@/components/training-plan/create/inputs/DurationInput";
 import { IntegerStepper } from "@/components/training-plan/create/inputs/IntegerStepper";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { PaceInput } from "@/components/training-plan/create/inputs/PaceInput";
+import {
+  createEmptyGoalDraft,
+  type GoalEditorDraft,
+  type GoalEditorGoalType,
+  type GoalEditorRaceTargetMode,
+} from "@/lib/goals/goalDraft";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   TouchableOpacity,
   View,
 } from "react-native";
-import type { GoalEditorDraft } from "@/lib/goals/goalDraft";
 
 interface GoalEditorModalProps {
   visible: boolean;
@@ -31,86 +31,203 @@ interface GoalEditorModalProps {
   onSubmit: (value: GoalEditorDraft) => void;
 }
 
-const COMMON_GOALS = [
-  "Marathon",
-  "Half Marathon",
-  "10K",
-  "5K",
-  "Sprint Triathlon",
-  "Olympic Triathlon",
-  "Century Ride",
-];
-
-const GOAL_TYPE_OPTIONS = [
-  { value: "race_performance", label: "Race" },
-  { value: "pace_threshold", label: "Pace" },
-  { value: "power_threshold", label: "Power" },
-  { value: "hr_threshold", label: "Heart Rate" },
-  { value: "general", label: "General" },
-];
-
-type TargetMetricOption = {
-  value: string | null;
+type GoalPreset = {
   label: string;
+  title: string;
+  goalType: GoalEditorGoalType;
+  activityCategory: GoalEditorDraft["activityCategory"];
+  raceDistanceKm?: number;
+  raceTargetMode?: GoalEditorRaceTargetMode;
 };
 
-const TARGET_METRIC_OPTIONS_BY_GOAL_TYPE: Record<string, TargetMetricOption[]> =
+type GoalTypeOption = {
+  value: GoalEditorGoalType;
+  label: string;
+  description: string;
+};
+
+const GOAL_TYPE_OPTIONS: GoalTypeOption[] = [
   {
-    race_performance: [
-      { value: "target_time_s", label: "Target time (seconds)" },
-      { value: "target_speed_mps", label: "Target speed (m/s)" },
-    ],
-    pace_threshold: [
-      { value: "target_speed_mps", label: "Target speed (m/s)" },
-    ],
-    power_threshold: [{ value: "target_watts", label: "Target watts" }],
-    hr_threshold: [
-      { value: "target_lthr_bpm", label: "Target threshold HR (bpm)" },
-    ],
-    general: [],
-  };
+    value: "race_performance",
+    label: "Race Day",
+    description: "Pick a distance and chase a finish time or pace.",
+  },
+  {
+    value: "completion",
+    label: "Complete It",
+    description: "Set a finish distance, duration, or both.",
+  },
+  {
+    value: "pace_threshold",
+    label: "Run Pace",
+    description: "Target a threshold pace you want to hold.",
+  },
+  {
+    value: "power_threshold",
+    label: "Bike Power",
+    description: "Target a threshold power in watts.",
+  },
+  {
+    value: "hr_threshold",
+    label: "Threshold HR",
+    description: "Target a threshold heart rate for testing.",
+  },
+  {
+    value: "consistency",
+    label: "Consistency",
+    description: "Aim for a weekly training rhythm over time.",
+  },
+];
 
-function getMetricOptions(goalType: string): TargetMetricOption[] {
-  const typedOptions = TARGET_METRIC_OPTIONS_BY_GOAL_TYPE[goalType] ?? [];
-  return [{ value: null, label: "None" }, ...typedOptions];
+const GOAL_PRESETS: GoalPreset[] = [
+  {
+    label: "5K",
+    title: "5K Race",
+    goalType: "race_performance",
+    activityCategory: "run",
+    raceDistanceKm: 5,
+    raceTargetMode: "time",
+  },
+  {
+    label: "10K",
+    title: "10K Race",
+    goalType: "race_performance",
+    activityCategory: "run",
+    raceDistanceKm: 10,
+    raceTargetMode: "time",
+  },
+  {
+    label: "Half",
+    title: "Half Marathon",
+    goalType: "race_performance",
+    activityCategory: "run",
+    raceDistanceKm: 21.1,
+    raceTargetMode: "time",
+  },
+  {
+    label: "Marathon",
+    title: "Marathon",
+    goalType: "race_performance",
+    activityCategory: "run",
+    raceDistanceKm: 42.2,
+    raceTargetMode: "time",
+  },
+  {
+    label: "Century",
+    title: "Century Ride",
+    goalType: "race_performance",
+    activityCategory: "bike",
+    raceDistanceKm: 160.9,
+    raceTargetMode: "time",
+  },
+  {
+    label: "FTP",
+    title: "Raise FTP",
+    goalType: "power_threshold",
+    activityCategory: "bike",
+  },
+];
+
+const ACTIVITY_OPTIONS: Array<{
+  value: GoalEditorDraft["activityCategory"];
+  label: string;
+}> = [
+  { value: "run", label: "Run" },
+  { value: "bike", label: "Bike" },
+  { value: "swim", label: "Swim" },
+  { value: "other", label: "Other" },
+];
+
+const RACE_TARGET_MODE_OPTIONS: Array<{
+  value: GoalEditorRaceTargetMode;
+  label: string;
+  description: string;
+}> = [
+  { value: "time", label: "Finish Time", description: "Save a race time." },
+  { value: "pace", label: "Goal Pace", description: "Save a pace target." },
+];
+
+const DISTANCE_PRESETS_BY_ACTIVITY: Record<
+  GoalEditorDraft["activityCategory"],
+  Array<{ label: string; value: number }>
+> = {
+  run: [
+    { label: "5K", value: 5 },
+    { label: "10K", value: 10 },
+    { label: "Half", value: 21.1 },
+    { label: "Marathon", value: 42.2 },
+  ],
+  bike: [
+    { label: "20K", value: 20 },
+    { label: "40K", value: 40 },
+    { label: "100K", value: 100 },
+    { label: "Century", value: 160.9 },
+  ],
+  swim: [
+    { label: "400m", value: 0.4 },
+    { label: "1500m", value: 1.5 },
+    { label: "3.8K", value: 3.8 },
+  ],
+  other: [],
+};
+
+function getGoalTypeOption(goalType: GoalEditorGoalType) {
+  return GOAL_TYPE_OPTIONS.find((option) => option.value === goalType);
 }
 
-function normalizeTargetMetric(
-  goalType: string,
-  metric: string | null | undefined,
-) {
-  const availableOptions = getMetricOptions(goalType);
-  const hasMetric = availableOptions.some((option) => option.value === metric);
-  return hasMetric ? (metric ?? null) : (availableOptions[0]?.value ?? null);
+function nearlyEqual(left: number | null | undefined, right: number): boolean {
+  return typeof left === "number" && Math.abs(left - right) < 0.05;
 }
 
-const toDateOnly = (value: Date) => value.toISOString().split("T")[0] ?? "";
-
-function toNullableNumber(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
+function hasDraftTarget(draft: GoalEditorDraft): boolean {
+  switch (draft.goalType) {
+    case "race_performance":
+      return (
+        typeof draft.raceDistanceKm === "number" &&
+        draft.raceDistanceKm > 0 &&
+        ((draft.raceTargetMode ?? "time") === "time"
+          ? !!draft.targetDuration?.trim()
+          : !!draft.targetPace?.trim())
+      );
+    case "completion":
+      return (
+        (typeof draft.raceDistanceKm === "number" &&
+          draft.raceDistanceKm > 0) ||
+        !!draft.targetDuration?.trim()
+      );
+    case "pace_threshold":
+      return (
+        !!draft.targetPace?.trim() && !!draft.thresholdTestDuration?.trim()
+      );
+    case "power_threshold":
+      return (
+        typeof draft.targetWatts === "number" &&
+        draft.targetWatts > 0 &&
+        !!draft.thresholdTestDuration?.trim()
+      );
+    case "hr_threshold":
+      return typeof draft.targetBpm === "number" && draft.targetBpm > 0;
+    case "consistency":
+      return (
+        (typeof draft.consistencySessionsPerWeek === "number" &&
+          draft.consistencySessionsPerWeek > 0) ||
+        (typeof draft.consistencyWeeks === "number" &&
+          draft.consistencyWeeks > 0)
+      );
   }
-
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function inferRaceDistanceKmFromTitle(title: string): number | null {
-  const normalized = title.trim().toLowerCase();
-
-  if (!normalized) return null;
-  if (normalized.includes("half marathon")) return 21.1;
-  if (normalized.includes("marathon")) return 42.2;
-  if (/\b5k\b/.test(normalized)) return 5;
-  if (/\b10k\b/.test(normalized)) return 10;
-  if (normalized.includes("century")) return 160.9;
-  return null;
+function supportsActivityChoice(goalType: GoalEditorGoalType): boolean {
+  return (
+    goalType === "race_performance" ||
+    goalType === "completion" ||
+    goalType === "hr_threshold" ||
+    goalType === "consistency"
+  );
 }
 
-function formatGoalTypeSummary(goalType: string) {
-  const option = GOAL_TYPE_OPTIONS.find((item) => item.value === goalType);
-  return option?.label ?? "General";
+function getDistanceLabel(goalType: GoalEditorGoalType): string {
+  return goalType === "completion" ? "Distance (optional)" : "Race distance";
 }
 
 export function GoalEditorModal({
@@ -123,57 +240,68 @@ export function GoalEditorModal({
   onSubmit,
 }: GoalEditorModalProps) {
   const [draft, setDraft] = useState<GoalEditorDraft>(initialValue);
-  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     if (!visible) {
       return;
     }
 
-    setDraft(initialValue);
+    setDraft({
+      ...createEmptyGoalDraft(),
+      ...initialValue,
+    });
   }, [initialValue, visible]);
 
-  const parsedDate = useMemo(() => {
-    if (!draft.targetDate) {
-      return new Date();
-    }
-
-    const date = new Date(`${draft.targetDate}T12:00:00.000Z`);
-    return Number.isNaN(date.getTime()) ? new Date() : date;
-  }, [draft.targetDate]);
-
-  const targetMetricOptions = useMemo(
-    () => getMetricOptions(draft.goalType),
+  const goalTypeOption = useMemo(
+    () => getGoalTypeOption(draft.goalType),
     [draft.goalType],
   );
-  const selectedTargetMetric = normalizeTargetMetric(
-    draft.goalType,
-    draft.targetMetric,
+  const distancePresets = useMemo(
+    () => DISTANCE_PRESETS_BY_ACTIVITY[draft.activityCategory] ?? [],
+    [draft.activityCategory],
   );
-  const showTargetControls = draft.goalType !== "general";
 
   const canSubmit =
     draft.title.trim().length > 0 &&
     draft.targetDate.length > 0 &&
+    hasDraftTarget(draft) &&
     !isSubmitting;
 
-  const handleDateChange = (_: any, selectedDate?: Date) => {
-    if (Platform.OS === "android") {
-      setShowDatePicker(false);
-    }
+  const updateDraft = (patch: Partial<GoalEditorDraft>) => {
+    setDraft((current) => ({ ...current, ...patch }));
+  };
 
-    if (!selectedDate) {
-      return;
-    }
+  const handleGoalTypeChange = (goalType: GoalEditorGoalType) => {
+    const base = createEmptyGoalDraft();
 
     setDraft((current) => ({
-      ...current,
-      targetDate: toDateOnly(selectedDate),
+      ...base,
+      title: current.title,
+      targetDate: current.targetDate,
+      importance: current.importance,
+      goalType,
+      activityCategory:
+        goalType === "pace_threshold"
+          ? "run"
+          : goalType === "power_threshold"
+            ? "bike"
+            : current.activityCategory,
     }));
+  };
 
-    if (Platform.OS === "ios") {
-      setShowDatePicker(false);
-    }
+  const handlePresetPress = (preset: GoalPreset) => {
+    const base = createEmptyGoalDraft();
+
+    setDraft((current) => ({
+      ...base,
+      title: preset.title,
+      targetDate: current.targetDate,
+      importance: current.importance,
+      goalType: preset.goalType,
+      activityCategory: preset.activityCategory,
+      raceDistanceKm: preset.raceDistanceKm ?? base.raceDistanceKm,
+      raceTargetMode: preset.raceTargetMode ?? base.raceTargetMode,
+    }));
   };
 
   return (
@@ -184,68 +312,44 @@ export function GoalEditorModal({
       onRequestClose={onClose}
     >
       <View className="flex-1 bg-background">
-        <View className="px-4 py-4 border-b border-border flex-row items-center justify-between">
-          <Text className="text-lg font-semibold">{title}</Text>
+        <View className="flex-row items-center justify-between border-b border-border px-4 py-4">
+          <Text className="text-lg font-semibold text-foreground">{title}</Text>
           <TouchableOpacity
             onPress={onClose}
             className="rounded-md bg-muted px-3 py-2"
             activeOpacity={0.8}
           >
-            <Text className="text-xs">Close</Text>
+            <Text className="text-xs text-foreground">Close</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView
           className="flex-1"
-          contentContainerClassName="px-4 py-4 gap-4"
+          contentContainerClassName="gap-4 px-4 py-4"
         >
-          <View className="rounded-md border border-border bg-muted/10 px-3 py-3 gap-1">
+          <View className="gap-1 rounded-md border border-border bg-muted/10 px-3 py-3">
             <Text className="text-sm font-medium text-foreground">
-              {formatGoalTypeSummary(draft.goalType)} goal
+              {goalTypeOption?.label ?? "Goal"}
             </Text>
             <Text className="text-xs text-muted-foreground">
-              Pick a title and date first. Metric details are only shown when
-              they matter.
+              {goalTypeOption?.description ??
+                "Build the goal from the athlete outcome you actually care about."}
             </Text>
           </View>
 
           <View className="gap-2">
-            <Text className="text-sm font-medium">Goal title</Text>
-            <Input
-              value={draft.title}
-              onChangeText={(text) =>
-                setDraft((current) => ({
-                  ...current,
-                  title: text,
-                }))
-              }
-              placeholder="e.g., Boston Marathon"
-              editable={!isSubmitting}
-            />
-          </View>
-
-          <View className="gap-2">
-            <Text className="text-sm font-medium">Quick picks</Text>
+            <Text className="text-sm font-medium text-foreground">
+              Quick picks
+            </Text>
             <View className="flex-row flex-wrap gap-2">
-              {COMMON_GOALS.map((goal) => (
+              {GOAL_PRESETS.map((preset) => (
                 <Pressable
-                  key={goal}
-                  onPress={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      title: goal,
-                      raceDistanceKm:
-                        current.goalType === "race_performance"
-                          ? (inferRaceDistanceKmFromTitle(goal) ??
-                            current.raceDistanceKm ??
-                            null)
-                          : current.raceDistanceKm,
-                    }))
-                  }
+                  key={preset.label}
+                  onPress={() => handlePresetPress(preset)}
                   className="rounded-full bg-secondary px-3 py-2"
                 >
                   <Text className="text-xs text-secondary-foreground">
-                    {goal}
+                    {preset.label}
                   </Text>
                 </Pressable>
               ))}
@@ -253,191 +357,357 @@ export function GoalEditorModal({
           </View>
 
           <View className="gap-2">
-            <Text className="text-sm font-medium">Target date</Text>
-            <TouchableOpacity
-              onPress={() => setShowDatePicker(true)}
-              className="rounded-md border border-border bg-card px-3 py-3"
-              activeOpacity={0.8}
-            >
-              <Text className="text-sm">
-                {draft.targetDate
-                  ? new Date(
-                      `${draft.targetDate}T12:00:00.000Z`,
-                    ).toLocaleDateString("en-US", {
-                      weekday: "short",
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
-                    })
-                  : "Select date"}
-              </Text>
-            </TouchableOpacity>
-            {showDatePicker ? (
-              <DateTimePicker
-                value={parsedDate}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                minimumDate={new Date()}
-                onChange={handleDateChange}
-              />
-            ) : null}
-          </View>
-
-          <View className="gap-2">
-            <Text className="text-sm font-medium">Goal type</Text>
-            <View className="flex-row flex-wrap gap-2">
+            <Text className="text-sm font-medium text-foreground">
+              Goal focus
+            </Text>
+            <View className="gap-2">
               {GOAL_TYPE_OPTIONS.map((option) => {
                 const isActive = option.value === draft.goalType;
                 return (
-                  <TouchableOpacity
+                  <Pressable
                     key={option.value}
-                    onPress={() =>
-                      setDraft((current) => ({
-                        ...current,
-                        goalType: option.value,
-                        targetMetric: normalizeTargetMetric(
-                          option.value,
-                          current.targetMetric,
-                        ),
-                      }))
-                    }
-                    className={`rounded-full border px-3 py-1.5 ${
+                    onPress={() => handleGoalTypeChange(option.value)}
+                    className={`rounded-lg border px-3 py-3 ${
                       isActive
-                        ? "bg-primary border-primary"
-                        : "bg-background border-border"
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-card"
                     }`}
-                    activeOpacity={0.8}
                   >
-                    <Text
-                      className={`text-xs ${
-                        isActive ? "text-primary-foreground" : "text-foreground"
-                      }`}
-                    >
+                    <Text className="text-sm font-semibold text-foreground">
                       {option.label}
                     </Text>
-                  </TouchableOpacity>
+                    <Text className="mt-1 text-xs text-muted-foreground">
+                      {option.description}
+                    </Text>
+                  </Pressable>
                 );
               })}
             </View>
           </View>
 
           <View className="gap-2">
-            <IntegerStepper
-              id="goal-importance"
-              label="Importance"
-              value={draft.importance}
-              min={0}
-              max={10}
-              onChange={(nextImportance) =>
-                setDraft((current) =>
-                  isSubmitting
-                    ? current
-                    : {
-                        ...current,
-                        importance: nextImportance,
-                      },
-                )
-              }
+            <Text className="text-sm font-medium text-foreground">
+              Goal title
+            </Text>
+            <Input
+              value={draft.title}
+              onChangeText={(text) => updateDraft({ title: text })}
+              placeholder="e.g., Spring 10K or Raise FTP"
+              editable={!isSubmitting}
             />
           </View>
 
-          {showTargetControls ? (
-            <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
-              <Text className="text-sm font-medium text-foreground">
-                Performance target
-              </Text>
-              <View className="gap-2">
-                <Text className="text-sm font-medium">Target metric</Text>
-                <Select
-                  disabled={isSubmitting}
-                  value={{
-                    value: selectedTargetMetric ?? "none",
-                    label:
-                      targetMetricOptions.find(
-                        (option) => option.value === selectedTargetMetric,
-                      )?.label ?? "None",
-                  }}
-                  onValueChange={(option) =>
-                    setDraft((current) => ({
-                      ...current,
-                      targetMetric:
-                        option?.value && option.value !== "none"
-                          ? option.value
-                          : null,
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select target metric" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {targetMetricOptions.map((option) => (
-                      <SelectItem
-                        key={option.value ?? "none"}
-                        label={option.label}
-                        value={option.value ?? "none"}
+          <DateField
+            id="goal-target-date"
+            label="Target date"
+            value={draft.targetDate || undefined}
+            onChange={(value) => updateDraft({ targetDate: value ?? "" })}
+            minimumDate={new Date()}
+            required
+            helperText="Goals stay linked to a milestone date."
+          />
+
+          {supportsActivityChoice(draft.goalType) ? (
+            <View className="gap-2">
+              <Text className="text-sm font-medium text-foreground">Sport</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {ACTIVITY_OPTIONS.map((option) => {
+                  const isActive = option.value === draft.activityCategory;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      onPress={() =>
+                        updateDraft({ activityCategory: option.value })
+                      }
+                      className={`rounded-full border px-3 py-2 ${
+                        isActive
+                          ? "border-primary bg-primary"
+                          : "border-border bg-background"
+                      }`}
+                    >
+                      <Text
+                        className={`text-xs ${
+                          isActive
+                            ? "text-primary-foreground"
+                            : "text-foreground"
+                        }`}
                       >
                         {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
+            </View>
+          ) : null}
 
-              <View className="gap-2">
-                <Text className="text-sm font-medium">Target value</Text>
-                <Input
-                  value={
-                    draft.targetValue === null ||
-                    draft.targetValue === undefined
-                      ? ""
-                      : String(draft.targetValue)
-                  }
-                  onChangeText={(text) =>
-                    setDraft((current) => ({
-                      ...current,
-                      targetValue: toNullableNumber(text),
-                    }))
-                  }
-                  placeholder="Optional"
-                  keyboardType="numeric"
-                  editable={!isSubmitting}
-                />
-              </View>
+          {draft.goalType === "race_performance" ||
+          draft.goalType === "completion" ? (
+            <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
+              <Text className="text-sm font-medium text-foreground">
+                {draft.goalType === "race_performance"
+                  ? "Event setup"
+                  : "Completion setup"}
+              </Text>
+
+              {distancePresets.length > 0 ? (
+                <View className="gap-2">
+                  <Text className="text-sm font-medium text-foreground">
+                    Suggested distances
+                  </Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {distancePresets.map((preset) => {
+                      const isActive = nearlyEqual(
+                        draft.raceDistanceKm,
+                        preset.value,
+                      );
+                      return (
+                        <Pressable
+                          key={`${draft.activityCategory}-${preset.label}`}
+                          onPress={() =>
+                            updateDraft({ raceDistanceKm: preset.value })
+                          }
+                          className={`rounded-full border px-3 py-2 ${
+                            isActive
+                              ? "border-primary bg-primary"
+                              : "border-border bg-background"
+                          }`}
+                        >
+                          <Text
+                            className={`text-xs ${
+                              isActive
+                                ? "text-primary-foreground"
+                                : "text-foreground"
+                            }`}
+                          >
+                            {preset.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+
+              <BoundedNumberInput
+                id="goal-distance"
+                label={getDistanceLabel(draft.goalType)}
+                value={
+                  draft.raceDistanceKm == null
+                    ? ""
+                    : String(draft.raceDistanceKm)
+                }
+                onChange={() => undefined}
+                onNumberChange={(value) =>
+                  updateDraft({ raceDistanceKm: value ?? null })
+                }
+                min={0}
+                max={1000}
+                decimals={1}
+                unitLabel="km"
+                placeholder="e.g., 21.1"
+                helperText={
+                  draft.goalType === "completion"
+                    ? "Leave this blank if duration is the only thing that matters."
+                    : "Choose the distance you want to race."
+                }
+                accessibilityHint="Enter distance in kilometers"
+              />
 
               {draft.goalType === "race_performance" ? (
                 <View className="gap-2">
-                  <Text className="text-sm font-medium">
-                    Race distance (km)
+                  <Text className="text-sm font-medium text-foreground">
+                    Target style
                   </Text>
-                  <Input
-                    value={
-                      draft.raceDistanceKm === null ||
-                      draft.raceDistanceKm === undefined
-                        ? ""
-                        : String(draft.raceDistanceKm)
-                    }
-                    onChangeText={(text) =>
-                      setDraft((current) => ({
-                        ...current,
-                        raceDistanceKm: toNullableNumber(text),
-                      }))
-                    }
-                    placeholder="e.g. 42.2"
-                    keyboardType="numeric"
-                    editable={!isSubmitting}
-                  />
-                  <Text className="text-xs text-muted-foreground">
-                    Distance helps the projection estimate realistic demand for
-                    new athletes with limited history.
-                  </Text>
+                  <View className="gap-2">
+                    {RACE_TARGET_MODE_OPTIONS.map((option) => {
+                      const isActive =
+                        (draft.raceTargetMode ?? "time") === option.value;
+                      return (
+                        <Pressable
+                          key={option.value}
+                          onPress={() =>
+                            updateDraft({ raceTargetMode: option.value })
+                          }
+                          className={`rounded-lg border px-3 py-3 ${
+                            isActive
+                              ? "border-primary bg-primary/10"
+                              : "border-border bg-card"
+                          }`}
+                        >
+                          <Text className="text-sm font-semibold text-foreground">
+                            {option.label}
+                          </Text>
+                          <Text className="mt-1 text-xs text-muted-foreground">
+                            {option.description}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </View>
+              ) : null}
+
+              {draft.goalType === "completion" ||
+              (draft.raceTargetMode ?? "time") === "time" ? (
+                <DurationInput
+                  id="goal-duration"
+                  label={
+                    draft.goalType === "completion"
+                      ? "Target duration"
+                      : "Goal time"
+                  }
+                  value={draft.targetDuration ?? ""}
+                  onChange={(value) => updateDraft({ targetDuration: value })}
+                  placeholder={
+                    draft.goalType === "completion"
+                      ? "e.g., 2:30:00"
+                      : "e.g., 0:25:00"
+                  }
+                  helperText={
+                    draft.goalType === "completion"
+                      ? "Optional if distance alone defines success."
+                      : "Use a finish time athletes recognize instantly."
+                  }
+                />
+              ) : null}
+
+              {draft.goalType === "race_performance" &&
+              (draft.raceTargetMode ?? "time") === "pace" ? (
+                <PaceInput
+                  id="goal-race-pace"
+                  label="Goal pace"
+                  value={draft.targetPace ?? ""}
+                  onChange={(value) => updateDraft({ targetPace: value })}
+                  helperText="Save the pace you want to average on race day."
+                />
               ) : null}
             </View>
           ) : null}
+
+          {draft.goalType === "pace_threshold" ? (
+            <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
+              <Text className="text-sm font-medium text-foreground">
+                Run pace target
+              </Text>
+              <PaceInput
+                id="goal-threshold-pace"
+                label="Target pace"
+                value={draft.targetPace ?? ""}
+                onChange={(value) => updateDraft({ targetPace: value })}
+                helperText="Use athlete pace, not raw meters per second."
+              />
+              <DurationInput
+                id="goal-threshold-pace-duration"
+                label="Test duration"
+                value={draft.thresholdTestDuration ?? ""}
+                onChange={(value) =>
+                  updateDraft({ thresholdTestDuration: value })
+                }
+                helperText="Usually the duration of the effort or benchmark test."
+              />
+            </View>
+          ) : null}
+
+          {draft.goalType === "power_threshold" ? (
+            <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
+              <Text className="text-sm font-medium text-foreground">
+                Bike power target
+              </Text>
+              <BoundedNumberInput
+                id="goal-power"
+                label="Target watts"
+                value={
+                  draft.targetWatts == null ? "" : String(draft.targetWatts)
+                }
+                onChange={() => undefined}
+                onNumberChange={(value) =>
+                  updateDraft({ targetWatts: value ?? null })
+                }
+                min={1}
+                max={2000}
+                decimals={0}
+                unitLabel="W"
+                placeholder="e.g., 285"
+                helperText="Whole watts keep the target clear and honest."
+                accessibilityHint="Enter target power in watts"
+              />
+              <DurationInput
+                id="goal-power-duration"
+                label="Test duration"
+                value={draft.thresholdTestDuration ?? ""}
+                onChange={(value) =>
+                  updateDraft({ thresholdTestDuration: value })
+                }
+                helperText="Default is 20 minutes, but keep it explicit."
+              />
+            </View>
+          ) : null}
+
+          {draft.goalType === "hr_threshold" ? (
+            <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
+              <Text className="text-sm font-medium text-foreground">
+                Threshold heart rate
+              </Text>
+              <BoundedNumberInput
+                id="goal-heart-rate"
+                label="Target heart rate"
+                value={draft.targetBpm == null ? "" : String(draft.targetBpm)}
+                onChange={() => undefined}
+                onNumberChange={(value) =>
+                  updateDraft({ targetBpm: value ?? null })
+                }
+                min={1}
+                max={260}
+                decimals={0}
+                unitLabel="bpm"
+                placeholder="e.g., 168"
+                helperText="Save bpm directly instead of a hidden canonical number."
+                accessibilityHint="Enter target threshold heart rate in beats per minute"
+              />
+            </View>
+          ) : null}
+
+          {draft.goalType === "consistency" ? (
+            <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
+              <Text className="text-sm font-medium text-foreground">
+                Consistency target
+              </Text>
+              <IntegerStepper
+                id="goal-consistency-sessions"
+                label="Sessions per week"
+                value={draft.consistencySessionsPerWeek ?? 0}
+                min={0}
+                max={14}
+                onChange={(value) =>
+                  updateDraft({ consistencySessionsPerWeek: value })
+                }
+                helperText="Choose the weekly rhythm you actually want to keep."
+              />
+              <IntegerStepper
+                id="goal-consistency-weeks"
+                label="Planned weeks"
+                value={draft.consistencyWeeks ?? 0}
+                min={0}
+                max={52}
+                onChange={(value) => updateDraft({ consistencyWeeks: value })}
+                helperText="Optional, but useful when the consistency block has an end date."
+              />
+            </View>
+          ) : null}
+
+          <IntegerStepper
+            id="goal-importance"
+            label="Importance"
+            value={draft.importance}
+            min={0}
+            max={10}
+            onChange={(value) => updateDraft({ importance: value })}
+            helperText="Higher priority goals get more planning attention."
+          />
         </ScrollView>
 
-        <View className="px-4 py-4 border-t border-border">
+        <View className="border-t border-border px-4 py-4">
           <Button
             onPress={() => onSubmit(draft)}
             disabled={!canSubmit}

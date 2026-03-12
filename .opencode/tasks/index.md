@@ -198,7 +198,7 @@
 
 ### [20260310-000001] Profile Goals + Projection Future-Proofing Implementation
 
-- **Status**: in_progress
+- **Status**: completed
 - **Complexity**: high
 - **Subtasks**:
   - [x] Phase 1: Persistence + Canonical Schemas
@@ -208,13 +208,27 @@
   - [x] Phase 5: Mobile App Integration
   - [x] Validation Gate
 - **Blockers**: None
-- **Spec Location**: `.opencode/specs/2026-03-10_profile-goals-projection-future-proofing/`
+- **Spec Location**: `.opencode/specs/archive/2026-03-10_profile-goals-projection-future-proofing/`
+
+---
+
+### [20260312-120000] Library Removal + Duplicate-First MVP
+
+- **Status**: in_progress
+- **Complexity**: medium
+- **Subtasks**:
+  - [ ] Audit remaining library dependencies and decide route scope
+  - [ ] Add or repair duplicate support for shared activity/training plans
+  - [ ] Remove library UI/copy and deprecate the library router
+  - [ ] Clean up `library_items` persistence if no runtime dependency remains
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-12_library-removal-duplicate-mvp/`
 
 ---
 
 ### [20260312-000001] Continuous Fluid Periodization MVP
 
-- **Status**: in_progress
+- **Status**: completed
 - **Complexity**: high
 - **Subtasks**:
   - [x] Phase 1: Canonical contracts and sport taxonomy
@@ -224,6 +238,6 @@
   - [x] Phase 5: Reference trajectory generation
   - [x] Phase 6: MPC tracking integration
   - [x] Phase 7: Payload integration and compatibility facade
-  - [ ] Phase 8: Benchmark closure for 365-day full projection target
-- **Blockers**: Functional validation passes, but the skipped full-projection benchmark in `packages/core/plan/periodization/__tests__/periodization-benchmarks.test.ts` is still above the 50ms target.
+  - [x] Phase 8: Validation and benchmark closure
+- **Blockers**: None
 - **Spec Location**: `.opencode/specs/2026-03-11_continuous-fluid-periodization/`

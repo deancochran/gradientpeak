@@ -13,7 +13,9 @@ import {
   buildGoalUpdatePayload,
   buildMilestoneEventCreateInput,
   buildMilestoneEventUpdatePatch,
+  createEmptyGoalDraft,
   formatGoalTypeLabel,
+  getGoalObjectiveSummary,
 } from "@/lib/goals/goalDraft";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
@@ -195,22 +197,12 @@ function PlanDashboardScreen() {
 
   const draftGoal = useMemo(() => {
     if (!editingGoalId) {
-      return {
-        title: "",
-        targetDate: "",
-        importance: 5,
-        goalType: "general",
-      } satisfies GoalEditorDraft;
+      return createEmptyGoalDraft() satisfies GoalEditorDraft;
     }
 
     const goal = goals.goals.find((item) => item.id === editingGoalId);
     if (!goal) {
-      return {
-        title: "",
-        targetDate: "",
-        importance: 5,
-        goalType: "general",
-      } satisfies GoalEditorDraft;
+      return createEmptyGoalDraft() satisfies GoalEditorDraft;
     }
 
     return buildGoalDraftFromGoal({
@@ -887,6 +879,9 @@ function PlanDashboardScreen() {
                               <Text className="text-xs text-muted-foreground">
                                 {formatGoalTypeLabel(goal)} · Priority:{" "}
                                 {formatPriorityLabel(goal.priority)}
+                              </Text>
+                              <Text className="text-xs text-muted-foreground">
+                                {getGoalObjectiveSummary(goal)}
                               </Text>
                               <Text className="text-xs text-muted-foreground">
                                 {goal.target_date

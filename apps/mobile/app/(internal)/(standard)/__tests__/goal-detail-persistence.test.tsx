@@ -139,9 +139,13 @@ describe("goal detail persistence", () => {
         targetDate: "2026-06-15",
         importance: 9,
         goalType: "race_performance",
-        targetMetric: "target_time_s",
-        targetValue: 1450,
+        activityCategory: "run",
         raceDistanceKm: 5,
+        raceTargetMode: "time",
+        targetDuration: "0:24:10",
+        thresholdTestDuration: "0:20:00",
+        consistencySessionsPerWeek: 4,
+        consistencyWeeks: 8,
       });
     });
 
@@ -162,6 +166,7 @@ describe("goal detail persistence", () => {
         target_payload: expect.objectContaining({
           type: "event_performance",
           target_time_s: 1450,
+          distance_m: 5000,
         }),
       }),
     });

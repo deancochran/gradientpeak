@@ -20,6 +20,7 @@ interface DateFieldProps {
   error?: string;
   required?: boolean;
   minimumDate?: Date;
+  maximumDate?: Date;
   placeholder?: string;
   clearable?: boolean;
   accessibilityHint?: string;
@@ -34,6 +35,7 @@ export function DateField({
   error,
   required = false,
   minimumDate,
+  maximumDate,
   placeholder = "Select date",
   clearable = false,
   accessibilityHint,
@@ -82,6 +84,7 @@ export function DateField({
           mode="date"
           display="default"
           minimumDate={minimumDate}
+          maximumDate={maximumDate}
           onChange={handleDateChange}
         />
       ) : null}

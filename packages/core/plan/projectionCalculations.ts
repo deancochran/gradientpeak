@@ -1782,6 +1782,7 @@ interface WeeklyOptimizationDecision {
 interface ProjectionReferenceContext {
   status: "available" | "unsupported" | "absent";
   reference_trajectory?: ReferenceTrajectory;
+  reference_by_date?: Map<string, ReferenceTrajectory["points"][number]>;
   trajectory_mode?: TrajectoryMode;
   feasibility_assessment?: FeasibilityAssessment;
   diagnostics: NonNullable<ProjectionDiagnostics["reference_context"]>;
@@ -1925,19 +1926,24 @@ function computeReferenceContext(input: {
     };
   }
 
+  const referenceTrajectory = generateReferenceTrajectory({
+    startDate: input.startDate,
+    endDate: input.endDate,
+    currentCtl: input.currentCtl,
+    goals: normalizedGoals,
+    resolvedDemands,
+    preferenceProfile,
+    constraintProfile,
+    feasibility,
+    mode,
+  });
+
   return {
     status: "available",
-    reference_trajectory: generateReferenceTrajectory({
-      startDate: input.startDate,
-      endDate: input.endDate,
-      currentCtl: input.currentCtl,
-      goals: normalizedGoals,
-      resolvedDemands,
-      preferenceProfile,
-      constraintProfile,
-      feasibility,
-      mode,
-    }),
+    reference_trajectory: referenceTrajectory,
+    reference_by_date: new Map(
+      referenceTrajectory.points.map((point) => [point.date, point]),
+    ),
     trajectory_mode: mode,
     feasibility_assessment: feasibility,
     diagnostics: createReferenceContextDiagnostics({
@@ -2921,41 +2927,46 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
   ];
   const simulatedPoints: ProjectedDailyState[] = [];
 
-  let simCtl = simulateCtlOverWeek(
-    input.currentCtl,
-    input.candidateWeeklyTss,
-    input.daysInWeek,
-  );
-  let simAtl = simulateAtlOverWeek(
-    input.currentAtl,
-    input.candidateWeeklyTss,
-    input.daysInWeek,
-  );
+  const appendProjectedWeekStates = (params: {
+    weekStartDate: string;
+    startingCtl: number;
+    startingAtl: number;
+    weeklyTss: number;
+    daysInWeek: number;
+  }) => {
+    let dayCtl = params.startingCtl;
+    let dayAtl = params.startingAtl;
+    const dailyTss = round1(params.weeklyTss / Math.max(1, params.daysInWeek));
+
+    for (let dayOffset = 0; dayOffset < params.daysInWeek; dayOffset += 1) {
+      dayCtl = calculateCTL(dayCtl, dailyTss);
+      dayAtl = calculateATL(dayAtl, dailyTss);
+      simulatedPoints.push({
+        date: addDaysDateOnlyUtc(params.weekStartDate, dayOffset),
+        predicted_load_tss: dailyTss,
+        predicted_fitness_ctl: round1(dayCtl),
+        predicted_fatigue_atl: round1(dayAtl),
+        predicted_form_tsb: round1(dayCtl - dayAtl),
+      });
+    }
+
+    return {
+      ctl: dayCtl,
+      atl: dayAtl,
+    };
+  };
+
+  const initialWeekState = appendProjectedWeekStates({
+    weekStartDate: input.weekStartDate,
+    startingCtl: input.currentCtl,
+    startingAtl: input.currentAtl,
+    weeklyTss: input.candidateWeeklyTss,
+    daysInWeek: input.daysInWeek,
+  });
+  let simCtl = initialWeekState.ctl;
+  let simAtl = initialWeekState.atl;
   let simPrevWeekTss = input.candidateWeeklyTss;
   let simPrevDemandFloorSignal = input.weightedNoHistoryDemandFloor;
-
-  for (let dayOffset = 0; dayOffset < input.daysInWeek; dayOffset += 1) {
-    const dayDate = addDaysDateOnlyUtc(input.weekStartDate, dayOffset);
-    const dayCtl = simulateCtlOverWeek(
-      input.currentCtl,
-      input.candidateWeeklyTss,
-      dayOffset + 1,
-    );
-    const dayAtl = simulateAtlOverWeek(
-      input.currentAtl,
-      input.candidateWeeklyTss,
-      dayOffset + 1,
-    );
-    simulatedPoints.push({
-      date: dayDate,
-      predicted_load_tss: round1(
-        input.candidateWeeklyTss / Math.max(1, input.daysInWeek),
-      ),
-      predicted_fitness_ctl: round1(dayCtl),
-      predicted_fatigue_atl: round1(dayAtl),
-      predicted_form_tsb: round1(dayCtl - dayAtl),
-    });
-  }
 
   let simWeekStartDate = addDaysDateOnlyUtc(input.weekStartDate, 7);
   let simProjectionWeekIndex = input.projectionWeekIndex + 1;
@@ -3019,23 +3030,15 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
       }),
     );
 
-    const priorCtl = simCtl;
-    const priorAtl = simAtl;
-    simCtl = simulateCtlOverWeek(simCtl, simWeeklyTss, simDaysInWeek);
-    simAtl = simulateAtlOverWeek(simAtl, simWeeklyTss, simDaysInWeek);
-
-    for (let dayOffset = 0; dayOffset < simDaysInWeek; dayOffset += 1) {
-      const dayDate = addDaysDateOnlyUtc(simWeekStartDate, dayOffset);
-      const dayCtl = simulateCtlOverWeek(priorCtl, simWeeklyTss, dayOffset + 1);
-      const dayAtl = simulateAtlOverWeek(priorAtl, simWeeklyTss, dayOffset + 1);
-      simulatedPoints.push({
-        date: dayDate,
-        predicted_load_tss: round1(simWeeklyTss / Math.max(1, simDaysInWeek)),
-        predicted_fitness_ctl: round1(dayCtl),
-        predicted_fatigue_atl: round1(dayAtl),
-        predicted_form_tsb: round1(dayCtl - dayAtl),
-      });
-    }
+    const updatedWeekState = appendProjectedWeekStates({
+      weekStartDate: simWeekStartDate,
+      startingCtl: simCtl,
+      startingAtl: simAtl,
+      weeklyTss: simWeeklyTss,
+      daysInWeek: simDaysInWeek,
+    });
+    simCtl = updatedWeekState.ctl;
+    simAtl = updatedWeekState.atl;
 
     simPrevWeekTss = simWeeklyTss;
     simPrevDemandFloorSignal = simSignals.weightedNoHistoryDemandFloor;
@@ -3055,6 +3058,7 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
     const evaluation = evaluateReferenceTrackingWindow({
       projected_states: simulatedPoints,
       reference_trajectory: input.referenceContext.reference_trajectory,
+      reference_by_date: input.referenceContext.reference_by_date,
     });
 
     return {
@@ -4868,26 +4872,6 @@ function buildDeterministicProjectionPayloadInternal(
 
   if (input.disable_weekly_tss_optimizer) {
     return optimizedPayload;
-  }
-
-  const baselinePayload = buildDeterministicProjectionPayloadInternal(
-    {
-      ...input,
-      disable_weekly_tss_optimizer: true,
-    },
-    referenceContext,
-  );
-  const optimizedReadiness = computeWeightedGoalDateReadiness({
-    points: optimizedPayload.points,
-    goals: optimizedPayload.goal_markers,
-  });
-  const baselineReadiness = computeWeightedGoalDateReadiness({
-    points: baselinePayload.points,
-    goals: baselinePayload.goal_markers,
-  });
-
-  if (optimizedReadiness < baselineReadiness) {
-    return baselinePayload;
   }
 
   return optimizedPayload;

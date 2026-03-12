@@ -32,6 +32,24 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function formatMinutes(minutes?: number) {
+  if (!minutes || minutes <= 0) {
+    return null;
+  }
+
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (remainder === 0) {
+    return `${hours} hr`;
+  }
+
+  return `${hours} hr ${remainder} min`;
+}
+
 function deriveProjectionPreview(
   baseCurve: Array<{ date: string; ctl: number }>,
   draft: AthleteTrainingSettings,
@@ -84,7 +102,8 @@ function deriveProjectionPreview(
 
 export default function TrainingPreferencesScreen() {
   const utils = trpc.useUtils();
-  const { data: activePlan } = trpc.trainingPlans.getActivePlan.useQuery();
+  const activePlanQuery = trpc.trainingPlans.getActivePlan.useQuery();
+  const activePlan = activePlanQuery.data;
   const settingsQuery = useProfileSettings();
   const [activeTab, setActiveTab] = useState<PreferencesTabKey>("schedule");
   const [draft, setDraft] = useState<AthleteTrainingSettings>(
@@ -128,12 +147,55 @@ export default function TrainingPreferencesScreen() {
     [idealFitnessCurve, draft],
   );
 
-  const previewProjectedFitness = useMemo(() => {
-    const today = new Date().toISOString().split("T")[0];
-    return previewIdealCurve.filter(
-      (point) => typeof point.date === "string" && point.date > today,
-    );
-  }, [previewIdealCurve]);
+  const scheduleValidation = useMemo(() => {
+    const minSessions = draft.dose_limits.min_sessions_per_week ?? 0;
+    const maxSessions = draft.dose_limits.max_sessions_per_week ?? 0;
+    const maxSingleSessionDuration =
+      draft.dose_limits.max_single_session_duration_minutes;
+    const maxWeeklyDuration = draft.dose_limits.max_weekly_duration_minutes;
+
+    const issues: string[] = [];
+
+    if (minSessions > maxSessions) {
+      issues.push(
+        "Fewest sessions per week cannot be higher than most sessions per week.",
+      );
+    }
+
+    if (
+      typeof maxSingleSessionDuration === "number" &&
+      typeof maxWeeklyDuration === "number" &&
+      maxSingleSessionDuration > maxWeeklyDuration
+    ) {
+      issues.push(
+        "Weekly time budget must be at least as long as your longest workout.",
+      );
+    }
+
+    return {
+      issues,
+      minSessionsError:
+        minSessions > maxSessions
+          ? "Choose a floor that stays at or below your weekly maximum."
+          : undefined,
+      maxSessionsError:
+        minSessions > maxSessions
+          ? "Raise this above the weekly minimum or lower the minimum."
+          : undefined,
+      maxSingleSessionError:
+        typeof maxSingleSessionDuration === "number" &&
+        typeof maxWeeklyDuration === "number" &&
+        maxSingleSessionDuration > maxWeeklyDuration
+          ? "A single workout cannot be longer than the full weekly time budget."
+          : undefined,
+      maxWeeklyDurationError:
+        typeof maxSingleSessionDuration === "number" &&
+        typeof maxWeeklyDuration === "number" &&
+        maxSingleSessionDuration > maxWeeklyDuration
+          ? "Increase this budget or shorten the longest workout."
+          : undefined,
+    };
+  }, [draft]);
 
   const goalMetrics = useMemo(() => {
     if (
@@ -151,23 +213,95 @@ export default function TrainingPreferencesScreen() {
   }, [snapshot.idealCurveData]);
 
   const projectionPreviewSummary = useMemo(() => {
-    if (previewIdealCurve.length < 2) {
-      return "Adjust your schedule, style, recovery, or goal strategy to preview how projection support can shift.";
+    if (idealFitnessCurve.length < 2 || previewIdealCurve.length < 2) {
+      return "Make changes here to compare the current baseline against this draft once the plan has enough projection data.";
     }
 
-    const firstPoint = previewIdealCurve[0];
-    const lastPoint = previewIdealCurve[previewIdealCurve.length - 1];
-    if (!firstPoint || !lastPoint) {
+    const baselinePoint = idealFitnessCurve[idealFitnessCurve.length - 1];
+    const draftPoint = previewIdealCurve[previewIdealCurve.length - 1];
+    if (!baselinePoint || !draftPoint) {
       return "Projection preview unavailable.";
     }
 
-    const delta = Math.round((lastPoint.ctl - firstPoint.ctl) * 10) / 10;
+    const delta = Math.round((draftPoint.ctl - baselinePoint.ctl) * 10) / 10;
     const sign = delta > 0 ? "+" : "";
-    return `Draft projection shift: ${sign}${delta} CTL across ${previewIdealCurve.length} checkpoints.`;
-  }, [previewIdealCurve]);
+    return `Draft vs baseline at the latest checkpoint: ${sign}${delta} CTL.`;
+  }, [idealFitnessCurve, previewIdealCurve]);
+
+  const projectionPreviewState = useMemo(() => {
+    if (
+      activePlanQuery.isLoading ||
+      snapshot.loading.plan ||
+      snapshot.loading.idealCurve
+    ) {
+      return {
+        tone: "loading" as const,
+        title: "Loading projection preview",
+        body: "Pulling your active plan and baseline curve so this screen can compare today\'s settings with a draft.",
+      };
+    }
+
+    if (!activePlan?.id) {
+      return {
+        tone: "empty" as const,
+        title: "Preview unavailable",
+        body: "Start or activate a training plan to generate a baseline curve for this preview.",
+      };
+    }
+
+    if (snapshot.errors.idealCurve) {
+      return {
+        tone: "unavailable" as const,
+        title: "Preview unavailable",
+        body: "The baseline projection could not be loaded right now. Try again after refreshing the active plan.",
+      };
+    }
+
+    if (idealFitnessCurve.length < 2) {
+      return {
+        tone: "empty" as const,
+        title: "Baseline curve not ready",
+        body:
+          snapshot.profileGoals.length > 0
+            ? "This active plan does not have enough ideal-curve checkpoints yet to show a baseline-vs-draft comparison."
+            : "Add a goal with a target date to give the active plan enough information for a projection preview.",
+      };
+    }
+
+    return {
+      tone: "ready" as const,
+      title: "Baseline vs draft preview",
+      body:
+        fitnessHistory.length > 0
+          ? "Recommended shows the current baseline, Planned shows this draft, and Completed shows your recent training when available."
+          : "Recommended shows the current baseline and Planned shows this draft. Completed training will appear here after local history syncs in.",
+    };
+  }, [
+    activePlan?.id,
+    activePlanQuery.isLoading,
+    fitnessHistory.length,
+    idealFitnessCurve.length,
+    snapshot.errors.idealCurve,
+    snapshot.loading.idealCurve,
+    snapshot.loading.plan,
+    snapshot.profileGoals.length,
+  ]);
+
+  const scheduleSnapshot = useMemo(() => {
+    const minSessions = draft.dose_limits.min_sessions_per_week ?? 0;
+    const maxSessions = draft.dose_limits.max_sessions_per_week ?? 0;
+    const weeklyBudget = formatMinutes(
+      draft.dose_limits.max_weekly_duration_minutes,
+    );
+    const longestWorkout = formatMinutes(
+      draft.dose_limits.max_single_session_duration_minutes,
+    );
+
+    return `${minSessions}-${maxSessions} sessions per week, ${weeklyBudget ?? "no weekly cap"}, longest workout ${longestWorkout ?? "not set"}.`;
+  }, [draft.dose_limits]);
 
   const savePreferences = () => {
-    if (!settingsQuery.profileId) {
+    if (!settingsQuery.profileId || scheduleValidation.issues.length > 0) {
       return;
     }
 
@@ -196,21 +330,40 @@ export default function TrainingPreferencesScreen() {
             <CardTitle>Projection Preview</CardTitle>
           </CardHeader>
           <CardContent className="gap-3">
-            <PlanVsActualChart
-              actualData={fitnessHistory}
-              projectedData={previewProjectedFitness}
-              idealData={previewIdealCurve}
-              goalMetrics={goalMetrics}
-              height={220}
-              showLegend
-            />
+            {projectionPreviewState.tone === "ready" ? (
+              <PlanVsActualChart
+                actualData={fitnessHistory}
+                projectedData={previewIdealCurve}
+                idealData={idealFitnessCurve}
+                goalMetrics={goalMetrics}
+                height={220}
+                showLegend
+              />
+            ) : (
+              <View className="gap-2 rounded-md border border-dashed border-border bg-muted/20 px-4 py-5">
+                {projectionPreviewState.tone === "loading" ? (
+                  <ActivityIndicator size="small" />
+                ) : null}
+                <Text className="text-sm font-semibold text-foreground">
+                  {projectionPreviewState.title}
+                </Text>
+                <Text className="text-sm text-muted-foreground">
+                  {projectionPreviewState.body}
+                </Text>
+              </View>
+            )}
+            <Text className="text-sm font-medium text-foreground">
+              {projectionPreviewState.title}
+            </Text>
             <Text className="text-sm text-muted-foreground">
-              {projectionPreviewSummary}
+              {projectionPreviewState.tone === "ready"
+                ? projectionPreviewSummary
+                : projectionPreviewState.body}
             </Text>
             <Text className="text-xs text-muted-foreground">
               Progression pace changes how fast training builds. Target surplus
-              is separate and only nudges scoring beyond your stated goal when
-              the model has enough support.
+              is separate and only nudges scoring past your stated goal when the
+              model has enough support.
             </Text>
           </CardContent>
         </Card>
@@ -247,15 +400,31 @@ export default function TrainingPreferencesScreen() {
             {activeTab === "schedule" ? (
               <>
                 <Text className="text-xs text-muted-foreground">
-                  Shape when and how much training can fit. Planner-only locks
-                  and tuning stay out of this profile view.
+                  Set the weekly training floor, ceiling, and time budget the
+                  planner should respect. Planner-only tuning stays out of this
+                  profile view.
                 </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Current draft: {scheduleSnapshot}
+                </Text>
+                {scheduleValidation.issues.length > 0 ? (
+                  <View className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+                    <Text className="text-sm font-medium text-destructive">
+                      Fix these schedule conflicts before saving.
+                    </Text>
+                    <Text className="mt-1 text-xs text-destructive">
+                      {scheduleValidation.issues.join(" ")}
+                    </Text>
+                  </View>
+                ) : null}
                 <IntegerStepper
                   id="preferences-min-sessions"
                   label="Fewest sessions per week"
                   value={draft.dose_limits.min_sessions_per_week ?? 0}
                   min={0}
                   max={14}
+                  helperText="Set the lowest weekly frequency that still feels sustainable."
+                  error={scheduleValidation.minSessionsError}
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
@@ -272,6 +441,8 @@ export default function TrainingPreferencesScreen() {
                   value={draft.dose_limits.max_sessions_per_week ?? 7}
                   min={0}
                   max={21}
+                  helperText="Set the upper limit the planner should never exceed."
+                  error={scheduleValidation.maxSessionsError}
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
@@ -290,6 +461,8 @@ export default function TrainingPreferencesScreen() {
                   }
                   min={20}
                   max={600}
+                  helperText="Use the longest workout you can realistically absorb in one day."
+                  error={scheduleValidation.maxSingleSessionError}
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
@@ -306,6 +479,8 @@ export default function TrainingPreferencesScreen() {
                   value={draft.dose_limits.max_weekly_duration_minutes ?? 360}
                   min={30}
                   max={10080}
+                  helperText="This should cover the whole week, including your longest workout."
+                  error={scheduleValidation.maxWeeklyDurationError}
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
@@ -333,7 +508,7 @@ export default function TrainingPreferencesScreen() {
                   max={100}
                   step={1}
                   decimals={0}
-                  helperText="Higher builds faster week to week."
+                  helperText="Higher builds load faster from week to week."
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
@@ -374,7 +549,7 @@ export default function TrainingPreferencesScreen() {
                   max={100}
                   step={1}
                   decimals={0}
-                  helperText="Higher packs more demanding sessions into a week."
+                  helperText="Higher packs more demanding sessions into the same week."
                   onChange={(value) =>
                     setDraft((current) => ({
                       ...current,
@@ -479,7 +654,8 @@ export default function TrainingPreferencesScreen() {
                 <Text className="text-xs text-muted-foreground">
                   Goal strategy changes how closely the planner hugs the stated
                   target versus aiming for bounded upside when confidence
-                  supports it. This is separate from progression pace.
+                  supports it. This stays separate from progression pace and
+                  schedule limits.
                 </Text>
                 <PercentSliderInput
                   id="preferences-target-surplus"
@@ -548,6 +724,7 @@ export default function TrainingPreferencesScreen() {
             disabled={
               !settingsQuery.profileId ||
               !hasUnsavedChanges ||
+              scheduleValidation.issues.length > 0 ||
               upsertMutation.isPending
             }
           >

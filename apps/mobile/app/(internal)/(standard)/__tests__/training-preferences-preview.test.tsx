@@ -1,6 +1,6 @@
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import TrainingPreferencesScreen from "../training-preferences";
 
 function createHost(type: string) {
@@ -42,6 +42,33 @@ const settingsFixture = {
 };
 
 const upsertMock = vi.fn();
+let activePlanData: { id: string } | undefined = { id: "plan-1" };
+let activePlanIsLoading = false;
+let snapshotState = {
+  actualCurveData: {
+    dataPoints: [
+      { date: "2026-03-01", ctl: 40 },
+      { date: "2026-03-02", ctl: 41 },
+    ],
+  },
+  idealCurveData: {
+    dataPoints: [
+      { date: "2026-03-01", ctl: 40 },
+      { date: "2026-03-02", ctl: 42 },
+      { date: "2026-03-03", ctl: 44 },
+    ],
+    targetCTL: 60,
+    targetDate: "2026-07-01",
+  },
+  loading: {
+    plan: false,
+    idealCurve: false,
+  },
+  errors: {
+    idealCurve: null,
+  },
+  profileGoals: [{ id: "goal-1" }],
+};
 
 vi.mock("react-native", () => ({
   ActivityIndicator: createHost("ActivityIndicator"),
@@ -91,23 +118,7 @@ vi.mock("@/lib/hooks/useProfileSettings", () => ({
 }));
 
 vi.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
-  useTrainingPlanSnapshot: () => ({
-    actualCurveData: {
-      dataPoints: [
-        { date: "2026-03-01", ctl: 40 },
-        { date: "2026-03-02", ctl: 41 },
-      ],
-    },
-    idealCurveData: {
-      dataPoints: [
-        { date: "2026-03-01", ctl: 40 },
-        { date: "2026-03-02", ctl: 42 },
-        { date: "2026-03-03", ctl: 44 },
-      ],
-      targetCTL: 60,
-      targetDate: "2026-07-01",
-    },
-  }),
+  useTrainingPlanSnapshot: () => snapshotState,
 }));
 
 vi.mock("@/lib/trpc", () => ({
@@ -122,7 +133,8 @@ vi.mock("@/lib/trpc", () => ({
     trainingPlans: {
       getActivePlan: {
         useQuery: () => ({
-          data: { id: "plan-1" },
+          data: activePlanData,
+          isLoading: activePlanIsLoading,
         }),
       },
     },
@@ -138,6 +150,37 @@ vi.mock("@/lib/trpc", () => ({
 }));
 
 describe("training preferences projection preview", () => {
+  beforeEach(() => {
+    upsertMock.mockReset();
+    activePlanData = { id: "plan-1" };
+    activePlanIsLoading = false;
+    snapshotState = {
+      actualCurveData: {
+        dataPoints: [
+          { date: "2026-03-01", ctl: 40 },
+          { date: "2026-03-02", ctl: 41 },
+        ],
+      },
+      idealCurveData: {
+        dataPoints: [
+          { date: "2026-03-01", ctl: 40 },
+          { date: "2026-03-02", ctl: 42 },
+          { date: "2026-03-03", ctl: 44 },
+        ],
+        targetCTL: 60,
+        targetDate: "2026-07-01",
+      },
+      loading: {
+        plan: false,
+        idealCurve: false,
+      },
+      errors: {
+        idealCurve: null,
+      },
+      profileGoals: [{ id: "goal-1" }],
+    };
+  });
+
   it("renders canonical preference tabs", () => {
     let renderer!: TestRenderer.ReactTestRenderer;
 
@@ -190,7 +233,9 @@ describe("training preferences projection preview", () => {
       (node: any) => node.type === "PlanVsActualChart",
     )[0];
     const initialLastCtl =
-      initialChart.props.idealData[initialChart.props.idealData.length - 1].ctl;
+      initialChart.props.projectedData[
+        initialChart.props.projectedData.length - 1
+      ].ctl;
 
     const behaviorTab = renderer.root.findAll(
       (node: any) =>
@@ -217,9 +262,127 @@ describe("training preferences projection preview", () => {
       (node: any) => node.type === "PlanVsActualChart",
     )[0];
     const updatedLastCtl =
-      updatedChart.props.idealData[updatedChart.props.idealData.length - 1].ctl;
+      updatedChart.props.projectedData[
+        updatedChart.props.projectedData.length - 1
+      ].ctl;
 
     expect(updatedLastCtl).not.toEqual(initialLastCtl);
+  });
+
+  it("shows a clear empty state when there is no active plan", () => {
+    activePlanData = undefined;
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = TestRenderer.create(<TrainingPreferencesScreen />);
+    });
+
+    const textValues = renderer.root
+      .findAll((node: any) => node.type === "Text")
+      .map((node: any) => {
+        const value = node.props.children;
+        return typeof value === "string"
+          ? value
+          : Array.isArray(value)
+            ? value.join("")
+            : "";
+      });
+
+    expect(
+      textValues.some((value: string) => value.includes("Preview unavailable")),
+    ).toBe(true);
+    expect(
+      textValues.some((value: string) =>
+        value.includes("Start or activate a training plan"),
+      ),
+    ).toBe(true);
+    expect(
+      renderer.root.findAll((node: any) => node.type === "PlanVsActualChart"),
+    ).toHaveLength(0);
+  });
+
+  it("shows a baseline-curve message when projection data is missing", () => {
+    snapshotState = {
+      ...snapshotState,
+      idealCurveData: {
+        dataPoints: [],
+        targetCTL: 60,
+        targetDate: "2026-07-01",
+      },
+    };
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = TestRenderer.create(<TrainingPreferencesScreen />);
+    });
+
+    const textValues = renderer.root
+      .findAll((node: any) => node.type === "Text")
+      .map((node: any) => {
+        const value = node.props.children;
+        return typeof value === "string"
+          ? value
+          : Array.isArray(value)
+            ? value.join("")
+            : "";
+      });
+
+    expect(
+      textValues.some((value: string) =>
+        value.includes("Baseline curve not ready"),
+      ),
+    ).toBe(true);
+    expect(
+      textValues.some((value: string) =>
+        value.includes("baseline-vs-draft comparison"),
+      ),
+    ).toBe(true);
+  });
+
+  it("blocks saving when schedule limits conflict", () => {
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = TestRenderer.create(<TrainingPreferencesScreen />);
+    });
+
+    const minSessionsStepper = renderer.root.findAll(
+      (node: any) =>
+        node.type === "IntegerStepper" &&
+        node.props.id === "preferences-min-sessions",
+    )[0];
+
+    act(() => {
+      minSessionsStepper.props.onChange(8);
+    });
+
+    const saveButton = renderer.root
+      .findAll((node: any) => node.type === "Button")
+      .find((node: any) => {
+        const textNode = node.findAll((child: any) => child.type === "Text")[0];
+        return textNode?.props?.children === "Save Preferences";
+      });
+
+    const textValues = renderer.root
+      .findAll((node: any) => node.type === "Text")
+      .map((node: any) => {
+        const value = node.props.children;
+        return typeof value === "string"
+          ? value
+          : Array.isArray(value)
+            ? value.join("")
+            : "";
+      });
+
+    expect(saveButton?.props.disabled).toBe(true);
+    expect(
+      textValues.some((value: string) =>
+        value.includes("Fix these schedule conflicts before saving."),
+      ),
+    ).toBe(true);
+    expect(upsertMock).not.toHaveBeenCalled();
   });
 
   it("saves canonical preference sections including target surplus", () => {

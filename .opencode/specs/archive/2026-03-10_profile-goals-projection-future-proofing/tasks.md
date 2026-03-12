@@ -38,6 +38,8 @@
 ## Phase 5: Mobile App Integration
 
 - [x] Task R - Goal editor persistence. Success: the current mobile goal flow continues to work while writing canonical goal payloads directly, with focused mobile tests passing.
+- [x] Task R1 - Goal mobile UX overhaul. Success: goal edit/display flows use athlete-friendly inputs and summaries, avoid silent draft-derived saves, and focused goal mobile tests pass.
+- [x] Task R2 - Onboarding/profile metric input cleanup. Success: onboarding and profile edit use shared date/pace/bounded number affordances for DOB, weight, HR, FTP, and swim/run pace values without changing write contracts, and focused mobile tests cover the new wrappers.
 - [x] Task S - Training preferences UX cutover. Success: the training preferences screen uses the canonical user-language sections, includes a dedicated `target_surplus_preference` control, and removes planner-internal controls from canonical settings UX.
 - [x] Task T - Projection explainability UX. Success: mobile projection surfaces show readiness/feasibility explanations plus fallback, confidence, and effective-target copy backed by focused tests.
 

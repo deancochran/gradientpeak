@@ -25,6 +25,7 @@ function round(value: number): number {
 export function evaluateReferenceTrackingWindow(input: {
   projected_states: ProjectedDailyState[];
   reference_trajectory?: ReferenceTrajectory | null;
+  reference_by_date?: Map<string, ReferenceTrajectory["points"][number]>;
 }): ReferenceTrackingEvaluation {
   if (!input.reference_trajectory || input.projected_states.length === 0) {
     return {
@@ -38,9 +39,11 @@ export function evaluateReferenceTrackingWindow(input: {
     };
   }
 
-  const referenceByDate = new Map(
-    input.reference_trajectory.points.map((point) => [point.date, point]),
-  );
+  const referenceByDate =
+    input.reference_by_date ??
+    new Map(
+      input.reference_trajectory.points.map((point) => [point.date, point]),
+    );
   let matchedPoints = 0;
   let ctlErrorSum = 0;
   let tssErrorSum = 0;

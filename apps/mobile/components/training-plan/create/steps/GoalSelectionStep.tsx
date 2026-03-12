@@ -2,6 +2,7 @@ import { GoalEditorModal } from "@/components/goals";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
+import { createEmptyGoalDraft } from "@/lib/goals/goalDraft";
 import type { WizardGoalInput } from "@repo/core";
 import React, { useMemo, useState } from "react";
 import { View } from "react-native";
@@ -104,6 +105,7 @@ export function GoalSelectionStep({
         title="Primary Goal"
         submitLabel="Apply Goal"
         initialValue={{
+          ...createEmptyGoalDraft(),
           title: goal.name,
           targetDate: goal.target_date,
           importance: 8,

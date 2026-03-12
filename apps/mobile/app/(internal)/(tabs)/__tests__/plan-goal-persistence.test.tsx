@@ -177,9 +177,13 @@ describe("plan goal persistence", () => {
         targetDate: "2026-06-01",
         importance: 8,
         goalType: "race_performance",
-        targetMetric: "target_time_s",
-        targetValue: 1500,
+        activityCategory: "run",
         raceDistanceKm: 5,
+        raceTargetMode: "time",
+        targetDuration: "0:25:00",
+        thresholdTestDuration: "0:20:00",
+        consistencySessionsPerWeek: 4,
+        consistencyWeeks: 8,
       });
     });
 
