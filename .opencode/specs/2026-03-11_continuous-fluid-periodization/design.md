@@ -48,9 +48,11 @@ User risk tolerance directly maps to the constraint variables in the optimizatio
 
 These UI inputs map to continuous values ($0.0 - 1.0$) in the `AthletePreferenceProfile` schema, which are then interpolated into rigid constraints:
 
-- **Max CTL Ramp Rate:** $Ramp_{max} = 2 + (x \times 4)$ (Yields 2 to 6 CTL/wk)
-- **Max ACWR:** $ACWR_{max} = 1.1 + (x \times 0.4)$ (Yields 1.1 to 1.5)
-- **TSB Floor:** $TSB_{floor} = -10 - (x \times 20)$ (Yields -10 to -30)
+- **Max CTL Ramp Rate:** Derived from `progression_pace`. $Ramp_{max} = 2 + (x \times 4)$ (Yields 2 to 6 CTL/wk)
+- **Max ACWR:** Derived from `progression_pace`. $ACWR_{max} = 1.1 + (x \times 0.4)$ (Yields 1.1 to 1.5)
+- **TSB Floor:** Derived from `systemic_fatigue_tolerance`. $TSB_{floor} = -15 - (x \times 20)$ (Yields -15 to -35)
+- **Taper Duration:** Derived from `taper_style_preference`. $Days = 7 + Math.round(x \times 14)$ (Yields 7 to 21 days)
+- **Strength Priority:** Derived from `strength_integration_priority`. Allocates MFS budget and max strength sessions per week.
 
 **Dynamic Recalculation:** If a user changes their preference mid-season (e.g., from Aggressive to Conservative), the engine instantly recalculates. A goal that was previously "Feasible" might become "Infeasible" because the algorithm is no longer allowed to ramp CTL aggressively. The UI will then display the new "Best Effort" curve and the resulting "Readiness Gap" alert.
 

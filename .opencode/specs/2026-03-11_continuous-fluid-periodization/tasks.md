@@ -1,9 +1,14 @@
 # Tasks: Continuous Fluid Periodization (MVP Architecture)
 
-## Phase 1: The Heuristic Reference Generator
+## Phase 1: Schema Enhancements & The Heuristic Reference Generator
 
+- [ ] Add `sport_overrides` to `athletePreferenceDoseLimitsSchema`.
+- [ ] Add `systemic_fatigue_tolerance` to `athletePreferenceRecoverySchema`.
+- [ ] Add `taper_style_preference` to `athletePreferenceGoalStrategySchema`.
+- [ ] Add `strength_integration_priority` to `athletePreferenceTrainingStyleSchema`.
+- [ ] Update `defaultAthletePreferenceProfile` with defaults for new fields.
 - [ ] Create `resolveEventDemand` helper to extract max distance/duration from `GoalTargetV2`.
-- [ ] Implement dynamic taper duration logic (7-28 days) based on event demand.
+- [ ] Implement dynamic taper duration logic (7-28 days) based on event demand and `taper_style_preference`.
 - [ ] Create `generateReferenceTrajectory` function that outputs an array of daily target CTL values.
 - [ ] Architect the `generateReferenceTrajectory` to be completely independent of planned/completed calendar events, outputting a smoothed daily baseline.
 - [ ] Implement `ConstraintResolver` to map user Risk Profile (Conservative, Moderate, Aggressive) to Max Ramp, Max ACWR, and Min TSB.

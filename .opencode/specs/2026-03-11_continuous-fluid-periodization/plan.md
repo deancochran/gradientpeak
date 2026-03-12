@@ -1,12 +1,14 @@
 # Plan: Continuous Fluid Periodization (MVP Architecture)
 
-## Phase 1: The Heuristic Reference Generator
+## Phase 1: Schema Enhancements & The Heuristic Reference Generator
 
-- **Objective:** Build the engine that draws the ideal, continuous Target CTL curve based on sports science rules.
+- **Objective:** Update the `AthletePreferenceProfile` schema to support advanced tuning, then build the engine that draws the ideal, continuous Target CTL curve based on those preferences.
 - **Strategy:**
+  - Add `sport_overrides` to `athletePreferenceDoseLimitsSchema` for multisport volume control.
+  - Add `systemic_fatigue_tolerance`, `taper_style_preference`, and `strength_integration_priority` to the profile schemas using the `capabilityBoundedNumber` pattern.
   - Create a new module to generate a `ReferenceTrajectory` (an array of daily target CTL values).
   - Architect the generator as a pure mathematical projection service that outputs a continuous array of smoothed daily TSS and CTL values, completely decoupled from the user's actual planned or completed calendar events.
-  - Implement dynamic taper scaling (7-28 days) based on the maximum distance/duration extracted from `GoalTargetV2`.
+  - Implement dynamic taper scaling (7-28 days) based on the maximum distance/duration extracted from `GoalTargetV2` and the user's `taper_style_preference`.
   - Implement a Feasibility Engine: calculate required ramp rate vs. allowed ramp rate.
   - Implement dual-mode generation: _Target-Seeking Mode_ (reverse curve generation for feasible goals) and _Capacity-Bounded Mode_ (forward simulation "Best Effort" curve for infeasible goals).
   - Implement a Constraint Resolver that maps a user's "Risk Profile" (Conservative, Moderate, Aggressive) to mathematical bounds (Max Ramp Rate, Max ACWR, Min TSB).
