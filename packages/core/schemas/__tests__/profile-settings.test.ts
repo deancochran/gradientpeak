@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   athleteCapabilitySnapshotSchema,
+  defaultAthletePreferenceProfile,
   athletePreferenceProfileSchema,
   invalidateCapabilitySnapshot,
   planPreferenceOverridesSchema,
@@ -27,15 +28,22 @@ const canonicalProfile = athletePreferenceProfileSchema.parse({
     max_sessions_per_week: 5,
     max_single_session_duration_minutes: 120,
     max_weekly_duration_minutes: 420,
+    sport_overrides: {
+      run: {
+        max_weekly_duration_minutes: 480,
+      },
+    },
   },
   training_style: {
     progression_pace: 0.55,
     week_pattern_preference: 0.4,
     key_session_density_preference: 0.6,
+    strength_integration_priority: 0.45,
   },
   recovery_preferences: {
     recovery_priority: 0.7,
     post_goal_recovery_days: 6,
+    systemic_fatigue_tolerance: 0.65,
     double_day_tolerance: 0.2,
     long_session_fatigue_tolerance: 0.5,
   },
@@ -46,6 +54,7 @@ const canonicalProfile = athletePreferenceProfileSchema.parse({
   goal_strategy_preferences: {
     target_surplus_preference: 0.25,
     priority_tradeoff_preference: 0.65,
+    taper_style_preference: 0.4,
   },
 });
 
@@ -107,6 +116,8 @@ describe("athletePreferenceProfileSchema", () => {
     expect(parsed.goal_strategy_preferences.target_surplus_preference).toBe(
       0.25,
     );
+    expect(parsed.training_style.strength_integration_priority).toBe(0.45);
+    expect(parsed.recovery_preferences.systemic_fatigue_tolerance).toBe(0.65);
     expect(Object.keys(parsed)).toEqual([
       "availability",
       "dose_limits",
@@ -115,6 +126,9 @@ describe("athletePreferenceProfileSchema", () => {
       "adaptation_preferences",
       "goal_strategy_preferences",
     ]);
+    expect(defaultAthletePreferenceProfile.dose_limits.sport_overrides).toEqual(
+      {},
+    );
   });
 
   it("rejects planner-only and internal fields from canonical persistence", () => {
@@ -135,6 +149,13 @@ describe("athletePreferenceProfileSchema", () => {
       },
       goal_strategy_preferences: {
         target_surplus_preference: 0.5,
+      },
+      dose_limits: {
+        sport_overrides: {
+          bike: {
+            max_sessions_per_week: 6,
+          },
+        },
       },
     });
     const plannerPolicyResult = plannerPolicyConfigSchema.safeParse({
@@ -162,6 +183,11 @@ describe("athletePreferenceProfileSchema", () => {
     expect(plannerPolicyResult.success).toBe(true);
     expect(diagnosticsResult.success).toBe(true);
     expect(invalidOverrideResult.success).toBe(false);
+    if (overrideResult.success) {
+      expect(overrideResult.data.dose_limits?.sport_overrides?.bike).toEqual({
+        max_sessions_per_week: 6,
+      });
+    }
   });
 });
 
@@ -223,6 +249,27 @@ describe("resolveEffectivePreferences", () => {
       canonicalProfile.availability.weekly_windows,
     );
     expect(resolved.availability.hard_rest_days).toEqual(["saturday"]);
+  });
+
+  it("merges per-sport dose overrides additively", () => {
+    const resolved = resolveEffectivePreferences(canonicalProfile, {
+      dose_limits: {
+        sport_overrides: {
+          bike: {
+            max_sessions_per_week: 6,
+          },
+        },
+      },
+    });
+
+    expect(resolved.dose_limits.sport_overrides).toEqual({
+      run: {
+        max_weekly_duration_minutes: 480,
+      },
+      bike: {
+        max_sessions_per_week: 6,
+      },
+    });
   });
 });
 

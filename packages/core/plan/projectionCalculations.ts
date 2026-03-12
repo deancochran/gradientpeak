@@ -10,7 +10,15 @@ import type {
   TrainingPlanCalibrationConfig,
 } from "../schemas/training_plan_structure";
 import { trainingPlanCalibrationConfigSchema } from "../schemas/training_plan_structure";
-import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
+import {
+  defaultAthletePreferenceProfile,
+  type AthletePreferenceProfile,
+} from "../schemas/settings/profile_settings";
+import type {
+  FeasibilityAssessment,
+  ReferenceTrajectory,
+  TrajectoryMode,
+} from "../schemas/planning";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import {
@@ -60,6 +68,16 @@ import {
 } from "./scoring/gdi";
 import { scoreGoalAssessment } from "./scoring/goalScore";
 import { scorePlanGoals } from "./scoring/planScore";
+import {
+  assessFeasibility,
+  buildPeriodizedObjectiveComponents,
+  evaluateReferenceTrackingWindow,
+  fromProfileGoals,
+  generateReferenceTrajectory,
+  resolveConstraintProfile,
+  resolveEventDemand,
+  type ProjectedDailyState,
+} from "./periodization";
 
 export {
   getOptimizationProfileBehavior,
@@ -1477,6 +1495,9 @@ export interface DeterministicProjectionPayload {
     }>;
     conflict_notes: string[];
   }>;
+  reference_trajectory?: ReferenceTrajectory;
+  trajectory_mode?: TrajectoryMode;
+  feasibility_assessment?: FeasibilityAssessment;
 }
 
 export interface BuildDeterministicProjectionInput {
@@ -1648,6 +1669,7 @@ interface WeeklyTssOptimizerInput {
   input: BuildDeterministicProjectionInput;
   normalizedConfig: ProjectionSafetyConfig;
   calibration: TrainingPlanCalibrationConfig;
+  referenceContext: ProjectionReferenceContext;
   goalMarkers: DeterministicProjectionGoalMarker[];
   recoverySegments: ProjectionRecoverySegment[];
   endDate: string;
@@ -1736,11 +1758,198 @@ export interface ProjectionDiagnostics {
     non_finite_objective_rejections: number;
     stability_assertions: string[];
   };
+  reference_context?: {
+    status: "available" | "unsupported" | "absent";
+    supported_goal_count: number;
+    unsupported_goal_count: number;
+    rationale_codes: string[];
+  };
+  reference_tracking?: {
+    scored_weeks: number;
+    matched_points: number;
+    ctl_mean_absolute_error: number;
+    tss_mean_absolute_error: number;
+    taper_pressure: number;
+    safety_penalty: number;
+  };
 }
 
 interface WeeklyOptimizationDecision {
   selected_weekly_tss: number;
   diagnostics: ProjectionDiagnostics;
+}
+
+interface ProjectionReferenceContext {
+  status: "available" | "unsupported" | "absent";
+  reference_trajectory?: ReferenceTrajectory;
+  trajectory_mode?: TrajectoryMode;
+  feasibility_assessment?: FeasibilityAssessment;
+  diagnostics: NonNullable<ProjectionDiagnostics["reference_context"]>;
+}
+
+function isUuidLike(value: string | undefined): value is string {
+  return value !== undefined
+    ? /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+      )
+    : false;
+}
+
+function createReferenceContextDiagnostics(input: {
+  status: "available" | "unsupported" | "absent";
+  supported_goal_count: number;
+  unsupported_goal_count: number;
+  rationale_codes: string[];
+}): ProjectionReferenceContext["diagnostics"] {
+  return {
+    status: input.status,
+    supported_goal_count: input.supported_goal_count,
+    unsupported_goal_count: input.unsupported_goal_count,
+    rationale_codes: [...new Set(input.rationale_codes)],
+  };
+}
+
+function computeReferenceContext(input: {
+  projectionInput: BuildDeterministicProjectionInput;
+  normalizedConfig: ProjectionSafetyConfig;
+  currentCtl: number;
+  startDate: string;
+  endDate: string;
+}): ProjectionReferenceContext {
+  const goalsWithTargets = input.projectionInput.goals.filter(
+    (goal) => (goal.targets?.length ?? 0) > 0,
+  );
+  if (goalsWithTargets.length === 0) {
+    return {
+      status: "absent",
+      diagnostics: createReferenceContextDiagnostics({
+        status: "absent",
+        supported_goal_count: 0,
+        unsupported_goal_count: 0,
+        rationale_codes: ["reference_context_goal_targets_absent"],
+      }),
+    };
+  }
+
+  const supportedGoals = goalsWithTargets.flatMap((goal) =>
+    isUuidLike(goal.id)
+      ? [
+          {
+            id: goal.id,
+            name: goal.name,
+            target_date: goal.target_date,
+            priority: goal.priority,
+            targets: goal.targets ?? [],
+          },
+        ]
+      : [],
+  );
+  const unsupportedGoalCount = goalsWithTargets.length - supportedGoals.length;
+
+  if (supportedGoals.length === 0) {
+    return {
+      status: "unsupported",
+      diagnostics: createReferenceContextDiagnostics({
+        status: "unsupported",
+        supported_goal_count: 0,
+        unsupported_goal_count: unsupportedGoalCount,
+        rationale_codes: ["reference_context_goal_ids_not_uuid"],
+      }),
+    };
+  }
+
+  const normalizedGoals = fromProfileGoals(supportedGoals);
+  const demandResults = normalizedGoals.map((goal) => resolveEventDemand(goal));
+  const resolvedDemands = demandResults.flatMap((result) =>
+    result.status === "supported" ? [result.demand] : [],
+  );
+  const unsupportedGoalIds = demandResults.flatMap((result) =>
+    result.status === "unsupported" ? result.goal_id : [],
+  );
+  const preferenceProfile =
+    input.projectionInput.preference_profile ?? defaultAthletePreferenceProfile;
+  const primarySport =
+    resolvedDemands[0]?.sport ?? normalizedGoals[0]?.activity_category;
+
+  if (!primarySport) {
+    return {
+      status: "unsupported",
+      diagnostics: createReferenceContextDiagnostics({
+        status: "unsupported",
+        supported_goal_count: normalizedGoals.length,
+        unsupported_goal_count: unsupportedGoalCount,
+        rationale_codes: ["reference_context_primary_sport_unresolved"],
+      }),
+    };
+  }
+
+  const constraintProfile = resolveConstraintProfile({
+    optimizationProfile: input.normalizedConfig.optimization_profile,
+    preferenceProfile,
+    sport: primarySport,
+  });
+  const endGoalDate = normalizedGoals[normalizedGoals.length - 1]?.target_date;
+  const weeksToPeak = Math.max(
+    1,
+    Math.ceil(
+      (Date.parse(`${endGoalDate ?? input.endDate}T00:00:00.000Z`) -
+        Date.parse(`${input.startDate}T00:00:00.000Z`)) /
+        (7 * 86400000),
+    ),
+  );
+  const { feasibility, mode } = assessFeasibility({
+    currentCtl: input.currentCtl,
+    weeksToPeak,
+    goals: normalizedGoals,
+    resolvedDemands,
+    unsupportedGoalIds,
+    preferenceProfile,
+    constraintProfile,
+  });
+
+  if (unsupportedGoalIds.length > 0) {
+    return {
+      status: "unsupported",
+      trajectory_mode: mode,
+      feasibility_assessment: feasibility,
+      diagnostics: createReferenceContextDiagnostics({
+        status: "unsupported",
+        supported_goal_count: normalizedGoals.length,
+        unsupported_goal_count:
+          unsupportedGoalCount + unsupportedGoalIds.length,
+        rationale_codes: [
+          ...feasibility.rationale_codes,
+          "reference_context_goal_mapping_unsupported",
+        ],
+      }),
+    };
+  }
+
+  return {
+    status: "available",
+    reference_trajectory: generateReferenceTrajectory({
+      startDate: input.startDate,
+      endDate: input.endDate,
+      currentCtl: input.currentCtl,
+      goals: normalizedGoals,
+      resolvedDemands,
+      preferenceProfile,
+      constraintProfile,
+      feasibility,
+      mode,
+    }),
+    trajectory_mode: mode,
+    feasibility_assessment: feasibility,
+    diagnostics: createReferenceContextDiagnostics({
+      status: "available",
+      supported_goal_count: normalizedGoals.length,
+      unsupported_goal_count: unsupportedGoalCount,
+      rationale_codes: [
+        ...feasibility.rationale_codes,
+        "reference_context_precomputed",
+      ],
+    }),
+  };
 }
 
 function resolveWeeklyLoadSignals(
@@ -2008,6 +2217,19 @@ function createZeroObjectiveContributions(): ProjectionDiagnostics["objective_co
   };
 }
 
+function createZeroReferenceTracking(): NonNullable<
+  ProjectionDiagnostics["reference_tracking"]
+> {
+  return {
+    scored_weeks: 0,
+    matched_points: 0,
+    ctl_mean_absolute_error: 0,
+    tss_mean_absolute_error: 0,
+    taper_pressure: 0,
+    safety_penalty: 0,
+  };
+}
+
 function createZeroTradeoffSummary(): ProjectionDiagnostics["optimization_tradeoff_summary"] {
   return {
     goal_utility: 0,
@@ -2069,9 +2291,14 @@ function resolveDiagnosticsEffectiveOptimizerConfig(input: {
 
 function parseObjectiveContributionsPayload(
   payload: Record<string, number | string | boolean | null> | undefined,
-): ProjectionDiagnostics["objective_contributions"] {
+): ProjectionDiagnostics["objective_contributions"] & {
+  reference_tracking: NonNullable<ProjectionDiagnostics["reference_tracking"]>;
+} {
   if (!payload) {
-    return createZeroObjectiveContributions();
+    return {
+      ...createZeroObjectiveContributions(),
+      reference_tracking: createZeroReferenceTracking(),
+    };
   }
 
   const readNumber = (key: string): number => {
@@ -2092,12 +2319,21 @@ function parseObjectiveContributionsPayload(
       strain: readNumber("weighted_term_strain"),
       curve: readNumber("weighted_term_curve"),
     },
+    reference_tracking: {
+      scored_weeks: readNumber("reference_tracking_scored_weeks"),
+      matched_points: readNumber("reference_tracking_matched_points"),
+      ctl_mean_absolute_error: readNumber("reference_tracking_ctl_mae"),
+      tss_mean_absolute_error: readNumber("reference_tracking_tss_mae"),
+      taper_pressure: readNumber("reference_tracking_taper_pressure"),
+      safety_penalty: readNumber("reference_tracking_safety_penalty"),
+    },
   };
 }
 
 function serializeObjectiveContributionsPayload(input: {
   objective_score: number;
   weighted_terms: MpcObjectiveEvaluation["weighted_terms"];
+  reference_tracking?: ProjectionDiagnostics["reference_tracking"];
 }): Record<string, number> {
   return {
     objective_score: input.objective_score,
@@ -2109,6 +2345,18 @@ function serializeObjectiveContributionsPayload(input: {
     weighted_term_monotony: input.weighted_terms.monotony,
     weighted_term_strain: input.weighted_terms.strain,
     weighted_term_curve: input.weighted_terms.curve,
+    reference_tracking_scored_weeks:
+      input.reference_tracking?.scored_weeks ?? 0,
+    reference_tracking_matched_points:
+      input.reference_tracking?.matched_points ?? 0,
+    reference_tracking_ctl_mae:
+      input.reference_tracking?.ctl_mean_absolute_error ?? 0,
+    reference_tracking_tss_mae:
+      input.reference_tracking?.tss_mean_absolute_error ?? 0,
+    reference_tracking_taper_pressure:
+      input.reference_tracking?.taper_pressure ?? 0,
+    reference_tracking_safety_penalty:
+      input.reference_tracking?.safety_penalty ?? 0,
   };
 }
 
@@ -2176,6 +2424,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
   selected_weekly_tss: number;
   evaluated_candidates: number;
   objective_contributions: ProjectionDiagnostics["objective_contributions"];
+  reference_tracking: NonNullable<ProjectionDiagnostics["reference_tracking"]>;
 } {
   const baseline = applyWeeklyTssCaps({
     flooredWeeklyTss: input.flooredWeeklyTss,
@@ -2190,6 +2439,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
       selected_weekly_tss: baseline,
       evaluated_candidates: 0,
       objective_contributions: createZeroObjectiveContributions(),
+      reference_tracking: createZeroReferenceTracking(),
     };
   }
 
@@ -2201,6 +2451,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
       selected_weekly_tss: baseline,
       evaluated_candidates: 0,
       objective_contributions: createZeroObjectiveContributions(),
+      reference_tracking: createZeroReferenceTracking(),
     };
   }
 
@@ -2223,6 +2474,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
       selected_weekly_tss: baseline,
       evaluated_candidates: 0,
       objective_contributions: createZeroObjectiveContributions(),
+      reference_tracking: createZeroReferenceTracking(),
     };
   }
 
@@ -2242,6 +2494,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
   let bestScore = Number.NEGATIVE_INFINITY;
   let evaluatedCandidates = 0;
   let bestObjectiveContributions = createZeroObjectiveContributions();
+  let bestReferenceTracking = createZeroReferenceTracking();
 
   for (const candidateTss of [...candidateValues].sort((a, b) => a - b)) {
     evaluatedCandidates += 1;
@@ -2269,6 +2522,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
         objective_score: objective.objective_score,
         weighted_terms: objective.weighted_terms,
       };
+      bestReferenceTracking = objective.reference_tracking;
       continue;
     }
 
@@ -2282,6 +2536,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
           objective_score: objective.objective_score,
           weighted_terms: objective.weighted_terms,
         };
+        bestReferenceTracking = objective.reference_tracking;
       }
     }
   }
@@ -2290,6 +2545,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
     selected_weekly_tss: bestTss,
     evaluated_candidates: evaluatedCandidates,
     objective_contributions: bestObjectiveContributions,
+    reference_tracking: bestReferenceTracking,
   };
 }
 
@@ -2329,6 +2585,8 @@ function solveWeeklyAppliedTssWithFallback(
     objective_contributions: createZeroObjectiveContributions(),
     optimization_tradeoff_summary: createZeroTradeoffSummary(),
     convergence_guard: convergenceGuard,
+    reference_context: input.referenceContext.diagnostics,
+    reference_tracking: createZeroReferenceTracking(),
   };
 
   if (input.input.disable_weekly_tss_optimizer) {
@@ -2423,12 +2681,17 @@ function solveWeeklyAppliedTssWithFallback(
             diagnostics_payload: serializeObjectiveContributionsPayload({
               objective_score: Number.NEGATIVE_INFINITY,
               weighted_terms: createZeroObjectiveWeightedTerms(),
+              reference_tracking: createZeroReferenceTracking(),
             }),
           };
         }
 
         return {
           objective_score: objective.objective_score,
+          safety_penalty: objective.reference_tracking?.safety_penalty,
+          tracking_error: objective.reference_tracking?.tracking_error,
+          volatility_penalty: Math.abs(objective.weighted_terms.volatility),
+          churn_penalty: Math.abs(objective.weighted_terms.churn),
           primary_goal_date: input.goalMarkers[0]?.target_date,
           primary_goal_id: input.goalMarkers[0]?.id,
           diagnostics_payload:
@@ -2470,6 +2733,9 @@ function solveWeeklyAppliedTssWithFallback(
         objective_contributions: parseObjectiveContributionsPayload(
           selectedCandidate?.diagnostics_payload,
         ),
+        reference_tracking: parseObjectiveContributionsPayload(
+          selectedCandidate?.diagnostics_payload,
+        ).reference_tracking,
         convergence_guard: {
           ...convergenceGuard,
           stability_assertions: [...convergenceGuard.stability_assertions],
@@ -2520,12 +2786,17 @@ function solveWeeklyAppliedTssWithFallback(
             diagnostics_payload: serializeObjectiveContributionsPayload({
               objective_score: Number.NEGATIVE_INFINITY,
               weighted_terms: createZeroObjectiveWeightedTerms(),
+              reference_tracking: createZeroReferenceTracking(),
             }),
           };
         }
 
         return {
           objective_score: objective.objective_score,
+          safety_penalty: objective.reference_tracking?.safety_penalty,
+          tracking_error: objective.reference_tracking?.tracking_error,
+          volatility_penalty: Math.abs(objective.weighted_terms.volatility),
+          churn_penalty: Math.abs(objective.weighted_terms.churn),
           primary_goal_date: input.goalMarkers[0]?.target_date,
           primary_goal_id: input.goalMarkers[0]?.id,
           diagnostics_payload:
@@ -2568,6 +2839,9 @@ function solveWeeklyAppliedTssWithFallback(
         objective_contributions: parseObjectiveContributionsPayload(
           selectedCandidate?.diagnostics_payload,
         ),
+        reference_tracking: parseObjectiveContributionsPayload(
+          selectedCandidate?.diagnostics_payload,
+        ).reference_tracking,
         convergence_guard: {
           ...convergenceGuard,
           stability_assertions: [...convergenceGuard.stability_assertions],
@@ -2597,6 +2871,7 @@ function solveWeeklyAppliedTssWithFallback(
           legacy_optimizer: legacy.evaluated_candidates,
         },
         objective_contributions: legacy.objective_contributions,
+        reference_tracking: legacy.reference_tracking,
         convergence_guard: {
           ...convergenceGuard,
           stability_assertions: [...convergenceGuard.stability_assertions],
@@ -2628,6 +2903,11 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
 ): {
   objective_score: number;
   weighted_terms: MpcObjectiveEvaluation["weighted_terms"];
+  reference_tracking: NonNullable<
+    ProjectionDiagnostics["reference_tracking"]
+  > & {
+    tracking_error: number;
+  };
 } {
   const profileBehavior = getOptimizationProfileBehavior(
     input.normalizedConfig.optimization_profile,
@@ -2639,12 +2919,7 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
       week_index: input.projectionWeekIndex,
     }),
   ];
-  const simulatedPoints: Array<{
-    date: string;
-    predicted_fitness_ctl: number;
-    predicted_fatigue_atl: number;
-    predicted_form_tsb: number;
-  }> = [];
+  const simulatedPoints: ProjectedDailyState[] = [];
 
   let simCtl = simulateCtlOverWeek(
     input.currentCtl,
@@ -2673,6 +2948,9 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
     );
     simulatedPoints.push({
       date: dayDate,
+      predicted_load_tss: round1(
+        input.candidateWeeklyTss / Math.max(1, input.daysInWeek),
+      ),
       predicted_fitness_ctl: round1(dayCtl),
       predicted_fatigue_atl: round1(dayAtl),
       predicted_form_tsb: round1(dayCtl - dayAtl),
@@ -2752,6 +3030,7 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
       const dayAtl = simulateAtlOverWeek(priorAtl, simWeeklyTss, dayOffset + 1);
       simulatedPoints.push({
         date: dayDate,
+        predicted_load_tss: round1(simWeeklyTss / Math.max(1, simDaysInWeek)),
         predicted_fitness_ctl: round1(dayCtl),
         predicted_fatigue_atl: round1(dayAtl),
         predicted_form_tsb: round1(dayCtl - dayAtl),
@@ -2763,6 +3042,32 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
     simWeekStartDate = addDaysDateOnlyUtc(simWeekStartDate, 7);
     simProjectionWeekIndex += 1;
   }
+
+  const referenceTracking = (() => {
+    if (input.referenceContext.status !== "available") {
+      return {
+        ...createZeroReferenceTracking(),
+        tracking_error: 0,
+        rationale_codes: [],
+      };
+    }
+
+    const evaluation = evaluateReferenceTrackingWindow({
+      projected_states: simulatedPoints,
+      reference_trajectory: input.referenceContext.reference_trajectory,
+    });
+
+    return {
+      scored_weeks: evaluation.matched_points > 0 ? 1 : 0,
+      matched_points: evaluation.matched_points,
+      ctl_mean_absolute_error: evaluation.ctl_mean_absolute_error,
+      tss_mean_absolute_error: evaluation.tss_mean_absolute_error,
+      taper_pressure: evaluation.taper_pressure,
+      safety_penalty: evaluation.safety_penalty,
+      tracking_error: evaluation.tracking_error,
+      rationale_codes: evaluation.rationale_codes,
+    };
+  })();
 
   const windowEndDate =
     simulatedPoints[simulatedPoints.length - 1]?.date ?? input.weekEndDate;
@@ -2777,6 +3082,7 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
       objective_score:
         -Math.abs(input.candidateWeeklyTss - input.baselineWeeklyTss) * 0.05,
       weighted_terms: createZeroObjectiveWeightedTerms(),
+      reference_tracking: referenceTracking,
     };
   }
 
@@ -2901,20 +3207,21 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
   const churnPenaltyScale = effectiveOptimizer.churn_penalty_weight;
 
   const objective = evaluateMpcObjective({
-    components: {
-      goal_attainment: preparednessPrimary,
-      projected_readiness: preparednessSecondary,
+    components: buildPeriodizedObjectiveComponents({
+      preparedness_primary: preparednessPrimary,
+      preparedness_secondary: preparednessSecondary,
       overload_penalty:
         overloadPenalty +
         softRampExcessPenalty +
         demandFloorPenalty +
         fatigueDecaySoftPenalty,
-      load_volatility_penalty: volatilityPenalty,
-      plan_change_penalty: baselineDeviationPenalty,
+      volatility_penalty: volatilityPenalty,
+      churn_penalty: baselineDeviationPenalty,
       monotony_penalty: 0,
       strain_penalty: 0,
       curvature_penalty: curvaturePenalty,
-    },
+      reference_tracking: referenceTracking,
+    }),
     weights: {
       w_goal: preparednessPrimaryWeight * profileBehavior.goal_readiness_weight,
       w_readiness: preparednessSecondaryWeight,
@@ -2932,6 +3239,7 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
   return {
     objective_score: objective.objective_score,
     weighted_terms: objective.weighted_terms,
+    reference_tracking: referenceTracking,
   };
 }
 
@@ -3544,6 +3852,13 @@ function inferCurrentState(input: {
 export function buildDeterministicProjectionPayload(
   input: BuildDeterministicProjectionInput,
 ): DeterministicProjectionPayload {
+  return buildDeterministicProjectionPayloadInternal(input);
+}
+
+function buildDeterministicProjectionPayloadInternal(
+  input: BuildDeterministicProjectionInput,
+  precomputedReferenceContext?: ProjectionReferenceContext,
+): DeterministicProjectionPayload {
   const normalizedConfig = normalizeProjectionSafetyConfig(
     input.creation_config,
   );
@@ -3698,6 +4013,15 @@ export function buildDeterministicProjectionPayload(
   const startingStateIsPrior = Boolean(
     input.prior_inferred_snapshot ?? noHistory?.projection_floor_applied,
   );
+  const referenceContext =
+    precomputedReferenceContext ??
+    computeReferenceContext({
+      projectionInput: input,
+      normalizedConfig,
+      currentCtl: startingCtl,
+      startDate,
+      endDate,
+    });
 
   const microcycles: DeterministicProjectionMicrocycle[] = [];
   const points: DeterministicProjectionPoint[] = [];
@@ -3738,6 +4062,8 @@ export function buildDeterministicProjectionPayload(
     objective_contributions: createZeroObjectiveContributions(),
     optimization_tradeoff_summary: createZeroTradeoffSummary(),
     convergence_guard: createDefaultConvergenceGuard(),
+    reference_context: referenceContext.diagnostics,
+    reference_tracking: createZeroReferenceTracking(),
   };
   if (calibrationResolution.usedDefaults) {
     projectionDiagnostics.active_constraints.push(
@@ -3801,6 +4127,7 @@ export function buildDeterministicProjectionPayload(
       input,
       normalizedConfig,
       calibration,
+      referenceContext,
       goalMarkers,
       recoverySegments,
       endDate,
@@ -3925,6 +4252,34 @@ export function buildDeterministicProjectionPayload(
         projectionDiagnostics.objective_contributions.weighted_terms.curve +
           weeklyDecision.diagnostics.objective_contributions.weighted_terms
             .curve,
+      ),
+    };
+    projectionDiagnostics.reference_tracking = {
+      scored_weeks:
+        (projectionDiagnostics.reference_tracking?.scored_weeks ?? 0) +
+        (weeklyDecision.diagnostics.reference_tracking?.scored_weeks ?? 0),
+      matched_points:
+        (projectionDiagnostics.reference_tracking?.matched_points ?? 0) +
+        (weeklyDecision.diagnostics.reference_tracking?.matched_points ?? 0),
+      ctl_mean_absolute_error: round6(
+        (projectionDiagnostics.reference_tracking?.ctl_mean_absolute_error ??
+          0) +
+          (weeklyDecision.diagnostics.reference_tracking
+            ?.ctl_mean_absolute_error ?? 0),
+      ),
+      tss_mean_absolute_error: round6(
+        (projectionDiagnostics.reference_tracking?.tss_mean_absolute_error ??
+          0) +
+          (weeklyDecision.diagnostics.reference_tracking
+            ?.tss_mean_absolute_error ?? 0),
+      ),
+      taper_pressure: round6(
+        (projectionDiagnostics.reference_tracking?.taper_pressure ?? 0) +
+          (weeklyDecision.diagnostics.reference_tracking?.taper_pressure ?? 0),
+      ),
+      safety_penalty: round6(
+        (projectionDiagnostics.reference_tracking?.safety_penalty ?? 0) +
+          (weeklyDecision.diagnostics.reference_tracking?.safety_penalty ?? 0),
       ),
     };
     projectionDiagnostics.optimization_tradeoff_summary = {
@@ -4506,16 +4861,22 @@ export function buildDeterministicProjectionPayload(
     sport_load_states: sportLoadStates,
     dose_recommendation: doseRecommendation,
     goal_assessments: goalAssessments,
+    reference_trajectory: referenceContext.reference_trajectory,
+    trajectory_mode: referenceContext.trajectory_mode,
+    feasibility_assessment: referenceContext.feasibility_assessment,
   };
 
   if (input.disable_weekly_tss_optimizer) {
     return optimizedPayload;
   }
 
-  const baselinePayload = buildDeterministicProjectionPayload({
-    ...input,
-    disable_weekly_tss_optimizer: true,
-  });
+  const baselinePayload = buildDeterministicProjectionPayloadInternal(
+    {
+      ...input,
+      disable_weekly_tss_optimizer: true,
+    },
+    referenceContext,
+  );
   const optimizedReadiness = computeWeightedGoalDateReadiness({
     points: optimizedPayload.points,
     goals: optimizedPayload.goal_markers,

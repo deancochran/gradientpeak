@@ -51,6 +51,211 @@ describe("projection calculations", () => {
     expect(engineProjection).toEqual(legacyProjection);
   });
 
+  it("adds reference payload fields without breaking existing projection shape", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-04-06",
+        end_date: "2026-04-27",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-04-06",
+          end_date: "2026-04-27",
+          target_weekly_tss_range: { min: 360, max: 400 },
+        },
+      ],
+      goals: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "10K Goal",
+          target_date: "2026-04-26",
+          priority: 9,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 10000,
+              target_time_s: 2700,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+      starting_ctl: 48,
+    });
+
+    expect(projection).toMatchObject({
+      start_date: "2026-04-06",
+      end_date: "2026-04-27",
+      points: expect.any(Array),
+      microcycles: expect.any(Array),
+    });
+    expect(projection.reference_trajectory?.points.length).toBeGreaterThan(0);
+    expect(projection.trajectory_mode).toBeDefined();
+    expect(projection.feasibility_assessment?.status).toBeDefined();
+  });
+
+  it("surfaces precomputed reference context when goals are valid", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-04-06",
+        end_date: "2026-04-27",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-04-06",
+          end_date: "2026-04-27",
+          target_weekly_tss_range: { min: 380, max: 430 },
+        },
+      ],
+      goals: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Half Marathon",
+          target_date: "2026-04-25",
+          priority: 10,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 21097,
+              target_time_s: 5400,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+      starting_ctl: 52,
+      preference_profile: defaultAthletePreferenceProfile,
+    });
+
+    expect(projection.reference_trajectory?.mode).toBe(
+      projection.trajectory_mode,
+    );
+    expect(projection.reference_trajectory?.feasibility).toEqual(
+      projection.feasibility_assessment,
+    );
+    expect(projection.projection_diagnostics?.reference_context).toMatchObject({
+      status: "available",
+      supported_goal_count: 1,
+    });
+  });
+
+  it("degrades to unsupported diagnostics when reference context cannot normalize goal ids", () => {
+    const buildProjection = () =>
+      buildDeterministicProjectionPayload({
+        timeline: {
+          start_date: "2026-04-06",
+          end_date: "2026-04-27",
+        },
+        blocks: [
+          {
+            name: "Build",
+            phase: "build",
+            start_date: "2026-04-06",
+            end_date: "2026-04-27",
+            target_weekly_tss_range: { min: 380, max: 430 },
+          },
+        ],
+        goals: [
+          {
+            id: "goal-no-uuid",
+            name: "Half Marathon",
+            target_date: "2026-04-25",
+            priority: 10,
+            targets: [
+              {
+                target_type: "race_performance",
+                distance_m: 21097,
+                target_time_s: 5400,
+                activity_category: "run",
+              },
+            ],
+          },
+        ],
+        starting_ctl: 52,
+      });
+
+    expect(buildProjection).not.toThrow();
+    expect(buildProjection().reference_trajectory).toBeUndefined();
+    expect(
+      buildProjection().projection_diagnostics?.reference_context,
+    ).toMatchObject({
+      status: "unsupported",
+      supported_goal_count: 0,
+    });
+  });
+
+  it("applies reference pressure before the event week when taper is inside the lookahead window", () => {
+    const sharedInput = {
+      timeline: {
+        start_date: "2026-04-06",
+        end_date: "2026-04-27",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-04-06",
+          end_date: "2026-04-27",
+          target_weekly_tss_range: { min: 420, max: 460 },
+        },
+      ],
+      starting_ctl: 52,
+      preference_profile: defaultAthletePreferenceProfile,
+    };
+
+    const tracked = buildDeterministicProjectionPayload({
+      ...sharedInput,
+      goals: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          name: "A Race",
+          target_date: "2026-04-25",
+          priority: 10,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 21097,
+              target_time_s: 5400,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+    });
+    const unsupported = buildDeterministicProjectionPayload({
+      ...sharedInput,
+      goals: [
+        {
+          id: "goal-no-uuid",
+          name: "A Race",
+          target_date: "2026-04-25",
+          priority: 10,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 21097,
+              target_time_s: 5400,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(tracked.reference_trajectory).toBeDefined();
+    expect(tracked.projection_diagnostics?.reference_context?.status).toBe(
+      "available",
+    );
+    expect(tracked.microcycles[0]?.planned_weekly_tss).toBeLessThanOrEqual(
+      unsupported.microcycles[0]?.planned_weekly_tss ??
+        Number.POSITIVE_INFINITY,
+    );
+  });
+
   it("blends block target range and baseline weekly TSS", () => {
     const weeklyTss = weeklyLoadFromBlockAndBaseline(
       {

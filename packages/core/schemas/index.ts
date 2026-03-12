@@ -80,7 +80,9 @@ export * from "./planned_activity";
 
 // Export profile goals/settings (Phase 1 additive domain schemas)
 export * from "./goals/profile_goals";
+export * from "./planning";
 export * from "./settings/profile_settings";
+export * from "./sport";
 
 // Export from training_plan_structure
 export * from "./training_plan_structure";

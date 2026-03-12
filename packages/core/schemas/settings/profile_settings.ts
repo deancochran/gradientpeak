@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canonicalSportSchema } from "../sport";
 import {
   creationOptimizationProfileEnum,
   creationWeekDayEnum,
@@ -92,7 +93,7 @@ export const athletePreferenceAvailabilitySchema = z
     }
   });
 
-export const athletePreferenceDoseLimitsSchema = z
+const athletePreferenceSportDoseLimitOverrideSchema = z
   .object({
     min_sessions_per_week: z.number().int().min(0).max(21).optional(),
     max_sessions_per_week: z.number().int().min(0).max(21).optional(),
@@ -119,11 +120,45 @@ export const athletePreferenceDoseLimitsSchema = z
     }
   });
 
+export const athletePreferenceDoseLimitsSchema = z
+  .object({
+    min_sessions_per_week: z.number().int().min(0).max(21).optional(),
+    max_sessions_per_week: z.number().int().min(0).max(21).optional(),
+    max_single_session_duration_minutes: z
+      .number()
+      .int()
+      .min(20)
+      .max(600)
+      .optional(),
+    max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
+    sport_overrides: z
+      .partialRecord(
+        canonicalSportSchema,
+        athletePreferenceSportDoseLimitOverrideSchema,
+      )
+      .optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      value.min_sessions_per_week !== undefined &&
+      value.max_sessions_per_week !== undefined &&
+      value.min_sessions_per_week > value.max_sessions_per_week
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["min_sessions_per_week"],
+        message: "Minimum sessions per week cannot exceed maximum sessions",
+      });
+    }
+  });
+
 export const athletePreferenceTrainingStyleSchema = z
   .object({
     progression_pace: capabilityBoundedNumber,
     week_pattern_preference: capabilityBoundedNumber,
     key_session_density_preference: capabilityBoundedNumber.optional(),
+    strength_integration_priority: capabilityBoundedNumber,
   })
   .strict();
 
@@ -131,6 +166,7 @@ export const athletePreferenceRecoverySchema = z
   .object({
     recovery_priority: capabilityBoundedNumber,
     post_goal_recovery_days: z.number().int().min(0).max(28),
+    systemic_fatigue_tolerance: capabilityBoundedNumber,
     double_day_tolerance: capabilityBoundedNumber.optional(),
     long_session_fatigue_tolerance: capabilityBoundedNumber.optional(),
   })
@@ -147,6 +183,7 @@ export const athletePreferenceGoalStrategySchema = z
   .object({
     target_surplus_preference: capabilityBoundedNumber,
     priority_tradeoff_preference: capabilityBoundedNumber.optional(),
+    taper_style_preference: capabilityBoundedNumber,
   })
   .strict();
 
@@ -223,15 +260,18 @@ export const defaultAthletePreferenceProfile =
       max_sessions_per_week: 4,
       max_single_session_duration_minutes: 90,
       max_weekly_duration_minutes: 360,
+      sport_overrides: {},
     },
     training_style: {
       progression_pace: 0.5,
       week_pattern_preference: 0.5,
       key_session_density_preference: 0.5,
+      strength_integration_priority: 0.5,
     },
     recovery_preferences: {
       recovery_priority: 0.6,
       post_goal_recovery_days: 5,
+      systemic_fatigue_tolerance: 0.5,
       double_day_tolerance: 0.25,
       long_session_fatigue_tolerance: 0.5,
     },
@@ -242,6 +282,7 @@ export const defaultAthletePreferenceProfile =
     goal_strategy_preferences: {
       target_surplus_preference: 0,
       priority_tradeoff_preference: 0.5,
+      taper_style_preference: 0.5,
     },
   });
 
@@ -452,6 +493,14 @@ export function resolveEffectivePreferences(
     dose_limits: {
       ...parsedDefaults.dose_limits,
       ...parsedOverrides.dose_limits,
+      sport_overrides:
+        parsedDefaults.dose_limits.sport_overrides ||
+        parsedOverrides.dose_limits?.sport_overrides
+          ? {
+              ...(parsedDefaults.dose_limits.sport_overrides ?? {}),
+              ...(parsedOverrides.dose_limits?.sport_overrides ?? {}),
+            }
+          : undefined,
     },
     training_style: {
       ...parsedDefaults.training_style,

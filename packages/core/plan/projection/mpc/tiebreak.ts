@@ -1,5 +1,9 @@
 export type MpcTieBreakField =
   | "objective"
+  | "safety_penalty"
+  | "tracking_error"
+  | "volatility_penalty"
+  | "churn_penalty"
   | "delta_from_prev"
   | "goal_date"
   | "goal_id"
@@ -7,6 +11,10 @@ export type MpcTieBreakField =
 
 export const MPC_TIE_BREAK_ORDER: readonly MpcTieBreakField[] = [
   "objective",
+  "safety_penalty",
+  "tracking_error",
+  "volatility_penalty",
+  "churn_penalty",
   "delta_from_prev",
   "goal_date",
   "goal_id",
@@ -16,9 +24,26 @@ export const MPC_TIE_BREAK_ORDER: readonly MpcTieBreakField[] = [
 export interface MpcTieBreakCandidate {
   candidate_value: number;
   objective_score: number;
+  safety_penalty?: number;
+  tracking_error?: number;
+  volatility_penalty?: number;
+  churn_penalty?: number;
   delta_from_prev: number;
   primary_goal_date?: string | null;
   primary_goal_id?: string | null;
+}
+
+function compareOptionalPenalty(
+  left: number | undefined,
+  right: number | undefined,
+): number {
+  if (left === undefined && right === undefined) {
+    return 0;
+  }
+
+  return (
+    (left ?? Number.POSITIVE_INFINITY) - (right ?? Number.POSITIVE_INFINITY)
+  );
 }
 
 /**
@@ -30,6 +55,38 @@ export function compareMpcTieBreakCandidates(
 ): number {
   if (left.objective_score !== right.objective_score) {
     return right.objective_score - left.objective_score;
+  }
+
+  const safetyPenaltyOrder = compareOptionalPenalty(
+    left.safety_penalty,
+    right.safety_penalty,
+  );
+  if (safetyPenaltyOrder !== 0) {
+    return safetyPenaltyOrder;
+  }
+
+  const trackingErrorOrder = compareOptionalPenalty(
+    left.tracking_error,
+    right.tracking_error,
+  );
+  if (trackingErrorOrder !== 0) {
+    return trackingErrorOrder;
+  }
+
+  const volatilityPenaltyOrder = compareOptionalPenalty(
+    left.volatility_penalty,
+    right.volatility_penalty,
+  );
+  if (volatilityPenaltyOrder !== 0) {
+    return volatilityPenaltyOrder;
+  }
+
+  const churnPenaltyOrder = compareOptionalPenalty(
+    left.churn_penalty,
+    right.churn_penalty,
+  );
+  if (churnPenaltyOrder !== 0) {
+    return churnPenaltyOrder;
   }
 
   if (left.delta_from_prev !== right.delta_from_prev) {

@@ -1,4 +1,9 @@
 import type {
+  FeasibilityAssessment,
+  ReferenceTrajectory,
+  TrajectoryMode,
+} from "../schemas/planning";
+import type {
   DeterministicProjectionMicrocycle,
   ProjectionDiagnostics,
   DeterministicProjectionPoint,
@@ -183,6 +188,9 @@ export interface ProjectionChartPayload {
   prediction_uncertainty?: ProjectionPredictionUncertainty;
   goal_target_distributions?: ProjectionGoalTargetDistribution[];
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
+  reference_trajectory?: ReferenceTrajectory;
+  trajectory_mode?: TrajectoryMode;
+  feasibility_assessment?: FeasibilityAssessment;
   sport_load_states?: ProjectionSportLoadState[];
   dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{

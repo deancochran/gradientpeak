@@ -30,6 +30,7 @@ export * from "./projection/mpc/constraints";
 export * from "./projection/mpc/objective";
 export * from "./projection/mpc/solver";
 export * from "./projection/mpc/tiebreak";
+export * from "./periodization";
 export * from "./scoring/targetSatisfaction";
 export * from "./scoring/goalScore";
 export * from "./scoring/planScore";
