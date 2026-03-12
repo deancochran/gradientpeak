@@ -42,17 +42,21 @@ When a user sets a goal that is physiologically unreachable within the timeframe
 - **State Shift:** The engine shifts from _Target-Seeking Mode_ (reverse-engineering from the goal) to _Capacity-Bounded Mode_ (forward-simulating at maximum safe capacity).
 - **The "Best Effort" Curve:** The engine draws a curve that safely gets the user as close to the goal as possible without violating safety constraints, and calculates a "Readiness Gap" ($CTL_{target} - CTL_{achievable}$) to communicate the reality to the user.
 
-### 5. Adjustable Risk Thresholds (UI to Math Mapping)
+### 5. Adjustable Risk Thresholds (The Biologically-Bounded Modifier Pattern)
 
-User risk tolerance directly maps to the constraint variables in the optimization model. By exposing a "Risk Profile" setting in the UI (e.g., a slider from Conservative to Aggressive), the bounding box of the heuristic engine is mathematically altered.
+User risk tolerance directly maps to the constraint variables in the optimization model. However, to prevent users from requesting physiologically impossible or dangerous plans (e.g., a 7-day taper for a 100-mile ultra), the engine uses a **Biologically-Bounded Modifier Pattern**.
 
-These UI inputs map to continuous values ($0.0 - 1.0$) in the `AthletePreferenceProfile` schema, which are then interpolated into rigid constraints:
+- **Goal-Driven Anchors:** The `GoalTargetV2` establishes the absolute physiological boundaries (e.g., a 100-miler _requires_ a minimum 18-day taper to clear systemic fatigue).
+- **Preference-Driven Modifiers:** The `AthletePreferenceProfile` acts as a multiplier applied to the baseline, rather than an absolute override.
 
-- **Max CTL Ramp Rate:** Derived from `progression_pace`. $Ramp_{max} = 2 + (x \times 4)$ (Yields 2 to 6 CTL/wk)
-- **Max ACWR:** Derived from `progression_pace`. $ACWR_{max} = 1.1 + (x \times 0.4)$ (Yields 1.1 to 1.5)
-- **TSB Floor:** Derived from `systemic_fatigue_tolerance`. $TSB_{floor} = -15 - (x \times 20)$ (Yields -15 to -35)
-- **Taper Duration:** Derived from `taper_style_preference`. $Days = 7 + Math.round(x \times 14)$ (Yields 7 to 21 days)
-- **Strength Priority:** Derived from `strength_integration_priority`. Allocates MFS budget and max strength sessions per week.
+For example, the `taper_style_preference` (0.0 to 1.0) maps to a multiplier (e.g., 0.8x to 1.2x).
+
+- **Baseline:** 24 days (derived from the 100-mile goal).
+- **User Preference (Aggressive/Short):** 0.8x multiplier.
+- **Calculated:** 19.2 days.
+- **Clamped:** The engine checks against the absolute minimum safe boundary (18 days). The result is 19 days.
+
+**Data Modeling (Provenance):** The engine wraps these values in a `CalculatedParameter` object that tracks the baseline, the applied modifiers, the final effective value, and a `clamped` boolean. If a user's preference hits a physiological wall, the UI can read this provenance data to explain _why_ (e.g., "Your 'Short' taper preference was bounded to 19 days to ensure adequate fatigue recovery for your 100-Mile event.").
 
 **Dynamic Recalculation:** If a user changes their preference mid-season (e.g., from Aggressive to Conservative), the engine instantly recalculates. A goal that was previously "Feasible" might become "Infeasible" because the algorithm is no longer allowed to ramp CTL aggressively. The UI will then display the new "Best Effort" curve and the resulting "Readiness Gap" alert.
 
