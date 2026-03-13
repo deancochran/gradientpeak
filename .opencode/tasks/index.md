@@ -214,13 +214,13 @@
 
 ### [20260312-120000] Library Removal + Duplicate-First MVP
 
-- **Status**: in_progress
+- **Status**: completed
 - **Complexity**: medium
 - **Subtasks**:
-  - [ ] Audit remaining library dependencies and decide route scope
-  - [ ] Add or repair duplicate support for shared activity/training plans
-  - [ ] Remove library UI/copy and deprecate the library router
-  - [ ] Clean up `library_items` persistence if no runtime dependency remains
+  - [x] Audit remaining library dependencies and decide route scope
+  - [x] Add or repair duplicate support for shared activity/training plans
+  - [x] Remove library UI/copy and deprecate the library router
+  - [x] Clean up `library_items` persistence if no runtime dependency remains
 - **Blockers**: None
 - **Spec Location**: `.opencode/specs/2026-03-12_library-removal-duplicate-mvp/`
 
@@ -241,3 +241,49 @@
   - [x] Phase 8: Validation and benchmark closure
 - **Blockers**: None
 - **Spec Location**: `.opencode/specs/2026-03-11_continuous-fluid-periodization/`
+
+---
+
+### [20260312-130000] Scheduling UX + Refresh Simplification
+
+- **Status**: completed
+- **Complexity**: high
+- **Subtasks**:
+  - [x] Phase 1: Audit + Contract Alignment
+  - [x] Phase 2: Freshness + State Propagation
+  - [x] Phase 3: Scheduling Flow Simplification
+  - [x] Phase 4: Training-Plan UX Cleanup
+  - [x] Phase 5: Training-Plan Scheduling Clarity + Projection Correctness
+  - [x] Validation Gate
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-12_scheduling-ux-refresh-simplification/`
+
+---
+
+### [20260313-100000] System Plan Heuristic Verification
+
+- **Status**: completed
+- **Complexity**: high
+- **Subtasks**:
+  - [x] Phase 1: Source Audit
+  - [x] Phase 2: Core Verification Harness
+  - [x] Phase 3: Fixture Matrix
+  - [x] Phase 4: Contract Tests
+  - [x] Phase 5: Validation and Follow-through
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-13_system-plan-heuristic-verification/`
+
+---
+
+### [20260313-130000] System Activity Plan Library Expansion
+
+- **Status**: pending
+- **Complexity**: high
+- **Subtasks**:
+  - [ ] Phase 1: Catalog Audit
+  - [ ] Phase 2: Training-Plan Dependency Audit
+  - [ ] Phase 3: Coverage Matrix
+  - [ ] Phase 4: Library Expansion
+  - [ ] Phase 5: Validation
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-13_system-activity-plan-library-expansion/`

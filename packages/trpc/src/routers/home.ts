@@ -60,9 +60,12 @@ export const homeRouter = createTRPCRouter({
         ? userGender
         : undefined;
 
-      // --- 1. Fetch Active Plan ---
-      const { data: nextPlannedEvent, error: nextPlannedEventError } =
-        await ctx.supabase
+      // --- 1. Fetch Active Plan & Settings ---
+      const [
+        { data: nextPlannedEvent, error: nextPlannedEventError },
+        { data: profileSettingsData },
+      ] = await Promise.all([
+        ctx.supabase
           .from("events")
           .select("training_plan_id, starts_at")
           .eq("profile_id", userId)
@@ -71,7 +74,13 @@ export const homeRouter = createTRPCRouter({
           .gte("starts_at", today.toISOString())
           .order("starts_at", { ascending: true })
           .limit(1)
-          .maybeSingle();
+          .maybeSingle(),
+        ctx.supabase
+          .from("profile_training_settings")
+          .select("settings")
+          .eq("profile_id", userId)
+          .maybeSingle(),
+      ]);
 
       if (nextPlannedEventError) {
         throw new TRPCError({
@@ -230,14 +239,55 @@ export const homeRouter = createTRPCRouter({
       const fitnessTrends = [];
       let todayStatus = { ctl: 0, atl: 0, tsb: 0, form: "fresh" };
 
-      // Iterate day by day from historyStart
+      // Apply Global CTL Override if enabled
+      const settings = profileSettingsData?.settings as any;
+      const baselineFitness = settings?.baseline_fitness;
+      let effectiveHistoryStart = historyStart;
+
+      if (baselineFitness?.is_enabled && baselineFitness.override_date) {
+        const overrideDate = new Date(baselineFitness.override_date);
+        if (!Number.isNaN(overrideDate.getTime())) {
+          currentCTL = baselineFitness.override_ctl ?? 0;
+          currentATL = baselineFitness.override_atl ?? 0;
+
+          // If the override date is before our history start, we need to decay it up to history start
+          if (overrideDate < historyStart) {
+            const daysToDecay = Math.floor(
+              (historyStart.getTime() - overrideDate.getTime()) /
+                (1000 * 60 * 60 * 24),
+            );
+            for (let i = 0; i < daysToDecay; i++) {
+              currentCTL = calculateCTL(currentCTL, 0, effectiveAge);
+              currentATL = calculateATL(
+                currentATL,
+                0,
+                effectiveAge,
+                effectiveGender,
+                rollingTrainingQuality,
+              );
+            }
+          } else if (overrideDate > historyStart && overrideDate <= today) {
+            // If the override date is within our window, we start calculating from the override date
+            effectiveHistoryStart = new Date(overrideDate);
+            // Clear any TSS before the override date to avoid double counting
+            for (const [dateStr] of tssByDate.entries()) {
+              if (new Date(dateStr) < overrideDate) {
+                tssByDate.delete(dateStr);
+              }
+            }
+          }
+        }
+      }
+
+      // Iterate day by day from effectiveHistoryStart
       const dayCount = Math.floor(
-        (today.getTime() - historyStart.getTime()) / (1000 * 60 * 60 * 24),
+        (today.getTime() - effectiveHistoryStart.getTime()) /
+          (1000 * 60 * 60 * 24),
       );
 
       for (let i = 0; i <= dayCount; i++) {
-        const date = new Date(historyStart);
-        date.setDate(historyStart.getDate() + i);
+        const date = new Date(effectiveHistoryStart);
+        date.setDate(effectiveHistoryStart.getDate() + i);
         const dateStr = date.toISOString().split("T")[0]!;
 
         const tss = tssByDate.get(dateStr) || 0;

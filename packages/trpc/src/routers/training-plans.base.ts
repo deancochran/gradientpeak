@@ -107,6 +107,10 @@ function todayStartIsoUtc(): string {
   return toDayStartIso(formatDateOnlyUtc(new Date()));
 }
 
+function todayDateOnlyUtc(): string {
+  return formatDateOnlyUtc(new Date());
+}
+
 type ActivePlanLookup = {
   trainingPlanId: string;
   trainingPlan: Record<string, any>;
@@ -2166,6 +2170,8 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       loadBootstrapState: profileContext.loadBootstrapState,
       finalConfig: creationConfig.finalConfig,
       contextSummary: profileContext.contextSummary,
+      startingCtlOverride: profileContext.globalCtlOverride,
+      startingAtlOverride: profileContext.globalAtlOverride,
     });
 
     const idealTssByDate = mapProjectionMicrocyclesToIdealTssByDate(
@@ -2550,38 +2556,48 @@ export async function deriveProfileAwareCreationContext(input: {
   const recentEffortsCutoff = new Date(asOf);
   recentEffortsCutoff.setDate(recentEffortsCutoff.getDate() - 84);
 
-  const [activitiesResult, effortsResult, profileMetricsResult, profileResult] =
-    await Promise.all([
-      input.supabase
-        .from("activities")
-        .select(
-          "started_at, activity_category, duration_seconds, training_stress_score, power_zone_1_seconds, power_zone_2_seconds, power_zone_3_seconds, power_zone_4_seconds, power_zone_5_seconds, power_zone_6_seconds, power_zone_7_seconds, hr_zone_1_seconds, hr_zone_2_seconds, hr_zone_3_seconds, hr_zone_4_seconds, hr_zone_5_seconds",
-        )
-        .eq("profile_id", input.profileId)
-        .gte("started_at", recentActivitiesCutoff.toISOString())
-        .order("started_at", { ascending: false })
-        .limit(300),
-      input.supabase
-        .from("activity_efforts")
-        .select(
-          "recorded_at, effort_type, duration_seconds, value, activity_category",
-        )
-        .eq("profile_id", input.profileId)
-        .gte("recorded_at", recentEffortsCutoff.toISOString())
-        .order("recorded_at", { ascending: false })
-        .limit(200),
-      input.supabase
-        .from("profile_metrics")
-        .select("metric_type, value, recorded_at")
-        .eq("profile_id", input.profileId)
-        .in("metric_type", ["lthr", "weight_kg"])
-        .order("recorded_at", { ascending: false }),
-      input.supabase
-        .from("profiles")
-        .select("dob, gender")
-        .eq("id", input.profileId)
-        .limit(1),
-    ]);
+  const [
+    activitiesResult,
+    effortsResult,
+    profileMetricsResult,
+    profileResult,
+    settingsResult,
+  ] = await Promise.all([
+    input.supabase
+      .from("activities")
+      .select(
+        "started_at, activity_category, duration_seconds, training_stress_score, power_zone_1_seconds, power_zone_2_seconds, power_zone_3_seconds, power_zone_4_seconds, power_zone_5_seconds, power_zone_6_seconds, power_zone_7_seconds, hr_zone_1_seconds, hr_zone_2_seconds, hr_zone_3_seconds, hr_zone_4_seconds, hr_zone_5_seconds",
+      )
+      .eq("profile_id", input.profileId)
+      .gte("started_at", recentActivitiesCutoff.toISOString())
+      .order("started_at", { ascending: false })
+      .limit(300),
+    input.supabase
+      .from("activity_efforts")
+      .select(
+        "recorded_at, effort_type, duration_seconds, value, activity_category",
+      )
+      .eq("profile_id", input.profileId)
+      .gte("recorded_at", recentEffortsCutoff.toISOString())
+      .order("recorded_at", { ascending: false })
+      .limit(200),
+    input.supabase
+      .from("profile_metrics")
+      .select("metric_type, value, recorded_at")
+      .eq("profile_id", input.profileId)
+      .in("metric_type", ["lthr", "weight_kg"])
+      .order("recorded_at", { ascending: false }),
+    input.supabase
+      .from("profiles")
+      .select("dob, gender")
+      .eq("id", input.profileId)
+      .limit(1),
+    input.supabase
+      .from("profile_training_settings")
+      .select("settings")
+      .eq("profile_id", input.profileId)
+      .maybeSingle(),
+  ]);
 
   if (activitiesResult.error) {
     console.warn(
@@ -2720,9 +2736,23 @@ export async function deriveProfileAwareCreationContext(input: {
     profile_age: contextSummary.user_age,
   });
 
+  const settings = settingsResult.data?.settings as any;
+  const globalCtlOverride =
+    settings?.baseline_fitness?.is_enabled &&
+    typeof settings?.baseline_fitness?.override_ctl === "number"
+      ? settings.baseline_fitness.override_ctl
+      : undefined;
+  const globalAtlOverride =
+    settings?.baseline_fitness?.is_enabled &&
+    typeof settings?.baseline_fitness?.override_atl === "number"
+      ? settings.baseline_fitness.override_atl
+      : undefined;
+
   return {
     contextSummary,
     loadBootstrapState,
+    globalCtlOverride,
+    globalAtlOverride,
   };
 }
 
@@ -2861,12 +2891,16 @@ async function evaluateCreationConfig(input: {
   asOfIso?: string;
 }) {
   const nowIso = input.creationInput.now_iso ?? new Date().toISOString();
-  const { contextSummary, loadBootstrapState } =
-    await deriveProfileAwareCreationContext({
-      supabase: input.supabase,
-      profileId: input.profileId,
-      asOfIso: input.asOfIso,
-    });
+  const {
+    contextSummary,
+    loadBootstrapState,
+    globalCtlOverride,
+    globalAtlOverride,
+  } = await deriveProfileAwareCreationContext({
+    supabase: input.supabase,
+    profileId: input.profileId,
+    asOfIso: input.asOfIso,
+  });
 
   const { suggestionPayload, suggestedValues } =
     buildConfirmedSuggestionsFromContext({
@@ -2954,6 +2988,8 @@ async function evaluateCreationConfig(input: {
     suggestionPayload,
     conflictResolution,
     feasibilitySummary,
+    globalCtlOverride,
+    globalAtlOverride,
   };
 }
 
@@ -3211,21 +3247,34 @@ export async function getPlanTabProjectionService({
     blockRampWarnings,
   });
 
-  const { data: plannedActivitiesEventsRaw } = await supabase
+  let plannedActivitiesQuery: any = supabase
     .from("events")
-    .select("starts_at, activity_plan:activity_plans (*)")
+    .select("starts_at, training_plan_id, activity_plan:activity_plans (*)")
     .eq("profile_id", profileId)
     .eq("event_type", plannedEventType)
     .gte("starts_at", toDayStartIso(input.start_date))
     .lt("starts_at", toNextDayStartIso(input.end_date));
 
-  const plannedActivitiesRaw = (plannedActivitiesEventsRaw || []).map(
-    (item) => ({
-      ...item,
-      scheduled_date: item.starts_at?.split("T")[0] ?? "",
-      activity_plan: item.activity_plan as any,
-    }),
-  );
+  if (input.training_plan_id) {
+    plannedActivitiesQuery = plannedActivitiesQuery.eq(
+      "training_plan_id",
+      input.training_plan_id,
+    );
+  }
+
+  const { data: plannedActivitiesEventsRaw } = await plannedActivitiesQuery;
+
+  const plannedActivitiesRaw = (
+    (plannedActivitiesEventsRaw || []) as Array<{
+      starts_at?: string | null;
+      training_plan_id?: string | null;
+      activity_plan?: unknown;
+    }>
+  ).map((item) => ({
+    ...item,
+    scheduled_date: item.starts_at?.split("T")[0] ?? "",
+    activity_plan: item.activity_plan as any,
+  }));
 
   const activityPlans = (plannedActivitiesRaw || [])
     .map((item) => item.activity_plan)
@@ -4135,6 +4184,81 @@ export const trainingPlansRouter = createTRPCRouter({
       return { success: true };
     }),
 
+  duplicate: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        newName: z.string().min(1, "Plan name is required").optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: sourcePlan, error: sourcePlanError } = await ctx.supabase
+        .from("training_plans")
+        .select("*")
+        .eq("id", input.id)
+        .or(
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
+        )
+        .single();
+
+      if (sourcePlanError || !sourcePlan) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Training plan not found",
+        });
+      }
+
+      try {
+        if (sourcePlan.structure) {
+          trainingPlanSchema.parse(sourcePlan.structure);
+        }
+      } catch (validationError) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Source training plan has invalid structure",
+          cause: validationError,
+        });
+      }
+
+      const duplicatedPlanId = crypto.randomUUID();
+      const duplicatedStructure = {
+        ...(sourcePlan.structure as Record<string, unknown>),
+        id: duplicatedPlanId,
+      };
+
+      try {
+        trainingPlanSchema.parse(duplicatedStructure);
+      } catch (validationError) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Duplicated training plan structure is invalid",
+          cause: validationError,
+        });
+      }
+
+      const { data, error } = await ctx.supabase
+        .from("training_plans")
+        .insert({
+          name: input.newName?.trim() || `${sourcePlan.name} (Copy)`,
+          description: sourcePlan.description,
+          structure: duplicatedStructure as any,
+          profile_id: ctx.session.user.id,
+          template_visibility: "private",
+          is_public: false,
+        })
+        .select("*")
+        .single();
+
+      if (error || !data) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error?.message ?? "Failed to duplicate training plan",
+        });
+      }
+
+      return withTrainingPlanIdentity(data);
+    }),
+
   // ------------------------------
   // Get training plan by ID (for verification)
   // ------------------------------
@@ -4747,13 +4871,15 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      // Verify plan ownership
+      // Verify plan accessibility
       const { data: plan, error: planError } = await ctx.supabase
         .from("training_plans")
         .select("*")
         .eq("id", input.training_plan_id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+        .or(
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
+        )
+        .maybeSingle();
 
       if (planError || !plan) {
         throw new TRPCError({
@@ -4777,6 +4903,7 @@ export const trainingPlansRouter = createTRPCRouter({
       const { data: plannedActivitiesEventsRaw } = await ctx.supabase
         .from("events")
         .select("*, activity_plan:activity_plans (*)")
+        .eq("profile_id", ctx.session.user.id)
         .eq("training_plan_id", input.training_plan_id)
         .eq("event_type", plannedEventType)
         .gte("starts_at", toDayStartIso(startDateOnly))
@@ -5376,7 +5503,7 @@ export const trainingPlansRouter = createTRPCRouter({
       let query = ctx.supabase
         .from("training_plans")
         .select(
-          "id, name, description, structure, is_system_template, template_visibility, likes_count, created_at, updated_at",
+          "id, name, description, structure, sessions_per_week_target, duration_hours, is_system_template, template_visibility, likes_count, created_at, updated_at",
         )
         .eq("is_system_template", true)
         .eq("template_visibility", "public");
@@ -5395,6 +5522,8 @@ export const trainingPlansRouter = createTRPCRouter({
         id: t.id,
         name: t.name,
         description: t.description,
+        sessions_per_week_target: t.sessions_per_week_target,
+        duration_hours: t.duration_hours,
         ...(t.structure as object),
       }));
 
@@ -5444,7 +5573,7 @@ export const trainingPlansRouter = createTRPCRouter({
       const { data: template, error } = await ctx.supabase
         .from("training_plans")
         .select(
-          "id, name, description, structure, is_system_template, template_visibility, likes_count, created_at, updated_at",
+          "id, name, description, structure, sessions_per_week_target, duration_hours, is_system_template, template_visibility, likes_count, created_at, updated_at",
         )
         .eq("id", input.id)
         .eq("is_system_template", true)
@@ -5462,6 +5591,8 @@ export const trainingPlansRouter = createTRPCRouter({
         id: template.id,
         name: template.name,
         description: template.description,
+        sessions_per_week_target: template.sessions_per_week_target,
+        duration_hours: template.duration_hours,
         ...(template.structure as object),
       };
     }),
@@ -5532,10 +5663,7 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       if (!appliedPlanStartDate) {
-        appliedPlanStartDate =
-          typeof structure.start_date === "string"
-            ? structure.start_date
-            : formatDateOnlyUtc(new Date());
+        appliedPlanStartDate = todayDateOnlyUtc();
       }
 
       const appliedStructureId = crypto.randomUUID();
@@ -5577,6 +5705,20 @@ export const trainingPlansRouter = createTRPCRouter({
         allowedPlanIds = new Set((accessiblePlans ?? []).map((row) => row.id));
       }
 
+      const unresolvedPlanIds = candidatePlanIds.filter(
+        (planId) => !allowedPlanIds.has(planId),
+      );
+
+      if (
+        templatePlan.is_system_template === true &&
+        unresolvedPlanIds.length > 0
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `This system training plan cannot be scheduled because ${unresolvedPlanIds.length === 1 ? "a linked activity template is" : "linked activity templates are"} unavailable: ${unresolvedPlanIds.join(", ")}`,
+        });
+      }
+
       const eventRows = materializedSessions
         .filter((session) => session.event_type === "planned")
         .filter(
@@ -5603,37 +5745,45 @@ export const trainingPlansRouter = createTRPCRouter({
       const schedule_batch_id = crypto.randomUUID();
       let created_event_count = 0;
 
-      if (eventRows.length > 0) {
-        const { data: insertedEvents, error: eventsError } = await ctx.supabase
-          .from("events")
-          .insert(
-            eventRows.map((eventRow) => ({
-              ...eventRow,
-              schedule_batch_id,
-            })),
-          )
-          .select("id");
+      if (eventRows.length === 0) {
+        const plannedSessionCount = materializedSessions.filter(
+          (session) => session.event_type === "planned",
+        ).length;
 
-        if (eventsError) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Applied plan was created, but event scheduling failed",
-          });
-        }
-
-        created_event_count = insertedEvents?.length ?? 0;
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            plannedSessionCount === 0
+              ? "This training plan does not contain any schedulable sessions."
+              : "This training plan could not be scheduled because its linked activities are not available to your account.",
+        });
       }
+
+      const { data: insertedEvents, error: eventsError } = await ctx.supabase
+        .from("events")
+        .insert(
+          eventRows.map((eventRow) => ({
+            ...eventRow,
+            schedule_batch_id,
+          })),
+        )
+        .select("id");
+
+      if (eventsError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Applied plan was created, but event scheduling failed",
+        });
+      }
+
+      created_event_count = insertedEvents?.length ?? 0;
 
       return {
         applied_plan_id: appliedPlanId,
         training_plan_id: templatePlan.id,
         schedule_batch_id,
         created_event_count,
-        cache_tags: [
-          "events.list",
-          "trainingPlans.list",
-          "library.listTrainingPlans",
-        ],
+        cache_tags: ["events.list", "trainingPlans.list"],
       };
     }),
 

@@ -1,6 +1,7 @@
 // packages/trpc/src/routers/index.ts
 import { createTRPCRouter } from "../trpc";
 import { activitiesRouter } from "./activities";
+import { activityEffortsRouter } from "./activity_efforts";
 import { activityPlansRouter } from "./activity_plans";
 import { authRouter } from "./auth";
 import { coachingRouter } from "./coaching";
@@ -10,7 +11,6 @@ import { fitFilesRouter } from "./fit-files";
 import { goalsRouter } from "./goals";
 import { homeRouter } from "./home";
 import { integrationsRouter } from "./integrations";
-import { libraryRouter } from "./library";
 import { messagingRouter } from "./messaging";
 import { notificationsRouter } from "./notifications";
 import { onboardingRouter } from "./onboarding";
@@ -35,12 +35,12 @@ export const appRouter = createTRPCRouter({
   onboarding: onboardingRouter,
   profileMetrics: profileMetricsRouter,
   activities: activitiesRouter,
+  activityEfforts: activityEffortsRouter,
   activityPlans: activityPlansRouter,
   events: eventsRouter,
   goals: goalsRouter,
   fitFiles: fitFilesRouter,
   integrations: integrationsRouter,
-  library: libraryRouter,
   messaging: messagingRouter,
   notifications: notificationsRouter,
   trainingPlans: trainingPlansRouter,

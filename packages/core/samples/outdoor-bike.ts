@@ -244,6 +244,59 @@ export const SYSTEM_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
     .build(),
 };
 
+export const SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan =
+  {
+    id: "6f2a4c8e-1b3d-4f6a-8c9e-2d4b6f8a1c3e",
+    version: "2.0",
+    name: "Progressive Long Endurance Ride",
+    description:
+      "Long endurance ride with steady tempo lifts to build late-ride durability.",
+    activity_category: "bike",
+    gps_recording_enabled: true,
+    structure: createPlan()
+      .warmup({
+        duration: Duration.minutes(15),
+        targets: [Target.ftp(58)],
+        notes: "Start relaxed and build cadence smoothly.",
+      })
+      .step({
+        name: "Settled Endurance",
+        duration: Duration.minutes(55),
+        targets: [Target.ftp(68), Target.bpm(138)],
+        notes: "Lock into conversational endurance riding.",
+      })
+      .interval({
+        repeat: 2,
+        name: "Progressive Lift",
+        steps: [
+          {
+            name: "Tempo Lift",
+            duration: Duration.minutes(10),
+            targets: [Target.ftp(76), Target.bpm(148)],
+            notes: "Raise pressure without drifting above controlled tempo.",
+          },
+          {
+            name: "Easy Reset",
+            duration: Duration.minutes(8),
+            targets: [Target.ftp(60)],
+            notes: "Recover while keeping pedals moving.",
+          },
+        ],
+      })
+      .step({
+        name: "Steady Finish",
+        duration: Duration.minutes(25),
+        targets: [Target.ftp(70)],
+        notes: "Finish with durable aerobic pressure, not a fade.",
+      })
+      .cooldown({
+        duration: Duration.minutes(8),
+        targets: [Target.ftp(55)],
+        notes: "Spin out the legs before ending the ride.",
+      })
+      .build(),
+  };
+
 export const SAMPLE_OUTDOOR_BIKE_ACTIVITIES: Array<RecordingServiceActivityPlan> =
   [
     EASY_ENDURANCE_RIDE,
@@ -252,4 +305,5 @@ export const SAMPLE_OUTDOOR_BIKE_ACTIVITIES: Array<RecordingServiceActivityPlan>
     CLIMBING_INTERVALS_RIDE,
     GROUP_RIDE_SIMULATION,
     SYSTEM_LONG_ENDURANCE_RIDE,
+    SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE,
   ];

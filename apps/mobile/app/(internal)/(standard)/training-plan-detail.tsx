@@ -23,21 +23,23 @@ import {
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { trpc } from "@/lib/trpc";
-import { skipToken } from "@tanstack/react-query";
+import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import {
   Activity,
   Calendar,
   ChevronRight,
+  Copy,
   Eye,
   EyeOff,
   Heart,
-  Library,
   Trash2,
   TrendingUp,
 } from "lucide-react-native";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -78,6 +80,8 @@ type GroupedMicrocycleSessions = {
     sessions: StructureSessionRow[];
   }>;
 };
+
+type ScheduleAnchorMode = "start" | "finish";
 
 const weekDayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -256,6 +260,7 @@ function formatCompactDayLabel(dayOffset: number) {
 
 export default function TrainingPlanOverview() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { profile } = useAuth();
   const utils = trpc.useUtils();
   const { id, nextStep, activityId } = useLocalSearchParams<{
@@ -276,7 +281,10 @@ export default function TrainingPlanOverview() {
       },
     );
 
-  const { data: rawActivePlan } = trpc.trainingPlans.getActivePlan.useQuery();
+  const { data: rawActivePlan } = trpc.trainingPlans.getActivePlan.useQuery(
+    undefined,
+    scheduleAwareReadQueryOptions,
+  );
   const activePlan = rawActivePlan as any;
 
   const normalizedNextStepIntent = normalizeTrainingPlanNextStep(nextStep);
@@ -293,51 +301,97 @@ export default function TrainingPlanOverview() {
   const isOwnedByUser = plan?.profile_id === profile?.id;
 
   const [refreshing, setRefreshing] = React.useState(false);
-  const [templateStartDate, setTemplateStartDate] = React.useState("");
-  const [templateGoalDate, setTemplateGoalDate] = React.useState("");
+  const [scheduleAnchorMode, setScheduleAnchorMode] =
+    React.useState<ScheduleAnchorMode>("start");
+  const [templateAnchorDate, setTemplateAnchorDate] = React.useState("");
   const [showApplyModal, setShowApplyModal] = React.useState(false);
   const [showConcurrencyWarning, setShowConcurrencyWarning] =
     React.useState(false);
-  const [pendingApplyDates, setPendingApplyDates] = React.useState<{
-    startDate: string;
-    goalDate: string;
-  } | null>(null);
   const [showActivityPicker, setShowActivityPicker] = React.useState(false);
   const [selectedSessionRow, setSelectedSessionRow] =
     React.useState<StructureSessionRow | null>(null);
 
-  const saveToLibraryMutation = trpc.library.add.useMutation({
-    onSuccess: async () => {
-      await utils.library.listTrainingPlans.invalidate();
-      Alert.alert("Saved", "Training plan added to your library.");
+  const handleOpenCalendar = useCallback(() => {
+    router.replace(ROUTES.CALENDAR as any);
+  }, [router]);
+
+  const handleOpenActivePlan = useCallback(() => {
+    if (typeof activePlan?.id === "string") {
+      router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
+      return;
+    }
+
+    router.replace(ROUTES.PLAN.INDEX as any);
+  }, [activePlan?.id, router]);
+
+  const duplicatePlanMutation = trpc.trainingPlans.duplicate.useMutation({
+    onSuccess: async (result: { id: string }) => {
+      await utils.trainingPlans.invalidate();
+      Alert.alert("Duplicated", "Training plan added to your plans.", [
+        {
+          text: "Open",
+          onPress: () =>
+            router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.id) as any),
+        },
+      ]);
     },
-    onError: (error) => {
-      Alert.alert("Save failed", error.message || "Could not save to library");
+    onError: (error: { message?: string }) => {
+      Alert.alert(
+        "Duplicate failed",
+        error.message || "Could not duplicate this training plan",
+      );
     },
   });
 
   const applyTemplateMutation = trpc.trainingPlans.applyTemplate.useMutation({
     onSuccess: async (result) => {
-      await Promise.all([
-        utils.trainingPlans.invalidate(),
-        utils.events.invalidate(),
-        utils.library.listTrainingPlans.invalidate(),
-      ]);
+      await refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation");
+      const successActions = [] as Array<{
+        text: string;
+        onPress: () => void;
+      }>;
+
+      if (typeof result.applied_plan_id === "string") {
+        successActions.push({
+          text: "Open Scheduled Plan",
+          onPress: () =>
+            router.replace(
+              ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.applied_plan_id) as any,
+            ),
+        });
+      }
+
+      successActions.push({
+        text: "View Calendar",
+        onPress: handleOpenCalendar,
+      });
+
       Alert.alert(
-        "Template Applied",
-        `Created ${result.created_event_count} scheduled session${result.created_event_count === 1 ? "" : "s"}.`,
-        [
-          {
-            text: "OK",
-            onPress: () => router.replace(ROUTES.PLAN.INDEX),
-          },
-        ],
+        "Plan scheduled",
+        `Scheduled ${result.created_event_count} session${result.created_event_count === 1 ? "" : "s"} on your calendar.`,
+        successActions,
       );
+      setShowApplyModal(false);
     },
     onError: (error) => {
+      if (error.message?.includes("active training plan")) {
+        Alert.alert(
+          "Finish your current plan first",
+          "You already have scheduled sessions from a training plan. Finish or abandon that plan before scheduling another one.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Open Current Plan",
+              onPress: handleOpenActivePlan,
+            },
+          ],
+        );
+        return;
+      }
+
       Alert.alert(
-        "Apply failed",
-        error.message || "Could not apply this training plan template",
+        "Schedule failed",
+        error.message || "Could not schedule this training plan",
       );
     },
   });
@@ -360,6 +414,9 @@ export default function TrainingPlanOverview() {
   const [isPublic, setIsPublic] = useState(
     plan?.template_visibility === "public",
   );
+  useEffect(() => {
+    setIsPublic(plan?.template_visibility === "public");
+  }, [plan?.template_visibility]);
 
   const updateVisibilityMutation = trpc.trainingPlans.update.useMutation({
     onSuccess: () => {
@@ -386,6 +443,10 @@ export default function TrainingPlanOverview() {
 
   const [isLiked, setIsLiked] = useState(plan?.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(plan?.likes_count ?? 0);
+  useEffect(() => {
+    setIsLiked(plan?.has_liked ?? false);
+    setLikesCount(plan?.likes_count ?? 0);
+  }, [plan?.has_liked, plan?.likes_count]);
 
   const {
     data: activityPlansData,
@@ -418,11 +479,10 @@ export default function TrainingPlanOverview() {
   );
 
   const { data: linkedActivityPlansData, isLoading: isLoadingLinkedPlans } =
-    trpc.activityPlans.list.useQuery(
+    trpc.activityPlans.getManyByIds.useQuery(
       linkedActivityPlanIds.length > 0
         ? {
-            ownerScope: "all",
-            limit: 100,
+            ids: linkedActivityPlanIds,
           }
         : skipToken,
       {
@@ -517,80 +577,116 @@ export default function TrainingPlanOverview() {
     );
   }, [deletePlanMutation, plan]);
 
-  const handleSaveToLibrary = useCallback(() => {
+  const handleDuplicate = useCallback(() => {
     if (!plan?.id) {
-      Alert.alert("Save failed", "No plan ID was found.");
+      Alert.alert("Duplicate failed", "No plan ID was found.");
       return;
     }
-    saveToLibraryMutation.mutate({
-      item_type: "training_plan",
-      item_id: plan.id,
+    duplicatePlanMutation.mutate({
+      id: plan.id,
+      newName: `${plan.name} (Copy)`,
     });
-  }, [plan?.id, saveToLibraryMutation]);
+  }, [duplicatePlanMutation, plan?.id, plan?.name]);
+
+  const scheduleAnchorContent = useMemo(() => {
+    if (scheduleAnchorMode === "finish") {
+      return {
+        fieldLabel: "Finish By",
+        fieldPlaceholder: "Select finish date",
+        helperText:
+          templateAnchorDate.length > 0
+            ? "We'll back-schedule the earlier sessions so the final session lands by this date."
+            : "Choose the date your final session should land. We'll place the earlier sessions automatically.",
+        emptyDateTitle: "Choose a finish date",
+        emptyDateMessage:
+          "Pick the date you want this plan to finish, or switch back to Start On.",
+        invalidDateTitle: "Invalid finish date",
+      };
+    }
+
+    return {
+      fieldLabel: "Start On",
+      fieldPlaceholder: "Select start date",
+      helperText:
+        templateAnchorDate.length > 0
+          ? "Week 1 will begin on this date and the rest of the plan will follow from there."
+          : "Leave blank to start from today, or pick the day you want week 1 to begin.",
+      emptyDateTitle: null,
+      emptyDateMessage: null,
+      invalidDateTitle: "Invalid start date",
+    };
+  }, [scheduleAnchorMode, templateAnchorDate]);
+
+  const handleSelectScheduleAnchorMode = useCallback(
+    (mode: ScheduleAnchorMode) => {
+      setScheduleAnchorMode(mode);
+      setTemplateAnchorDate("");
+    },
+    [],
+  );
 
   const executeApplyTemplate = (
-    normalizedStartDate: string,
-    normalizedGoalDate: string,
+    normalizedAnchorDate: string,
+    anchorMode: ScheduleAnchorMode,
   ) => {
     applyTemplateMutation.mutate({
       template_type: "training_plan",
       template_id: plan!.id,
-      start_date: normalizedStartDate || undefined,
-      target_date: normalizedGoalDate || undefined,
+      start_date:
+        anchorMode === "start" && normalizedAnchorDate
+          ? normalizedAnchorDate
+          : undefined,
+      target_date:
+        anchorMode === "finish" && normalizedAnchorDate
+          ? normalizedAnchorDate
+          : undefined,
     });
   };
 
   const handleApplyTemplate = useCallback(() => {
     if (!plan?.id) {
-      Alert.alert("Apply failed", "No plan ID was found.");
+      Alert.alert("Schedule failed", "No plan ID was found.");
       return;
     }
 
-    const normalizedStartDate = templateStartDate.trim();
-    const normalizedGoalDate = templateGoalDate.trim();
+    const normalizedAnchorDate = templateAnchorDate.trim();
+
+    if (scheduleAnchorMode === "finish" && !normalizedAnchorDate) {
+      Alert.alert(
+        scheduleAnchorContent.emptyDateTitle ?? "Choose a finish date",
+        scheduleAnchorContent.emptyDateMessage ??
+          "Pick the date you want this plan to finish.",
+      );
+      return;
+    }
 
     if (
-      normalizedStartDate &&
-      !/^\d{4}-\d{2}-\d{2}$/.test(normalizedStartDate)
+      normalizedAnchorDate &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(normalizedAnchorDate)
     ) {
-      Alert.alert("Invalid start date", "Use YYYY-MM-DD format.");
+      Alert.alert(
+        scheduleAnchorContent.invalidDateTitle,
+        "Use YYYY-MM-DD format.",
+      );
       return;
     }
 
-    if (normalizedGoalDate && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedGoalDate)) {
-      Alert.alert("Invalid goal date", "Use YYYY-MM-DD format.");
-      return;
-    }
-
-    if (activePlan && (activePlan as any).id !== plan.id) {
-      setPendingApplyDates({
-        startDate: normalizedStartDate,
-        goalDate: normalizedGoalDate,
-      });
+    if (activePlan) {
+      setShowApplyModal(false);
       setShowConcurrencyWarning(true);
     } else {
-      executeApplyTemplate(normalizedStartDate, normalizedGoalDate);
-      setShowApplyModal(false);
+      executeApplyTemplate(normalizedAnchorDate, scheduleAnchorMode);
     }
   }, [
     activePlan,
     applyTemplateMutation,
+    scheduleAnchorContent.emptyDateMessage,
+    scheduleAnchorContent.emptyDateTitle,
+    scheduleAnchorContent.invalidDateTitle,
+    scheduleAnchorMode,
     plan,
-    templateGoalDate,
-    templateStartDate,
+    templateAnchorDate,
   ]);
-
-  const handleConfirmConcurrencyWarning = () => {
-    if (pendingApplyDates) {
-      executeApplyTemplate(
-        pendingApplyDates.startDate,
-        pendingApplyDates.goalDate,
-      );
-    }
-    setShowConcurrencyWarning(false);
-    setShowApplyModal(false);
-    setPendingApplyDates(null);
-  };
 
   const activityPlanItems =
     ((activityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
@@ -1008,13 +1104,13 @@ export default function TrainingPlanOverview() {
               <View className="gap-1">
                 <Text className="text-sm font-semibold">Plan Actions</Text>
                 <Text className="text-xs text-muted-foreground">
-                  Keep the main actions close: edit if you own it, or apply it
-                  to your schedule.
+                  Get this plan onto your calendar first, then use editing only
+                  when you need to customize it.
                 </Text>
                 {!isOwnedByUser ? (
                   <Text className="text-xs text-muted-foreground">
-                    Shared templates stay read-only. Applying this plan only
-                    schedules your events.
+                    Shared plans stay read-only here. Make an editable copy if
+                    you want to customize the structure first.
                   </Text>
                 ) : null}
               </View>
@@ -1053,22 +1149,24 @@ export default function TrainingPlanOverview() {
                     onPress={handleEditStructure}
                     className="flex-1"
                   >
-                    <Text>Edit Structure</Text>
+                    <Text>Edit Plan</Text>
                   </Button>
                 ) : (
                   <Button
                     variant="outline"
-                    onPress={handleSaveToLibrary}
-                    disabled={saveToLibraryMutation.isPending}
+                    onPress={handleDuplicate}
+                    disabled={duplicatePlanMutation.isPending}
                     className="flex-1"
                   >
                     <Icon
-                      as={Library}
+                      as={Copy}
                       size={16}
                       className="text-foreground mr-2"
                     />
                     <Text className="text-foreground font-medium">
-                      {saveToLibraryMutation.isPending ? "Saving..." : "Save"}
+                      {duplicatePlanMutation.isPending
+                        ? "Duplicating..."
+                        : "Make Editable Copy"}
                     </Text>
                   </Button>
                 )}
@@ -1085,42 +1183,67 @@ export default function TrainingPlanOverview() {
                 <DialogTrigger asChild>
                   <Button className="w-full">
                     <Text className="text-primary-foreground font-semibold">
-                      Apply Template
+                      Schedule Sessions
                     </Text>
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[425px]">
                   <DialogHeader>
-                    <DialogTitle>Apply Training Plan</DialogTitle>
+                    <DialogTitle>Schedule this plan</DialogTitle>
                     <DialogDescription>
-                      Configure when you want to start this plan and set an
-                      optional target date.
+                      Choose one anchor for this schedule. You can either place
+                      week 1 on a date or finish the whole plan by a date.
                     </DialogDescription>
                   </DialogHeader>
                   <View className="gap-4 py-4">
                     <View className="gap-2">
-                      <Text className="text-sm font-medium">Start Date</Text>
-                      <DateField
-                        id="apply-template-start-date"
-                        label="Start Date"
-                        value={templateStartDate || undefined}
-                        onChange={(nextDate) =>
-                          setTemplateStartDate(nextDate ?? "")
-                        }
-                        placeholder="Select start date"
-                        clearable
-                      />
+                      <Text className="text-sm font-medium">
+                        How should this schedule line up?
+                      </Text>
+                      <View className="gap-2">
+                        <TouchableOpacity
+                          onPress={() =>
+                            handleSelectScheduleAnchorMode("start")
+                          }
+                          className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+                          activeOpacity={0.8}
+                        >
+                          <Text className="text-sm font-semibold text-foreground">
+                            Start On
+                          </Text>
+                          <Text className="text-xs text-muted-foreground mt-1">
+                            Put week 1 on a specific date.
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() =>
+                            handleSelectScheduleAnchorMode("finish")
+                          }
+                          className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "finish" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+                          activeOpacity={0.8}
+                        >
+                          <Text className="text-sm font-semibold text-foreground">
+                            Finish By
+                          </Text>
+                          <Text className="text-xs text-muted-foreground mt-1">
+                            Back-schedule the plan so the final session lands by
+                            a specific date.
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                     <View className="gap-2">
                       <DateField
-                        id="apply-template-target-date"
-                        label="Target Date (Optional)"
-                        value={templateGoalDate || undefined}
+                        id="apply-template-anchor-date"
+                        label={scheduleAnchorContent.fieldLabel}
+                        value={templateAnchorDate || undefined}
                         onChange={(nextDate) =>
-                          setTemplateGoalDate(nextDate ?? "")
+                          setTemplateAnchorDate(nextDate ?? "")
                         }
-                        placeholder="Select target date"
+                        placeholder={scheduleAnchorContent.fieldPlaceholder}
+                        helperText={scheduleAnchorContent.helperText}
                         clearable
+                        pickerPresentation="modal"
                       />
                     </View>
                   </View>
@@ -1138,8 +1261,8 @@ export default function TrainingPlanOverview() {
                     >
                       <Text className="text-primary-foreground font-semibold">
                         {applyTemplateMutation.isPending
-                          ? "Applying..."
-                          : "Apply"}
+                          ? "Scheduling..."
+                          : "Schedule Sessions"}
                       </Text>
                     </Button>
                   </DialogFooter>
@@ -1572,27 +1695,21 @@ export default function TrainingPlanOverview() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Active Plan Exists</DialogTitle>
+            <DialogTitle>Current plan already scheduled</DialogTitle>
           </DialogHeader>
           <DialogDescription>
-            You already have an active training plan. Applying this plan will
-            set it as your new active plan and pause the current one.
+            You already have scheduled sessions from a training plan. Finish or
+            abandon that plan before scheduling another one.
           </DialogDescription>
           <DialogFooter className="mt-4">
             <DialogClose asChild>
-              <Button
-                variant="outline"
-                onPress={() => setPendingApplyDates(null)}
-              >
+              <Button variant="outline">
                 <Text className="text-foreground font-medium">Cancel</Text>
               </Button>
             </DialogClose>
-            <Button
-              onPress={handleConfirmConcurrencyWarning}
-              disabled={applyTemplateMutation.isPending}
-            >
+            <Button onPress={handleOpenActivePlan}>
               <Text className="text-primary-foreground font-semibold">
-                {applyTemplateMutation.isPending ? "Applying..." : "Apply"}
+                Open Current Plan
               </Text>
             </Button>
           </DialogFooter>

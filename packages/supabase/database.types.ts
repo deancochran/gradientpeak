@@ -830,38 +830,6 @@ export type Database = {
           },
         ]
       }
-      library_items: {
-        Row: {
-          created_at: string
-          id: string
-          item_id: string
-          item_type: string
-          profile_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          item_id: string
-          item_type: string
-          profile_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          item_id?: string
-          item_type?: string
-          profile_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "library_items_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       likes: {
         Row: {
           created_at: string

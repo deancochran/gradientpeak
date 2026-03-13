@@ -187,6 +187,15 @@ export const athletePreferenceGoalStrategySchema = z
   })
   .strict();
 
+export const athletePreferenceBaselineSchema = z
+  .object({
+    is_enabled: z.boolean().default(false),
+    override_ctl: z.number().min(0).max(250).optional(),
+    override_atl: z.number().min(0).max(250).optional(),
+    override_date: z.string().datetime().optional(),
+  })
+  .strict();
+
 /**
  * Canonical persisted athlete preference profile.
  *
@@ -201,6 +210,7 @@ export const athletePreferenceProfileSchema = z
     recovery_preferences: athletePreferenceRecoverySchema,
     adaptation_preferences: athletePreferenceAdaptationSchema,
     goal_strategy_preferences: athletePreferenceGoalStrategySchema,
+    baseline_fitness: athletePreferenceBaselineSchema.optional(),
   })
   .strict();
 
@@ -246,6 +256,7 @@ export const athletePreferenceProfilePatchSchema = z
     goal_strategy_preferences: athletePreferenceGoalStrategySchema
       .partial()
       .optional(),
+    baseline_fitness: athletePreferenceBaselineSchema.partial().optional(),
   })
   .strict();
 
@@ -283,6 +294,9 @@ export const defaultAthletePreferenceProfile =
       target_surplus_preference: 0,
       priority_tradeoff_preference: 0.5,
       taper_style_preference: 0.5,
+    },
+    baseline_fitness: {
+      is_enabled: false,
     },
   });
 
@@ -517,6 +531,10 @@ export function resolveEffectivePreferences(
     goal_strategy_preferences: {
       ...parsedDefaults.goal_strategy_preferences,
       ...parsedOverrides.goal_strategy_preferences,
+    },
+    baseline_fitness: {
+      ...parsedDefaults.baseline_fitness,
+      ...parsedOverrides.baseline_fitness,
     },
   });
 }

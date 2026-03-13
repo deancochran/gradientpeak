@@ -114,7 +114,7 @@ export * from "./messaging";
 // Export onboarding schemas
 export * from "./onboarding";
 
-// Export template + library schemas
+// Export template schemas
 export * from "./template_library";
 
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports

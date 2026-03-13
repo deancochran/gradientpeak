@@ -1,8 +1,10 @@
 import { addDaysDateOnlyUtc } from "./dateOnlyUtc";
 
 type SessionSource = Record<string, unknown>;
+type PlanNode = Record<string, unknown>;
 
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+const nestedCollectionKeys = ["blocks", "weeks", "days"] as const;
 
 export type MaterializedPlanEventType = "planned" | "rest_day";
 
@@ -37,6 +39,32 @@ function isUuidString(value: unknown): value is string {
   );
 }
 
+function getOffsetDays(source: Record<string, unknown>): number | null {
+  const directOffset =
+    typeof source.offset_days === "number"
+      ? source.offset_days
+      : typeof source.day_offset === "number"
+        ? source.day_offset
+        : null;
+
+  if (directOffset !== null) {
+    return directOffset;
+  }
+
+  const weekOffset =
+    typeof source.offset_weeks === "number"
+      ? source.offset_weeks
+      : typeof source.week_offset === "number"
+        ? source.week_offset
+        : null;
+
+  if (weekOffset !== null) {
+    return weekOffset * 7;
+  }
+
+  return null;
+}
+
 function getSessionDate(
   session: SessionSource,
   baseDate: string,
@@ -45,18 +73,26 @@ function getSessionDate(
     return session.scheduled_date;
   }
 
-  const offsetDays =
-    typeof session.offset_days === "number"
-      ? session.offset_days
-      : typeof session.day_offset === "number"
-        ? session.day_offset
-        : null;
+  const offsetDays = getOffsetDays(session);
 
   if (offsetDays === null) {
-    return null;
+    return baseDate;
   }
 
   return addDaysDateOnlyUtc(baseDate, offsetDays);
+}
+
+function getNodeBaseDate(node: PlanNode, parentBaseDate: string): string {
+  if (isDateOnlyString(node.start_date)) {
+    return node.start_date;
+  }
+
+  const offsetDays = getOffsetDays(node);
+  if (offsetDays === null || offsetDays === 0) {
+    return parentBaseDate;
+  }
+
+  return addDaysDateOnlyUtc(parentBaseDate, offsetDays);
 }
 
 function getSessionEventType(
@@ -77,7 +113,7 @@ function getSessionEventType(
  *
  * Supported inputs:
  * - Root `sessions` with `scheduled_date` or `offset_days`/`day_offset`
- * - Nested `blocks[].sessions` with offsets relative to `block.start_date`
+ * - Nested `blocks[]`, `weeks[]`, and `days[]` with inherited offsets or `start_date`
  *
  * The function is pure and performs no I/O.
  */
@@ -139,34 +175,35 @@ export function materializePlanToEvents(
     });
   };
 
-  const rootSessions = Array.isArray(root.sessions)
-    ? (root.sessions as SessionSource[])
-    : [];
-  for (const session of rootSessions) {
-    pushSession(session, rootStartDate, "Planned Session");
-  }
+  const traverse = (
+    node: PlanNode,
+    baseDate: string,
+    fallbackTitle: string,
+  ) => {
+    const nodeBaseDate = getNodeBaseDate(node, baseDate);
+    const nodeTitle =
+      typeof node.name === "string" && node.name.trim().length > 0
+        ? node.name.trim()
+        : fallbackTitle;
 
-  const blocks = Array.isArray(root.blocks)
-    ? (root.blocks as Array<Record<string, unknown>>)
-    : [];
-
-  for (const block of blocks) {
-    const blockStartDate = isDateOnlyString(block.start_date)
-      ? block.start_date
-      : rootStartDate;
-    const fallbackTitle =
-      typeof block.name === "string" && block.name.trim().length > 0
-        ? block.name.trim()
-        : "Planned Session";
-
-    const blockSessions = Array.isArray(block.sessions)
-      ? (block.sessions as SessionSource[])
+    const sessions = Array.isArray(node.sessions)
+      ? (node.sessions as SessionSource[])
       : [];
-
-    for (const session of blockSessions) {
-      pushSession(session, blockStartDate, fallbackTitle);
+    for (const session of sessions) {
+      pushSession(session, nodeBaseDate, nodeTitle);
     }
-  }
+
+    for (const key of nestedCollectionKeys) {
+      const children = Array.isArray(node[key])
+        ? (node[key] as PlanNode[])
+        : [];
+      for (const child of children) {
+        traverse(child, nodeBaseDate, nodeTitle);
+      }
+    }
+  };
+
+  traverse(root, rootStartDate, "Planned Session");
 
   return materialized.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
 }

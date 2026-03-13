@@ -38,6 +38,11 @@ export interface PlanVsActualChartProps {
   actualData: FitnessDataPoint[];
   projectedData: FitnessDataPoint[];
   idealData?: Array<{ date: string; ctl: number }>;
+  goalMarkers?: Array<{
+    id: string;
+    targetDate: string;
+    label?: string;
+  }>;
   goalMetrics?: {
     targetCTL: number;
     targetDate: string;
@@ -273,6 +278,7 @@ export function PlanVsActualChart({
   actualData,
   projectedData,
   idealData,
+  goalMarkers,
   goalMetrics,
   height = 340,
   showLegend = true,
@@ -283,6 +289,20 @@ export function PlanVsActualChart({
   const isDark = colorScheme === "dark";
   const axisFont = useFont(getAxisFontSource(), 9);
   const useInsightTimeline = !!timeline && timeline.length > 0;
+  const normalizedGoalMarkers = useMemo(
+    () =>
+      (goalMarkers ?? [])
+        .filter(
+          (marker): marker is NonNullable<typeof goalMarkers>[number] =>
+            Boolean(marker?.id) && Boolean(marker?.targetDate),
+        )
+        .sort((left, right) => left.targetDate.localeCompare(right.targetDate)),
+    [goalMarkers],
+  );
+  const latestGoalTargetDate =
+    normalizedGoalMarkers[normalizedGoalMarkers.length - 1]?.targetDate ??
+    goalMetrics?.targetDate ??
+    null;
 
   const framedPoints = useMemo<NormalizedPoint[]>(() => {
     let base =
@@ -300,14 +320,14 @@ export function PlanVsActualChart({
     let startIndex = 0;
     let endIndex = base.length - 1;
 
-    if (goalMetrics?.targetDate) {
+    if (latestGoalTargetDate) {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const thirtyDaysAgoWeek = getWeekStartDateKey(
         thirtyDaysAgo.toISOString().split("T")[0],
       );
 
-      const goalDateObj = new Date(`${goalMetrics.targetDate}T12:00:00.000Z`);
+      const goalDateObj = new Date(`${latestGoalTargetDate}T12:00:00.000Z`);
       if (!Number.isNaN(goalDateObj.getTime())) {
         goalDateObj.setDate(goalDateObj.getDate() + 30);
       }
@@ -368,7 +388,7 @@ export function PlanVsActualChart({
     projectedData,
     timeline,
     useInsightTimeline,
-    goalMetrics?.targetDate,
+    latestGoalTargetDate,
   ]);
 
   const hasSeriesData = {
@@ -400,6 +420,33 @@ export function PlanVsActualChart({
     !useInsightTimeline && typeof goalMetrics?.targetCTL === "number"
       ? goalMetrics.targetCTL
       : null;
+  const groupedGoalMarkers = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        weekKey: string;
+        targetDate: string;
+        count: number;
+      }
+    >();
+
+    for (const marker of normalizedGoalMarkers) {
+      const weekKey = getWeekStartDateKey(marker.targetDate);
+      const existing = grouped.get(weekKey);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+
+      grouped.set(weekKey, {
+        weekKey,
+        targetDate: marker.targetDate,
+        count: 1,
+      });
+    }
+
+    return [...grouped.values()];
+  }, [normalizedGoalMarkers]);
 
   const chartData = useMemo<ChartDatum[]>(() => {
     const projectionValues = fillSeries(
@@ -443,6 +490,26 @@ export function PlanVsActualChart({
 
   const chartContainerHeight = Math.max(220, height - 92);
   const chartHeight = Math.max(210, chartContainerHeight - 24);
+  const goalMarkerLabelMeta = useMemo(() => {
+    let lastLabeledIndex = -Infinity;
+
+    return groupedGoalMarkers.map((marker) => {
+      const markerIndex = framedPoints.findIndex(
+        (point) => point.date >= marker.weekKey,
+      );
+      const shouldShowLabel = markerIndex - lastLabeledIndex >= 2;
+
+      if (shouldShowLabel) {
+        lastLabeledIndex = markerIndex;
+      }
+
+      return {
+        ...marker,
+        markerIndex,
+        shouldShowLabel,
+      };
+    });
+  }, [framedPoints, groupedGoalMarkers]);
 
   return (
     <View className="py-1">
@@ -561,29 +628,39 @@ export function PlanVsActualChart({
                       />
                     ) : null}
 
-                    {(() => {
-                      if (!goalMetrics?.targetDate) return null;
-                      const goalWeek = getWeekStartDateKey(
-                        goalMetrics.targetDate,
-                      );
-                      const goalIndex = framedPoints.findIndex(
-                        (p) => p.date >= goalWeek,
-                      );
-                      if (goalIndex === -1) return null;
-                      const targetPoint =
-                        points.projection[goalIndex] ||
-                        points.planned[goalIndex];
-                      if (!targetPoint) return null;
+                    {goalMarkerLabelMeta.map((marker, markerOrder) => {
+                      if (marker.markerIndex === -1) {
+                        return null;
+                      }
 
-                      const goalDateStr = new Date(
-                        `${goalMetrics.targetDate}T12:00:00.000Z`,
-                      ).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      });
+                      const targetPoint =
+                        points.projection[marker.markerIndex] ||
+                        points.planned[marker.markerIndex] ||
+                        points.actual[marker.markerIndex];
+                      if (!targetPoint) {
+                        return null;
+                      }
+
+                      const goalDateStr = compactDateLabel(marker.targetDate);
+                      const goalLabel =
+                        marker.count > 1
+                          ? `${goalDateStr} (${marker.count})`
+                          : goalDateStr;
+                      const fontTextWidth =
+                        axisFont && typeof axisFont.getTextWidth === "function"
+                          ? axisFont.getTextWidth(goalLabel)
+                          : goalLabel.length * 5;
+                      const minX = chartBounds.left;
+                      const maxX = chartBounds.right - fontTextWidth;
+                      const labelX = Math.min(
+                        Math.max(targetPoint.x - fontTextWidth / 2, minX),
+                        Math.max(minX, maxX),
+                      );
+                      const labelY =
+                        chartBounds.top + 8 + (markerOrder % 2) * 10;
 
                       return (
-                        <React.Fragment key="goal-line">
+                        <React.Fragment key={`goal-marker-${marker.weekKey}`}>
                           <SkiaLine
                             p1={vec(targetPoint.x, chartBounds.bottom)}
                             p2={vec(targetPoint.x, chartBounds.top + 12)}
@@ -592,21 +669,18 @@ export function PlanVsActualChart({
                           >
                             <DashPathEffect intervals={[4, 4]} />
                           </SkiaLine>
-                          {axisFont ? (
+                          {axisFont && marker.shouldShowLabel ? (
                             <SkiaText
-                              x={
-                                targetPoint.x -
-                                axisFont.getTextWidth(goalDateStr) / 2
-                              }
-                              y={chartBounds.top + 8}
-                              text={goalDateStr}
+                              x={labelX}
+                              y={labelY}
+                              text={goalLabel}
                               font={axisFont}
                               color={isDark ? "#e2e8f0" : "#334155"}
                             />
                           ) : null}
                         </React.Fragment>
                       );
-                    })()}
+                    })}
                   </>
                 )}
               </CartesianChart>
@@ -640,10 +714,12 @@ export function PlanVsActualChart({
               </View>
             );
           })}
-          {goalLineValue !== null ? (
+          {goalLineValue !== null || groupedGoalMarkers.length > 0 ? (
             <View className="flex-row items-center">
               <View className="w-3.5 h-0.5 bg-green-500 mr-1" />
-              <Text className="text-[10px] text-muted-foreground">Goal</Text>
+              <Text className="text-[10px] text-muted-foreground">
+                {groupedGoalMarkers.length > 1 ? "Goal dates" : "Goal"}
+              </Text>
             </View>
           ) : null}
         </View>

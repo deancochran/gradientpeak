@@ -1,8 +1,118 @@
 import {
   defaultShouldDehydrateQuery,
   QueryClient,
+  type QueryKey,
 } from "@tanstack/react-query";
 import superjson from "superjson";
+
+const DEFAULT_QUERY_STALE_TIME = 5 * 60 * 1000;
+const SCHEDULING_QUERY_STALE_TIME = 30 * 1000;
+
+export const SCHEDULING_REFRESH_CONTRACT = {
+  eventMutation: [
+    ["events", "list"],
+    ["events", "getById"],
+    ["events", "getToday"],
+    ["events", "validateConstraints"],
+    ["trainingPlans", "list"],
+    ["trainingPlans", "getActivePlan"],
+    ["trainingPlans", "get"],
+    ["trainingPlans", "getCurrentStatus"],
+    ["trainingPlans", "getInsightTimeline"],
+    ["trainingPlans", "getActualCurve"],
+    ["trainingPlans", "getIdealCurve"],
+    ["trainingPlans", "getWeeklySummary"],
+  ],
+  eventDeletionMutation: [
+    ["events", "list"],
+    ["events", "getToday"],
+    ["events", "validateConstraints"],
+    ["trainingPlans", "list"],
+    ["trainingPlans", "getActivePlan"],
+    ["trainingPlans", "get"],
+    ["trainingPlans", "getCurrentStatus"],
+    ["trainingPlans", "getInsightTimeline"],
+    ["trainingPlans", "getActualCurve"],
+    ["trainingPlans", "getIdealCurve"],
+    ["trainingPlans", "getWeeklySummary"],
+  ],
+  trainingPlanSchedulingMutation: [
+    ["events", "list"],
+    ["events", "getById"],
+    ["events", "getToday"],
+    ["events", "validateConstraints"],
+    ["trainingPlans", "list"],
+    ["trainingPlans", "getActivePlan"],
+    ["trainingPlans", "get"],
+    ["trainingPlans", "getCurrentStatus"],
+    ["trainingPlans", "getInsightTimeline"],
+    ["trainingPlans", "getActualCurve"],
+    ["trainingPlans", "getIdealCurve"],
+    ["trainingPlans", "getWeeklySummary"],
+  ],
+} as const;
+
+export type SchedulingRefreshScope = keyof typeof SCHEDULING_REFRESH_CONTRACT;
+
+function getQueryPathSegments(queryKey: QueryKey): readonly string[] {
+  const [head] = queryKey;
+
+  if (Array.isArray(head)) {
+    return head.filter(
+      (segment): segment is string => typeof segment === "string",
+    );
+  }
+
+  return queryKey.filter(
+    (segment): segment is string => typeof segment === "string",
+  );
+}
+
+function matchesQueryPath(
+  queryKey: QueryKey,
+  path: readonly string[],
+): boolean {
+  const segments = getQueryPathSegments(queryKey);
+
+  return path.every((segment, index) => segments[index] === segment);
+}
+
+export function isSchedulingSensitiveQueryKey(queryKey: QueryKey): boolean {
+  return Object.values(SCHEDULING_REFRESH_CONTRACT).some((paths) =>
+    paths.some((path) => matchesQueryPath(queryKey, path)),
+  );
+}
+
+export async function invalidateSchedulingQueries(
+  queryClient: QueryClient,
+  scope: SchedulingRefreshScope | readonly SchedulingRefreshScope[],
+) {
+  const scopes = (
+    Array.isArray(scope) ? scope : [scope]
+  ) as readonly SchedulingRefreshScope[];
+  const seen = new Set<string>();
+  const paths = scopes.flatMap(
+    (scopeName) => SCHEDULING_REFRESH_CONTRACT[scopeName],
+  );
+
+  await Promise.all(
+    paths
+      .filter((path) => {
+        const key = path.join(".");
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .map((path) =>
+        queryClient.invalidateQueries({
+          predicate: (query) => matchesQueryPath(query.queryKey, path),
+          refetchType: "all",
+        }),
+      ),
+  );
+}
 
 /**
  * Creates a configured QueryClient optimized for mobile React Native apps.
@@ -19,9 +129,12 @@ export function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
-        // Cache data for 5 minutes before considering it stale
-        // This reduces unnecessary refetches for slowly-changing data
-        staleTime: 5 * 60 * 1000, // 5 minutes
+        // Keep most data warm for 5 minutes, but shorten schedule-sensitive
+        // queries so navigation after scheduling does not sit on stale views.
+        staleTime: (query) =>
+          isSchedulingSensitiveQueryKey(query.queryKey)
+            ? SCHEDULING_QUERY_STALE_TIME
+            : DEFAULT_QUERY_STALE_TIME,
 
         // Keep unused data in cache for 10 minutes before garbage collection
         // Longer than staleTime to allow quick navigation back to cached screens
@@ -40,17 +153,19 @@ export function createQueryClient() {
         // and this can cause excessive refetches when switching apps
         refetchOnWindowFocus: false,
 
-        // Do refetch when network reconnects
-        // Essential for mobile apps that go offline frequently
-        refetchOnReconnect: true,
+        // Do refetch when network reconnects.
+        // Schedule-sensitive queries always revalidate on reconnect.
+        refetchOnReconnect: (query) =>
+          isSchedulingSensitiveQueryKey(query.queryKey) ? "always" : true,
 
         // Only run queries when online
         // Prevents unnecessary retry attempts when device is offline
         networkMode: "online",
 
-        // Don't refetch on component mount if data is fresh
-        // Reduces unnecessary network requests during navigation
-        refetchOnMount: false,
+        // Schedule-sensitive queries always revalidate on mount so calendar,
+        // plan, and detail screens do not depend on long stale windows.
+        refetchOnMount: (query) =>
+          isSchedulingSensitiveQueryKey(query.queryKey) ? "always" : false,
 
         // Throw errors to error boundaries instead of returning error state
         // This ensures our ErrorBoundary components catch query errors

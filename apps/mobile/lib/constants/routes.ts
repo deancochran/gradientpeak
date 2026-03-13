@@ -90,8 +90,9 @@ export function buildPlanRoute(
   planId: string,
   action?: "view" | "edit" | "schedule",
 ) {
-  const pathname = ROUTES.PLAN.PLAN_DETAIL(planId);
-  return action ? { pathname, params: { action } } : { pathname };
+  return action
+    ? { pathname: "/activity-plan-detail", params: { planId, action } }
+    : { pathname: "/activity-plan-detail", params: { planId } };
 }
 
 /**

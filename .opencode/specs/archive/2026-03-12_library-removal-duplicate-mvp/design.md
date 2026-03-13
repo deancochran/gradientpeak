@@ -111,9 +111,11 @@ This cleanup should remove or relabel minimal surfaces instead of redesigning un
 
 ## 7. Data and API Direction
 
-### A. Deprecate the saved-pointer model
+### A. Remove the saved-pointer model
 
-`library_items` and the `library` router should be considered deprecated. This spec should remove active app dependencies first. Table removal may happen in the same implementation if no remaining runtime dependency exists, otherwise it may be staged behind a follow-up cleanup migration.
+`library_items` and the `library` router should be treated as removable product and code debt. This spec should remove active app dependencies, remove the router and related tests once no caller remains, and remove the persistence table in the same implementation unless a concrete blocker prevents it.
+
+The intended end state is no user-facing library concept, no runtime library flow, and no dead fallback library code kept around in the app.
 
 ### B. Duplicate outputs
 
@@ -132,6 +134,7 @@ Duplicated records must:
 ## 8. Success Criteria
 
 - No primary mobile flow encourages `save to library` for shared plans.
+- No obsolete library UI, copy, router path, or saved-pointer runtime flow remains in the app.
 - Public `activity_plans` can be duplicated into owned private records.
 - Public `training_plans` can be duplicated into owned private records.
 - Training-plan shared detail continues to support `apply` separately from `duplicate`.

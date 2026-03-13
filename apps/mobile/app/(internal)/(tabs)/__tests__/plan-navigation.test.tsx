@@ -10,12 +10,16 @@ const {
   refetchSnapshotMock,
   recentEventsUpdatedAtRef,
   upcomingEventsUpdatedAtRef,
+  activePlanQueryOptionsRef,
+  eventQueryOptionsRef,
 } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   refetchActivePlanMock: vi.fn(async () => undefined),
   refetchSnapshotMock: vi.fn(async () => undefined),
   recentEventsUpdatedAtRef: { current: 1 },
   upcomingEventsUpdatedAtRef: { current: 1 },
+  activePlanQueryOptionsRef: { current: null as any },
+  eventQueryOptionsRef: { current: [] as any[] },
 }));
 
 function createHost(type: string) {
@@ -94,8 +98,23 @@ vi.mock("@/lib/hooks/useProfileGoals", () => ({
           target_time_s: 1400,
         },
       },
+      {
+        id: "goal-2",
+        title: "Race B",
+        priority: 6,
+        target_date: "2026-09-01",
+        milestone_event_id: "event-2",
+        profile_id: "profile-1",
+        activity_category: "run",
+        objective: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 10000,
+          target_time_s: 3200,
+        },
+      },
     ],
-    goalsCount: 1,
+    goalsCount: 2,
     refetch: vi.fn(async () => undefined),
   }),
 }));
@@ -155,6 +174,10 @@ vi.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
             },
           ],
         },
+        {
+          goal_id: "goal-2",
+          target_scores: [],
+        },
       ],
     },
     insightTimeline: {
@@ -168,6 +191,12 @@ vi.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
           goal_name: "Race A",
           state: "stretch",
           reasons: ["capacity_pressure"],
+        },
+        {
+          goal_id: "goal-2",
+          goal_name: "Race B",
+          state: "feasible",
+          reasons: [],
         },
       ],
       projection: {
@@ -183,8 +212,8 @@ vi.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
       },
       load_guidance: {
         mode: "goal_driven",
-        goal_count: 1,
-        dated_goal_count: 1,
+        goal_count: 2,
+        dated_goal_count: 2,
         interpretation:
           "Recommended load is anchored to your dated goals and current plan context.",
       },
@@ -214,14 +243,17 @@ vi.mock("@/lib/trpc", () => ({
     }),
     trainingPlans: {
       getActivePlan: {
-        useQuery: () => ({
-          data: {
-            id: "active-1",
-            next_event_at: "2026-04-05T00:00:00.000Z",
-            training_plan: { name: "Current Plan" },
-          },
-          refetch: refetchActivePlanMock,
-        }),
+        useQuery: (_input: any, options: any) => {
+          activePlanQueryOptionsRef.current = options;
+          return {
+            data: {
+              id: "active-1",
+              next_event_at: "2026-04-05T00:00:00.000Z",
+              training_plan: { name: "Current Plan" },
+            },
+            refetch: refetchActivePlanMock,
+          };
+        },
       },
       list: {
         useQuery: () => ({
@@ -231,25 +263,28 @@ vi.mock("@/lib/trpc", () => ({
     },
     events: {
       list: {
-        useQuery: (input: any) => ({
-          data:
-            input?.date_from && input?.date_to
-              ? {
-                  items: [
-                    {
-                      id: "event-1",
-                      training_plan_id: "active-1",
-                      starts_at: "2026-04-05T00:00:00.000Z",
-                    },
-                  ],
-                }
-              : { items: [] },
-          dataUpdatedAt:
-            input?.date_from === "2026-02-15"
-              ? recentEventsUpdatedAtRef.current
-              : upcomingEventsUpdatedAtRef.current,
-          refetch: vi.fn(async () => undefined),
-        }),
+        useQuery: (input: any, options: any) => {
+          eventQueryOptionsRef.current.push(options);
+          return {
+            data:
+              input?.date_from && input?.date_to
+                ? {
+                    items: [
+                      {
+                        id: "event-1",
+                        training_plan_id: "active-1",
+                        starts_at: "2026-04-05T00:00:00.000Z",
+                      },
+                    ],
+                  }
+                : { items: [] },
+            dataUpdatedAt:
+              input?.date_from === "2026-02-15"
+                ? recentEventsUpdatedAtRef.current
+                : upcomingEventsUpdatedAtRef.current,
+            refetch: vi.fn(async () => undefined),
+          };
+        },
       },
       create: {
         useMutation: () => ({
@@ -296,6 +331,24 @@ vi.mock("@/lib/trpc", () => ({
 }));
 
 describe("plan dashboard navigation", () => {
+  it("uses schedule-aware freshness for plan dashboard queries", () => {
+    activePlanQueryOptionsRef.current = null;
+    eventQueryOptionsRef.current = [];
+
+    act(() => {
+      TestRenderer.create(<PlanScreenWithErrorBoundary />);
+    });
+
+    expect(activePlanQueryOptionsRef.current).toEqual(
+      expect.objectContaining({ staleTime: 0, refetchOnMount: "always" }),
+    );
+    expect(eventQueryOptionsRef.current).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ staleTime: 0, refetchOnMount: "always" }),
+      ]),
+    );
+  });
+
   it("refreshes the projection snapshot when planned events change", () => {
     refetchActivePlanMock.mockClear();
     refetchSnapshotMock.mockClear();
@@ -325,6 +378,13 @@ describe("plan dashboard navigation", () => {
     expect(
       renderer.root.findAll((node: any) => node.type === "PlanVsActualChart"),
     ).toHaveLength(1);
+    const projectionChart = renderer.root.findAll(
+      (node: any) => node.type === "PlanVsActualChart",
+    )[0];
+    expect(projectionChart.props.goalMarkers).toEqual([
+      expect.objectContaining({ id: "goal-1", targetDate: "2026-08-01" }),
+      expect.objectContaining({ id: "goal-2", targetDate: "2026-09-01" }),
+    ]);
     expect(
       renderer.root
         .findAll((node: any) => node.type === "Text")

@@ -60,6 +60,8 @@ type EvaluateCreationConfigResult = {
     precedence: unknown;
   };
   feasibilitySummary: CreationFeasibilitySafetySummary;
+  globalCtlOverride?: number;
+  globalAtlOverride?: number;
 };
 
 const OVERRIDABLE_BLOCKING_CONFLICT_CODES = new Set([

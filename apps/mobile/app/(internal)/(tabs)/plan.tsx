@@ -19,6 +19,7 @@ import {
 } from "@/lib/goals/goalDraft";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import { Settings } from "lucide-react-native";
@@ -129,11 +130,17 @@ function PlanDashboardScreen() {
   const [showGoalModal, setShowGoalModal] = useState(false);
 
   const { data: activePlan, refetch: refetchActivePlan } =
-    trpc.trainingPlans.getActivePlan.useQuery();
-  const { data: ownPlans } = trpc.trainingPlans.list.useQuery({
-    includeOwnOnly: true,
-    includeSystemTemplates: false,
-  });
+    trpc.trainingPlans.getActivePlan.useQuery(
+      undefined,
+      scheduleAwareReadQueryOptions,
+    );
+  const { data: ownPlans } = trpc.trainingPlans.list.useQuery(
+    {
+      includeOwnOnly: true,
+      includeSystemTemplates: false,
+    },
+    scheduleAwareReadQueryOptions,
+  );
 
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getDateKey(today), [today]);
@@ -146,23 +153,29 @@ function PlanDashboardScreen() {
 
   const upcomingWindowEnd = useMemo(() => {
     const end = new Date(today);
-    end.setDate(end.getDate() + 180);
+    end.setDate(end.getDate() + 365);
     return getDateKey(end);
   }, [today]);
 
-  const upcomingPlannedEventsQuery = trpc.events.list.useQuery({
-    include_adhoc: false,
-    date_from: todayKey,
-    date_to: upcomingWindowEnd,
-    limit: 100,
-  });
+  const upcomingPlannedEventsQuery = trpc.events.list.useQuery(
+    {
+      include_adhoc: false,
+      date_from: todayKey,
+      date_to: upcomingWindowEnd,
+      limit: 500,
+    },
+    scheduleAwareReadQueryOptions,
+  );
 
-  const recentPlannedEventsQuery = trpc.events.list.useQuery({
-    include_adhoc: false,
-    date_from: recentWindowStart,
-    date_to: todayKey,
-    limit: 100,
-  });
+  const recentPlannedEventsQuery = trpc.events.list.useQuery(
+    {
+      include_adhoc: false,
+      date_from: recentWindowStart,
+      date_to: todayKey,
+      limit: 500,
+    },
+    scheduleAwareReadQueryOptions,
+  );
 
   const snapshot = useTrainingPlanSnapshot({ planId: activePlan?.id });
   const goals = useProfileGoals();
@@ -261,6 +274,24 @@ function PlanDashboardScreen() {
 
     return null;
   }, [snapshot.idealCurveData, goals.goals]);
+
+  const goalMarkers = useMemo(
+    () =>
+      goals.goals
+        .filter(
+          (goal): goal is typeof goal & { target_date: string } =>
+            typeof goal.target_date === "string" && goal.target_date.length > 0,
+        )
+        .sort((left, right) =>
+          left.target_date.localeCompare(right.target_date),
+        )
+        .map((goal) => ({
+          id: goal.id,
+          targetDate: goal.target_date,
+          label: goal.title,
+        })),
+    [goals.goals],
+  );
 
   const goalReadiness = useMemo(() => {
     const idealCurve = snapshot.idealCurveData;
@@ -831,6 +862,7 @@ function PlanDashboardScreen() {
                 actualData={fitnessHistory}
                 projectedData={projectedFitness}
                 idealData={idealFitnessCurve}
+                goalMarkers={goalMarkers}
                 goalMetrics={goalMetrics}
                 height={360}
                 showLegend
@@ -851,7 +883,7 @@ function PlanDashboardScreen() {
               {goalReadiness.length === 0 ? (
                 <Text className="text-sm text-muted-foreground">
                   {(loadGuidance?.goal_count ?? 0) > 0
-                    ? "Goal data is available but this screen has not loaded the detailed goal list yet. Pull to refresh to sync it."
+                    ? "Goal data is available and the detailed goal list is still syncing on this screen."
                     : "No profile goals yet. Add one to start planning with intent."}
                 </Text>
               ) : (

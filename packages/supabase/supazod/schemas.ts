@@ -899,40 +899,6 @@ export const publicIntegrationsRelationshipsSchema = z.tuple([
   }),
 ]);
 
-export const publicLibraryItemsRowSchema = z.object({
-  created_at: z.string(),
-  id: z.string(),
-  item_id: z.string(),
-  item_type: z.string(),
-  profile_id: z.string(),
-});
-
-export const publicLibraryItemsInsertSchema = z.object({
-  created_at: z.string().optional(),
-  id: z.string().optional(),
-  item_id: z.string(),
-  item_type: z.string(),
-  profile_id: z.string(),
-});
-
-export const publicLibraryItemsUpdateSchema = z.object({
-  created_at: z.string().optional(),
-  id: z.string().optional(),
-  item_id: z.string().optional(),
-  item_type: z.string().optional(),
-  profile_id: z.string().optional(),
-});
-
-export const publicLibraryItemsRelationshipsSchema = z.tuple([
-  z.object({
-    foreignKeyName: z.literal("library_items_profile_id_fkey"),
-    columns: z.tuple([z.literal("profile_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("profiles"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-]);
-
 export const publicLikesRowSchema = z.object({
   created_at: z.string(),
   entity_id: z.string(),

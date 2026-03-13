@@ -2,20 +2,41 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
+    "@tanstack/react-query",
+  );
+
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  };
+});
+
 const loadActivityPlanDetail = async () =>
   (await import("../activity-plan-detail")).default;
 
-const { alertMock, localSearchParamsMock, scheduleModalProps, routerMock } =
-  vi.hoisted(() => ({
-    alertMock: vi.fn(),
-    localSearchParamsMock: {} as Record<string, string | undefined>,
-    scheduleModalProps: [] as any[],
-    routerMock: {
-      back: vi.fn(),
-      push: vi.fn(),
-      replace: vi.fn(),
-    },
-  }));
+const {
+  alertMock,
+  duplicateMutateMock,
+  fetchedPlanMock,
+  localSearchParamsMock,
+  scheduleModalProps,
+  routerMock,
+} = vi.hoisted(() => ({
+  alertMock: vi.fn(),
+  duplicateMutateMock: vi.fn(),
+  fetchedPlanMock: {
+    current: null as Record<string, any> | null,
+  },
+  localSearchParamsMock: {} as Record<string, string | undefined>,
+  scheduleModalProps: [] as any[],
+  routerMock: {
+    back: vi.fn(),
+    push: vi.fn(),
+    replace: vi.fn(),
+  },
+}));
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -117,11 +138,19 @@ vi.mock("@/lib/trpc", () => ({
         getToday: { invalidate: vi.fn() },
       },
       trainingPlans: { invalidate: vi.fn() },
-      library: { listActivityPlans: { invalidate: vi.fn() } },
     }),
     activityPlans: {
       getById: {
-        useQuery: () => ({ data: null, isLoading: false }),
+        useQuery: () => ({ data: fetchedPlanMock.current, isLoading: false }),
+      },
+      duplicate: {
+        useMutation: (options: any) => ({
+          mutate: (input: any) => {
+            duplicateMutateMock(input);
+            options?.onSuccess?.({ id: "duplicated-plan-1" });
+          },
+          isPending: false,
+        }),
       },
       delete: {
         useMutation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -141,11 +170,6 @@ vi.mock("@/lib/trpc", () => ({
     routes: {
       get: {
         useQuery: () => ({ data: null }),
-      },
-    },
-    library: {
-      add: {
-        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
       },
     },
     social: {
@@ -195,8 +219,10 @@ vi.mock("lucide-react-native", () => ({
 
 describe("activity plan detail scheduling", () => {
   it("opens the scheduling modal for a schedulable template plan", async () => {
+    fetchedPlanMock.current = null;
     scheduleModalProps.length = 0;
     alertMock.mockReset();
+    duplicateMutateMock.mockReset();
     localSearchParamsMock.template = JSON.stringify({
       id: "11111111-1111-1111-1111-111111111111",
       name: "Tempo Builder",
@@ -206,6 +232,7 @@ describe("activity plan detail scheduling", () => {
     });
     localSearchParamsMock.planId = undefined;
     localSearchParamsMock.eventId = undefined;
+    localSearchParamsMock.action = undefined;
 
     const ActivityPlanDetail = await loadActivityPlanDetail();
     let renderer!: TestRenderer.ReactTestRenderer;
@@ -229,8 +256,10 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("shows a visible alert instead of silently doing nothing for an unsaved template", async () => {
+    fetchedPlanMock.current = null;
     scheduleModalProps.length = 0;
     alertMock.mockReset();
+    duplicateMutateMock.mockReset();
     localSearchParamsMock.template = JSON.stringify({
       name: "Draft Template",
       activity_category: "run",
@@ -239,6 +268,7 @@ describe("activity plan detail scheduling", () => {
     });
     localSearchParamsMock.planId = undefined;
     localSearchParamsMock.eventId = undefined;
+    localSearchParamsMock.action = undefined;
 
     const ActivityPlanDetail = await loadActivityPlanDetail();
     let renderer!: TestRenderer.ReactTestRenderer;
@@ -259,8 +289,129 @@ describe("activity plan detail scheduling", () => {
 
     expect(alertMock).toHaveBeenCalledWith(
       "Scheduling unavailable",
-      "Save or duplicate this activity plan first, then schedule it from its detail screen.",
+      "Create this activity plan first, then schedule it from its detail screen.",
     );
     expect(scheduleModalProps.at(-1)?.visible).toBe(false);
+  });
+
+  it("duplicates and routes into scheduling for a shared template", async () => {
+    fetchedPlanMock.current = null;
+    scheduleModalProps.length = 0;
+    alertMock.mockReset();
+    duplicateMutateMock.mockReset();
+    routerMock.replace.mockReset();
+    localSearchParamsMock.template = JSON.stringify({
+      id: "11111111-1111-1111-1111-111111111111",
+      name: "Shared Builder",
+      activity_category: "run",
+      profile_id: "another-profile",
+      structure: { intervals: [] },
+    });
+    localSearchParamsMock.planId = undefined;
+    localSearchParamsMock.eventId = undefined;
+    localSearchParamsMock.action = undefined;
+
+    const ActivityPlanDetail = await loadActivityPlanDetail();
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<ActivityPlanDetail />);
+    });
+
+    const scheduleButton = renderer.root.findAll(
+      (node) =>
+        (node.type as any) === "Button" &&
+        getTextContent(node.props.children).includes("Schedule"),
+    )[0];
+
+    await act(async () => {
+      scheduleButton?.props.onPress();
+    });
+
+    expect(duplicateMutateMock).toHaveBeenCalledWith({
+      id: "11111111-1111-1111-1111-111111111111",
+      newName: "Shared Builder (Copy)",
+    });
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(routerMock.replace).toHaveBeenCalledWith({
+      pathname: "/activity-plan-detail",
+      params: { planId: "duplicated-plan-1", action: "schedule" },
+    });
+    expect(scheduleModalProps.at(-1)?.visible).toBe(false);
+  });
+
+  it("duplicates a shared activity plan into the owned detail flow", async () => {
+    fetchedPlanMock.current = null;
+    scheduleModalProps.length = 0;
+    alertMock.mockReset();
+    duplicateMutateMock.mockReset();
+    routerMock.replace.mockReset();
+    localSearchParamsMock.template = JSON.stringify({
+      id: "11111111-1111-1111-1111-111111111111",
+      name: "Tempo Builder",
+      activity_category: "run",
+      profile_id: "template-owner",
+      structure: { intervals: [] },
+    });
+    localSearchParamsMock.planId = undefined;
+    localSearchParamsMock.eventId = undefined;
+    localSearchParamsMock.action = undefined;
+
+    const ActivityPlanDetail = await loadActivityPlanDetail();
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      renderer = TestRenderer.create(<ActivityPlanDetail />);
+    });
+
+    const duplicateButton = renderer.root.findAll(
+      (node) =>
+        (node.type as any) === "Button" &&
+        getTextContent(node.props.children) === "Duplicate",
+    )[0];
+
+    await act(async () => {
+      duplicateButton?.props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(duplicateMutateMock).toHaveBeenCalledWith({
+      id: "11111111-1111-1111-1111-111111111111",
+      newName: "Tempo Builder (Copy)",
+    });
+    const duplicateAlertButtons = alertMock.mock.calls.at(-1)?.[2] as
+      | Array<{ onPress?: () => void }>
+      | undefined;
+    duplicateAlertButtons?.[0]?.onPress?.();
+    expect(routerMock.replace).toHaveBeenCalledWith({
+      pathname: "/activity-plan-detail",
+      params: { planId: "duplicated-plan-1" },
+    });
+  });
+
+  it("opens scheduling immediately for a routed owned plan", async () => {
+    fetchedPlanMock.current = {
+      id: "owned-plan-1",
+      name: "Owned Builder",
+      activity_category: "run",
+      profile_id: "profile-1",
+      structure: { intervals: [] },
+    };
+    scheduleModalProps.length = 0;
+    alertMock.mockReset();
+    duplicateMutateMock.mockReset();
+    localSearchParamsMock.template = undefined;
+    localSearchParamsMock.planId = "owned-plan-1";
+    localSearchParamsMock.action = "schedule";
+    localSearchParamsMock.eventId = undefined;
+
+    const ActivityPlanDetail = await loadActivityPlanDetail();
+
+    await act(async () => {
+      TestRenderer.create(<ActivityPlanDetail />);
+    });
+
+    expect(scheduleModalProps.at(-1)?.visible).toBe(true);
+    expect(alertMock).not.toHaveBeenCalled();
   });
 });

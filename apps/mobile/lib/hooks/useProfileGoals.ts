@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { trpc } from "@/lib/trpc";
 import { parseProfileGoalRecord, type ProfileGoal } from "@repo/core";
 import { useCallback, useMemo } from "react";
@@ -24,6 +25,7 @@ export function useProfileGoals() {
     },
     {
       enabled: !!profileId,
+      ...scheduleAwareReadQueryOptions,
     },
   );
   const today = useMemo(() => new Date(), []);
@@ -49,6 +51,7 @@ export function useProfileGoals() {
     },
     {
       enabled: !!profileId,
+      ...scheduleAwareReadQueryOptions,
     },
   );
 

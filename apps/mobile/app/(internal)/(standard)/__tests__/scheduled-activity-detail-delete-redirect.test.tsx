@@ -4,6 +4,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import ScheduledActivityDetailScreen from "../scheduled-activity-detail";
 
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
+    "@tanstack/react-query",
+  );
+
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  };
+});
+
 const { routerReplace, queryMock } = vi.hoisted(() => ({
   routerReplace: vi.fn(),
   queryMock: vi.fn(() => ({
@@ -57,13 +68,6 @@ vi.mock("@/components/ui/text", () => ({
   Text: createHost("Text"),
 }));
 
-vi.mock("@/lib/hooks/useReliableMutation", () => ({
-  useReliableMutation: () => ({
-    isPending: false,
-    mutate: vi.fn(),
-  }),
-}));
-
 vi.mock("@/lib/stores/activitySelectionStore", () => ({
   activitySelectionStore: { setSelection: vi.fn() },
 }));
@@ -93,6 +97,7 @@ vi.mock("@/lib/trpc", () => ({
       events: {
         list: { invalidate: vi.fn() },
         getToday: { invalidate: vi.fn() },
+        getById: { invalidate: vi.fn() },
       },
       trainingPlans: {
         invalidate: vi.fn(),
@@ -103,13 +108,33 @@ vi.mock("@/lib/trpc", () => ({
         useQuery: queryMock,
       },
       delete: {
-        useMutation: vi.fn(),
+        useMutation: () => ({
+          isPending: false,
+          mutate: vi.fn(),
+        }),
       },
     },
   },
 }));
 
 describe("scheduled activity detail deleted record redirect", () => {
+  it("uses schedule-aware query freshness for scheduled activity detail", async () => {
+    queryMock.mockClear();
+
+    await act(async () => {
+      TestRenderer.create(<ScheduledActivityDetailScreen />);
+    });
+
+    expect(queryMock).toHaveBeenCalledWith(
+      { id: "event-1" },
+      expect.objectContaining({
+        enabled: true,
+        staleTime: 0,
+        refetchOnMount: "always",
+      }),
+    );
+  });
+
   it("redirects away instead of rendering the not-found state", async () => {
     let renderer!: TestRenderer.ReactTestRenderer;
 

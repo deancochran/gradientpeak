@@ -4,6 +4,17 @@ import TestRenderer, { act } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CalendarScreenWithErrorBoundary from "../calendar";
 
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
+    "@tanstack/react-query",
+  );
+
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  };
+});
+
 const { pushMock, replaceMock, openRouteMock, today } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   replaceMock: vi.fn(),
@@ -13,6 +24,16 @@ const { pushMock, replaceMock, openRouteMock, today } = vi.hoisted(() => ({
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
+    return React.createElement(type, props, props.children);
+  };
+}
+
+function createModalHost(type: string) {
+  return function MockModal(props: any) {
+    if (!props.visible) {
+      return null;
+    }
+
     return React.createElement(type, props, props.children);
   };
 }
@@ -43,8 +64,9 @@ vi.mock("react-native", () => {
   };
 
   return {
+    ActivityIndicator: createHost("ActivityIndicator"),
     Alert: { alert: vi.fn() },
-    Modal: createHost("Modal"),
+    Modal: createModalHost("Modal"),
     Pressable: createHost("Pressable"),
     RefreshControl: createHost("RefreshControl"),
     ScrollView: createHost("ScrollView"),
@@ -106,9 +128,11 @@ vi.mock("@/components/ui/textarea", () => ({
 
 vi.mock("lucide-react-native", () => ({
   CalendarDays: createHost("CalendarDays"),
+  ChevronRight: createHost("ChevronRight"),
   Clock3: createHost("Clock3"),
   Play: createHost("Play"),
   Plus: createHost("Plus"),
+  Search: createHost("Search"),
 }));
 
 vi.mock("@/lib/stores/activitySelectionStore", () => ({
@@ -157,6 +181,26 @@ vi.mock("@/lib/trpc", () => ({
       },
       delete: {
         useMutation: () => ({ isPending: false, mutate: vi.fn() }),
+      },
+    },
+    activityPlans: {
+      list: {
+        useQuery: () => ({
+          data: {
+            items: [
+              {
+                id: "plan-1",
+                name: "Tempo Builder",
+                activity_category: "outdoor_run",
+                estimated_duration: 3600,
+                estimated_tss: 72,
+              },
+            ],
+          },
+          isLoading: false,
+          error: null,
+          refetch: vi.fn(async () => undefined),
+        }),
       },
     },
   },
@@ -248,5 +292,43 @@ describe("calendar day scroller", () => {
 
     expect(openRouteMock).toHaveBeenCalled();
     expect(pushMock).toHaveBeenCalledWith("/event/event-1");
+  });
+
+  it("opens a direct planned-activity scheduling flow from calendar", () => {
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = TestRenderer.create(<CalendarScreenWithErrorBoundary />);
+    });
+
+    act(() => {
+      renderer.root
+        .findByProps({ testID: "create-event-entry" })
+        .props.onPress();
+    });
+
+    act(() => {
+      renderer.root
+        .findByProps({ testID: "create-type-planned" })
+        .props.onPress();
+    });
+
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(pushMock).not.toHaveBeenCalled();
+
+    const planOption = renderer.root.findByProps({
+      testID: "calendar-planned-activity-option-plan-1",
+    });
+
+    act(() => {
+      planOption.props.onPress();
+    });
+
+    const scheduleModal = renderer.root.find(
+      (node: any) => node.type === "ScheduleActivityModal",
+    );
+
+    expect(scheduleModal.props.activityPlanId).toBe("plan-1");
+    expect(scheduleModal.props.preselectedDate).toBe(today);
   });
 });

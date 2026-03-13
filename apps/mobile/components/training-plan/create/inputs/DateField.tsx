@@ -5,11 +5,13 @@ import {
   formatDateOnly,
   parseDateOnlyToDate,
 } from "@/lib/training-plan-form/input-parsers";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from "@react-native-community/datetimepicker";
 import type { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
 import React, { useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Modal, Platform, Pressable, View } from "react-native";
 
 interface DateFieldProps {
   id: string;
@@ -24,6 +26,7 @@ interface DateFieldProps {
   placeholder?: string;
   clearable?: boolean;
   accessibilityHint?: string;
+  pickerPresentation?: "inline" | "modal";
 }
 
 export function DateField({
@@ -39,23 +42,61 @@ export function DateField({
   placeholder = "Select date",
   clearable = false,
   accessibilityHint,
+  pickerPresentation = "inline",
 }: DateFieldProps) {
   const [isPickerVisible, setIsPickerVisible] = useState(false);
+  const [draftDate, setDraftDate] = useState(() => parseDateOnlyToDate(value));
 
   const selectedDate = useMemo(() => parseDateOnlyToDate(value), [value]);
+  const usesModalPresentation = pickerPresentation === "modal";
   const formattedValue = value
     ? format(selectedDate, "EEE, MMM d, yyyy")
     : placeholder;
 
-  const handleDateChange = (event: DateTimePickerEvent, selected?: Date) => {
+  const commitSelectedDate = (nextDate: Date) => {
+    onChange(formatDateOnly(nextDate));
+  };
+
+  const handleInlineDateChange = (
+    event: DateTimePickerEvent,
+    selected?: Date,
+  ) => {
     if (event.type === "dismissed") {
       setIsPickerVisible(false);
       return;
     }
 
     if (selected) {
-      onChange(formatDateOnly(selected));
+      commitSelectedDate(selected);
     }
+    setIsPickerVisible(false);
+  };
+
+  const handleOpenPicker = () => {
+    if (usesModalPresentation && Platform.OS === "android") {
+      DateTimePickerAndroid.open({
+        value: selectedDate,
+        mode: "date",
+        minimumDate,
+        maximumDate,
+        onChange: (_event, nextDate) => {
+          if (nextDate) {
+            commitSelectedDate(nextDate);
+          }
+        },
+      });
+      return;
+    }
+
+    if (usesModalPresentation) {
+      setDraftDate(selectedDate);
+    }
+
+    setIsPickerVisible(true);
+  };
+
+  const handleConfirmModalDate = () => {
+    commitSelectedDate(draftDate);
     setIsPickerVisible(false);
   };
 
@@ -68,7 +109,7 @@ export function DateField({
         </Text>
       </Label>
       <Pressable
-        onPress={() => setIsPickerVisible(true)}
+        onPress={handleOpenPicker}
         className={`rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -78,15 +119,59 @@ export function DateField({
       >
         <Text>{formattedValue}</Text>
       </Pressable>
-      {isPickerVisible ? (
+      {isPickerVisible && !usesModalPresentation ? (
         <DateTimePicker
           value={selectedDate}
           mode="date"
           display="default"
           minimumDate={minimumDate}
           maximumDate={maximumDate}
-          onChange={handleDateChange}
+          onChange={handleInlineDateChange}
         />
+      ) : null}
+      {usesModalPresentation && Platform.OS !== "android" ? (
+        <Modal
+          animationType="fade"
+          transparent
+          visible={isPickerVisible}
+          onRequestClose={() => setIsPickerVisible(false)}
+        >
+          <View className="flex-1 items-center justify-center bg-black/40 px-5">
+            <View className="w-full max-w-md rounded-2xl bg-background p-4 gap-4">
+              <View className="gap-1">
+                <Text className="text-base font-semibold text-foreground">
+                  {label}
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  Choose a date, then confirm to use it.
+                </Text>
+              </View>
+              <DateTimePicker
+                value={draftDate}
+                mode="date"
+                display="spinner"
+                minimumDate={minimumDate}
+                maximumDate={maximumDate}
+                onChange={(_event, nextDate) => {
+                  if (nextDate) {
+                    setDraftDate(nextDate);
+                  }
+                }}
+              />
+              <View className="flex-row justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onPress={() => setIsPickerVisible(false)}
+                >
+                  <Text>Cancel</Text>
+                </Button>
+                <Button onPress={handleConfirmModalDate}>
+                  <Text className="text-primary-foreground">Done</Text>
+                </Button>
+              </View>
+            </View>
+          </View>
+        </Modal>
       ) : null}
       {helperText ? (
         <Text className="text-xs text-muted-foreground">{helperText}</Text>

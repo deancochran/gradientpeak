@@ -2900,6 +2900,34 @@ describe("trainingPlansRouter analytics endpoints", () => {
     });
   });
 
+  it("returns weekly summary for a public scheduled plan", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          profile_id: "template-owner",
+          is_system_template: false,
+          template_visibility: "public",
+          structure: {
+            blocks: [],
+            constraints: { available_days_per_week: ["monday"] },
+          },
+        },
+        error: null,
+      },
+      events: { data: [], error: null },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.getWeeklySummary({
+      training_plan_id: planId,
+      weeks_back: 1,
+    });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(1);
+  });
+
   it("returns additive adherence/readiness summaries in insight timeline response", async () => {
     const caller = createTrainingPlansCaller({
       training_plans: {

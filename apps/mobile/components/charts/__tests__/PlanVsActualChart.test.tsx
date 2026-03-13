@@ -17,8 +17,9 @@ vi.mock("@/components/ui/text", () => ({
 
 vi.mock("@shopify/react-native-skia", () => ({
   DashPathEffect: (props: any) => React.createElement("DashPathEffect", props),
-  useFont: () => ({}),
+  useFont: () => ({ getTextWidth: () => 24 }),
   Line: (props: any) => React.createElement("SkiaLine", props),
+  Text: (props: any) => React.createElement("SkiaText", props),
   vec: (x: number, y: number) => ({ x, y }),
 }));
 
@@ -51,7 +52,7 @@ vi.mock("../../../assets/fonts/SpaceMono-Regular.ttf", () => ({
 }));
 
 describe("PlanVsActualChart", () => {
-  it("renders projection as area, planned as line and scatter, and actual as scatter only", () => {
+  it("renders the core series for a weekly timeline", () => {
     let renderer!: TestRenderer.ReactTestRenderer;
 
     act(() => {
@@ -89,11 +90,58 @@ describe("PlanVsActualChart", () => {
       (node) => (node.type as any) === "Area",
     );
 
-    // 1 Line for planned
-    expect(lines.length).toBe(1);
-    // 1 Scatter for actual
-    expect(scatters.length).toBe(1);
-    // 1 Area for projection
-    expect(areas.length).toBe(1);
+    // 1 Line for planned, 1 Line for actual
+    expect(lines.length).toBe(2);
+    expect(scatters.length).toBe(0);
+    // 1 Area for projection, 1 Area for planned
+    expect(areas.length).toBe(2);
+  });
+
+  it("renders multiple goal markers instead of only the first goal", () => {
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = TestRenderer.create(
+        <PlanVsActualChart
+          timeline={[
+            {
+              date: "2026-03-02",
+              ideal_tss: 320,
+              scheduled_tss: 300,
+              actual_tss: 280,
+              adherence_score: 0.9,
+            },
+            {
+              date: "2026-03-09",
+              ideal_tss: 340,
+              scheduled_tss: 330,
+              actual_tss: 310,
+              adherence_score: 0.92,
+            },
+            {
+              date: "2026-03-16",
+              ideal_tss: 350,
+              scheduled_tss: 345,
+              actual_tss: 320,
+              adherence_score: 0.94,
+            },
+          ]}
+          actualData={[]}
+          projectedData={[]}
+          goalMarkers={[
+            { id: "goal-1", targetDate: "2026-03-03", label: "Race A" },
+            { id: "goal-2", targetDate: "2026-03-18", label: "Race B" },
+          ]}
+        />,
+      );
+    });
+
+    const goalLines = renderer.root.findAll(
+      (node) =>
+        (node.type as any) === "SkiaLine" &&
+        node.props.color === "rgba(34, 197, 94, 0.6)",
+    );
+
+    expect(goalLines).toHaveLength(2);
   });
 });

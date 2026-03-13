@@ -110,6 +110,21 @@ export default function StandardLayout() {
         }}
       />
 
+      {/* ACTIVITY EFFORTS */}
+      <Stack.Screen
+        name="activity-efforts-list"
+        options={{
+          title: "Activity Efforts",
+        }}
+      />
+      <Stack.Screen
+        name="activity-effort-create"
+        options={{
+          title: "Add Effort",
+          presentation: "modal",
+        }}
+      />
+
       {/* ACTIVITY PLANS */}
       <Stack.Screen
         name="activity-plan-detail"

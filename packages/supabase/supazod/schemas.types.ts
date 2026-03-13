@@ -171,18 +171,6 @@ export type PublicIntegrationsUpdate = z.infer<
 export type PublicIntegrationsRelationships = z.infer<
   typeof generated.publicIntegrationsRelationshipsSchema
 >;
-export type PublicLibraryItemsRow = z.infer<
-  typeof generated.publicLibraryItemsRowSchema
->;
-export type PublicLibraryItemsInsert = z.infer<
-  typeof generated.publicLibraryItemsInsertSchema
->;
-export type PublicLibraryItemsUpdate = z.infer<
-  typeof generated.publicLibraryItemsUpdateSchema
->;
-export type PublicLibraryItemsRelationships = z.infer<
-  typeof generated.publicLibraryItemsRelationshipsSchema
->;
 export type PublicLikesRow = z.infer<typeof generated.publicLikesRowSchema>;
 export type PublicLikesInsert = z.infer<
   typeof generated.publicLikesInsertSchema

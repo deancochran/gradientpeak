@@ -19,11 +19,5 @@ export const templateApplyInputSchema = z
     path: ["target_date"],
   });
 
-export const libraryItemCreateSchema = z.object({
-  item_type: templateItemTypeSchema,
-  item_id: z.string().uuid(),
-});
-
 export type TemplateItemType = z.infer<typeof templateItemTypeSchema>;
 export type TemplateApplyInput = z.infer<typeof templateApplyInputSchema>;
-export type LibraryItemCreateInput = z.infer<typeof libraryItemCreateSchema>;

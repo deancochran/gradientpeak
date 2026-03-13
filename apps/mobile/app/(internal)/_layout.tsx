@@ -10,13 +10,13 @@ import React from "react";
  * 1. (tabs) - Tab-based navigation
  *    - Shows tab bar footer
  *    - No back buttons
- *    - Home, Discover, Plan, Library tabs
+ *    - Home, Discover, Record, Plan, Calendar tabs
  *
  * 2. (standard) - Stack-based modal pages
  *    - Shows header with back button
  *    - No tab bar footer
  *    - Card-style presentation
- *    - Activities, settings, plan library, etc.
+ *    - Activities, settings, planning detail screens, etc.
  *
  * 3. record - Isolated recording experience
  *    - No tab bar

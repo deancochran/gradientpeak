@@ -181,7 +181,13 @@ describe("useTrainingPlanSnapshot", () => {
       );
     });
 
-    expect(getPlanQuery).toHaveBeenCalledWith({ id: "plan-123" });
+    expect(getPlanQuery).toHaveBeenCalledWith(
+      { id: "plan-123" },
+      expect.objectContaining({
+        staleTime: 0,
+        refetchOnMount: "always",
+      }),
+    );
 
     expect(getWeeklySummaryQuery).toHaveBeenCalledWith(
       expect.objectContaining({ training_plan_id: "plan-123" }),
@@ -234,7 +240,11 @@ describe("useTrainingPlanSnapshot", () => {
 
     expect(getInsightTimelineQuery).toHaveBeenCalledWith(
       expect.not.objectContaining({ training_plan_id: expect.anything() }),
-      expect.objectContaining({ enabled: true }),
+      expect.objectContaining({
+        enabled: true,
+        staleTime: 0,
+        refetchOnMount: "always",
+      }),
     );
 
     await act(async () => {

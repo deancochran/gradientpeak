@@ -6,13 +6,15 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { ROUTES } from "@/lib/constants/routes";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { trpc } from "@/lib/trpc";
 import { getActivityBgClass, getActivityColor } from "@/lib/utils/plan/colors";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import { ActivityPayload } from "@repo/core";
 import { formatDurationSec } from "@repo/core/utils/dates";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -31,7 +33,7 @@ function PlannedActivityDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const eventId = params.id as string;
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const { beginRedirect, isRedirecting, redirectOnNotFound } =
     useDeletedDetailRedirect({
@@ -45,18 +47,21 @@ function PlannedActivityDetailScreen() {
     isLoading,
   } = trpc.events.getById.useQuery(
     { id: eventId },
-    { enabled: !!eventId && !isRedirecting },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: !!eventId && !isRedirecting,
+    },
   );
 
   useEffect(() => {
     redirectOnNotFound(error);
   }, [error, redirectOnNotFound]);
 
-  // Delete mutation
-  const deleteMutation = useReliableMutation(trpc.events.delete, {
-    invalidate: [utils.events.list, utils.events.getToday, utils.trainingPlans],
-    success: "Activity removed from your schedule",
-    onSuccess: () => beginRedirect(),
+  const deleteMutation = trpc.events.delete.useMutation({
+    onSuccess: async () => {
+      await refreshScheduleViews(queryClient, "eventDeletionMutation");
+      beginRedirect();
+    },
   });
 
   const handleStartActivity = () => {
@@ -376,10 +381,6 @@ function PlannedActivityDetailScreen() {
           visible={showRescheduleModal}
           onClose={() => setShowRescheduleModal(false)}
           eventId={plannedActivity.id}
-          onSuccess={() => {
-            utils.events.invalidate();
-            utils.trainingPlans.invalidate();
-          }}
         />
       )}
     </View>

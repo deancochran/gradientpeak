@@ -125,6 +125,8 @@ type EvaluateCreationConfigResult = {
     conflicts: CreationConflictItem[];
   };
   feasibilitySummary: CreationFeasibilitySafetySummary;
+  globalCtlOverride?: number;
+  globalAtlOverride?: number;
 };
 
 export async function previewCreationConfigUseCase<
@@ -222,8 +224,10 @@ export async function previewCreationConfigUseCase<
       minimalPlan: input.params.minimal_plan,
       loadBootstrapState: evaluation.loadBootstrapState,
       priorInferredSnapshot: priorInferredSnapshot ?? undefined,
-      startingCtlOverride: input.params.starting_ctl_override,
-      startingAtlOverride: input.params.starting_atl_override,
+      startingCtlOverride:
+        input.params.starting_ctl_override ?? evaluation.globalCtlOverride,
+      startingAtlOverride:
+        input.params.starting_atl_override ?? evaluation.globalAtlOverride,
       finalConfig: evaluation.finalConfig,
       contextSummary: evaluation.contextSummary,
     });

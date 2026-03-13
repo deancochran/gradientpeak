@@ -3,41 +3,62 @@ import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import { ROUTES } from "@/lib/constants/routes";
 
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
+    "@tanstack/react-query",
+  );
+
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  };
+});
+
 const loadTrainingPlanOverview = async () =>
   (await import("../training-plan-detail")).default;
 
-const { replaceMock, pushMock, localSearchParamsMock, snapshotState } =
-  vi.hoisted(() => ({
-    replaceMock: vi.fn(),
-    pushMock: vi.fn(),
-    localSearchParamsMock: {} as Record<string, string | undefined>,
-    snapshotState: {
-      plan: null as any,
-      isLoadingSharedDependencies: false,
-      hasSharedDependencyError: false,
-      insightTimeline: {
-        timeline: Array.from({ length: 40 }, (_, index) => ({
-          adherence_score: 80,
-          boundary_state: "safe",
-          actual_tss: index + 100,
-          scheduled_tss: index + 110,
-        })),
-        projection: { at_goal_date: {} },
-        adherence_summary: {
-          interpretation: "Adherence interpretation from timeline summary.",
-          contributors: [
-            { detail: "Adherence contributor detail from timeline summary." },
-          ],
-        },
-        readiness_summary: {
-          interpretation: "Readiness interpretation from timeline summary.",
-          contributors: [
-            { detail: "Readiness contributor detail from timeline summary." },
-          ],
-        },
-      } as any,
-    },
-  }));
+const {
+  alertMock,
+  applyTemplateMutateMock,
+  duplicateMutateMock,
+  replaceMock,
+  pushMock,
+  localSearchParamsMock,
+  snapshotState,
+} = vi.hoisted(() => ({
+  alertMock: vi.fn(),
+  applyTemplateMutateMock: vi.fn(),
+  duplicateMutateMock: vi.fn(),
+  replaceMock: vi.fn(),
+  pushMock: vi.fn(),
+  localSearchParamsMock: {} as Record<string, string | undefined>,
+  snapshotState: {
+    plan: null as any,
+    isLoadingSharedDependencies: false,
+    hasSharedDependencyError: false,
+    insightTimeline: {
+      timeline: Array.from({ length: 40 }, (_, index) => ({
+        adherence_score: 80,
+        boundary_state: "safe",
+        actual_tss: index + 100,
+        scheduled_tss: index + 110,
+      })),
+      projection: { at_goal_date: {} },
+      adherence_summary: {
+        interpretation: "Adherence interpretation from timeline summary.",
+        contributors: [
+          { detail: "Adherence contributor detail from timeline summary." },
+        ],
+      },
+      readiness_summary: {
+        interpretation: "Readiness interpretation from timeline summary.",
+        contributors: [
+          { detail: "Readiness contributor detail from timeline summary." },
+        ],
+      },
+    } as any,
+  },
+}));
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -79,10 +100,10 @@ vi.mock("@/lib/trpc", () => ({
           autoAddPeriodization: { mutate: vi.fn() },
         },
       },
-      library: {
-        listTrainingPlans: { invalidate: vi.fn() },
-      },
       trainingPlans: {
+        invalidate: vi.fn(),
+      },
+      events: {
         invalidate: vi.fn(),
       },
     }),
@@ -96,21 +117,23 @@ vi.mock("@/lib/trpc", () => ({
       update: {
         useMutation: () => ({ isPending: false }),
       },
+      duplicate: {
+        useMutation: (options: any) => ({
+          mutate: (input: any) => {
+            duplicateMutateMock(input);
+            options?.onSuccess?.({ id: "duplicated-training-plan-1" });
+          },
+          isPending: false,
+        }),
+      },
       applyTemplate: {
         useMutation: () => ({
           mutateAsync: vi.fn(),
+          mutate: applyTemplateMutateMock,
           isPending: false,
         }),
       },
       delete: {},
-    },
-    library: {
-      add: {
-        useMutation: () => ({
-          mutateAsync: vi.fn(),
-          isPending: false,
-        }),
-      },
     },
     social: {
       toggleLike: {
@@ -131,6 +154,12 @@ vi.mock("@/lib/trpc", () => ({
           refetch: vi.fn(),
         }),
       },
+      getManyByIds: {
+        useQuery: () => ({
+          data: { items: [] },
+          isLoading: false,
+        }),
+      },
     },
   },
 }));
@@ -144,7 +173,7 @@ vi.mock("@/lib/hooks/useReliableMutation", () => ({
 
 vi.mock("react-native", () => ({
   ActivityIndicator: createHost("ActivityIndicator"),
-  Alert: { alert: vi.fn() },
+  Alert: { alert: alertMock },
   NativeModules: { BlobModule: {} },
   TurboModuleRegistry: {
     get: vi.fn(() => ({ installTurboModule: vi.fn() })),
@@ -262,6 +291,7 @@ vi.mock("lucide-react-native", () => {
     Calendar: Icon,
     ChevronRight: Icon,
     CircleCheck: Icon,
+    Copy: Icon,
     Gauge: Icon,
     Library: Icon,
     Pause: Icon,
@@ -324,6 +354,18 @@ const findTouchableByText = (
     );
   });
 
+const findButtonByText = (
+  renderer: TestRenderer.ReactTestRenderer,
+  text: string,
+) =>
+  renderer.root.find((node: any) => {
+    if (node.type !== "Button" || typeof node.props.onPress !== "function") {
+      return false;
+    }
+
+    return getNodeText(node.props?.children) === text;
+  });
+
 const findInsightCardTouchable = (
   renderer: TestRenderer.ReactTestRenderer,
   chartType: string,
@@ -356,6 +398,9 @@ describe("TrainingPlanOverview deep-link routing", () => {
   const resetTestState = () => {
     replaceMock.mockReset();
     pushMock.mockReset();
+    alertMock.mockReset();
+    applyTemplateMutateMock.mockReset();
+    duplicateMutateMock.mockReset();
     snapshotState.plan = null;
     snapshotState.isLoadingSharedDependencies = false;
     snapshotState.hasSharedDependencyError = false;
@@ -409,7 +454,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     const TrainingPlanOverview = await loadTrainingPlanOverview();
 
     let renderer!: TestRenderer.ReactTestRenderer;
-    act(() => {
+    await act(async () => {
       renderer = TestRenderer.create(<TrainingPlanOverview />);
     });
 
@@ -484,6 +529,138 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
   });
 
+  it("shows schedule-first plan actions for owned plans", async () => {
+    resetTestState();
+    snapshotState.plan = {
+      id: "plan-owned-1",
+      name: "Owned Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    localSearchParamsMock.id = "plan-owned-1";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<TrainingPlanOverview />);
+    });
+
+    expect(hasTextContaining(renderer, "Schedule Sessions")).toBe(true);
+    expect(hasTextContaining(renderer, "Edit Plan")).toBe(true);
+    expect(hasTextContaining(renderer, "Apply Template")).toBe(false);
+    expect(hasTextContaining(renderer, "Edit Structure")).toBe(false);
+  });
+
+  it("shows one clear schedule anchor mode instead of start plus target dates", async () => {
+    resetTestState();
+    snapshotState.plan = {
+      id: "plan-owned-anchor-1",
+      name: "Anchor Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    localSearchParamsMock.id = "plan-owned-anchor-1";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<TrainingPlanOverview />);
+    });
+
+    expect(
+      hasTextContaining(renderer, "How should this schedule line up?"),
+    ).toBe(true);
+    expect(hasTextContaining(renderer, "Start On")).toBe(true);
+    expect(hasTextContaining(renderer, "Finish By")).toBe(true);
+    expect(
+      renderer.root.findAll((node: any) => node.type === "DateField"),
+    ).toHaveLength(1);
+    expect(hasTextContaining(renderer, "Target Date (Optional)")).toBe(false);
+    expect(hasTextContaining(renderer, "Start Date")).toBe(false);
+  });
+
+  it("sends only the selected finish-by anchor to scheduling", async () => {
+    resetTestState();
+    snapshotState.plan = {
+      id: "plan-owned-anchor-2",
+      name: "Anchor Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    localSearchParamsMock.id = "plan-owned-anchor-2";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<TrainingPlanOverview />);
+    });
+
+    const finishByButton = findTouchableByText(renderer, "Finish By");
+    await act(async () => {
+      finishByButton.props.onPress();
+    });
+
+    const anchorField = renderer.root.find(
+      (node: any) => node.type === "DateField",
+    );
+    await act(async () => {
+      anchorField.props.onChange("2026-04-30");
+    });
+
+    const scheduleButton = findButtonByText(renderer, "Schedule Sessions");
+    await act(async () => {
+      scheduleButton.props.onPress();
+    });
+
+    expect(applyTemplateMutateMock).toHaveBeenCalledWith({
+      template_type: "training_plan",
+      template_id: "plan-owned-anchor-2",
+      start_date: undefined,
+      target_date: "2026-04-30",
+    });
+  });
+
+  it("requires a finish date when finish-by mode is selected", async () => {
+    resetTestState();
+    snapshotState.plan = {
+      id: "plan-owned-anchor-3",
+      name: "Anchor Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    localSearchParamsMock.id = "plan-owned-anchor-3";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<TrainingPlanOverview />);
+    });
+
+    const finishByButton = findTouchableByText(renderer, "Finish By");
+    await act(async () => {
+      finishByButton.props.onPress();
+    });
+
+    const scheduleButton = findButtonByText(renderer, "Schedule Sessions");
+    await act(async () => {
+      scheduleButton.props.onPress();
+    });
+
+    expect(alertMock).toHaveBeenCalledWith(
+      "Choose a finish date",
+      "Pick the date you want this plan to finish, or switch back to Start On.",
+    );
+    expect(applyTemplateMutateMock).not.toHaveBeenCalled();
+  });
+
   it("routes review-activity intent CTA to activity detail", async () => {
     resetTestState();
     snapshotState.plan = {
@@ -538,6 +715,52 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining(renderer, "Edit Plan Structure")).toBe(false);
     expect(hasTextContaining(renderer, "Review Planned Activity")).toBe(false);
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("duplicates a shared training plan and routes to the new owned copy", async () => {
+    resetTestState();
+    snapshotState.plan = {
+      id: "plan-shared-1",
+      name: "Shared Plan",
+      profile_id: "someone-else",
+      template_visibility: "public",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    localSearchParamsMock.id = "plan-shared-1";
+    const TrainingPlanOverview = await loadTrainingPlanOverview();
+
+    let renderer!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(<TrainingPlanOverview />);
+    });
+
+    const duplicateButton = renderer.root.find(
+      (node: any) =>
+        node.type === "Button" &&
+        getNodeText(node.props?.children) === "Make Editable Copy",
+    );
+
+    await act(async () => {
+      duplicateButton.props.onPress();
+    });
+
+    expect(duplicateMutateMock).toHaveBeenCalledWith({
+      id: "plan-shared-1",
+      newName: "Shared Plan (Copy)",
+    });
+    expect(alertMock).toHaveBeenCalledWith(
+      "Duplicated",
+      "Training plan added to your plans.",
+      expect.any(Array),
+    );
+    const duplicateAlertButtons = alertMock.mock.calls.at(-1)?.[2] as
+      | Array<{ onPress?: () => void }>
+      | undefined;
+    duplicateAlertButtons?.[0]?.onPress?.();
+    expect(replaceMock).toHaveBeenCalledWith(
+      ROUTES.PLAN.TRAINING_PLAN.DETAIL("duplicated-training-plan-1"),
+    );
   });
 
   // removed insight tests since they were moved to active plan

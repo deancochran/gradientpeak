@@ -3,7 +3,9 @@ import { IntegerStepper } from "@/components/training-plan/create/inputs/Integer
 import { PercentSliderInput } from "@/components/training-plan/create/inputs/PercentSliderInput";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
+import { Input } from "@/components/ui/input";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
@@ -15,13 +17,15 @@ type PreferencesTabKey =
   | "schedule"
   | "training-style"
   | "recovery"
-  | "goal-strategy";
+  | "goal-strategy"
+  | "baseline-fitness";
 
 const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = [
   { key: "schedule", label: "Schedule" },
   { key: "training-style", label: "Training style" },
   { key: "recovery", label: "Recovery" },
   { key: "goal-strategy", label: "Goal strategy" },
+  { key: "baseline-fitness", label: "Baseline fitness" },
 ];
 
 function toFractionFromPercent(value: number, decimals = 2) {
@@ -702,6 +706,131 @@ export default function TrainingPreferencesScreen() {
                     }))
                   }
                 />
+              </>
+            ) : null}
+
+            {activeTab === "baseline-fitness" ? (
+              <>
+                <Text className="text-xs text-muted-foreground">
+                  Override your baseline fitness to unlock higher volume
+                  training plans without historical data. This tells the system
+                  your current CTL (fitness) and ATL (fatigue) so it doesn't cap
+                  your plan due to low historical load.
+                </Text>
+                <View className="flex-row items-center justify-between py-2">
+                  <View className="flex-1">
+                    <Text className="text-sm font-medium text-foreground">
+                      Enable Manual Baseline
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      Use override values instead of calculated from history
+                    </Text>
+                  </View>
+                  <Switch
+                    checked={draft.baseline_fitness?.is_enabled ?? false}
+                    onCheckedChange={(checked: boolean) =>
+                      setDraft((current) => ({
+                        ...current,
+                        baseline_fitness: {
+                          is_enabled: checked,
+                          override_ctl:
+                            current.baseline_fitness?.override_ctl ?? 0,
+                          override_atl:
+                            current.baseline_fitness?.override_atl ?? 0,
+                          override_date:
+                            current.baseline_fitness?.override_date,
+                        },
+                      }))
+                    }
+                  />
+                </View>
+                {(draft.baseline_fitness?.is_enabled ?? false) && (
+                  <>
+                    <IntegerStepper
+                      id="preferences-baseline-ctl"
+                      label="CTL (Chronic Training Load)"
+                      value={draft.baseline_fitness?.override_ctl ?? 0}
+                      min={0}
+                      max={250}
+                      helperText="Your current fitness level (42-day average TSS)"
+                      onChange={(value: number) =>
+                        setDraft((current) => ({
+                          ...current,
+                          baseline_fitness: {
+                            is_enabled:
+                              current.baseline_fitness?.is_enabled ?? false,
+                            override_ctl: value,
+                            override_atl:
+                              current.baseline_fitness?.override_atl ?? 0,
+                            override_date:
+                              current.baseline_fitness?.override_date,
+                          },
+                        }))
+                      }
+                    />
+                    <IntegerStepper
+                      id="preferences-baseline-atl"
+                      label="ATL (Acute Training Load)"
+                      value={draft.baseline_fitness?.override_atl ?? 0}
+                      min={0}
+                      max={250}
+                      helperText="Your current fatigue level (7-day average TSS)"
+                      onChange={(value: number) =>
+                        setDraft((current) => ({
+                          ...current,
+                          baseline_fitness: {
+                            is_enabled:
+                              current.baseline_fitness?.is_enabled ?? false,
+                            override_ctl:
+                              current.baseline_fitness?.override_ctl ?? 0,
+                            override_atl: value,
+                            override_date:
+                              current.baseline_fitness?.override_date,
+                          },
+                        }))
+                      }
+                    />
+                    <View className="mt-2">
+                      <Text className="text-sm font-medium text-foreground mb-2">
+                        Baseline Date
+                      </Text>
+                      <Text className="text-xs text-muted-foreground mb-2">
+                        When these values were valid (defaults to today)
+                      </Text>
+                      <Input
+                        value={
+                          draft.baseline_fitness?.override_date ??
+                          new Date().toISOString().split("T")[0]!
+                        }
+                        onChangeText={(value: string) =>
+                          setDraft((current) => ({
+                            ...current,
+                            baseline_fitness: {
+                              is_enabled:
+                                current.baseline_fitness?.is_enabled ?? false,
+                              override_ctl:
+                                current.baseline_fitness?.override_ctl ?? 0,
+                              override_atl:
+                                current.baseline_fitness?.override_atl ?? 0,
+                              override_date: value,
+                            },
+                          }))
+                        }
+                        placeholder="YYYY-MM-DD"
+                        className="border-input"
+                      />
+                    </View>
+                    <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
+                      <Text className="text-sm font-medium text-info">
+                        Example CTL Values
+                      </Text>
+                      <Text className="mt-1 text-xs text-muted-foreground">
+                        Recreatonal: 30-50 | Intermediate: 50-80 | Advanced:
+                        80-120 | Elite: 120+
+                      </Text>
+                    </View>
+                  </>
+                )}
               </>
             ) : null}
           </CardContent>

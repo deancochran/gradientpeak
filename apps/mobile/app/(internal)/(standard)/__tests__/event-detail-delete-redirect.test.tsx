@@ -4,6 +4,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import EventDetailScreen from "../event-detail";
 
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
+    "@tanstack/react-query",
+  );
+
+  return {
+    ...actual,
+    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  };
+});
+
 const { routerReplace, queryMock } = vi.hoisted(() => ({
   routerReplace: vi.fn(),
   queryMock: vi.fn(() => ({
@@ -69,6 +80,7 @@ vi.mock("@/lib/trpc", () => ({
       events: {
         list: { invalidate: vi.fn() },
         getToday: { invalidate: vi.fn() },
+        getById: { invalidate: vi.fn() },
       },
       trainingPlans: {
         invalidate: vi.fn(),
@@ -95,6 +107,23 @@ vi.mock("@/lib/trpc", () => ({
 }));
 
 describe("event detail deleted record redirect", () => {
+  it("uses schedule-aware query freshness for event detail", async () => {
+    queryMock.mockClear();
+
+    await act(async () => {
+      TestRenderer.create(<EventDetailScreen />);
+    });
+
+    expect(queryMock).toHaveBeenCalledWith(
+      { id: "event-1" },
+      expect.objectContaining({
+        enabled: true,
+        staleTime: 0,
+        refetchOnMount: "always",
+      }),
+    );
+  });
+
   it("redirects away instead of showing a transient not-found state", async () => {
     let renderer!: TestRenderer.ReactTestRenderer;
 

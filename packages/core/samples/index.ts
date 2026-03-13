@@ -19,6 +19,7 @@ export * from "./indoor-treadmill";
 export * from "./other-activity";
 export * from "./outdoor-bike";
 export * from "./outdoor-run";
+export * from "./system-activity-template-taxonomy";
 
 // Export training plan samples
 export * from "./training-plans";

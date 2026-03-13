@@ -11,7 +11,7 @@ Implementation should proceed in this order:
 3. clean up backend contracts and invalidations,
 4. remove persistence and router dead weight once the app no longer depends on it.
 
-The goal is to reduce concepts, not add a new system.
+The goal is to reduce concepts, not add a new system. Deprecated library code paths should be removed, not retained as long-term compatibility surfaces.
 
 ## 2. Current Issues To Address
 
@@ -54,11 +54,11 @@ Scheduling and detail-screen copy still refers to library usage when the desired
 
 ## 4. Backend Changes
 
-### A. Deprecate library router usage
+### A. Remove library router usage
 
 - remove mobile calls to `trpc.library.add`,
 - remove now-unused invalidations and cache tags,
-- remove or deprecate `packages/trpc/src/routers/library.ts` once nothing depends on it.
+- remove `packages/trpc/src/routers/library.ts` and its router export once nothing depends on it.
 
 ### B. Activity plan duplication
 
@@ -83,9 +83,10 @@ Preferred order:
 
 1. remove runtime use of `library_items`,
 2. remove library router exports and tests,
-3. drop the `library_items` table in a migration if no dependency remains.
+3. drop the `library_items` table in a migration,
+4. regenerate types so no generated API surface still implies library support.
 
-If staged cleanup is safer, mark the table/router deprecated first and remove them in a short follow-up.
+This spec prefers full removal in one implementation pass. Do not leave deprecated library flows in the app unless a hard blocker is documented.
 
 ## 5. Mobile App Changes
 
@@ -152,7 +153,7 @@ pnpm run update-types
 2. Wire `activityPlans.duplicate` into mobile.
 3. Add `trainingPlans.duplicate` and wire it into mobile.
 4. Clean up invalidations, copy, tests, and router exports.
-5. Drop or deprecate `library_items` and the `library` router.
+5. Drop `library_items` and remove the `library` router.
 
 ## 9. Expected Outcomes
 

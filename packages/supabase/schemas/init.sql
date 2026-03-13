@@ -303,24 +303,6 @@ create trigger update_activity_plans_updated_at
     execute function update_updated_at_column();
 
 -- ============================================================================
--- LIBRARY ITEMS
--- ============================================================================
-create table if not exists public.library_items (
-    id uuid primary key default uuid_generate_v4(),
-    profile_id uuid not null references public.profiles(id) on delete cascade,
-    item_type text not null check (item_type in ('training_plan', 'activity_plan')),
-    item_id uuid not null,
-    created_at timestamptz not null default now(),
-    unique (profile_id, item_type, item_id)
-);
-
-create index if not exists idx_library_items_profile_type_created
-    on public.library_items(profile_id, item_type, created_at desc);
-
-create index if not exists idx_library_items_item_lookup
-    on public.library_items(item_type, item_id);
-
--- ============================================================================
 -- EVENTS
 -- ============================================================================
 create table if not exists public.events (
@@ -1092,7 +1074,6 @@ alter table public.activity_routes disable row level security;
 
 alter table public.integrations disable row level security;
 alter table public.events disable row level security;
-alter table public.library_items disable row level security;
 alter table public.notifications disable row level security;
 alter table public.oauth_states disable row level security;
 alter table public.profiles disable row level security;

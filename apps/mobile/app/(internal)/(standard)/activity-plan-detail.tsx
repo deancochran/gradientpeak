@@ -6,11 +6,12 @@ import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { ROUTES } from "@/lib/constants/routes";
+import { buildPlanRoute, ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 import { getDurationMs } from "@/lib/utils/durationConversion";
-import { skipToken } from "@tanstack/react-query";
+import { skipToken, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityPayload,
   buildEstimationContext,
@@ -30,7 +31,6 @@ import {
   Eye,
   EyeOff,
   Heart,
-  Library,
   MessageCircle,
   Send,
   Share2,
@@ -56,12 +56,19 @@ function isValidUuid(value: string): boolean {
 
 export default function ActivityPlanDetailPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { profile } = useAuth();
   const params = useLocalSearchParams();
-  const planId = params.planId as string | undefined;
-  const eventId = params.eventId as string | undefined;
+  const planIdParam =
+    typeof params.planId === "string" ? params.planId : undefined;
+  const fallbackIdParam = typeof params.id === "string" ? params.id : undefined;
+  const planId = planIdParam ?? fallbackIdParam;
+  const eventId =
+    typeof params.eventId === "string" ? params.eventId : undefined;
+  const action = typeof params.action === "string" ? params.action : undefined;
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
+  const scheduleActionHandledRef = React.useRef<string | null>(null);
 
   const utils = trpc.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } =
@@ -201,11 +208,20 @@ export default function ActivityPlanDetailPage() {
 
   const handleSchedule = () => {
     if (!activityPlan) return;
-    if (!planId && !activityPlan.id) {
+    const isOwnedByUser = activityPlan.profile_id === profile?.id;
+    if (!activityPlan.id) {
       Alert.alert(
         "Scheduling unavailable",
-        "Save or duplicate this activity plan first, then schedule it from its detail screen.",
+        "Create this activity plan first, then schedule it from its detail screen.",
       );
+      return;
+    }
+    if (!isOwnedByUser) {
+      duplicateActionRef.current = "schedule";
+      duplicatePlanMutation.mutate({
+        id: activityPlan.id,
+        newName: `${activityPlan.name} (Copy)`,
+      });
       return;
     }
     setShowScheduleModal(true);
@@ -235,11 +251,50 @@ export default function ActivityPlanDetailPage() {
     );
   };
 
+  const duplicateActionRef = React.useRef<"copy" | "schedule" | null>(null);
+
+  const duplicatePlanMutation = trpc.activityPlans.duplicate.useMutation({
+    onSuccess: async (duplicatedPlan) => {
+      const duplicateAction = duplicateActionRef.current;
+      duplicateActionRef.current = null;
+      await Promise.all([
+        utils.activityPlans.list.invalidate(),
+        utils.activityPlans.getUserPlansCount.invalidate(),
+      ]);
+      if (duplicateAction === "schedule") {
+        router.replace(buildPlanRoute(duplicatedPlan.id, "schedule") as any);
+        return;
+      }
+      Alert.alert("Duplicated", "Activity plan added to your plans.", [
+        {
+          text: "Open",
+          onPress: () =>
+            router.replace({
+              pathname: "/activity-plan-detail" as any,
+              params: { planId: duplicatedPlan.id },
+            }),
+        },
+      ]);
+    },
+    onError: (error) => {
+      Alert.alert(
+        "Duplicate failed",
+        error.message || "Could not duplicate this activity plan",
+      );
+    },
+  });
+
   const handleDuplicate = () => {
-    // TODO: Navigate to create activity plan with this plan as template
-    router.push({
-      pathname: "/create-activity-plan" as any,
-      params: { templateId: activityPlan?.id },
+    const actualPlanId = planId || activityPlan?.id;
+    if (!actualPlanId) {
+      Alert.alert("Duplicate failed", "No activity plan ID was found.");
+      return;
+    }
+
+    duplicateActionRef.current = "copy";
+    duplicatePlanMutation.mutate({
+      id: actualPlanId,
+      newName: `${activityPlan.name} (Copy)`,
     });
   };
 
@@ -304,14 +359,10 @@ export default function ActivityPlanDetailPage() {
   };
 
   const removeScheduleMutation = trpc.events.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       beginRedirect();
       setShowScheduleModal(false);
-      void Promise.all([
-        utils.events.list.invalidate(),
-        utils.events.getToday.invalidate(),
-        utils.trainingPlans.invalidate(),
-      ]);
+      await refreshScheduleViews(queryClient, "eventDeletionMutation");
     },
     onError: (error) => {
       Alert.alert(
@@ -320,29 +371,6 @@ export default function ActivityPlanDetailPage() {
       );
     },
   });
-
-  const saveToLibraryMutation = trpc.library.add.useMutation({
-    onSuccess: async () => {
-      await utils.library.listActivityPlans.invalidate();
-      Alert.alert("Saved", "Activity plan added to your library.");
-    },
-    onError: (error) => {
-      Alert.alert("Save failed", error.message || "Could not save to library");
-    },
-  });
-
-  const handleSaveToLibrary = () => {
-    const actualPlanId = planId || activityPlan?.id;
-    if (!actualPlanId) {
-      Alert.alert("Save failed", "No activity plan ID was found.");
-      return;
-    }
-
-    saveToLibraryMutation.mutate({
-      item_type: "activity_plan",
-      item_id: actualPlanId,
-    });
-  };
 
   const handleDelete = () => {
     if (!activityPlan) return;
@@ -471,6 +499,31 @@ export default function ActivityPlanDetailPage() {
     }
   }, [activityPlan?.template_visibility]);
 
+  React.useEffect(() => {
+    if (action !== "schedule" || !activityPlan?.id || eventId) {
+      return;
+    }
+
+    const scheduleKey = `${activityPlan.id}:${action}`;
+
+    if (scheduleActionHandledRef.current === scheduleKey) {
+      return;
+    }
+
+    if (activityPlan.profile_id !== profile?.id) {
+      return;
+    }
+
+    scheduleActionHandledRef.current = scheduleKey;
+    setShowScheduleModal(true);
+  }, [
+    action,
+    activityPlan?.id,
+    activityPlan?.profile_id,
+    eventId,
+    profile?.id,
+  ]);
+
   if (loadingPlan || loadingPlannedActivity || isRedirecting) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
@@ -501,6 +554,13 @@ export default function ActivityPlanDetailPage() {
   // Check if user owns this plan for edit permission
   // Database uses profile_id field, not user_id
   const isOwnedByUser = activityPlan.profile_id === profile?.id;
+  const primaryScheduleLabel = isScheduled
+    ? "Reschedule"
+    : isOwnedByUser
+      ? "Schedule"
+      : duplicatePlanMutation.isPending
+        ? "Duplicating..."
+        : "Duplicate and Schedule";
 
   // Decode route coordinates if available
   const routeCoordinates = route?.polyline
@@ -544,10 +604,11 @@ export default function ActivityPlanDetailPage() {
                 variant="outline"
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
+                disabled={!isScheduled && duplicatePlanMutation.isPending}
               >
                 <Icon as={Calendar} size={16} className="text-foreground" />
                 <Text className="text-foreground text-sm">
-                  {isScheduled ? "Reschedule" : "Schedule"}
+                  {primaryScheduleLabel}
                 </Text>
               </Button>
             </View>
@@ -611,26 +672,18 @@ export default function ActivityPlanDetailPage() {
               </Pressable>
 
               <Button
-                onPress={handleSaveToLibrary}
-                variant="outline"
-                size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5"
-                disabled={saveToLibraryMutation.isPending}
-              >
-                <Icon as={Library} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">
-                  {saveToLibraryMutation.isPending ? "Saving..." : "Save"}
-                </Text>
-              </Button>
-
-              <Button
                 onPress={handleDuplicate}
                 variant="outline"
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
+                disabled={duplicatePlanMutation.isPending}
               >
                 <Icon as={Copy} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">Duplicate</Text>
+                <Text className="text-foreground text-sm">
+                  {duplicatePlanMutation.isPending
+                    ? "Duplicating..."
+                    : "Duplicate"}
+                </Text>
               </Button>
 
               <Button
@@ -944,8 +997,12 @@ export default function ActivityPlanDetailPage() {
         <ScheduleActivityModal
           visible={showScheduleModal}
           onClose={() => setShowScheduleModal(false)}
-          activityPlanId={eventId ? undefined : planId}
-          activityPlan={!planId && !eventId ? activityPlan : undefined}
+          activityPlanId={
+            eventId ? undefined : isOwnedByUser ? activityPlan.id : undefined
+          }
+          activityPlan={
+            !planId && !eventId && isOwnedByUser ? activityPlan : undefined
+          }
           eventId={eventId}
           onSuccess={() => {
             setShowScheduleModal(false);

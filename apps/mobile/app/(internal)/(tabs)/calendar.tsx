@@ -1,5 +1,6 @@
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
+import { CalendarPlannedActivityPickerModal } from "@/components/calendar/CalendarPlannedActivityPickerModal";
 import { AppHeader, PlanCalendarSkeleton } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -11,9 +12,10 @@ import {
   buildEditEventRoute,
   buildOpenEventRoute,
 } from "@/lib/calendar/eventRouting";
-import { ROUTES } from "@/lib/constants/routes";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { trpc } from "@/lib/trpc";
+import { useQueryClient } from "@tanstack/react-query";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
 import { format } from "date-fns";
@@ -60,9 +62,10 @@ type DaySection = {
   data: DayRow[];
 };
 
-const FUTURE_DAYS_WINDOW = 120;
+const FUTURE_DAYS_WINDOW = 365;
 const PAST_DAYS_WINDOW = 14;
 const EXTEND_DAYS_WINDOW = 60;
+const CALENDAR_EVENT_QUERY_LIMIT = 500;
 
 function toDateKey(date: Date): string {
   return date.toISOString().split("T")[0] ?? "";
@@ -80,7 +83,7 @@ function addDaysToDateKey(dateKey: string, days: number): string {
 function CalendarScreen() {
   const router = useRouter();
   const guardNavigation = useNavigationActionGuard();
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const sectionListRef = useRef<SectionList<DayRow, DaySection>>(null);
   const isMountedRef = useRef(true);
 
@@ -97,6 +100,11 @@ function CalendarScreen() {
   const [editingEventScope, setEditingEventScope] =
     useState<EventMutationScope>("single");
   const [showCreateTypeModal, setShowCreateTypeModal] = useState(false);
+  const [showPlannedActivityPicker, setShowPlannedActivityPicker] =
+    useState(false);
+  const [schedulingActivityPlanId, setSchedulingActivityPlanId] = useState<
+    string | null
+  >(null);
   const [showManualCreateModal, setShowManualCreateModal] = useState(false);
   const [manualCreateType, setManualCreateType] =
     useState<ManualEventCreateType | null>(null);
@@ -131,6 +139,8 @@ function CalendarScreen() {
   const dismissOverlaysBeforeNavigation = useCallback(
     (navigate: () => void) => {
       setShowCreateTypeModal(false);
+      setShowPlannedActivityPicker(false);
+      setSchedulingActivityPlanId(null);
       setShowMoveDatePicker(false);
       setMovingEvent(null);
       setMoveEventScope(undefined);
@@ -152,13 +162,16 @@ function CalendarScreen() {
     date_from: rangeStart,
     date_to: rangeEnd,
     include_adhoc: true,
-    limit: 100,
+    limit: CALENDAR_EVENT_QUERY_LIMIT,
   });
 
   const deleteEventMutation = trpc.events.delete.useMutation({
     onSuccess: async () => {
       if (!isMountedRef.current) return;
-      await Promise.all([utils.events.invalidate(), refetchActivities()]);
+      await Promise.all([
+        refreshScheduleViews(queryClient, "eventDeletionMutation"),
+        refetchActivities(),
+      ]);
     },
   });
 
@@ -166,7 +179,10 @@ function CalendarScreen() {
     onSuccess: async () => {
       if (!isMountedRef.current) return;
       resetManualCreateState();
-      await Promise.all([utils.events.invalidate(), refetchActivities()]);
+      await Promise.all([
+        refreshScheduleViews(queryClient),
+        refetchActivities(),
+      ]);
     },
   });
 
@@ -176,7 +192,10 @@ function CalendarScreen() {
       setMovingEvent(null);
       setMoveEventScope(undefined);
       setShowMoveDatePicker(false);
-      await Promise.all([utils.events.invalidate(), refetchActivities()]);
+      await Promise.all([
+        refreshScheduleViews(queryClient),
+        refetchActivities(),
+      ]);
     },
   });
 
@@ -515,9 +534,7 @@ function CalendarScreen() {
     setShowCreateTypeModal(false);
 
     if (type === "planned") {
-      dismissOverlaysBeforeNavigation(() => {
-        router.replace(ROUTES.DISCOVER as any);
-      });
+      setShowPlannedActivityPicker(true);
       return;
     }
 
@@ -787,6 +804,21 @@ function CalendarScreen() {
         />
       )}
 
+      {schedulingActivityPlanId && (
+        <ScheduleActivityModal
+          visible
+          onClose={() => setSchedulingActivityPlanId(null)}
+          activityPlanId={schedulingActivityPlanId}
+          preselectedDate={selectedDate}
+          onSuccess={() => {
+            if (!isMountedRef.current) return;
+            setSchedulingActivityPlanId(null);
+            void handleRefresh();
+            scrollToDate(selectedDate);
+          }}
+        />
+      )}
+
       {showMoveDatePicker && movingEvent && (
         <DateTimePicker
           value={moveDate}
@@ -826,7 +858,7 @@ function CalendarScreen() {
               >
                 <Text className="text-sm font-medium">Planned activity</Text>
                 <Text className="text-xs text-muted-foreground mt-1">
-                  Pick from your library and schedule it.
+                  Pick one of your activity plans and schedule it.
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -857,6 +889,16 @@ function CalendarScreen() {
           </Pressable>
         </Modal>
       )}
+
+      <CalendarPlannedActivityPickerModal
+        visible={showPlannedActivityPicker}
+        selectedDate={selectedDate}
+        onClose={() => setShowPlannedActivityPicker(false)}
+        onSelectPlan={(activityPlanId) => {
+          setShowPlannedActivityPicker(false);
+          setSchedulingActivityPlanId(activityPlanId);
+        }}
+      />
 
       {showManualCreateModal && manualCreateType && (
         <Modal

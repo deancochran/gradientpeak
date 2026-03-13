@@ -123,11 +123,13 @@ type EvaluateCreationConfigResult = {
   finalConfig: TrainingPlanCreationConfig;
   contextSummary: CreationContextSummary;
   loadBootstrapState: LoadBootstrapState;
+  suggestionPayload: unknown;
   conflictResolution: {
     conflicts: CreationConflictItem[];
-    precedence: unknown;
   };
   feasibilitySummary: CreationFeasibilitySafetySummary;
+  globalCtlOverride?: number;
+  globalAtlOverride?: number;
 };
 
 export async function createFromCreationConfigUseCase<

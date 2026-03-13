@@ -21,15 +21,31 @@
  * Your existing code still works - just more reliable!
  */
 
+import {
+  invalidateSchedulingQueries,
+  type SchedulingRefreshScope,
+} from "@repo/trpc/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { showErrorAlert } from "@/lib/utils/formErrors";
 import { Alert } from "react-native";
+
+type InvalidationTarget =
+  | {
+      invalidate?: () => Promise<unknown> | unknown;
+    }
+  | (() => Promise<unknown> | unknown);
 
 export interface ReliableMutationOptions {
   /**
    * Utils to invalidate (just pass the utils objects)
    * @example invalidate: [utils.activities, utils.profile]
    */
-  invalidate?: any[];
+  invalidate?: InvalidationTarget[];
+
+  /**
+   * Shared refresh contract for scheduling-sensitive mutations.
+   */
+  refresh?: SchedulingRefreshScope | SchedulingRefreshScope[];
 
   /**
    * Success message to show
@@ -44,7 +60,7 @@ export interface ReliableMutationOptions {
   /**
    * Custom success handling
    */
-  onSuccess?: (data: any) => void;
+  onSuccess?: (data: any) => void | Promise<void>;
 
   /**
    * Suppress automatic error alerts
@@ -60,24 +76,39 @@ export function useReliableMutation<T extends { useMutation: any }>(
   mutation: T,
   options: ReliableMutationOptions = {},
 ) {
-  return mutation.useMutation({
-    onSuccess: (data: any, variables: any, context: any) => {
-      // Custom success callback first (e.g., onClose to dismiss modals)
-      options.onSuccess?.(data);
+  const queryClient = useQueryClient();
 
-      // Invalidate queries
+  return mutation.useMutation({
+    onSuccess: async (data: any, variables: any, context: any) => {
+      const refreshTasks: Promise<unknown>[] = [];
+
       if (options.invalidate) {
-        options.invalidate.forEach((util) => {
-          if (util?.invalidate) util.invalidate();
-        });
+        refreshTasks.push(
+          ...options.invalidate.map((target) => {
+            if (typeof target === "function") {
+              return Promise.resolve(target());
+            }
+
+            return Promise.resolve(target.invalidate?.());
+          }),
+        );
       }
 
-      // Show success message after modal is closed
+      if (options.refresh) {
+        refreshTasks.push(
+          invalidateSchedulingQueries(queryClient, options.refresh),
+        );
+      }
+
+      if (refreshTasks.length > 0) {
+        await Promise.all(refreshTasks);
+      }
+
+      await options.onSuccess?.(data);
+
+      // Show success message after required refresh work completes
       if (options.success) {
-        // Small delay to ensure modal dismissal completes
-        setTimeout(() => {
-          Alert.alert("Success", options.success);
-        }, 300);
+        Alert.alert("Success", options.success);
       }
     },
     onError: (error: any, variables: any, context: any) => {

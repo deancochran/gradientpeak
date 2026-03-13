@@ -88,6 +88,7 @@ function coerceLegacyProfileSettings(settings: unknown) {
     },
     goal_strategy_preferences:
       defaultAthletePreferenceProfile.goal_strategy_preferences,
+    baseline_fitness: defaultAthletePreferenceProfile.baseline_fitness,
   });
 }
 

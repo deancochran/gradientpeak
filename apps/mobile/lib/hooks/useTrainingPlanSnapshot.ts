@@ -1,3 +1,4 @@
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { trpc } from "@/lib/trpc";
 import { useCallback, useMemo } from "react";
 import { useProfileGoals } from "./useProfileGoals";
@@ -99,7 +100,10 @@ export function useTrainingPlanSnapshot(
     isError: isPlanError,
     error: planError,
     refetch: refetchPlan,
-  } = trpc.trainingPlans.get.useQuery(planId ? { id: planId } : undefined);
+  } = trpc.trainingPlans.get.useQuery(
+    planId ? { id: planId } : undefined,
+    scheduleAwareReadQueryOptions,
+  );
 
   const planSnapshot = useMemo(() => {
     if (!isTrainingPlanSnapshotData(plan)) {
@@ -117,6 +121,7 @@ export function useTrainingPlanSnapshot(
     refetch: refetchStatus,
   } = trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
     enabled: !!planSnapshot,
+    ...scheduleAwareReadQueryOptions,
   });
 
   const actualCurveRange = useMemo(() => {
@@ -216,6 +221,7 @@ export function useTrainingPlanSnapshot(
     },
     {
       enabled: true,
+      ...scheduleAwareReadQueryOptions,
     },
   );
 
@@ -227,6 +233,7 @@ export function useTrainingPlanSnapshot(
     refetch: refetchActualCurve,
   } = trpc.trainingPlans.getActualCurve.useQuery(actualCurveRange, {
     enabled: !!planSnapshot,
+    ...scheduleAwareReadQueryOptions,
   });
 
   const {
@@ -242,6 +249,7 @@ export function useTrainingPlanSnapshot(
     },
     {
       enabled: !!planSnapshot?.id,
+      ...scheduleAwareReadQueryOptions,
     },
   );
 
@@ -258,6 +266,7 @@ export function useTrainingPlanSnapshot(
     },
     {
       enabled: includeWeeklySummaries && !!planSnapshot?.id,
+      ...scheduleAwareReadQueryOptions,
     },
   );
 

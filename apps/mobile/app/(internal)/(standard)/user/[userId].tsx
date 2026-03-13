@@ -585,6 +585,19 @@ function UserDetailScreen() {
               onPress={() => router.push(ROUTES.ROUTES.LIST as any)}
               testID="my-routes"
             />
+            <SettingItem
+              type="button"
+              label="Activity Efforts"
+              description="View and manage your raw capability efforts"
+              buttonLabel="Open"
+              variant="outline"
+              onPress={() =>
+                router.push(
+                  "/(internal)/(standard)/activity-efforts-list" as any,
+                )
+              }
+              testID="my-activity-efforts"
+            />
           </SettingsGroup>
 
           <SettingsGroup

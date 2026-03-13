@@ -5,10 +5,13 @@ import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { ROUTES } from "@/lib/constants/routes";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { formatDurationSec } from "@repo/core/utils/dates";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -72,7 +75,7 @@ function formatEventType(eventType: string | null | undefined) {
 
 export default function EventDetailScreen() {
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const { id, mode } = useLocalSearchParams<{ id?: string; mode?: string }>();
   const eventId = typeof id === "string" ? id : "";
   const startsInEditMode = mode === "edit";
@@ -89,7 +92,10 @@ export default function EventDetailScreen() {
     refetch,
   } = trpc.events.getById.useQuery(
     { id: eventId },
-    { enabled: !!eventId && !isRedirecting },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: !!eventId && !isRedirecting,
+    },
   );
 
   const [isEditing, setIsEditing] = useState(startsInEditMode);
@@ -118,23 +124,15 @@ export default function EventDetailScreen() {
 
   const updateMutation = trpc.events.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.events.invalidate(),
-        utils.trainingPlans.invalidate(),
-        refetch(),
-      ]);
+      await Promise.all([refreshScheduleViews(queryClient), refetch()]);
       setIsEditing(false);
     },
   });
 
   const deleteMutation = trpc.events.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
+      await refreshScheduleViews(queryClient, "eventDeletionMutation");
       beginRedirect();
-      void Promise.all([
-        utils.events.list.invalidate(),
-        utils.events.getToday.invalidate(),
-        utils.trainingPlans.invalidate(),
-      ]);
     },
   });
 

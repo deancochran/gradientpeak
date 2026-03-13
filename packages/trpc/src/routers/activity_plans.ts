@@ -29,6 +29,12 @@ const listActivityPlansSchema = z
   })
   .strict();
 
+const getManyActivityPlansByIdsSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1).max(200),
+  })
+  .strict();
+
 // Helper to validate V2 structure only
 function validateStructure(structure: unknown): void {
   activityPlanStructureSchemaV2.parse(structure);
@@ -271,6 +277,60 @@ export const activityPlansRouter = createTRPCRouter({
       };
     }),
 
+  getManyByIds: protectedProcedure
+    .input(getManyActivityPlansByIdsSchema)
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.session.user.id;
+      const ids = Array.from(new Set(input.ids));
+
+      const { data: plans, error } = await ctx.supabase
+        .from("activity_plans")
+        .select("*")
+        .in("id", ids)
+        .or(
+          `profile_id.eq.${userId},is_system_template.eq.true,template_visibility.eq.public`,
+        );
+
+      if (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message,
+        });
+      }
+
+      const planById = new Map((plans ?? []).map((plan) => [plan.id, plan]));
+      const orderedPlans = ids
+        .map((id) => planById.get(id))
+        .filter((plan): plan is NonNullable<typeof plan> => !!plan);
+
+      const itemsWithEstimation = await addEstimationToPlans(
+        orderedPlans,
+        ctx.supabase,
+        userId,
+      );
+
+      const planIds = itemsWithEstimation.map((plan) => plan.id);
+      let userLikes: string[] = [];
+
+      if (planIds.length > 0) {
+        const { data: likesData } = await (ctx.supabase as any)
+          .from("likes")
+          .select("entity_id")
+          .eq("profile_id", userId)
+          .eq("entity_type", "activity_plan")
+          .in("entity_id", planIds);
+
+        userLikes = likesData?.map((like: any) => like.entity_id) || [];
+      }
+
+      return {
+        items: itemsWithEstimation.map((plan) => ({
+          ...withIdentityFields(plan as any),
+          has_liked: userLikes.includes((plan as any).id),
+        })),
+      };
+    }),
+
   // ------------------------------
   // Get user's custom plans count
   // ------------------------------
@@ -492,7 +552,7 @@ export const activityPlansRouter = createTRPCRouter({
     .input(
       z.object({
         id: z.string().uuid(),
-        newName: z.string().min(1, "Plan name is required"),
+        newName: z.string().min(1, "Plan name is required").optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -501,7 +561,9 @@ export const activityPlansRouter = createTRPCRouter({
         .from("activity_plans")
         .select("*")
         .eq("id", input.id)
-        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`) // Allow user's plans or system templates
+        .or(
+          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
+        )
         .single();
 
       if (fetchError || !originalPlan) {
@@ -539,14 +601,18 @@ export const activityPlansRouter = createTRPCRouter({
       const { data, error } = await ctx.supabase
         .from("activity_plans")
         .insert({
-          name: input.newName,
+          name: input.newName?.trim() || `${originalPlan.name} (Copy)`,
           description: originalPlan.description,
+          notes: originalPlan.notes,
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
           ...metrics,
           version: originalPlan.version,
           route_id: originalPlan.route_id,
           profile_id: ctx.session.user.id,
+          template_visibility: "private",
+          import_provider: null,
+          import_external_id: null,
         })
         .select("*")
         .single();
