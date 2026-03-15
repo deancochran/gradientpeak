@@ -193,6 +193,10 @@ export const athletePreferenceBaselineSchema = z
     override_ctl: z.number().min(0).max(250).optional(),
     override_atl: z.number().min(0).max(250).optional(),
     override_date: z.string().datetime().optional(),
+    // Ramp rate overrides - applied when baseline fitness is enabled
+    // These allow advanced athletes to override the default safety caps
+    max_weekly_tss_ramp_pct: z.number().min(0).max(40).optional(),
+    max_ctl_ramp_per_week: z.number().min(0).max(12).optional(),
   })
   .strict();
 
@@ -297,6 +301,8 @@ export const defaultAthletePreferenceProfile =
     },
     baseline_fitness: {
       is_enabled: false,
+      max_weekly_tss_ramp_pct: 10, // Default: outcome_first profile
+      max_ctl_ramp_per_week: 5,
     },
   });
 

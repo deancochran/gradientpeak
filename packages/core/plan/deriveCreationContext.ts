@@ -60,6 +60,13 @@ export interface DeriveCreationContextInput {
   profile_metrics?: CreationProfileMetricsSignal;
   profile?: CreationProfileSignal;
   as_of?: string;
+  /** Global CTL override from profile settings. If provided, boosts confidence. */
+  baseline_fitness_override?: {
+    is_enabled: boolean;
+    override_ctl?: number;
+    override_atl?: number;
+    override_date?: string;
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -130,8 +137,21 @@ export function deriveCreationContext(
   });
 
   const activityCount = activities.length;
+
+  // If user has a baseline fitness override with a valid CTL, treat as having history
+  const hasBaselineOverride =
+    input.baseline_fitness_override?.is_enabled === true &&
+    typeof input.baseline_fitness_override.override_ctl === "number" &&
+    input.baseline_fitness_override.override_ctl > 0;
+
   const historyState =
-    activityCount === 0 ? "none" : activityCount < 10 ? "sparse" : "rich";
+    activityCount === 0
+      ? hasBaselineOverride
+        ? "sparse" // User declared baseline fitness, treat as sparse (not none)
+        : "none"
+      : activityCount < 10
+        ? "sparse"
+        : "rich";
 
   const weeksWithTraining = new Set(
     activities.map((activity) => {
@@ -176,14 +196,20 @@ export function deriveCreationContext(
   ].filter((value) => value !== null && value !== undefined).length;
   const metricCompleteness = clamp(presentMetricCount / 4, 0, 1);
 
-  const consistencyMarker =
-    consistencyRatio >= 0.7
+  const consistencyMarker = hasBaselineOverride
+    ? "high" // User declared baseline, treat as consistent
+    : consistencyRatio >= 0.7
       ? "high"
       : consistencyRatio >= 0.35
         ? "moderate"
         : "low";
-  const effortMarker =
-    effortCount >= 6 ? "high" : effortCount >= 2 ? "moderate" : "low";
+  const effortMarker = hasBaselineOverride
+    ? "moderate" // Baseline override counts as some effort evidence
+    : effortCount >= 6
+      ? "high"
+      : effortCount >= 2
+        ? "moderate"
+        : "low";
   const profileMarker =
     metricCompleteness >= 0.75
       ? "high"
@@ -191,11 +217,17 @@ export function deriveCreationContext(
         ? "moderate"
         : "low";
 
+  // Calculate baseline override bonus for signal quality
+  const baselineOverrideBonus = hasBaselineOverride
+    ? Math.min(0.3, (input.baseline_fitness_override?.override_ctl ?? 0) / 300)
+    : 0;
+
   const qualityScore = clamp(
     (historyState === "rich" ? 0.45 : historyState === "sparse" ? 0.25 : 0.05) +
       consistencyRatio * 0.25 +
       clamp(effortCount / 8, 0, 1) * 0.15 +
-      metricCompleteness * 0.15 -
+      metricCompleteness * 0.15 +
+      baselineOverrideBonus -
       (missingRequiredOnboardingFields.length > 0 ? 0.08 : 0),
     0,
     1,

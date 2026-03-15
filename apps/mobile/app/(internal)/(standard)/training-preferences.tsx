@@ -739,6 +739,12 @@ export default function TrainingPreferencesScreen() {
                             current.baseline_fitness?.override_atl ?? 0,
                           override_date:
                             current.baseline_fitness?.override_date,
+                          max_weekly_tss_ramp_pct:
+                            current.baseline_fitness?.max_weekly_tss_ramp_pct ??
+                            10,
+                          max_ctl_ramp_per_week:
+                            current.baseline_fitness?.max_ctl_ramp_per_week ??
+                            5,
                         },
                       }))
                     }
@@ -764,6 +770,12 @@ export default function TrainingPreferencesScreen() {
                               current.baseline_fitness?.override_atl ?? 0,
                             override_date:
                               current.baseline_fitness?.override_date,
+                            max_weekly_tss_ramp_pct:
+                              current.baseline_fitness
+                                ?.max_weekly_tss_ramp_pct ?? 10,
+                            max_ctl_ramp_per_week:
+                              current.baseline_fitness?.max_ctl_ramp_per_week ??
+                              5,
                           },
                         }))
                       }
@@ -786,6 +798,12 @@ export default function TrainingPreferencesScreen() {
                             override_atl: value,
                             override_date:
                               current.baseline_fitness?.override_date,
+                            max_weekly_tss_ramp_pct:
+                              current.baseline_fitness
+                                ?.max_weekly_tss_ramp_pct ?? 10,
+                            max_ctl_ramp_per_week:
+                              current.baseline_fitness?.max_ctl_ramp_per_week ??
+                              5,
                           },
                         }))
                       }
@@ -813,12 +831,97 @@ export default function TrainingPreferencesScreen() {
                               override_atl:
                                 current.baseline_fitness?.override_atl ?? 0,
                               override_date: value,
+                              max_weekly_tss_ramp_pct:
+                                current.baseline_fitness
+                                  ?.max_weekly_tss_ramp_pct ?? 10,
+                              max_ctl_ramp_per_week:
+                                current.baseline_fitness
+                                  ?.max_ctl_ramp_per_week ?? 5,
                             },
                           }))
                         }
                         placeholder="YYYY-MM-DD"
                         className="border-input"
                       />
+                    </View>
+                    <View className="mt-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
+                      <Text className="text-sm font-medium text-warning">
+                        Advanced: Ramp Rate Settings
+                      </Text>
+                      <Text className="mt-1 text-xs text-muted-foreground">
+                        Override the default weekly ramp caps. Higher values
+                        allow faster training load progression but increase
+                        injury risk.
+                      </Text>
+                    </View>
+                    <IntegerStepper
+                      id="preferences-ramp-tss-pct"
+                      label="Max Weekly TSS Ramp %"
+                      value={
+                        draft.baseline_fitness?.max_weekly_tss_ramp_pct ?? 10
+                      }
+                      min={1}
+                      max={40}
+                      helperText="Maximum weekly TSS increase (default: 10%)"
+                      onChange={(value: number) =>
+                        setDraft((current) => ({
+                          ...current,
+                          baseline_fitness: {
+                            is_enabled:
+                              current.baseline_fitness?.is_enabled ?? false,
+                            override_ctl:
+                              current.baseline_fitness?.override_ctl ?? 0,
+                            override_atl:
+                              current.baseline_fitness?.override_atl ?? 0,
+                            override_date:
+                              current.baseline_fitness?.override_date,
+                            max_weekly_tss_ramp_pct: value,
+                            max_ctl_ramp_per_week:
+                              current.baseline_fitness?.max_ctl_ramp_per_week ??
+                              5,
+                          },
+                        }))
+                      }
+                    />
+                    <IntegerStepper
+                      id="preferences-ramp-ctl"
+                      label="Max CTL Ramp Per Week"
+                      value={draft.baseline_fitness?.max_ctl_ramp_per_week ?? 5}
+                      min={1}
+                      max={12}
+                      helperText="Maximum CTL increase per week (default: 5)"
+                      onChange={(value: number) =>
+                        setDraft((current) => ({
+                          ...current,
+                          baseline_fitness: {
+                            is_enabled:
+                              current.baseline_fitness?.is_enabled ?? false,
+                            override_ctl:
+                              current.baseline_fitness?.override_ctl ?? 0,
+                            override_atl:
+                              current.baseline_fitness?.override_atl ?? 0,
+                            override_date:
+                              current.baseline_fitness?.override_date,
+                            max_weekly_tss_ramp_pct:
+                              current.baseline_fitness
+                                ?.max_weekly_tss_ramp_pct ?? 10,
+                            max_ctl_ramp_per_week: value,
+                          },
+                        }))
+                      }
+                    />
+                    <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
+                      <Text className="text-sm font-medium text-info">
+                        Why Adjust Ramp Rates?
+                      </Text>
+                      <Text className="mt-1 text-xs text-muted-foreground">
+                        If your plan's readiness score feels too low, it may be
+                        because the goal requires more training load than the
+                        default ramp caps allow. Try increasing the Max Weekly
+                        TSS Ramp % or Max CTL Ramp Per Week above to see if that
+                        unlocks a higher readiness. Higher values allow faster
+                        progression but increase injury risk.
+                      </Text>
                     </View>
                     <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
                       <Text className="text-sm font-medium text-info">

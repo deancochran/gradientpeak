@@ -2710,6 +2710,9 @@ export async function deriveProfileAwareCreationContext(input: {
     lthr: lthrMetric?.value ? Number(lthrMetric.value) : null,
   };
 
+  const settings = settingsResult.data?.settings as any;
+  const baselineFitnessOverride = settings?.baseline_fitness;
+
   const contextSummary = deriveCreationContext({
     completed_activities: completedActivities,
     efforts,
@@ -2727,6 +2730,7 @@ export async function deriveProfileAwareCreationContext(input: {
           : null,
     },
     as_of: input.asOfIso,
+    baseline_fitness_override: baselineFitnessOverride,
   });
 
   const loadBootstrapState = computeLoadBootstrapState({
@@ -2736,16 +2740,15 @@ export async function deriveProfileAwareCreationContext(input: {
     profile_age: contextSummary.user_age,
   });
 
-  const settings = settingsResult.data?.settings as any;
   const globalCtlOverride =
-    settings?.baseline_fitness?.is_enabled &&
-    typeof settings?.baseline_fitness?.override_ctl === "number"
-      ? settings.baseline_fitness.override_ctl
+    baselineFitnessOverride?.is_enabled &&
+    typeof baselineFitnessOverride?.override_ctl === "number"
+      ? baselineFitnessOverride.override_ctl
       : undefined;
   const globalAtlOverride =
-    settings?.baseline_fitness?.is_enabled &&
-    typeof settings?.baseline_fitness?.override_atl === "number"
-      ? settings.baseline_fitness.override_atl
+    baselineFitnessOverride?.is_enabled &&
+    typeof baselineFitnessOverride?.override_atl === "number"
+      ? baselineFitnessOverride.override_atl
       : undefined;
 
   return {
@@ -2753,6 +2756,7 @@ export async function deriveProfileAwareCreationContext(input: {
     loadBootstrapState,
     globalCtlOverride,
     globalAtlOverride,
+    baselineFitnessOverride,
   };
 }
 
@@ -2760,6 +2764,14 @@ function buildConfirmedSuggestionsFromContext(input: {
   contextSummary: ReturnType<typeof deriveCreationContext>;
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
   nowIso: string;
+  baselineFitnessOverride?: {
+    is_enabled: boolean;
+    override_ctl?: number;
+    override_atl?: number;
+    override_date?: string;
+    max_weekly_tss_ramp_pct?: number;
+    max_ctl_ramp_per_week?: number;
+  };
 }) {
   const suggestedOptimizationProfile =
     input.contextSummary.is_youth ||
@@ -2779,6 +2791,15 @@ function buildConfirmedSuggestionsFromContext(input: {
       suggestedOptimizationProfile,
     post_goal_recovery_days:
       input.creationInput.defaults?.post_goal_recovery_days,
+    // Apply ramp rate overrides when baseline fitness is enabled
+    max_weekly_tss_ramp_pct:
+      input.baselineFitnessOverride?.is_enabled === true
+        ? input.baselineFitnessOverride.max_weekly_tss_ramp_pct
+        : undefined,
+    max_ctl_ramp_per_week:
+      input.baselineFitnessOverride?.is_enabled === true
+        ? input.baselineFitnessOverride.max_ctl_ramp_per_week
+        : undefined,
     learned_ramp_rate:
       featureFlags.personalizationRampLearning &&
       input.contextSummary.learned_ramp_rate
@@ -2896,6 +2917,7 @@ async function evaluateCreationConfig(input: {
     loadBootstrapState,
     globalCtlOverride,
     globalAtlOverride,
+    baselineFitnessOverride,
   } = await deriveProfileAwareCreationContext({
     supabase: input.supabase,
     profileId: input.profileId,
@@ -2907,6 +2929,7 @@ async function evaluateCreationConfig(input: {
       contextSummary,
       creationInput: input.creationInput,
       nowIso,
+      baselineFitnessOverride,
     });
 
   const mergedConfirmedSuggestions = mergeConfirmedSuggestions({
@@ -3160,10 +3183,10 @@ export async function getPlanTabProjectionService({
     });
   }
 
-  if (windowDays > 400) {
+  if (windowDays > 365) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: "Date range too large. Use 400 days or fewer.",
+      message: "Date range too large. Use 365 days or fewer.",
     });
   }
 

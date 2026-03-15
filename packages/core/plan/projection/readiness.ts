@@ -34,10 +34,12 @@ export interface ProjectionDemandGap {
   feasible_weekly_tss_applied: number;
   unmet_weekly_tss: number;
   unmet_ratio: number;
+  is_capped_vs_infeasible: boolean;
 }
 
 export interface ProjectionFeasibilityMetadata {
   demand_gap: ProjectionDemandGap;
+  demand_gap_type: "ramp_capped" | "capacity_limited" | "none";
   readiness_band: ReadinessBand;
   dominant_limiters: string[];
   low_readiness_limiter_mode?: LowReadinessLimiterMode | null;
@@ -358,8 +360,21 @@ export function computeProjectionFeasibilityMetadata(input: {
   const confidence = clamp01(input.confidence);
   const evidenceSupport = smoothstep01(confidence);
 
+  // Classify demand gap type
+  const hasDemandGap = unmetWeeklyTss > 0;
+  const demandGapType: "ramp_capped" | "capacity_limited" | "none" =
+    !hasDemandGap
+      ? "none"
+      : clampPressure > 0.05 // If there was any clamping, it's ramp-capped
+        ? "ramp_capped"
+        : "capacity_limited";
+
+  // Reduce penalty when ramp-capped (user can override caps to achieve goal)
+  const rampCappedPenaltyReduction = demandGapType === "ramp_capped" ? 0.2 : 0;
   const loadState = clamp01(
-    demandFulfillment * 0.75 + (1 - unmetRatio) * 0.25 - clampPressure * 0.35,
+    demandFulfillment * 0.75 +
+      (1 - unmetRatio) * 0.25 -
+      clampPressure * (0.35 - rampCappedPenaltyReduction),
   );
   const intensityBalance = clamp01(
     1 - clampPressure * 0.7 - Math.min(0.12, input.tssRampClampWeeks * 0.04),
@@ -385,7 +400,6 @@ export function computeProjectionFeasibilityMetadata(input: {
     readiness = "medium";
   }
 
-  const hasDemandGap = unmetWeeklyTss > 0;
   const highTimelinePressure =
     clampPressure >= 0.18 ||
     (input.tssRampClampWeeks + input.ctlRampClampWeeks >= 3 &&
@@ -395,7 +409,7 @@ export function computeProjectionFeasibilityMetadata(input: {
     (clampPressure <= 0.1 && input.projectionWeeks >= 16);
 
   let lowReadinessLimiterMode: LowReadinessLimiterMode | null = null;
-  if (hasDemandGap) {
+  if (demandGapType !== "none") {
     if (highTimelinePressure) {
       lowReadinessLimiterMode = "timeline_limited";
     } else if (lowTimelinePressure) {
@@ -451,7 +465,9 @@ export function computeProjectionFeasibilityMetadata(input: {
       feasible_weekly_tss_applied: round1(input.feasiblePeakWeeklyTssApplied),
       unmet_weekly_tss: unmetWeeklyTss,
       unmet_ratio: unmetRatio,
+      is_capped_vs_infeasible: demandGapType === "ramp_capped",
     },
+    demand_gap_type: demandGapType,
     readiness_band: readiness,
     dominant_limiters: dominantLimiters,
     low_readiness_limiter_mode: lowReadinessLimiterMode,

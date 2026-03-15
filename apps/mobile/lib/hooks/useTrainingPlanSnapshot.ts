@@ -88,9 +88,15 @@ export function useTrainingPlanSnapshot(
         ? fallbackEndDate
         : endDate;
 
+    const maxEndDate = new Date(startDate);
+    maxEndDate.setDate(startDate.getDate() + 365);
+
+    const cappedEndDate =
+      normalizedEndDate > maxEndDate ? maxEndDate : normalizedEndDate;
+
     return {
       start_date: toDateKey(startDate),
-      end_date: toDateKey(normalizedEndDate),
+      end_date: toDateKey(cappedEndDate),
     };
   }, [profileGoals.goals, today]);
 
