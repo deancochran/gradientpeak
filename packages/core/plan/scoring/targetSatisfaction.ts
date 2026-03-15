@@ -4,10 +4,23 @@ import { normalizeTargetWeight } from "./weightedMean";
 export interface TargetProjectionSignals {
   readiness_score?: number;
   readiness_confidence?: number;
+  plan_feasibility_confidence?: number;
+  target_surplus_preference?: number;
+  weeks_to_goal?: number;
+  limiter_share?: number;
   projected_race_time_s?: number;
   projected_speed_mps?: number;
   projected_power_watts?: number;
   projected_lthr_bpm?: number;
+}
+
+export interface EffectiveScoringTargetMetadata {
+  raw_target: number;
+  effective_scoring_target: number;
+  applied_surplus_pct: number;
+  surplus_support_factor: number;
+  surplus_applied: boolean;
+  rationale_code: string;
 }
 
 export interface TargetSatisfactionResult {
@@ -16,7 +29,20 @@ export interface TargetSatisfactionResult {
   target_weight: number;
   unmet_gap?: number;
   rationale_codes: string[];
+  effective_target: EffectiveScoringTargetMetadata;
 }
+
+export interface ResolveEffectiveScoringTargetInput {
+  rawTarget: number;
+  targetType: GoalTargetV2["target_type"];
+  surplusPreference?: number;
+  readinessConfidence?: number;
+  feasibilityConfidence?: number;
+  weeksToGoal?: number;
+  limiterShare?: number;
+}
+
+const MIN_EFFECTIVE_SURPLUS_PCT = 0.005;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -119,6 +145,69 @@ function scoreHigherIsBetter(input: {
   return clamp01(1 - normalCdf(z));
 }
 
+function smoothstep01(value: number): number {
+  const clamped = clamp01(value);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+function getMaxSurplusPctByTargetType(
+  targetType: GoalTargetV2["target_type"],
+): number {
+  switch (targetType) {
+    case "race_performance":
+      return 0.04;
+    case "pace_threshold":
+    case "power_threshold":
+      return 0.05;
+    case "hr_threshold":
+      return 0.015;
+  }
+}
+
+/**
+ * Resolves the internal scoring target after applying bounded surplus intent.
+ *
+ * Surplus remains separate from aggressiveness: it only shifts the target used
+ * for scoring/optimization, while weekly load shaping continues to use the
+ * aggressiveness controls elsewhere in projection logic.
+ */
+export function resolveEffectiveScoringTarget(
+  input: ResolveEffectiveScoringTargetInput,
+): EffectiveScoringTargetMetadata {
+  const rawTarget = Math.max(0, input.rawTarget);
+  const surplusSignal = smoothstep01(input.surplusPreference ?? 0);
+  const supportFactor = clamp01(
+    0.4 * clamp01(input.readinessConfidence ?? 0.6) +
+      0.25 * clamp01(input.feasibilityConfidence ?? 0.6) +
+      0.2 * smoothstep01(((input.weeksToGoal ?? 8) - 4) / 12) +
+      0.15 * (1 - clamp01(input.limiterShare ?? 0.35)),
+  );
+  const resolvedSurplusPct = round3(
+    getMaxSurplusPctByTargetType(input.targetType) *
+      surplusSignal *
+      supportFactor,
+  );
+  const surplusApplied = resolvedSurplusPct >= MIN_EFFECTIVE_SURPLUS_PCT;
+  const appliedSurplusPct = surplusApplied ? resolvedSurplusPct : 0;
+  const lowerIsBetter = input.targetType === "race_performance";
+  const effectiveTarget = round3(
+    rawTarget * (lowerIsBetter ? 1 - appliedSurplusPct : 1 + appliedSurplusPct),
+  );
+
+  return {
+    raw_target: round3(rawTarget),
+    effective_scoring_target: effectiveTarget,
+    applied_surplus_pct: appliedSurplusPct,
+    surplus_support_factor: round3(supportFactor),
+    surplus_applied: surplusApplied,
+    rationale_code: surplusApplied
+      ? "effective_target_surplus_applied"
+      : surplusSignal <= 0.0005
+        ? "effective_target_surplus_disabled"
+        : "effective_target_surplus_suppressed_low_support",
+  };
+}
+
 /**
  * Scores target satisfaction using continuous attainment distributions.
  */
@@ -132,15 +221,32 @@ export function scoreTargetSatisfaction(input: {
     0,
     1,
   );
+  const planFeasibilityConfidence = clamp(
+    input.projection.plan_feasibility_confidence ?? readinessConfidence,
+    0,
+    1,
+  );
   const targetWeight = normalizeTargetWeight(input.target.weight);
 
   switch (input.target.target_type) {
     case "race_performance": {
+      const effectiveTarget = resolveEffectiveScoringTarget({
+        rawTarget: input.target.target_time_s,
+        targetType: input.target.target_type,
+        surplusPreference: input.projection.target_surplus_preference,
+        readinessConfidence,
+        feasibilityConfidence: planFeasibilityConfidence,
+        weeksToGoal: input.projection.weeks_to_goal,
+        limiterShare: input.projection.limiter_share,
+      });
       const projectionInferred =
         input.projection.projected_race_time_s === undefined;
       const projected =
         input.projection.projected_race_time_s ??
-        estimateRaceTimeFromReadiness(input.target.target_time_s, readiness);
+        estimateRaceTimeFromReadiness(
+          effectiveTarget.effective_scoring_target,
+          readiness,
+        );
       const targetSpeed =
         input.target.distance_m / Math.max(1, input.target.target_time_s);
       const speedCap = resolveActivitySpeedCapMps(
@@ -153,22 +259,27 @@ export function scoreTargetSatisfaction(input: {
         projection_inferred: projectionInferred,
       });
       const attainmentProbability = scoreLowerIsBetter({
-        target: input.target.target_time_s,
+        target: effectiveTarget.effective_scoring_target,
         projected,
         sigma,
       });
       const utility = clamp01(
         attainmentProbability * resolveDemandPenalty(demandRatio),
       );
-      const gap = Math.max(0, projected - input.target.target_time_s);
+      const gap = Math.max(
+        0,
+        projected - effectiveTarget.effective_scoring_target,
+      );
 
       return {
         kind: "race_performance",
         score_0_100: Math.round(utility * 100),
         target_weight: targetWeight,
         unmet_gap: toUnmetGap(gap),
+        effective_target: effectiveTarget,
         rationale_codes: [
           "distribution_attainment_utility",
+          effectiveTarget.rationale_code,
           ...(projectionInferred ? ["projection_inferred_from_readiness"] : []),
           ...(demandRatio > 1 ? ["target_demand_above_plausible_cap"] : []),
           gap <= 0 ? "target_met_or_exceeded_on_mean" : "target_unmet_on_mean",
@@ -176,12 +287,21 @@ export function scoreTargetSatisfaction(input: {
       };
     }
     case "pace_threshold": {
+      const effectiveTarget = resolveEffectiveScoringTarget({
+        rawTarget: input.target.target_speed_mps,
+        targetType: input.target.target_type,
+        surplusPreference: input.projection.target_surplus_preference,
+        readinessConfidence,
+        feasibilityConfidence: planFeasibilityConfidence,
+        weeksToGoal: input.projection.weeks_to_goal,
+        limiterShare: input.projection.limiter_share,
+      });
       const projectionInferred =
         input.projection.projected_speed_mps === undefined;
       const projected =
         input.projection.projected_speed_mps ??
         estimateHigherIsBetterProjection(
-          input.target.target_speed_mps,
+          effectiveTarget.effective_scoring_target,
           readiness,
         );
       const speedCap = resolveActivitySpeedCapMps(
@@ -195,22 +315,27 @@ export function scoreTargetSatisfaction(input: {
         projection_inferred: projectionInferred,
       });
       const attainmentProbability = scoreHigherIsBetter({
-        target: input.target.target_speed_mps,
+        target: effectiveTarget.effective_scoring_target,
         projected,
         sigma,
       });
       const utility = clamp01(
         attainmentProbability * resolveDemandPenalty(demandRatio),
       );
-      const gap = Math.max(0, input.target.target_speed_mps - projected);
+      const gap = Math.max(
+        0,
+        effectiveTarget.effective_scoring_target - projected,
+      );
 
       return {
         kind: "pace_threshold",
         score_0_100: Math.round(utility * 100),
         target_weight: targetWeight,
         unmet_gap: toUnmetGap(gap),
+        effective_target: effectiveTarget,
         rationale_codes: [
           "distribution_attainment_utility",
+          effectiveTarget.rationale_code,
           ...(projectionInferred ? ["projection_inferred_from_readiness"] : []),
           ...(demandRatio > 1 ? ["target_demand_above_plausible_cap"] : []),
           gap <= 0 ? "target_met_or_exceeded_on_mean" : "target_unmet_on_mean",
@@ -218,11 +343,23 @@ export function scoreTargetSatisfaction(input: {
       };
     }
     case "power_threshold": {
+      const effectiveTarget = resolveEffectiveScoringTarget({
+        rawTarget: input.target.target_watts,
+        targetType: input.target.target_type,
+        surplusPreference: input.projection.target_surplus_preference,
+        readinessConfidence,
+        feasibilityConfidence: planFeasibilityConfidence,
+        weeksToGoal: input.projection.weeks_to_goal,
+        limiterShare: input.projection.limiter_share,
+      });
       const projectionInferred =
         input.projection.projected_power_watts === undefined;
       const projected =
         input.projection.projected_power_watts ??
-        estimateHigherIsBetterProjection(input.target.target_watts, readiness);
+        estimateHigherIsBetterProjection(
+          effectiveTarget.effective_scoring_target,
+          readiness,
+        );
       const powerCap = resolvePowerCapWatts(input.target.activity_category);
       const demandRatio = input.target.target_watts / Math.max(1, powerCap);
       const sigma = resolveDistributionScale({
@@ -231,22 +368,27 @@ export function scoreTargetSatisfaction(input: {
         projection_inferred: projectionInferred,
       });
       const attainmentProbability = scoreHigherIsBetter({
-        target: input.target.target_watts,
+        target: effectiveTarget.effective_scoring_target,
         projected,
         sigma,
       });
       const utility = clamp01(
         attainmentProbability * resolveDemandPenalty(demandRatio),
       );
-      const gap = Math.max(0, input.target.target_watts - projected);
+      const gap = Math.max(
+        0,
+        effectiveTarget.effective_scoring_target - projected,
+      );
 
       return {
         kind: "power_threshold",
         score_0_100: Math.round(utility * 100),
         target_weight: targetWeight,
         unmet_gap: toUnmetGap(gap),
+        effective_target: effectiveTarget,
         rationale_codes: [
           "distribution_attainment_utility",
+          effectiveTarget.rationale_code,
           ...(projectionInferred ? ["projection_inferred_from_readiness"] : []),
           ...(demandRatio > 1 ? ["target_demand_above_plausible_cap"] : []),
           gap <= 0 ? "target_met_or_exceeded_on_mean" : "target_unmet_on_mean",
@@ -254,12 +396,21 @@ export function scoreTargetSatisfaction(input: {
       };
     }
     case "hr_threshold": {
+      const effectiveTarget = resolveEffectiveScoringTarget({
+        rawTarget: input.target.target_lthr_bpm,
+        targetType: input.target.target_type,
+        surplusPreference: input.projection.target_surplus_preference,
+        readinessConfidence,
+        feasibilityConfidence: planFeasibilityConfidence,
+        weeksToGoal: input.projection.weeks_to_goal,
+        limiterShare: input.projection.limiter_share,
+      });
       const projectionInferred =
         input.projection.projected_lthr_bpm === undefined;
       const projected =
         input.projection.projected_lthr_bpm ??
         estimateHigherIsBetterProjection(
-          input.target.target_lthr_bpm,
+          effectiveTarget.effective_scoring_target,
           readiness,
         );
       const demandRatio = input.target.target_lthr_bpm / 210;
@@ -269,22 +420,27 @@ export function scoreTargetSatisfaction(input: {
         projection_inferred: projectionInferred,
       });
       const attainmentProbability = scoreHigherIsBetter({
-        target: input.target.target_lthr_bpm,
+        target: effectiveTarget.effective_scoring_target,
         projected,
         sigma,
       });
       const utility = clamp01(
         attainmentProbability * resolveDemandPenalty(demandRatio),
       );
-      const gap = Math.max(0, input.target.target_lthr_bpm - projected);
+      const gap = Math.max(
+        0,
+        effectiveTarget.effective_scoring_target - projected,
+      );
 
       return {
         kind: "hr_threshold",
         score_0_100: Math.round(utility * 100),
         target_weight: targetWeight,
         unmet_gap: toUnmetGap(gap),
+        effective_target: effectiveTarget,
         rationale_codes: [
           "distribution_attainment_utility",
+          effectiveTarget.rationale_code,
           ...(projectionInferred ? ["projection_inferred_from_readiness"] : []),
           ...(demandRatio > 1 ? ["target_demand_above_plausible_cap"] : []),
           gap <= 0 ? "target_met_or_exceeded_on_mean" : "target_unmet_on_mean",

@@ -104,11 +104,9 @@ export function AddActivityModal({
     },
   );
 
-  const utils = trpc.useUtils();
-
   // Schedule activity mutation
   const scheduleMutation = useReliableMutation(trpc.events.create, {
-    invalidate: [utils.events],
+    refresh: "eventMutation",
     success: "Activity scheduled!",
     onSuccess: () => {
       onSuccess?.();

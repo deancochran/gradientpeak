@@ -11,9 +11,13 @@ import { FlatList, Pressable, View } from "react-native";
 function NotificationItem({
   notification,
   onPress,
+  onAccept,
+  onReject,
 }: {
   notification: any;
   onPress: () => void;
+  onAccept?: (followerId: string) => void;
+  onReject?: (followerId: string) => void;
 }) {
   const isUnread = !notification.read_at;
 
@@ -29,6 +33,9 @@ function NotificationItem({
   } else if (notification.type === "new_follower") {
     Icon = UserPlus;
     title = "New Follower";
+  } else if (notification.type === "follow_request") {
+    Icon = UserPlus;
+    title = "Follow Request";
   }
 
   return (
@@ -65,12 +72,43 @@ function NotificationItem({
           >
             {notification.type === "coaching_invitation"
               ? "You have a new coaching invitation."
-              : "Tap to view details."}
+              : notification.type === "new_follower"
+                ? "Accepted your follow request."
+                : notification.type === "follow_request"
+                  ? "Wants to follow you."
+                  : "Tap to view details."}
           </Text>
           {isUnread && (
             <Badge variant="default" className="h-2 w-2 rounded-full p-0" />
           )}
         </View>
+
+        {notification.type === "follow_request" && onAccept && onReject && (
+          <View className="flex-row gap-2 mt-2">
+            <Button
+              variant="default"
+              size="sm"
+              className="flex-1"
+              onPress={(e) => {
+                e.stopPropagation();
+                onAccept(notification.actor_id);
+              }}
+            >
+              <Text>Accept</Text>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onPress={(e) => {
+                e.stopPropagation();
+                onReject(notification.actor_id);
+              }}
+            >
+              <Text>Reject</Text>
+            </Button>
+          </View>
+        )}
       </View>
     </Pressable>
   );
@@ -89,6 +127,75 @@ export default function NotificationsScreen() {
     },
   });
 
+  const acceptFollowMutation = trpc.social.acceptFollowRequest.useMutation({
+    onMutate: async ({ follower_id }) => {
+      // Cancel any outgoing refetches
+      await utils.notifications.getRecent.cancel();
+
+      // Snapshot the previous value
+      const previousNotifications = utils.notifications.getRecent.getData();
+
+      // Optimistically update to remove the follow_request notification
+      utils.notifications.getRecent.setData({ limit: 20 }, (old: any[] = []) =>
+        old?.filter(
+          (n) => !(n.type === "follow_request" && n.actor_id === follower_id),
+        ),
+      );
+
+      return { previousNotifications };
+    },
+    onError: (_err, _variables, context) => {
+      // Rollback on error
+      if (context?.previousNotifications) {
+        utils.notifications.getRecent.setData(
+          { limit: 20 },
+          context.previousNotifications,
+        );
+      }
+    },
+    onSettled: () => {
+      utils.notifications.getRecent.invalidate();
+      utils.notifications.getUnreadCount.invalidate();
+      utils.social.getFollowers.invalidate();
+      utils.social.getFollowing.invalidate();
+    },
+  });
+
+  const rejectFollowMutation = trpc.social.rejectFollowRequest.useMutation({
+    onMutate: async ({ follower_id }) => {
+      // Cancel any outgoing refetches
+      await utils.notifications.getRecent.cancel();
+
+      // Snapshot the previous value
+      const previousNotifications = utils.notifications.getRecent.getData();
+
+      // Optimistically update to remove the follow_request notification
+      utils.notifications.getRecent.setData({ limit: 20 }, (old: any[] = []) =>
+        old?.filter(
+          (n) => !(n.type === "follow_request" && n.actor_id === follower_id),
+        ),
+      );
+
+      return { previousNotifications };
+    },
+    onError: (_err, _variables, context) => {
+      // Rollback on error
+      if (context?.previousNotifications) {
+        utils.notifications.getRecent.setData(
+          { limit: 20 },
+          context.previousNotifications,
+        );
+      }
+    },
+    onSettled: () => {
+      utils.notifications.getRecent.invalidate();
+      utils.notifications.getUnreadCount.invalidate();
+      // Invalidate followers/following lists in case they were viewing
+      utils.social.getFollowers.invalidate();
+      utils.social.getFollowing.invalidate();
+    },
+  });
+
   const handlePress = (notification: any) => {
     if (!notification.read_at) {
       markReadMutation.mutate({ notification_ids: [notification.id] });
@@ -97,6 +204,14 @@ export default function NotificationsScreen() {
     if (notification.type === "new_message") {
       router.push("/messages");
     }
+  };
+
+  const handleAcceptFollow = (followerId: string) => {
+    acceptFollowMutation.mutate({ follower_id: followerId });
+  };
+
+  const handleRejectFollow = (followerId: string) => {
+    rejectFollowMutation.mutate({ follower_id: followerId });
   };
 
   const handleReadAll = () => {
@@ -127,6 +242,8 @@ export default function NotificationsScreen() {
           <NotificationItem
             notification={item}
             onPress={() => handlePress(item)}
+            onAccept={handleAcceptFollow}
+            onReject={handleRejectFollow}
           />
         )}
         ListEmptyComponent={

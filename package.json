@@ -20,6 +20,7 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
+    "update-types": "pnpm --filter @repo/supabase update-types",
     "test": "turbo run test",
     "logs:scan": "node scripts/scan-dev-logs.mjs --since 10",
     "logs:scan:json": "node scripts/scan-dev-logs.mjs --since 10 --json",

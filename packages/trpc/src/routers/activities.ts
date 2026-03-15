@@ -1,4 +1,5 @@
 import { ActivityUploadSchema } from "@repo/core";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -7,6 +8,48 @@ import {
   estimateMaxHR,
   estimateLTHR,
 } from "@repo/core";
+
+/**
+ * Check if a user has access to view an activity
+ * Returns true if: user owns the activity, OR activity is public, OR user follows the owner
+ */
+async function checkActivityAccess(
+  supabase: any,
+  activityId: string,
+  userId: string,
+): Promise<boolean> {
+  // Get the activity
+  const { data: activity, error } = await supabase
+    .from("activities")
+    .select("profile_id, is_private")
+    .eq("id", activityId)
+    .single();
+
+  if (error || !activity) {
+    return false;
+  }
+
+  // User owns the activity
+  if (activity.profile_id === userId) {
+    return true;
+  }
+
+  // Activity is public - allow access
+  if (!activity.is_private) {
+    return true;
+  }
+
+  // Activity is private - check if user follows the owner
+  const { data: followData } = await supabase
+    .from("follows")
+    .select("follower_id")
+    .eq("follower_id", userId)
+    .eq("following_id", activity.profile_id)
+    .eq("status", "accepted")
+    .maybeSingle();
+
+  return !!followData;
+}
 
 export const activitiesRouter = createTRPCRouter({
   // List activities by date range (legacy - for trends/analytics)
@@ -29,7 +72,25 @@ export const activitiesRouter = createTRPCRouter({
         .order("started_at", { ascending: false });
 
       if (error) throw new Error(error.message);
-      return data || [];
+
+      const activityIds = data?.map((a) => a.id) || [];
+      let userLikes: string[] = [];
+
+      if (activityIds.length > 0) {
+        const { data: likesData } = await (ctx.supabase as any)
+          .from("likes")
+          .select("entity_id")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("entity_type", "activity")
+          .in("entity_id", activityIds);
+
+        userLikes = likesData?.map((l: any) => l.entity_id) || [];
+      }
+
+      return (data || []).map((a) => ({
+        ...a,
+        has_liked: userLikes.includes(a.id),
+      }));
     }),
 
   // Paginated list of activities with filters
@@ -87,8 +148,27 @@ export const activitiesRouter = createTRPCRouter({
 
       if (error) throw new Error(error.message);
 
+      const activityIds = data?.map((a) => a.id) || [];
+      let userLikes: string[] = [];
+
+      if (activityIds.length > 0) {
+        const { data: likesData } = await (ctx.supabase as any)
+          .from("likes")
+          .select("entity_id")
+          .eq("profile_id", ctx.session.user.id)
+          .eq("entity_type", "activity")
+          .in("entity_id", activityIds);
+
+        userLikes = likesData?.map((l: any) => l.entity_id) || [];
+      }
+
+      const items = (data || []).map((a) => ({
+        ...a,
+        has_liked: userLikes.includes(a.id),
+      }));
+
       return {
-        items: data || [],
+        items,
         total: count || 0,
         hasMore: (count || 0) > input.offset + input.limit,
       };
@@ -175,6 +255,22 @@ export const activitiesRouter = createTRPCRouter({
         .strict(),
     )
     .query(async ({ input, ctx }) => {
+      const userId = ctx.session.user.id;
+
+      // Check authorization
+      const hasAccess = await checkActivityAccess(
+        ctx.supabase,
+        input.id,
+        userId,
+      );
+
+      if (!hasAccess) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "You don't have permission to view this activity",
+        });
+      }
+
       const { data, error } = await ctx.supabase
         .from("activities")
         .select(
@@ -189,7 +285,18 @@ export const activitiesRouter = createTRPCRouter({
       if (error) throw new Error(error.message);
       if (!data) throw new Error("Activity not found");
 
-      return data;
+      const { data: likeData } = await (ctx.supabase as any)
+        .from("likes")
+        .select("id")
+        .eq("profile_id", userId)
+        .eq("entity_type", "activity")
+        .eq("entity_id", input.id)
+        .maybeSingle();
+
+      return {
+        ...data,
+        has_liked: !!likeData,
+      };
     }),
 
   // Update activity (e.g., to set metrics after calculation)
@@ -203,6 +310,7 @@ export const activitiesRouter = createTRPCRouter({
           normalized_power: z.number().optional(),
           name: z.string().optional(),
           notes: z.string().nullable().optional(),
+          is_private: z.boolean().optional(),
         })
         .strict(),
     )

@@ -8,7 +8,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-import { buildPlanRoute, ROUTES } from "@/lib/constants/routes";
+import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { trpc } from "@/lib/trpc";
@@ -150,14 +150,13 @@ export function ActivityPlanComposerScreen(
         {
           text: "Schedule Now",
           onPress: () => {
-            const route = buildPlanRoute(planId, "schedule");
-            router.push(route.pathname as any);
+            router.push(buildPlanRoute(planId, "schedule") as any);
           },
         },
         {
           text: "View Plan",
           onPress: () => {
-            router.push(ROUTES.PLAN.PLAN_DETAIL(planId) as any);
+            router.push(buildPlanRoute(planId) as any);
           },
         },
       ]);

@@ -19,12 +19,15 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
         delete: vi.fn(() => builder),
         eq: vi.fn(() => builder),
         neq: vi.fn(() => builder),
+        not: vi.fn(() => builder),
+        or: vi.fn(() => builder),
         gte: vi.fn(() => builder),
         lte: vi.fn(() => builder),
         lt: vi.fn(() => builder),
         in: vi.fn(() => builder),
         order: vi.fn(() => builder),
         single: vi.fn(() => Promise.resolve(result)),
+        maybeSingle: vi.fn(() => Promise.resolve(result)),
         limit: vi.fn(() => builder),
         then: (onFulfilled: (value: QueryResult) => unknown) =>
           Promise.resolve(result).then(onFulfilled),
@@ -282,48 +285,6 @@ describe("deriveProfileAwareCreationContext", () => {
         starting_atl: expect.any(Number),
         starting_tsb: expect.any(Number),
       },
-    });
-  });
-});
-
-describe("trainingPlansRouter.create active-plan invariant", () => {
-  const maintenanceCreateInput = {
-    name: "New Plan",
-    structure: {
-      plan_type: "maintenance" as const,
-      name: "Maintenance Structure",
-      start_date: "2026-01-05",
-      activity_distribution: {
-        run: {
-          target_percentage: 1,
-        },
-      },
-    },
-  };
-
-  it("deactivates existing active plans when is_active is omitted", async () => {
-    const harness = createTrainingPlansCreateHarness();
-
-    await harness.caller.create(maintenanceCreateInput);
-
-    expect(harness.tableBuilder.update).toHaveBeenCalledWith({
-      is_active: false,
-    });
-    expect(harness.deactivationEq).toHaveBeenCalledWith(
-      "profile_id",
-      "profile-123",
-    );
-    expect(harness.deactivationEq).toHaveBeenCalledWith("is_active", true);
-  });
-
-  it("defaults inserted plan to active when is_active is omitted", async () => {
-    const harness = createTrainingPlansCreateHarness();
-
-    await harness.caller.create(maintenanceCreateInput);
-
-    expect(harness.getInsertedPayload()).toMatchObject({
-      is_active: true,
-      profile_id: "profile-123",
     });
   });
 });
@@ -680,16 +641,15 @@ describe("trainingPlansRouter plan_start_date support", () => {
       goals: [minimalGoal],
     };
 
-    let previewThrown: unknown;
-    try {
-      await caller.getFeasibilityPreview(lateStartInput);
-    } catch (error) {
-      previewThrown = error;
-    }
-
-    expect(previewThrown).toBeInstanceOf(TRPCError);
-    expect((previewThrown as TRPCError).code).toBe("BAD_REQUEST");
-    expect((previewThrown as TRPCError).message).toContain("plan_start_date");
+    await expect(
+      caller.previewCreationConfig({
+        minimal_plan: lateStartInput,
+        creation_input: {},
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("plan_start_date"),
+    });
 
     let createThrown: unknown;
     try {
@@ -753,6 +713,71 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(
       result.normalized_creation_config.behavior_controls_v1.recovery_priority,
     ).toBeGreaterThan(0.6);
+  });
+
+  it("merges profile settings defaults without overriding explicit user values", async () => {
+    const caller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      profile_training_settings: {
+        data: {
+          profile_id: "profile-123",
+          settings: {
+            availability: {
+              weekly_windows: [],
+              hard_rest_days: ["friday"],
+            },
+            dose_limits: {
+              min_sessions_per_week: 2,
+              max_sessions_per_week: 5,
+              max_single_session_duration_minutes: 95,
+            },
+            training_style: {
+              progression_pace: 0.72,
+              week_pattern_preference: 0.33,
+            },
+            recovery_preferences: {
+              recovery_priority: 0.81,
+              post_goal_recovery_days: 11,
+            },
+            adaptation_preferences: {},
+            goal_strategy_preferences: {
+              target_surplus_preference: 0.4,
+            },
+            optimization_profile: "sustainable",
+          },
+        },
+        error: null,
+      },
+    });
+
+    const result = await caller.previewCreationConfig({
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {
+        user_values: {
+          optimization_profile: "outcome_first",
+        },
+      },
+    });
+
+    expect(result.normalized_creation_config.optimization_profile).toBe(
+      "outcome_first",
+    );
+    expect(result.normalized_creation_config.post_goal_recovery_days).toBe(11);
+    expect(
+      result.normalized_creation_config.constraints.hard_rest_days,
+    ).toEqual(["friday"]);
+    expect(
+      result.normalized_creation_config.behavior_controls_v1,
+    ).toMatchObject({
+      aggressiveness: 0.72,
+      variability: 0.33,
+      recovery_priority: 0.81,
+    });
   });
 
   it("applies strict cap tuning without forcing blocking or unsafe feasibility", async () => {
@@ -2873,6 +2898,34 @@ describe("trainingPlansRouter analytics endpoints", () => {
       completedTSS: expect.any(Number),
       status: expect.any(String),
     });
+  });
+
+  it("returns weekly summary for a public scheduled plan", async () => {
+    const caller = createTrainingPlansCaller({
+      training_plans: {
+        data: {
+          id: planId,
+          profile_id: "template-owner",
+          is_system_template: false,
+          template_visibility: "public",
+          structure: {
+            blocks: [],
+            constraints: { available_days_per_week: ["monday"] },
+          },
+        },
+        error: null,
+      },
+      events: { data: [], error: null },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.getWeeklySummary({
+      training_plan_id: planId,
+      weeks_back: 1,
+    });
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(1);
   });
 
   it("returns additive adherence/readiness summaries in insight timeline response", async () => {

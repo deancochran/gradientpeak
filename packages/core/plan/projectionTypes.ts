@@ -1,9 +1,16 @@
 import type {
+  FeasibilityAssessment,
+  ReferenceTrajectory,
+  TrajectoryMode,
+} from "../schemas/planning";
+import type {
   DeterministicProjectionMicrocycle,
   ProjectionDiagnostics,
   DeterministicProjectionPoint,
   ProjectionRecoverySegment,
   ProjectionSafetyConfig,
+  ProjectionDoseRecommendation,
+  ProjectionSportLoadState,
 } from "./projectionCalculations";
 
 export interface ProjectionPeriodizationPhase {
@@ -24,6 +31,10 @@ export interface ProjectionGoalMarker {
 
 export type ReadinessBand = "low" | "medium" | "high";
 export type DemandConfidence = "high" | "medium" | "low";
+export type LowReadinessLimiterMode =
+  | "timeline_limited"
+  | "capacity_limited"
+  | "mixed_limiters";
 
 export interface DemandBand {
   min: number;
@@ -42,6 +53,7 @@ export interface ProjectionFeasibilityMetadata {
   demand_gap: ProjectionDemandGap;
   readiness_band: ReadinessBand;
   dominant_limiters: string[];
+  low_readiness_limiter_mode?: LowReadinessLimiterMode | null;
   readiness_score?: number;
   readiness_components?: {
     load_state: number;
@@ -65,11 +77,13 @@ export interface NoHistoryProjectionMetadata {
     start_weekly_tss: number;
   } | null;
   fitness_level: "weak" | "strong" | null;
+  fitness_signal_0_1?: number | null;
   fitness_inference_reasons: string[];
   projection_floor_confidence: "high" | "medium" | "low" | null;
   floor_clamped_by_availability: boolean;
   starting_ctl_for_projection?: number | null;
   starting_weekly_tss_for_projection?: number | null;
+  goal_demand_score_0_1?: number;
   required_event_demand_range?: DemandBand | null;
   required_peak_weekly_tss?: DemandBand | null;
   demand_confidence?: DemandConfidence | null;
@@ -77,7 +91,16 @@ export interface NoHistoryProjectionMetadata {
   evidence_confidence?: {
     score: number;
     state: "none" | "sparse" | "stale" | "rich";
+    support_signal: number;
+    evidence_recency_days: number;
     reasons: string[];
+  } | null;
+  capability_factors?: {
+    aerobic_base: number;
+    durability: number;
+    recovery_speed: number;
+    intensity_support: number;
+    evidence_quality: number;
   } | null;
 }
 
@@ -136,12 +159,20 @@ export interface ProjectionChartPayload {
   inferred_current_state?: ProjectionInferredCurrentState;
   no_history?: NoHistoryProjectionMetadata;
   readiness_score?: number;
+  physiological_readiness_score?: number;
   readiness_confidence?: number;
+  planning_confidence?: number;
+  planning_confidence_reasons?: string[];
   readiness_rationale_codes?: string[];
   capacity_envelope?: {
     envelope_score: number;
     envelope_state: "inside" | "edge" | "outside";
     limiting_factors: string[];
+    limiting_factor_scores?: {
+      over_high: number;
+      under_low: number;
+      over_ramp: number;
+    };
   };
   feasibility_band?:
     | "feasible"
@@ -149,6 +180,7 @@ export interface ProjectionChartPayload {
     | "aggressive"
     | "nearly_impossible"
     | "infeasible";
+  risk_score?: number;
   risk_level?: "low" | "moderate" | "high" | "extreme";
   risk_flags?: string[];
   caps_applied?: string[];
@@ -156,6 +188,11 @@ export interface ProjectionChartPayload {
   prediction_uncertainty?: ProjectionPredictionUncertainty;
   goal_target_distributions?: ProjectionGoalTargetDistribution[];
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
+  reference_trajectory?: ReferenceTrajectory;
+  trajectory_mode?: TrajectoryMode;
+  feasibility_assessment?: FeasibilityAssessment;
+  sport_load_states?: ProjectionSportLoadState[];
+  dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
@@ -168,12 +205,29 @@ export interface ProjectionChartPayload {
       | "aggressive"
       | "nearly_impossible"
       | "infeasible";
+    limiter_shares?: {
+      timeline_pressure: number;
+      capacity_pressure: number;
+      evidence_weakness: number;
+      recovery_strain: number;
+      mechanical_stress: number;
+      goal_interference: number;
+    };
+    interference_notes?: string[];
     target_scores: Array<{
       kind: string;
       score_0_100: number;
       target_weight?: number;
       unmet_gap?: number;
       rationale_codes: string[];
+      effective_target?: {
+        raw_target: number;
+        effective_scoring_target: number;
+        applied_surplus_pct: number;
+        surplus_support_factor: number;
+        surplus_applied: boolean;
+        rationale_code: string;
+      };
     }>;
     conflict_notes: string[];
   }>;

@@ -94,6 +94,49 @@ vi.mock("@/lib/trpc", () => ({
   },
 }));
 
+vi.mock("../useProfileGoals", () => ({
+  useProfileGoals: () => ({
+    goals: [],
+    goalsCount: 0,
+    profileId: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("../useProfileSettings", () => ({
+  useProfileSettings: () => ({
+    settings: {
+      availability_config: { days: [] },
+      behavior_controls_v1: {
+        aggressiveness: 0.5,
+        recovery_priority: 0.5,
+        variability: 0.5,
+      },
+      constraints: {
+        hard_rest_days: [],
+      },
+      locks: {
+        volume_by_day: false,
+        intensity_distribution: false,
+      },
+      post_goal_recovery_days: 5,
+      microcycle_pattern: {
+        hard_days: [],
+        medium_days: [],
+        easy_days: [],
+      },
+      progression_preferences: {
+        weekly_progression_cap: 0.08,
+      },
+      diagnostics: {
+        include_readiness_codes: true,
+      },
+    },
+    settingsRecord: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 function HookProbe(props: {
   options: Parameters<typeof useTrainingPlanSnapshot>[0];
   onSnapshot: (snapshot: ReturnType<typeof useTrainingPlanSnapshot>) => void;
@@ -138,7 +181,13 @@ describe("useTrainingPlanSnapshot", () => {
       );
     });
 
-    expect(getPlanQuery).toHaveBeenCalledWith({ id: "plan-123" });
+    expect(getPlanQuery).toHaveBeenCalledWith(
+      { id: "plan-123" },
+      expect.objectContaining({
+        staleTime: 0,
+        refetchOnMount: "always",
+      }),
+    );
 
     expect(getWeeklySummaryQuery).toHaveBeenCalledWith(
       expect.objectContaining({ training_plan_id: "plan-123" }),
@@ -163,5 +212,45 @@ describe("useTrainingPlanSnapshot", () => {
     expect(refetchActualCurve).toHaveBeenCalledTimes(1);
     expect(refetchIdealCurve).toHaveBeenCalledTimes(1);
     expect(refetchWeeklySummary).toHaveBeenCalledTimes(0);
+  });
+
+  it("requests insight timeline without a training plan id when no active plan exists", async () => {
+    getPlanQuery.mockImplementationOnce(() => ({
+      data: null as any,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchPlan,
+    }));
+    getInsightTimelineQuery.mockClear();
+    refetchInsightTimeline.mockClear();
+
+    let latestSnapshot: ReturnType<typeof useTrainingPlanSnapshot> | undefined;
+
+    await act(async () => {
+      TestRenderer.create(
+        <HookProbe
+          options={{}}
+          onSnapshot={(snapshot) => {
+            latestSnapshot = snapshot;
+          }}
+        />,
+      );
+    });
+
+    expect(getInsightTimelineQuery).toHaveBeenCalledWith(
+      expect.not.objectContaining({ training_plan_id: expect.anything() }),
+      expect.objectContaining({
+        enabled: true,
+        staleTime: 0,
+        refetchOnMount: "always",
+      }),
+    );
+
+    await act(async () => {
+      await latestSnapshot!.refetchAll();
+    });
+
+    expect(refetchInsightTimeline).toHaveBeenCalledTimes(1);
   });
 });

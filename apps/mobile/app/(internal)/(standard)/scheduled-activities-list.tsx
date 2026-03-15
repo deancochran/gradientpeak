@@ -2,11 +2,12 @@ import { ActivityList } from "@/components/plan/calendar/ActivityList";
 import { EmptyStateCard, ListSkeleton } from "@/components/shared";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
+import { ROUTES } from "@/lib/constants/routes";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { trpc } from "@/lib/trpc";
-import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { Calendar, Plus } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import React, { useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -24,9 +25,12 @@ export default function ScheduledScreen() {
     data: scheduledData,
     isLoading,
     refetch,
-  } = trpc.events.list.useQuery({
-    limit: 100, // Get all activities for scheduling view
-  });
+  } = trpc.events.list.useQuery(
+    {
+      limit: 100, // Get all activities for scheduling view
+    },
+    scheduleAwareReadQueryOptions,
+  );
 
   const scheduledActivities = scheduledData?.items || [];
 
@@ -37,19 +41,12 @@ export default function ScheduledScreen() {
     setRefreshing(false);
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      refetch();
-      utils.trainingPlans.invalidate();
-    }, [refetch, utils.trainingPlans]),
-  );
-
   const handleActivityTap = (activityId: string) => {
     router.push(`/scheduled-activity-detail?id=${activityId}` as any);
   };
 
   const handleScheduleNew = () => {
-    router.push("/plan-library" as any);
+    router.push(ROUTES.CALENDAR as any);
   };
 
   if (isLoading) {
@@ -72,8 +69,8 @@ export default function ScheduledScreen() {
           <EmptyStateCard
             icon={Calendar}
             title="No Activities Scheduled"
-            description="Browse the library to get started with your training plan"
-            actionLabel="Browse Library"
+            description="Open Calendar to schedule an activity on the day you want."
+            actionLabel="Open Calendar"
             onAction={handleScheduleNew}
             iconSize={64}
             iconColor="text-primary"

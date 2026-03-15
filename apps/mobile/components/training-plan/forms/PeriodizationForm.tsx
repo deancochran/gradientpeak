@@ -1,10 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
+import { IntegerStepper } from "@/components/training-plan/create/inputs/IntegerStepper";
 import {
   AlertCircle,
   CheckCircle,
@@ -217,18 +217,15 @@ export function PeriodizationForm({
             <Text className="text-sm text-muted-foreground">
               The fitness level you want to reach by your target date
             </Text>
-            <Input
-              value={targetCtlText}
-              onChangeText={handleTargetCtlChange}
-              keyboardType="numeric"
-              placeholder="85"
-              className={errors.target_ctl ? "border-destructive" : ""}
+            <IntegerStepper
+              id="periodization-target-ctl"
+              value={parseInt(targetCtlText) || 85}
+              min={0}
+              max={250}
+              onChange={(nextCtl) => handleTargetCtlChange(String(nextCtl))}
+              helperText="Set your CTL goal by your target date"
+              error={errors.target_ctl}
             />
-            {errors.target_ctl && (
-              <Text className="text-destructive text-xs">
-                {errors.target_ctl}
-              </Text>
-            )}
           </View>
 
           {/* Ramp Rate */}
@@ -239,18 +236,15 @@ export function PeriodizationForm({
             <Text className="text-sm text-muted-foreground">
               How much your CTL increases each week (5-7% is typical)
             </Text>
-            <Input
-              value={rampRateText}
-              onChangeText={handleRampRateChange}
-              keyboardType="numeric"
-              placeholder="5"
-              className={errors.ramp_rate ? "border-destructive" : ""}
+            <IntegerStepper
+              id="periodization-ramp-rate"
+              value={parseInt(rampRateText) || 5}
+              min={1}
+              max={20}
+              onChange={(nextRate) => handleRampRateChange(String(nextRate))}
+              helperText="Set weekly CTL increase percentage"
+              error={errors.ramp_rate}
             />
-            {errors.ramp_rate && (
-              <Text className="text-destructive text-xs">
-                {errors.ramp_rate}
-              </Text>
-            )}
           </View>
 
           {/* Target Date */}

@@ -2,11 +2,13 @@ import type { PublicActivityPlansInsert } from "@repo/supabase";
 import { z } from "zod";
 import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
 import {
-  goalTargetV2Schema,
-  goalV2Schema,
   minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
 } from "./training_plan_structure";
+import {
+  profileGoalLegacySchema,
+  profileGoalTargetSchema,
+} from "./goals/profile_goals";
 
 // Export from activity_payload (includes ActivityType)
 export * from "./activity_payload";
@@ -76,6 +78,12 @@ export * from "./form-schemas";
 // Export from planned_activity
 export * from "./planned_activity";
 
+// Export profile goals/settings (Phase 1 additive domain schemas)
+export * from "./goals/profile_goals";
+export * from "./planning";
+export * from "./settings/profile_settings";
+export * from "./sport";
+
 // Export from training_plan_structure
 export * from "./training_plan_structure";
 
@@ -106,7 +114,7 @@ export * from "./messaging";
 // Export onboarding schemas
 export * from "./onboarding";
 
-// Export template + library schemas
+// Export template schemas
 export * from "./template_library";
 
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
@@ -155,9 +163,9 @@ export const trainingPlanCreateInputSchema = z.object({
 export const trainingPlanUpdateInputSchema =
   trainingPlanCreateInputSchema.partial();
 
-export const trainingPlanGoalTargetInputSchema = goalTargetV2Schema;
+export const trainingPlanGoalTargetInputSchema = profileGoalTargetSchema;
 
-export const trainingPlanGoalInputSchema = goalV2Schema.omit({
+export const trainingPlanGoalInputSchema = profileGoalLegacySchema.omit({
   id: true,
 });
 

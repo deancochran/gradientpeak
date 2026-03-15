@@ -23,7 +23,6 @@ export default function TrainingPlanEditRoute() {
     const tab = (initialTab || "").toLowerCase();
     if (
       tab === "plan" ||
-      tab === "goals" ||
       tab === "availability" ||
       tab === "constraints" ||
       tab === "calibration" ||
@@ -31,7 +30,6 @@ export default function TrainingPlanEditRoute() {
     ) {
       return tab as
         | "plan"
-        | "goals"
         | "availability"
         | "constraints"
         | "calibration"
@@ -42,7 +40,7 @@ export default function TrainingPlanEditRoute() {
       return "plan" as const;
     }
 
-    return "goals" as const;
+    return "plan" as const;
   })();
 
   if (!hasValidId) {
@@ -54,7 +52,7 @@ export default function TrainingPlanEditRoute() {
         </Text>
         <Pressable
           className="mt-4 rounded-md bg-primary px-4 py-2"
-          onPress={() => router.replace(ROUTES.PLAN.TRAINING_PLAN.INDEX)}
+          onPress={() => router.replace(ROUTES.PLAN.INDEX)}
         >
           <Text className="font-semibold text-primary-foreground">
             Back to plan

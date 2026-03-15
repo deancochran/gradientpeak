@@ -7,31 +7,41 @@ import {
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import { StreamChart } from "@/components/activity/charts/StreamChart";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Text } from "@/components/ui/text";
+import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/lib/hooks/useAuth";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
+import { skipToken } from "@tanstack/react-query";
 import { decodePolyline } from "@repo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Activity,
   Clock,
+  Eye,
+  EyeOff,
   Heart,
   MapPin,
+  MessageCircle,
+  Send,
   Timer,
   Trash2,
   TrendingUp,
   Waves,
   Zap,
 } from "lucide-react-native";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
+  TextInput,
   View,
 } from "react-native";
 import MapView, { Polyline as MapPolyline, Region } from "react-native-maps";
@@ -72,6 +82,12 @@ function formatPace(metersPerSecond: number): string {
 function formatSpeed(metersPerSecond: number): string {
   const kmh = (metersPerSecond * 3.6).toFixed(1);
   return `${kmh} km/h`;
+}
+
+function isValidUuid(value: string): boolean {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(value);
 }
 
 function formatSwimPace(metersPerSecond: number): string {
@@ -120,14 +136,20 @@ function ActivityDetailScreen() {
   );
 
   // Fetch streams if fit file exists
+  const activityId = activity?.id;
+  const fitFilePath = activity?.fit_file_path;
+
   const {
     data: streamsData,
     isLoading: isLoadingStreams,
     error: streamsError,
   } = trpc.fitFiles.getStreams.useQuery(
-    { fitFilePath: activity?.fit_file_path! },
     {
-      enabled: !!activity?.fit_file_path,
+      fitFilePath: fitFilePath!,
+      activityId: activityId,
+    },
+    {
+      enabled: !!fitFilePath && !!activityId,
       staleTime: 5 * 60 * 1000,
       retry: 2,
     },
@@ -145,6 +167,84 @@ function ActivityDetailScreen() {
       Alert.alert("Error", `Failed to delete activity: ${error.message}`);
     },
   });
+
+  // Privacy toggle mutation
+  const updatePrivacyMutation = trpc.activities.update.useMutation({
+    onSuccess: () => {
+      queryClient.activities.invalidate();
+      queryClient.feed.getFeed.invalidate();
+    },
+    onError: (error) => {
+      Alert.alert("Error", `Failed to update visibility: ${error.message}`);
+    },
+  });
+
+  // Like mutation
+  const [liked, setLiked] = useState(activity?.has_liked ?? false);
+  const [likesCount, setLikesCount] = useState(activity?.likes_count ?? 0);
+
+  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+    onSuccess: (data) => {
+      setLiked(data.liked);
+      setLikesCount((prev: number) => (data.liked ? prev + 1 : prev - 1));
+    },
+    onError: (error) => {
+      Alert.alert("Error", `Failed to update like: ${error.message}`);
+    },
+  });
+
+  const handleLikeToggle = () => {
+    if (!activity) return;
+    toggleLikeMutation.mutate({
+      entity_id: activity.id,
+      entity_type: "activity",
+    });
+  };
+
+  // Comments state
+  const [newComment, setNewComment] = useState("");
+  const commentEntityId =
+    typeof activity?.id === "string" ? activity.id.trim() : "";
+
+  // Fetch comments
+  const { data: commentsData, refetch: refetchComments } =
+    trpc.social.getComments.useQuery(
+      isValidUuid(commentEntityId)
+        ? { entity_id: commentEntityId, entity_type: "activity" }
+        : skipToken,
+    );
+
+  // Add comment mutation
+  const addCommentMutation = trpc.social.addComment.useMutation({
+    onSuccess: () => {
+      setNewComment("");
+      refetchComments();
+    },
+    onError: (error) => {
+      Alert.alert("Error", `Failed to add comment: ${error.message}`);
+    },
+  });
+
+  const handleAddComment = () => {
+    if (!isValidUuid(commentEntityId) || !newComment.trim()) return;
+    addCommentMutation.mutate({
+      entity_id: commentEntityId,
+      entity_type: "activity",
+      content: newComment.trim(),
+    });
+  };
+
+  // Get current user to check ownership
+  const { user } = useAuth();
+  const isOwner = user?.id === activity?.profile_id;
+
+  const handleTogglePrivacy = () => {
+    if (!activity || !isOwner) return;
+    updatePrivacyMutation.mutate({
+      id: activity.id,
+      is_private: !activity.is_private,
+    });
+  };
 
   const handleDelete = () => {
     if (!activity) return;
@@ -445,6 +545,76 @@ function ActivityDetailScreen() {
           }}
           notes={activity.notes ?? undefined}
         />
+
+        {/* Like & Comments Section */}
+        <Card>
+          <CardContent className="p-4">
+            {/* Like Button */}
+            <Pressable
+              onPress={handleLikeToggle}
+              disabled={toggleLikeMutation.isPending}
+              className="flex-row items-center gap-2 mb-4"
+            >
+              <Heart
+                size={24}
+                className={
+                  liked ? "fill-red-500 text-red-500" : "text-muted-foreground"
+                }
+                color={liked ? "#ef4444" : undefined}
+              />
+              <Text
+                className={
+                  liked ? "text-red-500 font-medium" : "text-muted-foreground"
+                }
+              >
+                {likesCount} {likesCount === 1 ? "Like" : "Likes"}
+              </Text>
+            </Pressable>
+
+            {/* Comments List */}
+            {commentsData && commentsData.comments.length > 0 && (
+              <View className="mb-4 border-t border-border pt-4">
+                <Text className="font-semibold text-foreground mb-3">
+                  Comments ({commentsData.total})
+                </Text>
+                {commentsData.comments.map((comment: any) => (
+                  <View key={comment.id} className="mb-3">
+                    <View className="flex-row items-center gap-2 mb-1">
+                      <Text className="font-medium text-sm text-foreground">
+                        {comment.profile?.username || "Unknown User"}
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {new Date(comment.created_at).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <Text className="text-sm text-foreground">
+                      {comment.content}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Add Comment Input */}
+            <View className="flex-row items-center gap-2">
+              <TextInput
+                className="flex-1 border border-border rounded-lg px-3 py-2 text-foreground"
+                placeholder="Add a comment..."
+                placeholderTextColor="#9ca3af"
+                value={newComment}
+                onChangeText={setNewComment}
+                multiline
+              />
+              <Button
+                onPress={handleAddComment}
+                disabled={!newComment.trim() || addCommentMutation.isPending}
+                size="icon"
+              >
+                <Send size={18} />
+              </Button>
+            </View>
+          </CardContent>
+        </Card>
 
         {/* Map */}
         {routeCoordinates.length > 0 && mapRegion && (
@@ -815,6 +985,36 @@ function ActivityDetailScreen() {
               </View>
             </CardContent>
           </Card>
+        )}
+
+        {/* Privacy Toggle - Only show for activity owner */}
+        {isOwner && activity && (
+          <View className="mt-4 mb-4">
+            <View className="flex-row items-center justify-between p-4 bg-card rounded-lg border border-border">
+              <View className="flex-row items-center gap-3">
+                <Icon
+                  as={activity.is_private ? EyeOff : Eye}
+                  size={20}
+                  className="text-foreground"
+                />
+                <View>
+                  <Text className="font-semibold text-foreground">
+                    {activity.is_private ? "Private" : "Public"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {activity.is_private
+                      ? "Only you can see this activity"
+                      : "Visible to followers in feed"}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                checked={!activity.is_private}
+                onCheckedChange={handleTogglePrivacy}
+                disabled={updatePrivacyMutation.isPending}
+              />
+            </View>
+          </View>
         )}
 
         {/* Delete Button */}

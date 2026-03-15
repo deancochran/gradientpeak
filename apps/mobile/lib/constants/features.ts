@@ -1,3 +1,3 @@
 export const featureFlags = {
-  trainingPlanCreateConfigMvp: true,
+  trainingPlanCreateConfigMvp: false,
 } as const;

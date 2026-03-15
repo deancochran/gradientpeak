@@ -119,6 +119,10 @@ describe("MPC tiebreak", () => {
 
     expect(result.diagnostics.tie_break_order).toEqual([
       "objective",
+      "safety_penalty",
+      "tracking_error",
+      "volatility_penalty",
+      "churn_penalty",
       "delta_from_prev",
       "goal_date",
       "goal_id",
@@ -148,7 +152,7 @@ describe("MPC tiebreak", () => {
     ).toBe(false);
   });
 
-  it("applies tie-break precedence objective -> delta -> date -> id -> value", () => {
+  it("applies tie-break precedence objective -> safety -> tracking -> volatility -> churn -> delta -> date -> id -> value", () => {
     const betterObjective = compareMpcTieBreakCandidates(
       {
         candidate_value: 300,
@@ -167,26 +171,76 @@ describe("MPC tiebreak", () => {
       {
         candidate_value: 300,
         objective_score: 10,
+        safety_penalty: 0.2,
+        tracking_error: 0.3,
+        volatility_penalty: 0.2,
+        churn_penalty: 0.2,
         delta_from_prev: 2,
       },
       {
         candidate_value: 299,
         objective_score: 10,
+        safety_penalty: 0.2,
+        tracking_error: 0.3,
+        volatility_penalty: 0.2,
+        churn_penalty: 0.2,
         delta_from_prev: 4,
       },
     );
     expect(betterDelta).toBeLessThan(0);
 
+    const betterSafety = compareMpcTieBreakCandidates(
+      {
+        candidate_value: 300,
+        objective_score: 10,
+        safety_penalty: 0.1,
+        delta_from_prev: 5,
+      },
+      {
+        candidate_value: 299,
+        objective_score: 10,
+        safety_penalty: 0.4,
+        delta_from_prev: 1,
+      },
+    );
+    expect(betterSafety).toBeLessThan(0);
+
+    const betterTracking = compareMpcTieBreakCandidates(
+      {
+        candidate_value: 300,
+        objective_score: 10,
+        safety_penalty: 0.1,
+        tracking_error: 0.2,
+        delta_from_prev: 5,
+      },
+      {
+        candidate_value: 299,
+        objective_score: 10,
+        safety_penalty: 0.1,
+        tracking_error: 0.6,
+        delta_from_prev: 1,
+      },
+    );
+    expect(betterTracking).toBeLessThan(0);
+
     const betterDate = compareMpcTieBreakCandidates(
       {
         candidate_value: 300,
         objective_score: 10,
+        safety_penalty: 0.2,
+        tracking_error: 0.3,
+        volatility_penalty: 0.2,
+        churn_penalty: 0.2,
         delta_from_prev: 2,
         primary_goal_date: "2026-04-01",
       },
       {
         candidate_value: 299,
         objective_score: 10,
+        safety_penalty: 0.2,
+        tracking_error: 0.3,
+        volatility_penalty: 0.2,
+        churn_penalty: 0.2,
         delta_from_prev: 2,
         primary_goal_date: "2026-05-01",
       },
@@ -197,6 +251,10 @@ describe("MPC tiebreak", () => {
       {
         candidate_value: 300,
         objective_score: 10,
+        safety_penalty: 0.2,
+        tracking_error: 0.3,
+        volatility_penalty: 0.2,
+        churn_penalty: 0.2,
         delta_from_prev: 2,
         primary_goal_date: "2026-04-01",
         primary_goal_id: "goal-a",
@@ -204,6 +262,10 @@ describe("MPC tiebreak", () => {
       {
         candidate_value: 299,
         objective_score: 10,
+        safety_penalty: 0.2,
+        tracking_error: 0.3,
+        volatility_penalty: 0.2,
+        churn_penalty: 0.2,
         delta_from_prev: 2,
         primary_goal_date: "2026-04-01",
         primary_goal_id: "goal-b",
@@ -215,6 +277,10 @@ describe("MPC tiebreak", () => {
       {
         candidate_value: 298,
         objective_score: 10,
+        safety_penalty: 0.2,
+        tracking_error: 0.3,
+        volatility_penalty: 0.2,
+        churn_penalty: 0.2,
         delta_from_prev: 2,
         primary_goal_date: "2026-04-01",
         primary_goal_id: "goal-a",
@@ -222,6 +288,10 @@ describe("MPC tiebreak", () => {
       {
         candidate_value: 300,
         objective_score: 10,
+        safety_penalty: 0.2,
+        tracking_error: 0.3,
+        volatility_penalty: 0.2,
+        churn_penalty: 0.2,
         delta_from_prev: 2,
         primary_goal_date: "2026-04-01",
         primary_goal_id: "goal-a",

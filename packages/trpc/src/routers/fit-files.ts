@@ -850,11 +850,11 @@ export const fitFilesRouter = createTRPCRouter({
               recorded_at: startTime.toISOString(),
             });
 
-            // Create notification
+            // Create notification for new LTHR detection.
             await supabase.from("notifications").insert({
               profile_id: userId,
-              title: "New LTHR Detected!",
-              message: `Your LTHR has improved to ${Math.round(detectedLTHR)} bpm based on your recent activity.`,
+              title: "New LTHR detected",
+              message: `Detected lactate threshold heart rate: ${Math.round(detectedLTHR)} bpm`,
               is_read: false,
             });
           }
@@ -1209,10 +1209,11 @@ export const fitFilesRouter = createTRPCRouter({
     .input(
       z.object({
         fitFilePath: z.string().min(1, "File path is required"),
+        activityId: z.string().uuid().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { fitFilePath } = input;
+      const { fitFilePath, activityId } = input;
       const userId = ctx.session?.user?.id;
       const supabase = ctx.supabase;
 
@@ -1221,11 +1222,51 @@ export const fitFilesRouter = createTRPCRouter({
       }
 
       try {
-        // Verify user owns this file (check file path starts with user ID)
-        // Note: fitFilePath usually looks like "userId/timestamp-filename.fit"
-        if (!fitFilePath.startsWith(`${userId}/`)) {
-          // Allow access if it's in the activities/{userId} folder too (legacy or different structure)
-          if (!fitFilePath.includes(userId)) {
+        // If activityId is provided, use proper database-driven authorization
+        if (activityId) {
+          // Query the activity to determine access rights
+          const { data: activity, error: activityError } = await supabase
+            .from("activities")
+            .select("profile_id, is_private")
+            .eq("id", activityId)
+            .single();
+
+          if (activityError || !activity) {
+            throw new Error("Activity not found");
+          }
+
+          // Determine access rights based on database relationships
+          const isActivityOwner = activity.profile_id === userId;
+
+          if (isActivityOwner) {
+            // User owns this activity - allow full access
+          } else if (!activity.is_private) {
+            // Activity is public - allow access
+          } else {
+            // Activity is private - check follow relationship
+            const { data: followData } = await (supabase as any)
+              .from("follows")
+              .select("follower_id")
+              .eq("follower_id", userId)
+              .eq("following_id", activity.profile_id)
+              .eq("status", "accepted")
+              .maybeSingle();
+
+            if (!followData) {
+              throw new Error(
+                "Access denied: You can only access your own activities or public activities from users you follow",
+              );
+            }
+          }
+        } else {
+          // Fallback: legacy behavior - check file path ownership directly
+          const cleanPath = fitFilePath.trim();
+          const isOwnFile =
+            cleanPath.startsWith(`${userId}/`) ||
+            cleanPath.startsWith(`${userId} `) ||
+            cleanPath.includes(userId);
+
+          if (!isOwnFile) {
             throw new Error(
               "Access denied: You can only access your own files",
             );
@@ -1235,7 +1276,7 @@ export const fitFilesRouter = createTRPCRouter({
         // Download FIT file from storage
         const { data: fitFile, error: downloadError } = await supabase.storage
           .from("fit-files")
-          .download(fitFilePath);
+          .download(fitFilePath.trim());
 
         if (downloadError || !fitFile) {
           throw new TRPCError({

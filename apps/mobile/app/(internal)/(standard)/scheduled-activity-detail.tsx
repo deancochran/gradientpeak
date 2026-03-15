@@ -4,12 +4,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { ROUTES } from "@/lib/constants/routes";
+import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { trpc } from "@/lib/trpc";
 import { getActivityBgClass, getActivityColor } from "@/lib/utils/plan/colors";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import { ActivityPayload } from "@repo/core";
+import { formatDurationSec } from "@repo/core/utils/dates";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -21,34 +26,49 @@ import {
   Trash2,
   Zap,
 } from "lucide-react-native";
-import { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 
 function PlannedActivityDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const eventId = params.id as string;
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const { beginRedirect, isRedirecting, redirectOnNotFound } =
+    useDeletedDetailRedirect({
+      onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    });
 
   // Query planned activity with plan details
-  const { data: plannedActivity, isLoading } = trpc.events.getById.useQuery(
+  const {
+    data: plannedActivity,
+    error,
+    isLoading,
+  } = trpc.events.getById.useQuery(
     { id: eventId },
-    { enabled: !!eventId },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: !!eventId && !isRedirecting,
+    },
   );
 
-  // Delete mutation
-  const deleteMutation = useReliableMutation(trpc.events.delete, {
-    invalidate: [utils.events, utils.trainingPlans],
-    success: "Activity removed from your schedule",
-    onSuccess: () => router.back(),
+  useEffect(() => {
+    redirectOnNotFound(error);
+  }, [error, redirectOnNotFound]);
+
+  const deleteMutation = trpc.events.delete.useMutation({
+    onSuccess: async () => {
+      await refreshScheduleViews(queryClient, "eventDeletionMutation");
+      beginRedirect();
+    },
   });
 
   const handleStartActivity = () => {
     if (!plannedActivity?.activity_plan) return;
 
     const payload: ActivityPayload = {
-      category: plannedActivity.activity_plan.activity_category,
+      category: plannedActivity.activity_plan.activity_category as any,
       gpsRecordingEnabled: true,
       eventId: plannedActivity.id,
       plan: plannedActivity.activity_plan as any,
@@ -94,11 +114,13 @@ function PlannedActivityDetailScreen() {
   return (
     <View className="flex-1 bg-background">
       {/* Content */}
-      {isLoading ? (
+      {isLoading || isRedirecting ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
           <Text className="text-muted-foreground mt-4">
-            Loading activity details...
+            {isRedirecting
+              ? "Closing activity..."
+              : "Loading activity details..."}
           </Text>
         </View>
       ) : !plannedActivity ? (
@@ -201,11 +223,15 @@ function PlannedActivityDetailScreen() {
                           Duration
                         </Text>
                         <Text className="font-semibold">
-                          {
-                            (plannedActivity.activity_plan as any)
-                              .estimated_duration
-                          }{" "}
-                          min
+                          {formatDurationSec(
+                            Math.max(
+                              0,
+                              Number(
+                                (plannedActivity.activity_plan as any)
+                                  .estimated_duration,
+                              ) || 0,
+                            ),
+                          )}
                         </Text>
                       </View>
                     )}
@@ -355,10 +381,6 @@ function PlannedActivityDetailScreen() {
           visible={showRescheduleModal}
           onClose={() => setShowRescheduleModal(false)}
           eventId={plannedActivity.id}
-          onSuccess={() => {
-            utils.events.invalidate();
-            utils.trainingPlans.invalidate();
-          }}
         />
       )}
     </View>

@@ -4,7 +4,6 @@
  *
  * Usage:
  *   pnpm seed-training-plans                    # Sync all training plan templates
- *   pnpm seed-training-plans --type=periodized  # Sync only periodized plans
  *   pnpm seed-training-plans --dry-run          # Preview changes without applying
  *   pnpm seed-training-plans --no-delete        # Don't delete templates not in code
  *
@@ -28,11 +27,6 @@ config({ path: resolve(__dirname, "../.env.local") });
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
-const typeArg = args.find((arg) => arg.startsWith("--type="));
-const planType = typeArg?.split("=")[1] as
-  | "periodized"
-  | "maintenance"
-  | undefined;
 
 // Environment variables
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -49,10 +43,7 @@ if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
-// Filter plans by type if specified
-const TEMPLATES = planType
-  ? ALL_SAMPLE_PLANS.filter((p) => p.plan_type === planType)
-  : ALL_SAMPLE_PLANS;
+const TEMPLATES = ALL_SAMPLE_PLANS;
 
 /**
  * Deep equality check for objects and arrays
@@ -108,8 +99,13 @@ function hasChanges(
     return true;
   }
 
-  if (local.is_active !== remote.is_active) {
-    console.log(`   Field change: is_active`);
+  if (local.sessions_per_week_target !== remote.sessions_per_week_target) {
+    console.log(`   Field change: sessions_per_week_target`);
+    return true;
+  }
+
+  if (local.duration_hours !== remote.duration_hours) {
+    console.log(`   Field change: duration_hours`);
     return true;
   }
 
@@ -129,7 +125,7 @@ function hasChanges(
 async function seedTrainingPlanTemplates() {
   console.log("🌱 Starting training plan template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
-  console.log(`   Filter: ${planType ? `${planType} only` : "all"}`);
+  console.log(`   Filter: all`);
   console.log(`   Local Templates: ${TEMPLATES.length}\n`);
 
   // 1. Fetch existing system templates from DB
@@ -138,9 +134,7 @@ async function seedTrainingPlanTemplates() {
     .select("*")
     .eq("is_system_template", true);
 
-  // If we are only syncing one type, we could filter by structure.plan_type
-  // However, for simplicity and to handle deletions properly, we fetch all system templates
-  // and filter locally if needed
+  // We always sync the full curated training-plan template set.
 
   const { data: existingTemplates, error } = await query;
 
@@ -197,9 +191,11 @@ async function seedTrainingPlanTemplates() {
               .update({
                 name: template.name,
                 description: template.description,
-                // Store entire plan object (goals/blocks) as JSON in structure column
-                structure: JSON.parse(JSON.stringify(template)),
-                is_active: template.is_active,
+                structure: template.structure,
+                sessions_per_week_target: template.sessions_per_week_target,
+                duration_hours: template.duration_hours,
+                is_public: true,
+                template_visibility: "public",
                 updated_at: new Date().toISOString(),
               })
               .eq("id", existing.id);
@@ -222,11 +218,12 @@ async function seedTrainingPlanTemplates() {
               profile_id: null,
               is_system_template: true,
               template_visibility: "public", // System templates must be public
+              is_public: true,
               name: template.name,
               description: template.description,
-              // Store entire plan object (goals/blocks) as JSON in structure column
-              structure: JSON.parse(JSON.stringify(template)),
-              is_active: template.is_active,
+              structure: template.structure,
+              sessions_per_week_target: template.sessions_per_week_target,
+              duration_hours: template.duration_hours,
             });
 
           if (insertError) throw insertError;

@@ -9,6 +9,10 @@ import {
 
 export interface DeterministicMpcEvaluationResult {
   objective_score: number;
+  safety_penalty?: number;
+  tracking_error?: number;
+  volatility_penalty?: number;
+  churn_penalty?: number;
   primary_goal_date?: string;
   primary_goal_id?: string;
   diagnostics_payload?: Record<string, number | string | boolean | null>;
@@ -91,6 +95,10 @@ export function solveDeterministicBoundedMpc(
       return {
         candidate_value: candidateValue,
         objective_score: objectiveScore,
+        safety_penalty: evaluation.safety_penalty,
+        tracking_error: evaluation.tracking_error,
+        volatility_penalty: evaluation.volatility_penalty,
+        churn_penalty: evaluation.churn_penalty,
         delta_from_prev: Math.abs(candidateValue - input.previous_action),
         primary_goal_date: evaluation.primary_goal_date,
         primary_goal_id: evaluation.primary_goal_id,

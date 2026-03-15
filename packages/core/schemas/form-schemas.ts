@@ -18,9 +18,9 @@ import {
 import {
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
-  goalTargetV2Schema,
   trainingPlanCreationConfigSchema,
 } from "./training_plan_structure";
+import { profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   eventMutationScopeSchema,
   eventRecurrenceSchema,
@@ -905,7 +905,7 @@ export const trainingPlanGoalPrioritySchema = z.preprocess(
     .max(10, "Priority must be at most 10"),
 );
 
-export const trainingPlanGoalTargetFormSchema = goalTargetV2Schema;
+export const trainingPlanGoalTargetFormSchema = profileGoalTargetSchema;
 
 export const trainingPlanMinimalGoalFormSchema = z.object({
   goal_name: trainingPlanNameSchema,

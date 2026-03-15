@@ -896,7 +896,8 @@ CREATE TYPE notification_type AS ENUM (
     'coaching_invitation',
     'coaching_invitation_accepted',
     'coaching_invitation_declined',
-    'new_follower'
+    'new_follower',
+    'follow_request'
 );
 
 -- Table for user notifications

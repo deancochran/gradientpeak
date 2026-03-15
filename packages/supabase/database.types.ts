@@ -45,6 +45,7 @@ export type Database = {
           avg_swolf: number | null
           avg_temperature: number | null
           calories: number | null
+          comments_count: number | null
           created_at: string
           device_manufacturer: string | null
           device_product: string | null
@@ -67,6 +68,7 @@ export type Database = {
           intensity_factor: number | null
           is_private: boolean
           laps: Json | null
+          likes_count: number | null
           map_bounds: Json | null
           max_cadence: number | null
           max_heart_rate: number | null
@@ -110,6 +112,7 @@ export type Database = {
           avg_swolf?: number | null
           avg_temperature?: number | null
           calories?: number | null
+          comments_count?: number | null
           created_at?: string
           device_manufacturer?: string | null
           device_product?: string | null
@@ -132,6 +135,7 @@ export type Database = {
           intensity_factor?: number | null
           is_private?: boolean
           laps?: Json | null
+          likes_count?: number | null
           map_bounds?: Json | null
           max_cadence?: number | null
           max_heart_rate?: number | null
@@ -175,6 +179,7 @@ export type Database = {
           avg_swolf?: number | null
           avg_temperature?: number | null
           calories?: number | null
+          comments_count?: number | null
           created_at?: string
           device_manufacturer?: string | null
           device_product?: string | null
@@ -197,6 +202,7 @@ export type Database = {
           intensity_factor?: number | null
           is_private?: boolean
           laps?: Json | null
+          likes_count?: number | null
           map_bounds?: Json | null
           max_cadence?: number | null
           max_heart_rate?: number | null
@@ -307,6 +313,7 @@ export type Database = {
       activity_plans: {
         Row: {
           activity_category: Database["public"]["Enums"]["activity_category"]
+          comments_count: number | null
           created_at: string
           description: string
           id: string
@@ -314,16 +321,11 @@ export type Database = {
           import_external_id: string | null
           import_provider: string | null
           is_system_template: boolean
+          likes_count: number | null
           name: string
           notes: string | null
           profile_id: string | null
           route_id: string | null
-          static_distance_meters: number | null
-          static_duration_seconds: number | null
-          static_hr_zone_seconds: Json | null
-          static_power_zone_seconds: Json | null
-          static_tss: number | null
-          static_work_kilojoules: number | null
           structure: Json | null
           template_visibility: string
           updated_at: string
@@ -331,6 +333,7 @@ export type Database = {
         }
         Insert: {
           activity_category?: Database["public"]["Enums"]["activity_category"]
+          comments_count?: number | null
           created_at?: string
           description: string
           id?: string
@@ -338,16 +341,11 @@ export type Database = {
           import_external_id?: string | null
           import_provider?: string | null
           is_system_template?: boolean
+          likes_count?: number | null
           name: string
           notes?: string | null
           profile_id?: string | null
           route_id?: string | null
-          static_distance_meters?: number | null
-          static_duration_seconds?: number | null
-          static_hr_zone_seconds?: Json | null
-          static_power_zone_seconds?: Json | null
-          static_tss?: number | null
-          static_work_kilojoules?: number | null
           structure?: Json | null
           template_visibility?: string
           updated_at?: string
@@ -355,6 +353,7 @@ export type Database = {
         }
         Update: {
           activity_category?: Database["public"]["Enums"]["activity_category"]
+          comments_count?: number | null
           created_at?: string
           description?: string
           id?: string
@@ -362,16 +361,11 @@ export type Database = {
           import_external_id?: string | null
           import_provider?: string | null
           is_system_template?: boolean
+          likes_count?: number | null
           name?: string
           notes?: string | null
           profile_id?: string | null
           route_id?: string | null
-          static_distance_meters?: number | null
-          static_duration_seconds?: number | null
-          static_hr_zone_seconds?: Json | null
-          static_power_zone_seconds?: Json | null
-          static_tss?: number | null
-          static_work_kilojoules?: number | null
           structure?: Json | null
           template_visibility?: string
           updated_at?: string
@@ -397,12 +391,14 @@ export type Database = {
       activity_routes: {
         Row: {
           activity_category: Database["public"]["Enums"]["activity_category"]
+          comments_count: number | null
           created_at: string
           description: string | null
           elevation_polyline: string | null
           file_path: string
           id: string
           idx: number
+          likes_count: number | null
           name: string
           polyline: string
           profile_id: string
@@ -414,12 +410,14 @@ export type Database = {
         }
         Insert: {
           activity_category?: Database["public"]["Enums"]["activity_category"]
+          comments_count?: number | null
           created_at?: string
           description?: string | null
           elevation_polyline?: string | null
           file_path: string
           id?: string
           idx?: number
+          likes_count?: number | null
           name: string
           polyline: string
           profile_id: string
@@ -431,12 +429,14 @@ export type Database = {
         }
         Update: {
           activity_category?: Database["public"]["Enums"]["activity_category"]
+          comments_count?: number | null
           created_at?: string
           description?: string | null
           elevation_polyline?: string | null
           file_path?: string
           id?: string
           idx?: number
+          likes_count?: number | null
           name?: string
           polyline?: string
           profile_id?: string
@@ -533,6 +533,44 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      comments: {
+        Row: {
+          content: string
+          created_at: string | null
+          entity_id: string
+          entity_type: string
+          id: string
+          profile_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          entity_id: string
+          entity_type: string
+          id?: string
+          profile_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          profile_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comments_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       conversation_participants: {
         Row: {
@@ -703,6 +741,45 @@ export type Database = {
           },
         ]
       }
+      follows: {
+        Row: {
+          created_at: string
+          follower_id: string
+          following_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          follower_id: string
+          following_id: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          follower_id?: string
+          following_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follows_follower_id_fkey"
+            columns: ["follower_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follows_following_id_fkey"
+            columns: ["following_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       integrations: {
         Row: {
           access_token: string
@@ -753,31 +830,31 @@ export type Database = {
           },
         ]
       }
-      library_items: {
+      likes: {
         Row: {
           created_at: string
+          entity_id: string
+          entity_type: string
           id: string
-          item_id: string
-          item_type: string
           profile_id: string
         }
         Insert: {
           created_at?: string
+          entity_id: string
+          entity_type: string
           id?: string
-          item_id: string
-          item_type: string
           profile_id: string
         }
         Update: {
           created_at?: string
+          entity_id?: string
+          entity_type?: string
           id?: string
-          item_id?: string
-          item_type?: string
           profile_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "library_items_profile_id_fkey"
+            foreignKeyName: "likes_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -822,33 +899,38 @@ export type Database = {
       }
       notifications: {
         Row: {
-          actor_id: string
           created_at: string
-          entity_id: string | null
           id: string
-          read_at: string | null
-          type: Database["public"]["Enums"]["notification_type"]
-          user_id: string
+          is_read: boolean
+          message: string
+          profile_id: string
+          title: string
         }
         Insert: {
-          actor_id: string
           created_at?: string
-          entity_id?: string | null
           id?: string
-          read_at?: string | null
-          type: Database["public"]["Enums"]["notification_type"]
-          user_id: string
+          is_read?: boolean
+          message: string
+          profile_id: string
+          title: string
         }
         Update: {
-          actor_id?: string
           created_at?: string
-          entity_id?: string | null
           id?: string
-          read_at?: string | null
-          type?: Database["public"]["Enums"]["notification_type"]
-          user_id?: string
+          is_read?: boolean
+          message?: string
+          profile_id?: string
+          title?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "notifications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       oauth_states: {
         Row: {
@@ -884,6 +966,57 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "oauth_states_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profile_goals: {
+        Row: {
+          activity_category: string | null
+          created_at: string
+          id: string
+          milestone_event_id: string
+          priority: number
+          profile_id: string
+          target_payload: Json | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          activity_category?: string | null
+          created_at?: string
+          id?: string
+          milestone_event_id: string
+          priority?: number
+          profile_id: string
+          target_payload?: Json | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          activity_category?: string | null
+          created_at?: string
+          id?: string
+          milestone_event_id?: string
+          priority?: number
+          profile_id?: string
+          target_payload?: Json | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_goals_milestone_event_id_fkey"
+            columns: ["milestone_event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_goals_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
@@ -948,6 +1081,32 @@ export type Database = {
           },
         ]
       }
+      profile_training_settings: {
+        Row: {
+          profile_id: string
+          settings: Json
+          updated_at: string
+        }
+        Insert: {
+          profile_id: string
+          settings?: Json
+          updated_at?: string
+        }
+        Update: {
+          profile_id?: string
+          settings?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_training_settings_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -957,6 +1116,7 @@ export type Database = {
           gender: string | null
           id: string
           idx: number
+          is_public: boolean
           language: string | null
           onboarded: boolean | null
           preferred_units: string | null
@@ -971,6 +1131,7 @@ export type Database = {
           gender?: string | null
           id: string
           idx?: number
+          is_public?: boolean
           language?: string | null
           onboarded?: boolean | null
           preferred_units?: string | null
@@ -985,6 +1146,7 @@ export type Database = {
           gender?: string | null
           id?: string
           idx?: number
+          is_public?: boolean
           language?: string | null
           onboarded?: boolean | null
           preferred_units?: string | null
@@ -1046,40 +1208,55 @@ export type Database = {
       }
       training_plans: {
         Row: {
+          comments_count: number | null
           created_at: string
           description: string | null
+          duration_hours: number | null
           id: string
           idx: number
           is_active: boolean
+          is_public: boolean
           is_system_template: boolean
+          likes_count: number | null
           name: string
           profile_id: string | null
+          sessions_per_week_target: number | null
           structure: Json
           template_visibility: string
           updated_at: string
         }
         Insert: {
+          comments_count?: number | null
           created_at?: string
           description?: string | null
+          duration_hours?: number | null
           id?: string
           idx?: number
           is_active?: boolean
+          is_public?: boolean
           is_system_template?: boolean
+          likes_count?: number | null
           name: string
           profile_id?: string | null
+          sessions_per_week_target?: number | null
           structure: Json
           template_visibility?: string
           updated_at?: string
         }
         Update: {
+          comments_count?: number | null
           created_at?: string
           description?: string | null
+          duration_hours?: number | null
           id?: string
           idx?: number
           is_active?: boolean
+          is_public?: boolean
           is_system_template?: boolean
+          likes_count?: number | null
           name?: string
           profile_id?: string | null
+          sessions_per_week_target?: number | null
           structure?: Json
           template_visibility?: string
           updated_at?: string
@@ -1126,6 +1303,7 @@ export type Database = {
         | "coaching_invitation_accepted"
         | "coaching_invitation_declined"
         | "new_follower"
+        | "follow_request"
       profile_metric_type:
         | "weight_kg"
         | "resting_hr"
@@ -1300,6 +1478,7 @@ export const Constants = {
         "coaching_invitation_accepted",
         "coaching_invitation_declined",
         "new_follower",
+        "follow_request",
       ],
       profile_metric_type: [
         "weight_kg",

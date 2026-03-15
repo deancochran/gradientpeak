@@ -26,3 +26,6 @@ export type {
   NoHistoryProjectionFloorClampResult,
   ProjectionFloorConfidence,
 } from "../projectionCalculations";
+
+export type NoHistoryDemandScore = number;
+export type NoHistoryFitnessSignal = number;

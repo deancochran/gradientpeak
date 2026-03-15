@@ -1,20 +1,27 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
 import { Text } from "@/components/ui/text";
+import { PaceSecondsField } from "@/components/profile/PaceSecondsField";
+import { WeightInputField } from "@/components/profile/WeightInputField";
+import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
+import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { useAuth } from "@/lib/hooks/useAuth";
+import {
+  estimateFtpFromWeight,
+  estimateMaxHrFromDob,
+  formatWeightForDisplay,
+} from "@/lib/profile/metricUnits";
 import { trpc } from "@/lib/trpc";
 import { router } from "expo-router";
 import { Activity, ArrowRight, Check, ChevronRight } from "lucide-react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { useState, useMemo, useEffect } from "react";
+import { useMemo, useState } from "react";
 import {
   Alert,
-  ScrollView,
-  View,
-  TouchableOpacity,
   Platform,
+  ScrollView,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -120,80 +127,6 @@ interface StepProps {
 // Helper Components
 // ================================
 
-const TimeDurationInput = ({
-  seconds,
-  onChange,
-}: {
-  seconds: number | null;
-  onChange: (val: number | null) => void;
-}) => {
-  // Initialize local state from props only on mount or when props drastically change
-  // We don't want to re-sync on every keystroke round-trip to avoid cursor jumping/resetting
-  const [minStr, setMinStr] = useState(
-    seconds ? Math.floor(seconds / 60).toString() : "",
-  );
-  const [secStr, setSecStr] = useState(
-    seconds ? (seconds % 60).toString().padStart(2, "0") : "",
-  );
-
-  // Sync effect: Only update local state if external prop changes significantly
-  // (e.g. initial load or reset), but ignore if it matches our current calculated value.
-  useEffect(() => {
-    const currentTotal = (parseInt(minStr) || 0) * 60 + (parseInt(secStr) || 0);
-    if (seconds !== null && seconds !== currentTotal) {
-      setMinStr(Math.floor(seconds / 60).toString());
-      setSecStr((seconds % 60).toString().padStart(2, "0"));
-    }
-  }, [seconds]);
-
-  const handleUpdate = (newMin: string, newSec: string) => {
-    setMinStr(newMin);
-    setSecStr(newSec);
-
-    // If both are empty, clear the value
-    if (newMin === "" && newSec === "") {
-      onChange(null);
-      return;
-    }
-
-    const minVal = parseInt(newMin) || 0;
-    const secVal = parseInt(newSec) || 0;
-
-    // Only valid if positive
-    if (minVal >= 0 && secVal >= 0) {
-      onChange(minVal * 60 + secVal);
-    }
-  };
-
-  return (
-    <View className="flex-row items-center gap-2 justify-center">
-      <View className="items-center">
-        <Input
-          value={minStr}
-          onChangeText={(t) => handleUpdate(t, secStr)}
-          keyboardType="number-pad"
-          className="w-24 text-center text-2xl h-16"
-          placeholder="00"
-          maxLength={3}
-        />
-        <Text className="text-xs text-muted-foreground mt-1">Minutes</Text>
-      </View>
-      <Text className="text-2xl font-bold mb-6">:</Text>
-      <View className="items-center">
-        <Input
-          value={secStr}
-          onChangeText={(t) => handleUpdate(minStr, t)}
-          keyboardType="number-pad"
-          className="w-24 text-center text-2xl h-16"
-          placeholder="00"
-          maxLength={2}
-        />
-        <Text className="text-xs text-muted-foreground mt-1">Seconds</Text>
-      </View>
-    </View>
-  );
-};
-
 // ================================
 // Step Components
 // ================================
@@ -266,62 +199,19 @@ const GenderStep = ({ data, updateData }: StepProps) => (
 );
 
 const DobStep = ({ data, updateData }: StepProps) => {
-  const [showPicker, setShowPicker] = useState(false);
-
-  // Use a default date if null, but ensure we don't accidentally save the default
-  const date = data.dob ? new Date(data.dob) : new Date("2000-01-01");
-
-  const onChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === "android") {
-      setShowPicker(false);
-    }
-
-    if (selectedDate) {
-      updateData({ dob: selectedDate.toISOString().split("T")[0] });
-    }
-  };
-
   return (
-    <View className="gap-6 items-center">
-      <View className="w-full">
-        <Text className="text-xl font-semibold mb-2 text-left">
-          When were you born?
-        </Text>
-        <Text className="text-sm text-muted-foreground mb-4 text-left">
-          Used to calculate accurate heart rate zones.
-        </Text>
-      </View>
-
-      {Platform.OS === "ios" ? (
-        <DateTimePicker
-          value={date}
-          mode="date"
-          display="spinner"
-          onChange={onChange}
-          maximumDate={new Date()}
-          style={{ width: "100%", height: 200 }}
-        />
-      ) : (
-        <View className="w-full">
-          <Button
-            variant="outline"
-            onPress={() => setShowPicker(true)}
-            className="w-full"
-          >
-            <Text>{data.dob || "Select Date of Birth"}</Text>
-          </Button>
-
-          {showPicker && (
-            <DateTimePicker
-              value={date}
-              mode="date"
-              display="default"
-              onChange={onChange}
-              maximumDate={new Date()}
-            />
-          )}
-        </View>
-      )}
+    <View className="gap-4">
+      <Text className="text-xl font-semibold">When were you born?</Text>
+      <DateField
+        id="onboarding-dob"
+        label="Date of birth"
+        value={data.dob ?? undefined}
+        onChange={(nextDate) => updateData({ dob: nextDate ?? null })}
+        helperText="Used for age-based heart rate estimates and training zones."
+        placeholder="Select your date of birth"
+        maximumDate={new Date()}
+        accessibilityHint="Choose your date of birth"
+      />
     </View>
   );
 };
@@ -329,35 +219,17 @@ const DobStep = ({ data, updateData }: StepProps) => {
 const WeightStep = ({ data, updateData }: StepProps) => (
   <View className="gap-4">
     <Text className="text-xl font-semibold mb-2">What is your weight?</Text>
-    <View className="flex-row gap-3">
-      <Input
-        placeholder="70"
-        value={data.weight_kg?.toString() || ""}
-        onChangeText={(text) => {
-          if (text === "") {
-            updateData({ weight_kg: null });
-            return;
-          }
-          const val = parseFloat(text);
-          if (!isNaN(val)) {
-            updateData({ weight_kg: val });
-          }
-        }}
-        keyboardType="numeric"
-        className="flex-1 text-lg"
-        autoFocus
-      />
-      <Button
-        variant="outline"
-        onPress={() =>
-          updateData({ weight_unit: data.weight_unit === "kg" ? "lbs" : "kg" })
-        }
-        className="w-24"
-      >
-        <Text>{data.weight_unit.toUpperCase()}</Text>
-      </Button>
-    </View>
-    <Text className="text-xs text-muted-foreground">Range: 30kg - 300kg</Text>
+    <WeightInputField
+      id="onboarding-weight"
+      label="Current weight"
+      valueKg={data.weight_kg}
+      onChangeKg={(weight_kg) => updateData({ weight_kg })}
+      unit={data.weight_unit}
+      onUnitChange={(weight_unit) => updateData({ weight_unit })}
+      helperText="Switch units if needed. We keep the saved value aligned to your profile metrics."
+      placeholder={data.weight_unit === "kg" ? "70.0" : "154.3"}
+      required
+    />
   </View>
 );
 
@@ -383,97 +255,130 @@ const SportStep = ({ data, updateData }: StepProps) => (
   </View>
 );
 
-const MaxHrStep = ({ data, updateData }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">Max Heart Rate</Text>
-    <Input
-      placeholder="e.g. 185"
-      value={data.max_hr?.toString() || ""}
-      onChangeText={(text) => {
-        if (text === "") {
-          updateData({ max_hr: null });
-          return;
+const MaxHrStep = ({ data, updateData }: StepProps) => {
+  const estimatedMaxHr = estimateMaxHrFromDob(data.dob);
+
+  return (
+    <View className="gap-4">
+      <Text className="text-xl font-semibold mb-2">Max Heart Rate</Text>
+      <BoundedNumberInput
+        id="onboarding-max-hr"
+        label="Max HR"
+        value={data.max_hr?.toString() ?? ""}
+        onChange={(value) => {
+          if (!value.trim()) {
+            updateData({ max_hr: null });
+          }
+        }}
+        onNumberChange={(value) =>
+          updateData({ max_hr: value ? Math.round(value) : null })
         }
-        const val = parseInt(text);
-        if (!isNaN(val)) {
-          updateData({ max_hr: val });
-        }
-      }}
-      keyboardType="numeric"
-      className="text-lg"
-      autoFocus
-    />
-    <Text className="text-sm text-muted-foreground">
-      Range: 100 - 220 bpm. Leave blank to estimate from age.
-    </Text>
-  </View>
-);
+        min={100}
+        max={220}
+        decimals={0}
+        unitLabel="bpm"
+        helperText="Optional. Add a tested value, or use the age-based estimate below."
+        placeholder="185"
+      />
+      {estimatedMaxHr ? (
+        <Button
+          variant="outline"
+          onPress={() => updateData({ max_hr: estimatedMaxHr })}
+        >
+          <Text>Use estimate ({estimatedMaxHr} bpm)</Text>
+        </Button>
+      ) : (
+        <Text className="text-sm text-muted-foreground">
+          Add your date of birth first if you want a quick estimate.
+        </Text>
+      )}
+    </View>
+  );
+};
 
 const RestingHrStep = ({ data, updateData }: StepProps) => (
   <View className="gap-4">
     <Text className="text-xl font-semibold mb-2">Resting Heart Rate</Text>
-    <Input
-      placeholder="e.g. 60"
-      value={data.resting_hr?.toString() || ""}
-      onChangeText={(text) => {
-        if (text === "") {
+    <BoundedNumberInput
+      id="onboarding-resting-hr"
+      label="Resting HR"
+      value={data.resting_hr?.toString() ?? ""}
+      onChange={(value) => {
+        if (!value.trim()) {
           updateData({ resting_hr: null });
-          return;
-        }
-        const val = parseInt(text);
-        if (!isNaN(val)) {
-          updateData({ resting_hr: val });
         }
       }}
-      keyboardType="numeric"
-      className="text-lg"
-      autoFocus
+      onNumberChange={(value) =>
+        updateData({ resting_hr: value ? Math.round(value) : null })
+      }
+      min={30}
+      max={100}
+      decimals={0}
+      unitLabel="bpm"
+      helperText="Optional. Best measured first thing in the morning."
+      placeholder="60"
     />
-    <Text className="text-sm text-muted-foreground">Range: 30 - 100 bpm</Text>
   </View>
 );
 
-const FtpStep = ({ data, updateData }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">
-      Functional Threshold Power (FTP)
-    </Text>
-    <Input
-      placeholder="e.g. 250"
-      value={data.ftp?.toString() || ""}
-      onChangeText={(text) => {
-        if (text === "") {
-          updateData({ ftp: null });
-          return;
+const FtpStep = ({ data, updateData }: StepProps) => {
+  const estimatedFtp = estimateFtpFromWeight(data.weight_kg);
+
+  return (
+    <View className="gap-4">
+      <Text className="text-xl font-semibold mb-2">
+        Functional Threshold Power (FTP)
+      </Text>
+      <BoundedNumberInput
+        id="onboarding-ftp"
+        label="FTP"
+        value={data.ftp?.toString() ?? ""}
+        onChange={(value) => {
+          if (!value.trim()) {
+            updateData({ ftp: null });
+          }
+        }}
+        onNumberChange={(value) =>
+          updateData({ ftp: value ? Math.round(value) : null })
         }
-        const val = parseInt(text);
-        if (!isNaN(val)) {
-          updateData({ ftp: val });
-        }
-      }}
-      keyboardType="numeric"
-      className="text-lg"
-      autoFocus
-    />
-    <Text className="text-sm text-muted-foreground">Range: 50 - 500 Watts</Text>
-  </View>
-);
+        min={50}
+        max={500}
+        decimals={0}
+        unitLabel="W"
+        helperText="Optional. Use a recent tested value, or start with a conservative estimate."
+        placeholder="250"
+      />
+      {estimatedFtp ? (
+        <Button
+          variant="outline"
+          onPress={() => updateData({ ftp: estimatedFtp })}
+        >
+          <Text>Use estimate ({estimatedFtp} W)</Text>
+        </Button>
+      ) : (
+        <Text className="text-sm text-muted-foreground">
+          Add your weight first if you want a quick starter estimate.
+        </Text>
+      )}
+    </View>
+  );
+};
 
 const ThresholdPaceStep = ({ data, updateData }: StepProps) => (
   <View className="gap-4">
     <Text className="text-xl font-semibold mb-2">Threshold Running Pace</Text>
     <Text className="text-muted-foreground mb-4">
-      Your average pace for a hard 20-40 minute run.
+      Optional. Use your hard 20-40 minute pace if you know it.
     </Text>
 
-    <TimeDurationInput
-      seconds={data.threshold_pace}
-      onChange={(val) => updateData({ threshold_pace: val })}
+    <PaceSecondsField
+      id="onboarding-threshold-pace"
+      label="Threshold pace"
+      valueSeconds={data.threshold_pace}
+      onChangeSeconds={(threshold_pace) => updateData({ threshold_pace })}
+      helperText="Enter pace in mm:ss per kilometer."
+      placeholder="4:30"
     />
-
-    <Text className="text-sm text-center text-muted-foreground mt-2">
-      min / km (Range: 2:00 - 10:00)
-    </Text>
   </View>
 );
 
@@ -481,17 +386,18 @@ const CssStep = ({ data, updateData }: StepProps) => (
   <View className="gap-4">
     <Text className="text-xl font-semibold mb-2">Critical Swim Speed</Text>
     <Text className="text-muted-foreground mb-4">
-      Your sustainable pace per 100m.
+      Optional. Use your sustainable pace per 100m if you know it.
     </Text>
 
-    <TimeDurationInput
-      seconds={data.css}
-      onChange={(val) => updateData({ css: val })}
+    <PaceSecondsField
+      id="onboarding-css"
+      label="CSS"
+      valueSeconds={data.css}
+      onChangeSeconds={(css) => updateData({ css })}
+      helperText="Enter pace in mm:ss per 100 meters."
+      placeholder="1:45"
+      unitLabel="/100m"
     />
-
-    <Text className="text-sm text-center text-muted-foreground mt-2">
-      min / 100m (Range: 1:00 - 5:00)
-    </Text>
   </View>
 );
 
@@ -650,7 +556,9 @@ const SummaryStep = ({ data }: { data: OnboardingData }) => {
     { label: "Date of Birth", value: data.dob },
     {
       label: "Weight",
-      value: data.weight_kg ? `${data.weight_kg} ${data.weight_unit}` : null,
+      value: data.weight_kg
+        ? `${formatWeightForDisplay(data.weight_kg, data.weight_unit)} ${data.weight_unit}`
+        : null,
     },
     { label: "Primary Sport", value: data.primary_sport, capitalize: true },
     {
@@ -663,7 +571,7 @@ const SummaryStep = ({ data }: { data: OnboardingData }) => {
     },
     {
       label: "FTP",
-      value: data.ftp ? `${data.ftp} w` : null,
+      value: data.ftp ? `${data.ftp} W` : null,
     },
     {
       label: "Threshold Pace",

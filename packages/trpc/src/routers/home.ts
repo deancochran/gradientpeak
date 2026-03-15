@@ -60,17 +60,66 @@ export const homeRouter = createTRPCRouter({
         ? userGender
         : undefined;
 
-      // --- 1. Fetch Active Plan ---
-      const { data: plan } = await ctx.supabase
-        .from("training_plans")
-        .select("id, name, description, is_active, structure")
-        .eq("profile_id", userId)
-        .eq("is_active", true)
-        .maybeSingle();
+      // --- 1. Fetch Active Plan & Settings ---
+      const [
+        { data: nextPlannedEvent, error: nextPlannedEventError },
+        { data: profileSettingsData },
+      ] = await Promise.all([
+        ctx.supabase
+          .from("events")
+          .select("training_plan_id, starts_at")
+          .eq("profile_id", userId)
+          .eq("event_type", "planned_activity")
+          .not("training_plan_id", "is", null)
+          .gte("starts_at", today.toISOString())
+          .order("starts_at", { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+        ctx.supabase
+          .from("profile_training_settings")
+          .select("settings")
+          .eq("profile_id", userId)
+          .maybeSingle(),
+      ]);
+
+      if (nextPlannedEventError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: nextPlannedEventError.message,
+        });
+      }
+
+      let plan: {
+        id: string;
+        name: string;
+        description: string | null;
+        structure: unknown;
+      } | null = null;
+
+      if (nextPlannedEvent?.training_plan_id) {
+        const { data: activePlan, error: activePlanError } = await ctx.supabase
+          .from("training_plans")
+          .select("id, name, description, structure")
+          .eq("id", nextPlannedEvent.training_plan_id)
+          .or(
+            `profile_id.eq.${userId},is_system_template.eq.true,template_visibility.eq.public`,
+          )
+          .maybeSingle();
+
+        if (activePlanError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: activePlanError.message,
+          });
+        }
+
+        plan = activePlan;
+      }
+
+      const planStructure = (plan?.structure as any) ?? null;
 
       // Extract phase from structure if available
-      const planPhase =
-        (plan?.structure as any)?.periodization?.currentPhase || null;
+      const planPhase = planStructure?.periodization?.currentPhase ?? null;
 
       // --- 2. Calculate Dates ---
       // For trends: Need 42 days of history + 42 days buffer for CTL seeding
@@ -168,7 +217,9 @@ export const homeRouter = createTRPCRouter({
             ...pa,
             activity_plan:
               pa.activity_plan && plansMap.get(pa.activity_plan.id)
-                ? plansMap.get(pa.activity_plan.id)!
+                ? (plansMap.get(
+                    pa.activity_plan.id,
+                  )! as unknown as typeof pa.activity_plan)
                 : pa.activity_plan,
           }));
         }
@@ -188,14 +239,55 @@ export const homeRouter = createTRPCRouter({
       const fitnessTrends = [];
       let todayStatus = { ctl: 0, atl: 0, tsb: 0, form: "fresh" };
 
-      // Iterate day by day from historyStart
+      // Apply Global CTL Override if enabled
+      const settings = profileSettingsData?.settings as any;
+      const baselineFitness = settings?.baseline_fitness;
+      let effectiveHistoryStart = historyStart;
+
+      if (baselineFitness?.is_enabled && baselineFitness.override_date) {
+        const overrideDate = new Date(baselineFitness.override_date);
+        if (!Number.isNaN(overrideDate.getTime())) {
+          currentCTL = baselineFitness.override_ctl ?? 0;
+          currentATL = baselineFitness.override_atl ?? 0;
+
+          // If the override date is before our history start, we need to decay it up to history start
+          if (overrideDate < historyStart) {
+            const daysToDecay = Math.floor(
+              (historyStart.getTime() - overrideDate.getTime()) /
+                (1000 * 60 * 60 * 24),
+            );
+            for (let i = 0; i < daysToDecay; i++) {
+              currentCTL = calculateCTL(currentCTL, 0, effectiveAge);
+              currentATL = calculateATL(
+                currentATL,
+                0,
+                effectiveAge,
+                effectiveGender,
+                rollingTrainingQuality,
+              );
+            }
+          } else if (overrideDate > historyStart && overrideDate <= today) {
+            // If the override date is within our window, we start calculating from the override date
+            effectiveHistoryStart = new Date(overrideDate);
+            // Clear any TSS before the override date to avoid double counting
+            for (const [dateStr] of tssByDate.entries()) {
+              if (new Date(dateStr) < overrideDate) {
+                tssByDate.delete(dateStr);
+              }
+            }
+          }
+        }
+      }
+
+      // Iterate day by day from effectiveHistoryStart
       const dayCount = Math.floor(
-        (today.getTime() - historyStart.getTime()) / (1000 * 60 * 60 * 24),
+        (today.getTime() - effectiveHistoryStart.getTime()) /
+          (1000 * 60 * 60 * 24),
       );
 
       for (let i = 0; i <= dayCount; i++) {
-        const date = new Date(historyStart);
-        date.setDate(historyStart.getDate() + i);
+        const date = new Date(effectiveHistoryStart);
+        date.setDate(effectiveHistoryStart.getDate() + i);
         const dateStr = date.toISOString().split("T")[0]!;
 
         const tss = tssByDate.get(dateStr) || 0;
@@ -401,7 +493,9 @@ export const homeRouter = createTRPCRouter({
             ...pa,
             activity_plan:
               pa.activity_plan && futurePlansMap.get(pa.activity_plan.id)
-                ? futurePlansMap.get(pa.activity_plan.id)!
+                ? (futurePlansMap.get(
+                    pa.activity_plan.id,
+                  )! as unknown as typeof pa.activity_plan)
                 : pa.activity_plan,
           }));
         }
@@ -447,8 +541,8 @@ export const homeRouter = createTRPCRouter({
       const idealFitnessCurve = [];
       let goalMetrics = null;
 
-      if (plan && plan.structure) {
-        const structure = plan.structure as any;
+      if (planStructure) {
+        const structure = planStructure;
         const periodization = structure.periodization_template;
 
         if (periodization) {
@@ -529,7 +623,6 @@ export const homeRouter = createTRPCRouter({
           : null;
 
       let firstTargetType = undefined;
-      const planStructure = plan?.structure as any;
       if (
         planStructure &&
         planStructure.goals &&
@@ -544,7 +637,7 @@ export const homeRouter = createTRPCRouter({
         activePlan: plan
           ? {
               id: plan.id,
-              name: plan.name,
+              name: plan.name || "Active Plan",
               phase: planPhase,
               targetType: firstTargetType,
             }

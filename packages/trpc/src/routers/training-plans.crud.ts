@@ -7,8 +7,11 @@ export const trainingPlansCrudRouter = createTRPCRouter({
   exists: trainingPlansBaseRouter._def.procedures.exists,
   create: trainingPlansBaseRouter._def.procedures.create,
   update: trainingPlansBaseRouter._def.procedures.update,
-  activate: trainingPlansBaseRouter._def.procedures.activate,
+  updateActivePlanStatus:
+    trainingPlansBaseRouter._def.procedures.updateActivePlanStatus,
+  getActivePlan: trainingPlansBaseRouter._def.procedures.getActivePlan,
   delete: trainingPlansBaseRouter._def.procedures.delete,
+  duplicate: trainingPlansBaseRouter._def.procedures.duplicate,
   getById: trainingPlansBaseRouter._def.procedures.getById,
   applyQuickAdjustment:
     trainingPlansBaseRouter._def.procedures.applyQuickAdjustment,

@@ -13,10 +13,122 @@ import {
 } from "@repo/core/estimation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+async function getEstimationProfileInputs(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{
+  ftp?: number | null;
+  dob?: string | null;
+  max_hr?: number | null;
+  threshold_hr?: number | null;
+  resting_hr?: number | null;
+  weight_kg?: number | null;
+  threshold_pace_seconds_per_km?: number | null;
+}> {
+  const ninetyDaysAgoIso = new Date(
+    Date.now() - 90 * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("dob")
+    .eq("id", userId)
+    .single();
+
+  const { data: efforts } = await supabase
+    .from("activity_efforts")
+    .select("effort_type, duration_seconds, value, unit, activity_category")
+    .eq("profile_id", userId)
+    .gte("recorded_at", ninetyDaysAgoIso)
+    .in("effort_type", ["power", "speed"])
+    .order("recorded_at", { ascending: false })
+    .limit(300);
+
+  const { data: metrics } = await supabase
+    .from("profile_metrics")
+    .select("metric_type, value, recorded_at")
+    .eq("profile_id", userId)
+    .in("metric_type", ["weight_kg", "resting_hr", "max_hr", "lthr"])
+    .order("recorded_at", { ascending: false });
+
+  let weightKg: number | null = null;
+  let restingHr: number | null = null;
+  let maxHr: number | null = null;
+  let lthr: number | null = null;
+
+  const bikePower20mEffort = (efforts || [])
+    .filter(
+      (effort) =>
+        effort.effort_type === "power" &&
+        effort.activity_category === "bike" &&
+        effort.duration_seconds === 1200,
+    )
+    .sort((a, b) => b.value - a.value)[0];
+
+  const runSpeed20mEffort = (efforts || [])
+    .filter(
+      (effort) =>
+        effort.effort_type === "speed" &&
+        effort.activity_category === "run" &&
+        effort.duration_seconds === 1200,
+    )
+    .sort((a, b) => b.value - a.value)[0];
+
+  const ftp = bikePower20mEffort
+    ? Math.round(bikePower20mEffort.value * 0.95)
+    : null;
+
+  let thresholdPaceSecondsPerKm: number | null = null;
+  if (runSpeed20mEffort && runSpeed20mEffort.value > 0) {
+    if (runSpeed20mEffort.unit === "meters_per_second") {
+      thresholdPaceSecondsPerKm = Math.round(1000 / runSpeed20mEffort.value);
+    } else if (runSpeed20mEffort.unit === "km_per_hour") {
+      thresholdPaceSecondsPerKm = Math.round(3600 / runSpeed20mEffort.value);
+    }
+  }
+
+  for (const metric of metrics || []) {
+    if (metric.metric_type === "weight_kg" && weightKg === null) {
+      weightKg = metric.value;
+      continue;
+    }
+    if (metric.metric_type === "resting_hr" && restingHr === null) {
+      restingHr = metric.value;
+      continue;
+    }
+    if (metric.metric_type === "max_hr" && maxHr === null) {
+      maxHr = metric.value;
+      continue;
+    }
+    if (metric.metric_type === "lthr" && lthr === null) {
+      lthr = metric.value;
+      continue;
+    }
+  }
+
+  return {
+    ftp,
+    dob: profile?.dob ?? null,
+    max_hr: maxHr,
+    threshold_hr: lthr,
+    resting_hr: restingHr,
+    weight_kg: weightKg,
+    threshold_pace_seconds_per_km: thresholdPaceSecondsPerKm,
+  };
+}
+
 /**
  * Activity plan with estimation added
  */
-export interface ActivityPlanWithEstimation extends PublicActivityPlansRow {
+export interface ActivityPlanWithEstimation {
+  // Base fields from activity plan
+  id: string;
+  profile_id: string | null;
+  name: string;
+  description: string;
+  activity_category: string;
+  // Add all other fields we need
+  [key: string]: unknown;
   // Dynamically calculated fields
   estimated_tss: number;
   estimated_duration: number;
@@ -36,12 +148,7 @@ export async function addEstimationToPlan(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ActivityPlanWithEstimation> {
-  // Fetch user profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("ftp, threshold_hr, max_hr, resting_hr, weight_kg, dob")
-    .eq("id", userId)
-    .single();
+  const profile = await getEstimationProfileInputs(supabase, userId);
 
   // Fetch route if referenced
   let route: any = undefined;
@@ -110,12 +217,7 @@ export async function computePlanMetrics(
   intensity_factor: number;
   estimated_distance_meters: number;
 }> {
-  // Fetch user profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("ftp, threshold_hr, max_hr, resting_hr, weight_kg, dob")
-    .eq("id", userId)
-    .single();
+  const profile = await getEstimationProfileInputs(supabase, userId);
 
   // Fetch route if referenced
   let route: any = undefined;
@@ -164,21 +266,21 @@ export async function computePlanMetrics(
  * More efficient than calling addEstimationToPlan repeatedly
  */
 export async function addEstimationToPlans(
-  plans: PublicActivityPlansRow[],
+  plans: Array<PublicActivityPlansRow | null | undefined>,
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ActivityPlanWithEstimation[]> {
-  if (plans.length === 0) return [];
+  const normalizedPlans = plans.filter(
+    (plan): plan is PublicActivityPlansRow =>
+      !!plan && typeof plan === "object",
+  );
 
-  // Fetch user profile once
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("ftp, threshold_hr, max_hr, resting_hr, weight_kg, dob")
-    .eq("id", userId)
-    .single();
+  if (normalizedPlans.length === 0) return [];
+
+  const profile = await getEstimationProfileInputs(supabase, userId);
 
   // Collect all route IDs
-  const routeIds = plans
+  const routeIds = normalizedPlans
     .filter((p) => p.route_id)
     .map((p) => p.route_id)
     .filter((id, index, self) => self.indexOf(id) === index); // Unique
@@ -199,7 +301,7 @@ export async function addEstimationToPlans(
   // Calculate estimation for each plan
   const results: ActivityPlanWithEstimation[] = [];
 
-  for (const plan of plans) {
+  for (const plan of normalizedPlans) {
     try {
       const route = plan.route_id ? routesMap.get(plan.route_id) : undefined;
 
@@ -282,12 +384,7 @@ export async function estimatePlannedActivity(
     throw new Error("Activity plan not found");
   }
 
-  // Fetch user profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("ftp, threshold_hr, max_hr, resting_hr, weight_kg, dob")
-    .eq("id", userId)
-    .single();
+  const profile = await getEstimationProfileInputs(supabase, userId);
 
   // Fetch current fitness state
   const { data: fitnessData } = await supabase

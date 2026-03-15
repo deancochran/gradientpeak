@@ -2,8 +2,10 @@ import {
   creationContextSummarySchema,
   type CreationContextSummary,
 } from "../schemas/training_plan_structure";
-import { calculateAge } from "../calculations";
-import { getMaxSustainableCTL } from "./calibration-constants";
+import {
+  getMaxSustainableCTL,
+  resolveNoHistoryStartingPrior,
+} from "./calibration-constants";
 import { learnIndividualRampRate } from "./ramp-learning";
 import { calculateRollingTrainingQuality } from "../calculations/training-quality";
 
@@ -58,6 +60,13 @@ export interface DeriveCreationContextInput {
   profile_metrics?: CreationProfileMetricsSignal;
   profile?: CreationProfileSignal;
   as_of?: string;
+  /** Global CTL override from profile settings. If provided, boosts confidence. */
+  baseline_fitness_override?: {
+    is_enabled: boolean;
+    override_ctl?: number;
+    override_atl?: number;
+    override_date?: string;
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -73,6 +82,24 @@ function toDate(value: string): Date | null {
 function daysBetween(a: Date, b: Date): number {
   const dayMs = 24 * 60 * 60 * 1000;
   return Math.floor((a.getTime() - b.getTime()) / dayMs);
+}
+
+function calculateAgeAtDate(
+  dob: string | null | undefined,
+  asOf: Date,
+): number | undefined {
+  if (!dob) return undefined;
+  const birthDate = toDate(dob);
+  if (!birthDate) return undefined;
+  let age = asOf.getUTCFullYear() - birthDate.getUTCFullYear();
+  const monthDelta = asOf.getUTCMonth() - birthDate.getUTCMonth();
+  if (
+    monthDelta < 0 ||
+    (monthDelta === 0 && asOf.getUTCDate() < birthDate.getUTCDate())
+  ) {
+    age -= 1;
+  }
+  return age >= 0 ? age : undefined;
 }
 
 function percentile(values: number[], q: number): number {
@@ -110,8 +137,21 @@ export function deriveCreationContext(
   });
 
   const activityCount = activities.length;
+
+  // If user has a baseline fitness override with a valid CTL, treat as having history
+  const hasBaselineOverride =
+    input.baseline_fitness_override?.is_enabled === true &&
+    typeof input.baseline_fitness_override.override_ctl === "number" &&
+    input.baseline_fitness_override.override_ctl > 0;
+
   const historyState =
-    activityCount === 0 ? "none" : activityCount < 10 ? "sparse" : "rich";
+    activityCount === 0
+      ? hasBaselineOverride
+        ? "sparse" // User declared baseline fitness, treat as sparse (not none)
+        : "none"
+      : activityCount < 10
+        ? "sparse"
+        : "rich";
 
   const weeksWithTraining = new Set(
     activities.map((activity) => {
@@ -133,12 +173,21 @@ export function deriveCreationContext(
   const effortCount = recentEfforts.length;
 
   const metrics = input.profile_metrics;
-  const userAge = calculateAge(input.profile?.dob ?? null);
+  const userAge = calculateAgeAtDate(input.profile?.dob ?? null, safeAsOf);
   const userGender =
     input.profile?.gender === "male" || input.profile?.gender === "female"
       ? input.profile.gender
       : null;
+  const starterPrior = resolveNoHistoryStartingPrior({ age: userAge });
   const maxSustainableCtl = getMaxSustainableCTL(userAge);
+  const missingRequiredOnboardingFields = input.profile?.dob ? [] : ["dob"];
+  const missingOptionalCalibrationFields = [
+    metrics?.weight_kg == null ? "weight_kg" : null,
+    metrics?.threshold_hr == null && metrics?.lthr == null
+      ? "threshold_hr"
+      : null,
+    metrics?.ftp == null ? "ftp" : null,
+  ].filter((field): field is string => field !== null);
   const presentMetricCount = [
     metrics?.ftp,
     metrics?.threshold_hr,
@@ -147,14 +196,20 @@ export function deriveCreationContext(
   ].filter((value) => value !== null && value !== undefined).length;
   const metricCompleteness = clamp(presentMetricCount / 4, 0, 1);
 
-  const consistencyMarker =
-    consistencyRatio >= 0.7
+  const consistencyMarker = hasBaselineOverride
+    ? "high" // User declared baseline, treat as consistent
+    : consistencyRatio >= 0.7
       ? "high"
       : consistencyRatio >= 0.35
         ? "moderate"
         : "low";
-  const effortMarker =
-    effortCount >= 6 ? "high" : effortCount >= 2 ? "moderate" : "low";
+  const effortMarker = hasBaselineOverride
+    ? "moderate" // Baseline override counts as some effort evidence
+    : effortCount >= 6
+      ? "high"
+      : effortCount >= 2
+        ? "moderate"
+        : "low";
   const profileMarker =
     metricCompleteness >= 0.75
       ? "high"
@@ -162,11 +217,18 @@ export function deriveCreationContext(
         ? "moderate"
         : "low";
 
+  // Calculate baseline override bonus for signal quality
+  const baselineOverrideBonus = hasBaselineOverride
+    ? Math.min(0.3, (input.baseline_fitness_override?.override_ctl ?? 0) / 300)
+    : 0;
+
   const qualityScore = clamp(
     (historyState === "rich" ? 0.45 : historyState === "sparse" ? 0.25 : 0.05) +
       consistencyRatio * 0.25 +
       clamp(effortCount / 8, 0, 1) * 0.15 +
-      metricCompleteness * 0.15,
+      metricCompleteness * 0.15 +
+      baselineOverrideBonus -
+      (missingRequiredOnboardingFields.length > 0 ? 0.08 : 0),
     0,
     1,
   );
@@ -205,11 +267,18 @@ export function deriveCreationContext(
           weeklyTssMedian,
           weeklyTssBuckets.reduce((a, b) => a + b, 0) / 6,
         )
-      : 70;
+      : starterPrior.starting_weekly_tss;
 
   const baselineBounds =
     historyState === "none"
-      ? { minFloor: 30, maxFloor: 60, maxCeil: 400 }
+      ? {
+          minFloor: Math.max(
+            20,
+            Math.round(starterPrior.starting_weekly_tss * 0.7),
+          ),
+          maxFloor: Math.round(starterPrior.starting_weekly_tss * 0.95),
+          maxCeil: starterPrior.is_youth ? 260 : 400,
+        }
       : historyState === "sparse"
         ? { minFloor: 60, maxFloor: 100, maxCeil: 800 }
         : { minFloor: 80, maxFloor: 140, maxCeil: 1200 };
@@ -247,14 +316,14 @@ export function deriveCreationContext(
   const sessionMaxFromHistory = Math.ceil(percentile(weeklySessionBuckets, 75));
   const sessionMin = clamp(
     historyState === "none"
-      ? 3
+      ? starterPrior.recommended_sessions_per_week_range.min
       : Math.max(2, sessionMinFromHistory || (historyState === "rich" ? 4 : 3)),
     2,
     7,
   );
   const sessionMax = clamp(
     historyState === "none"
-      ? 5
+      ? starterPrior.recommended_sessions_per_week_range.max
       : Math.max(
           sessionMin + 1,
           sessionMaxFromHistory || (historyState === "rich" ? 7 : 6),
@@ -312,7 +381,16 @@ export function deriveCreationContext(
     `consistency_${consistencyMarker}`,
     `effort_${effortMarker}`,
     `profile_metrics_${profileMarker}`,
+    ...(historyState === "none" ? starterPrior.rationale_codes : []),
   ];
+
+  if (missingRequiredOnboardingFields.length > 0) {
+    rationaleCodes.push("missing_required_onboarding_dob");
+  }
+
+  for (const missingField of missingOptionalCalibrationFields) {
+    rationaleCodes.push(`missing_optional_${missingField}`);
+  }
 
   if (input.activity_context?.primary_category) {
     rationaleCodes.push(`focus_${input.activity_context.primary_category}`);
@@ -327,6 +405,7 @@ export function deriveCreationContext(
     recent_consistency_marker: consistencyMarker,
     effort_confidence_marker: effortMarker,
     profile_metric_completeness_marker: profileMarker,
+    is_youth: starterPrior.is_youth,
     signal_quality: Number(qualityScore.toFixed(3)),
     recommended_baseline_tss_range: {
       min: baselineMin,
@@ -343,6 +422,8 @@ export function deriveCreationContext(
     user_age: userAge,
     user_gender: userGender,
     max_sustainable_ctl: maxSustainableCtl,
+    missing_required_onboarding_fields: missingRequiredOnboardingFields,
+    missing_optional_calibration_fields: missingOptionalCalibrationFields,
     learned_ramp_rate: {
       max_safe_ramp_rate: learnedRampRate.maxSafeRampRate,
       confidence: learnedRampRate.confidence,

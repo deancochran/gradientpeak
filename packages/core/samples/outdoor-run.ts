@@ -3,8 +3,8 @@ import { createPlan, Duration, Target } from "../schemas/activity_payload";
 
 /**
  * Easy Aerobic Run - Outdoor
- * Total time: 45 minutes
- * Estimated TSS: ~35
+ * Total time: 30 minutes
+ * Estimated TSS: ~25
  */
 export const EASY_AEROBIC_RUN: RecordingServiceActivityPlan = {
   id: "3b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e",
@@ -16,7 +16,7 @@ export const EASY_AEROBIC_RUN: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Easy Run",
-      duration: Duration.minutes(45),
+      duration: Duration.minutes(30),
       targets: [Target.thresholdHR(65)],
       notes:
         "Should feel comfortable and easy - you should be able to hold a conversation",
@@ -272,6 +272,40 @@ export const SYSTEM_LONG_EASY_RUN: RecordingServiceActivityPlan = {
     .build(),
 };
 
+export const SYSTEM_MARATHON_PACE_LONG_RUN: RecordingServiceActivityPlan = {
+  id: "7e5f8a9b-1c4d-4e6f-8a2b-9c1d3e5f7a9b",
+  version: "2.0",
+  name: "Marathon Pace Long Run",
+  description:
+    "Long run with controlled marathon-pace segments to build race-specific durability.",
+  activity_category: "run",
+  gps_recording_enabled: true,
+  structure: createPlan()
+    .warmup({
+      duration: Duration.minutes(15),
+      targets: [Target.ftp(65)],
+      notes: "Ease in and settle into relaxed aerobic rhythm.",
+    })
+    .step({
+      name: "Aerobic Settling",
+      duration: Duration.minutes(40),
+      targets: [Target.ftp(70), Target.bpm(148)],
+      notes: "Stay smooth and controlled before race-pace work begins.",
+    })
+    .step({
+      name: "Marathon Pace",
+      duration: Duration.minutes(20),
+      targets: [Target.ftp(82), Target.bpm(158)],
+      notes: "Controlled race pace with strong form and even effort.",
+    })
+    .cooldown({
+      duration: Duration.minutes(10),
+      targets: [Target.ftp(60)],
+      notes: "Relax the pace and finish under control.",
+    })
+    .build(),
+};
+
 export const SAMPLE_OUTDOOR_RUN_ACTIVITIES: Array<RecordingServiceActivityPlan> =
   [
     EASY_AEROBIC_RUN,
@@ -281,4 +315,5 @@ export const SAMPLE_OUTDOOR_RUN_ACTIVITIES: Array<RecordingServiceActivityPlan> 
     SYSTEM_TEMPO_RUN,
     SYSTEM_THRESHOLD_INTERVALS_RUN,
     SYSTEM_LONG_EASY_RUN,
+    SYSTEM_MARATHON_PACE_LONG_RUN,
   ];

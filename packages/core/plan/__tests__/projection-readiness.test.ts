@@ -3,6 +3,7 @@ import { computeCapacityEnvelope } from "../projection/capacity-envelope";
 import {
   computeCompositeReadiness,
   computeDurabilityScore,
+  computePlanningConfidence,
   computeProjectionFeasibilityMetadata,
   computeProjectionPointReadinessScores,
 } from "../projection/readiness";
@@ -37,6 +38,33 @@ describe("computeProjectionFeasibilityMetadata", () => {
     expect(result.dominant_limiters).toContain("required_growth_exceeds_caps");
     expect(result.dominant_limiters).toContain("tss_ramp_cap_pressure");
     expect(result.dominant_limiters).toContain("ctl_ramp_cap_pressure");
+    expect(result.low_readiness_limiter_mode).toBe("timeline_limited");
+    expect(result.dominant_limiters).toContain(
+      "timeline_limited_goal_too_soon",
+    );
+    expect(result.readiness_rationale_codes).toContain(
+      "readiness_limiter_timeline_limited",
+    );
+  });
+
+  it("flags low readiness as capacity-limited when demand stays unmet without timeline pressure", () => {
+    const result = computeProjectionFeasibilityMetadata({
+      requiredPeakWeeklyTssTarget: 320,
+      feasiblePeakWeeklyTssApplied: 40,
+      tssRampClampWeeks: 0,
+      ctlRampClampWeeks: 0,
+      confidence: 0.78,
+      projectionWeeks: 52,
+    });
+
+    expect(result.readiness_band).toBe("low");
+    expect(result.low_readiness_limiter_mode).toBe("capacity_limited");
+    expect(result.dominant_limiters).toContain(
+      "capacity_limited_sustainable_capacity",
+    );
+    expect(result.readiness_rationale_codes).toContain(
+      "readiness_limiter_capacity_limited",
+    );
   });
 });
 
@@ -64,9 +92,40 @@ describe("computeCapacityEnvelope", () => {
     expect(realistic.envelope_score).toBeGreaterThan(
       unrealistic.envelope_score,
     );
-    expect(unrealistic.envelope_state).toBe("outside");
+    expect(unrealistic.envelope_score).toBeLessThan(70);
     expect(unrealistic.limiting_factors).toContain("over_high");
     expect(unrealistic.limiting_factors).toContain("over_ramp");
+    expect((unrealistic.limiting_factor_scores?.over_high ?? 0) > 0).toBe(true);
+  });
+
+  it("changes smoothly for nearby evidence scores and elite-load boundaries", () => {
+    const lowerEvidence = computeCapacityEnvelope({
+      weeks: [{ projected_weekly_tss: 460, projected_ramp_pct: 6 }],
+      starting_ctl: 92,
+      evidence_score: 0.59,
+    });
+    const higherEvidence = computeCapacityEnvelope({
+      weeks: [{ projected_weekly_tss: 460, projected_ramp_pct: 6 }],
+      starting_ctl: 92,
+      evidence_score: 0.61,
+    });
+    const justBelowElite = computeCapacityEnvelope({
+      weeks: [{ projected_weekly_tss: 645, projected_ramp_pct: 7 }],
+      starting_ctl: 92,
+      evidence_score: 0.75,
+    });
+    const justAboveElite = computeCapacityEnvelope({
+      weeks: [{ projected_weekly_tss: 655, projected_ramp_pct: 7 }],
+      starting_ctl: 94,
+      evidence_score: 0.75,
+    });
+
+    expect(
+      Math.abs(higherEvidence.envelope_score - lowerEvidence.envelope_score),
+    ).toBeLessThanOrEqual(5);
+    expect(
+      Math.abs(justAboveElite.envelope_score - justBelowElite.envelope_score),
+    ).toBeLessThanOrEqual(5);
   });
 });
 
@@ -98,6 +157,64 @@ describe("computeCompositeReadiness", () => {
     expect(first.readiness_score).toBeLessThanOrEqual(100);
     expect(first.readiness_confidence).toBeGreaterThanOrEqual(0);
     expect(first.readiness_confidence).toBeLessThanOrEqual(100);
+  });
+
+  it("changes readiness confidence smoothly for nearby evidence levels", () => {
+    const envelope = computeCapacityEnvelope({
+      weeks: [{ projected_weekly_tss: 220, projected_ramp_pct: 4 }],
+      starting_ctl: 30,
+      evidence_state: "rich",
+    });
+
+    const lower = computeCompositeReadiness({
+      target_attainment_score: 78,
+      durability_score: 80,
+      evidence_score: 60,
+      envelope,
+      evidence_state: "sparse",
+    });
+    const higher = computeCompositeReadiness({
+      target_attainment_score: 78,
+      durability_score: 80,
+      evidence_score: 64,
+      envelope,
+      evidence_state: "sparse",
+    });
+
+    expect(higher.readiness_confidence).toBeGreaterThan(
+      lower.readiness_confidence,
+    );
+    expect(
+      higher.readiness_confidence - lower.readiness_confidence,
+    ).toBeLessThanOrEqual(6);
+  });
+});
+
+describe("computePlanningConfidence", () => {
+  it("drops continuously with clamp pressure and unmet demand", () => {
+    const strong = computePlanningConfidence({
+      evidence_score: 78,
+      evidence_state: "rich",
+      unmet_ratio: 0.04,
+      clamp_pressure: 0.05,
+      projection_weeks: 14,
+      goal_count: 1,
+      adherence_confidence: 0.82,
+    });
+    const constrained = computePlanningConfidence({
+      evidence_score: 78,
+      evidence_state: "rich",
+      unmet_ratio: 0.18,
+      clamp_pressure: 0.24,
+      projection_weeks: 14,
+      goal_count: 2,
+      adherence_confidence: 0.82,
+    });
+
+    expect(strong.score).toBeGreaterThan(constrained.score);
+    expect(constrained.rationale_codes).toContain(
+      "planning_confidence_penalty_clamp_pressure",
+    );
   });
 });
 

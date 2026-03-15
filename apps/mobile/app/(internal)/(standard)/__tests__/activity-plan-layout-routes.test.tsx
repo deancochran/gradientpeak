@@ -46,7 +46,7 @@ describe("standard layout activity-plan route declarations", () => {
       expect.arrayContaining([
         "activity-plan-detail",
         "create-activity-plan",
-        "plan-library",
+        "scheduled-activities-list",
       ]),
     );
 

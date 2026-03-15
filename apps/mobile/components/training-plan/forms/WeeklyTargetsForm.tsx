@@ -1,8 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Text } from "@/components/ui/text";
+import { IntegerStepper } from "@/components/training-plan/create/inputs/IntegerStepper";
 import { AlertCircle, CheckCircle, Info } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
@@ -17,49 +17,52 @@ interface WeeklyTargetsFormProps {
   errors: Record<string, string>;
 }
 
-export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormProps) {
-  const [minTssText, setMinTssText] = React.useState(data.target_weekly_tss_min.toString());
-  const [maxTssText, setMaxTssText] = React.useState(data.target_weekly_tss_max.toString());
-  const [activitiesText, setActivitiesText] = React.useState(
-    data.target_activities_per_week.toString()
-  );
+export function WeeklyTargetsForm({
+  data,
+  onChange,
+  errors,
+}: WeeklyTargetsFormProps) {
+  const TSS_MIN = 0;
+  const TSS_MAX = 2000;
 
   // Calculate average TSS per activity
   const avgTssPerActivity = React.useMemo(() => {
-    const min = parseInt(minTssText) || 0;
-    const max = parseInt(maxTssText) || 0;
-    const activities = parseInt(activitiesText) || 1;
-    const avgWeekly = (min + max) / 2;
+    const avgWeekly =
+      (data.target_weekly_tss_min + data.target_weekly_tss_max) / 2;
+    const activities = Math.max(1, data.target_activities_per_week);
     return Math.round(avgWeekly / activities);
-  }, [minTssText, maxTssText, activitiesText]);
+  }, [
+    data.target_weekly_tss_min,
+    data.target_weekly_tss_max,
+    data.target_activities_per_week,
+  ]);
 
   // Validation states
   const tssRangeValid =
-    !errors.tss_min && !errors.tss_max && parseInt(maxTssText) >= parseInt(minTssText);
+    !errors.tss_min &&
+    !errors.tss_max &&
+    data.target_weekly_tss_max >= data.target_weekly_tss_min;
   const activitiesValid = !errors.activities_per_week;
 
-  const handleMinTssChange = (text: string) => {
-    setMinTssText(text);
-    const value = parseInt(text);
-    if (!isNaN(value)) {
-      onChange({ target_weekly_tss_min: value });
+  const clampTss = (value: number) =>
+    Math.min(TSS_MAX, Math.max(TSS_MIN, value));
+
+  const handleMinTssChange = (value: number) => {
+    const nextMin = clampTss(value);
+    if (data.target_weekly_tss_max < nextMin) {
+      onChange({
+        target_weekly_tss_min: nextMin,
+        target_weekly_tss_max: nextMin,
+      });
+      return;
     }
+
+    onChange({ target_weekly_tss_min: nextMin });
   };
 
-  const handleMaxTssChange = (text: string) => {
-    setMaxTssText(text);
-    const value = parseInt(text);
-    if (!isNaN(value)) {
-      onChange({ target_weekly_tss_max: value });
-    }
-  };
-
-  const handleActivitiesChange = (text: string) => {
-    setActivitiesText(text);
-    const value = parseInt(text);
-    if (!isNaN(value)) {
-      onChange({ target_activities_per_week: value });
-    }
+  const handleMaxTssChange = (value: number) => {
+    const nextMax = Math.max(clampTss(value), data.target_weekly_tss_min);
+    onChange({ target_weekly_tss_max: nextMax });
   };
 
   return (
@@ -68,7 +71,8 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
       <View className="gap-2">
         <Text className="text-2xl font-bold">Weekly Training Targets</Text>
         <Text className="text-muted-foreground">
-          Set your weekly Training Stress Score (TSS) range and activity frequency goals.
+          Set your weekly Training Stress Score (TSS) range and activity
+          frequency goals.
         </Text>
       </View>
 
@@ -77,58 +81,57 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
         <Label className="text-base font-semibold">Weekly TSS Range</Label>
         <View className="flex-row gap-3">
           <View className="flex-1">
-            <Label>Min TSS</Label>
-            <Input
-              value={minTssText}
-              onChangeText={handleMinTssChange}
-              keyboardType="numeric"
-              placeholder="150"
-              className={errors.tss_min ? "border-destructive" : ""}
+            <IntegerStepper
+              id="weekly-target-min-tss"
+              label="Min TSS"
+              value={data.target_weekly_tss_min}
+              min={TSS_MIN}
+              max={TSS_MAX}
+              onChange={handleMinTssChange}
+              error={errors.tss_min}
             />
-            {errors.tss_min && (
-              <Text className="text-destructive text-xs mt-1">{errors.tss_min}</Text>
-            )}
           </View>
           <View className="flex-1">
-            <Label>Max TSS</Label>
-            <Input
-              value={maxTssText}
-              onChangeText={handleMaxTssChange}
-              keyboardType="numeric"
-              placeholder="300"
-              className={errors.tss_max ? "border-destructive" : ""}
+            <IntegerStepper
+              id="weekly-target-max-tss"
+              label="Max TSS"
+              value={data.target_weekly_tss_max}
+              min={TSS_MIN}
+              max={TSS_MAX}
+              onChange={handleMaxTssChange}
+              error={errors.tss_max}
             />
-            {errors.tss_max && (
-              <Text className="text-destructive text-xs mt-1">{errors.tss_max}</Text>
-            )}
           </View>
         </View>
 
         {/* Validation indicator */}
-        {tssRangeValid && parseInt(minTssText) > 0 && parseInt(maxTssText) > 0 && (
-          <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md">
-            <Icon as={CheckCircle} size={16} className="text-success" />
-            <Text className="text-success text-sm">Valid TSS range</Text>
-          </View>
-        )}
+        {tssRangeValid &&
+          data.target_weekly_tss_min > 0 &&
+          data.target_weekly_tss_max > 0 && (
+            <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md">
+              <Icon as={CheckCircle} size={16} className="text-success" />
+              <Text className="text-success text-sm">Valid TSS range</Text>
+            </View>
+          )}
       </View>
 
       {/* Activities Per Week */}
       <View className="gap-3">
         <Label className="text-base font-semibold">Activities Per Week</Label>
-        <Input
-          value={activitiesText}
-          onChangeText={handleActivitiesChange}
-          keyboardType="numeric"
-          placeholder="4"
-          className={errors.activities_per_week ? "border-destructive" : ""}
+        <IntegerStepper
+          id="weekly-target-activities"
+          value={data.target_activities_per_week}
+          min={1}
+          max={14}
+          onChange={(nextActivities) =>
+            onChange({ target_activities_per_week: nextActivities })
+          }
+          helperText="Typical range is 3 to 6 sessions"
+          error={errors.activities_per_week}
         />
-        {errors.activities_per_week && (
-          <Text className="text-destructive text-xs mt-1">{errors.activities_per_week}</Text>
-        )}
 
         {/* Validation indicator */}
-        {activitiesValid && parseInt(activitiesText) > 0 && (
+        {activitiesValid && data.target_activities_per_week > 0 && (
           <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md">
             <Icon as={CheckCircle} size={16} className="text-success" />
             <Text className="text-success text-sm">Valid activity count</Text>
@@ -137,30 +140,41 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
       </View>
 
       {/* Preview Card */}
-      {parseInt(minTssText) > 0 &&
-        parseInt(maxTssText) > 0 &&
-        parseInt(activitiesText) > 0 && (
+      {data.target_weekly_tss_min > 0 &&
+        data.target_weekly_tss_max > 0 &&
+        data.target_activities_per_week > 0 && (
           <Card className="bg-primary/5 border-primary/20">
             <CardContent className="p-4 gap-3">
               <View className="flex-row items-center gap-2">
                 <Icon as={Info} size={20} className="text-primary" />
-                <Text className="font-semibold text-primary">Training Preview</Text>
+                <Text className="font-semibold text-primary">
+                  Training Preview
+                </Text>
               </View>
 
               <View className="gap-2">
                 <View className="flex-row justify-between">
-                  <Text className="text-muted-foreground">Average TSS per activity:</Text>
+                  <Text className="text-muted-foreground">
+                    Average TSS per activity:
+                  </Text>
                   <Text className="font-semibold">{avgTssPerActivity} TSS</Text>
                 </View>
                 <View className="flex-row justify-between">
-                  <Text className="text-muted-foreground">Weekly TSS range:</Text>
+                  <Text className="text-muted-foreground">
+                    Weekly TSS range:
+                  </Text>
                   <Text className="font-semibold">
-                    {minTssText} - {maxTssText} TSS
+                    {data.target_weekly_tss_min} - {data.target_weekly_tss_max}{" "}
+                    TSS
                   </Text>
                 </View>
                 <View className="flex-row justify-between">
-                  <Text className="text-muted-foreground">Activities per week:</Text>
-                  <Text className="font-semibold">{activitiesText}</Text>
+                  <Text className="text-muted-foreground">
+                    Activities per week:
+                  </Text>
+                  <Text className="font-semibold">
+                    {data.target_activities_per_week}
+                  </Text>
                 </View>
               </View>
             </CardContent>
@@ -190,14 +204,19 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
       {avgTssPerActivity > 300 && (
         <Card className="bg-destructive/10 border-destructive">
           <CardContent className="p-4 flex-row items-start gap-2">
-            <Icon as={AlertCircle} size={20} className="text-destructive mt-0.5" />
+            <Icon
+              as={AlertCircle}
+              size={20}
+              className="text-destructive mt-0.5"
+            />
             <View className="flex-1">
               <Text className="text-destructive font-semibold mb-1">
                 Warning: Very High TSS
               </Text>
               <Text className="text-destructive text-sm">
-                Your average TSS per activity ({avgTssPerActivity}) is very high. This might be
-                unrealistic for most athletes. Consider adjusting your targets.
+                Your average TSS per activity ({avgTssPerActivity}) is very
+                high. This might be unrealistic for most athletes. Consider
+                adjusting your targets.
               </Text>
             </View>
           </CardContent>

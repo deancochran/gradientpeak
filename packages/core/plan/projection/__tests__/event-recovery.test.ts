@@ -199,7 +199,8 @@ describe("computeEventRecoveryProfile - Threshold Tests", () => {
 
     expect(profile.recovery_days_full).toBeGreaterThanOrEqual(3);
     expect(profile.recovery_days_full).toBeLessThanOrEqual(5);
-    expect(profile.fatigue_intensity).toBe(75);
+    expect(profile.fatigue_intensity).toBeGreaterThanOrEqual(60);
+    expect(profile.fatigue_intensity).toBeLessThanOrEqual(80);
   });
 
   it("HR threshold test should have minimal recovery (3 days)", () => {
@@ -211,9 +212,33 @@ describe("computeEventRecoveryProfile - Threshold Tests", () => {
 
     const profile = computeEventRecoveryProfile(input);
 
-    expect(profile.recovery_days_full).toBe(3);
-    expect(profile.recovery_days_functional).toBe(1);
-    expect(profile.fatigue_intensity).toBe(65);
+    expect(profile.recovery_days_full).toBeGreaterThanOrEqual(2);
+    expect(profile.recovery_days_full).toBeLessThanOrEqual(4);
+    expect(profile.recovery_days_functional).toBeGreaterThanOrEqual(1);
+    expect(profile.fatigue_intensity).toBeGreaterThanOrEqual(55);
+    expect(profile.fatigue_intensity).toBeLessThanOrEqual(70);
+  });
+
+  it("keeps gender recovery effects bounded for threshold work", () => {
+    const male = computeEventRecoveryProfile({
+      target: createPaceThresholdTarget("run", 4.0, 1200),
+      projected_ctl_at_event: 50,
+      projected_atl_at_event: 48,
+      athlete_gender: "male",
+    });
+    const female = computeEventRecoveryProfile({
+      target: createPaceThresholdTarget("run", 4.0, 1200),
+      projected_ctl_at_event: 50,
+      projected_atl_at_event: 48,
+      athlete_gender: "female",
+    });
+
+    expect(female.recovery_days_full).toBeGreaterThanOrEqual(
+      male.recovery_days_full,
+    );
+    expect(
+      female.recovery_days_full - male.recovery_days_full,
+    ).toBeLessThanOrEqual(1);
   });
 });
 

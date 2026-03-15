@@ -1,5 +1,7 @@
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ActivityHeader } from "@/components/activity/shared/ActivityHeader";
+import { Heart } from "lucide-react-native";
+import { Icon } from "@/components/ui/icon";
 import { Card, CardContent } from "@/components/ui/card";
 import { Text } from "@/components/ui/text";
 import { trpc } from "@/lib/trpc";
@@ -33,6 +35,8 @@ interface PastActivityCardProps {
     pool_length?: number | null;
     device_manufacturer?: string | null;
     device_product?: string | null;
+    likes_count?: number;
+    has_liked?: boolean;
   };
   onPress?: () => void;
 }
@@ -67,6 +71,26 @@ function calculatePace(meters: number, seconds: number): string {
 
 export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
   const [carouselIndex, setCarouselIndex] = useState(0);
+  const [isLiked, setIsLiked] = useState(activity.has_liked ?? false);
+  const [likesCount, setLikesCount] = useState(activity.likes_count ?? 0);
+
+  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+    onError: () => {
+      // Revert optimistic update on error
+      setIsLiked(activity.has_liked ?? false);
+      setLikesCount(activity.likes_count ?? 0);
+    },
+  });
+
+  const handleToggleLike = () => {
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    setLikesCount((prev) => (newLikedState ? prev + 1 : prev - 1));
+    toggleLikeMutation.mutate({
+      entity_id: activity.id,
+      entity_type: "activity",
+    });
+  };
 
   // Fetch user identity from profiles table (current username/avatar)
   const { data: profile } = trpc.profiles.getPublicById.useQuery(
@@ -291,6 +315,30 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
               )}
             </View>
           )}
+
+          {/* Social Actions (Like) */}
+          <View className="flex-row items-center mt-3 pt-3 border-t border-border">
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                handleToggleLike();
+              }}
+              className="flex-row items-center"
+            >
+              <Icon
+                as={Heart}
+                size={20}
+                className={
+                  isLiked
+                    ? "text-red-500 fill-red-500"
+                    : "text-muted-foreground"
+                }
+              />
+              <Text className="ml-1.5 text-sm text-muted-foreground">
+                {likesCount > 0 ? likesCount : ""}
+              </Text>
+            </Pressable>
+          </View>
         </CardContent>
       </Card>
     </Pressable>

@@ -60,6 +60,8 @@ type EvaluateCreationConfigResult = {
     precedence: unknown;
   };
   feasibilitySummary: CreationFeasibilitySafetySummary;
+  globalCtlOverride?: number;
+  globalAtlOverride?: number;
 };
 
 const OVERRIDABLE_BLOCKING_CONFLICT_CODES = new Set([
@@ -334,16 +336,6 @@ export async function updateFromCreationConfigUseCase<
     });
   }
 
-  const nextActiveState = input.params.is_active ?? existingPlan.is_active;
-  if (nextActiveState) {
-    await input.supabase
-      .from("training_plans")
-      .update({ is_active: false })
-      .eq("profile_id", input.profileId)
-      .eq("is_active", true)
-      .neq("id", existingPlan.id);
-  }
-
   // Invariant: edit-save only updates training_plans; it never writes activities.
   const { data: updatedPlan, error: updateError } = await input.supabase
     .from("training_plans")
@@ -351,7 +343,6 @@ export async function updateFromCreationConfigUseCase<
       name: expandedPlan.name,
       description: expandedPlan.description ?? null,
       structure: structureWithId as Json,
-      is_active: nextActiveState,
     })
     .eq("id", existingPlan.id)
     .eq("profile_id", input.profileId)

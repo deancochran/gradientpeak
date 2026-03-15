@@ -71,40 +71,48 @@ export function createSupabaseTrainingPlanRepository(
       return data ? { id: data.id, structure: data.structure } : null;
     }
 
-    const { data, error } = await supabase
-      .from("training_plans")
-      .select("id, structure")
+    const { data: activeEvents, error: eventsError } = await supabase
+      .from("events")
+      .select("training_plan_id, starts_at")
       .eq("profile_id", input.profileId)
-      .eq("is_active", true)
-      .order("updated_at", { ascending: false })
+      .eq("event_type", "planned_activity")
+      .not("training_plan_id", "is", null)
+      .gte("starts_at", new Date().toISOString())
+      .order("starts_at", { ascending: true })
       .limit(1);
 
-    if (error) {
+    if (eventsError) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: error.message,
+        message: eventsError.message,
       });
     }
 
-    return data?.[0] ? { id: data[0].id, structure: data[0].structure } : null;
+    const activePlanId = activeEvents?.[0]?.training_plan_id;
+    if (!activePlanId) {
+      return null;
+    }
+
+    const { data: activePlan, error: activePlanError } = await supabase
+      .from("training_plans")
+      .select("id, structure")
+      .eq("id", activePlanId)
+      .eq("profile_id", input.profileId)
+      .maybeSingle();
+
+    if (activePlanError) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: activePlanError.message,
+      });
+    }
+
+    return activePlan
+      ? { id: activePlan.id, structure: activePlan.structure }
+      : null;
   };
 
   return {
-    async deactivateActivePlans(profileId: string) {
-      const { error } = await supabase
-        .from("training_plans")
-        .update({ is_active: false })
-        .eq("profile_id", profileId)
-        .eq("is_active", true);
-
-      if (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error.message,
-        });
-      }
-    },
-
     async createTrainingPlan(
       input: CreateTrainingPlanRecordInput,
     ): Promise<CreatedTrainingPlanRecord> {
@@ -114,7 +122,6 @@ export function createSupabaseTrainingPlanRepository(
           name: input.name,
           description: input.description,
           structure: input.structure as Json,
-          is_active: input.isActive,
           profile_id: input.profileId,
         })
         .select("*")

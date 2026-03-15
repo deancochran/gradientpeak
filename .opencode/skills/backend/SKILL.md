@@ -295,7 +295,8 @@ packages/trpc/src/
 2. **Declarative Changes**: Modify `packages/supabase/schemas/init.sql` (or source of truth).
 3. **Generate**: Use `supabase db diff -f <kebab-case-name>` to generate migration files.
    - Name MUST be lowercase kebab-case (e.g., `add-performance-metrics`).
-4. **Sync**: Run `pnpm update-types` to sync DB types and Zod schemas.
+4. **Run Migration**: Run the migration locally using `supabase db push` or `supabase migration up`.
+5. **Sync Types**: Run `pnpm update-types` to sync DB types and Zod schemas.
 
 ## Checklist
 

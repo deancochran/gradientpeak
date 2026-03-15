@@ -279,7 +279,34 @@ describe("SinglePageForm blocker surfacing", () => {
       .map((node: any) => getNodeText(node.props.children))
       .join("\n");
 
-    expect(allText).toContain("Needs attention: Plan, Goals");
+    expect(allText).toContain("Needs attention: Plan");
+  });
+
+  it("hides config-heavy tabs when creation config is disabled", () => {
+    let renderer: ReactTestRenderer;
+    act(() => {
+      renderer = TestRenderer.create(
+        <SinglePageForm
+          showCreationConfig={false}
+          formData={baseFormData}
+          onFormDataChange={vi.fn()}
+          configData={baseConfigData}
+          onConfigChange={vi.fn()}
+        />,
+      );
+    });
+
+    const tabs = findMockNodes(renderer!, "Pressable")
+      .map((node: any) => node.props.accessibilityLabel)
+      .filter((label: unknown): label is string => typeof label === "string");
+
+    expect(tabs).toContain("Plan tab");
+    expect(tabs).not.toContain("Goals tab");
+    expect(tabs).not.toContain("Availability tab");
+    expect(tabs).not.toContain("Limits tab");
+    expect(tabs).not.toContain("Tuning tab");
+    expect(tabs).not.toContain("Review tab");
+    expect(findMockNodes(renderer!, "CreationProjectionChart")).toHaveLength(0);
   });
 
   it("wires plan tab metadata fields", () => {
@@ -292,7 +319,6 @@ describe("SinglePageForm blocker surfacing", () => {
           planMetadata={{
             name: "Build Phase",
             description: "Progressive block",
-            isActive: true,
           }}
           onPlanMetadataChange={onPlanMetadataChange}
           formData={baseFormData}
@@ -317,18 +343,8 @@ describe("SinglePageForm blocker surfacing", () => {
       planNameInput?.props.onChangeText("Peak Block");
     });
 
-    const activeSwitch = findMockNodes(renderer!, "Switch").find(
-      (node: any) => node.props.accessibilityLabel === "Active plan",
-    );
-    act(() => {
-      activeSwitch?.props.onCheckedChange(false);
-    });
-
     expect(onPlanMetadataChange).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Peak Block" }),
-    );
-    expect(onPlanMetadataChange).toHaveBeenCalledWith(
-      expect.objectContaining({ isActive: false }),
     );
   });
 
@@ -341,16 +357,16 @@ describe("SinglePageForm blocker surfacing", () => {
           onFormDataChange={vi.fn()}
           configData={baseConfigData}
           onConfigChange={vi.fn()}
-          errors={{ "goals.0.name": "Goal name is required" }}
+          errors={{ plan: "Plan metadata required" }}
         />,
       );
     });
 
-    const goalNameInput = findMockNodes(renderer!, "Input").find(
-      (node: any) => node.props["aria-label"] === "Goal name",
+    const planNameInput = findMockNodes(renderer!, "Input").find(
+      (node: any) => node.props["aria-label"] === "Plan name",
     );
 
-    expect(goalNameInput?.props.className).toContain("border-destructive");
+    expect(planNameInput?.props.className).toContain("border-destructive");
   });
 
   it("shows behavior controls inline without mode switching", () => {

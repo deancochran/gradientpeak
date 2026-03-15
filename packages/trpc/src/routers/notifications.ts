@@ -10,7 +10,7 @@ export const notificationsRouter = createTRPCRouter({
       const { data, error } = await ctx.supabase
         .from("notifications")
         .select("*")
-        .eq("user_id", ctx.session.user.id)
+        .eq("profile_id", ctx.session.user.id)
         .order("created_at", { ascending: false })
         .limit(input.limit);
 
@@ -26,8 +26,8 @@ export const notificationsRouter = createTRPCRouter({
     const { count, error } = await ctx.supabase
       .from("notifications")
       .select("*", { count: "exact", head: true })
-      .eq("user_id", ctx.session.user.id)
-      .is("read_at", null);
+      .eq("profile_id", ctx.session.user.id)
+      .eq("is_read", false);
 
     if (error)
       throw new TRPCError({
@@ -42,9 +42,9 @@ export const notificationsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { error } = await ctx.supabase
         .from("notifications")
-        .update({ read_at: new Date().toISOString() })
+        .update({ is_read: true })
         .in("id", input.notification_ids)
-        .eq("user_id", ctx.session.user.id); // Security check
+        .eq("profile_id", ctx.session.user.id); // Security check
 
       if (error)
         throw new TRPCError({

@@ -19,8 +19,11 @@ import {
 } from "@/components/ui/form";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { WeightInputField } from "@/components/profile/WeightInputField";
+import { Switch } from "@/components/ui/switch";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
@@ -55,6 +58,7 @@ const profileEditSchema = z.object({
   // threshold_hr: z.number().min(1).max(250).nullable(), // Deprecated: LTHR is now in profile_metrics
   preferred_units: z.enum(["metric", "imperial"]).nullable(),
   language: z.string().nullable(),
+  is_public: z.boolean().nullable(),
 });
 
 type ProfileEditForm = z.infer<typeof profileEditSchema>;
@@ -103,8 +107,12 @@ function ProfileEditScreen() {
       weight_kg: profile?.weight_kg || null,
       preferred_units: profile?.preferred_units || "metric",
       language: profile?.language || "en",
+      is_public: profile?.is_public ?? true,
     },
   });
+
+  const preferredWeightUnit =
+    form.watch("preferred_units") === "imperial" ? "lbs" : "kg";
 
   const onSubmit = async (data: ProfileEditForm) => {
     try {
@@ -115,6 +123,7 @@ function ProfileEditScreen() {
         weight_kg: data.weight_kg || undefined,
         preferred_units: data.preferred_units || undefined,
         language: data.language || undefined,
+        is_public: data.is_public ?? undefined,
       });
     } catch (error) {
       console.error("Failed to update profile:", error);
@@ -385,16 +394,22 @@ function ProfileEditScreen() {
                   name="dob"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date of Birth</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="YYYY-MM-DD"
-                          value={field.value || ""}
-                          onChangeText={field.onChange}
+                        <DateField
+                          id="profile-edit-dob"
+                          label="Date of Birth"
+                          value={field.value ?? undefined}
+                          onChange={(nextDate) =>
+                            field.onChange(nextDate ?? null)
+                          }
+                          placeholder="Select date"
+                          clearable
+                          maximumDate={new Date()}
+                          accessibilityHint="Set your date of birth"
                         />
                       </FormControl>
                       <FormDescription>
-                        Format: YYYY-MM-DD (e.g., 1990-01-15)
+                        Used to estimate age-based training metrics.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -421,18 +436,23 @@ function ProfileEditScreen() {
                   name="weight_kg"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Weight (kg)</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="Enter weight"
-                          value={field.value ? field.value.toString() : ""}
-                          onChangeText={(text) => {
-                            const num = text ? Number(text) : null;
-                            field.onChange(num);
-                          }}
-                          keyboardType="numeric"
+                        <WeightInputField
+                          id="profile-edit-weight"
+                          label="Weight"
+                          valueKg={field.value}
+                          onChangeKg={field.onChange}
+                          unit={preferredWeightUnit}
+                          helperText={`Shown in ${preferredWeightUnit}. Used for calorie, W/kg, and readiness estimates.`}
+                          placeholder={
+                            preferredWeightUnit === "kg" ? "70.0" : "154.3"
+                          }
                         />
                       </FormControl>
+                      <FormDescription>
+                        This stays saved as kilograms behind the scenes so
+                        existing analytics keep working.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -445,11 +465,12 @@ function ProfileEditScreen() {
                   <View className="bg-muted p-3 rounded-md">
                     <Text className="text-foreground">
                       {estimatedFTP?.predicted_value
-                        ? `${estimatedFTP.predicted_value} watts`
+                        ? `${estimatedFTP.predicted_value} W`
                         : "Not enough data"}
                     </Text>
                     <Text className="text-xs text-muted-foreground mt-1">
-                      Calculated from your best efforts (last 90 days)
+                      Read-only estimate from your best recent ride efforts
+                      (last 90 days).
                     </Text>
                   </View>
                 </View>
@@ -463,7 +484,8 @@ function ProfileEditScreen() {
                         : "Not detected yet"}
                     </Text>
                     <Text className="text-xs text-muted-foreground mt-1">
-                      Detected from your best 20-minute heart rate
+                      Read-only estimate from your strongest recent 20-minute
+                      heart rate effort.
                     </Text>
                   </View>
                 </View>
@@ -511,6 +533,29 @@ function ProfileEditScreen() {
                         Choose between km/kg or miles/lbs
                       </FormDescription>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="is_public"
+                  render={({ field }) => (
+                    <FormItem className="flex-row items-center justify-between rounded-lg border border-border p-4">
+                      <View className="space-y-0.5">
+                        <FormLabel className="text-base">
+                          Public Account
+                        </FormLabel>
+                        <FormDescription>
+                          Allow anyone to view your profile and activities
+                        </FormDescription>
+                      </View>
+                      <FormControl>
+                        <Switch
+                          checked={field.value ?? true}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
                     </FormItem>
                   )}
                 />

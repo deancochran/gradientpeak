@@ -6,7 +6,7 @@
  * pre-selected before opening this modal, keeping the UX simple and focused.
  *
  * ## Design Philosophy
- * - User browses plans first (library, detail page, etc.)
+ * - User browses plans first (discover, detail page, etc.)
  * - User clicks "Schedule" with a specific plan in mind
  * - Modal opens with only date and notes to configure
  * - Much simpler and faster than full-page form
@@ -21,7 +21,7 @@
  *
  * ## Usage Examples
  *
- * ### Schedule from Library/Detail Page
+ * ### Schedule from Discover/Detail Page
  * ```tsx
  * const [showModal, setShowModal] = useState(false);
  * const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
@@ -78,17 +78,19 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { trpc } from "@/lib/trpc";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { plannedActivityScheduleFormSchema } from "@repo/core";
-import { format, parseISO } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { Calendar, Clock, TrendingUp, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -107,7 +109,7 @@ type PlannedActivityScheduleFormOutput = z.output<
 interface ScheduleActivityModalProps {
   visible: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: () => void | Promise<void>;
 
   // Either provide activityPlanId (database ID), activityPlan (template object), or eventId (edit)
   activityPlanId?: string;
@@ -124,6 +126,41 @@ interface ScheduleActivityModalProps {
   editScope?: "single" | "future" | "series";
 }
 
+function toDateOnlyString(value: Date): string {
+  return format(value, "yyyy-MM-dd");
+}
+
+function toPickerDate(value: string | null | undefined): Date {
+  if (!value) {
+    return new Date();
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (match) {
+    const [, year, month, day] = match;
+    return new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+
+  return new Date(
+    parsed.getFullYear(),
+    parsed.getMonth(),
+    parsed.getDate(),
+    12,
+    0,
+    0,
+    0,
+  );
+}
+
+function alertSuccess(message: string) {
+  Alert.alert("Success", message);
+}
+
 export function ScheduleActivityModal({
   visible,
   onClose,
@@ -135,7 +172,12 @@ export function ScheduleActivityModal({
   trainingPlanId,
   editScope = "single",
 }: ScheduleActivityModalProps) {
+  if (!visible) {
+    return null;
+  }
+
   const isEditMode = !!eventId;
+  const resolvedActivityPlanId = activityPlanId ?? activityPlan?.id ?? "";
   const isTemplate = !!activityPlan && !activityPlanId;
 
   // Validation: Must have either activityPlanId, activityPlan, or eventId
@@ -159,9 +201,9 @@ export function ScheduleActivityModal({
   >({
     resolver: zodResolver(plannedActivityScheduleFormSchema),
     defaultValues: {
-      scheduled_date: preselectedDate || new Date().toISOString(),
+      scheduled_date: preselectedDate || toDateOnlyString(new Date()),
       notes: null,
-      activity_plan_id: activityPlanId || "",
+      activity_plan_id: resolvedActivityPlanId,
       training_plan_id: trainingPlanId || null,
     },
   });
@@ -169,12 +211,9 @@ export function ScheduleActivityModal({
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const scheduledDateString = watch("scheduled_date");
-  const scheduledDate =
-    scheduledDateString && !isNaN(Date.parse(scheduledDateString))
-      ? new Date(scheduledDateString)
-      : new Date();
+  const scheduledDate = toPickerDate(scheduledDateString);
   const currentActivityPlanId = watch("activity_plan_id");
-  const scheduledDateForApi = format(scheduledDate, "yyyy-MM-dd");
+  const scheduledDateForApi = toDateOnlyString(scheduledDate);
 
   // Fetch existing activity if editing
   const { data: existingActivity, isLoading: loadingExistingActivity } =
@@ -216,6 +255,14 @@ export function ScheduleActivityModal({
     }
   }, [visible, reset]);
 
+  useEffect(() => {
+    if (!isEditMode && resolvedActivityPlanId) {
+      setValue("activity_plan_id", resolvedActivityPlanId, {
+        shouldValidate: false,
+      });
+    }
+  }, [isEditMode, resolvedActivityPlanId, setValue]);
+
   // Load existing activity data (edit mode)
   useEffect(() => {
     if (existingActivity && existingActivity.activity_plan) {
@@ -225,23 +272,27 @@ export function ScheduleActivityModal({
     }
   }, [existingActivity, setValue]);
 
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const createMutation = useReliableMutation(trpc.events.create, {
-    invalidate: [utils.events, utils.trainingPlans],
-    success: "Activity scheduled!",
-    onSuccess: () => {
-      onSuccess?.();
+  const createMutation = trpc.events.create.useMutation({
+    onSuccess: async () => {
+      await refreshScheduleViews(queryClient);
+      await onSuccess?.();
       onClose();
+      setTimeout(() => {
+        alertSuccess("Activity scheduled!");
+      }, 300);
     },
   });
 
-  const updateMutation = useReliableMutation(trpc.events.update, {
-    invalidate: [utils.events, utils.trainingPlans],
-    success: "Activity updated!",
-    onSuccess: () => {
-      onSuccess?.();
+  const updateMutation = trpc.events.update.useMutation({
+    onSuccess: async () => {
+      await refreshScheduleViews(queryClient);
+      await onSuccess?.();
       onClose();
+      setTimeout(() => {
+        alertSuccess("Activity updated!");
+      }, 300);
     },
   });
 
@@ -250,14 +301,14 @@ export function ScheduleActivityModal({
       updateMutation.mutate({
         id: eventId,
         activity_plan_id: data.activity_plan_id,
-        scheduled_date: format(parseISO(data.scheduled_date), "yyyy-MM-dd"),
+        scheduled_date: data.scheduled_date,
         notes: data.notes || undefined,
         scope: editScope,
       });
     } else {
       createMutation.mutate({
         activity_plan_id: data.activity_plan_id,
-        scheduled_date: format(parseISO(data.scheduled_date), "yyyy-MM-dd"),
+        scheduled_date: data.scheduled_date,
         notes: data.notes || undefined,
         training_plan_id: data.training_plan_id || undefined,
       });
@@ -267,7 +318,7 @@ export function ScheduleActivityModal({
   const handleDateChange = (event: any, date?: Date) => {
     setShowDatePicker(false);
     if (date) {
-      setValue("scheduled_date", date.toISOString());
+      setValue("scheduled_date", toDateOnlyString(date));
     }
   };
 
@@ -294,13 +345,14 @@ export function ScheduleActivityModal({
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
   const isLoading = (loadingPlan && !isTemplate) || loadingExistingActivity;
+  const isValidationPending =
+    !!trainingPlanId && validationLoading && !validation;
   const canSchedule =
     !isLoading &&
     displayPlan &&
-    (!trainingPlanId || validation?.canSchedule !== false) &&
+    !!currentActivityPlanId &&
+    !isValidationPending &&
     !isSubmitting;
-
-  if (!visible) return null;
 
   return (
     <Modal
@@ -490,6 +542,17 @@ export function ScheduleActivityModal({
                 </View>
 
                 {/* Error Messages */}
+                {!currentActivityPlanId ? (
+                  <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+                    <Text className="text-destructive font-medium">
+                      This activity cannot be scheduled yet
+                    </Text>
+                    <Text className="text-destructive/80 text-sm mt-1">
+                      Duplicate the activity plan first, then schedule it from
+                      its detail screen.
+                    </Text>
+                  </View>
+                ) : null}
                 {(createMutation.error || updateMutation.error) && (
                   <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                     <Text className="text-destructive font-medium">

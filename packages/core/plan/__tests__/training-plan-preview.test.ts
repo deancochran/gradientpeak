@@ -245,8 +245,14 @@ describe("deterministic projection safety behavior", () => {
       ],
       no_history_context: {
         history_availability_state: "none",
-        goal_tier: "high",
         weeks_to_event: 16,
+        goal_targets: [
+          {
+            target_type: "race_performance",
+            distance_m: 42195,
+            target_time_s: 3 * 3600 + 10 * 60,
+          },
+        ],
         context_summary: {
           history_availability_state: "none",
           recent_consistency_marker: "moderate",
@@ -300,8 +306,14 @@ describe("deterministic projection safety behavior", () => {
       starting_ctl: 20,
       no_history_context: {
         history_availability_state: "sparse",
-        goal_tier: "high",
         weeks_to_event: 10,
+        goal_targets: [
+          {
+            target_type: "race_performance",
+            distance_m: 42195,
+            target_time_s: 3 * 3600 + 20 * 60,
+          },
+        ],
       },
     });
 

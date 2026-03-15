@@ -18,6 +18,7 @@ interface PaceInputProps {
   error?: string;
   placeholder?: string;
   required?: boolean;
+  unitLabel?: string;
   accessibilityHint?: string;
 }
 
@@ -31,6 +32,7 @@ export function PaceInput({
   error,
   placeholder = "e.g., 4:15",
   required = false,
+  unitLabel = "/km",
   accessibilityHint,
 }: PaceInputProps) {
   const [draftValue, setDraftValue] = useState(value);
@@ -79,7 +81,7 @@ export function PaceInput({
             accessibilityHint ?? "Enter pace in mm:ss format, for example 4:15"
           }
         />
-        <Text className="text-xs text-muted-foreground">/km</Text>
+        <Text className="text-xs text-muted-foreground">{unitLabel}</Text>
       </View>
       {helperText ? (
         <Text className="text-xs text-muted-foreground">{helperText}</Text>

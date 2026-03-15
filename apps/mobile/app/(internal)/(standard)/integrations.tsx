@@ -106,14 +106,14 @@ export default function IntegrationsScreen() {
   const importFitMutation = useReliableMutation(
     trpc.activityPlans.importFromFitTemplate,
     {
-      invalidate: [utils.activityPlans, utils.library],
+      invalidate: [utils.activityPlans],
     },
   );
 
   const importZwoMutation = useReliableMutation(
     trpc.activityPlans.importFromZwoTemplate,
     {
-      invalidate: [utils.activityPlans, utils.library],
+      invalidate: [utils.activityPlans],
     },
   );
 
@@ -439,7 +439,7 @@ export default function IntegrationsScreen() {
             Workout Template Imports (MVP)
           </Text>
           <Text className="text-xs text-muted-foreground mb-3">
-            Quick-import FIT/ZWO entries into your activity plan library.
+            Quick-import FIT/ZWO entries into your activity plans.
           </Text>
 
           <View className="border border-border rounded-xl p-3 bg-card mb-2 gap-2">
@@ -500,8 +500,7 @@ export default function IntegrationsScreen() {
                 {importSummary.provider} import {importSummary.action}
               </Text>
               <Text className="text-xs text-muted-foreground mt-1">
-                {importSummary.name} is now available in your activity plan
-                library.
+                {importSummary.name} is now available in your activity plans.
               </Text>
             </View>
           ) : null}

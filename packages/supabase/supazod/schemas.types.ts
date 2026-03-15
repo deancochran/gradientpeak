@@ -106,6 +106,18 @@ export type PublicCoachingInvitationsInsert = z.infer<
 export type PublicCoachingInvitationsUpdate = z.infer<
   typeof generated.publicCoachingInvitationsUpdateSchema
 >;
+export type PublicCommentsRow = z.infer<
+  typeof generated.publicCommentsRowSchema
+>;
+export type PublicCommentsInsert = z.infer<
+  typeof generated.publicCommentsInsertSchema
+>;
+export type PublicCommentsUpdate = z.infer<
+  typeof generated.publicCommentsUpdateSchema
+>;
+export type PublicCommentsRelationships = z.infer<
+  typeof generated.publicCommentsRelationshipsSchema
+>;
 export type PublicConversationParticipantsRow = z.infer<
   typeof generated.publicConversationParticipantsRowSchema
 >;
@@ -137,6 +149,16 @@ export type PublicEventsUpdate = z.infer<
 export type PublicEventsRelationships = z.infer<
   typeof generated.publicEventsRelationshipsSchema
 >;
+export type PublicFollowsRow = z.infer<typeof generated.publicFollowsRowSchema>;
+export type PublicFollowsInsert = z.infer<
+  typeof generated.publicFollowsInsertSchema
+>;
+export type PublicFollowsUpdate = z.infer<
+  typeof generated.publicFollowsUpdateSchema
+>;
+export type PublicFollowsRelationships = z.infer<
+  typeof generated.publicFollowsRelationshipsSchema
+>;
 export type PublicIntegrationsRow = z.infer<
   typeof generated.publicIntegrationsRowSchema
 >;
@@ -149,17 +171,15 @@ export type PublicIntegrationsUpdate = z.infer<
 export type PublicIntegrationsRelationships = z.infer<
   typeof generated.publicIntegrationsRelationshipsSchema
 >;
-export type PublicLibraryItemsRow = z.infer<
-  typeof generated.publicLibraryItemsRowSchema
+export type PublicLikesRow = z.infer<typeof generated.publicLikesRowSchema>;
+export type PublicLikesInsert = z.infer<
+  typeof generated.publicLikesInsertSchema
 >;
-export type PublicLibraryItemsInsert = z.infer<
-  typeof generated.publicLibraryItemsInsertSchema
+export type PublicLikesUpdate = z.infer<
+  typeof generated.publicLikesUpdateSchema
 >;
-export type PublicLibraryItemsUpdate = z.infer<
-  typeof generated.publicLibraryItemsUpdateSchema
->;
-export type PublicLibraryItemsRelationships = z.infer<
-  typeof generated.publicLibraryItemsRelationshipsSchema
+export type PublicLikesRelationships = z.infer<
+  typeof generated.publicLikesRelationshipsSchema
 >;
 export type PublicMessagesRow = z.infer<
   typeof generated.publicMessagesRowSchema
@@ -182,6 +202,9 @@ export type PublicNotificationsInsert = z.infer<
 export type PublicNotificationsUpdate = z.infer<
   typeof generated.publicNotificationsUpdateSchema
 >;
+export type PublicNotificationsRelationships = z.infer<
+  typeof generated.publicNotificationsRelationshipsSchema
+>;
 export type PublicOauthStatesRow = z.infer<
   typeof generated.publicOauthStatesRowSchema
 >;
@@ -194,6 +217,18 @@ export type PublicOauthStatesUpdate = z.infer<
 export type PublicOauthStatesRelationships = z.infer<
   typeof generated.publicOauthStatesRelationshipsSchema
 >;
+export type PublicProfileGoalsRow = z.infer<
+  typeof generated.publicProfileGoalsRowSchema
+>;
+export type PublicProfileGoalsInsert = z.infer<
+  typeof generated.publicProfileGoalsInsertSchema
+>;
+export type PublicProfileGoalsUpdate = z.infer<
+  typeof generated.publicProfileGoalsUpdateSchema
+>;
+export type PublicProfileGoalsRelationships = z.infer<
+  typeof generated.publicProfileGoalsRelationshipsSchema
+>;
 export type PublicProfileMetricsRow = z.infer<
   typeof generated.publicProfileMetricsRowSchema
 >;
@@ -205,6 +240,18 @@ export type PublicProfileMetricsUpdate = z.infer<
 >;
 export type PublicProfileMetricsRelationships = z.infer<
   typeof generated.publicProfileMetricsRelationshipsSchema
+>;
+export type PublicProfileTrainingSettingsRow = z.infer<
+  typeof generated.publicProfileTrainingSettingsRowSchema
+>;
+export type PublicProfileTrainingSettingsInsert = z.infer<
+  typeof generated.publicProfileTrainingSettingsInsertSchema
+>;
+export type PublicProfileTrainingSettingsUpdate = z.infer<
+  typeof generated.publicProfileTrainingSettingsUpdateSchema
+>;
+export type PublicProfileTrainingSettingsRelationships = z.infer<
+  typeof generated.publicProfileTrainingSettingsRelationshipsSchema
 >;
 export type PublicProfilesRow = z.infer<
   typeof generated.publicProfilesRowSchema

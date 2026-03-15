@@ -3,7 +3,7 @@ import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGu
 import { useTheme } from "@/lib/stores/theme-store";
 import { NAV_THEME, THEME } from "@/lib/theme";
 import { Tabs, useRouter } from "expo-router";
-import { Book, Calendar, Circle, Home, Search } from "lucide-react-native";
+import { Calendar, Circle, Home, Search, Target } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
 
@@ -68,16 +68,16 @@ export default function InternalLayout() {
           options={{
             title: "Plan",
             tabBarIcon: ({ color }) => (
-              <Icon as={Calendar} size={28} color={color} />
+              <Icon as={Target} size={28} color={color} />
             ),
           }}
         />
         <Tabs.Screen
-          name="library"
+          name="calendar"
           options={{
-            title: "Library",
+            title: "Calendar",
             tabBarIcon: ({ color }) => (
-              <Icon as={Book} size={28} color={color} />
+              <Icon as={Calendar} size={28} color={color} />
             ),
           }}
         />

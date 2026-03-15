@@ -94,6 +94,8 @@ describe("updateFromCreationConfigUseCase", () => {
         value && "structure" in value,
     )?.[0] as { structure?: { metadata?: Record<string, unknown> } };
 
+    expect(persistedUpdatePayload).not.toHaveProperty("is_active");
+
     expect(
       persistedUpdatePayload?.structure?.metadata?.creation_config_snapshot,
     ).toMatchObject({

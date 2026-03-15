@@ -21,6 +21,7 @@ export default function MessagesPage() {
   const { user } = useAuth();
   const { data: conversations = [] } =
     trpc.messaging.getConversations.useQuery();
+  type Conversation = (typeof conversations)[number];
 
   const { data: messages = [] } = trpc.messaging.getMessages.useQuery(
     { conversation_id: selectedId! },
@@ -54,7 +55,7 @@ export default function MessagesPage() {
             <Separator />
             <ScrollArea className="flex-1">
               <div className="flex flex-col gap-2 p-4">
-                {conversations.map((conv: any) => (
+                {conversations.map((conv: Conversation) => (
                   <button
                     key={conv.id}
                     className={cn(

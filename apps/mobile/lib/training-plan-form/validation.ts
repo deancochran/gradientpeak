@@ -1,6 +1,8 @@
 import type {
+  AthleteTrainingSettings,
   CreationAvailabilityConfig,
   CreationFeasibilitySafetySummary,
+  ProfileGoal,
 } from "@repo/core";
 import { z } from "zod";
 import {
@@ -440,4 +442,39 @@ export function getCreateDisabledReason(
   }
 
   return `Create is disabled until ${blockingIssues.length} blocking conflicts are resolved.`;
+}
+
+export function mapProfileGoalsToValidationGoals(
+  profileGoals: Array<ProfileGoal & { target_date?: string | null }>,
+): GoalForValidation[] {
+  return profileGoals.map((goal) => ({
+    id: goal.id,
+    name: goal.title,
+    targetDate: goal.target_date ?? "",
+    priority: goal.priority,
+    targets: [
+      {
+        id: `${goal.id}-fallback-target`,
+        targetType: "hr_threshold",
+        targetLthrBpm:
+          goal.objective.type === "threshold" && goal.objective.metric === "hr"
+            ? Math.round(goal.objective.value)
+            : 160,
+      },
+    ],
+  }));
+}
+
+export function getPlanStartDateFromProfileSettings(
+  settings: AthleteTrainingSettings,
+): string | undefined {
+  const firstAvailableDay = settings.availability.weekly_windows.find(
+    (day) => day.windows.length > 0,
+  );
+
+  if (!firstAvailableDay) {
+    return undefined;
+  }
+
+  return undefined;
 }

@@ -16,13 +16,29 @@ interface UserSettings {
  */
 function getDurationSeconds(
   duration: IntervalStepV2["duration"],
-  options?: { paceSecondsPerKm?: number; secondsPerRep?: number },
+  options?: {
+    paceSecondsPerKm?: number;
+    secondsPerRep?: number;
+    activityCategory?: PublicActivityCategory;
+  },
 ): number {
+  const categoryPaceSecondsPerKm: Record<PublicActivityCategory, number> = {
+    run: 300,
+    bike: 120,
+    swim: 1000,
+    strength: 300,
+    other: 300,
+  };
+  const defaultPaceSecondsPerKm = options?.activityCategory
+    ? categoryPaceSecondsPerKm[options.activityCategory]
+    : 300;
+
   switch (duration.type) {
     case "time":
       return duration.seconds;
     case "distance":
-      const paceSecondsPerKm = options?.paceSecondsPerKm ?? 300; // 5 min/km default
+      const paceSecondsPerKm =
+        options?.paceSecondsPerKm ?? defaultPaceSecondsPerKm;
       return (duration.meters / 1000) * paceSecondsPerKm;
     case "repetitions":
       const secondsPerRep = options?.secondsPerRep ?? 10; // 10 sec/rep default
@@ -85,7 +101,14 @@ function calculateStepIntensityFactor(
 export function estimateFromStructure(
   context: EstimationContext,
 ): EstimationResult {
-  const { structure, profile, activityCategory, ftp, thresholdHr } = context;
+  const {
+    structure,
+    profile,
+    activityCategory,
+    ftp,
+    thresholdHr,
+    thresholdPaceSecondsPerKm,
+  } = context;
 
   if (!structure?.intervals || structure.intervals.length === 0) {
     throw new Error("Structure-based estimation requires intervals");
@@ -109,19 +132,30 @@ export function estimateFromStructure(
   for (const interval of intervals) {
     for (let rep = 0; rep < interval.repetitions; rep++) {
       for (const step of interval.steps) {
-        const stepDuration = getDurationSeconds(step.duration);
+        const durationOptions = {
+          activityCategory,
+          paceSecondsPerKm:
+            activityCategory === "run" && thresholdPaceSecondsPerKm
+              ? Math.round(thresholdPaceSecondsPerKm * 1.12)
+              : undefined,
+        } as const;
+        const stepDurationWithCategory = getDurationSeconds(
+          step.duration,
+          durationOptions,
+        );
 
         const stepIF = calculateStepIntensityFactor(step, userSettings);
-        const stepTSS = (stepDuration / 3600) * Math.pow(stepIF, 2) * 100;
+        const stepTSS =
+          (stepDurationWithCategory / 3600) * Math.pow(stepIF, 2) * 100;
 
         totalTSS += stepTSS;
-        totalDuration += stepDuration;
-        totalWeightedIF += stepIF * stepDuration;
+        totalDuration += stepDurationWithCategory;
+        totalWeightedIF += stepIF * stepDurationWithCategory;
 
         // Distribute time into zones based on targets
         distributeStepIntoZones(
           step,
-          stepDuration,
+          stepDurationWithCategory,
           hrZones,
           powerZones,
           userSettings,
@@ -265,15 +299,26 @@ function getHRZoneIndex(thresholdPercent: number): number {
 export function estimateFromRoute(
   context: EstimationContext,
 ): EstimationResult {
-  const { route, profile, activityCategory, fitnessState, ftp, weightKg } =
-    context;
+  const {
+    route,
+    profile,
+    activityCategory,
+    fitnessState,
+    ftp,
+    weightKg,
+    thresholdPaceSecondsPerKm,
+  } = context;
 
   if (!route) {
     throw new Error("Route-based estimation requires route data");
   }
 
   // Estimate base speed based on activity type and fitness level
-  const baseSpeed = estimateBaseSpeed(activityCategory, fitnessState);
+  let baseSpeed = estimateBaseSpeed(activityCategory, fitnessState);
+  if (activityCategory === "run" && thresholdPaceSecondsPerKm) {
+    const endurancePaceSecondsPerKm = thresholdPaceSecondsPerKm * 1.12;
+    baseSpeed = 1000 / endurancePaceSecondsPerKm;
+  }
 
   // Adjust for terrain
   const terrainAdjustment = calculateTerrainAdjustment(route, activityCategory);

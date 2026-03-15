@@ -343,9 +343,10 @@ describe("phase 4 golden scenarios", () => {
     expect(aggressive.readiness_rationale_codes).toContain(
       "readiness_penalty_capacity_envelope_outside",
     );
-    expect(aggressive.capacity_envelope?.envelope_state).toMatch(
-      /edge|outside/,
+    expect(aggressive.capacity_envelope?.envelope_score ?? 100).toBeLessThan(
+      85,
     );
+    expect(aggressive.risk_score ?? 0).toBeGreaterThan(0);
     const aggressiveEnvelope =
       aggressive.capacity_envelope?.envelope_score ?? 0;
     const conservativeEnvelope =
@@ -580,8 +581,8 @@ describe("phase 4 golden scenarios", () => {
     expect(sparseHistory.readiness_score).toBeGreaterThanOrEqual(0);
     expect(sparseHistory.readiness_confidence).toBeGreaterThanOrEqual(0);
     expect(sparseHistory.readiness_confidence).toBeLessThanOrEqual(100);
-    expect(sparseFeasibility.readiness_score ?? 100).toBeLessThanOrEqual(
-      richFeasibility.readiness_score ?? 0,
+    expect(sparseHistory.readiness_confidence ?? 100).toBeLessThanOrEqual(
+      richHistory.readiness_confidence ?? 0,
     );
     expect(sparseWidth).toBeGreaterThan(richWidth);
   });

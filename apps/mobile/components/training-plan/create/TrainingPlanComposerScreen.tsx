@@ -1,5 +1,4 @@
 import {
-  type GoalTargetFormData,
   SinglePageForm,
   type TrainingPlanConfigConflict,
   type TrainingPlanConfigFormData,
@@ -85,7 +84,6 @@ export type TrainingPlanComposerModeContract =
 
 export type TrainingPlanComposerInitialTab =
   | "plan"
-  | "goals"
   | "availability"
   | "constraints"
   | "calibration"
@@ -124,19 +122,42 @@ const weekDays: CreationAvailabilityConfig["days"][number]["day"][] = [
 const createLocalId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-const createDefaultTarget = (): GoalTargetFormData => ({
-  id: createLocalId(),
-  targetType: "race_performance",
-  activityCategory: "run",
-});
-
 const createDefaultGoal = (targetDate: string) => ({
   id: createLocalId(),
-  name: "",
+  name: "Template Goal",
   targetDate,
   priority: 1,
-  targets: [createDefaultTarget()],
+  targets: [
+    {
+      id: createLocalId(),
+      targetType: "hr_threshold" as const,
+      targetLthrBpm: 160,
+    },
+  ],
 });
+
+const ensureInternalGoal = (formData: TrainingPlanFormData) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const fallbackDateValue = new Date(today);
+  fallbackDateValue.setDate(fallbackDateValue.getDate() + 112);
+  const fallbackDate = fallbackDateValue.toISOString().split("T")[0] ?? "";
+
+  const candidateDate = formData.goals[0]?.targetDate;
+  const hasValidCandidateDate =
+    typeof candidateDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(candidateDate)
+      ? new Date(`${candidateDate}T00:00:00.000Z`) >= today
+      : false;
+
+  return {
+    ...formData,
+    goals: [
+      createDefaultGoal(hasValidCandidateDate ? candidateDate : fallbackDate),
+    ],
+  };
+};
 
 const areJsonStructurallyEqual = (left: unknown, right: unknown): boolean => {
   if (left === right) {
@@ -154,6 +175,31 @@ const isFieldError = (value: unknown): value is FieldError => {
   }
 
   return "message" in value || "type" in value;
+};
+
+type EditableTrainingPlan = {
+  id: string;
+  structure: unknown;
+  name: string;
+  description: string | null;
+};
+
+const isEditableTrainingPlan = (
+  value: unknown,
+): value is EditableTrainingPlan => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return (
+    "id" in value &&
+    typeof value.id === "string" &&
+    "structure" in value &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "description" in value &&
+    (typeof value.description === "string" || value.description === null)
+  );
 };
 
 const flattenFormErrors = (
@@ -322,7 +368,6 @@ export function TrainingPlanComposerScreen(
     useState<TrainingPlanMetadataFormData>(() => ({
       name: "New Training Plan",
       description: "",
-      isActive: true,
     }));
   const [hasHydratedFromEditPlan, setHasHydratedFromEditPlan] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -408,18 +453,6 @@ export function TrainingPlanComposerScreen(
     ReturnType<typeof getCreationSuggestionsQuery>
   >;
 
-  const createPlanLegacyMutation = useReliableMutation(
-    trpc.trainingPlans.createFromMinimalGoal,
-    {
-      invalidate: [utils.trainingPlans],
-      onError: (error) => {
-        const errorMessage = error.message || "Failed to create training plan.";
-        Alert.alert("Error", errorMessage, [{ text: "OK" }]);
-        setIsCreating(false);
-      },
-    },
-  );
-
   const createPlanMutation = useReliableMutation(
     trpc.trainingPlans.createFromCreationConfig,
     {
@@ -458,16 +491,29 @@ export function TrainingPlanComposerScreen(
     },
   );
 
+  const effectiveFormData = useMemo(
+    () => ensureInternalGoal(formData),
+    [formData],
+  );
+
   const buildMinimalPayload = useCallback(
     () =>
       buildMinimalTrainingPlanPayload({
-        planStartDate: formData.planStartDate,
-        goals: formData.goals,
+        planStartDate: effectiveFormData.planStartDate,
+        goals: effectiveFormData.goals,
       }),
-    [formData.goals, formData.planStartDate],
+    [effectiveFormData.goals, effectiveFormData.planStartDate],
   );
 
   const buildCreationInput = toCreationNormalizationInput;
+
+  const editPlanData = useMemo(() => {
+    if (!isEditableTrainingPlan(editPlanQuery.data)) {
+      return undefined;
+    }
+
+    return editPlanQuery.data;
+  }, [editPlanQuery.data]);
 
   const resolveStartingAtlOverride = (
     config: TrainingPlanConfigFormData,
@@ -552,7 +598,8 @@ export function TrainingPlanComposerScreen(
       return;
     }
 
-    const previewMinimalPlan = buildPreviewMinimalPlanFromForm(formData);
+    const previewMinimalPlan =
+      buildPreviewMinimalPlanFromForm(effectiveFormData);
     if (!previewMinimalPlan) {
       previewBaselineSnapshotRef.current = null;
       setReadinessDeltaDiagnostics(undefined);
@@ -687,35 +734,36 @@ export function TrainingPlanComposerScreen(
       });
       setIsPreviewPending(previewPendingRequestCountRef.current > 0);
     }
-  }, [buildCreationInput, configData, contextSummary, formData]);
+  }, [buildCreationInput, configData, contextSummary, effectiveFormData]);
 
   useEffect(() => {
     if (!isEditMode) {
       return;
     }
 
-    if (!editPlanQuery.data || hasHydratedFromEditPlan) {
+    if (!editPlanData || hasHydratedFromEditPlan) {
       return;
     }
 
     form.reset(
-      toTrainingPlanFormDataFromStructure({
-        structure: editPlanQuery.data.structure,
-      }),
+      ensureInternalGoal(
+        toTrainingPlanFormDataFromStructure({
+          structure: editPlanData.structure,
+        }),
+      ),
     );
     setConfigData(
       toTrainingPlanConfigFormDataFromStructure({
-        structure: editPlanQuery.data.structure,
+        structure: editPlanData.structure,
       }),
     );
     setPlanMetadata({
-      name: editPlanQuery.data.name,
-      description: editPlanQuery.data.description ?? "",
-      isActive: editPlanQuery.data.is_active,
+      name: editPlanData.name,
+      description: editPlanData.description ?? "",
     });
     setHasHydratedFromEditPlan(true);
     setHasSeededDefaults(true);
-  }, [editPlanQuery.data, form, hasHydratedFromEditPlan, isEditMode]);
+  }, [editPlanData, form, hasHydratedFromEditPlan, isEditMode]);
 
   useEffect(() => {
     if (!featureFlags.trainingPlanCreateConfigMvp || hasSeededDefaults) {
@@ -1024,29 +1072,6 @@ export function TrainingPlanComposerScreen(
 
       const description = planMetadata.description.trim();
 
-      if (!featureFlags.trainingPlanCreateConfigMvp) {
-        if (isEditMode) {
-          throw new Error(
-            "Edit from composer requires training plan config mode to be enabled.",
-          );
-        }
-
-        const createdPlan = await createPlanLegacyMutation.mutateAsync(
-          buildMinimalPayload(),
-        );
-        await updatePlanMetadataMutation.mutateAsync({
-          id: createdPlan.id,
-          name: planName,
-          description: description.length > 0 ? description : null,
-          is_active: planMetadata.isActive,
-        });
-        router.replace({
-          pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
-          params: { id: createdPlan.id, nextStep: "refine" },
-        });
-        return;
-      }
-
       const payload = {
         minimal_plan: buildMinimalPayload(),
         creation_input: buildCreationInput(configData),
@@ -1058,7 +1083,6 @@ export function TrainingPlanComposerScreen(
         override_policy: {
           allow_blocking_conflicts: allowBlockingIssueOverride,
         },
-        is_active: planMetadata.isActive,
       };
 
       if (isEditMode) {
@@ -1071,13 +1095,11 @@ export function TrainingPlanComposerScreen(
           id: updatedPlan.id,
           name: planName,
           description: description.length > 0 ? description : null,
-          is_active: planMetadata.isActive,
         });
 
-        router.replace({
-          pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
-          params: { id: updatedPlan.id, nextStep: "refine" },
-        });
+        router.replace(
+          `${ROUTES.PLAN.TRAINING_PLAN.DETAIL(updatedPlan.id)}&nextStep=refine` as any,
+        );
         return;
       }
 
@@ -1089,13 +1111,11 @@ export function TrainingPlanComposerScreen(
         id: createdPlan.id,
         name: planName,
         description: description.length > 0 ? description : null,
-        is_active: planMetadata.isActive,
       });
 
-      router.replace({
-        pathname: ROUTES.PLAN.TRAINING_PLAN.INDEX,
-        params: { id: createdPlan.id, nextStep: "refine" },
-      });
+      router.replace(
+        `${ROUTES.PLAN.TRAINING_PLAN.DETAIL(createdPlan.id)}&nextStep=refine` as any,
+      );
     } catch (error) {
       console.error(
         "Failed to save training plan from creation config:",
@@ -1131,7 +1151,7 @@ export function TrainingPlanComposerScreen(
     );
   }
 
-  if (isEditMode && !editPlanQuery.data) {
+  if (isEditMode && !editPlanData) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
         <Text className="text-lg font-semibold">Plan not found</Text>

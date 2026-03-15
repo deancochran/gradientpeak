@@ -27,6 +27,7 @@ const publicProfileProjection = [
   "gender",
   "preferred_units",
   "language",
+  "is_public",
 ].join(", ");
 
 const publicProfileSchema = z.object({
@@ -37,6 +38,10 @@ const publicProfileSchema = z.object({
   gender: z.string().nullable(),
   preferred_units: z.string().nullable(),
   language: z.string().nullable(),
+  is_public: z.boolean().nullable().optional(),
+  follow_status: z.string().nullable().optional(),
+  followers_count: z.number().nullable().optional(),
+  following_count: z.number().nullable().optional(),
 });
 
 export const profilesRouter = createTRPCRouter({
@@ -98,7 +103,51 @@ export const profilesRouter = createTRPCRouter({
           });
         }
 
-        return publicProfileSchema.parse(profile);
+        // Get follow status
+        const { data: followData } = await (ctx.supabase as any)
+          .from("follows")
+          .select("status")
+          .eq("follower_id", ctx.session.user.id)
+          .eq("following_id", input.id)
+          .maybeSingle();
+
+        const follow_status = followData ? followData.status : null;
+
+        // Get followers count (users following this profile with accepted status)
+        const { count: followersCount } = await (ctx.supabase as any)
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("following_id", input.id)
+          .eq("status", "accepted");
+
+        // Get following count (users this profile is following with accepted status)
+        const { count: followingCount } = await (ctx.supabase as any)
+          .from("follows")
+          .select("*", { count: "exact", head: true })
+          .eq("follower_id", input.id)
+          .eq("status", "accepted");
+
+        // If private and not accepted follower (or self), strip out sensitive info
+        const isSelf = ctx.session.user.id === input.id;
+        const isPrivate = (profile as any).is_public === false;
+        const isAcceptedFollower = follow_status === "accepted";
+
+        let resultProfile: any = {
+          ...(profile as any),
+          follow_status,
+          followers_count: followersCount ?? 0,
+          following_count: followingCount ?? 0,
+        };
+
+        if (!isSelf && isPrivate && !isAcceptedFollower) {
+          // Strip out sensitive fields for private accounts
+          resultProfile.bio = null;
+          resultProfile.preferred_units = null;
+          resultProfile.language = null;
+          // E.g., recent activities would be skipped here if we fetched them
+        }
+
+        return publicProfileSchema.parse(resultProfile);
       } catch (error) {
         if (error instanceof TRPCError) {
           throw error;
@@ -118,6 +167,7 @@ export const profilesRouter = createTRPCRouter({
         dob: z.string().nullable().optional(),
         preferred_units: z.enum(["metric", "imperial"]).nullable().optional(),
         language: z.string().max(10).nullable().optional(),
+        is_public: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

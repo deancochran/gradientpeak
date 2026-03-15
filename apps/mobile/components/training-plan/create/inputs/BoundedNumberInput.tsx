@@ -16,7 +16,7 @@ interface PresetOption {
 
 interface BoundedNumberInputProps {
   id: string;
-  label: string;
+  label?: string;
   value: string;
   onChange: (value: string) => void;
   onNumberChange?: (value: number | undefined) => void;
@@ -89,12 +89,14 @@ export function BoundedNumberInput({
 
   return (
     <View className="gap-2">
-      <Label nativeID={id}>
-        <Text className="text-sm font-medium">
-          {label}
-          {required ? <Text className="text-destructive"> *</Text> : null}
-        </Text>
-      </Label>
+      {label ? (
+        <Label nativeID={id}>
+          <Text className="text-sm font-medium">
+            {label}
+            {required ? <Text className="text-destructive"> *</Text> : null}
+          </Text>
+        </Label>
+      ) : null}
       <View className="flex-row items-center gap-2">
         <Input
           className={`flex-1 ${error ? "border-destructive bg-destructive/5" : ""}`}

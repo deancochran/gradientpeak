@@ -290,7 +290,7 @@ export function AdvancedConfigSheet({
             <TabsContent value="phases" className="p-4">
               <MesocycleBuilderForm
                 data={formData.periodization_template?.mesocycles || null}
-                onChange={(mesocycles) =>
+                onChange={(mesocycles: Mesocycle[]) =>
                   updateFormData({
                     periodization_template: {
                       ...formData.periodization_template!,

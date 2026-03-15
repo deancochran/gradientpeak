@@ -24,6 +24,7 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
         select: selectSpy,
         eq: vi.fn(() => builder),
         single: vi.fn(() => Promise.resolve(result)),
+        maybeSingle: vi.fn(() => Promise.resolve(result)),
       };
 
       tableSpies.set(table, { select: selectSpy });
@@ -76,7 +77,7 @@ describe("profilesRouter contracts", () => {
 
     const profilesSelect = tableSpies.get("profiles")?.select;
     expect(profilesSelect).toHaveBeenCalledWith(
-      "id, username, avatar_url, bio, gender, preferred_units, language",
+      "id, username, avatar_url, bio, gender, preferred_units, language, is_public",
     );
     expect(profilesSelect).not.toHaveBeenCalledWith("*");
   });

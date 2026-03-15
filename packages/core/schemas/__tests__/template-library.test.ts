@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  libraryItemCreateSchema,
   templateApplyInputSchema,
   templateItemTypeSchema,
 } from "../template_library";
@@ -19,8 +18,7 @@ describe("template library schemas", () => {
     const parsed = templateApplyInputSchema.safeParse({
       template_type: "training_plan",
       template_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      start_date: "2026-03-01",
-      goal_date: "2026-06-15",
+      target_date: "2026-06-15",
     });
 
     expect(parsed.success).toBe(true);
@@ -34,14 +32,5 @@ describe("template library schemas", () => {
     });
 
     expect(parsed.success).toBe(false);
-  });
-
-  it("validates library item creation payload", () => {
-    const parsed = libraryItemCreateSchema.safeParse({
-      item_type: "activity_plan",
-      item_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-    });
-
-    expect(parsed.success).toBe(true);
   });
 });

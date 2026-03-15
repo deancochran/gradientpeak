@@ -10,6 +10,15 @@ import type {
   TrainingPlanCalibrationConfig,
 } from "../schemas/training_plan_structure";
 import { trainingPlanCalibrationConfigSchema } from "../schemas/training_plan_structure";
+import {
+  defaultAthletePreferenceProfile,
+  type AthletePreferenceProfile,
+} from "../schemas/settings/profile_settings";
+import type {
+  FeasibilityAssessment,
+  ReferenceTrajectory,
+  TrajectoryMode,
+} from "../schemas/planning";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import {
@@ -25,8 +34,9 @@ import {
   READINESS_CALCULATION,
   DISTANCE_TO_CTL,
   PACE_TO_CTL,
-  TARGET_TYPE_CTL,
   getPaceBaseline,
+  getMaxSustainableCTL,
+  resolveNoHistoryStartingPrior,
 } from "./calibration-constants";
 import {
   buildCurvatureEnvelope,
@@ -39,6 +49,7 @@ import {
   blendDemandWithConfidence,
   computeCompositeReadiness,
   computeDurabilityScore,
+  computePlanningConfidence,
   computeProjectionFeasibilityMetadata,
   computeProjectionPointReadinessScores,
   getDemandRhythmMultiplier,
@@ -57,6 +68,16 @@ import {
 } from "./scoring/gdi";
 import { scoreGoalAssessment } from "./scoring/goalScore";
 import { scorePlanGoals } from "./scoring/planScore";
+import {
+  assessFeasibility,
+  buildPeriodizedObjectiveComponents,
+  evaluateReferenceTrackingWindow,
+  fromProfileGoals,
+  generateReferenceTrajectory,
+  resolveConstraintProfile,
+  resolveEventDemand,
+  type ProjectedDailyState,
+} from "./periodization";
 
 export {
   getOptimizationProfileBehavior,
@@ -69,6 +90,7 @@ export {
   blendDemandWithConfidence,
   computeCompositeReadiness,
   computeDurabilityScore,
+  computePlanningConfidence,
   computeProjectionFeasibilityMetadata,
   computeProjectionPointReadinessScores,
   getDemandRhythmMultiplier,
@@ -112,6 +134,18 @@ export type NoHistoryFitnessLevel = "weak" | "strong";
 export type NoHistoryGoalTier = "low" | "medium" | "high";
 export type BuildTimeFeasibility = "full" | "limited" | "insufficient";
 export type ProjectionFloorConfidence = "high" | "medium" | "low";
+export type ProjectionSport = "run" | "bike" | "swim" | "other";
+export type ProjectionLoadMethod =
+  | "bike_power"
+  | "run_pace"
+  | "swim_threshold_speed"
+  | "heart_rate"
+  | "manual_estimate";
+export type ProjectionFallbackMode =
+  | "primary_method"
+  | "same_sport_fallback"
+  | "sparse_evidence"
+  | "manual_conservative";
 
 interface DemandBand {
   min: number;
@@ -122,7 +156,17 @@ interface DemandBand {
 export interface EvidenceWeightingResult {
   score: number;
   state: "none" | "sparse" | "stale" | "rich";
+  support_signal: number;
+  evidence_recency_days: number;
   reasons: string[];
+}
+
+export interface ContinuousCapabilityFactors {
+  aerobic_base: number;
+  durability: number;
+  recovery_speed: number;
+  intensity_support: number;
+  evidence_quality: number;
 }
 
 export interface NoHistoryAvailabilityContext {
@@ -140,6 +184,9 @@ export interface NoHistoryAvailabilityContext {
 
 export interface NoHistoryIntensityModel {
   version: string;
+  min_supported_if?: number;
+  max_supported_if?: number;
+  fallback_if?: number;
   weak_if: number;
   strong_if: number;
   conservative_if: number;
@@ -147,8 +194,10 @@ export interface NoHistoryIntensityModel {
 
 export interface NoHistoryAnchorContext {
   history_availability_state: "none" | "sparse" | "rich";
-  goal_tier: NoHistoryGoalTier;
+  goal_tier?: NoHistoryGoalTier;
   weeks_to_event: number;
+  age?: number | null;
+  gender?: "male" | "female" | null;
   goal_targets?: NoHistoryGoalTargetInput[];
   total_horizon_weeks?: number;
   goal_count?: number;
@@ -177,16 +226,24 @@ export type NoHistoryGoalTargetInput =
 export interface NoHistoryEvidence {
   strong_signal_tokens: string[];
   rationale_codes: string[];
+  signal_quality?: number;
+  recent_consistency_marker?: "low" | "moderate" | "high";
+  effort_confidence_marker?: "low" | "moderate" | "high";
+  profile_metric_completeness_marker?: "low" | "moderate" | "high";
 }
 
 export interface NoHistoryFitnessInference {
   fitnessLevel: NoHistoryFitnessLevel;
+  fitnessSignal: number;
+  capability_factors: ContinuousCapabilityFactors;
   reasons: string[];
 }
 
 export interface NoHistoryProjectionFloor {
   goalTier: NoHistoryGoalTier;
   fitnessLevel: NoHistoryFitnessLevel;
+  fitness_signal_0_1?: number;
+  goal_demand_score_0_1?: number;
   start_ctl_floor: number;
   start_weekly_tss_floor: number;
   target_event_ctl: number;
@@ -207,6 +264,7 @@ export interface NoHistoryAnchorResolution {
     start_weekly_tss: number;
   } | null;
   fitness_level: NoHistoryFitnessLevel | null;
+  fitness_signal_0_1?: number | null;
   fitness_inference_reasons: string[];
   projection_floor_confidence: ProjectionFloorConfidence | null;
   floor_clamped_by_availability: boolean;
@@ -221,19 +279,50 @@ export interface NoHistoryAnchorResolution {
   starting_weekly_tss_for_projection: number | null;
   required_event_demand_range: DemandBand | null;
   required_peak_weekly_tss: DemandBand | null;
+  goal_demand_score_0_1?: number;
   evidence_confidence: EvidenceWeightingResult | null;
+  capability_factors: ContinuousCapabilityFactors | null;
   demand_confidence: ProjectionFloorConfidence | null;
   projection_feasibility: ReadinessProjectionFeasibilityMetadata | null;
 }
 
+export interface ProjectionSportLoadState {
+  sport: ProjectionSport;
+  load_method: ProjectionLoadMethod;
+  load_confidence: number;
+  fallback_mode: ProjectionFallbackMode;
+  source_quality: number;
+  rolling_load_7d: number;
+  rolling_load_28d: number;
+  ctl_equivalent: number;
+  mechanical_stress_score: number;
+}
+
+export interface ProjectionDoseRecommendation {
+  recommended_weekly_load: number;
+  recommended_weekly_duration_minutes: number;
+  recommended_sessions_per_week: number;
+  key_session_count: number;
+  long_session_ceiling_minutes: number;
+  intensity_distribution_target: {
+    easy: number;
+    moderate: number;
+    hard: number;
+  };
+  ramp_pressure: number;
+  recovery_pressure: number;
+  notes: string[];
+}
+
 const NO_HISTORY_DEFAULT_INTENSITY_MODEL: NoHistoryIntensityModel = {
   version: "no_history_intensity_v1",
+  min_supported_if: 0.68,
+  max_supported_if: 0.75,
+  fallback_if: 0.65,
   weak_if: 0.68,
   strong_if: 0.75,
   conservative_if: 0.65,
 };
-
-const NO_HISTORY_DEFAULT_STARTING_CTL = 0;
 
 function resolveProjectionCalibration(input: {
   calibration?: ProjectionCalibrationConfigInput;
@@ -258,22 +347,6 @@ function resolveProjectionCalibration(input: {
     usedDefaults: true,
   };
 }
-
-const NO_HISTORY_PROJECTION_FLOOR_MATRIX: Record<
-  NoHistoryFitnessLevel,
-  Record<NoHistoryGoalTier, { start_ctl_floor: number }>
-> = {
-  weak: {
-    low: { start_ctl_floor: 20 },
-    medium: { start_ctl_floor: 28 },
-    high: { start_ctl_floor: 35 },
-  },
-  strong: {
-    low: { start_ctl_floor: 30 },
-    medium: { start_ctl_floor: 40 },
-    high: { start_ctl_floor: 50 },
-  },
-};
 
 export function weeklyLoadFromBlockAndBaseline(
   block:
@@ -345,6 +418,11 @@ export function collectNoHistoryEvidence(
   return {
     strong_signal_tokens: [...new Set(strongSignals)],
     rationale_codes: summary?.rationale_codes ?? [],
+    signal_quality: summary?.signal_quality,
+    recent_consistency_marker: summary?.recent_consistency_marker,
+    effort_confidence_marker: summary?.effort_confidence_marker,
+    profile_metric_completeness_marker:
+      summary?.profile_metric_completeness_marker,
   };
 }
 
@@ -355,21 +433,51 @@ export function collectNoHistoryEvidence(
 export function determineNoHistoryFitnessLevel(
   evidence: NoHistoryEvidence,
 ): NoHistoryFitnessInference {
-  if (evidence.strong_signal_tokens.length >= 2) {
+  const markerValue = (marker?: "low" | "moderate" | "high") =>
+    marker === "high" ? 1 : marker === "moderate" ? 0.58 : 0.2;
+  const tokenSupport = clamp01(evidence.strong_signal_tokens.length / 3);
+  const signalQuality = clamp01(evidence.signal_quality ?? 0.35);
+  const consistency = markerValue(evidence.recent_consistency_marker);
+  const effort = markerValue(evidence.effort_confidence_marker);
+  const metrics = markerValue(evidence.profile_metric_completeness_marker);
+  const fitnessSignal = round3(
+    clamp01(
+      tokenSupport * 0.35 +
+        signalQuality * 0.3 +
+        consistency * 0.15 +
+        effort * 0.1 +
+        metrics * 0.1,
+    ),
+  );
+  const capability_factors: ContinuousCapabilityFactors = {
+    aerobic_base: round3(clamp01(fitnessSignal * 0.82 + consistency * 0.18)),
+    durability: round3(clamp01(fitnessSignal * 0.55 + consistency * 0.45)),
+    recovery_speed: round3(clamp01(0.35 + consistency * 0.35 + effort * 0.3)),
+    intensity_support: round3(clamp01(fitnessSignal * 0.5 + effort * 0.5)),
+    evidence_quality: round3(
+      clamp01(signalQuality * 0.55 + metrics * 0.25 + tokenSupport * 0.2),
+    ),
+  };
+
+  if (fitnessSignal >= 0.62) {
     return {
       fitnessLevel: "strong",
+      fitnessSignal,
+      capability_factors,
       reasons: [
         ...evidence.strong_signal_tokens,
-        "fitness_promoted_to_strong_two_independent_signals",
+        "fitness_promoted_to_strong_supportive_continuous_signal",
       ],
     };
   }
 
   return {
     fitnessLevel: "weak",
+    fitnessSignal,
+    capability_factors,
     reasons: [
       ...evidence.strong_signal_tokens,
-      "fitness_defaulted_to_weak_insufficient_strong_signals",
+      "fitness_defaulted_to_weak_supportive_signal_below_threshold",
     ],
   };
 }
@@ -380,9 +488,18 @@ export function determineNoHistoryFitnessLevel(
 export function deriveNoHistoryProjectionFloor(
   goalTier: NoHistoryGoalTier,
   fitnessLevel: NoHistoryFitnessLevel,
+  goalDemandScore = goalTier === "high"
+    ? 1
+    : goalTier === "medium"
+      ? 0.55
+      : 0.2,
+  fitnessSignal = fitnessLevel === "strong" ? 0.78 : 0.35,
 ): NoHistoryProjectionFloor {
-  const row = NO_HISTORY_PROJECTION_FLOOR_MATRIX[fitnessLevel][goalTier];
-  const startCtlFloor = row.start_ctl_floor;
+  const fitnessBase = 20 + smoothstep01(fitnessSignal) * 10;
+  const fitnessGrowth = 15 + smoothstep01(fitnessSignal) * 5;
+  const startCtlFloor = round1(
+    fitnessBase + fitnessGrowth * smoothstep01(goalDemandScore),
+  );
   const targetEventCtl = round1(
     Math.max(35, Math.min(95, startCtlFloor * 1.85)),
   );
@@ -390,6 +507,8 @@ export function deriveNoHistoryProjectionFloor(
   return {
     goalTier,
     fitnessLevel,
+    fitness_signal_0_1: fitnessSignal,
+    goal_demand_score_0_1: goalDemandScore,
     start_ctl_floor: startCtlFloor,
     start_weekly_tss_floor: deriveWeeklyTssFromCtl(startCtlFloor),
     target_event_ctl: targetEventCtl,
@@ -408,6 +527,12 @@ export function clampNoHistoryFloorByAvailability(
     ...NO_HISTORY_DEFAULT_INTENSITY_MODEL,
     ...intensityModel,
   };
+  const minSupportedIf =
+    mergedIntensityModel.min_supported_if ?? mergedIntensityModel.weak_if;
+  const maxSupportedIf =
+    mergedIntensityModel.max_supported_if ?? mergedIntensityModel.strong_if;
+  const fallbackIf =
+    mergedIntensityModel.fallback_if ?? mergedIntensityModel.conservative_if;
 
   if (!availabilityContext) {
     return {
@@ -452,12 +577,15 @@ export function clampNoHistoryFloorByAvailability(
   );
 
   const intensityFactor =
-    floor.fitnessLevel === "strong"
-      ? mergedIntensityModel.strong_if
-      : mergedIntensityModel.weak_if;
+    minSupportedIf +
+    (maxSupportedIf - minSupportedIf) *
+      smoothstep01(
+        floor.fitness_signal_0_1 ??
+          (floor.fitnessLevel === "strong" ? 0.78 : 0.35),
+      );
   const safeIntensityFactor = Number.isFinite(intensityFactor)
     ? intensityFactor
-    : mergedIntensityModel.conservative_if;
+    : fallbackIf;
 
   const feasibleWeeklyTss = Math.max(
     0,
@@ -473,8 +601,10 @@ export function clampNoHistoryFloorByAvailability(
 
   const reasons = [`availability_training_days_${availableTrainingDays}`];
   if (
-    intensityModel?.weak_if === undefined ||
-    intensityModel?.strong_if === undefined
+    (intensityModel?.min_supported_if === undefined &&
+      intensityModel?.weak_if === undefined) ||
+    (intensityModel?.max_supported_if === undefined &&
+      intensityModel?.strong_if === undefined)
   ) {
     reasons.push("intensity_model_missing_using_conservative_baseline");
   }
@@ -572,6 +702,26 @@ function confidenceToScoreFloor(input: {
   return input.calibration?.confidence_floor_low ?? 0.45;
 }
 
+function smoothstep01(value: number): number {
+  const clamped = clamp01(value);
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+export function computeBuildTimeFeasibilityScore(input: {
+  goalTier?: NoHistoryGoalTier;
+  goalDemandScore?: number;
+  weeksToEvent: number;
+}): number {
+  const safeWeeks = roundWeeksToEvent(input.weeksToEvent);
+  const demandScore =
+    input.goalDemandScore ??
+    (input.goalTier === "high" ? 1 : input.goalTier === "medium" ? 0.55 : 0.2);
+  const limited = 6 + demandScore * 6;
+  const full = 8 + demandScore * 8;
+
+  return smoothstep01((safeWeeks - limited) / Math.max(1, full - limited));
+}
+
 export function deriveGoalDemandProfileFromTargets(input: {
   goalTargets: NoHistoryGoalTargetInput[];
   goalTier: NoHistoryGoalTier;
@@ -580,13 +730,11 @@ export function deriveGoalDemandProfileFromTargets(input: {
 }): {
   required_event_demand_range: DemandBand;
   required_peak_weekly_tss: DemandBand;
+  goal_demand_score_0_1: number;
   demand_confidence: ProjectionFloorConfidence;
   minimum_confidence_score: number;
   rationale_codes: string[];
 } {
-  const tierRank =
-    input.goalTier === "low" ? 0 : input.goalTier === "medium" ? 1 : 2;
-  const tierBiasCtl = tierRank * 4;
   const reasons = [
     "demand_model_dynamic_continuous_v1",
     `goal_tier_${input.goalTier}`,
@@ -596,14 +744,44 @@ export function deriveGoalDemandProfileFromTargets(input: {
   const candidateWeights: number[] = [];
   let hasRacePaceTarget = false;
 
+  const thresholdDemandCtl = (input: {
+    modality: "pace" | "power" | "hr";
+    weeksToEvent: number;
+  }): number => {
+    const horizonSupport = smoothstep01((input.weeksToEvent - 4) / 20);
+    const modalityBase =
+      input.modality === "power" ? 56 : input.modality === "pace" ? 53 : 49;
+    const modalityGrowth =
+      input.modality === "power" ? 10 : input.modality === "pace" ? 8 : 6;
+    return modalityBase + modalityGrowth * horizonSupport;
+  };
+
+  const smoothRaceDistanceCtl = (distanceKm: number): number => {
+    const baseCtl =
+      DISTANCE_TO_CTL.DISTANCE_CTL_BASE +
+      DISTANCE_TO_CTL.DISTANCE_CTL_SCALE * Math.log(1 + distanceKm);
+    const enduranceBias =
+      clamp01((distanceKm - 10) / 32) * 4 +
+      clamp01((distanceKm - 42.2) / 57.8) * 5;
+    return baseCtl + enduranceBias;
+  };
+
+  const smoothPaceBoostCtl = (input: {
+    speedKph: number;
+    paceBaseline: number;
+  }): number => {
+    const surplus = Math.max(0, input.speedKph - input.paceBaseline);
+    return Math.min(
+      PACE_TO_CTL.PACE_BOOST_CAP,
+      PACE_TO_CTL.PACE_BOOST_CAP * (1 - Math.exp(-surplus / 3.2)),
+    );
+  };
+
   for (const target of input.goalTargets) {
     if (target.target_type === "race_performance") {
       const distanceKm = Math.max(1, Math.min(100, target.distance_m / 1000));
 
-      // Calculate base CTL from distance using documented formula
-      const distanceCtl =
-        DISTANCE_TO_CTL.DISTANCE_CTL_BASE +
-        DISTANCE_TO_CTL.DISTANCE_CTL_SCALE * Math.log(1 + distanceKm);
+      const distanceCtl = smoothRaceDistanceCtl(distanceKm);
 
       let paceCtlBoost = 0;
 
@@ -614,24 +792,16 @@ export function deriveGoalDemandProfileFromTargets(input: {
       ) {
         const speedKph = (distanceKm * 3600) / target.target_time_s;
 
-        // Use activity-specific pace baseline (default to "run" for NoHistoryGoalTargetInput)
         const paceBaseline = getPaceBaseline("run", distanceKm);
 
-        // Calculate pace boost with documented constants
-        paceCtlBoost = Math.max(
-          0,
-          Math.min(
-            PACE_TO_CTL.PACE_BOOST_CAP,
-            (speedKph - paceBaseline) * PACE_TO_CTL.PACE_BOOST_MULTIPLIER,
-          ),
-        );
+        paceCtlBoost = smoothPaceBoostCtl({ speedKph, paceBaseline });
         hasRacePaceTarget = true;
         reasons.push("race_performance_target_with_pace");
       } else {
         reasons.push("race_performance_target_without_pace");
       }
 
-      targetCtlCandidates.push(distanceCtl + paceCtlBoost + tierBiasCtl);
+      targetCtlCandidates.push(distanceCtl + paceCtlBoost);
       candidateWeights.push(
         1 + Math.min(0.8, distanceKm / 60) + (paceCtlBoost > 0 ? 0.25 : 0),
       );
@@ -639,25 +809,37 @@ export function deriveGoalDemandProfileFromTargets(input: {
     }
 
     if (target.target_type === "pace_threshold") {
-      targetCtlCandidates.push(TARGET_TYPE_CTL.PACE_THRESHOLD + tierBiasCtl);
+      targetCtlCandidates.push(
+        thresholdDemandCtl({
+          modality: "pace",
+          weeksToEvent: input.weeksToEvent,
+        }),
+      );
       candidateWeights.push(1);
       reasons.push("pace_threshold_target_included");
       continue;
     }
 
     if (target.target_type === "power_threshold") {
-      targetCtlCandidates.push(TARGET_TYPE_CTL.POWER_THRESHOLD + tierBiasCtl);
+      targetCtlCandidates.push(
+        thresholdDemandCtl({
+          modality: "power",
+          weeksToEvent: input.weeksToEvent,
+        }),
+      );
       candidateWeights.push(1.05);
       reasons.push("power_threshold_target_included");
       continue;
     }
 
-    targetCtlCandidates.push(TARGET_TYPE_CTL.HR_THRESHOLD + tierBiasCtl);
+    targetCtlCandidates.push(
+      thresholdDemandCtl({ modality: "hr", weeksToEvent: input.weeksToEvent }),
+    );
     candidateWeights.push(0.95);
     reasons.push("hr_threshold_target_included");
   }
 
-  let intrinsicDemandCtl = 48 + tierRank * 8;
+  let intrinsicDemandCtl = 54;
   if (targetCtlCandidates.length === 0) {
     reasons.push("goal_targets_missing_using_dynamic_tier_baseline");
   } else {
@@ -675,15 +857,17 @@ export function deriveGoalDemandProfileFromTargets(input: {
         : "single_goal_demand_applied",
     );
   }
+  const continuousDemandScore = smoothstep01((intrinsicDemandCtl - 42) / 36);
+  intrinsicDemandCtl += -2 + continuousDemandScore * 6;
 
   const weeks = roundWeeksToEvent(input.weeksToEvent);
   const horizonPressureScale =
     input.calibration?.demand_tier_time_pressure_scale ?? 1;
-  const horizonPressure = Math.max(
-    -0.35,
-    Math.min(0.7, ((20 - weeks) / 20) * horizonPressureScale),
-  );
-  const horizonDemandMultiplier = 1 + horizonPressure * 0.12;
+  const shortHorizonPressure = clamp01((18 - weeks) / 12) * 0.09;
+  const longHorizonRelaxation = clamp01((weeks - 30) / 28) * 0.035;
+  const horizonDemandMultiplier =
+    1 + shortHorizonPressure * horizonPressureScale - longHorizonRelaxation;
+  const horizonPressure = shortHorizonPressure - longHorizonRelaxation;
   reasons.push(`event_horizon_weeks_${weeks}`);
   reasons.push(
     horizonPressure > 0.25
@@ -698,8 +882,13 @@ export function deriveGoalDemandProfileFromTargets(input: {
   );
   const targetPeakWeeklyTss = targetEventCtl * 7;
 
+  const horizonConfidenceSignal = clamp01((weeks - 8) / 12);
   const confidence: ProjectionFloorConfidence =
-    weeks >= 16 ? "high" : weeks >= 10 ? "medium" : "low";
+    horizonConfidenceSignal >= 0.7
+      ? "high"
+      : horizonConfidenceSignal >= 0.35
+        ? "medium"
+        : "low";
   const intrinsicConfidenceFloor = clamp01((targetEventCtl - 45) / 55);
   const demandBasedConfidenceFloor = Math.min(
     0.94,
@@ -717,6 +906,7 @@ export function deriveGoalDemandProfileFromTargets(input: {
   return {
     required_event_demand_range: toDemandBand(targetEventCtl),
     required_peak_weekly_tss: toDemandBand(targetPeakWeeklyTss),
+    goal_demand_score_0_1: continuousDemandScore,
     demand_confidence: confidence,
     minimum_confidence_score: minimumConfidenceScore,
     rationale_codes: [...new Set(reasons)],
@@ -748,7 +938,16 @@ export function deriveEvidenceWeighting(input: {
     ...(hasStaleMarker ? ["confidence_discount_stale_history"] : []),
   ];
   const quality = clamp01(input.signalQuality ?? 0.4);
-  let confidence = baseByState[state] * 0.7 + quality * 0.3;
+  const evidence_recency_days = hasStaleMarker
+    ? 56
+    : state === "none"
+      ? 120
+      : state === "sparse"
+        ? 35
+        : 10;
+  const recencySupport = Math.exp(-evidence_recency_days / 90);
+  let confidence =
+    baseByState[state] * 0.45 + quality * 0.35 + recencySupport * 0.2;
 
   if (input.effortConfidenceMarker === "high") {
     confidence += 0.08;
@@ -773,9 +972,13 @@ export function deriveEvidenceWeighting(input: {
     rich: 0.5,
   };
 
+  const boundedScore = Math.max(minByState[state], clamp01(confidence));
+
   return {
-    score: Math.max(minByState[state], clamp01(confidence)),
+    score: boundedScore,
     state,
+    support_signal: round3(clamp01(boundedScore * 0.7 + recencySupport * 0.3)),
+    evidence_recency_days,
     reasons,
   };
 }
@@ -787,11 +990,47 @@ export function resolveNoHistoryAnchor(
   context: NoHistoryAnchorContext,
   calibration?: TrainingPlanCalibrationConfig["no_history"],
 ): NoHistoryAnchorResolution {
+  const startingPrior = resolveNoHistoryStartingPrior({ age: context.age });
+  const resolvedGoalTier =
+    context.goal_tier ??
+    deriveNoHistoryGoalTierFromTargets(context.goal_targets ?? []);
   const evidence = collectNoHistoryEvidence(context);
   const fitness = determineNoHistoryFitnessLevel(evidence);
+  const hasStartingCtlOverride =
+    Number.isFinite(context.starting_ctl_override) &&
+    (context.starting_ctl_override ?? 0) >= 0;
+  const startingCtlForProjection = round1(
+    hasStartingCtlOverride
+      ? (context.starting_ctl_override ?? startingPrior.starting_ctl)
+      : startingPrior.starting_ctl,
+  );
+  const startingWeeklyTssForProjection = deriveWeeklyTssFromCtl(
+    startingCtlForProjection,
+  );
+  const rawGoalDemandProfile = deriveGoalDemandProfileFromTargets({
+    goalTargets: context.goal_targets ?? [],
+    goalTier: resolvedGoalTier,
+    weeksToEvent: context.weeks_to_event,
+    calibration,
+  });
+  const maxSustainableCtl = getMaxSustainableCTL(context.age ?? undefined);
+  const goalDemandProfile =
+    rawGoalDemandProfile.required_event_demand_range.target > maxSustainableCtl
+      ? {
+          ...rawGoalDemandProfile,
+          required_event_demand_range: toDemandBand(maxSustainableCtl),
+          required_peak_weekly_tss: toDemandBand(maxSustainableCtl * 7),
+          rationale_codes: [
+            ...rawGoalDemandProfile.rationale_codes,
+            "goal_demand_capped_by_age_safe_ctl_ceiling",
+          ],
+        }
+      : rawGoalDemandProfile;
   const floor = deriveNoHistoryProjectionFloor(
-    context.goal_tier,
+    resolvedGoalTier,
     fitness.fitnessLevel,
+    goalDemandProfile.goal_demand_score_0_1,
+    fitness.fitnessSignal,
   );
   const clamped = clampNoHistoryFloorByAvailability(
     floor,
@@ -799,15 +1038,19 @@ export function resolveNoHistoryAnchor(
     context.intensity_model,
   );
   const periodizationFeasibility = classifyBuildTimeFeasibility(
-    context.goal_tier,
+    resolvedGoalTier,
     context.weeks_to_event,
   );
+  const buildTimeFeasibilityScore = computeBuildTimeFeasibilityScore({
+    goalDemandScore: goalDemandProfile.goal_demand_score_0_1,
+    weeksToEvent: context.weeks_to_event,
+  });
   let confidence = mapFeasibilityToConfidence(periodizationFeasibility);
   const confidenceReasons: string[] = [];
 
-  if (fitness.fitnessLevel === "weak" && confidence === "high") {
+  if (fitness.fitnessSignal < 0.45 && confidence === "high") {
     confidence = "medium";
-    confidenceReasons.push("confidence_downgraded_weak_fitness_inference");
+    confidenceReasons.push("confidence_downgraded_low_fitness_signal");
   }
 
   if ((context.goal_count ?? 1) > 1) {
@@ -828,24 +1071,6 @@ export function resolveNoHistoryAnchor(
     confidence = "medium";
     confidenceReasons.push("confidence_downgraded_availability_clamped");
   }
-
-  const hasStartingCtlOverride =
-    Number.isFinite(context.starting_ctl_override) &&
-    (context.starting_ctl_override ?? 0) >= 0;
-  const startingCtlForProjection = round1(
-    hasStartingCtlOverride
-      ? (context.starting_ctl_override ?? NO_HISTORY_DEFAULT_STARTING_CTL)
-      : NO_HISTORY_DEFAULT_STARTING_CTL,
-  );
-  const startingWeeklyTssForProjection = deriveWeeklyTssFromCtl(
-    startingCtlForProjection,
-  );
-  const goalDemandProfile = deriveGoalDemandProfileFromTargets({
-    goalTargets: context.goal_targets ?? [],
-    goalTier: context.goal_tier,
-    weeksToEvent: context.weeks_to_event,
-    calibration,
-  });
   const evidenceConfidence = deriveEvidenceWeighting({
     historyAvailabilityState: context.history_availability_state,
     rationaleCodes: evidence.rationale_codes,
@@ -861,6 +1086,7 @@ export function resolveNoHistoryAnchor(
   const effectiveEvidenceScore = Math.max(
     evidenceConfidence.score,
     demandConfidenceFloor,
+    0.45 + buildTimeFeasibilityScore * 0.35,
     goalDemandProfile.minimum_confidence_score,
   );
   const enrichedEvidenceReasons =
@@ -881,19 +1107,21 @@ export function resolveNoHistoryAnchor(
         }
       : null,
     fitness_level: fitness.fitnessLevel,
+    fitness_signal_0_1: fitness.fitnessSignal,
     fitness_inference_reasons: [
       ...fitness.reasons,
       ...evidence.rationale_codes,
       ...goalDemandProfile.rationale_codes,
       ...clamped.reasons,
+      ...startingPrior.rationale_codes,
       ...confidenceReasons,
       hasStartingCtlOverride
         ? "starting_ctl_override_applied"
-        : "starting_ctl_defaulted_never_trained",
+        : "starting_ctl_defaulted_shared_prior",
     ],
     projection_floor_confidence: confidence,
     floor_clamped_by_availability: clamped.floor_clamped_by_availability,
-    projection_floor_tier: context.goal_tier,
+    projection_floor_tier: resolvedGoalTier,
     starting_state_is_prior: projectionFloorApplied,
     target_event_ctl: goalDemandProfile.required_event_demand_range.target,
     weeks_to_event: roundWeeksToEvent(context.weeks_to_event),
@@ -911,11 +1139,15 @@ export function resolveNoHistoryAnchor(
     starting_weekly_tss_for_projection: startingWeeklyTssForProjection,
     required_event_demand_range: goalDemandProfile.required_event_demand_range,
     required_peak_weekly_tss: goalDemandProfile.required_peak_weekly_tss,
+    goal_demand_score_0_1: goalDemandProfile.goal_demand_score_0_1,
     evidence_confidence: {
       score: effectiveEvidenceScore,
       state: evidenceConfidence.state,
+      support_signal: evidenceConfidence.support_signal,
+      evidence_recency_days: evidenceConfidence.evidence_recency_days,
       reasons: enrichedEvidenceReasons,
     },
+    capability_factors: fitness.capability_factors,
     demand_confidence: goalDemandProfile.demand_confidence,
     projection_feasibility: null,
   };
@@ -1191,31 +1423,45 @@ export interface DeterministicProjectionPayload {
     | "projection_floor_applied"
     | "projection_floor_values"
     | "fitness_level"
+    | "fitness_signal_0_1"
     | "fitness_inference_reasons"
     | "projection_floor_confidence"
     | "floor_clamped_by_availability"
     | "starting_ctl_for_projection"
     | "starting_weekly_tss_for_projection"
+    | "goal_demand_score_0_1"
     | "required_event_demand_range"
     | "required_peak_weekly_tss"
     | "demand_confidence"
     | "evidence_confidence"
+    | "capability_factors"
     | "projection_feasibility"
   >;
   readiness_score: number;
+  physiological_readiness_score?: number;
   readiness_confidence?: number;
+  planning_confidence?: number;
+  planning_confidence_reasons?: string[];
   readiness_rationale_codes?: string[];
   capacity_envelope?: {
     envelope_score: number;
     envelope_state: "inside" | "edge" | "outside";
     limiting_factors: string[];
+    limiting_factor_scores?: {
+      over_high: number;
+      under_low: number;
+      over_ramp: number;
+    };
   };
   feasibility_band?: FeasibilityBand;
+  risk_score?: number;
   risk_level?: "low" | "moderate" | "high" | "extreme";
   risk_flags?: string[];
   caps_applied?: string[];
   projection_diagnostics?: ProjectionDiagnostics;
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
+  sport_load_states?: ProjectionSportLoadState[];
+  dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
@@ -1223,15 +1469,35 @@ export interface DeterministicProjectionPayload {
     state_readiness_score?: number;
     goal_alignment_loss_0_100?: number;
     feasibility_band: FeasibilityBand;
+    limiter_shares?: {
+      timeline_pressure: number;
+      capacity_pressure: number;
+      evidence_weakness: number;
+      recovery_strain: number;
+      mechanical_stress: number;
+      goal_interference: number;
+    };
+    interference_notes?: string[];
     target_scores: Array<{
       kind: GoalTargetV2["target_type"];
       score_0_100: number;
       target_weight?: number;
       unmet_gap?: number;
       rationale_codes: string[];
+      effective_target?: {
+        raw_target: number;
+        effective_scoring_target: number;
+        applied_surplus_pct: number;
+        surplus_support_factor: number;
+        surplus_applied: boolean;
+        rationale_code: string;
+      };
     }>;
     conflict_notes: string[];
   }>;
+  reference_trajectory?: ReferenceTrajectory;
+  trajectory_mode?: TrajectoryMode;
+  feasibility_assessment?: FeasibilityAssessment;
 }
 
 export interface BuildDeterministicProjectionInput {
@@ -1257,6 +1523,7 @@ export interface BuildDeterministicProjectionInput {
   starting_atl?: number;
   starting_tsb?: number;
   creation_config?: ProjectionSafetyConfigInput;
+  preference_profile?: AthletePreferenceProfile;
   no_history_context?: NoHistoryAnchorContext;
   prior_inferred_snapshot?: PriorInferredStateSnapshotInput;
   disable_weekly_tss_optimizer?: boolean;
@@ -1402,6 +1669,7 @@ interface WeeklyTssOptimizerInput {
   input: BuildDeterministicProjectionInput;
   normalizedConfig: ProjectionSafetyConfig;
   calibration: TrainingPlanCalibrationConfig;
+  referenceContext: ProjectionReferenceContext;
   goalMarkers: DeterministicProjectionGoalMarker[];
   recoverySegments: ProjectionRecoverySegment[];
   endDate: string;
@@ -1490,11 +1758,204 @@ export interface ProjectionDiagnostics {
     non_finite_objective_rejections: number;
     stability_assertions: string[];
   };
+  reference_context?: {
+    status: "available" | "unsupported" | "absent";
+    supported_goal_count: number;
+    unsupported_goal_count: number;
+    rationale_codes: string[];
+  };
+  reference_tracking?: {
+    scored_weeks: number;
+    matched_points: number;
+    ctl_mean_absolute_error: number;
+    tss_mean_absolute_error: number;
+    taper_pressure: number;
+    safety_penalty: number;
+  };
 }
 
 interface WeeklyOptimizationDecision {
   selected_weekly_tss: number;
   diagnostics: ProjectionDiagnostics;
+}
+
+interface ProjectionReferenceContext {
+  status: "available" | "unsupported" | "absent";
+  reference_trajectory?: ReferenceTrajectory;
+  reference_by_date?: Map<string, ReferenceTrajectory["points"][number]>;
+  trajectory_mode?: TrajectoryMode;
+  feasibility_assessment?: FeasibilityAssessment;
+  diagnostics: NonNullable<ProjectionDiagnostics["reference_context"]>;
+}
+
+function isUuidLike(value: string | undefined): value is string {
+  return value !== undefined
+    ? /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+      )
+    : false;
+}
+
+function createReferenceContextDiagnostics(input: {
+  status: "available" | "unsupported" | "absent";
+  supported_goal_count: number;
+  unsupported_goal_count: number;
+  rationale_codes: string[];
+}): ProjectionReferenceContext["diagnostics"] {
+  return {
+    status: input.status,
+    supported_goal_count: input.supported_goal_count,
+    unsupported_goal_count: input.unsupported_goal_count,
+    rationale_codes: [...new Set(input.rationale_codes)],
+  };
+}
+
+function computeReferenceContext(input: {
+  projectionInput: BuildDeterministicProjectionInput;
+  normalizedConfig: ProjectionSafetyConfig;
+  currentCtl: number;
+  startDate: string;
+  endDate: string;
+}): ProjectionReferenceContext {
+  const goalsWithTargets = input.projectionInput.goals.filter(
+    (goal) => (goal.targets?.length ?? 0) > 0,
+  );
+  if (goalsWithTargets.length === 0) {
+    return {
+      status: "absent",
+      diagnostics: createReferenceContextDiagnostics({
+        status: "absent",
+        supported_goal_count: 0,
+        unsupported_goal_count: 0,
+        rationale_codes: ["reference_context_goal_targets_absent"],
+      }),
+    };
+  }
+
+  const supportedGoals = goalsWithTargets.flatMap((goal) =>
+    isUuidLike(goal.id)
+      ? [
+          {
+            id: goal.id,
+            name: goal.name,
+            target_date: goal.target_date,
+            priority: goal.priority,
+            targets: goal.targets ?? [],
+          },
+        ]
+      : [],
+  );
+  const unsupportedGoalCount = goalsWithTargets.length - supportedGoals.length;
+
+  if (supportedGoals.length === 0) {
+    return {
+      status: "unsupported",
+      diagnostics: createReferenceContextDiagnostics({
+        status: "unsupported",
+        supported_goal_count: 0,
+        unsupported_goal_count: unsupportedGoalCount,
+        rationale_codes: ["reference_context_goal_ids_not_uuid"],
+      }),
+    };
+  }
+
+  const normalizedGoals = fromProfileGoals(supportedGoals);
+  const demandResults = normalizedGoals.map((goal) => resolveEventDemand(goal));
+  const resolvedDemands = demandResults.flatMap((result) =>
+    result.status === "supported" ? [result.demand] : [],
+  );
+  const unsupportedGoalIds = demandResults.flatMap((result) =>
+    result.status === "unsupported" ? result.goal_id : [],
+  );
+  const preferenceProfile =
+    input.projectionInput.preference_profile ?? defaultAthletePreferenceProfile;
+  const primarySport =
+    resolvedDemands[0]?.sport ?? normalizedGoals[0]?.activity_category;
+
+  if (!primarySport) {
+    return {
+      status: "unsupported",
+      diagnostics: createReferenceContextDiagnostics({
+        status: "unsupported",
+        supported_goal_count: normalizedGoals.length,
+        unsupported_goal_count: unsupportedGoalCount,
+        rationale_codes: ["reference_context_primary_sport_unresolved"],
+      }),
+    };
+  }
+
+  const constraintProfile = resolveConstraintProfile({
+    optimizationProfile: input.normalizedConfig.optimization_profile,
+    preferenceProfile,
+    sport: primarySport,
+  });
+  const endGoalDate = normalizedGoals[normalizedGoals.length - 1]?.target_date;
+  const weeksToPeak = Math.max(
+    1,
+    Math.ceil(
+      (Date.parse(`${endGoalDate ?? input.endDate}T00:00:00.000Z`) -
+        Date.parse(`${input.startDate}T00:00:00.000Z`)) /
+        (7 * 86400000),
+    ),
+  );
+  const { feasibility, mode } = assessFeasibility({
+    currentCtl: input.currentCtl,
+    weeksToPeak,
+    goals: normalizedGoals,
+    resolvedDemands,
+    unsupportedGoalIds,
+    preferenceProfile,
+    constraintProfile,
+  });
+
+  if (unsupportedGoalIds.length > 0) {
+    return {
+      status: "unsupported",
+      trajectory_mode: mode,
+      feasibility_assessment: feasibility,
+      diagnostics: createReferenceContextDiagnostics({
+        status: "unsupported",
+        supported_goal_count: normalizedGoals.length,
+        unsupported_goal_count:
+          unsupportedGoalCount + unsupportedGoalIds.length,
+        rationale_codes: [
+          ...feasibility.rationale_codes,
+          "reference_context_goal_mapping_unsupported",
+        ],
+      }),
+    };
+  }
+
+  const referenceTrajectory = generateReferenceTrajectory({
+    startDate: input.startDate,
+    endDate: input.endDate,
+    currentCtl: input.currentCtl,
+    goals: normalizedGoals,
+    resolvedDemands,
+    preferenceProfile,
+    constraintProfile,
+    feasibility,
+    mode,
+  });
+
+  return {
+    status: "available",
+    reference_trajectory: referenceTrajectory,
+    reference_by_date: new Map(
+      referenceTrajectory.points.map((point) => [point.date, point]),
+    ),
+    trajectory_mode: mode,
+    feasibility_assessment: feasibility,
+    diagnostics: createReferenceContextDiagnostics({
+      status: "available",
+      supported_goal_count: normalizedGoals.length,
+      unsupported_goal_count: unsupportedGoalCount,
+      rationale_codes: [
+        ...feasibility.rationale_codes,
+        "reference_context_precomputed",
+      ],
+    }),
+  };
 }
 
 function resolveWeeklyLoadSignals(
@@ -1762,6 +2223,19 @@ function createZeroObjectiveContributions(): ProjectionDiagnostics["objective_co
   };
 }
 
+function createZeroReferenceTracking(): NonNullable<
+  ProjectionDiagnostics["reference_tracking"]
+> {
+  return {
+    scored_weeks: 0,
+    matched_points: 0,
+    ctl_mean_absolute_error: 0,
+    tss_mean_absolute_error: 0,
+    taper_pressure: 0,
+    safety_penalty: 0,
+  };
+}
+
 function createZeroTradeoffSummary(): ProjectionDiagnostics["optimization_tradeoff_summary"] {
   return {
     goal_utility: 0,
@@ -1823,9 +2297,14 @@ function resolveDiagnosticsEffectiveOptimizerConfig(input: {
 
 function parseObjectiveContributionsPayload(
   payload: Record<string, number | string | boolean | null> | undefined,
-): ProjectionDiagnostics["objective_contributions"] {
+): ProjectionDiagnostics["objective_contributions"] & {
+  reference_tracking: NonNullable<ProjectionDiagnostics["reference_tracking"]>;
+} {
   if (!payload) {
-    return createZeroObjectiveContributions();
+    return {
+      ...createZeroObjectiveContributions(),
+      reference_tracking: createZeroReferenceTracking(),
+    };
   }
 
   const readNumber = (key: string): number => {
@@ -1846,12 +2325,21 @@ function parseObjectiveContributionsPayload(
       strain: readNumber("weighted_term_strain"),
       curve: readNumber("weighted_term_curve"),
     },
+    reference_tracking: {
+      scored_weeks: readNumber("reference_tracking_scored_weeks"),
+      matched_points: readNumber("reference_tracking_matched_points"),
+      ctl_mean_absolute_error: readNumber("reference_tracking_ctl_mae"),
+      tss_mean_absolute_error: readNumber("reference_tracking_tss_mae"),
+      taper_pressure: readNumber("reference_tracking_taper_pressure"),
+      safety_penalty: readNumber("reference_tracking_safety_penalty"),
+    },
   };
 }
 
 function serializeObjectiveContributionsPayload(input: {
   objective_score: number;
   weighted_terms: MpcObjectiveEvaluation["weighted_terms"];
+  reference_tracking?: ProjectionDiagnostics["reference_tracking"];
 }): Record<string, number> {
   return {
     objective_score: input.objective_score,
@@ -1863,11 +2351,35 @@ function serializeObjectiveContributionsPayload(input: {
     weighted_term_monotony: input.weighted_terms.monotony,
     weighted_term_strain: input.weighted_terms.strain,
     weighted_term_curve: input.weighted_terms.curve,
+    reference_tracking_scored_weeks:
+      input.reference_tracking?.scored_weeks ?? 0,
+    reference_tracking_matched_points:
+      input.reference_tracking?.matched_points ?? 0,
+    reference_tracking_ctl_mae:
+      input.reference_tracking?.ctl_mean_absolute_error ?? 0,
+    reference_tracking_tss_mae:
+      input.reference_tracking?.tss_mean_absolute_error ?? 0,
+    reference_tracking_taper_pressure:
+      input.reference_tracking?.taper_pressure ?? 0,
+    reference_tracking_safety_penalty:
+      input.reference_tracking?.safety_penalty ?? 0,
   };
 }
 
 function applyWeeklyTssCaps(input: WeeklyTssCapInput): WeeklyTssCapResult {
-  const rampCaps = resolveInvariantRampCaps();
+  const effectiveRampCaps = resolveEffectiveRampCaps({
+    effectiveControls: input.effectiveControls,
+  });
+  const rampCaps = {
+    max_weekly_tss_ramp_pct: Math.min(
+      resolveInvariantRampCaps().max_weekly_tss_ramp_pct,
+      effectiveRampCaps.max_weekly_tss_ramp_pct,
+    ),
+    max_ctl_ramp_per_week: Math.min(
+      resolveInvariantRampCaps().max_ctl_ramp_per_week,
+      effectiveRampCaps.max_ctl_ramp_per_week,
+    ),
+  };
   const maxAllowedByTssRamp = round1(
     input.previousWeekTss * (1 + rampCaps.max_weekly_tss_ramp_pct / 100),
   );
@@ -1918,6 +2430,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
   selected_weekly_tss: number;
   evaluated_candidates: number;
   objective_contributions: ProjectionDiagnostics["objective_contributions"];
+  reference_tracking: NonNullable<ProjectionDiagnostics["reference_tracking"]>;
 } {
   const baseline = applyWeeklyTssCaps({
     flooredWeeklyTss: input.flooredWeeklyTss,
@@ -1932,6 +2445,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
       selected_weekly_tss: baseline,
       evaluated_candidates: 0,
       objective_contributions: createZeroObjectiveContributions(),
+      reference_tracking: createZeroReferenceTracking(),
     };
   }
 
@@ -1943,6 +2457,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
       selected_weekly_tss: baseline,
       evaluated_candidates: 0,
       objective_contributions: createZeroObjectiveContributions(),
+      reference_tracking: createZeroReferenceTracking(),
     };
   }
 
@@ -1965,6 +2480,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
       selected_weekly_tss: baseline,
       evaluated_candidates: 0,
       objective_contributions: createZeroObjectiveContributions(),
+      reference_tracking: createZeroReferenceTracking(),
     };
   }
 
@@ -1984,6 +2500,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
   let bestScore = Number.NEGATIVE_INFINITY;
   let evaluatedCandidates = 0;
   let bestObjectiveContributions = createZeroObjectiveContributions();
+  let bestReferenceTracking = createZeroReferenceTracking();
 
   for (const candidateTss of [...candidateValues].sort((a, b) => a - b)) {
     evaluatedCandidates += 1;
@@ -2011,6 +2528,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
         objective_score: objective.objective_score,
         weighted_terms: objective.weighted_terms,
       };
+      bestReferenceTracking = objective.reference_tracking;
       continue;
     }
 
@@ -2024,6 +2542,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
           objective_score: objective.objective_score,
           weighted_terms: objective.weighted_terms,
         };
+        bestReferenceTracking = objective.reference_tracking;
       }
     }
   }
@@ -2032,6 +2551,7 @@ function optimizeWeeklyAppliedTssLegacy(input: WeeklyTssOptimizerInput): {
     selected_weekly_tss: bestTss,
     evaluated_candidates: evaluatedCandidates,
     objective_contributions: bestObjectiveContributions,
+    reference_tracking: bestReferenceTracking,
   };
 }
 
@@ -2071,6 +2591,8 @@ function solveWeeklyAppliedTssWithFallback(
     objective_contributions: createZeroObjectiveContributions(),
     optimization_tradeoff_summary: createZeroTradeoffSummary(),
     convergence_guard: convergenceGuard,
+    reference_context: input.referenceContext.diagnostics,
+    reference_tracking: createZeroReferenceTracking(),
   };
 
   if (input.input.disable_weekly_tss_optimizer) {
@@ -2165,12 +2687,17 @@ function solveWeeklyAppliedTssWithFallback(
             diagnostics_payload: serializeObjectiveContributionsPayload({
               objective_score: Number.NEGATIVE_INFINITY,
               weighted_terms: createZeroObjectiveWeightedTerms(),
+              reference_tracking: createZeroReferenceTracking(),
             }),
           };
         }
 
         return {
           objective_score: objective.objective_score,
+          safety_penalty: objective.reference_tracking?.safety_penalty,
+          tracking_error: objective.reference_tracking?.tracking_error,
+          volatility_penalty: Math.abs(objective.weighted_terms.volatility),
+          churn_penalty: Math.abs(objective.weighted_terms.churn),
           primary_goal_date: input.goalMarkers[0]?.target_date,
           primary_goal_id: input.goalMarkers[0]?.id,
           diagnostics_payload:
@@ -2212,6 +2739,9 @@ function solveWeeklyAppliedTssWithFallback(
         objective_contributions: parseObjectiveContributionsPayload(
           selectedCandidate?.diagnostics_payload,
         ),
+        reference_tracking: parseObjectiveContributionsPayload(
+          selectedCandidate?.diagnostics_payload,
+        ).reference_tracking,
         convergence_guard: {
           ...convergenceGuard,
           stability_assertions: [...convergenceGuard.stability_assertions],
@@ -2262,12 +2792,17 @@ function solveWeeklyAppliedTssWithFallback(
             diagnostics_payload: serializeObjectiveContributionsPayload({
               objective_score: Number.NEGATIVE_INFINITY,
               weighted_terms: createZeroObjectiveWeightedTerms(),
+              reference_tracking: createZeroReferenceTracking(),
             }),
           };
         }
 
         return {
           objective_score: objective.objective_score,
+          safety_penalty: objective.reference_tracking?.safety_penalty,
+          tracking_error: objective.reference_tracking?.tracking_error,
+          volatility_penalty: Math.abs(objective.weighted_terms.volatility),
+          churn_penalty: Math.abs(objective.weighted_terms.churn),
           primary_goal_date: input.goalMarkers[0]?.target_date,
           primary_goal_id: input.goalMarkers[0]?.id,
           diagnostics_payload:
@@ -2310,6 +2845,9 @@ function solveWeeklyAppliedTssWithFallback(
         objective_contributions: parseObjectiveContributionsPayload(
           selectedCandidate?.diagnostics_payload,
         ),
+        reference_tracking: parseObjectiveContributionsPayload(
+          selectedCandidate?.diagnostics_payload,
+        ).reference_tracking,
         convergence_guard: {
           ...convergenceGuard,
           stability_assertions: [...convergenceGuard.stability_assertions],
@@ -2339,6 +2877,7 @@ function solveWeeklyAppliedTssWithFallback(
           legacy_optimizer: legacy.evaluated_candidates,
         },
         objective_contributions: legacy.objective_contributions,
+        reference_tracking: legacy.reference_tracking,
         convergence_guard: {
           ...convergenceGuard,
           stability_assertions: [...convergenceGuard.stability_assertions],
@@ -2370,6 +2909,11 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
 ): {
   objective_score: number;
   weighted_terms: MpcObjectiveEvaluation["weighted_terms"];
+  reference_tracking: NonNullable<
+    ProjectionDiagnostics["reference_tracking"]
+  > & {
+    tracking_error: number;
+  };
 } {
   const profileBehavior = getOptimizationProfileBehavior(
     input.normalizedConfig.optimization_profile,
@@ -2381,45 +2925,48 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
       week_index: input.projectionWeekIndex,
     }),
   ];
-  const simulatedPoints: Array<{
-    date: string;
-    predicted_fitness_ctl: number;
-    predicted_fatigue_atl: number;
-    predicted_form_tsb: number;
-  }> = [];
+  const simulatedPoints: ProjectedDailyState[] = [];
 
-  let simCtl = simulateCtlOverWeek(
-    input.currentCtl,
-    input.candidateWeeklyTss,
-    input.daysInWeek,
-  );
-  let simAtl = simulateAtlOverWeek(
-    input.currentAtl,
-    input.candidateWeeklyTss,
-    input.daysInWeek,
-  );
+  const appendProjectedWeekStates = (params: {
+    weekStartDate: string;
+    startingCtl: number;
+    startingAtl: number;
+    weeklyTss: number;
+    daysInWeek: number;
+  }) => {
+    let dayCtl = params.startingCtl;
+    let dayAtl = params.startingAtl;
+    const dailyTss = round1(params.weeklyTss / Math.max(1, params.daysInWeek));
+
+    for (let dayOffset = 0; dayOffset < params.daysInWeek; dayOffset += 1) {
+      dayCtl = calculateCTL(dayCtl, dailyTss);
+      dayAtl = calculateATL(dayAtl, dailyTss);
+      simulatedPoints.push({
+        date: addDaysDateOnlyUtc(params.weekStartDate, dayOffset),
+        predicted_load_tss: dailyTss,
+        predicted_fitness_ctl: round1(dayCtl),
+        predicted_fatigue_atl: round1(dayAtl),
+        predicted_form_tsb: round1(dayCtl - dayAtl),
+      });
+    }
+
+    return {
+      ctl: dayCtl,
+      atl: dayAtl,
+    };
+  };
+
+  const initialWeekState = appendProjectedWeekStates({
+    weekStartDate: input.weekStartDate,
+    startingCtl: input.currentCtl,
+    startingAtl: input.currentAtl,
+    weeklyTss: input.candidateWeeklyTss,
+    daysInWeek: input.daysInWeek,
+  });
+  let simCtl = initialWeekState.ctl;
+  let simAtl = initialWeekState.atl;
   let simPrevWeekTss = input.candidateWeeklyTss;
   let simPrevDemandFloorSignal = input.weightedNoHistoryDemandFloor;
-
-  for (let dayOffset = 0; dayOffset < input.daysInWeek; dayOffset += 1) {
-    const dayDate = addDaysDateOnlyUtc(input.weekStartDate, dayOffset);
-    const dayCtl = simulateCtlOverWeek(
-      input.currentCtl,
-      input.candidateWeeklyTss,
-      dayOffset + 1,
-    );
-    const dayAtl = simulateAtlOverWeek(
-      input.currentAtl,
-      input.candidateWeeklyTss,
-      dayOffset + 1,
-    );
-    simulatedPoints.push({
-      date: dayDate,
-      predicted_fitness_ctl: round1(dayCtl),
-      predicted_fatigue_atl: round1(dayAtl),
-      predicted_form_tsb: round1(dayCtl - dayAtl),
-    });
-  }
 
   let simWeekStartDate = addDaysDateOnlyUtc(input.weekStartDate, 7);
   let simProjectionWeekIndex = input.projectionWeekIndex + 1;
@@ -2483,28 +3030,48 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
       }),
     );
 
-    const priorCtl = simCtl;
-    const priorAtl = simAtl;
-    simCtl = simulateCtlOverWeek(simCtl, simWeeklyTss, simDaysInWeek);
-    simAtl = simulateAtlOverWeek(simAtl, simWeeklyTss, simDaysInWeek);
-
-    for (let dayOffset = 0; dayOffset < simDaysInWeek; dayOffset += 1) {
-      const dayDate = addDaysDateOnlyUtc(simWeekStartDate, dayOffset);
-      const dayCtl = simulateCtlOverWeek(priorCtl, simWeeklyTss, dayOffset + 1);
-      const dayAtl = simulateAtlOverWeek(priorAtl, simWeeklyTss, dayOffset + 1);
-      simulatedPoints.push({
-        date: dayDate,
-        predicted_fitness_ctl: round1(dayCtl),
-        predicted_fatigue_atl: round1(dayAtl),
-        predicted_form_tsb: round1(dayCtl - dayAtl),
-      });
-    }
+    const updatedWeekState = appendProjectedWeekStates({
+      weekStartDate: simWeekStartDate,
+      startingCtl: simCtl,
+      startingAtl: simAtl,
+      weeklyTss: simWeeklyTss,
+      daysInWeek: simDaysInWeek,
+    });
+    simCtl = updatedWeekState.ctl;
+    simAtl = updatedWeekState.atl;
 
     simPrevWeekTss = simWeeklyTss;
     simPrevDemandFloorSignal = simSignals.weightedNoHistoryDemandFloor;
     simWeekStartDate = addDaysDateOnlyUtc(simWeekStartDate, 7);
     simProjectionWeekIndex += 1;
   }
+
+  const referenceTracking = (() => {
+    if (input.referenceContext.status !== "available") {
+      return {
+        ...createZeroReferenceTracking(),
+        tracking_error: 0,
+        rationale_codes: [],
+      };
+    }
+
+    const evaluation = evaluateReferenceTrackingWindow({
+      projected_states: simulatedPoints,
+      reference_trajectory: input.referenceContext.reference_trajectory,
+      reference_by_date: input.referenceContext.reference_by_date,
+    });
+
+    return {
+      scored_weeks: evaluation.matched_points > 0 ? 1 : 0,
+      matched_points: evaluation.matched_points,
+      ctl_mean_absolute_error: evaluation.ctl_mean_absolute_error,
+      tss_mean_absolute_error: evaluation.tss_mean_absolute_error,
+      taper_pressure: evaluation.taper_pressure,
+      safety_penalty: evaluation.safety_penalty,
+      tracking_error: evaluation.tracking_error,
+      rationale_codes: evaluation.rationale_codes,
+    };
+  })();
 
   const windowEndDate =
     simulatedPoints[simulatedPoints.length - 1]?.date ?? input.weekEndDate;
@@ -2519,6 +3086,7 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
       objective_score:
         -Math.abs(input.candidateWeeklyTss - input.baselineWeeklyTss) * 0.05,
       weighted_terms: createZeroObjectiveWeightedTerms(),
+      reference_tracking: referenceTracking,
     };
   }
 
@@ -2626,7 +3194,9 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
   });
   const normalizedGoalReadiness =
     weightedGoalCount <= 0 ? 0 : weightedGoalReadiness / weightedGoalCount;
-  const preparednessTowardTarget = clamp01(normalizedGoalReadiness / 100);
+  const preparednessTowardTarget = normalizeReadinessTowardTarget(
+    normalizedGoalReadiness,
+  );
   const preparednessPrimary = preparednessTowardTarget;
   const preparednessSecondary = preparednessTowardTarget;
 
@@ -2641,20 +3211,21 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
   const churnPenaltyScale = effectiveOptimizer.churn_penalty_weight;
 
   const objective = evaluateMpcObjective({
-    components: {
-      goal_attainment: preparednessPrimary,
-      projected_readiness: preparednessSecondary,
+    components: buildPeriodizedObjectiveComponents({
+      preparedness_primary: preparednessPrimary,
+      preparedness_secondary: preparednessSecondary,
       overload_penalty:
         overloadPenalty +
         softRampExcessPenalty +
         demandFloorPenalty +
         fatigueDecaySoftPenalty,
-      load_volatility_penalty: volatilityPenalty,
-      plan_change_penalty: baselineDeviationPenalty,
+      volatility_penalty: volatilityPenalty,
+      churn_penalty: baselineDeviationPenalty,
       monotony_penalty: 0,
       strain_penalty: 0,
       curvature_penalty: curvaturePenalty,
-    },
+      reference_tracking: referenceTracking,
+    }),
     weights: {
       w_goal: preparednessPrimaryWeight * profileBehavior.goal_readiness_weight,
       w_readiness: preparednessSecondaryWeight,
@@ -2672,6 +3243,7 @@ function evaluateWeeklyTssCandidateObjectiveDetails(
   return {
     objective_score: objective.objective_score,
     weighted_terms: objective.weighted_terms,
+    reference_tracking: referenceTracking,
   };
 }
 
@@ -2792,22 +3364,329 @@ function computeGoalReadinessScore(input: {
 
 function resolveSparsityPenalty(
   state: "none" | "sparse" | "stale" | "rich" | undefined,
+  evidenceScore?: number,
 ): number {
-  if (state === "none") return 0.2;
-  if (state === "stale") return 0.16;
-  if (state === "sparse") return 0.12;
-  return 0.04;
+  const basePenalty = clamp01(1 - clamp01(evidenceScore ?? 0.7)) * 0.18;
+  const stateBias =
+    state === "none"
+      ? 0.04
+      : state === "stale"
+        ? 0.03
+        : state === "sparse"
+          ? 0.02
+          : 0.01;
+  return round3(basePenalty + stateBias);
+}
+
+function resolveTargetSport(
+  targets: GoalTargetV2[] | undefined,
+): ProjectionSport {
+  const sportCounts: Record<ProjectionSport, number> = {
+    run: 0,
+    bike: 0,
+    swim: 0,
+    other: 0,
+  };
+
+  for (const target of targets ?? []) {
+    if (target.target_type === "hr_threshold") {
+      sportCounts.other += 0.5;
+      continue;
+    }
+    sportCounts[target.activity_category] += 1;
+  }
+
+  return (Object.entries(sportCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ??
+    "other") as ProjectionSport;
+}
+
+function resolveSportLoadMethod(input: {
+  sport: ProjectionSport;
+  targets: GoalTargetV2[];
+  evidenceScore: number;
+}): {
+  load_method: ProjectionLoadMethod;
+  fallback_mode: ProjectionFallbackMode;
+  base_confidence: number;
+} {
+  const hasPowerTarget = input.targets.some(
+    (target) => target.target_type === "power_threshold",
+  );
+  const hasRunPaceTarget = input.targets.some(
+    (target) =>
+      target.target_type === "pace_threshold" ||
+      (target.target_type === "race_performance" &&
+        target.activity_category === "run"),
+  );
+  const hasSwimTarget = input.targets.some(
+    (target) =>
+      target.target_type === "pace_threshold" ||
+      (target.target_type === "race_performance" &&
+        target.activity_category === "swim"),
+  );
+  const weakEvidence = input.evidenceScore < 0.22;
+
+  if (input.sport === "bike" && hasPowerTarget) {
+    return {
+      load_method: "bike_power",
+      fallback_mode:
+        input.evidenceScore >= 0.38 ? "primary_method" : "sparse_evidence",
+      base_confidence: input.evidenceScore >= 0.38 ? 0.92 : 0.78,
+    };
+  }
+  if (input.sport === "run" && hasRunPaceTarget) {
+    return {
+      load_method: "run_pace",
+      fallback_mode:
+        input.evidenceScore >= 0.38 ? "primary_method" : "sparse_evidence",
+      base_confidence: input.evidenceScore >= 0.38 ? 0.88 : 0.74,
+    };
+  }
+  if (input.sport === "swim" && hasSwimTarget) {
+    return {
+      load_method: "swim_threshold_speed",
+      fallback_mode:
+        input.evidenceScore >= 0.38 ? "primary_method" : "sparse_evidence",
+      base_confidence: input.evidenceScore >= 0.38 ? 0.85 : 0.72,
+    };
+  }
+  if (input.sport !== "other" && input.evidenceScore >= 0.28) {
+    return {
+      load_method: "heart_rate",
+      fallback_mode: weakEvidence ? "sparse_evidence" : "same_sport_fallback",
+      base_confidence: weakEvidence ? 0.48 : 0.58,
+    };
+  }
+
+  return {
+    load_method: "manual_estimate",
+    fallback_mode: weakEvidence ? "manual_conservative" : "same_sport_fallback",
+    base_confidence: weakEvidence ? 0.32 : 0.42,
+  };
+}
+
+function computeGoalInterferenceNote(input: {
+  goalId: string;
+  sport: ProjectionSport;
+  targetDate: string;
+  goals: Array<{ id: string; target_date: string; sport: ProjectionSport }>;
+}): string[] {
+  const notes: string[] = [];
+  for (const goal of input.goals) {
+    if (goal.id === input.goalId) continue;
+    const daysBetween = Math.abs(diffDays(input.targetDate, goal.target_date));
+    const interferenceWindowDays = goal.sport === input.sport ? 21 : 56;
+    if (daysBetween > interferenceWindowDays) continue;
+    notes.push(
+      goal.sport === input.sport
+        ? "shared_peak_window_limits_simultaneous_peak"
+        : "cross_sport_goal_interference_requires_split_focus",
+    );
+  }
+
+  return [...new Set(notes)];
+}
+
+function buildSportLoadStates(input: {
+  microcycles: DeterministicProjectionMicrocycle[];
+  goals: BuildDeterministicProjectionInput["goals"];
+  evidenceConfidenceScore: number;
+  capabilityFactors?: ContinuousCapabilityFactors | null;
+}): ProjectionSportLoadState[] {
+  const sports: ProjectionSport[] = ["run", "bike", "swim", "other"];
+  const weights = new Map<ProjectionSport, number>(
+    sports.map((sport) => [sport, 0]),
+  );
+
+  for (const goal of input.goals) {
+    const sport = resolveTargetSport(goal.targets);
+    weights.set(
+      sport,
+      (weights.get(sport) ?? 0) + getPriorityInfluenceWeight(goal.priority),
+    );
+  }
+
+  const totalWeight =
+    [...weights.values()].reduce((sum, value) => sum + value, 0) ||
+    sports.length;
+  const last4 = input.microcycles.slice(-4);
+  const last1 = input.microcycles.slice(-1);
+
+  return sports.map((sport) => {
+    const sportWeight = Math.max(0.08, (weights.get(sport) ?? 0) / totalWeight);
+    const sportGoals = input.goals.filter(
+      (goal) => resolveTargetSport(goal.targets) === sport,
+    );
+    const { load_method, fallback_mode, base_confidence } =
+      resolveSportLoadMethod({
+        sport,
+        targets: sportGoals.flatMap((goal) => goal.targets ?? []),
+        evidenceScore: input.evidenceConfidenceScore,
+      });
+    const rolling7 = round1(
+      last1.reduce(
+        (sum, cycle) => sum + cycle.planned_weekly_tss * sportWeight,
+        0,
+      ),
+    );
+    const rolling28 = round1(
+      last4.length === 0
+        ? 0
+        : last4.reduce(
+            (sum, cycle) => sum + cycle.planned_weekly_tss * sportWeight,
+            0,
+          ) / last4.length,
+    );
+    const source_quality = round3(
+      clamp01(
+        input.evidenceConfidenceScore * 0.75 +
+          (input.capabilityFactors?.evidence_quality ??
+            input.evidenceConfidenceScore) *
+            0.25,
+      ),
+    );
+    const load_confidence = round3(clamp01(base_confidence * source_quality));
+    const mechanicalMultiplier =
+      sport === "run"
+        ? 0.34
+        : sport === "other"
+          ? 0.16
+          : sport === "bike"
+            ? 0.08
+            : 0.05;
+
+    return {
+      sport,
+      load_method,
+      load_confidence,
+      fallback_mode,
+      source_quality,
+      rolling_load_7d: rolling7,
+      rolling_load_28d: rolling28,
+      ctl_equivalent: round1(rolling28 / 7),
+      mechanical_stress_score: round1(
+        clamp01((rolling28 / 220) * mechanicalMultiplier * 4) * 100,
+      ),
+    };
+  });
+}
+
+function buildDoseRecommendation(input: {
+  microcycles: DeterministicProjectionMicrocycle[];
+  preferenceProfile?: AthletePreferenceProfile;
+  clampPressure: number;
+  recoveryWeeks: number;
+  goalAssessmentsCount: number;
+  surplusApplied: boolean;
+}): ProjectionDoseRecommendation {
+  const trailingWeeks = input.microcycles.slice(-3);
+  const averageLoad =
+    trailingWeeks.length === 0
+      ? 0
+      : trailingWeeks.reduce(
+          (sum, cycle) => sum + cycle.planned_weekly_tss,
+          0,
+        ) / trailingWeeks.length;
+  const maxWeeklyDuration =
+    input.preferenceProfile?.dose_limits.max_weekly_duration_minutes;
+  const recommendedMinutes = round1(
+    Math.max(
+      90,
+      maxWeeklyDuration === undefined
+        ? averageLoad * 0.58
+        : Math.min(maxWeeklyDuration, averageLoad * 0.58),
+    ),
+  );
+  const recommendedSessions = Math.max(
+    input.preferenceProfile?.dose_limits.min_sessions_per_week ?? 3,
+    Math.min(
+      input.preferenceProfile?.dose_limits.max_sessions_per_week ?? 6,
+      Math.round(recommendedMinutes / 75),
+    ),
+  );
+  const keySessionCount = Math.max(
+    1,
+    Math.min(3, Math.round(recommendedSessions * 0.4)),
+  );
+  const longSessionCeilingMinutes = Math.round(
+    Math.min(
+      input.preferenceProfile?.dose_limits
+        .max_single_session_duration_minutes ?? 180,
+      Math.max(75, recommendedMinutes * 0.32),
+    ),
+  );
+  const recoveryPressure = round3(
+    clamp01(
+      input.recoveryWeeks / Math.max(1, input.microcycles.length) +
+        input.clampPressure * 0.45,
+    ),
+  );
+
+  return {
+    recommended_weekly_load: round1(averageLoad),
+    recommended_weekly_duration_minutes: recommendedMinutes,
+    recommended_sessions_per_week: recommendedSessions,
+    key_session_count: keySessionCount,
+    long_session_ceiling_minutes: longSessionCeilingMinutes,
+    intensity_distribution_target: {
+      easy: 0.76,
+      moderate: 0.17,
+      hard: 0.07,
+    },
+    ramp_pressure: round3(
+      clamp01(input.clampPressure + input.goalAssessmentsCount * 0.04),
+    ),
+    recovery_pressure: recoveryPressure,
+    notes: [
+      input.surplusApplied
+        ? "planning_to_slightly_exceed_raw_target_when_supported"
+        : "planning_to_reliably_meet_raw_target",
+      recoveryPressure > 0.45
+        ? "recovery_pressure_elevated"
+        : "recovery_pressure_managed",
+    ],
+  };
 }
 
 function resolveRiskLevel(input: {
   feasibilityBand: FeasibilityBand;
-}): "low" | "moderate" | "high" | "extreme" {
-  if (input.feasibilityBand === "infeasible") return "extreme";
-  if (input.feasibilityBand === "nearly_impossible") return "high";
-  if (input.feasibilityBand === "aggressive") return "high";
-  if (input.feasibilityBand === "stretch") return "moderate";
+  projectionFeasibilityScore?: number;
+  envelopeScore?: number;
+  clampCount?: number;
+}): { riskScore: number; riskLevel: "low" | "moderate" | "high" | "extreme" } {
+  const bandPenalty =
+    input.feasibilityBand === "infeasible"
+      ? 90
+      : input.feasibilityBand === "nearly_impossible"
+        ? 72
+        : input.feasibilityBand === "aggressive"
+          ? 58
+          : input.feasibilityBand === "stretch"
+            ? 40
+            : 18;
+  const readinessPenalty = Math.max(
+    0,
+    100 - (input.projectionFeasibilityScore ?? 75),
+  );
+  const envelopePenalty = Math.max(0, 100 - (input.envelopeScore ?? 85));
+  const clampPenalty = Math.min(25, (input.clampCount ?? 0) * 4);
+  const riskScore = Math.round(
+    bandPenalty * 0.45 +
+      readinessPenalty * 0.3 +
+      envelopePenalty * 0.2 +
+      clampPenalty * 0.05,
+  );
 
-  return "low";
+  const riskLevel =
+    riskScore >= 80
+      ? "extreme"
+      : riskScore >= 58
+        ? "high"
+        : riskScore >= 34
+          ? "moderate"
+          : "low";
+
+  return { riskScore, riskLevel };
 }
 
 function toDateTimeUtc(date: string): string {
@@ -2977,6 +3856,13 @@ function inferCurrentState(input: {
 export function buildDeterministicProjectionPayload(
   input: BuildDeterministicProjectionInput,
 ): DeterministicProjectionPayload {
+  return buildDeterministicProjectionPayloadInternal(input);
+}
+
+function buildDeterministicProjectionPayloadInternal(
+  input: BuildDeterministicProjectionInput,
+  precomputedReferenceContext?: ProjectionReferenceContext,
+): DeterministicProjectionPayload {
   const normalizedConfig = normalizeProjectionSafetyConfig(
     input.creation_config,
   );
@@ -3131,6 +4017,15 @@ export function buildDeterministicProjectionPayload(
   const startingStateIsPrior = Boolean(
     input.prior_inferred_snapshot ?? noHistory?.projection_floor_applied,
   );
+  const referenceContext =
+    precomputedReferenceContext ??
+    computeReferenceContext({
+      projectionInput: input,
+      normalizedConfig,
+      currentCtl: startingCtl,
+      startDate,
+      endDate,
+    });
 
   const microcycles: DeterministicProjectionMicrocycle[] = [];
   const points: DeterministicProjectionPoint[] = [];
@@ -3171,6 +4066,8 @@ export function buildDeterministicProjectionPayload(
     objective_contributions: createZeroObjectiveContributions(),
     optimization_tradeoff_summary: createZeroTradeoffSummary(),
     convergence_guard: createDefaultConvergenceGuard(),
+    reference_context: referenceContext.diagnostics,
+    reference_tracking: createZeroReferenceTracking(),
   };
   if (calibrationResolution.usedDefaults) {
     projectionDiagnostics.active_constraints.push(
@@ -3234,6 +4131,7 @@ export function buildDeterministicProjectionPayload(
       input,
       normalizedConfig,
       calibration,
+      referenceContext,
       goalMarkers,
       recoverySegments,
       endDate,
@@ -3358,6 +4256,34 @@ export function buildDeterministicProjectionPayload(
         projectionDiagnostics.objective_contributions.weighted_terms.curve +
           weeklyDecision.diagnostics.objective_contributions.weighted_terms
             .curve,
+      ),
+    };
+    projectionDiagnostics.reference_tracking = {
+      scored_weeks:
+        (projectionDiagnostics.reference_tracking?.scored_weeks ?? 0) +
+        (weeklyDecision.diagnostics.reference_tracking?.scored_weeks ?? 0),
+      matched_points:
+        (projectionDiagnostics.reference_tracking?.matched_points ?? 0) +
+        (weeklyDecision.diagnostics.reference_tracking?.matched_points ?? 0),
+      ctl_mean_absolute_error: round6(
+        (projectionDiagnostics.reference_tracking?.ctl_mean_absolute_error ??
+          0) +
+          (weeklyDecision.diagnostics.reference_tracking
+            ?.ctl_mean_absolute_error ?? 0),
+      ),
+      tss_mean_absolute_error: round6(
+        (projectionDiagnostics.reference_tracking?.tss_mean_absolute_error ??
+          0) +
+          (weeklyDecision.diagnostics.reference_tracking
+            ?.tss_mean_absolute_error ?? 0),
+      ),
+      taper_pressure: round6(
+        (projectionDiagnostics.reference_tracking?.taper_pressure ?? 0) +
+          (weeklyDecision.diagnostics.reference_tracking?.taper_pressure ?? 0),
+      ),
+      safety_penalty: round6(
+        (projectionDiagnostics.reference_tracking?.safety_penalty ?? 0) +
+          (weeklyDecision.diagnostics.reference_tracking?.safety_penalty ?? 0),
       ),
     };
     projectionDiagnostics.optimization_tradeoff_summary = {
@@ -3562,10 +4488,30 @@ export function buildDeterministicProjectionPayload(
     confidence: evidenceConfidenceScore,
     projectionWeeks: Math.max(1, microcycles.length),
   });
+  const clampPressure =
+    (tssRampClampWeeks + ctlRampClampWeeks) / Math.max(1, microcycles.length);
+  const planningConfidence = computePlanningConfidence({
+    evidence_score: evidenceConfidenceScore * 100,
+    evidence_state: noHistory?.evidence_confidence?.state,
+    unmet_ratio: projectionFeasibility.demand_gap.unmet_ratio,
+    clamp_pressure: clampPressure,
+    projection_weeks: Math.max(1, microcycles.length),
+    goal_count: goalMarkers.length,
+  });
+  const sportLoadStates = buildSportLoadStates({
+    microcycles,
+    goals: input.goals,
+    evidenceConfidenceScore,
+    capabilityFactors: noHistory?.capability_factors,
+  });
+  const sportLoadStateBySport = new Map(
+    sportLoadStates.map((state) => [state.sport, state]),
+  );
   const pointReadinessForScoring = computeProjectionPointReadinessScores({
     points,
     goals: goalMarkers,
     timeline_calibration: calibration.readiness_timeline,
+    athlete_gender: input.no_history_context?.gender,
   });
   const pointsForScoring = points.map((point, index) => ({
     ...point,
@@ -3579,19 +4525,73 @@ export function buildDeterministicProjectionPayload(
     ]),
   );
   const goalReadinessById = new Map<string, number>();
+  const goalContextById = new Map(
+    goalMarkers.map((marker) => {
+      const sourceGoal =
+        goalInputById.get(marker.id) ??
+        input.goals.find(
+          (goal) =>
+            goal.name === marker.name &&
+            goal.target_date === marker.target_date,
+        );
+      const sport = resolveTargetSport(sourceGoal?.targets);
+      return [
+        marker.id,
+        {
+          sourceGoal,
+          sport,
+          weeksToGoal: Math.max(0, diffDays(startDate, marker.target_date)) / 7,
+          interferenceNotes: computeGoalInterferenceNote({
+            goalId: marker.id,
+            sport,
+            targetDate: marker.target_date,
+            goals: goalMarkers.map((goalMarker) => {
+              const goalSource =
+                goalInputById.get(goalMarker.id) ??
+                input.goals.find(
+                  (goal) =>
+                    goal.name === goalMarker.name &&
+                    goal.target_date === goalMarker.target_date,
+                );
+              return {
+                id: goalMarker.id,
+                target_date: goalMarker.target_date,
+                sport: resolveTargetSport(goalSource?.targets),
+              };
+            }),
+          }),
+        },
+      ] as const;
+    }),
+  );
   const goalAssessmentsRaw = goalMarkers.map((marker) => {
-    const sourceGoal =
-      goalInputById.get(marker.id) ??
-      input.goals.find(
-        (goal) =>
-          goal.name === marker.name && goal.target_date === marker.target_date,
-      );
+    const goalContext = goalContextById.get(marker.id);
+    const sourceGoal = goalContext?.sourceGoal;
 
     const readinessAtGoal = resolveGoalDateReadiness(
       pointsForScoring,
       marker.target_date,
     );
     goalReadinessById.set(marker.id, readinessAtGoal);
+    const timelinePressure = clamp01(1 - (goalContext?.weeksToGoal ?? 0) / 24);
+    const evidenceWeakness = clamp01(1 - evidenceConfidenceScore);
+    const goalInterference = clamp01(
+      (goalContext?.interferenceNotes.length ?? 0) * 0.45,
+    );
+    const mechanicalStress = clamp01(
+      (sportLoadStateBySport.get(goalContext?.sport ?? "other")
+        ?.mechanical_stress_score ?? 0) / 100,
+    );
+    const capacityPressure = clamp01(
+      projectionFeasibility.demand_gap.unmet_ratio * 0.6 + clampPressure * 0.4,
+    );
+    const limiterShare = clamp01(
+      timelinePressure * 0.28 +
+        capacityPressure * 0.32 +
+        evidenceWeakness * 0.18 +
+        goalInterference * 0.12 +
+        mechanicalStress * 0.1,
+    );
 
     return scoreGoalAssessment({
       goal_id: marker.id,
@@ -3600,6 +4600,12 @@ export function buildDeterministicProjectionPayload(
       projection: {
         readiness_score: readinessAtGoal,
         readiness_confidence: evidenceConfidenceScore,
+        plan_feasibility_confidence: planningConfidence.score / 100,
+        target_surplus_preference:
+          input.preference_profile?.goal_strategy_preferences
+            .target_surplus_preference ?? 0,
+        weeks_to_goal: goalContext?.weeksToGoal,
+        limiter_share: limiterShare,
       },
     });
   });
@@ -3620,6 +4626,7 @@ export function buildDeterministicProjectionPayload(
       timeline_pressure: timelinePressure,
       sparsity_penalty: resolveSparsityPenalty(
         noHistory?.evidence_confidence?.state,
+        noHistory?.evidence_confidence?.score,
       ),
     });
   });
@@ -3639,6 +4646,7 @@ export function buildDeterministicProjectionPayload(
     })),
     starting_ctl: startingCtl,
     evidence_state: noHistory?.evidence_confidence?.state,
+    evidence_score: evidenceConfidenceScore,
     envelope_penalties: calibration.envelope_penalties,
   });
   const compositeReadiness = computeCompositeReadiness({
@@ -3667,7 +4675,14 @@ export function buildDeterministicProjectionPayload(
       };
     }),
     timeline_calibration: calibration.readiness_timeline,
+    athlete_gender: input.no_history_context?.gender,
   });
+  const physiologicalReadinessScore = round1(
+    computeWeightedGoalDateReadiness({
+      points: pointsForScoring,
+      goals: goalMarkers,
+    }),
+  );
   const pointsWithReadiness = pointsForScoring.map((point, i) => ({
     ...point,
     readiness_score: finalPointReadinessScores[i] ?? point.readiness_score,
@@ -3681,13 +4696,27 @@ export function buildDeterministicProjectionPayload(
       specificity: round3(compositeReadiness.durability_score / 100),
       execution_confidence: round3(compositeReadiness.evidence_score / 100),
     },
-    readiness_rationale_codes: compositeReadiness.readiness_rationale_codes,
+    readiness_rationale_codes: [
+      ...new Set([
+        ...(projectionFeasibility.readiness_rationale_codes ?? []),
+        ...compositeReadiness.readiness_rationale_codes,
+      ]),
+    ],
   };
+
+  const readinessRationaleCodes =
+    cappedProjectionFeasibility.readiness_rationale_codes;
 
   const goalFeasibilityById = new Map(
     goalGdi.map((goal) => [goal.goal_id, goal.feasibility_band]),
   );
   const goalAssessments = goalAssessmentsRaw.map((goal) => {
+    const goalContext = goalContextById.get(goal.goal_id);
+    const timelinePressure = clamp01(1 - (goalContext?.weeksToGoal ?? 0) / 24);
+    const capacityPressure = clamp01(
+      projectionFeasibility.demand_gap.unmet_ratio * 0.6 + clampPressure * 0.4,
+    );
+    const evidenceWeakness = clamp01(1 - evidenceConfidenceScore);
     const stateReadinessScore = round1(
       goalReadinessById.get(goal.goal_id) ?? 0,
     );
@@ -3704,6 +4733,16 @@ export function buildDeterministicProjectionPayload(
       targetAttainmentScore,
       goalAlignmentLoss: alignmentLoss,
     });
+    const mechanicalStress = clamp01(
+      (sportLoadStateBySport.get(goalContext?.sport ?? "other")
+        ?.mechanical_stress_score ?? 0) / 100,
+    );
+    const goalInterference = clamp01(
+      (goalContext?.interferenceNotes.length ?? 0) * 0.45,
+    );
+    const recoveryStrain = clamp01(
+      (alignmentLoss / 100) * 0.6 + goalInterference * 0.4,
+    );
 
     return {
       goal_id: goal.goal_id,
@@ -3712,25 +4751,56 @@ export function buildDeterministicProjectionPayload(
       state_readiness_score: stateReadinessScore,
       goal_alignment_loss_0_100: alignmentLoss,
       feasibility_band: goalFeasibilityById.get(goal.goal_id) ?? "feasible",
-      target_scores: goal.target_scores,
+      limiter_shares: {
+        timeline_pressure: round3(timelinePressure),
+        capacity_pressure: round3(capacityPressure),
+        evidence_weakness: round3(evidenceWeakness),
+        recovery_strain: round3(recoveryStrain),
+        mechanical_stress: round3(mechanicalStress),
+        goal_interference: round3(goalInterference),
+      },
+      interference_notes: goalContext?.interferenceNotes ?? [],
+      target_scores: goal.target_scores.map((targetScore) => ({
+        ...targetScore,
+        effective_target: targetScore.effective_target,
+      })),
       conflict_notes:
         alignmentLoss >= 8
           ? [...goal.conflict_notes, "goal_alignment_loss_elevated"]
           : goal.conflict_notes,
     };
   });
+  const doseRecommendation = buildDoseRecommendation({
+    microcycles,
+    preferenceProfile: input.preference_profile,
+    clampPressure,
+    recoveryWeeks,
+    goalAssessmentsCount: goalAssessments.length,
+    surplusApplied: goalAssessments.some((goal) =>
+      goal.target_scores.some(
+        (target) => target.effective_target?.surplus_applied,
+      ),
+    ),
+  });
 
   const riskFlags = [
     `feasibility_band_${planGdi.feasibility_band}`,
     ...projectionFeasibility.dominant_limiters,
-    `capacity_envelope_${capacityEnvelope.envelope_state}`,
+    ...(capacityEnvelope.envelope_score < 65
+      ? ["capacity_envelope_score_outside"]
+      : capacityEnvelope.envelope_score < 85
+        ? ["capacity_envelope_score_edge"]
+        : ["capacity_envelope_score_inside"]),
     ...capacityEnvelope.limiting_factors.map(
       (factor) => `capacity_envelope_${factor}`,
     ),
   ];
   const uniqueRiskFlags = [...new Set(riskFlags)];
-  const riskLevel = resolveRiskLevel({
+  const riskAssessment = resolveRiskLevel({
     feasibilityBand: planGdi.feasibility_band,
+    projectionFeasibilityScore: projectionFeasibility.readiness_score,
+    envelopeScore: capacityEnvelope.envelope_score,
+    clampCount: tssRampClampWeeks + ctlRampClampWeeks,
   });
 
   const optimizedPayload: DeterministicProjectionPayload = {
@@ -3758,6 +4828,7 @@ export function buildDeterministicProjectionPayload(
       projection_floor_applied: noHistory?.projection_floor_applied ?? false,
       projection_floor_values: noHistory?.projection_floor_values ?? null,
       fitness_level: noHistory?.fitness_level ?? null,
+      fitness_signal_0_1: noHistory?.fitness_signal_0_1 ?? undefined,
       fitness_inference_reasons: noHistory?.fitness_inference_reasons ?? [],
       projection_floor_confidence:
         noHistory?.projection_floor_confidence ?? null,
@@ -3767,46 +4838,40 @@ export function buildDeterministicProjectionPayload(
         noHistory?.starting_ctl_for_projection ?? null,
       starting_weekly_tss_for_projection:
         noHistory?.starting_weekly_tss_for_projection ?? null,
+      goal_demand_score_0_1: noHistory?.goal_demand_score_0_1 ?? undefined,
       required_event_demand_range:
         noHistory?.required_event_demand_range ?? null,
       required_peak_weekly_tss: noHistory?.required_peak_weekly_tss ?? null,
       demand_confidence: noHistory?.demand_confidence ?? null,
       evidence_confidence: noHistory?.evidence_confidence ?? null,
+      capability_factors: noHistory?.capability_factors ?? null,
       projection_feasibility: cappedProjectionFeasibility,
     },
     readiness_score: compositeReadiness.readiness_score,
+    physiological_readiness_score: physiologicalReadinessScore,
     readiness_confidence: compositeReadiness.readiness_confidence,
+    planning_confidence: planningConfidence.score,
+    planning_confidence_reasons: planningConfidence.rationale_codes,
     capacity_envelope: capacityEnvelope,
-    readiness_rationale_codes: compositeReadiness.readiness_rationale_codes,
+    readiness_rationale_codes: readinessRationaleCodes,
     feasibility_band: planGdi.feasibility_band,
-    risk_level: riskLevel,
+    risk_score: riskAssessment.riskScore,
+    risk_level: riskAssessment.riskLevel,
     risk_flags: uniqueRiskFlags,
     caps_applied: [],
     projection_diagnostics: projectionDiagnostics,
     optimization_tradeoff_summary:
       projectionDiagnostics.optimization_tradeoff_summary,
+    sport_load_states: sportLoadStates,
+    dose_recommendation: doseRecommendation,
     goal_assessments: goalAssessments,
+    reference_trajectory: referenceContext.reference_trajectory,
+    trajectory_mode: referenceContext.trajectory_mode,
+    feasibility_assessment: referenceContext.feasibility_assessment,
   };
 
   if (input.disable_weekly_tss_optimizer) {
     return optimizedPayload;
-  }
-
-  const baselinePayload = buildDeterministicProjectionPayload({
-    ...input,
-    disable_weekly_tss_optimizer: true,
-  });
-  const optimizedReadiness = computeWeightedGoalDateReadiness({
-    points: optimizedPayload.points,
-    goals: optimizedPayload.goal_markers,
-  });
-  const baselineReadiness = computeWeightedGoalDateReadiness({
-    points: baselinePayload.points,
-    goals: baselinePayload.goal_markers,
-  });
-
-  if (optimizedReadiness < baselineReadiness) {
-    return baselinePayload;
   }
 
   return optimizedPayload;
@@ -3952,6 +5017,16 @@ function round1(value: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+const TARGET_GOAL_READINESS_SCORE = 100;
+
+function normalizeReadinessTowardTarget(readinessScore: number): number {
+  const readinessGap = Math.max(
+    0,
+    TARGET_GOAL_READINESS_SCORE - Math.max(0, readinessScore),
+  );
+  return clamp01(1 - readinessGap / TARGET_GOAL_READINESS_SCORE);
 }
 
 function clampNumber(

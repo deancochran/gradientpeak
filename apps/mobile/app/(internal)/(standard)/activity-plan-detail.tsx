@@ -1,12 +1,17 @@
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { Switch } from "@/components/ui/switch";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { buildPlanRoute, ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 import { getDurationMs } from "@/lib/utils/durationConversion";
+import { skipToken, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityPayload,
   buildEstimationContext,
@@ -23,32 +28,71 @@ import {
   CalendarX,
   Copy,
   Edit,
-  Library,
+  Eye,
+  EyeOff,
+  Heart,
+  MessageCircle,
+  Send,
   Share2,
   Smartphone,
   Trash2,
 } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
 import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+
+function isValidUuid(value: string): boolean {
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(value);
+}
 
 export default function ActivityPlanDetailPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { profile } = useAuth();
   const params = useLocalSearchParams();
-  const planId = params.planId as string | undefined;
-  const eventId = params.eventId as string | undefined;
+  const planIdParam =
+    typeof params.planId === "string" ? params.planId : undefined;
+  const fallbackIdParam = typeof params.id === "string" ? params.id : undefined;
+  const planId = planIdParam ?? fallbackIdParam;
+  const eventId =
+    typeof params.eventId === "string" ? params.eventId : undefined;
+  const action = typeof params.action === "string" ? params.action : undefined;
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const scheduleActionHandledRef = React.useRef<string | null>(null);
 
   const utils = trpc.useUtils();
+  const { beginRedirect, isRedirecting, redirectOnNotFound } =
+    useDeletedDetailRedirect({
+      onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    });
 
   // Fetch plan from database if planId is provided
   const { data: fetchedPlan, isLoading: loadingPlan } =
     trpc.activityPlans.getById.useQuery({ id: planId! }, { enabled: !!planId });
 
   // Fetch planned activity if eventId is provided
-  const { data: plannedActivity, isLoading: loadingPlannedActivity } =
-    trpc.events.getById.useQuery({ id: eventId! }, { enabled: !!eventId });
+  const {
+    data: plannedActivity,
+    error: plannedActivityError,
+    isLoading: loadingPlannedActivity,
+  } = trpc.events.getById.useQuery(
+    { id: eventId! },
+    { enabled: !!eventId && !isRedirecting },
+  );
+
+  React.useEffect(() => {
+    redirectOnNotFound(plannedActivityError);
+  }, [plannedActivityError, redirectOnNotFound]);
 
   // Fetch route if plan has one
   const routeId =
@@ -164,6 +208,22 @@ export default function ActivityPlanDetailPage() {
 
   const handleSchedule = () => {
     if (!activityPlan) return;
+    const isOwnedByUser = activityPlan.profile_id === profile?.id;
+    if (!activityPlan.id) {
+      Alert.alert(
+        "Scheduling unavailable",
+        "Create this activity plan first, then schedule it from its detail screen.",
+      );
+      return;
+    }
+    if (!isOwnedByUser) {
+      duplicateActionRef.current = "schedule";
+      duplicatePlanMutation.mutate({
+        id: activityPlan.id,
+        newName: `${activityPlan.name} (Copy)`,
+      });
+      return;
+    }
     setShowScheduleModal(true);
   };
 
@@ -191,11 +251,50 @@ export default function ActivityPlanDetailPage() {
     );
   };
 
+  const duplicateActionRef = React.useRef<"copy" | "schedule" | null>(null);
+
+  const duplicatePlanMutation = trpc.activityPlans.duplicate.useMutation({
+    onSuccess: async (duplicatedPlan) => {
+      const duplicateAction = duplicateActionRef.current;
+      duplicateActionRef.current = null;
+      await Promise.all([
+        utils.activityPlans.list.invalidate(),
+        utils.activityPlans.getUserPlansCount.invalidate(),
+      ]);
+      if (duplicateAction === "schedule") {
+        router.replace(buildPlanRoute(duplicatedPlan.id, "schedule") as any);
+        return;
+      }
+      Alert.alert("Duplicated", "Activity plan added to your plans.", [
+        {
+          text: "Open",
+          onPress: () =>
+            router.replace({
+              pathname: "/activity-plan-detail" as any,
+              params: { planId: duplicatedPlan.id },
+            }),
+        },
+      ]);
+    },
+    onError: (error) => {
+      Alert.alert(
+        "Duplicate failed",
+        error.message || "Could not duplicate this activity plan",
+      );
+    },
+  });
+
   const handleDuplicate = () => {
-    // TODO: Navigate to create activity plan with this plan as template
-    router.push({
-      pathname: "/create-activity-plan" as any,
-      params: { templateId: activityPlan?.id },
+    const actualPlanId = planId || activityPlan?.id;
+    if (!actualPlanId) {
+      Alert.alert("Duplicate failed", "No activity plan ID was found.");
+      return;
+    }
+
+    duplicateActionRef.current = "copy";
+    duplicatePlanMutation.mutate({
+      id: actualPlanId,
+      newName: `${activityPlan.name} (Copy)`,
     });
   };
 
@@ -237,12 +336,33 @@ export default function ActivityPlanDetailPage() {
     },
   });
 
+  // Privacy update mutation
+  const updatePrivacyMutation = trpc.activityPlans.update.useMutation({
+    onSuccess: async () => {
+      await utils.activityPlans.getById.invalidate({ id: planId });
+      await utils.activityPlans.list.invalidate();
+    },
+    onError: (error) => {
+      console.error("Privacy update error:", error);
+      Alert.alert("Error", error.message || "Failed to update privacy");
+      setIsPublic(!isPublic);
+    },
+  });
+
+  const handleTogglePrivacy = () => {
+    const newVisibility = isPublic ? "private" : "public";
+    setIsPublic(!isPublic);
+    updatePrivacyMutation.mutate({
+      id: planId || activityPlan.id,
+      template_visibility: newVisibility,
+    });
+  };
+
   const removeScheduleMutation = trpc.events.delete.useMutation({
     onSuccess: async () => {
-      await utils.events.invalidate();
-      await utils.trainingPlans.invalidate();
+      beginRedirect();
       setShowScheduleModal(false);
-      router.back();
+      await refreshScheduleViews(queryClient, "eventDeletionMutation");
     },
     onError: (error) => {
       Alert.alert(
@@ -251,29 +371,6 @@ export default function ActivityPlanDetailPage() {
       );
     },
   });
-
-  const saveToLibraryMutation = trpc.library.add.useMutation({
-    onSuccess: async () => {
-      await utils.library.listActivityPlans.invalidate();
-      Alert.alert("Saved", "Activity plan added to your library.");
-    },
-    onError: (error) => {
-      Alert.alert("Save failed", error.message || "Could not save to library");
-    },
-  });
-
-  const handleSaveToLibrary = () => {
-    const actualPlanId = planId || activityPlan?.id;
-    if (!actualPlanId) {
-      Alert.alert("Save failed", "No activity plan ID was found.");
-      return;
-    }
-
-    saveToLibraryMutation.mutate({
-      item_type: "activity_plan",
-      item_id: actualPlanId,
-    });
-  };
 
   const handleDelete = () => {
     if (!activityPlan) return;
@@ -316,12 +413,123 @@ export default function ActivityPlanDetailPage() {
     );
   };
 
-  if (loadingPlan || loadingPlannedActivity) {
+  // Like state and mutation
+  const actualPlanId = (planId || activityPlan?.id)?.trim();
+  const [isLiked, setIsLiked] = useState(activityPlan?.has_liked ?? false);
+  const [likesCount, setLikesCount] = useState(activityPlan?.likes_count ?? 0);
+
+  // Helper to validate UUID format
+  const isValidUUID = (id: string | undefined): boolean => {
+    if (!id) return false;
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  };
+
+  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+    onError: () => {
+      setIsLiked(activityPlan?.has_liked ?? false);
+      setLikesCount(activityPlan?.likes_count ?? 0);
+    },
+  });
+
+  const handleToggleLike = () => {
+    if (!actualPlanId || !isValidUUID(actualPlanId)) {
+      Alert.alert("Error", "Cannot like this item - invalid ID");
+      return;
+    }
+    const newLikedState = !isLiked;
+    setIsLiked(newLikedState);
+    setLikesCount((prev: number) => (newLikedState ? prev + 1 : prev - 1));
+    toggleLikeMutation.mutate({
+      entity_id: actualPlanId,
+      entity_type: "activity_plan",
+    });
+  };
+
+  // Update like state when plan data loads
+  React.useEffect(() => {
+    if (activityPlan) {
+      setIsLiked(activityPlan.has_liked ?? false);
+      setLikesCount(activityPlan.likes_count ?? 0);
+    }
+  }, [activityPlan?.has_liked, activityPlan?.likes_count]);
+
+  // Comments state
+  const [newComment, setNewComment] = useState("");
+  const commentEntityId = actualPlanId ?? "";
+  const isCommentEntityIdValid = isValidUuid(commentEntityId);
+
+  // Fetch comments
+  const { data: commentsData, refetch: refetchComments } =
+    trpc.social.getComments.useQuery(
+      isCommentEntityIdValid
+        ? {
+            entity_id: commentEntityId,
+            entity_type: "activity_plan",
+          }
+        : skipToken,
+    );
+
+  // Add comment mutation
+  const addCommentMutation = trpc.social.addComment.useMutation({
+    onSuccess: () => {
+      setNewComment("");
+      refetchComments();
+    },
+    onError: (error) => {
+      Alert.alert("Error", `Failed to add comment: ${error.message}`);
+    },
+  });
+
+  const handleAddComment = () => {
+    const planIdToUse = (planId || activityPlan?.id)?.trim();
+    if (!planIdToUse || !isValidUuid(planIdToUse) || !newComment.trim()) return;
+    addCommentMutation.mutate({
+      entity_id: planIdToUse,
+      entity_type: "activity_plan",
+      content: newComment.trim(),
+    });
+  };
+
+  // Update privacy state when plan data loads
+  React.useEffect(() => {
+    if (activityPlan) {
+      setIsPublic(activityPlan.template_visibility === "public");
+    }
+  }, [activityPlan?.template_visibility]);
+
+  React.useEffect(() => {
+    if (action !== "schedule" || !activityPlan?.id || eventId) {
+      return;
+    }
+
+    const scheduleKey = `${activityPlan.id}:${action}`;
+
+    if (scheduleActionHandledRef.current === scheduleKey) {
+      return;
+    }
+
+    if (activityPlan.profile_id !== profile?.id) {
+      return;
+    }
+
+    scheduleActionHandledRef.current = scheduleKey;
+    setShowScheduleModal(true);
+  }, [
+    action,
+    activityPlan?.id,
+    activityPlan?.profile_id,
+    eventId,
+    profile?.id,
+  ]);
+
+  if (loadingPlan || loadingPlannedActivity || isRedirecting) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
         <ActivityIndicator size="large" />
         <Text className="text-muted-foreground mt-4">
-          Loading activity plan...
+          {isRedirecting ? "Closing activity..." : "Loading activity plan..."}
         </Text>
       </View>
     );
@@ -346,6 +554,13 @@ export default function ActivityPlanDetailPage() {
   // Check if user owns this plan for edit permission
   // Database uses profile_id field, not user_id
   const isOwnedByUser = activityPlan.profile_id === profile?.id;
+  const primaryScheduleLabel = isScheduled
+    ? "Reschedule"
+    : isOwnedByUser
+      ? "Schedule"
+      : duplicatePlanMutation.isPending
+        ? "Duplicating..."
+        : "Duplicate and Schedule";
 
   // Decode route coordinates if available
   const routeCoordinates = route?.polyline
@@ -389,10 +604,11 @@ export default function ActivityPlanDetailPage() {
                 variant="outline"
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
+                disabled={!isScheduled && duplicatePlanMutation.isPending}
               >
                 <Icon as={Calendar} size={16} className="text-foreground" />
                 <Text className="text-foreground text-sm">
-                  {isScheduled ? "Reschedule" : "Schedule"}
+                  {primaryScheduleLabel}
                 </Text>
               </Button>
             </View>
@@ -418,27 +634,56 @@ export default function ActivityPlanDetailPage() {
 
             {/* Secondary Actions Row */}
             <View className="flex-row gap-2">
-              <Button
-                onPress={handleSaveToLibrary}
-                variant="outline"
-                size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5"
-                disabled={saveToLibraryMutation.isPending}
+              <Pressable
+                onPress={handleToggleLike}
+                className="flex-1 flex-row items-center justify-center gap-1.5 py-2 rounded-lg border border-border bg-card"
               >
-                <Icon as={Library} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">
-                  {saveToLibraryMutation.isPending ? "Saving..." : "Save"}
+                <Icon
+                  as={Heart}
+                  size={16}
+                  className={
+                    isLiked
+                      ? "text-red-500 fill-red-500"
+                      : "text-muted-foreground"
+                  }
+                />
+                <Text
+                  className={
+                    isLiked
+                      ? "text-red-500 text-sm font-medium"
+                      : "text-muted-foreground text-sm"
+                  }
+                >
+                  {likesCount > 0 ? likesCount : "Like"}
                 </Text>
-              </Button>
+                {(commentsData?.total ?? 0) > 0 && (
+                  <>
+                    <Text className="text-muted-foreground text-sm">·</Text>
+                    <Icon
+                      as={MessageCircle}
+                      size={14}
+                      className="text-muted-foreground"
+                    />
+                    <Text className="text-muted-foreground text-sm">
+                      {commentsData?.total}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
 
               <Button
                 onPress={handleDuplicate}
                 variant="outline"
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
+                disabled={duplicatePlanMutation.isPending}
               >
                 <Icon as={Copy} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">Duplicate</Text>
+                <Text className="text-foreground text-sm">
+                  {duplicatePlanMutation.isPending
+                    ? "Duplicating..."
+                    : "Duplicate"}
+                </Text>
               </Button>
 
               <Button
@@ -454,6 +699,24 @@ export default function ActivityPlanDetailPage() {
 
             {isOwnedByUser && (
               <View className="flex-row gap-2">
+                {/* Privacy Toggle */}
+                <View className="flex-1 flex-row items-center justify-between px-3 py-2 rounded-lg border border-border bg-card">
+                  <View className="flex-row items-center gap-2">
+                    <Icon
+                      as={isPublic ? Eye : EyeOff}
+                      size={16}
+                      className="text-muted-foreground"
+                    />
+                    <Text className="text-sm text-foreground">
+                      {isPublic ? "Public" : "Private"}
+                    </Text>
+                  </View>
+                  <Switch
+                    checked={isPublic}
+                    onCheckedChange={handleTogglePrivacy}
+                    disabled={updatePrivacyMutation.isPending}
+                  />
+                </View>
                 <Button
                   onPress={handleEdit}
                   variant="outline"
@@ -478,6 +741,49 @@ export default function ActivityPlanDetailPage() {
                 </Button>
               </View>
             )}
+          </View>
+
+          {/* Comments Section */}
+          {commentsData && commentsData.comments.length > 0 && (
+            <View className="mb-4 border-t border-border pt-4">
+              <Text className="font-semibold text-foreground mb-3">
+                Comments ({commentsData.total})
+              </Text>
+              {commentsData.comments.map((comment: any) => (
+                <View key={comment.id} className="mb-3">
+                  <View className="flex-row items-center gap-2 mb-1">
+                    <Text className="font-medium text-sm text-foreground">
+                      {comment.profile?.username || "Unknown User"}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {new Date(comment.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Text className="text-sm text-foreground">
+                    {comment.content}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Add Comment Input */}
+          <View className="flex-row items-center gap-2 mb-6">
+            <TextInput
+              className="flex-1 border border-border rounded-lg px-3 py-2 text-foreground"
+              placeholder="Add a comment..."
+              placeholderTextColor="#9ca3af"
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline
+            />
+            <Button
+              onPress={handleAddComment}
+              disabled={!newComment.trim() || addCommentMutation.isPending}
+              size="icon"
+            >
+              <Icon as={Send} size={18} className="text-primary-foreground" />
+            </Button>
           </View>
 
           {/* Scheduled Date Banner */}
@@ -691,8 +997,12 @@ export default function ActivityPlanDetailPage() {
         <ScheduleActivityModal
           visible={showScheduleModal}
           onClose={() => setShowScheduleModal(false)}
-          activityPlanId={eventId ? undefined : planId}
-          activityPlan={!planId && !eventId ? activityPlan : undefined}
+          activityPlanId={
+            eventId ? undefined : isOwnedByUser ? activityPlan.id : undefined
+          }
+          activityPlan={
+            !planId && !eventId && isOwnedByUser ? activityPlan : undefined
+          }
           eventId={eventId}
           onSuccess={() => {
             setShowScheduleModal(false);

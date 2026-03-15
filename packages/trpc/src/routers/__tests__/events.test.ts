@@ -459,6 +459,64 @@ describe("eventsRouter generalization", () => {
     expect(result.status).toBe("completed");
   });
 
+  it("derives next-day ends_at for all-day updates when only starts_at changes", async () => {
+    const eventId = "00000000-0000-4000-8000-000000000024";
+
+    const { caller, callLog } = createCaller({
+      events: [
+        {
+          data: createEventRow({
+            id: eventId,
+            event_type: "custom",
+            all_day: true,
+            starts_at: "2026-05-01T00:00:00.000Z",
+            ends_at: "2026-05-02T00:00:00.000Z",
+          }),
+          error: null,
+        },
+        {
+          data: [
+            createEventRow({
+              id: eventId,
+              event_type: "custom",
+              all_day: true,
+              starts_at: "2026-05-03T00:00:00.000Z",
+              ends_at: "2026-05-04T00:00:00.000Z",
+            }),
+          ],
+          error: null,
+        },
+      ],
+      integrations: {
+        data: null,
+        error: null,
+      },
+    });
+
+    await caller.update({
+      id: eventId,
+      scope: "single",
+      patch: {
+        title: "Planned Activity",
+        notes: null,
+        all_day: true,
+        timezone: "UTC",
+        starts_at: "2026-05-03T00:00:00.000Z",
+      },
+    });
+
+    const updateCall = callLog.find(
+      (call) => call.table === "events" && call.operation === "update",
+    );
+
+    expect((updateCall?.payload as any).starts_at).toBe(
+      "2026-05-03T00:00:00.000Z",
+    );
+    expect((updateCall?.payload as any).ends_at).toBe(
+      "2026-05-04T00:00:00.000Z",
+    );
+  });
+
   it("delete supports scoped series mutations", async () => {
     const { caller } = createCaller({
       events: [

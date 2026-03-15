@@ -190,7 +190,7 @@ const eventListSchema = z
     include_adhoc: z.boolean().default(true),
     date_from: z.string().optional(),
     date_to: z.string().optional(),
-    limit: z.number().min(1).max(100).default(20),
+    limit: z.number().min(1).max(500).default(20),
     cursor: z.string().optional(),
   })
   .strict();
@@ -725,15 +725,26 @@ export const eventsRouter = createTRPCRouter({
         }
       }
 
-      let trainingPlanId = input.training_plan_id;
-      if (!trainingPlanId && normalizedEventType === "planned") {
-        const { data: activePlan } = await ctx.supabase
-          .from("training_plans")
-          .select("*")
-          .eq("profile_id", ctx.session.user.id)
-          .eq("is_active", true)
-          .single();
-        trainingPlanId = activePlan?.id;
+      const trainingPlanId =
+        "training_plan_id" in input
+          ? (input.training_plan_id ?? null)
+          : (null as string | null);
+
+      if (trainingPlanId) {
+        const { data: trainingPlan, error: trainingPlanError } =
+          await ctx.supabase
+            .from("training_plans")
+            .select("id")
+            .eq("id", trainingPlanId)
+            .eq("profile_id", ctx.session.user.id)
+            .maybeSingle();
+
+        if (trainingPlanError || !trainingPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Training plan not found or not accessible",
+          });
+        }
       }
 
       const domainInput = input as z.infer<typeof eventCreateSchema>;
@@ -778,7 +789,7 @@ export const eventsRouter = createTRPCRouter({
           recurrence_rule: recurrence?.rule ?? null,
           recurrence_timezone: recurrence?.timezone ?? null,
           source_provider: sourceProvider,
-        })
+        } as any)
         .select(plannedEventSelect)
         .single();
 
@@ -923,6 +934,23 @@ export const eventsRouter = createTRPCRouter({
         }
       }
 
+      if (typeof patchAny.training_plan_id === "string") {
+        const { data: trainingPlan, error: trainingPlanError } =
+          await ctx.supabase
+            .from("training_plans")
+            .select("id")
+            .eq("id", patchAny.training_plan_id)
+            .eq("profile_id", ctx.session.user.id)
+            .maybeSingle();
+
+        if (trainingPlanError || !trainingPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Training plan not found or not accessible",
+          });
+        }
+      }
+
       const eventUpdates: Database["public"]["Tables"]["events"]["Update"] = {
         ...(patchAny.event_type !== undefined
           ? { event_type: toDbEventType(patchAny.event_type as CoreEventType) }
@@ -968,6 +996,22 @@ export const eventsRouter = createTRPCRouter({
       if (scheduledDate !== undefined) {
         eventUpdates.starts_at = toDayStartIso(scheduledDate);
         eventUpdates.ends_at = toNextDayStartIso(scheduledDate);
+      }
+
+      const nextAllDay =
+        patchAny.all_day !== undefined
+          ? Boolean(patchAny.all_day)
+          : existingEvent.all_day;
+
+      if (
+        nextAllDay &&
+        patchAny.starts_at !== undefined &&
+        patchAny.ends_at === undefined &&
+        scheduledDate === undefined
+      ) {
+        eventUpdates.ends_at = toNextDayStartIso(
+          toDateKey(patchAny.starts_at as string),
+        );
       }
 
       if (
@@ -1630,9 +1674,11 @@ export const eventsRouter = createTRPCRouter({
         itemsWithEstimation = events.map((event) => ({
           ...event,
           activity_plan: event.activity_plan
-            ? plansMap.get(event.activity_plan.id) || event.activity_plan
+            ? (plansMap.get(
+                event.activity_plan.id,
+              ) as unknown as typeof event.activity_plan) || event.activity_plan
             : null,
-        }));
+        })) as typeof events;
       }
 
       let nextCursor: string | undefined;

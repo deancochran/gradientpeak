@@ -1,6 +1,7 @@
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+import { ROUTES } from "@/lib/constants/routes";
 import UserDetailScreenWithErrorBoundary from "../user/[userId]";
 
 const {
@@ -83,7 +84,13 @@ vi.mock("@/components/ui/icon", () => ({ Icon: createHost("Icon") }));
 vi.mock("@/components/ui/input", () => ({ Input: createHost("Input") }));
 vi.mock("@/components/ui/text", () => ({ Text: createHost("Text") }));
 
-vi.mock("lucide-react-native", () => ({ Edit3: createHost("Edit3") }));
+vi.mock("lucide-react-native", () => ({
+  Edit3: createHost("Edit3"),
+  UserPlus: createHost("UserPlus"),
+  UserMinus: createHost("UserMinus"),
+  Clock: createHost("Clock"),
+  MessageCircle: createHost("MessageCircle"),
+}));
 
 vi.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => authState,
@@ -120,11 +127,25 @@ vi.mock("@/lib/trpc", () => ({
         useMutation: () => ({ mutate: vi.fn(), isPending: false }),
       },
     },
+    social: {
+      followUser: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+      unfollowUser: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+    },
+    messaging: {
+      getOrCreateDM: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false }),
+      },
+    },
   },
 }));
 
 describe("user detail own vs other controls", () => {
   it("shows own-only controls on own profile", () => {
+    pushMock.mockReset();
     localSearchParamsMock.userId = authState.user.id;
     authState.profile.username = "Owner";
     profileQueryState.data.username = "Owner";
@@ -143,6 +164,18 @@ describe("user detail own vs other controls", () => {
 
     expect(ownEdit.length).toBeGreaterThan(0);
     expect(accountSections.length).toBeGreaterThan(0);
+
+    const myTrainingPlans = renderer.root.findAll(
+      (node: any) => node.props?.testID === "my-training-plans",
+    )[0];
+
+    expect(myTrainingPlans).toBeDefined();
+
+    act(() => {
+      myTrainingPlans.props.onPress();
+    });
+
+    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.LIST);
   });
 
   it("hides own-only controls on other user profile", () => {

@@ -21,6 +21,7 @@ export function NotificationsButton() {
   const { data: notifications = [] } = trpc.notifications.getRecent.useQuery({
     limit: 5,
   });
+  type Notification = (typeof notifications)[number];
   const utils = trpc.useUtils();
 
   const markReadMutation = trpc.notifications.markRead.useMutation({
@@ -30,17 +31,12 @@ export function NotificationsButton() {
     },
   });
 
-  const handleNotificationClick = (notification: any) => {
-    if (!notification.read_at) {
+  const handleNotificationClick = (notification: Notification) => {
+    if (!notification.is_read) {
       markReadMutation.mutate({ notification_ids: [notification.id] });
     }
 
-    // Navigate based on type
-    if (notification.type === "coaching_invitation") {
-      router.push("/coaching");
-    } else if (notification.type === "new_message") {
-      router.push("/messages");
-    }
+    router.push("/notifications");
   };
 
   return (
@@ -72,15 +68,14 @@ export function NotificationsButton() {
               onClick={() => handleNotificationClick(n)}
               className="cursor-pointer flex flex-col items-start gap-1 p-3"
             >
-              <div className="font-medium">
-                {n.type === "coaching_invitation" && "New Coaching Invite"}
-                {n.type === "new_message" && "New Message"}
-                {n.type === "new_follower" && "New Follower"}
+              <div className="font-medium">{n.title}</div>
+              <div className="text-sm text-muted-foreground line-clamp-2">
+                {n.message}
               </div>
               <div className="text-xs text-muted-foreground">
                 {new Date(n.created_at).toLocaleDateString()}
               </div>
-              {!n.read_at && (
+              {!n.is_read && (
                 <div className="h-2 w-2 rounded-full bg-blue-500 absolute top-3 right-3" />
               )}
             </DropdownMenuItem>
