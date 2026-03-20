@@ -30,17 +30,17 @@ vi.mock("@/components/goals/GoalEditorModal", () => ({
   GoalEditorModal: createHost("GoalEditorModal"),
 }));
 
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: createHost("Button"),
 }));
 
-vi.mock("@/components/ui/card", () => ({
+vi.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardTitle: createHost("CardTitle"),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 

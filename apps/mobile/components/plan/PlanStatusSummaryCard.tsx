@@ -1,4 +1,4 @@
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 
 type FeasibilityState = "feasible" | "aggressive" | "unsafe";

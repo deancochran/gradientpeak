@@ -1,5 +1,5 @@
-import { Text } from "@/components/ui/text";
-import { cn } from "@/lib/utils";
+import { Text } from "@repo/ui/components/text";
+import { cn } from "@repo/ui/lib/cn";
 import React from "react";
 import { View } from "react-native";
 

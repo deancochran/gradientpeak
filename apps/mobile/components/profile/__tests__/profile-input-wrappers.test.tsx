@@ -8,11 +8,11 @@ vi.mock("react-native", () => ({
   View: (props: any) => React.createElement("View", props, props.children),
 }));
 
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: (props: any) => React.createElement("Button", props, props.children),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: (props: any) => React.createElement("Text", props, props.children),
 }));
 

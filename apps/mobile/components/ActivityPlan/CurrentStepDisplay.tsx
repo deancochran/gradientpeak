@@ -4,8 +4,8 @@ import {
   formatDuration,
   PlanStepV2,
 } from "@repo/core";
-import { Text } from "@/components/ui/text";
-import { Icon } from "@/components/ui/icon";
+import { Text } from "@repo/ui/components/text";
+import { Icon } from "@repo/ui/components/icon";
 import { View } from "react-native";
 import { Clock } from "lucide-react-native";
 import { TargetMetricsGrid } from "./TargetMetricsCard";

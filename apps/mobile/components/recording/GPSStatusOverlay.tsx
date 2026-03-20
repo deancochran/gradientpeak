@@ -14,7 +14,7 @@
 
 import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,

@@ -12,8 +12,8 @@
  */
 
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
-import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { trpc } from "@/lib/trpc";

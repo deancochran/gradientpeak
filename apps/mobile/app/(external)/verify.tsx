@@ -7,8 +7,13 @@ import { z } from "zod";
 
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@repo/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -16,9 +21,9 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
+} from "@repo/ui/components/form";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
 
 const verifySchema = z.object({
   token: z

@@ -6,10 +6,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { trpc } from "@/lib/trpc";
 import { useFormMutation } from "@/lib/hooks/useFormMutation";
-import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Text } from "@repo/ui/components/text";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 
 const effortSchema = z.object({

@@ -1,10 +1,10 @@
 import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";

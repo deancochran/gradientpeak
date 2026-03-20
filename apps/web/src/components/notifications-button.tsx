@@ -1,7 +1,7 @@
 "use client";
 
 import { Bell } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,8 +9,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
+} from "@repo/ui/components/dropdown-menu";
+import { Badge } from "@repo/ui/components/badge";
 import { trpc } from "@/lib/trpc/client";
 import { useRouter } from "next/navigation";
 

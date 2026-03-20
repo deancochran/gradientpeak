@@ -1,7 +1,7 @@
 import React from "react";
 import { Stack, useRouter } from "expo-router";
 import { TouchableOpacity } from "react-native";
-import { Icon } from "@/components/ui/icon";
+import { Icon } from "@repo/ui/components/icon";
 import { ChevronLeft } from "lucide-react-native";
 
 /**

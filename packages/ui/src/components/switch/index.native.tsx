@@ -1,0 +1,70 @@
+import * as SwitchPrimitives from "@rn-primitives/switch";
+import type * as React from "react";
+import { Platform } from "../../lib/react-native";
+
+import { cn } from "../../lib/cn";
+import { getNativeTestProps } from "../../lib/test-props";
+import { SWITCH_NATIVE_MINIMUM_HIT_SLOP, type SwitchTestProps } from "./shared";
+
+function Switch({
+  accessibilityLabel,
+  accessibilityState,
+  className,
+  hitSlop,
+  id,
+  role,
+  testId,
+  ...props
+}: SwitchPrimitives.RootProps &
+  React.RefAttributes<SwitchPrimitives.RootRef> &
+  SwitchTestProps) {
+  const nativeTestProps = getNativeTestProps({
+    accessibilityLabel,
+    id,
+    role,
+    testId,
+  }) as Pick<
+    SwitchPrimitives.RootProps,
+    "accessibilityLabel" | "nativeID" | "role" | "testID"
+  >;
+
+  return (
+    <SwitchPrimitives.Root
+      accessibilityRole="switch"
+      accessibilityState={{
+        ...accessibilityState,
+        checked: Boolean(props.checked),
+        disabled: Boolean(props.disabled),
+      }}
+      hitSlop={
+        hitSlop ??
+        (Platform.OS === "web" ? undefined : SWITCH_NATIVE_MINIMUM_HIT_SLOP)
+      }
+      className={cn(
+        "flex h-[1.15rem] w-8 shrink-0 flex-row items-center rounded-full border border-transparent shadow-sm shadow-black/5",
+        Platform.select({
+          web: "focus-visible:border-ring focus-visible:ring-ring/50 peer inline-flex outline-none transition-all focus-visible:ring-[3px] disabled:cursor-not-allowed",
+        }),
+        props.checked ? "bg-primary" : "bg-input dark:bg-input/80",
+        props.disabled && "opacity-50",
+        className,
+      )}
+      {...nativeTestProps}
+      {...props}
+    >
+      <SwitchPrimitives.Thumb
+        className={cn(
+          "bg-background size-4 rounded-full transition-transform",
+          Platform.select({
+            web: "pointer-events-none block ring-0",
+          }),
+          props.checked
+            ? "dark:bg-primary-foreground translate-x-3.5"
+            : "dark:bg-foreground translate-x-0",
+        )}
+      />
+    </SwitchPrimitives.Root>
+  );
+}
+
+export { Switch };

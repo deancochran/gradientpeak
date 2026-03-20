@@ -1,5 +1,5 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import { Activity, Flame, TrendingUp } from "lucide-react-native";
 import { Dimensions, TouchableOpacity, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";

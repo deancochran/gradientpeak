@@ -1,6 +1,6 @@
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
+import { Badge } from "@repo/ui/components/badge";
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import type { BlockingIssue } from "@/lib/training-plan-form/validation";
 import type {
   CreationContextSummary,

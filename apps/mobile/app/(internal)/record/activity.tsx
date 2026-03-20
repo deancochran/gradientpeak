@@ -13,9 +13,9 @@
 import React, { useState } from "react";
 import { View, ScrollView, Pressable } from "react-native";
 import { router } from "expo-router";
-import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
+import { Text } from "@repo/ui/components/text";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
 import {
   Activity,
   Bike,

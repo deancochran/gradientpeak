@@ -4,7 +4,7 @@ import { columns } from "./columns";
 import type { Athlete } from "./columns";
 import { DataTable } from "@/components/ui/data-table";
 import { trpc } from "@/lib/trpc/client";
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import { Plus } from "lucide-react";
 import Link from "next/link";
 

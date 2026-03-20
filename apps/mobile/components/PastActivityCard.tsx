@@ -1,9 +1,9 @@
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ActivityHeader } from "@/components/activity/shared/ActivityHeader";
 import { Heart } from "lucide-react-native";
-import { Icon } from "@/components/ui/icon";
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Icon } from "@repo/ui/components/icon";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import { trpc } from "@/lib/trpc";
 import { decodePolyline } from "@repo/core";
 import React, { useMemo, useState } from "react";

@@ -1,7 +1,7 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 import {
   formatDurationV2,

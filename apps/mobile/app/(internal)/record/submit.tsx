@@ -1,5 +1,5 @@
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Form,
   FormControl,
@@ -8,13 +8,13 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Text } from "@/components/ui/text";
-import { Textarea } from "@/components/ui/textarea";
+} from "@repo/ui/components/form";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { zodResolver } from "@hookform/resolvers/zod";

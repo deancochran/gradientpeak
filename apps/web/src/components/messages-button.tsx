@@ -1,8 +1,8 @@
 "use client";
 
 import { MessageSquare } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@repo/ui/components/button";
+import { Badge } from "@repo/ui/components/badge";
 import { useRouter } from "next/navigation";
 
 export function MessagesButton() {

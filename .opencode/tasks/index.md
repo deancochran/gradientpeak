@@ -287,3 +287,55 @@
   - [ ] Phase 5: Validation
 - **Blockers**: None
 - **Spec Location**: `.opencode/specs/2026-03-13_system-activity-plan-library-expansion/`
+
+---
+
+### [20260319-000001] Turborepo Biome + Shared UI Restructure Spec
+
+- **Status**: completed
+- **Complexity**: high
+- **Subtasks**:
+  - [x] Audit current repo structure and duplicated UI/tooling ownership
+  - [x] Research Biome, shadcn/ui monorepo setup, NativeWind v5, Storybook composition, and platform resolution behavior
+  - [x] Synthesize a new shared `packages/ui` and Storybook architecture
+  - [x] Create `design.md`, `plan.md`, and `tasks.md`
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-19_turborepo-biome-ui-restructure/`
+
+---
+
+### [20260320-000001] Packages UI Testing Foundation Spec
+
+- **Status**: completed
+- **Complexity**: medium
+- **Subtasks**:
+  - [x] Define cross-platform selector contract and testing ownership boundaries
+  - [x] Create `design.md`, `plan.md`, and `tasks.md`
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-20_packages-ui-testing-foundation/`
+
+---
+
+### [20260320-000002] Packages UI Single-Package Architecture Spec
+
+- **Status**: completed
+- **Complexity**: medium
+- **Subtasks**:
+  - [x] Evaluate architecture options for minimizing duplication while keeping all shared UI in `packages/ui`
+  - [x] Define the recommended single-package architecture and testing split
+  - [x] Create `design.md`, `plan.md`, and `tasks.md`
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-20_packages-ui-single-package-architecture/`
+
+---
+
+### [20260320-000003] Packages UI Dual-Runner Component Testing Spec
+
+- **Status**: completed
+- **Complexity**: medium
+- **Subtasks**:
+  - [x] Define shared component-test ownership for both web and native in `packages/ui`
+  - [x] Define runner split (`Vitest` for web, `Jest` for native)
+  - [x] Define strict E2E boundaries for Playwright and Maestro
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-20_packages-ui-dual-runner-component-testing/`

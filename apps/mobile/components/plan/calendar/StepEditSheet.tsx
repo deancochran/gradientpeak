@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -6,19 +6,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from "@repo/ui/components/dialog";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Text } from "@/components/ui/text";
-import { Textarea } from "@/components/ui/textarea";
+} from "@repo/ui/components/select";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import {
   type DurationV2,
   type IntensityTargetV2,

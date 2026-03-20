@@ -8,7 +8,7 @@ import {
   ActivityPlanCard,
   ActivityPlanCardData,
 } from "@/components/shared/ActivityPlanCard";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import {
   groupActivitiesByDate,
   GroupedActivities,

@@ -1,7 +1,7 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/AddActivityModal.tsx
 
-import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import { X } from "lucide-react-native";

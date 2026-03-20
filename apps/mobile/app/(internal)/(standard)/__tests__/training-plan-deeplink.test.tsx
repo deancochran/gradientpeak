@@ -248,10 +248,10 @@ vi.mock("@/components/shared/DetailChartModal", () => ({
     );
   },
 }));
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: createHost("Button"),
 }));
-vi.mock("@/components/ui/dialog", () => ({
+vi.mock("@repo/ui/components/dialog", () => ({
   Dialog: createHost("Dialog"),
   DialogClose: createHost("DialogClose"),
   DialogContent: createHost("DialogContent"),
@@ -261,26 +261,26 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogTitle: createHost("DialogTitle"),
   DialogTrigger: createHost("DialogTrigger"),
 }));
-vi.mock("@/components/ui/card", () => ({
+vi.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardHeader: createHost("CardHeader"),
   CardTitle: createHost("CardTitle"),
 }));
-vi.mock("@/components/ui/icon", () => ({
+vi.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
 vi.mock("@/components/training-plan/create/inputs/DateField", () => ({
   DateField: createHost("DateField"),
 }));
-vi.mock("@/components/ui/input", () => ({
+vi.mock("@repo/ui/components/input", () => ({
   Input: createHost("Input"),
 }));
-vi.mock("@/components/ui/switch", () => ({
+vi.mock("@repo/ui/components/switch", () => ({
   Switch: createHost("Switch"),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 

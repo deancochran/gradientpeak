@@ -1,11 +1,16 @@
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { IntegerStepper } from "@/components/training-plan/create/inputs/IntegerStepper";
 import { PercentSliderInput } from "@/components/training-plan/create/inputs/PercentSliderInput";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Text } from "@/components/ui/text";
-import { Input } from "@/components/ui/input";
+import { Button } from "@repo/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
+import { Input } from "@repo/ui/components/input";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
@@ -241,7 +246,7 @@ export default function TrainingPreferencesScreen() {
       return {
         tone: "loading" as const,
         title: "Loading projection preview",
-        body: "Pulling your active plan and baseline curve so this screen can compare today\'s settings with a draft.",
+        body: "Pulling your active plan and baseline curve so this screen can compare today's settings with a draft.",
       };
     }
 

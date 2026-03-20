@@ -70,6 +70,12 @@ export default function ExternalLayout() {
           title: "Authenticating",
         }}
       />
+      <Stack.Screen
+        name="ui-preview"
+        options={{
+          title: "UI Preview",
+        }}
+      />
     </Stack>
   );
 }

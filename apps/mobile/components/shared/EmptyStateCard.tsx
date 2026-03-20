@@ -1,6 +1,6 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import { LucideIcon } from "lucide-react-native";
 import { View } from "react-native";
 

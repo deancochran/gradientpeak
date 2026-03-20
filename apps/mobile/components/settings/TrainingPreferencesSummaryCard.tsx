@@ -1,6 +1,6 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import type { AthleteTrainingSettings } from "@repo/core";
 import React from "react";
 import { View } from "react-native";

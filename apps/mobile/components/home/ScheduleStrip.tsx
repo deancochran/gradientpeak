@@ -1,4 +1,4 @@
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { format, isToday } from "date-fns";
 import { Check, Circle } from "lucide-react-native";
 import { ScrollView, TouchableOpacity, View } from "react-native";

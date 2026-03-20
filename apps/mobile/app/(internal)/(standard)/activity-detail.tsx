@@ -7,13 +7,18 @@ import {
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import { StreamChart } from "@/components/activity/charts/StreamChart";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Text } from "@/components/ui/text";
-import { Switch } from "@/components/ui/switch";
+import { Button } from "@repo/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Skeleton } from "@repo/ui/components/skeleton";
+import { Text } from "@repo/ui/components/text";
+import { Switch } from "@repo/ui/components/switch";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/lib/hooks/useAuth";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";

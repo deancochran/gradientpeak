@@ -10,23 +10,23 @@ vi.mock("react-native", () => ({
   View: (props: any) => React.createElement("View", props, props.children),
 }));
 
-vi.mock("@/components/ui/input", () => ({
+vi.mock("@repo/ui/components/input", () => ({
   Input: (props: any) => React.createElement("Input", props),
 }));
 
-vi.mock("@/components/ui/label", () => ({
+vi.mock("@repo/ui/components/label", () => ({
   Label: (props: any) => React.createElement("Label", props, props.children),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: (props: any) => React.createElement("Text", props, props.children),
 }));
 
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: (props: any) => React.createElement("Button", props, props.children),
 }));
 
-vi.mock("@/components/ui/slider", () => ({
+vi.mock("@repo/ui/components/slider", () => ({
   Slider: (props: any) => React.createElement("Slider", props, props.children),
 }));
 

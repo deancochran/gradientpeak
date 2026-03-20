@@ -5,7 +5,7 @@
 import { memo } from "react";
 import { View } from "react-native";
 import { type ActivityPlanStructureV2, formatDuration } from "@repo/core";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { ActivityProgressGraph } from "./ActivityProgress";
 import type { CurrentReadings } from "@/lib/services/ActivityRecorder/types";
 

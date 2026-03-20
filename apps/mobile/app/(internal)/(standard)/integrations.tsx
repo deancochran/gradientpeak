@@ -11,10 +11,10 @@ import {
   View,
 } from "react-native";
 
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
+import { Button } from "@repo/ui/components/button";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 import type { PublicIntegrationProvider } from "@repo/supabase";

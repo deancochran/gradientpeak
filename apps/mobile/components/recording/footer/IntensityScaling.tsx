@@ -1,5 +1,5 @@
-import { Slider } from "@/components/ui/slider";
-import { Text } from "@/components/ui/text";
+import { Slider } from "@repo/ui/components/slider";
+import { Text } from "@repo/ui/components/text";
 import { useIntensityScale } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import React from "react";

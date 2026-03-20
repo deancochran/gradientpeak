@@ -44,29 +44,29 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ back: vi.fn(), replace: routerReplace }),
 }));
 
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: createHost("Button"),
 }));
 
-vi.mock("@/components/ui/card", () => ({
+vi.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardTitle: createHost("CardTitle"),
 }));
 
-vi.mock("@/components/ui/input", () => ({
+vi.mock("@repo/ui/components/input", () => ({
   Input: createHost("Input"),
 }));
 
-vi.mock("@/components/ui/switch", () => ({
+vi.mock("@repo/ui/components/switch", () => ({
   Switch: createHost("Switch"),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
-vi.mock("@/components/ui/textarea", () => ({
+vi.mock("@repo/ui/components/textarea", () => ({
   Textarea: createHost("Textarea"),
 }));
 

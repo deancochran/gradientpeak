@@ -4,9 +4,9 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Text } from "@/components/ui/text";
+} from "@repo/ui/components/card";
+import { Label } from "@repo/ui/components/label";
+import { Text } from "@repo/ui/components/text";
 import { WizardStep } from "../WizardStep";
 import { Sprout, Activity, Trophy, ChevronDown, ChevronUp } from "lucide-react-native";
 import React, { useState } from "react";

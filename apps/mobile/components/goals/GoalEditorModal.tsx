@@ -1,6 +1,6 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
 import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
 import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { DurationInput } from "@/components/training-plan/create/inputs/DurationInput";

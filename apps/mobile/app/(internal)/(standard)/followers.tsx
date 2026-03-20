@@ -1,6 +1,6 @@
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Text } from "@/components/ui/text";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Text } from "@repo/ui/components/text";
 import { trpc } from "@/lib/trpc";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Loader2 } from "lucide-react-native";

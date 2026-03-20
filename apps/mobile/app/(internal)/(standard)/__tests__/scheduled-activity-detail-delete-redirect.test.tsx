@@ -51,20 +51,20 @@ vi.mock("@/components/ScheduleActivityModal", () => ({
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
 }));
 
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: createHost("Button"),
 }));
 
-vi.mock("@/components/ui/card", () => ({
+vi.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
 }));
 
-vi.mock("@/components/ui/icon", () => ({
+vi.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 

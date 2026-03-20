@@ -8,10 +8,11 @@ vi.mock("react-native", () => ({
   Pressable: (props: any) =>
     React.createElement("Pressable", props, props.children),
   View: (props: any) => React.createElement("View", props, props.children),
+  useColorScheme: () => "light",
   useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: (props: any) => React.createElement("Text", props, props.children),
 }));
 
@@ -21,10 +22,6 @@ vi.mock("@shopify/react-native-skia", () => ({
   Line: (props: any) => React.createElement("SkiaLine", props),
   Text: (props: any) => React.createElement("SkiaText", props),
   vec: (x: number, y: number) => ({ x, y }),
-}));
-
-vi.mock("nativewind", () => ({
-  useColorScheme: () => ({ colorScheme: "light" }),
 }));
 
 vi.mock("victory-native", () => ({

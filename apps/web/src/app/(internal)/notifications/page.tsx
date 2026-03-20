@@ -2,19 +2,24 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@repo/ui/components/tabs";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from "@repo/ui/components/card";
+import { ScrollArea } from "@repo/ui/components/scroll-area";
 import { trpc } from "@/lib/trpc/client";
 import { Bell, Mail, UserPlus } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { cn } from "@repo/ui/lib/cn";
+import { Button } from "@repo/ui/components/button";
 
 const getField = (value: unknown, key: string): unknown => {
   if (typeof value !== "object" || value === null) {

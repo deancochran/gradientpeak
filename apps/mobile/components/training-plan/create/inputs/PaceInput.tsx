@@ -1,6 +1,6 @@
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Text } from "@/components/ui/text";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
+import { Text } from "@repo/ui/components/text";
 import {
   normalizePaceInput,
   parseMmSsToSeconds,

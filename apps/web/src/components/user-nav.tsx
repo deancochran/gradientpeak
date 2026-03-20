@@ -7,9 +7,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+} from "@repo/ui/components/dropdown-menu";
+import { Button } from "@repo/ui/components/button";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@repo/ui/components/avatar";
 import { useAuth } from "@/components/providers/auth-provider";
 import { trpc } from "@/lib/trpc/client";
 import { useRouter } from "next/navigation";

@@ -1,36 +1,27 @@
 {
-  "$schema": "https://turborepo.com/schema.json",
-  "ui": "tui",
-  "globalEnv": [
-    "OAUTH_CALLBACK_BASE_URL",
-    "VERCEL_URL",
-    "STRAVA_CLIENT_ID",
-    "STRAVA_CLIENT_SECRET",
-    "WAHOO_CLIENT_ID",
-    "WAHOO_CLIENT_SECRET",
-    "TRAININGPEAKS_CLIENT_ID",
-    "TRAININGPEAKS_CLIENT_SECRET",
-    "GARMIN_CLIENT_ID",
-    "GARMIN_CLIENT_SECRET",
-    "ZWIFT_CLIENT_ID",
-    "ZWIFT_CLIENT_SECRET",
-    "NEXT_PRIVATE_SUPABASE_SECRET_KEY"
-  ],
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**"]
     },
-    "lint": {
-      "dependsOn": ["^lint"]
+    "check": {
+      "outputs": []
     },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "outputs": []
     },
-    "watch": {
+    "lint": {
+      "outputs": []
+    },
+    "lint:fix": {
       "cache": false,
-      "persistent": true
+      "outputs": []
+    },
+    "format": {
+      "cache": false,
+      "outputs": []
     },
     "dev": {
       "cache": false,
@@ -38,62 +29,23 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".env*",
-        "tests/**",
-        "**/*.test.*",
-        "src/**"
-      ],
-      "outputs": ["coverage/**", "test-results/**", "dist/**"],
+      "outputs": ["coverage/**"],
       "cache": true
     },
-    "test:integration": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*", "tests/integration/**", "src/**"],
-      "outputs": ["coverage/**", "test-results/**"],
-      "cache": true
-    },
-    "test:e2e": {
-      "dependsOn": ["^build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".env*",
-        "tests/e2e/**",
-        ".maestro/**",
-        "src/**"
-      ],
-      "outputs": [
-        "playwright-report/**",
-        "test-results/**",
-        "maestro-results/**"
-      ],
+    "test:e2e:web": {
+      "dependsOn": ["build"],
+      "outputs": [],
       "cache": false
     },
-    "test:watch": {
-      "cache": false,
-      "persistent": true
+    "test:e2e:mobile": {
+      "dependsOn": [],
+      "outputs": [],
+      "cache": false
     },
     "test:all": {
-      "dependsOn": ["test", "test:e2e"],
+      "dependsOn": ["test", "test:e2e:web", "test:e2e:mobile"],
+      "outputs": [],
       "cache": false
-    },
-    "test:ci": {
-      "dependsOn": ["^build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        ".env*",
-        "tests/**",
-        "**/*.test.*",
-        "src/**"
-      ],
-      "outputs": [
-        "coverage/**",
-        "test-results/**",
-        "playwright-report/**",
-        "dist/**"
-      ],
-      "cache": true
     }
   }
 }

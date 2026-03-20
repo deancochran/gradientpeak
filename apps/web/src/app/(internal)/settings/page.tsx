@@ -20,17 +20,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+} from "@repo/ui/components/alert-dialog";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@repo/ui/components/avatar";
+import { Badge } from "@repo/ui/components/badge";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -39,9 +43,9 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from "@repo/ui/components/form";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
 
 import {
   Calendar,

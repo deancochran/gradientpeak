@@ -1,15 +1,15 @@
 // stores/theme-store.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { colorScheme } from "nativewind";
+import { Appearance } from "react-native";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { type ResolvedThemeMode, resolveThemeMode, type ThemePreference } from "@/lib/theme";
 
 const THEME_STORAGE_KEY = "@theme_preference";
 
-type ThemePreference = "system" | "light" | "dark";
-
 interface ThemeStore {
   userPreference: ThemePreference;
+  resolvedTheme: ResolvedThemeMode;
   isLoaded: boolean;
   hydrated: boolean;
   initialize: () => Promise<void>;
@@ -23,6 +23,7 @@ export const useThemeStore = create<ThemeStore>()(
     (set, get) => ({
       // State
       userPreference: "light" as ThemePreference,
+      resolvedTheme: "light" as ResolvedThemeMode,
       isLoaded: false as boolean,
       hydrated: false as boolean,
 
@@ -35,23 +36,30 @@ export const useThemeStore = create<ThemeStore>()(
         try {
           const savedPreference = await AsyncStorage.getItem(THEME_STORAGE_KEY);
 
-          if (
-            savedPreference &&
-            ["light", "dark", "system"].includes(savedPreference)
-          ) {
+          if (savedPreference && ["light", "dark", "system"].includes(savedPreference)) {
             const preference = savedPreference as ThemePreference;
-            set({ userPreference: preference });
-            colorScheme.set(preference);
+            set({
+              userPreference: preference,
+              resolvedTheme: resolveThemeMode(preference),
+            });
+            Appearance.setColorScheme(preference === "system" ? null : preference);
           } else {
             // Default to light mode
             const defaultTheme = "light";
-            set({ userPreference: defaultTheme });
-            colorScheme.set(defaultTheme);
+            set({
+              userPreference: defaultTheme,
+              resolvedTheme: resolveThemeMode(defaultTheme),
+            });
+            Appearance.setColorScheme(defaultTheme);
             await AsyncStorage.setItem(THEME_STORAGE_KEY, defaultTheme);
           }
         } catch (error) {
           console.warn("Failed to load theme preference:", error);
-          colorScheme.set("light");
+          set({
+            userPreference: "light",
+            resolvedTheme: resolveThemeMode("light"),
+          });
+          Appearance.setColorScheme("light");
         } finally {
           set({ isLoaded: true });
         }
@@ -60,17 +68,19 @@ export const useThemeStore = create<ThemeStore>()(
       setTheme: async (preference: ThemePreference) => {
         try {
           await AsyncStorage.setItem(THEME_STORAGE_KEY, preference);
-          set({ userPreference: preference });
-          colorScheme.set(preference);
+          set({
+            userPreference: preference,
+            resolvedTheme: resolveThemeMode(preference),
+          });
+          Appearance.setColorScheme(preference === "system" ? null : preference);
         } catch (error) {
           console.warn("Failed to save theme preference:", error);
         }
       },
 
       toggleTheme: () => {
-        const { userPreference } = get();
-        const newTheme: ThemePreference =
-          userPreference === "dark" ? "light" : "dark";
+        const { resolvedTheme } = get();
+        const newTheme: ThemePreference = resolvedTheme === "dark" ? "light" : "dark";
         get().setTheme(newTheme);
       },
     }),
@@ -93,16 +103,22 @@ export const useThemeStore = create<ThemeStore>()(
   ),
 );
 
+Appearance.addChangeListener(({ colorScheme }) => {
+  const { userPreference } = useThemeStore.getState();
+
+  if (userPreference !== "system") {
+    return;
+  }
+
+  useThemeStore.setState({
+    resolvedTheme: resolveThemeMode(userPreference, colorScheme),
+  });
+});
+
 // Simple hook for components
 export const useTheme = () => {
-  const {
-    userPreference,
-    isLoaded,
-    hydrated,
-    setTheme,
-    toggleTheme,
-    initialize,
-  } = useThemeStore();
+  const { userPreference, resolvedTheme, isLoaded, hydrated, setTheme, toggleTheme, initialize } =
+    useThemeStore();
 
   // Auto-initialize if hydrated but not loaded
   if (hydrated && !isLoaded) {
@@ -111,6 +127,7 @@ export const useTheme = () => {
 
   return {
     theme: userPreference,
+    resolvedTheme,
     isLoaded,
     hydrated,
     setTheme,

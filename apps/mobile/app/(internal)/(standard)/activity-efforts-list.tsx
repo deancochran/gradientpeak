@@ -2,16 +2,16 @@ import React from "react";
 import { View, FlatList, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { trpc } from "@/lib/trpc";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
+} from "@repo/ui/components/card";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
 import { Plus, Trash2, Activity, Zap, Timer } from "lucide-react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { format } from "date-fns";

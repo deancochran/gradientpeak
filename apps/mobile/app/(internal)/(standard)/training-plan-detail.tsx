@@ -1,5 +1,5 @@
 import { TrainingPlanSummaryHeader } from "@/components/training-plan/TrainingPlanSummaryHeader";
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Dialog,
   DialogClose,
@@ -9,12 +9,17 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
+} from "@repo/ui/components/dialog";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
 import { DateField } from "@/components/training-plan/create/inputs/DateField";
-import { Switch } from "@/components/ui/switch";
-import { Text } from "@/components/ui/text";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
 import { ROUTES } from "@/lib/constants/routes";
 import {
   TPV_NEXT_STEP_INTENTS,
@@ -1333,8 +1338,9 @@ export default function TrainingPlanOverview() {
                         </Text>
                         <Text className="font-semibold">
                           {new Date(
-                            (plan.structure as any).periodization_template
-                              .target_date,
+                            (
+                              plan.structure as any
+                            ).periodization_template.target_date,
                           ).toLocaleDateString("en-US", {
                             month: "short",
                             day: "numeric",
@@ -1511,9 +1517,9 @@ export default function TrainingPlanOverview() {
                                     </Text>
                                     <Text className="text-[11px] text-muted-foreground">
                                       {session.activityPlanId
-                                        ? (activityPlanNameById.get(
+                                        ? activityPlanNameById.get(
                                             session.activityPlanId,
-                                          ) ?? "Linked activity plan")
+                                          ) ?? "Linked activity plan"
                                         : "No linked activity plan"}
                                     </Text>
                                   </View>

@@ -1,5 +1,5 @@
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { isSameDay } from "@/lib/utils/plan/dateGrouping";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";

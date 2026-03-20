@@ -1,4 +1,4 @@
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { supabase } from "@/lib/supabase/client";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";

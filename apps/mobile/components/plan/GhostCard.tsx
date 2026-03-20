@@ -1,8 +1,8 @@
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
-import { Icon } from "@/components/ui/icon";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
+import { Icon } from "@repo/ui/components/icon";
 import { Plus } from "lucide-react-native";
 
 interface GhostCardProps {

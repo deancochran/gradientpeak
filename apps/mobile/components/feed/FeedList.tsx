@@ -3,7 +3,7 @@ import { FeedEmptyState } from "./FeedEmptyState";
 import { trpc } from "@/lib/trpc";
 import { RefreshControl, FlatList, View, Text } from "react-native";
 import { useCallback, useState } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@repo/ui/components/skeleton";
 
 interface FeedListProps {
   onCommentPress?: (activityId: string) => void;

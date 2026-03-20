@@ -1,7 +1,7 @@
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Text } from "@/components/ui/text";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
+import { Slider } from "@repo/ui/components/slider";
+import { Text } from "@repo/ui/components/text";
 import {
   clampNumber,
   formatNumberForInput,

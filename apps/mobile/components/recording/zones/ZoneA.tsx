@@ -20,8 +20,8 @@
 
 import { GPSStatusOverlay } from "@/components/recording/GPSStatusOverlay";
 import { VirtualRouteMap } from "@/components/recording/VirtualRouteMap";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";

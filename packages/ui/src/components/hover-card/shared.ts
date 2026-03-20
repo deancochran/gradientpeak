@@ -1,0 +1,1 @@
+export const DEFAULT_HOVER_CARD_SIDE_OFFSET = 4;

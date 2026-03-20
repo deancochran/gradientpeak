@@ -1,7 +1,7 @@
 import { GoalEditorModal } from "@/components/goals/GoalEditorModal";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import {
   buildGoalDraftFromGoal,
   buildGoalUpdatePayload,

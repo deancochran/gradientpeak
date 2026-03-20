@@ -1,0 +1,15 @@
+appId: com.deancochran.gradientpeak.dev
+# Reusable Login Flow
+# PARAMS:
+#   - email: The user's email
+#   - password: The user's password
+---
+- tapOn:
+    id: "email-input"
+- inputText: "${email}"
+- tapOn:
+    id: "password-input"
+- inputText: "${password}"
+- tapOn:
+    id: "sign-in-button"
+- assertVisible: "Plan"

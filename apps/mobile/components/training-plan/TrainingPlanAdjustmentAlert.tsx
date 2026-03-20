@@ -1,5 +1,5 @@
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
 import { AlertCircle, AlertTriangle, X } from "lucide-react-native";
 import React from "react";

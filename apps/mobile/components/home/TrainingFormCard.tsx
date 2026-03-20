@@ -1,6 +1,11 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Text } from "@/components/ui/text";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
+import { Progress } from "@repo/ui/components/progress";
+import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 
 interface FormStatus {

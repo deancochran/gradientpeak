@@ -1,5 +1,5 @@
 import { ChartSkeleton, EmptyStateCard } from "@/components/shared";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { Calendar } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { WeeklyProgressChart } from "@/components/charts";

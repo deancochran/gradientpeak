@@ -4,16 +4,16 @@ import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@/components/ui/resizable";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+} from "@repo/ui/components/resizable";
+import { ScrollArea } from "@repo/ui/components/scroll-area";
+import { Separator } from "@repo/ui/components/separator";
+import { Input } from "@repo/ui/components/input";
+import { Button } from "@repo/ui/components/button";
 import { Send } from "lucide-react";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { cn } from "@/lib/utils";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { cn } from "@repo/ui/lib/cn";
+import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { useAuth } from "@/components/providers/auth-provider";
 
 export default function MessagesPage() {

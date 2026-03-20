@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import React from "react";
 import { View } from "react-native";

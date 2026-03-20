@@ -1,4 +1,4 @@
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { LucideIcon } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";

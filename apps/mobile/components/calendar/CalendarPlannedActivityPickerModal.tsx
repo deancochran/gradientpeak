@@ -1,6 +1,6 @@
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
 import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { ChevronRight, Clock3, Search } from "lucide-react-native";

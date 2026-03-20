@@ -22,7 +22,7 @@ vi.mock("react-native", () => ({
   TouchableOpacity: createHost("TouchableOpacity"),
 }));
 
-vi.mock("@/components/ui/icon", () => ({
+vi.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
 

@@ -30,15 +30,15 @@ vi.mock("react-native", () => ({
   View: createHost("View"),
 }));
 
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: createHost("Button"),
 }));
 
-vi.mock("@/components/ui/label", () => ({
+vi.mock("@repo/ui/components/label", () => ({
   Label: createHost("Label"),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 

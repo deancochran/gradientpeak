@@ -2,9 +2,9 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { View } from "react-native";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 export default function WelcomeScreen() {
@@ -21,6 +21,10 @@ export default function WelcomeScreen() {
 
   const handleSignupPress = () => {
     router.replace({ pathname: "/(external)/sign-up" });
+  };
+
+  const handleUiPreviewPress = () => {
+    router.push("/(external)/ui-preview" as any);
   };
 
   return (
@@ -68,6 +72,18 @@ export default function WelcomeScreen() {
               >
                 <Text>Create Account</Text>
               </Button>
+
+              {__DEV__ && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onPress={handleUiPreviewPress}
+                  testId="open-ui-preview-button"
+                  className="w-full"
+                >
+                  <Text>UI Preview</Text>
+                </Button>
+              )}
             </View>
           </CardContent>
         </Card>

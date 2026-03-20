@@ -1,9 +1,13 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@repo/ui/components/avatar";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import { useRouter } from "expo-router";
 import { format } from "date-fns";
 import {

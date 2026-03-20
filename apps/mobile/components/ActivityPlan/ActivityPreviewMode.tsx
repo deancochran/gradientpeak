@@ -7,7 +7,7 @@ import { ScrollView, View } from "react-native";
 import { type ActivityPlanStructureV2 } from "@repo/core";
 import { ActivityGraph } from "./ActivityGraph";
 import { ActivityMetricsGrid } from "./ActivityMetricsGrid";
-import { Text } from "../ui/text";
+import { Text } from "@repo/ui/components/text";
 import StepPreviewCard from "./StepPreviewCard";
 
 const ActivityPreviewMode = memo<{ structure: ActivityPlanStructureV2 }>(

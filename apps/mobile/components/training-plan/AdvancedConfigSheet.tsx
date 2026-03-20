@@ -1,7 +1,12 @@
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@repo/ui/components/tabs";
+import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
 import React, { useState } from "react";
 import {

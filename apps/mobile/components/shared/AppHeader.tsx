@@ -1,5 +1,5 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Text } from "@/components/ui/text";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Text } from "@repo/ui/components/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useRouter } from "expo-router";
 import React from "react";

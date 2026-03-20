@@ -1,9 +1,9 @@
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
-import { Switch } from "@/components/ui/switch";
+import { Switch } from "@repo/ui/components/switch";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";

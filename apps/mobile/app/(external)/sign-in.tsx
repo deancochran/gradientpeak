@@ -1,14 +1,6 @@
-import { useRouter } from "expo-router";
-import React from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -16,15 +8,17 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
+} from "@repo/ui/components/form";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
+import { useRouter } from "expo-router";
+import React from "react";
+import { useForm } from "react-hook-form";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { z } from "zod";
+import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
 import { useAuth } from "@/lib/hooks/useAuth";
-import {
-  getHostedApiUrl,
-  setServerUrlOverride,
-  useServerConfig,
-} from "@/lib/server-config";
+import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
 
@@ -51,8 +45,7 @@ export default function SignInScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [isServerConfigExpanded, setIsServerConfigExpanded] =
-    React.useState(false);
+  const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
     serverConfig.overrideUrl ?? serverConfig.apiUrl,
@@ -201,10 +194,7 @@ export default function SignInScreen() {
                     className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
                     testID="root-error-container"
                   >
-                    <Text
-                      variant="small"
-                      className="text-destructive text-center"
-                    >
+                    <Text variant="small" className="text-destructive text-center">
                       {form.formState.errors.root.message}
                     </Text>
                   </View>
@@ -228,9 +218,7 @@ export default function SignInScreen() {
               expanded={isServerConfigExpanded}
               value={serverUrlInput}
               usingHostedDefault={!serverConfig.overrideUrl}
-              onToggle={() =>
-                setIsServerConfigExpanded((currentValue) => !currentValue)
-              }
+              onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
               onChange={setServerUrlInput}
             />
 
@@ -241,9 +229,7 @@ export default function SignInScreen() {
               testID="forgot-password-button"
               className="w-full"
             >
-              <Text className="text-muted-foreground">
-                Forgot your password?
-              </Text>
+              <Text className="text-muted-foreground">Forgot your password?</Text>
             </Button>
 
             {/* Sign Up Link */}
@@ -256,6 +242,17 @@ export default function SignInScreen() {
               >
                 <Text>Need an account? Sign up</Text>
               </Button>
+
+              {__DEV__ && (
+                <Button
+                  variant="ghost"
+                  onPress={() => router.push("/(external)/ui-preview" as any)}
+                  testId="open-ui-preview-button"
+                  className="mt-3 w-full"
+                >
+                  <Text>UI Preview</Text>
+                </Button>
+              )}
             </View>
           </CardContent>
         </Card>

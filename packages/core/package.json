@@ -16,10 +16,12 @@
     "./ftms-types": "./ftms-types.ts"
   },
   "scripts": {
-    "lint": "eslint .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
     "test": "vitest",
     "check-types": "tsc --noEmit",
-    "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar '**/*.{ts,tsx,js,jsx}' -c 'eslint .'\""
+    "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar '**/*.{ts,tsx,js,jsx,json}' -c 'biome lint .'\""
   },
   "dependencies": {
     "@garmin/fitsdk": "^21.188.0",
@@ -27,7 +29,6 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@repo/eslint-config": "workspace:*",
     "@repo/supabase": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/jest": "^29.5.0",

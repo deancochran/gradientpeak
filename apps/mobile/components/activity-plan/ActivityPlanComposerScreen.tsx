@@ -2,12 +2,12 @@ import { StructureIntervalSheet } from "@/components/activity-plan/structure/Str
 import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
 import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";

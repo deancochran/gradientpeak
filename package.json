@@ -1,8 +1,10 @@
 {
   "name": "gradientpeak",
   "devDependencies": {
+    "@biomejs/biome": "^2.2.5",
+    "@playwright/test": "^1.58.2",
     "chokidar-cli": "^3.0.0",
-    "prettier": "^3.7.4",
+    "lightningcss": "1.30.1",
     "turbo": "^2.6.3",
     "typescript": "5.9.2"
   },
@@ -13,15 +15,21 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
-    "dev:apps": "turbo run dev --filter=!@repo/supabase",
+    "check": "biome check .",
+    "dev": "turbo run dev --parallel --ui tui",
+    "dev:web": "pnpm --filter web dev",
+    "dev:mobile": "pnpm --filter mobile dev",
+    "dev:apps": "turbo run dev --filter=!@repo/supabase --ui tui",
     "dev:monitor:local": "node scripts/dev-monitor-local.mjs --clean",
     "watch": "turbo run watch",
-    "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
     "check-types": "turbo run check-types",
     "update-types": "pnpm --filter @repo/supabase update-types",
     "test": "turbo run test",
+    "test:e2e:web": "pnpm --filter web test:e2e",
+    "test:e2e:mobile": "pnpm --filter mobile test:e2e",
     "logs:scan": "node scripts/scan-dev-logs.mjs --since 10",
     "logs:scan:json": "node scripts/scan-dev-logs.mjs --since 10 --json",
     "self-host:up": "pnpm --filter @repo/supabase dev:supabase",
@@ -33,6 +41,7 @@
   ],
   "pnpm": {
     "overrides": {
+      "lightningcss": "1.30.1",
       "zod": "^4.2.1"
     }
   },

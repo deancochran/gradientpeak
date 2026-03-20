@@ -1,5 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import { downsampleStream, removeNullValues } from "@/lib/utils/streamSampling";
 import { CartesianChart, Area, useChartPressState } from "victory-native";

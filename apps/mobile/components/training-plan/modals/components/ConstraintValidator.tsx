@@ -1,6 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ConstraintValidator.tsx
 
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import {
   ConstraintIndicator,

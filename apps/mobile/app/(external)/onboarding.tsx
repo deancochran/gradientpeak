@@ -1,18 +1,18 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Label } from "@/components/ui/label";
+} from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Label } from "@repo/ui/components/label";
 import { PaceSecondsField } from "@/components/profile/PaceSecondsField";
 import { WeightInputField } from "@/components/profile/WeightInputField";
 import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
 import { DateField } from "@/components/training-plan/create/inputs/DateField";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import {
   estimateFtpFromWeight,
   estimateMaxHrFromDob,

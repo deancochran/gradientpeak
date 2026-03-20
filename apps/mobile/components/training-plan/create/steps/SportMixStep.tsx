@@ -1,14 +1,14 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Text } from "@/components/ui/text";
+} from "@repo/ui/components/card";
+import { Label } from "@repo/ui/components/label";
+import { Slider } from "@repo/ui/components/slider";
+import { Text } from "@repo/ui/components/text";
 import { WizardStep } from "../WizardStep";
 import React, { useState } from "react";
 import { View, Pressable } from "react-native";
