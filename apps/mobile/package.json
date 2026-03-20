@@ -3,19 +3,20 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "dev": "expo start -c --lan",
-    "start": "expo start",
+    "dev": "pnpm exec expo start -c --lan",
+    "start": "pnpm exec expo start -c",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web",
+    "android": "bash -lc 'set -euo pipefail; AVD_NAME=\"${GP_ANDROID_AVD:-Pixel_8_API_35}\"; EMULATOR_BIN=\"${ANDROID_HOME:-/opt/android-sdk}/emulator/emulator\"; LOG_DIR=.maestro; mkdir -p \"$LOG_DIR\"; SERIAL=$(adb devices | awk \"/^emulator-[0-9]+[[:space:]]+device$/ { print \\\\$1; exit }\"); if [ -z \"${SERIAL:-}\" ]; then nohup env ANDROID_EMULATOR_USE_SYSTEM_LIBS=1 \"$EMULATOR_BIN\" -avd \"$AVD_NAME\" -no-window -gpu swiftshader_indirect -no-boot-anim -no-snapshot-save > \"$LOG_DIR/emulator.log\" 2>&1 & for _ in $(seq 1 120); do SERIAL=$(adb devices | awk \"/^emulator-[0-9]+[[:space:]]+device$/ { print \\\\$1; exit }\"); [ -n \"${SERIAL:-}\" ] && break; sleep 2; done; fi; [ -n \"${SERIAL:-}\" ] || { echo \"[mobile-android] ERROR: no emulator detected\" >&2; exit 1; }; adb -s \"$SERIAL\" wait-for-device >/dev/null; for _ in $(seq 1 180); do BOOT=$(adb -s \"$SERIAL\" shell getprop sys.boot_completed 2>/dev/null | tr -d \"\\r\"); [ \"$BOOT\" = \"1\" ] && break; sleep 2; done; [ \"${BOOT:-}\" = \"1\" ] || { echo \"[mobile-android] ERROR: emulator boot timed out\" >&2; exit 1; }; pnpm exec expo run:android -d \"$SERIAL\"'",
+    "ios": "pnpm exec expo run:ios",
+    "web": "pnpm exec expo start --web",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "test": "vitest",
     "check-types": "tsc --noEmit",
     "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar '**/*.{ts,tsx,js,jsx,json,css}' -c 'biome lint .'\"",
-    "test:e2e": "maestro test .maestro/flows/main"
+    "test:e2e": "maestro test .maestro/flows/main",
+    "android:gui": "pnpm exec expo run:android"
   },
   "dependencies": {
     "@garmin/fitsdk": "^21.188.0",

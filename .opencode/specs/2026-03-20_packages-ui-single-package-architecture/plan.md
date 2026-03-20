@@ -178,12 +178,25 @@ These fixtures should be usable by:
 - stop treating preview tooling as a `packages/ui` concern,
 - define the migration path for any existing package-owned preview files.
 
+Current concrete targets:
+
+- web preview host: `apps/web/.storybook/*`
+- web preview scripts: `apps/web/package.json` owns `storybook` and `build-storybook`
+- mobile preview host: `apps/mobile/app/dev/ui-preview.tsx` as the first target route, with optional child screens under `apps/mobile/app/dev/ui-preview/*` if the catalog grows
+
 ### Phase 4: Runtime-owned verification
 
 - lean on Playwright for web runtime confidence,
 - lean on Maestro for mobile runtime confidence,
 - retain only the package-level tests that provide clear contract value,
 - decide which existing package tests should be kept, rewritten, or removed.
+
+Current reduction rubric:
+
+- keep: lightweight web contract tests, selector mapping tests, and fixture-driven package tests that do not require heavy runtime shims
+- rewrite: first-wave component tests to consume shared `fixtures.ts`
+- move up: preview-driven interactions and runtime confidence checks into `apps/web` and `apps/mobile`
+- remove: package-owned preview config/scripts and any package-native tests whose maintenance cost exceeds their contract value
 
 ### Phase 5: Package test reduction and cleanup
 
@@ -205,6 +218,12 @@ These fixtures should be usable by:
 - `apps/web` for preview tooling and Playwright config
 - `apps/mobile` for preview tooling and Maestro config
 - package test config only where package-level tests remain valuable
+
+Additional runtime guidance:
+
+- `apps/web/.storybook/main.ts` and `apps/web/.storybook/preview.ts` should follow official Storybook config patterns
+- `apps/web/playwright.config.ts` should continue to follow Playwright project/config guidance
+- `apps/mobile/.maestro/flows/` remains the Maestro workspace root, using reusable flows and shared selectors aligned with Maestro workspace-management guidance
 
 ## 8. Implementation File Targets
 
@@ -241,3 +260,28 @@ App-level validation remains separate where needed.
 - This is a refinement, not a reversal, of the `packages/ui` strategy.
 - The main change is promoting shared fixtures and runtime-owned previews/tests over package-owned preview complexity.
 - Future shared components should be added only if their `shared.ts` contract stays pure, their fixtures stay runtime-agnostic, and their platform implementations stay isolated.
+
+## 11. Documentation References For Implementation
+
+Implementation work should consult the official docs directly while configuring each runtime surface.
+
+### Web preview ownership (`apps/web`)
+
+- Storybook official docs for `main.ts`, `preview.ts`, stories globs, docs/autodocs, addons, and Vite customization
+- Use this reference when defining web preview hosting and any migrated Storybook config
+
+### Web runtime verification (`apps/web`)
+
+- Playwright official docs for config structure, `projects`, `webServer`, browser/device targets, retries, and test layout
+- Use this reference when shaping Playwright around shared fixtures/selectors
+
+### Mobile runtime verification (`apps/mobile`)
+
+- Maestro official docs for workspace management, flow organization, CLI usage, YAML flows, nested flows, JavaScript helpers, and troubleshooting
+- Use this reference when deciding how shared selector values are consumed by Maestro
+
+### Practical implementation rule
+
+- do not invent custom config patterns where the official docs already provide a supported structure,
+- prefer official config names and directory conventions unless the repo has a strong reason to differ,
+- keep the spec aligned with mainstream documented usage for maintainability.

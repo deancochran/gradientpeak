@@ -23,6 +23,10 @@ export default function WelcomeScreen() {
     router.replace({ pathname: "/(external)/sign-up" });
   };
 
+  const handleUiPreviewPress = () => {
+    router.push("/(external)/ui-preview" as any);
+  };
+
   return (
     <View className="flex-1 bg-background p-6" testID="welcome-screen">
       {/* Main Content */}
@@ -68,6 +72,18 @@ export default function WelcomeScreen() {
               >
                 <Text>Create Account</Text>
               </Button>
+
+              {__DEV__ && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onPress={handleUiPreviewPress}
+                  testId="open-ui-preview-button"
+                  className="w-full"
+                >
+                  <Text>UI Preview</Text>
+                </Button>
+              )}
             </View>
           </CardContent>
         </Card>

@@ -326,3 +326,16 @@
   - [x] Create `design.md`, `plan.md`, and `tasks.md`
 - **Blockers**: None
 - **Spec Location**: `.opencode/specs/2026-03-20_packages-ui-single-package-architecture/`
+
+---
+
+### [20260320-000003] Packages UI Dual-Runner Component Testing Spec
+
+- **Status**: completed
+- **Complexity**: medium
+- **Subtasks**:
+  - [x] Define shared component-test ownership for both web and native in `packages/ui`
+  - [x] Define runner split (`Vitest` for web, `Jest` for native)
+  - [x] Define strict E2E boundaries for Playwright and Maestro
+- **Blockers**: None
+- **Spec Location**: `.opencode/specs/2026-03-20_packages-ui-dual-runner-component-testing/`

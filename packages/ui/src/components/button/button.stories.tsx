@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { ChevronRight } from "lucide-react";
 
+import { buttonFixtures } from "./fixtures";
 import { Button } from "./index.web";
 import { BUTTON_SIZES, BUTTON_VARIANTS } from "./shared";
 
@@ -9,7 +10,7 @@ const meta = {
   component: Button,
   tags: ["autodocs"],
   args: {
-    children: "Continue",
+    ...buttonFixtures.continue,
     variant: "default",
     size: "default",
     disabled: false,

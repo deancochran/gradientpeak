@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
 import { Input } from "../input/index.web";
+import { labelFixtures } from "./fixtures";
 import { Label } from "./index.web";
 
 const meta = {
@@ -8,7 +9,7 @@ const meta = {
   component: Label,
   tags: ["autodocs"],
   args: {
-    children: "Email address",
+    ...labelFixtures.email,
   },
 } satisfies Meta<typeof Label>;
 
@@ -17,15 +18,17 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {
-  render: (args) => <Label {...args} htmlFor="storybook-label-field" />,
+  render: (args) => <Label {...args} htmlFor={labelFixtures.email.htmlFor} />,
 };
 
 export const WithInput: Story = {
   render: () => (
     <div className="grid w-80 gap-2">
-      <Label htmlFor="work-email">Work email</Label>
+      <Label htmlFor={labelFixtures.workEmail.htmlFor}>
+        {labelFixtures.workEmail.children}
+      </Label>
       <Input
-        id="work-email"
+        id={labelFixtures.workEmail.htmlFor}
         placeholder="coach@gradientpeak.com"
         type="email"
       />

@@ -1,22 +1,19 @@
 import { Icon } from "@repo/ui/components/icon";
-import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
-import { useTheme } from "@/lib/stores/theme-store";
-import { NAV_THEME } from "@/lib/theme";
-import { THEME } from "@repo/ui/theme/native";
 import { Tabs, useRouter } from "expo-router";
 import { Calendar, Circle, Home, Search, Target } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
+import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
+import { useTheme } from "@/lib/stores/theme-store";
+import { getNavigationTheme, getResolvedThemeScale } from "@/lib/theme";
 
 export default function InternalLayout() {
-  const { theme } = useTheme();
+  const { resolvedTheme } = useTheme();
   const router = useRouter();
   const guardNavigation = useNavigationActionGuard();
 
-  // Determine if we're in dark mode
-  const isDark = theme === "dark";
-  const navTheme = isDark ? NAV_THEME.dark : NAV_THEME.light;
-  const currentTheme = isDark ? THEME.dark : THEME.light;
+  const navTheme = getNavigationTheme(resolvedTheme);
+  const currentTheme = getResolvedThemeScale(resolvedTheme);
 
   return (
     <View className="flex-1 bg-background">
@@ -35,27 +32,21 @@ export default function InternalLayout() {
           name="index"
           options={{
             title: "Home",
-            tabBarIcon: ({ color }) => (
-              <Icon as={Home} size={28} color={color} />
-            ),
+            tabBarIcon: ({ color }) => <Icon as={Home} size={28} color={color} />,
           }}
         />
         <Tabs.Screen
           name="discover"
           options={{
             title: "Discover",
-            tabBarIcon: ({ color }) => (
-              <Icon as={Search} size={28} color={color} />
-            ),
+            tabBarIcon: ({ color }) => <Icon as={Search} size={28} color={color} />,
           }}
         />
         <Tabs.Screen
           name="record-launcher"
           options={{
             title: "Record",
-            tabBarIcon: ({ color }) => (
-              <Icon as={Circle} size={28} color={color} />
-            ),
+            tabBarIcon: ({ color }) => <Icon as={Circle} size={28} color={color} />,
             tabBarButton: (props) => (
               <TouchableOpacity
                 {...(props as any)}
@@ -68,18 +59,14 @@ export default function InternalLayout() {
           name="plan"
           options={{
             title: "Plan",
-            tabBarIcon: ({ color }) => (
-              <Icon as={Target} size={28} color={color} />
-            ),
+            tabBarIcon: ({ color }) => <Icon as={Target} size={28} color={color} />,
           }}
         />
         <Tabs.Screen
           name="calendar"
           options={{
             title: "Calendar",
-            tabBarIcon: ({ color }) => (
-              <Icon as={Calendar} size={28} color={color} />
-            ),
+            tabBarIcon: ({ color }) => <Icon as={Calendar} size={28} color={color} />,
           }}
         />
       </Tabs>

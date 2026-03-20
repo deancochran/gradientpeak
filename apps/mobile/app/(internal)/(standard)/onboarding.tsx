@@ -2,6 +2,12 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import { Activity, ArrowRight, Check, ChevronRight } from "lucide-react-native";
+import { useMemo, useState } from "react";
+import { Alert, Platform, ScrollView, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { PaceSecondsField } from "@/components/profile/PaceSecondsField";
 import { WeightInputField } from "@/components/profile/WeightInputField";
 import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
@@ -13,18 +19,6 @@ import {
   formatWeightForDisplay,
 } from "@/lib/profile/metricUnits";
 import { trpc } from "@/lib/trpc";
-import { router } from "expo-router";
-import { Activity, ArrowRight, Check, ChevronRight } from "lucide-react-native";
-import { useMemo, useState } from "react";
-import {
-  Alert,
-  Platform,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import * as WebBrowser from "expo-web-browser";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 type HealthKitPermissions = {
   permissions: {
@@ -53,13 +47,7 @@ interface OnboardingData {
   weight_kg: number | null;
   weight_unit: "kg" | "lbs";
   gender: "male" | "female" | "other" | null;
-  primary_sport:
-    | "cycling"
-    | "running"
-    | "swimming"
-    | "triathlon"
-    | "other"
-    | null;
+  primary_sport: "cycling" | "running" | "swimming" | "triathlon" | "other" | null;
   max_hr: number | null;
   resting_hr: number | null;
   lthr: number | null;
@@ -136,9 +124,7 @@ const IntroStep = () => (
     <View className="w-24 h-24 bg-primary/10 rounded-full items-center justify-center mb-6">
       <Icon as={Activity} size={48} className="text-primary" />
     </View>
-    <Text className="text-2xl font-bold text-center mb-2">
-      Welcome to GradientPeak
-    </Text>
+    <Text className="text-2xl font-bold text-center mb-2">Welcome to GradientPeak</Text>
     <Text className="text-center text-muted-foreground px-4">
       Let&apos;s customize your experience. This will only take a minute.
     </Text>
@@ -147,17 +133,13 @@ const IntroStep = () => (
 
 const ExperienceStep = ({ data, updateData }: StepProps) => (
   <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">
-      What&apos;s your experience?
-    </Text>
+    <Text className="text-xl font-semibold mb-2">What&apos;s your experience?</Text>
     {(["beginner", "intermediate", "advanced"] as const).map((level) => (
       <TouchableOpacity
         key={level}
         onPress={() => updateData({ experience_level: level })}
         className={`p-4 border rounded-xl flex-row items-center justify-between ${
-          data.experience_level === level
-            ? "border-primary bg-primary/5"
-            : "border-border bg-card"
+          data.experience_level === level ? "border-primary bg-primary/5" : "border-border bg-card"
         }`}
       >
         <View>
@@ -170,9 +152,7 @@ const ExperienceStep = ({ data, updateData }: StepProps) => (
                 : "Data obsessed"}
           </Text>
         </View>
-        {data.experience_level === level && (
-          <Icon as={Check} className="text-primary" />
-        )}
+        {data.experience_level === level && <Icon as={Check} className="text-primary" />}
       </TouchableOpacity>
     ))}
   </View>
@@ -186,9 +166,7 @@ const GenderStep = ({ data, updateData }: StepProps) => (
         key={gender}
         onPress={() => updateData({ gender })}
         className={`p-4 border rounded-xl flex-row items-center justify-between ${
-          data.gender === gender
-            ? "border-primary bg-primary/5"
-            : "border-border bg-card"
+          data.gender === gender ? "border-primary bg-primary/5" : "border-border bg-card"
         }`}
       >
         <Text className="font-semibold capitalize text-lg">{gender}</Text>
@@ -241,15 +219,11 @@ const SportStep = ({ data, updateData }: StepProps) => (
         key={sport}
         onPress={() => updateData({ primary_sport: sport as any })}
         className={`p-4 border rounded-xl flex-row items-center justify-between ${
-          data.primary_sport === sport
-            ? "border-primary bg-primary/5"
-            : "border-border bg-card"
+          data.primary_sport === sport ? "border-primary bg-primary/5" : "border-border bg-card"
         }`}
       >
         <Text className="font-semibold capitalize text-lg">{sport}</Text>
-        {data.primary_sport === sport && (
-          <Icon as={Check} className="text-primary" />
-        )}
+        {data.primary_sport === sport && <Icon as={Check} className="text-primary" />}
       </TouchableOpacity>
     ))}
   </View>
@@ -270,9 +244,7 @@ const MaxHrStep = ({ data, updateData }: StepProps) => {
             updateData({ max_hr: null });
           }
         }}
-        onNumberChange={(value) =>
-          updateData({ max_hr: value ? Math.round(value) : null })
-        }
+        onNumberChange={(value) => updateData({ max_hr: value ? Math.round(value) : null })}
         min={100}
         max={220}
         decimals={0}
@@ -281,10 +253,7 @@ const MaxHrStep = ({ data, updateData }: StepProps) => {
         placeholder="185"
       />
       {estimatedMaxHr ? (
-        <Button
-          variant="outline"
-          onPress={() => updateData({ max_hr: estimatedMaxHr })}
-        >
+        <Button variant="outline" onPress={() => updateData({ max_hr: estimatedMaxHr })}>
           <Text>Use estimate ({estimatedMaxHr} bpm)</Text>
         </Button>
       ) : (
@@ -308,9 +277,7 @@ const RestingHrStep = ({ data, updateData }: StepProps) => (
           updateData({ resting_hr: null });
         }
       }}
-      onNumberChange={(value) =>
-        updateData({ resting_hr: value ? Math.round(value) : null })
-      }
+      onNumberChange={(value) => updateData({ resting_hr: value ? Math.round(value) : null })}
       min={30}
       max={100}
       decimals={0}
@@ -326,9 +293,7 @@ const FtpStep = ({ data, updateData }: StepProps) => {
 
   return (
     <View className="gap-4">
-      <Text className="text-xl font-semibold mb-2">
-        Functional Threshold Power (FTP)
-      </Text>
+      <Text className="text-xl font-semibold mb-2">Functional Threshold Power (FTP)</Text>
       <BoundedNumberInput
         id="onboarding-ftp"
         label="FTP"
@@ -338,9 +303,7 @@ const FtpStep = ({ data, updateData }: StepProps) => {
             updateData({ ftp: null });
           }
         }}
-        onNumberChange={(value) =>
-          updateData({ ftp: value ? Math.round(value) : null })
-        }
+        onNumberChange={(value) => updateData({ ftp: value ? Math.round(value) : null })}
         min={50}
         max={500}
         decimals={0}
@@ -349,10 +312,7 @@ const FtpStep = ({ data, updateData }: StepProps) => {
         placeholder="250"
       />
       {estimatedFtp ? (
-        <Button
-          variant="outline"
-          onPress={() => updateData({ ftp: estimatedFtp })}
-        >
+        <Button variant="outline" onPress={() => updateData({ ftp: estimatedFtp })}>
           <Text>Use estimate ({estimatedFtp} W)</Text>
         </Button>
       ) : (
@@ -414,13 +374,9 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
 
       let AppleHealthKit: AppleHealthKitModule;
       try {
-        AppleHealthKit = require("react-native-health")
-          .default as AppleHealthKitModule;
+        AppleHealthKit = require("react-native-health").default as AppleHealthKitModule;
       } catch {
-        Alert.alert(
-          "Not Available",
-          "Apple Health integration is not available in this build.",
-        );
+        Alert.alert("Not Available", "Apple Health integration is not available in this build.");
         return;
       }
 
@@ -466,10 +422,7 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
 
     const providerKey = providerMap[provider];
     if (!providerKey) {
-      Alert.alert(
-        "Coming Soon",
-        `Connection to ${provider} will be available in the next update.`,
-      );
+      Alert.alert("Coming Soon", `Connection to ${provider} will be available in the next update.`);
       return;
     }
 
@@ -479,10 +432,7 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
         redirectUri: "gradientpeak://integrations",
       });
 
-      const result = await WebBrowser.openAuthSessionAsync(
-        url,
-        "gradientpeak://integrations",
-      );
+      const result = await WebBrowser.openAuthSessionAsync(url, "gradientpeak://integrations");
 
       if (result.type === "success") {
         setConnected((prev) => [...prev, provider]);
@@ -507,9 +457,7 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
   return (
     <View className="gap-4">
       <Text className="text-xl font-semibold mb-2">Connect Accounts</Text>
-      <Text className="text-muted-foreground mb-4">
-        Sync your activities automatically.
-      </Text>
+      <Text className="text-muted-foreground mb-4">Sync your activities automatically.</Text>
 
       {providers.map((service) => (
         <TouchableOpacity
@@ -531,11 +479,7 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
           {connected.includes(service.name) ? (
             <Icon as={Check} className="text-green-600" size={20} />
           ) : (
-            <Icon
-              as={ChevronRight}
-              className="text-muted-foreground"
-              size={20}
-            />
+            <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
           )}
         </TouchableOpacity>
       ))}
@@ -575,9 +519,7 @@ const SummaryStep = ({ data }: { data: OnboardingData }) => {
     },
     {
       label: "Threshold Pace",
-      value: data.threshold_pace
-        ? `${formatDuration(data.threshold_pace)} /km`
-        : null,
+      value: data.threshold_pace ? `${formatDuration(data.threshold_pace)} /km` : null,
     },
     {
       label: "CSS",
@@ -600,9 +542,7 @@ const SummaryStep = ({ data }: { data: OnboardingData }) => {
           {summaryItems.map((item) => (
             <View key={item.label} className="flex-row justify-between">
               <Text className="text-muted-foreground">{item.label}</Text>
-              <Text
-                className={`font-medium ${item.capitalize ? "capitalize" : ""}`}
-              >
+              <Text className={`font-medium ${item.capitalize ? "capitalize" : ""}`}>
                 {item.value}
               </Text>
             </View>
@@ -628,8 +568,7 @@ export default function OnboardingScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { completeOnboarding } = useAuth();
   const { data: profile } = trpc.profiles.get.useQuery();
-  const completeOnboardingMutation =
-    trpc.onboarding.completeOnboarding.useMutation();
+  const completeOnboardingMutation = trpc.onboarding.completeOnboarding.useMutation();
 
   const updateData = (updates: Partial<OnboardingData>) => {
     setData((prev) => ({ ...prev, ...updates }));
@@ -660,15 +599,13 @@ export default function OnboardingScreen() {
         id: "dob",
         component: DobStep,
         shouldShow: () => true,
-        isValid: (d) =>
-          !!d.dob && new Date(d.dob).toString() !== "Invalid Date",
+        isValid: (d) => !!d.dob && new Date(d.dob).toString() !== "Invalid Date",
       },
       {
         id: "weight",
         component: WeightStep,
         shouldShow: () => true,
-        isValid: (d) =>
-          !!d.weight_kg && d.weight_kg >= 30 && d.weight_kg <= 300,
+        isValid: (d) => !!d.weight_kg && d.weight_kg >= 30 && d.weight_kg <= 300,
       },
       {
         id: "sport",
@@ -688,30 +625,24 @@ export default function OnboardingScreen() {
         component: RestingHrStep,
         shouldShow: () => true,
         // Optional but must be valid if present
-        isValid: (d) =>
-          !d.resting_hr || (d.resting_hr >= 30 && d.resting_hr <= 100),
+        isValid: (d) => !d.resting_hr || (d.resting_hr >= 30 && d.resting_hr <= 100),
       },
       {
         id: "ftp",
         component: FtpStep,
-        shouldShow: (d) =>
-          d.primary_sport === "cycling" || d.primary_sport === "triathlon",
+        shouldShow: (d) => d.primary_sport === "cycling" || d.primary_sport === "triathlon",
         isValid: (d) => !d.ftp || (d.ftp >= 50 && d.ftp <= 500),
       },
       {
         id: "threshold_pace",
         component: ThresholdPaceStep,
-        shouldShow: (d) =>
-          d.primary_sport === "running" || d.primary_sport === "triathlon",
-        isValid: (d) =>
-          !d.threshold_pace ||
-          (d.threshold_pace >= 120 && d.threshold_pace <= 600), // 2:00 to 10:00 min/km
+        shouldShow: (d) => d.primary_sport === "running" || d.primary_sport === "triathlon",
+        isValid: (d) => !d.threshold_pace || (d.threshold_pace >= 120 && d.threshold_pace <= 600), // 2:00 to 10:00 min/km
       },
       {
         id: "css",
         component: CssStep,
-        shouldShow: (d) =>
-          d.primary_sport === "swimming" || d.primary_sport === "triathlon",
+        shouldShow: (d) => d.primary_sport === "swimming" || d.primary_sport === "triathlon",
         isValid: (d) => !d.css || (d.css >= 60 && d.css <= 300), // 1:00 to 5:00 min/100m
       },
       {
@@ -731,10 +662,7 @@ export default function OnboardingScreen() {
   );
 
   // Filter valid steps
-  const activeSteps = useMemo(
-    () => steps.filter((step) => step.shouldShow(data)),
-    [data, steps],
-  );
+  const activeSteps = useMemo(() => steps.filter((step) => step.shouldShow(data)), [data, steps]);
   const currentStep = activeSteps[currentStepIndex];
   const isLastStep = currentStepIndex === activeSteps.length - 1;
 
@@ -806,53 +734,53 @@ export default function OnboardingScreen() {
   if (!currentStep) return null;
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={["top", "bottom"]}>
-      {/* Header - Fixed */}
-      <View className="px-6 py-4 border-b border-border/50 flex-row items-center justify-between bg-background z-10">
-        <Text className="text-sm font-medium text-muted-foreground">
-          Step {currentStepIndex + 1} of {activeSteps.length}
-        </Text>
-        <View className="h-1 flex-1 mx-4 bg-muted rounded-full overflow-hidden">
-          <View
-            className="h-full bg-primary"
-            style={{
-              width: `${((currentStepIndex + 1) / activeSteps.length) * 100}%`,
-            }}
-          />
-        </View>
-      </View>
-
-      {/* Body - Scrollable */}
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <currentStep.component data={data} updateData={updateData} />
-      </ScrollView>
-
-      {/* Footer - Fixed */}
-      <View className="px-6 py-4 border-t border-border/50 bg-background flex-row gap-4">
-        <Button
-          variant="ghost"
-          onPress={handleSkip}
-          className={`flex-1 ${isStepValid ? "opacity-50" : ""}`}
-          disabled={isSubmitting || isStepValid}
-        >
-          <Text className="text-muted-foreground">Skip</Text>
-        </Button>
-        <Button
-          onPress={handleNext}
-          className={`flex-[2] ${!isStepValid ? "opacity-50" : ""}`}
-          disabled={isSubmitting || !isStepValid}
-        >
-          <Text className="font-semibold text-primary-foreground">
-            {isLastStep ? "Finish" : "Next"}
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+      <View className="flex-1 bg-background">
+        {/* Header - Fixed */}
+        <View className="px-6 py-4 border-b border-border/50 flex-row items-center justify-between bg-background z-10">
+          <Text className="text-sm font-medium text-muted-foreground">
+            Step {currentStepIndex + 1} of {activeSteps.length}
           </Text>
-          {!isLastStep && (
-            <Icon as={ArrowRight} className="ml-2 text-primary-foreground" />
-          )}
-        </Button>
+          <View className="h-1 flex-1 mx-4 bg-muted rounded-full overflow-hidden">
+            <View
+              className="h-full bg-primary"
+              style={{
+                width: `${((currentStepIndex + 1) / activeSteps.length) * 100}%`,
+              }}
+            />
+          </View>
+        </View>
+
+        {/* Body - Scrollable */}
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <currentStep.component data={data} updateData={updateData} />
+        </ScrollView>
+
+        {/* Footer - Fixed */}
+        <View className="px-6 py-4 border-t border-border/50 bg-background flex-row gap-4">
+          <Button
+            variant="ghost"
+            onPress={handleSkip}
+            className={`flex-1 ${isStepValid ? "opacity-50" : ""}`}
+            disabled={isSubmitting || isStepValid}
+          >
+            <Text className="text-muted-foreground">Skip</Text>
+          </Button>
+          <Button
+            onPress={handleNext}
+            className={`flex-[2] ${!isStepValid ? "opacity-50" : ""}`}
+            disabled={isSubmitting || !isStepValid}
+          >
+            <Text className="font-semibold text-primary-foreground">
+              {isLastStep ? "Finish" : "Next"}
+            </Text>
+            {!isLastStep && <Icon as={ArrowRight} className="ml-2 text-primary-foreground" />}
+          </Button>
+        </View>
       </View>
     </SafeAreaView>
   );

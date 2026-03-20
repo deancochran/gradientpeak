@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
 import { Card, CardContent } from "../card/index.web";
+import { tabsFixtures } from "./fixtures";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./index.web";
 import type { TabsListVariant } from "./shared";
 
@@ -15,34 +16,39 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 function TabsPreview({ variant }: { variant: TabsListVariant }) {
+  const fixture = tabsFixtures.settings;
+
   return (
-    <Tabs className="w-[420px]" defaultValue="overview">
+    <Tabs className="w-[420px]" defaultValue={fixture.values.overview}>
       <TabsList variant={variant}>
-        <TabsTrigger value="overview">Overview</TabsTrigger>
-        <TabsTrigger value="sessions">Sessions</TabsTrigger>
-        <TabsTrigger value="notes">Notes</TabsTrigger>
+        <TabsTrigger value={fixture.values.overview}>
+          {fixture.triggers.overview.label}
+        </TabsTrigger>
+        <TabsTrigger value={fixture.values.sessions}>
+          {fixture.triggers.sessions.label}
+        </TabsTrigger>
+        <TabsTrigger value={fixture.values.notes}>
+          {fixture.triggers.notes.label}
+        </TabsTrigger>
       </TabsList>
-      <TabsContent value="overview">
+      <TabsContent value={fixture.values.overview}>
         <Card>
           <CardContent className="pt-6 text-sm text-muted-foreground">
-            Base block is progressing well, with fatigue trending down after the
-            recovery week.
+            {fixture.content.overview}
           </CardContent>
         </Card>
       </TabsContent>
-      <TabsContent value="sessions">
+      <TabsContent value={fixture.values.sessions}>
         <Card>
           <CardContent className="pt-6 text-sm text-muted-foreground">
-            Four key sessions are scheduled this week: hills, tempo, recovery
-            spin, and long run.
+            {fixture.content.sessions}
           </CardContent>
         </Card>
       </TabsContent>
-      <TabsContent value="notes">
+      <TabsContent value={fixture.values.notes}>
         <Card>
           <CardContent className="pt-6 text-sm text-muted-foreground">
-            Prioritize sleep and avoid stacking strength work the night before
-            the tempo session.
+            {fixture.content.notes}
           </CardContent>
         </Card>
       </TabsContent>

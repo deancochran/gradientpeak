@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 
 import { Badge } from "../badge/index.web";
 import { Button } from "../button/index.web";
+import { cardFixtures } from "./fixtures";
 import {
   Card,
   CardAction,
@@ -26,26 +27,28 @@ export const Overview: Story = {
   render: () => (
     <Card className="w-[360px]">
       <CardHeader>
-        <CardTitle>Weekly recovery check</CardTitle>
+        <CardTitle>{cardFixtures.recoveryCheck.title}</CardTitle>
         <CardDescription>
-          Track energy, sleep quality, and workout confidence before your next
-          block.
+          {cardFixtures.recoveryCheck.description}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid gap-3 text-sm">
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-            <span className="text-muted-foreground">Sleep score</span>
-            <span className="font-medium">8.4 / 10</span>
-          </div>
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-            <span className="text-muted-foreground">Resting HR</span>
-            <span className="font-medium">52 bpm</span>
-          </div>
+          {cardFixtures.recoveryCheck.stats.map((stat) => (
+            <div
+              className="flex items-center justify-between rounded-lg border px-3 py-2"
+              key={stat.label}
+            >
+              <span className="text-muted-foreground">{stat.label}</span>
+              <span className="font-medium">{stat.value}</span>
+            </div>
+          ))}
         </div>
       </CardContent>
       <CardFooter>
-        <Button className="w-full">Save check-in</Button>
+        <Button className="w-full">
+          {cardFixtures.recoveryCheck.primaryActionLabel}
+        </Button>
       </CardFooter>
     </Card>
   ),

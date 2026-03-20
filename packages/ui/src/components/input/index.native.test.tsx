@@ -1,21 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("react-native", () => import("../../test/react-native"));
-
 import { renderNative } from "../../test/render-native";
+import { inputFixtures } from "./fixtures";
 import { Input } from "./index.native";
 
 describe("Input native", () => {
   it("maps normalized test props onto the native input", () => {
     const { getByLabelText, getByTestId } = renderNative(
-      <Input accessibilityLabel="Email" id="email-input" testId="auth-email" />,
+      <Input {...inputFixtures.email} />,
     );
 
-    expect(getByLabelText("Email")).toBeTruthy();
+    expect(getByLabelText(inputFixtures.email.accessibilityLabel)).toBeTruthy();
 
-    const input = getByTestId("auth-email");
+    const input = getByTestId(inputFixtures.email.testId);
 
-    expect(input.props.testID).toBe("auth-email");
-    expect(input.props.nativeID).toBe("email-input");
+    expect(input.props.testID).toBe(inputFixtures.email.testId);
+    expect(input.props.nativeID).toBe(inputFixtures.email.id);
   });
 });

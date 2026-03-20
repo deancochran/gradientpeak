@@ -1,15 +1,13 @@
 import * as React from "react";
-import { describe, expect, it, vi } from "vitest";
 
-vi.mock("react-native", () => import("../../test/react-native"));
-vi.mock("@rn-primitives/slot", () => {
+jest.mock("@rn-primitives/slot", () => {
   return {
     Text: (props: any) =>
       React.createElement("Slot.Text", props, props.children),
   };
 });
 
-vi.mock("@rn-primitives/tabs", () => {
+jest.mock("@rn-primitives/tabs", () => {
   const valueContext = React.createContext({
     value: undefined as string | undefined,
   });
@@ -49,28 +47,41 @@ vi.mock("@rn-primitives/tabs", () => {
 });
 
 import { renderNative } from "../../test/render-native";
+import { tabsFixtures } from "./fixtures";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./index.native";
 
 describe("Tabs native", () => {
   it("maps normalized test props for root, trigger, and active content", () => {
+    const fixture = tabsFixtures.settings;
+
     const { getByTestId } = renderNative(
-      <Tabs onValueChange={() => {}} testId="settings-tabs" value="profile">
-        <TabsList testId="settings-tabs-list">
-          <TabsTrigger testId="settings-tabs-trigger-profile" value="profile">
-            Profile
+      <Tabs
+        onValueChange={() => {}}
+        testId={fixture.rootTestId}
+        value={fixture.values.profile}
+      >
+        <TabsList testId={fixture.listTestId}>
+          <TabsTrigger
+            testId={fixture.triggers.profile.testId}
+            value={fixture.values.profile}
+          >
+            {fixture.triggers.profile.label}
           </TabsTrigger>
         </TabsList>
-        <TabsContent testId="settings-tabs-content-profile" value="profile">
-          Profile content
+        <TabsContent
+          testId={fixture.contentTestIds.profile}
+          value={fixture.values.profile}
+        >
+          {fixture.content.profile}
         </TabsContent>
       </Tabs>,
     );
 
-    const trigger = getByTestId("settings-tabs-trigger-profile");
-    const content = getByTestId("settings-tabs-content-profile");
+    const trigger = getByTestId(fixture.triggers.profile.testId);
+    const content = getByTestId(fixture.contentTestIds.profile);
 
-    expect(getByTestId("settings-tabs")).toBeTruthy();
-    expect(trigger.props.children).toBe("Profile");
-    expect(content.props.children).toBe("Profile content");
+    expect(getByTestId(fixture.rootTestId)).toBeTruthy();
+    expect(trigger.props.children).toBe(fixture.triggers.profile.label);
+    expect(content.props.children).toBe(fixture.content.profile);
   });
 });

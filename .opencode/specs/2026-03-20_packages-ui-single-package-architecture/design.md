@@ -305,3 +305,38 @@ This architecture implies the following concrete repo changes.
 - Runtime confidence comes from web and mobile runtime-owned verification instead of over-centralized package tooling.
 - Shared selectors and component contracts remain consistent across platforms.
 - The architecture reduces mocking complexity and increases maintainability.
+
+## 8. Reference Documentation
+
+Implementation should follow the official documentation for the runtime-owning tools:
+
+### Storybook
+
+- Storybook configuration docs for `main.ts`, `preview.ts`, stories globs, addons, and autodocs
+- Storybook API docs for app-owned configuration files and preview behavior
+- Use these docs when moving preview ownership into `apps/web`
+
+Reference sources used:
+
+- Storybook docs via Context7: `/storybookjs/storybook/v9.0.15`
+- Relevant topics: configuration, `main.ts`, `preview.ts`, autodocs, stories globs, framework configuration, docs/autodocs
+
+### Playwright
+
+- Playwright docs for `playwright.config.ts`, projects, browser/device setup, `webServer`, retries, reporters, and test organization
+- Use these docs when defining runtime-owned verification in `apps/web`
+
+Reference sources used:
+
+- Playwright docs via Context7: `/microsoft/playwright`
+- Relevant topics: test configuration, projects, best practices, directory structure, web-first assertions, CI retries
+
+### Maestro
+
+- Maestro docs for flow organization, workspace management, CLI usage, YAML flows, JavaScript support, and test execution patterns
+- Use these docs when defining runtime-owned verification and shared selector consumption in `apps/mobile`
+
+Reference sources used:
+
+- Maestro docs: `https://maestro.mobile.dev/`
+- Relevant topics: quickstart, flows, JavaScript, workspace management, CLI, examples, troubleshooting

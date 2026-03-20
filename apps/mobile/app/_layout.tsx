@@ -2,7 +2,16 @@
 import "../polyfills";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
+import { NATIVE_THEME_VARIABLES } from "@repo/ui/theme/native";
 import "@/global.css";
+import { PortalHost } from "@rn-primitives/portal";
+import { Redirect, router, Slot, useSegments } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { vars } from "nativewind";
+import * as React from "react";
+import { ActivityIndicator, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
@@ -10,25 +19,12 @@ import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
 import { useTheme } from "@/lib/stores/theme-store";
-import { PortalHost } from "@rn-primitives/portal";
-import { Redirect, router, Slot, useSegments } from "expo-router";
-import { StatusBar } from "expo-status-bar";
-import * as React from "react";
-import { ActivityIndicator, View, useColorScheme } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 // Initialize Sentry error tracking for production
 initSentry();
 
 // Export ErrorBoundary for the layout
-export function ErrorBoundary({
-  error,
-  retry,
-}: {
-  error: Error;
-  retry: () => void;
-}) {
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   return (
     <View className="flex-1 justify-center items-center p-5 bg-background">
       <Text className="text-destructive text-2xl font-bold mb-3 text-center">
@@ -43,9 +39,7 @@ export function ErrorBoundary({
           <Text className="text-muted-foreground text-sm font-semibold mb-2">
             Error Details (Dev Mode):
           </Text>
-          <Text className="text-muted-foreground text-xs font-mono">
-            {error.message}
-          </Text>
+          <Text className="text-muted-foreground text-xs font-mono">{error.message}</Text>
         </View>
       )}
 
@@ -53,11 +47,7 @@ export function ErrorBoundary({
         <Text className="text-primary-foreground font-semibold">Try Again</Text>
       </Button>
 
-      <Button
-        variant="outline"
-        onPress={() => router.replace("/")}
-        className="w-full max-w-xs"
-      >
+      <Button variant="outline" onPress={() => router.replace("/")} className="w-full max-w-xs">
         <Text className="text-foreground">Go Home</Text>
       </Button>
     </View>
@@ -68,22 +58,16 @@ export function ErrorBoundary({
 function AppContent() {
   console.log("AppContent loaded");
 
-  const { userStatus, onboardingStatus, isAuthenticated, isFullyLoaded, user } =
-    useAuth();
-  const { theme, isLoaded: isThemeLoaded } = useTheme();
-  const colorScheme = useColorScheme();
+  const { userStatus, onboardingStatus, isAuthenticated, isFullyLoaded, user } = useAuth();
+  const { theme, resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
   const segments = useSegments();
 
   const inInternalGroup = segments[0] === "(internal)";
   const inExternalGroup = segments[0] === "(external)";
   const isOnboardingScreen =
-    segments[0] === "(internal)" &&
-    segments[1] === "(standard)" &&
-    segments[2] === "onboarding";
-  const isVerificationScreen =
-    segments[0] === "(external)" && segments[1] === "verify";
-  const isAuthCallbackScreen =
-    segments[0] === "(external)" && segments[1] === "callback";
+    segments[0] === "(internal)" && segments[1] === "(standard)" && segments[2] === "onboarding";
+  const isVerificationScreen = segments[0] === "(external)" && segments[1] === "verify";
+  const isAuthCallbackScreen = segments[0] === "(external)" && segments[1] === "callback";
 
   const guardDecision = React.useMemo(() => {
     if (!isFullyLoaded || !isThemeLoaded) {
@@ -140,6 +124,12 @@ function AppContent() {
     userStatus,
   ]);
 
+  const isDark = resolvedTheme === "dark";
+  const themeVariables = React.useMemo(
+    () => vars(NATIVE_THEME_VARIABLES[resolvedTheme]),
+    [resolvedTheme],
+  );
+
   if (guardDecision.type === "loading") {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -150,38 +140,26 @@ function AppContent() {
 
   if (guardDecision.type === "redirect") {
     if (guardDecision.to === "/(external)/verify") {
-      return (
-        <Redirect
-          href={{ pathname: guardDecision.to, params: guardDecision.params }}
-        />
-      );
+      return <Redirect href={{ pathname: guardDecision.to, params: guardDecision.params }} />;
     }
 
     return <Redirect href={guardDecision.to} />;
   }
 
-  const isDark = colorScheme === "dark";
-
-  console.log(
-    "Rendering with theme:",
-    theme,
-    "NativeWind colorScheme:",
-    colorScheme,
-    "isDark:",
-    isDark,
-  );
+  console.log("Rendering with theme:", theme, "resolvedTheme:", resolvedTheme, "isDark:", isDark);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar style={isDark ? "light" : "dark"} />
-        <SafeAreaView
-          className="flex-1 bg-background"
-          edges={["top", "left", "right"]}
-        >
-          <Slot />
-          <PortalHost />
-        </SafeAreaView>
+        <View style={themeVariables} className="flex-1 bg-background">
+          <StatusBar style={isDark ? "light" : "dark"} />
+          <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+            <View className="flex-1 bg-background">
+              <Slot />
+              <PortalHost />
+            </View>
+          </SafeAreaView>
+        </View>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

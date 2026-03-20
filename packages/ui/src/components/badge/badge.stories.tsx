@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
+import { badgeFixtures } from "./fixtures";
 import { Badge } from "./index.web";
 import { BADGE_VARIANTS } from "./shared";
 
@@ -8,8 +9,7 @@ const meta = {
   component: Badge,
   tags: ["autodocs"],
   args: {
-    children: "Featured",
-    variant: "default",
+    ...badgeFixtures.featured,
   },
   argTypes: {
     variant: {

@@ -14,7 +14,9 @@
     "check-types": "tsc --noEmit",
     "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar 'src/**/*.{ts,tsx,js,jsx,json,css}' -c 'biome lint .'\"",
     "test:serve": "next dev",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -59,11 +61,16 @@
     "@playwright/test": "^1.58.2",
     "@repo/supabase": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "@storybook/addon-a11y": "^8.6.14",
+    "@storybook/addon-essentials": "^8.6.14",
+    "@storybook/react-vite": "^8.6.14",
+    "@tailwindcss/vite": "^4",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "concurrently": "^9.2.1",
+    "storybook": "^8.6.14",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.7",
     "typescript": "^5"

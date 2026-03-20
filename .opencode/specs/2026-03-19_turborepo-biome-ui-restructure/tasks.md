@@ -29,7 +29,7 @@
 ## Phase 4: App Integration
 
 - [x] Task L - Web app cutover. Success: `apps/web` consumes `@repo/ui`, `apps/web/next.config.ts` transpiles the package, and no shared UI imports point back to `apps/web/src/components/ui/`. Progress note: the only remaining app-local `apps/web/src/components/ui/*` consumer is `data-table`, which stays intentionally app-specific.
-- [x] Task M - Mobile app cutover. Success: `apps/mobile` consumes `@repo/ui`, NativeWind v5 preview setup is applied, and no shared UI imports point back to `apps/mobile/components/ui/`. Progress note: `apps/mobile` and `packages/ui` now use NativeWind `5.0.0-preview.3` with `react-native-css`, v5 Metro/Babel/env wiring, CSS `@source` scanning for shared package classes, and no remaining mobile imports targeting the deleted app-local UI shim directory.
+- [x] Task M - Mobile app cutover. Success: `apps/mobile` consumes `@repo/ui`, NativeWind v5 preview setup is applied, and no shared UI imports point back to `apps/mobile/components/ui/`. Progress note: `apps/mobile` and `packages/ui` now use NativeWind `5.0.0-preview.3` with `react-native-css`, v5 Metro/Babel/env wiring, CSS `@source` scanning for shared package classes, runtime-applied CSS variables for native theme switching, and no remaining mobile imports targeting the deleted app-local UI shim directory.
 - [x] Task N - Update components metadata. Success: `components.json` files for shared and consuming workspaces reflect the new shared package architecture. Progress note: `packages/ui/components.json` and `apps/mobile/components.json` now point at the upstream shadcn registry plus the React Native Reusables NativeWind registry namespace for modular component import workflows.
 
 ## Phase 5: Storybook and Documentation Surface

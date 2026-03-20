@@ -19,9 +19,7 @@ const lightEntries = Object.entries(source.light);
 const formatDeclarations = (entries) =>
   entries.map(([name, value]) => `  --${name}: ${value};`).join("\n");
 
-const colorTokenNames = lightEntries
-  .map(([name]) => name)
-  .filter((name) => name !== "radius");
+const colorTokenNames = lightEntries.map(([name]) => name).filter((name) => name !== "radius");
 
 const formatThemeAliases = () => {
   const colorAliases = colorTokenNames
@@ -37,8 +35,7 @@ const formatThemeAliases = () => {
   ].join("\n");
 };
 
-const toCamelCase = (name) =>
-  name.replace(/-([a-z0-9])/g, (_, letter) => letter.toUpperCase());
+const toCamelCase = (name) => name.replace(/-([a-z0-9])/g, (_, letter) => letter.toUpperCase());
 
 const formatNativeThemeScale = (entries) => {
   return entries
@@ -47,6 +44,10 @@ const formatNativeThemeScale = (entries) => {
       return `    ${toCamelCase(name)}: ${JSON.stringify(serializedValue)},`;
     })
     .join("\n");
+};
+
+const formatNativeThemeVariables = (entries) => {
+  return entries.map(([name, value]) => `    "--${name}": ${JSON.stringify(value)},`).join("\n");
 };
 
 const tokensCss = `${GENERATED_HEADER}
@@ -76,7 +77,10 @@ const nativeCss = `${GENERATED_HEADER}
 @import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css";
 @import "nativewind/theme";
-@import "./tokens.css";
+
+:root {
+${formatDeclarations(lightEntries)}
+}
 
 @theme inline {
 ${formatThemeAliases()}
@@ -94,8 +98,18 @@ ${formatNativeThemeScale(Object.entries(source.dark))}
   },
 } as const;
 
+export const NATIVE_THEME_VARIABLES = {
+  light: {
+${formatNativeThemeVariables(lightEntries)}
+  },
+  dark: {
+${formatNativeThemeVariables(Object.entries(source.dark))}
+  },
+} as const;
+
 export type ThemeMode = keyof typeof THEME;
 export type ThemeScale = (typeof THEME)[ThemeMode];
+export type ThemeVariables = (typeof NATIVE_THEME_VARIABLES)[ThemeMode];
 `;
 
 await mkdir(themeDir, { recursive: true });

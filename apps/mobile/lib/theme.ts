@@ -1,5 +1,9 @@
 import { DarkTheme, DefaultTheme, type Theme } from "@react-navigation/native";
 import { THEME } from "@repo/ui/theme/native";
+import { Appearance, type ColorSchemeName } from "react-native";
+
+export type ThemePreference = "system" | "light" | "dark";
+export type ResolvedThemeMode = keyof typeof THEME;
 
 export const NAV_THEME: Record<"light" | "dark", Theme> = {
   light: {
@@ -25,3 +29,22 @@ export const NAV_THEME: Record<"light" | "dark", Theme> = {
     },
   },
 };
+
+export function resolveThemeMode(
+  preference: ThemePreference,
+  systemColorScheme: ColorSchemeName = Appearance.getColorScheme(),
+): ResolvedThemeMode {
+  if (preference === "system") {
+    return systemColorScheme === "dark" ? "dark" : "light";
+  }
+
+  return preference;
+}
+
+export function getNavigationTheme(mode: ResolvedThemeMode): Theme {
+  return NAV_THEME[mode];
+}
+
+export function getResolvedThemeScale(mode: ResolvedThemeMode) {
+  return THEME[mode];
+}

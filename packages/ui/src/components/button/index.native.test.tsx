@@ -1,8 +1,6 @@
 import * as React from "react";
-import { describe, expect, it, vi } from "vitest";
 
-vi.mock("react-native", () => import("../../test/react-native"));
-vi.mock("@rn-primitives/slot", () => {
+jest.mock("@rn-primitives/slot", () => {
   return {
     Text: (props: any) =>
       React.createElement("Slot.Text", props, props.children),
@@ -11,27 +9,23 @@ vi.mock("@rn-primitives/slot", () => {
 
 import { Text } from "../text/index.native";
 import { fireEvent, renderNative } from "../../test/render-native";
+import { buttonFixtures } from "./fixtures";
 import { Button } from "./index.native";
 
 describe("Button native", () => {
   it("maps normalized test props and handles presses", () => {
-    const onPress = vi.fn();
+    const onPress = jest.fn();
 
     const { getByLabelText } = renderNative(
-      <Button
-        accessibilityLabel="Save changes"
-        id="save-button"
-        onPress={onPress}
-        testId="settings-save"
-      >
-        <Text>Save</Text>
+      <Button {...buttonFixtures.save} onPress={onPress}>
+        <Text>{buttonFixtures.save.children}</Text>
       </Button>,
     );
 
-    const button = getByLabelText("Save changes");
+    const button = getByLabelText(buttonFixtures.save.accessibilityLabel);
 
-    expect(button.props.testID).toBe("settings-save");
-    expect(button.props.nativeID).toBe("save-button");
+    expect(button.props.testID).toBe(buttonFixtures.save.testId);
+    expect(button.props.nativeID).toBe(buttonFixtures.save.id);
 
     fireEvent.press(button);
     expect(onPress).toHaveBeenCalledTimes(1);

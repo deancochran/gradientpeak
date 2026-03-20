@@ -1,16 +1,15 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { User } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // Service role client has admin privileges to create users
 // Uses the project's configured service role key
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY;
+const serviceRoleKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY;
 
 if (!supabaseUrl || !serviceRoleKey) {
   // eslint-disable-next-line no-console
-  console.warn(
-    "⚠️  Missing Supabase credentials - test user creation will be skipped",
-  );
+  console.warn("⚠️  Missing Supabase credentials - test user creation will be skipped");
 }
 
 const supabaseAdmin: SupabaseClient | null =
@@ -62,9 +61,7 @@ export async function createTestUser(role: TestUserRole): Promise<User | null> {
   // Check if user already exists
   const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
 
-  const existingUser = existingUsers?.users.find(
-    (u) => u.email === userData.email,
-  );
+  const existingUser = existingUsers?.users.find((u) => u.email === userData.email);
 
   if (existingUser) {
     // eslint-disable-next-line no-console

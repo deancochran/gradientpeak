@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 
+import { inputFixtures } from "./fixtures";
 import { Input } from "./index.web";
 
 const meta = {
@@ -7,8 +8,7 @@ const meta = {
   component: Input,
   tags: ["autodocs"],
   args: {
-    placeholder: "runner@example.com",
-    type: "email",
+    ...inputFixtures.email,
   },
 } satisfies Meta<typeof Input>;
 
@@ -27,10 +27,10 @@ export const Playground: Story = {
 export const States: Story = {
   render: () => (
     <div className="grid w-80 gap-4">
-      <Input placeholder="Default field" />
-      <Input defaultValue="Editable value" />
-      <Input aria-invalid defaultValue="Needs attention" />
-      <Input disabled defaultValue="Disabled value" />
+      <Input placeholder={inputFixtures.states.defaultPlaceholder} />
+      <Input defaultValue={inputFixtures.states.value} />
+      <Input aria-invalid defaultValue={inputFixtures.states.invalidValue} />
+      <Input disabled defaultValue={inputFixtures.states.disabledValue} />
     </div>
   ),
 };

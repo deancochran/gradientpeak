@@ -1,5 +1,5 @@
 # Main Test: Verify Profile Screen after Login
-appId: host.exp.exponent
+appId: com.deancochran.gradientpeak.dev
 env:
   USER_EMAIL: "test@example.com"
   USER_PASS: "password123"

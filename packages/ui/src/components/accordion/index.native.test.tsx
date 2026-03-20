@@ -1,7 +1,3 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("react-native", () => import("../../test/react-native"));
-
 import { renderNative } from "../../test/render-native";
 import {
   Accordion,
@@ -12,17 +8,19 @@ import {
 
 describe("Accordion native", () => {
   it("maps normalized test props onto accordion items", () => {
-    const { getByTestId, getByText } = renderNative(
+    const { getByTestId } = renderNative(
       <Accordion type="single" value="profile">
         <AccordionItem testId="settings-section" value="profile">
-          <AccordionTrigger>Profile</AccordionTrigger>
-          <AccordionContent>Profile content</AccordionContent>
+          <AccordionTrigger testID="settings-trigger">Profile</AccordionTrigger>
+          <AccordionContent testID="settings-content">
+            Profile content
+          </AccordionContent>
         </AccordionItem>
       </Accordion>,
     );
 
     expect(getByTestId("settings-section")).toBeTruthy();
-    expect(getByText("Profile")).toBeTruthy();
-    expect(getByText("Profile content")).toBeTruthy();
+    expect(getByTestId("settings-trigger")).toBeTruthy();
+    expect(getByTestId("settings-content")).toBeTruthy();
   });
 });

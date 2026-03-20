@@ -32,9 +32,21 @@
 
 ## Phase 5: Implementation Backlog
 
-- [ ] Task M - Audit current package-owned preview assets. Success: all `packages/ui` preview-specific files, scripts, docs, and dependencies that must move, be deleted, or be replaced are listed before code changes begin.
-- [ ] Task N - Define shared fixture rollout set. Success: a first-wave list of shared components that need `fixtures.ts` is documented with scope and expected consumers.
-- [ ] Task O - Plan web preview hosting changes. Success: the exact target location, scripts, and dependencies for `apps/web` preview ownership are defined.
-- [ ] Task P - Plan mobile preview hosting changes. Success: the exact target route or development entry strategy for `apps/mobile` preview ownership is defined.
-- [ ] Task Q - Plan package test reduction. Success: existing `packages/ui` tests are categorized into keep, rewrite, move-up, or remove.
-- [ ] Task R - Define selector/fixture export strategy for Playwright and Maestro. Success: the implementation approach for direct imports, constants, or generated artifacts is documented before automation changes begin.
+- [x] Task M - Audit current package-owned preview assets. Success: all `packages/ui` preview-specific files, scripts, docs, and dependencies that must move, be deleted, or be replaced are listed before code changes begin. Progress note: package-owned `.storybook/*` and `storybook` scripts were identified as preview ownership drift, and `packages/ui/README.md` was updated to point preview ownership at the apps.
+- [x] Task N - Define shared fixture rollout set. Success: a first-wave list of shared components that need `fixtures.ts` is documented with scope and expected consumers. Progress note: first-wave fixtures were added for `button`, `input`, `card`, and `tabs` and reused by stories/tests.
+- [x] Task O - Plan web preview hosting changes. Success: the exact target location, scripts, and dependencies for `apps/web` preview ownership are defined. Progress note: `apps/web/.storybook/*` now hosts the web preview config, `apps/web/package.json` now owns Storybook scripts, `apps/web/src/app/dev/ui-preview/page.tsx` now provides a runtime-owned preview page, and `pnpm --filter web build-storybook -- --ci` passes.
+- [x] Task P - Plan mobile preview hosting changes. Success: the exact target route or development entry strategy for `apps/mobile` preview ownership is defined. Progress note: the first mobile preview surface now exists at `apps/mobile/app/(external)/ui-preview.tsx`, with room to expand into dedicated preview child screens later.
+- [x] Task Q - Plan package test reduction. Success: existing `packages/ui` tests are categorized into keep, rewrite, move-up, or remove. Progress note: the implementation plan now includes a concrete reduction rubric, package-owned preview config/scripts have been removed, and `packages/ui` Vitest coverage is now narrowed to lightweight web contract tests.
+- [x] Task R - Define selector/fixture export strategy for Playwright and Maestro. Success: the implementation approach for direct imports, constants, or generated artifacts is documented before automation changes begin. Progress note: `packages/ui` now exports `./components/*/fixtures` for direct TypeScript consumers, Playwright consumes those fixtures directly in `apps/web/e2e/specs/ui-preview.spec.ts`, and Maestro remains aligned to the same stable selector contract for future flow updates.
+
+## Phase 7: First Runtime Integrations
+
+- [x] Task V - Add runtime-owned web preview page. Success: `apps/web` contains a fixture-driven runtime preview page that imports shared components and fixtures from `@repo/ui`. Progress note: `apps/web/src/app/dev/ui-preview/page.tsx` now serves this role and is covered by Playwright.
+- [x] Task W - Add runtime-owned mobile preview route. Success: `apps/mobile` contains a fixture-driven preview route that imports shared components and fixtures from `@repo/ui`. Progress note: `apps/mobile/app/(external)/ui-preview.tsx` now provides the first mobile preview route and is reachable from the external welcome screen in dev mode.
+- [x] Task X - Add a first Maestro-aligned preview flow. Success: the mobile automation workspace includes a flow targeting the preview surface with stable selector IDs aligned to shared fixtures. Progress note: `apps/mobile/.maestro/flows/main/ui_preview.yaml` now validates the preview route using stable shared selector values.
+
+## Phase 6: Documentation-Grounded Execution
+
+- [x] Task S - Reference Storybook docs during web preview planning. Success: implementation decisions for `apps/web` preview hosting cite official Storybook configuration patterns rather than ad hoc structure.
+- [x] Task T - Reference Playwright docs during web verification planning. Success: implementation decisions for Playwright config, projects, and runtime setup align with official Playwright guidance.
+- [x] Task U - Reference Maestro docs during mobile verification planning. Success: implementation decisions for mobile flow organization, workspace management, and selector usage align with official Maestro guidance.

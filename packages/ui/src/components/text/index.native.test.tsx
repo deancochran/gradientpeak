@@ -1,7 +1,3 @@
-import { describe, expect, it, vi } from "vitest";
-
-vi.mock("react-native", () => import("../../test/react-native"));
-
 import { renderNative } from "../../test/render-native";
 import { Text } from "./index.native";
 

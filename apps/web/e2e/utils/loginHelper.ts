@@ -1,4 +1,4 @@
-import { type Page, expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 /**
  * Test user credentials - these users should be created in the database
@@ -20,6 +20,20 @@ export async function loginAs(page: Page, userRole: UserRole) {
 
   // Navigate to login page
   await page.goto("/auth/login");
+  await page.waitForURL("**/auth/login", { timeout: 10000 });
+
+  if (
+    !(await page
+      .getByTestId("login-email-input")
+      .isVisible()
+      .catch(() => false))
+  ) {
+    await page.getByRole("link", { name: /^login$/i }).click();
+    await page.waitForURL("**/auth/login", { timeout: 10000 });
+  }
+
+  await expect(page.getByTestId("login-email-input")).toBeVisible();
+  await expect(page.getByTestId("login-password-input")).toBeVisible();
 
   // Fill in email and password
   await page.getByTestId("login-email-input").fill(credentials.email);
@@ -29,11 +43,9 @@ export async function loginAs(page: Page, userRole: UserRole) {
   await page.getByTestId("login-submit-button").click();
 
   // Wait for a navigation to happen or a timeout if we stay on the same page
-  await page
-    .waitForNavigation({ waitUntil: "networkidle", timeout: 5000 })
-    .catch(() => {
-      // This is fine, it means we likely stayed on the login page
-    });
+  await page.waitForNavigation({ waitUntil: "networkidle", timeout: 5000 }).catch(() => {
+    // This is fine, it means we likely stayed on the login page
+  });
 
   // If we're still on the login page, the user probably doesn't exist.
   if (page.url().includes("/auth/login")) {
@@ -58,6 +70,8 @@ export async function loginAs(page: Page, userRole: UserRole) {
 
     // Now that user is created, log them in
     await page.goto("/auth/login");
+    await page.waitForURL("**/auth/login", { timeout: 10000 });
+    await expect(page.getByTestId("login-email-input")).toBeVisible();
     await page.getByTestId("login-email-input").fill(credentials.email);
     await page.getByTestId("login-password-input").fill(credentials.password);
     await page.getByTestId("login-submit-button").click();

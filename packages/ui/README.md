@@ -1,12 +1,13 @@
 # @repo/ui
 
-`packages/ui` is the source of truth for shared web and mobile UI primitives. Apps should consume `@repo/ui`; Storybook only documents what lives here.
+`packages/ui` is the source of truth for shared web and mobile UI primitives, shared selectors, and shared fixtures. Apps should consume `@repo/ui` and own their runtime previews.
 
 ## Component contract
 
 Create each shared primitive under `src/components/<name>/` and keep the contract strict:
 
 - `shared.ts` - shared types, variants, and non-platform logic
+- `fixtures.ts` - shared scenario data for previews, tests, Playwright, and Maestro
 - `index.web.tsx` - web implementation
 - `index.native.tsx` - React Native implementation
 
@@ -24,16 +25,18 @@ pnpm --filter @repo/ui generate:theme
 
 Do not hand-edit generated theme outputs.
 
-## Storybook
+## Preview ownership
 
-Run from `packages/ui`:
+Web preview tooling belongs to `apps/web`.
+
+Run from `apps/web`:
 
 ```bash
-pnpm storybook
-pnpm build-storybook
+pnpm --filter web storybook
+pnpm --filter web build-storybook
 ```
 
-Expo/mobile Storybook is intentionally out of scope for this package workflow.
+Mobile preview ownership belongs to `apps/mobile` and should use app-owned development entry points or preview routes.
 
 ## Add components
 

@@ -1,8 +1,6 @@
 import * as React from "react";
-import { describe, expect, it, vi } from "vitest";
 
-vi.mock("react-native", () => import("../../test/react-native"));
-vi.mock("@rn-primitives/switch", () => {
+jest.mock("@rn-primitives/switch", () => {
   return {
     Root: (props: any) =>
       React.createElement("SwitchRoot", props, props.children),
@@ -16,7 +14,7 @@ import { Switch } from "./index.native";
 
 describe("Switch native", () => {
   it("maps normalized test props for the native-only switch", () => {
-    const onCheckedChange = vi.fn();
+    const onCheckedChange = jest.fn();
 
     const { getByLabelText } = renderNative(
       <Switch
