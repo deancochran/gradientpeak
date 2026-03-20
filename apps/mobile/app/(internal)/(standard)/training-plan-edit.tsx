@@ -1,5 +1,5 @@
 import { TrainingPlanComposerScreen } from "@/components/training-plan/create/TrainingPlanComposerScreen";
-import { Text } from "../../../components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { ROUTES } from "../../../lib/constants/routes";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";

@@ -1,17 +1,17 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+} from "@repo/ui/components/card";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -58,6 +58,7 @@ export function LoginForm({
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
+                  testId="login-email-input"
                   type="email"
                   placeholder="m@example.com"
                   required
@@ -77,6 +78,7 @@ export function LoginForm({
                 </div>
                 <Input
                   id="password"
+                  testId="login-password-input"
                   type="password"
                   required
                   value={password}
@@ -84,7 +86,11 @@ export function LoginForm({
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" disabled={signInMutation.isPending}>
+              <Button
+                disabled={signInMutation.isPending}
+                testId="login-submit-button"
+                type="submit"
+              >
                 {signInMutation.isPending ? "Logging in..." : "Login"}
               </Button>
             </div>

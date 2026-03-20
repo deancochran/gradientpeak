@@ -1,5 +1,5 @@
-import { Switch } from "@/components/ui/switch";
-import { Text } from "@/components/ui/text";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
 import type { CreationAvailabilityConfig } from "@repo/core";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
 import React from "react";

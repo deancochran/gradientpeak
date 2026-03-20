@@ -1,17 +1,17 @@
-import { Badge } from "../../ui/badge";
-import { Button } from "../../ui/button";
-import { Input } from "../../ui/input";
-import { Label } from "../../ui/label";
-import { Textarea } from "../../ui/textarea";
+import { Badge } from "@repo/ui/components/badge";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
+import { Textarea } from "@repo/ui/components/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "../../ui/select";
-import { Switch } from "../../ui/switch";
-import { Text } from "../../ui/text";
+} from "@repo/ui/components/select";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
 import { BoundedNumberInput } from "./inputs/BoundedNumberInput";
 import { DateField } from "./inputs/DateField";
 import { DurationInput } from "./inputs/DurationInput";
@@ -2435,8 +2435,8 @@ export function SinglePageForm({
                           nextType === "race_performance" ||
                           nextType === "pace_threshold" ||
                           nextType === "power_threshold"
-                            ? (editingContext.target.activityCategory ??
-                              defaultCategory)
+                            ? editingContext.target.activityCategory ??
+                              defaultCategory
                             : undefined,
                       },
                     );

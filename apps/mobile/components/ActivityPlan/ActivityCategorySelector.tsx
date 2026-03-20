@@ -1,11 +1,11 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Text } from "@/components/ui/text";
+} from "@repo/ui/components/dialog";
+import { Text } from "@repo/ui/components/text";
 import { ACTIVITY_CATEGORY_CONFIG } from "@repo/core";
 import * as Haptics from "expo-haptics";
 import { memo, useState } from "react";

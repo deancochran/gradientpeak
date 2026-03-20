@@ -1,6 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/charts/IntensityDistributionChart.tsx
 
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { Dimensions, Pressable, View } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
 

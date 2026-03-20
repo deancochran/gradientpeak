@@ -1,0 +1,16 @@
+# Main Test: Verify Profile Screen after Login
+appId: host.exp.exponent
+env:
+  USER_EMAIL: "test@example.com"
+  USER_PASS: "password123"
+---
+- launchApp:
+    clearState: true
+- runFlow:
+    file: ../reusable/login.yaml
+    env:
+      email: "${USER_EMAIL}"
+      password: "${USER_PASS}"
+- tapOn: "Profile" # Navigate to the profile tab
+- assertVisible: "Goals" # An element on the Profile screen
+- takeScreenshot: reports/profile_screen_after_login.png

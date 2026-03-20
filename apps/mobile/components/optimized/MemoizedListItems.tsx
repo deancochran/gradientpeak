@@ -1,5 +1,5 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { Clock, MapPin, TrendingUp } from "lucide-react-native";
 import { memo } from "react";

@@ -1,5 +1,5 @@
 "use client";
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import { trpc } from "@/lib/trpc/client";
 import { House, LogOut, Settings } from "lucide-react";
 import Image from "next/image";
@@ -14,7 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+} from "@repo/ui/components/dropdown-menu";
 const Navbar = () => {
   const router = useRouter();
   const { isAuthenticated, refreshSession } = useAuth();

@@ -16,8 +16,8 @@
  * - Grayed out controls in Auto mode
  */
 
-import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import {
   useCurrentReadings,
   usePlan,

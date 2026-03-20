@@ -1,5 +1,5 @@
 import { TrendsOverviewSkeleton } from "@/components/shared";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import { ConsistencyHeatmap, type ConsistencyData } from "@/components/charts";
 

@@ -1,4 +1,4 @@
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@repo/ui/components/card";
 import React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 

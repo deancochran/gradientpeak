@@ -1,5 +1,5 @@
 import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { Activity } from "lucide-react-native";
 import React, { useState } from "react";
 import { View, TouchableOpacity } from "react-native";

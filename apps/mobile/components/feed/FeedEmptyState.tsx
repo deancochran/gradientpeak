@@ -1,4 +1,4 @@
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import { Users, Footprints, Bike } from "lucide-react-native";
 

@@ -1,6 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/TimeRangeSelector.tsx
 
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { Pressable, View } from "react-native";
 
 export type TimeRange = "1M" | "3M" | "6M" | "12M" | "ALL";

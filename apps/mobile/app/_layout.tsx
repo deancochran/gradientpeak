@@ -1,7 +1,7 @@
 // apps/native/app/_layout.tsx
 import "../polyfills";
-import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import "@/global.css";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
@@ -13,9 +13,8 @@ import { useTheme } from "@/lib/stores/theme-store";
 import { PortalHost } from "@rn-primitives/portal";
 import { Redirect, router, Slot, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useColorScheme } from "nativewind";
 import * as React from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, View, useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -69,16 +68,10 @@ export function ErrorBoundary({
 function AppContent() {
   console.log("AppContent loaded");
 
-  // Debug NativeWind installation
-  if (__DEV__) {
-    const { verifyInstallation } = require("nativewind");
-    verifyInstallation();
-  }
-
   const { userStatus, onboardingStatus, isAuthenticated, isFullyLoaded, user } =
     useAuth();
   const { theme, isLoaded: isThemeLoaded } = useTheme();
-  const { colorScheme } = useColorScheme();
+  const colorScheme = useColorScheme();
   const segments = useSegments();
 
   const inInternalGroup = segments[0] === "(internal)";
@@ -167,7 +160,6 @@ function AppContent() {
     return <Redirect href={guardDecision.to} />;
   }
 
-  // Use NativeWind's colorScheme
   const isDark = colorScheme === "dark";
 
   console.log(

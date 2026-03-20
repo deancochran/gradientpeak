@@ -30,7 +30,7 @@ import {
   shouldIgnorePreviewResponse,
 } from "@/lib/training-plan-form/previewRequestState";
 import { trpc } from "@/lib/trpc";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import {
   buildPreviewMinimalPlanFromForm,
   reducePreviewState,
@@ -70,7 +70,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { X } from "lucide-react-native";
-import { Icon } from "@/components/ui/icon";
+import { Icon } from "@repo/ui/components/icon";
 
 export type TrainingPlanComposerModeContract =
   | {

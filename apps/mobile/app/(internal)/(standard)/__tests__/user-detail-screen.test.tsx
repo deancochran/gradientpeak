@@ -69,20 +69,20 @@ vi.mock("@/components/settings", () => ({
   SettingItem: createHost("SettingItem"),
 }));
 
-vi.mock("@/components/ui/avatar", () => ({
+vi.mock("@repo/ui/components/avatar", () => ({
   Avatar: createHost("Avatar"),
   AvatarFallback: createHost("AvatarFallback"),
   AvatarImage: createHost("AvatarImage"),
 }));
 
-vi.mock("@/components/ui/button", () => ({ Button: createHost("Button") }));
-vi.mock("@/components/ui/card", () => ({
+vi.mock("@repo/ui/components/button", () => ({ Button: createHost("Button") }));
+vi.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
 }));
-vi.mock("@/components/ui/icon", () => ({ Icon: createHost("Icon") }));
-vi.mock("@/components/ui/input", () => ({ Input: createHost("Input") }));
-vi.mock("@/components/ui/text", () => ({ Text: createHost("Text") }));
+vi.mock("@repo/ui/components/icon", () => ({ Icon: createHost("Icon") }));
+vi.mock("@repo/ui/components/input", () => ({ Input: createHost("Input") }));
+vi.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
 
 vi.mock("lucide-react-native", () => ({
   Edit3: createHost("Edit3"),

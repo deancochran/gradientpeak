@@ -1,0 +1,1 @@
+export const NAVIGATION_MENU_VIEWPORT_ENABLED = true;

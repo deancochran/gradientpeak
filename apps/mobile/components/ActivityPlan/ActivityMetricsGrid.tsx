@@ -6,7 +6,7 @@ import {
   calculateActivityStatsV2,
   formatDurationCompact,
 } from "@repo/core";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { MetricCard } from "./MetricCard";
 
 interface ActivityMetricsGridProps {

@@ -9,19 +9,16 @@ vi.mock("react-native", () => ({
   ScrollView: (props: any) =>
     React.createElement("ScrollView", props, props.children),
   View: (props: any) => React.createElement("View", props, props.children),
+  useColorScheme: () => "light",
   useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: (props: any) => React.createElement("Text", props, props.children),
 }));
 
 vi.mock("@shopify/react-native-skia", () => ({
   useFont: () => ({}),
-}));
-
-vi.mock("nativewind", () => ({
-  useColorScheme: () => ({ colorScheme: "light" }),
 }));
 
 vi.mock("victory-native", () => ({

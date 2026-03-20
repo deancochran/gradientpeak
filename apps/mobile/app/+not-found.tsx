@@ -1,6 +1,6 @@
 // apps/native/app/(external)/not-found.tsx
-import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { router } from "expo-router";
 import { View } from "react-native";

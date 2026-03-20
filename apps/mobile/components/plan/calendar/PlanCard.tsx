@@ -1,6 +1,6 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import {
   Activity,
   Bike,

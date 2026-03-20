@@ -1,6 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/charts/WeeklyProgressChart.tsx
 
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { Dimensions, View } from "react-native";
 import { BarChart } from "react-native-chart-kit";
 

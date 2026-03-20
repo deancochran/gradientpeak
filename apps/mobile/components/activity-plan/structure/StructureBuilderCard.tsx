@@ -1,8 +1,8 @@
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import type { IntervalV2 } from "@repo/core";
 import { Info, Plus, X } from "lucide-react-native";
 import { Pressable, View } from "react-native";

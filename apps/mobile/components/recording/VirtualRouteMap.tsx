@@ -12,7 +12,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { View, StyleSheet } from "react-native";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { decodePolyline } from "@repo/core";
 

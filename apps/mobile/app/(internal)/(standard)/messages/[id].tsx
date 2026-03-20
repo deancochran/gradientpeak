@@ -1,9 +1,9 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+import { cn } from "@repo/ui/lib/cn";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Send } from "lucide-react-native";
 import React, { useState } from "react";

@@ -1,5 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import React, { useState } from "react";
 import { Pressable, View } from "react-native";
 

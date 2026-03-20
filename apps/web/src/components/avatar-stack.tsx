@@ -1,26 +1,34 @@
-import { cn } from '@/lib/utils'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { cva, type VariantProps } from 'class-variance-authority'
-import * as React from 'react'
+import { cn } from "@repo/ui/lib/cn";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@repo/ui/components/avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@repo/ui/components/tooltip";
+import { cva, type VariantProps } from "class-variance-authority";
+import * as React from "react";
 
-const avatarStackVariants = cva('flex -space-x-4 -space-y-4', {
+const avatarStackVariants = cva("flex -space-x-4 -space-y-4", {
   variants: {
     orientation: {
-      vertical: 'flex-row',
-      horizontal: 'flex-col',
+      vertical: "flex-row",
+      horizontal: "flex-col",
     },
   },
   defaultVariants: {
-    orientation: 'vertical',
+    orientation: "vertical",
   },
-})
+});
 
 export interface AvatarStackProps
   extends React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof avatarStackVariants> {
-  avatars: { name: string; image: string }[]
-  maxAvatarsAmount?: number
+  avatars: { name: string; image: string }[];
+  maxAvatarsAmount?: number;
 }
 
 const AvatarStack = ({
@@ -30,15 +38,15 @@ const AvatarStack = ({
   maxAvatarsAmount = 3,
   ...props
 }: AvatarStackProps) => {
-  const shownAvatars = avatars.slice(0, maxAvatarsAmount)
-  const hiddenAvatars = avatars.slice(maxAvatarsAmount)
+  const shownAvatars = avatars.slice(0, maxAvatarsAmount);
+  const hiddenAvatars = avatars.slice(maxAvatarsAmount);
 
   return (
     <div
       className={cn(
         avatarStackVariants({ orientation }),
         className,
-        orientation === 'horizontal' ? '-space-x-0' : '-space-y-0'
+        orientation === "horizontal" ? "-space-x-0" : "-space-y-0",
       )}
       {...props}
     >
@@ -49,9 +57,9 @@ const AvatarStack = ({
               <AvatarImage src={image} />
               <AvatarFallback>
                 {name
-                  ?.split(' ')
+                  ?.split(" ")
                   ?.map((word) => word[0])
-                  ?.join('')
+                  ?.join("")
                   ?.toUpperCase()}
               </AvatarFallback>
             </Avatar>
@@ -66,7 +74,9 @@ const AvatarStack = ({
         <Tooltip key="hidden-avatars">
           <TooltipTrigger asChild>
             <Avatar>
-              <AvatarFallback>+{avatars.length - shownAvatars.length}</AvatarFallback>
+              <AvatarFallback>
+                +{avatars.length - shownAvatars.length}
+              </AvatarFallback>
             </Avatar>
           </TooltipTrigger>
           <TooltipContent>
@@ -77,7 +87,7 @@ const AvatarStack = ({
         </Tooltip>
       ) : null}
     </div>
-  )
-}
+  );
+};
 
-export { AvatarStack, avatarStackVariants }
+export { AvatarStack, avatarStackVariants };

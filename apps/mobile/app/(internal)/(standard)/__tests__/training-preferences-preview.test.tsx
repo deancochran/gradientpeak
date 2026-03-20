@@ -89,22 +89,22 @@ vi.mock("@/components/training-plan/create/inputs/PercentSliderInput", () => ({
   PercentSliderInput: createHost("PercentSliderInput"),
 }));
 
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: createHost("Button"),
 }));
 
-vi.mock("@/components/ui/card", () => ({
+vi.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardHeader: createHost("CardHeader"),
   CardTitle: createHost("CardTitle"),
 }));
 
-vi.mock("@/components/ui/switch", () => ({
+vi.mock("@repo/ui/components/switch", () => ({
   Switch: createHost("Switch"),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 

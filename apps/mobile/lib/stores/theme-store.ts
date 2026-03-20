@@ -1,6 +1,6 @@
 // stores/theme-store.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { colorScheme } from "nativewind";
+import { Appearance } from "react-native";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -41,17 +41,19 @@ export const useThemeStore = create<ThemeStore>()(
           ) {
             const preference = savedPreference as ThemePreference;
             set({ userPreference: preference });
-            colorScheme.set(preference);
+            Appearance.setColorScheme(
+              preference === "system" ? null : preference,
+            );
           } else {
             // Default to light mode
             const defaultTheme = "light";
             set({ userPreference: defaultTheme });
-            colorScheme.set(defaultTheme);
+            Appearance.setColorScheme(defaultTheme);
             await AsyncStorage.setItem(THEME_STORAGE_KEY, defaultTheme);
           }
         } catch (error) {
           console.warn("Failed to load theme preference:", error);
-          colorScheme.set("light");
+          Appearance.setColorScheme("light");
         } finally {
           set({ isLoaded: true });
         }
@@ -61,7 +63,9 @@ export const useThemeStore = create<ThemeStore>()(
         try {
           await AsyncStorage.setItem(THEME_STORAGE_KEY, preference);
           set({ userPreference: preference });
-          colorScheme.set(preference);
+          Appearance.setColorScheme(
+            preference === "system" ? null : preference,
+          );
         } catch (error) {
           console.warn("Failed to save theme preference:", error);
         }

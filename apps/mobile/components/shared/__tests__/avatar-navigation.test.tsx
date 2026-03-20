@@ -35,20 +35,20 @@ vi.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => authState,
 }));
 
-vi.mock("@/components/ui/avatar", () => ({
+vi.mock("@repo/ui/components/avatar", () => ({
   Avatar: createHost("Avatar"),
   AvatarFallback: createHost("AvatarFallback"),
   AvatarImage: createHost("AvatarImage"),
 }));
 
-vi.mock("@/components/ui/text", () => ({ Text: createHost("Text") }));
-vi.mock("@/components/ui/card", () => ({
+vi.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
+vi.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
 }));
-vi.mock("@/components/ui/icon", () => ({ Icon: createHost("Icon") }));
-vi.mock("@/components/ui/input", () => ({ Input: createHost("Input") }));
-vi.mock("@/components/ui/textarea", () => ({
+vi.mock("@repo/ui/components/icon", () => ({ Icon: createHost("Icon") }));
+vi.mock("@repo/ui/components/input", () => ({ Input: createHost("Input") }));
+vi.mock("@repo/ui/components/textarea", () => ({
   Textarea: createHost("Textarea"),
 }));
 
@@ -90,8 +90,9 @@ describe.skip("avatar profile navigation", () => {
   });
 
   it("routes activity avatar taps to target user route", async () => {
-    const { ActivityHeader } =
-      await import("@/components/activity/shared/ActivityHeader");
+    const { ActivityHeader } = await import(
+      "@/components/activity/shared/ActivityHeader"
+    );
     pushMock.mockReset();
     let renderer!: TestRenderer.ReactTestRenderer;
 

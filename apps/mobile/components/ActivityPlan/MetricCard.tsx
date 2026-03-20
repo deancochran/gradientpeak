@@ -1,5 +1,5 @@
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import React, { memo } from "react";
 import { View } from "react-native";
 

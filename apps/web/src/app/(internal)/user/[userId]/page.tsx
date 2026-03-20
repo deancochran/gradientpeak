@@ -2,15 +2,15 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc/client";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@repo/ui/components/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-} from "@/components/ui/card";
+} from "@repo/ui/components/card";
 import { useAuth } from "@/components/providers/auth-provider";
 import {
   Loader2,

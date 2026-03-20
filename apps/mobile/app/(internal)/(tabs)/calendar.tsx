@@ -2,12 +2,12 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { CalendarPlannedActivityPickerModal } from "@/components/calendar/CalendarPlannedActivityPickerModal";
 import { AppHeader, PlanCalendarSkeleton } from "@/components/shared";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Text } from "@/components/ui/text";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import {
   buildEditEventRoute,
   buildOpenEventRoute,

@@ -2,9 +2,9 @@ import { ActivitySelectionModal } from "@/components/ActivitySelectionModal";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingFooter } from "@/components/recording/footer";
 import { RecordingZones, ZoneFocusOverlay } from "@/components/recording/zones";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import {
   useActivityStatus,
   useIntensityScale,

@@ -1,0 +1,1 @@
+export const DEFAULT_POPOVER_SIDE_OFFSET = 4;

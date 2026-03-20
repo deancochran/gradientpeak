@@ -1,13 +1,17 @@
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@repo/ui/components/avatar";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -16,13 +20,13 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
+} from "@repo/ui/components/form";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
 import { WeightInputField } from "@/components/profile/WeightInputField";
-import { Switch } from "@/components/ui/switch";
-import { Text } from "@/components/ui/text";
-import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";

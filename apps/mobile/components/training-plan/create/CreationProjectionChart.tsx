@@ -1,12 +1,12 @@
-import { Text } from "../../ui/text";
+import { Text } from "@repo/ui/components/text";
 import { useFont } from "@shopify/react-native-skia";
-import { useColorScheme } from "nativewind";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
   View,
   type LayoutChangeEvent,
+  useColorScheme,
   useWindowDimensions,
 } from "react-native";
 import { CartesianChart, Line } from "victory-native";
@@ -657,7 +657,7 @@ export const CreationProjectionChart = React.memo(
     compact = false,
     chartMaxHeight,
   }: CreationProjectionChartProps) {
-    const { colorScheme } = useColorScheme();
+    const colorScheme = useColorScheme();
     const isDark = colorScheme === "dark";
     const { width } = useWindowDimensions();
     const [measuredChartContainerWidth, setMeasuredChartContainerWidth] =
@@ -911,7 +911,7 @@ export const CreationProjectionChart = React.memo(
             index === 0 ||
             index % labelStride === 0 ||
             index === points.length - 1;
-          return isShownLabel ? (shortDateLabels[index] ?? point.date) : "";
+          return isShownLabel ? shortDateLabels[index] ?? point.date : "";
         }),
       [labelStride, points, shortDateLabels],
     );

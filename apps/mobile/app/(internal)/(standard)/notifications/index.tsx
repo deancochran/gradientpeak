@@ -1,8 +1,8 @@
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Text } from "@/components/ui/text";
+import { Badge } from "@repo/ui/components/badge";
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
+import { cn } from "@repo/ui/lib/cn";
 import { Stack, useRouter } from "expo-router";
 import { Bell, Mail, UserPlus } from "lucide-react-native";
 import React from "react";

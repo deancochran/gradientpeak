@@ -16,7 +16,7 @@
  * - Adjust: FTMS control (navigate to /record/ftms)
  */
 
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type { RecordingState } from "@repo/core";
 import type { PublicActivityCategory } from "@repo/supabase";

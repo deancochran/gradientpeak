@@ -1,7 +1,8 @@
-import { Icon } from "@/components/ui/icon";
+import { Icon } from "@repo/ui/components/icon";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
 import { useTheme } from "@/lib/stores/theme-store";
-import { NAV_THEME, THEME } from "@/lib/theme";
+import { NAV_THEME } from "@/lib/theme";
+import { THEME } from "@repo/ui/theme/native";
 import { Tabs, useRouter } from "expo-router";
 import { Calendar, Circle, Home, Search, Target } from "lucide-react-native";
 import React from "react";

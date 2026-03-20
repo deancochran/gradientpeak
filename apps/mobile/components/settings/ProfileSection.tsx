@@ -4,14 +4,14 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { View } from "react-native";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -19,9 +19,9 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Text } from "@/components/ui/text";
+} from "@repo/ui/components/form";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 
@@ -96,7 +96,7 @@ export function ProfileSection({
               variant="outline"
               size="sm"
               onPress={() => setIsEditing(true)}
-              testID="edit-profile-button"
+              testId="edit-profile-button"
             >
               <Text>Edit</Text>
             </Button>
@@ -106,7 +106,7 @@ export function ProfileSection({
                 variant="outline"
                 size="sm"
                 onPress={onCancel}
-                testID="cancel-button"
+                testId="cancel-button"
               >
                 <Text>Cancel</Text>
               </Button>
@@ -115,7 +115,7 @@ export function ProfileSection({
                 size="sm"
                 onPress={form.handleSubmit(onSubmit)}
                 disabled={updateProfileMutation.isPending}
-                testID="save-button"
+                testId="save-button"
               >
                 <Text>
                   {updateProfileMutation.isPending ? "Saving..." : "Save"}
@@ -140,7 +140,7 @@ export function ProfileSection({
                       value={field.value?.toString() ?? ""}
                       onChangeText={field.onChange}
                       editable={isEditing}
-                      testID="username-input"
+                      testId="username-input"
                     />
                   </FormControl>
                   <FormMessage />
@@ -164,7 +164,7 @@ export function ProfileSection({
                       }}
                       keyboardType="numeric"
                       editable={isEditing}
-                      testID="weight-input"
+                      testId="weight-input"
                     />
                   </FormControl>
                   <FormMessage />
@@ -188,7 +188,7 @@ export function ProfileSection({
                       }}
                       keyboardType="numeric"
                       editable={isEditing}
-                      testID="ftp-input"
+                      testId="ftp-input"
                     />
                   </FormControl>
                   <FormMessage />
@@ -212,7 +212,7 @@ export function ProfileSection({
                       }}
                       keyboardType="numeric"
                       editable={isEditing}
-                      testID="threshold-hr-input"
+                      testId="threshold-hr-input"
                     />
                   </FormControl>
                   <FormMessage />

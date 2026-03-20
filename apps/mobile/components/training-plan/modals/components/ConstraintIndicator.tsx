@@ -1,6 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ConstraintIndicator.tsx
 
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { AlertTriangle, Check, X } from "lucide-react-native";
 import { View } from "react-native";
 

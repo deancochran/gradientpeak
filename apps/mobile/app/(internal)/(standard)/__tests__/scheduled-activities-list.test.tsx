@@ -39,11 +39,11 @@ vi.mock("@/components/shared", () => ({
   ListSkeleton: createHost("ListSkeleton"),
 }));
 
-vi.mock("@/components/ui/icon", () => ({
+vi.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 

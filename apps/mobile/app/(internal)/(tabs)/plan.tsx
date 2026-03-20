@@ -2,10 +2,10 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { GoalEditorModal, type GoalEditorDraft } from "@/components/goals";
 import { AppHeader } from "@/components/shared";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { ROUTES } from "@/lib/constants/routes";
 import {
   buildGoalCreatePayload,

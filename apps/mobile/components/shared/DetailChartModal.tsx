@@ -1,4 +1,4 @@
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
 import React, { useState } from "react";
 import {

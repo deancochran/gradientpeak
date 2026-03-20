@@ -12,7 +12,7 @@
  * - Recording continues in background
  */
 
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import React, { useEffect, useState } from "react";
@@ -23,7 +23,7 @@ import { BikeControlUI } from "@/components/recording/ftms/BikeControlUI";
 import { EllipticalControlUI } from "@/components/recording/ftms/EllipticalControlUI";
 import { RowerControlUI } from "@/components/recording/ftms/RowerControlUI";
 import { TreadmillControlUI } from "@/components/recording/ftms/TreadmillControlUI";
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 
 export default function FTMSControlPage() {
   const service = useSharedActivityRecorder();

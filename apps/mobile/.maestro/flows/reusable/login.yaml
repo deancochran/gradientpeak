@@ -1,0 +1,14 @@
+appId: host.exp.exponent
+# Reusable Login Flow
+# PARAMS:
+#   - email: The user's email
+#   - password: The user's password
+---
+- tapOn:
+    id: "email-input" # Assuming testID="email-input"
+- inputText: "${email}"
+- tapOn:
+    id: "password-input" # Assuming testID="password-input"
+- inputText: "${password}"
+- tapOn: "Log in" # Assuming text="Log in"
+- assertVisible: "Plan" # Asserts landing on the main 'Plan' tab

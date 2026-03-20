@@ -12,7 +12,9 @@
   "scripts": {
     "check-types": "tsc --noEmit",
     "check-boundaries": "node ./scripts/check-layer-boundaries.mjs",
-    "lint": "eslint src",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
     "test": "vitest run",
     "watch": "tsc --noEmit --watch --preserveWatchOutput"
   },

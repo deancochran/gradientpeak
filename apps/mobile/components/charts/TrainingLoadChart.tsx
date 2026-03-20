@@ -1,7 +1,6 @@
-import { Text } from "@/components/ui/text";
-import { View, Dimensions } from "react-native";
+import { Text } from "@repo/ui/components/text";
+import { Dimensions, View, useColorScheme } from "react-native";
 import { LineChart } from "react-native-chart-kit";
-import { useColorScheme } from "nativewind";
 import type { InsightTimelinePoint } from "./PlanVsActualChart";
 
 export interface TrainingLoadData {
@@ -24,7 +23,7 @@ export function TrainingLoadChart({
 }: TrainingLoadChartProps) {
   const screenWidth = Dimensions.get("window").width;
   const chartWidth = screenWidth - 48;
-  const { colorScheme } = useColorScheme();
+  const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
   const useTimeline = !!timeline && timeline.length > 0;

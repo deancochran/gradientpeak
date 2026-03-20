@@ -1,4 +1,4 @@
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import {
   DashPathEffect,
   useFont,
@@ -6,11 +6,11 @@ import {
   Text as SkiaText,
   vec,
 } from "@shopify/react-native-skia";
-import { useColorScheme } from "nativewind";
 import React, { useMemo, useState } from "react";
 import {
   LayoutChangeEvent,
   Pressable,
+  useColorScheme,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -285,7 +285,7 @@ export function PlanVsActualChart({
 }: PlanVsActualChartProps) {
   const { width } = useWindowDimensions();
   const [chartWidth, setChartWidth] = useState(Math.max(220, width - 32));
-  const { colorScheme } = useColorScheme();
+  const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const axisFont = useFont(getAxisFontSource(), 9);
   const useInsightTimeline = !!timeline && timeline.length > 0;

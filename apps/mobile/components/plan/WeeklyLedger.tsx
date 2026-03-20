@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { View, TouchableOpacity } from "react-native";
-import { Card, CardContent } from "@/components/ui/card";
-import { Text } from "@/components/ui/text";
-import { Icon } from "@/components/ui/icon";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
+import { Icon } from "@repo/ui/components/icon";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
 
 interface WeeklyLedgerProps {

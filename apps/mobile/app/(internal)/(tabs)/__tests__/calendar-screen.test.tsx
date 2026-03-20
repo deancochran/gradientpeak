@@ -102,27 +102,27 @@ vi.mock("@/components/ScheduleActivityModal", () => ({
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
 }));
 
-vi.mock("@/components/ui/button", () => ({
+vi.mock("@repo/ui/components/button", () => ({
   Button: createHost("Button"),
 }));
 
-vi.mock("@/components/ui/icon", () => ({
+vi.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
 
-vi.mock("@/components/ui/input", () => ({
+vi.mock("@repo/ui/components/input", () => ({
   Input: createHost("Input"),
 }));
 
-vi.mock("@/components/ui/switch", () => ({
+vi.mock("@repo/ui/components/switch", () => ({
   Switch: createHost("Switch"),
 }));
 
-vi.mock("@/components/ui/text", () => ({
+vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
-vi.mock("@/components/ui/textarea", () => ({
+vi.mock("@repo/ui/components/textarea", () => ({
   Textarea: createHost("Textarea"),
 }));
 

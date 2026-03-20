@@ -1,0 +1,49 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]:
+      - img "Logo" [ref=e4]
+      - generic [ref=e5]: GradientPeak
+    - generic [ref=e6]:
+      - link "Login" [ref=e7] [cursor=pointer]:
+        - /url: /auth/login
+      - link "Signup" [ref=e8] [cursor=pointer]:
+        - /url: /auth/sign-up
+  - generic [ref=e13] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e14]:
+      - img [ref=e15]
+    - generic [ref=e18]:
+      - button "Open issues overlay" [ref=e19]:
+        - generic [ref=e20]:
+          - generic [ref=e21]: "0"
+          - generic [ref=e22]: "1"
+        - generic [ref=e23]: Issue
+      - button "Collapse issues badge" [ref=e24]:
+        - img [ref=e25]
+  - alert [ref=e27]
+  - generic [ref=e31]:
+    - generic [ref=e32]:
+      - generic [ref=e33]: Login
+      - generic [ref=e34]: Enter your email below to login to your account
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - generic [ref=e38]:
+          - generic [ref=e39]: Email
+          - textbox "Email" [ref=e40]:
+            - /placeholder: m@example.com
+            - text: admin@test.com
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - generic [ref=e43]: Password
+            - link "Forgot your password?" [ref=e44] [cursor=pointer]:
+              - /url: /auth/forgot-password
+          - textbox "Password" [ref=e45]: TestPass123!
+        - paragraph [ref=e46]: Email not confirmed
+        - button "Login" [ref=e47]
+      - generic [ref=e48]:
+        - text: Don't have an account?
+        - link "Sign up" [ref=e49] [cursor=pointer]:
+          - /url: /auth/sign-up
+```

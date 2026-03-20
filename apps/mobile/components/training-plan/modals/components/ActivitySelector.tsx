@@ -1,6 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ActivitySelector.tsx
 
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { Search } from "lucide-react-native";
 import { useState } from "react";
 import { FlatList, Pressable, TextInput, View } from "react-native";

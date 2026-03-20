@@ -14,8 +14,8 @@
 
 import React, { Component, ReactNode } from "react";
 import { View } from "react-native";
-import { Text } from "@/components/ui/text";
-import { Button } from "@/components/ui/button";
+import { Text } from "@repo/ui/components/text";
+import { Button } from "@repo/ui/components/button";
 
 export interface RecordingErrorBoundaryProps {
   children: ReactNode;

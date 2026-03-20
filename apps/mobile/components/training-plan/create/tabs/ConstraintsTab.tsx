@@ -1,12 +1,12 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Text } from "@/components/ui/text";
+} from "@repo/ui/components/select";
+import { Text } from "@repo/ui/components/text";
 import { IntegerStepper } from "../inputs/IntegerStepper";
 import type {
   CreationAvailabilityConfig,

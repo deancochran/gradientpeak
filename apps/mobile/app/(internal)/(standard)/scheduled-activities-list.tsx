@@ -1,7 +1,7 @@
 import { ActivityList } from "@/components/plan/calendar/ActivityList";
 import { EmptyStateCard, ListSkeleton } from "@/components/shared";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { ROUTES } from "@/lib/constants/routes";
 import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { trpc } from "@/lib/trpc";

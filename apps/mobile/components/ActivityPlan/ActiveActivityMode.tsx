@@ -9,8 +9,8 @@ import {
   type ActivityPlanStructureV2,
   extractActivityProfileV2,
 } from "@repo/core";
-import { Text } from "@/components/ui/text";
-import { Icon } from "@/components/ui/icon";
+import { Text } from "@repo/ui/components/text";
+import { Icon } from "@repo/ui/components/icon";
 
 type CurrentMetrics = {
   power?: number;

@@ -1,9 +1,9 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Label } from "@repo/ui/components/label";
+import { Slider } from "@repo/ui/components/slider";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
 import { publicActivityCategorySchema } from "@repo/supabase";
 import React, { useState, useEffect } from "react";
 import { View } from "react-native";

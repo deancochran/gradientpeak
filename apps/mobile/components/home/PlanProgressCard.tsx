@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity } from "react-native";
-import { Progress } from "@/components/ui/progress";
+import { Progress } from "@repo/ui/components/progress";
 import { Target } from "lucide-react-native";
 
 interface PlanProgressCardProps {

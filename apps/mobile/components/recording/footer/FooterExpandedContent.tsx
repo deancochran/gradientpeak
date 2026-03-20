@@ -16,8 +16,8 @@
  * - Adjust: FTMS control (navigate to /record/ftms)
  */
 
-import { Badge } from "@/components/ui/badge";
-import { Text } from "@/components/ui/text";
+import { Badge } from "@repo/ui/components/badge";
+import { Text } from "@repo/ui/components/text";
 import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type { RecordingState } from "@repo/core";

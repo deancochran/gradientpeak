@@ -1,5 +1,5 @@
 import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import { TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
 import { VolumeTrendsChart, type VolumeDataPoint } from "@/components/charts";

@@ -16,10 +16,10 @@
  * - Bottom sheet uses containerStyle.zIndex to stay on top
  */
 
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
-import { Slider } from "@/components/ui/slider";
-import { Text } from "@/components/ui/text";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Slider } from "@repo/ui/components/slider";
+import { Text } from "@repo/ui/components/text";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
@@ -106,7 +106,9 @@ function formatCompactIntervalWithProfile(
   }
 
   const targets = step.targets
-    .map((target) => resolveIntensityTarget(target, profile, intensityAdjustment))
+    .map((target) =>
+      resolveIntensityTarget(target, profile, intensityAdjustment),
+    )
     .join(", "); // "220W" or "220W, 90 rpm"
 
   return `${duration} @ ${targets}`;
@@ -411,7 +413,11 @@ export function ZoneB({ service, hasPlan, isFocused }: ZoneBProps) {
                   </Text>
                   {currentStep.targets.map((target, idx) => (
                     <Text key={idx} className="text-2xl font-bold mb-1">
-                      {resolveIntensityTarget(target, profile, intensityAdjustment)}
+                      {resolveIntensityTarget(
+                        target,
+                        profile,
+                        intensityAdjustment,
+                      )}
                     </Text>
                   ))}
                 </View>
@@ -452,7 +458,11 @@ export function ZoneB({ service, hasPlan, isFocused }: ZoneBProps) {
                 </Text>
                 <Text className="text-2xl font-semibold">{nextStep.name}</Text>
                 <Text className="text-lg text-muted-foreground mt-1">
-                  {formatCompactIntervalWithProfile(nextStep, profile, intensityAdjustment)}
+                  {formatCompactIntervalWithProfile(
+                    nextStep,
+                    profile,
+                    intensityAdjustment,
+                  )}
                 </Text>
               </View>
             )}

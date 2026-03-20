@@ -1,10 +1,4 @@
-import { clsx, type ClassValue } from "clsx";
-import { formatDistanceToNow, isToday, isYesterday, format } from "date-fns";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+import { format, isToday, isYesterday } from "date-fns";
 
 /**
  * Format a date as relative time (e.g., "5m ago", "Yesterday", "3/4/26")

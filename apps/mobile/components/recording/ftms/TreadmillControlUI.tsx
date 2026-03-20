@@ -15,7 +15,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Pressable, Alert } from "react-native";
-import { Text } from "@/components/ui/text";
+import { Text } from "@repo/ui/components/text";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 

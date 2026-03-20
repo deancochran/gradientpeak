@@ -1,8 +1,9 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Text } from "@/components/ui/text";
+import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
+import { Badge } from "@repo/ui/components/badge";
+import { Text } from "@repo/ui/components/text";
 import { trpc } from "@/lib/trpc";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn } from "@repo/ui/lib/cn";
+import { formatRelativeTime } from "@/lib/utils";
 import { Stack, useRouter } from "expo-router";
 import React from "react";
 import { ActivityIndicator, FlatList, Pressable, View } from "react-native";

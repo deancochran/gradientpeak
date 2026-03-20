@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { Button } from "@/components/ui/button";
+import { Button } from "@repo/ui/components/button";
 import { Heart } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@repo/ui/lib/cn";
 import { toast } from "sonner";
 
 interface LikeButtonProps {

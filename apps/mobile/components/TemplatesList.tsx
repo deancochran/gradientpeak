@@ -2,8 +2,8 @@ import {
   ActivityPlanCard,
   ActivityPlanCardData,
 } from "@/components/shared/ActivityPlanCard";
-import { Icon } from "@/components/ui/icon";
-import { Text } from "@/components/ui/text";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import type { PublicActivityCategory } from "@repo/supabase";
 import { ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
 import { useRouter } from "expo-router";
