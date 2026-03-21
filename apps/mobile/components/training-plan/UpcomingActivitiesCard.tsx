@@ -4,6 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
 import { Calendar, ChevronRight, Clock } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
+import { ROUTES } from "@/lib/constants/routes";
 
 interface UpcomingActivity {
   id: string;
@@ -21,9 +22,7 @@ interface UpcomingActivitiesCardProps {
   activities: UpcomingActivity[];
 }
 
-export function UpcomingActivitiesCard({
-  activities,
-}: UpcomingActivitiesCardProps) {
+export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardProps) {
   const router = useRouter();
 
   const formatDate = (dateString: string) => {
@@ -68,7 +67,7 @@ export function UpcomingActivitiesCard({
   };
 
   const handleActivityPress = (activityId: string) => {
-    router.push(`/scheduled-activity-detail?id=${activityId}` as any);
+    router.push(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
   };
 
   if (!activities || activities.length === 0) {
@@ -95,11 +94,7 @@ export function UpcomingActivitiesCard({
                     <View className="flex-1 mr-3">
                       {/* Date */}
                       <View className="flex-row items-center gap-2 mb-2">
-                        <Icon
-                          as={Calendar}
-                          size={14}
-                          className="text-muted-foreground"
-                        />
+                        <Icon as={Calendar} size={14} className="text-muted-foreground" />
                         <Text className="text-sm text-muted-foreground font-medium">
                           {formatDate(activity.scheduled_date)}
                         </Text>
@@ -113,11 +108,7 @@ export function UpcomingActivitiesCard({
                       {/* Activity Details */}
                       <View className="flex-row items-center gap-3">
                         <View className="flex-row items-center gap-1">
-                          <Icon
-                            as={Clock}
-                            size={12}
-                            className="text-muted-foreground"
-                          />
+                          <Icon as={Clock} size={12} className="text-muted-foreground" />
                           <Text className="text-xs text-muted-foreground">
                             {activity.activity_plan.estimated_duration} min
                           </Text>
@@ -125,37 +116,26 @@ export function UpcomingActivitiesCard({
 
                         {activity.activity_plan.estimated_tss && (
                           <>
+                            <Text className="text-xs text-muted-foreground">•</Text>
                             <Text className="text-xs text-muted-foreground">
-                              •
-                            </Text>
-                            <Text className="text-xs text-muted-foreground">
-                              {Math.round(activity.activity_plan.estimated_tss)}{" "}
-                              TSS
+                              {Math.round(activity.activity_plan.estimated_tss)} TSS
                             </Text>
                           </>
                         )}
 
                         <Text className="text-xs text-muted-foreground">•</Text>
                         <Text className="text-xs text-muted-foreground capitalize">
-                          {formatActivityType(
-                            activity.activity_plan.activity_category,
-                          )}
+                          {formatActivityType(activity.activity_plan.activity_category)}
                         </Text>
                       </View>
                     </View>
 
-                    <Icon
-                      as={ChevronRight}
-                      size={20}
-                      className="text-muted-foreground"
-                    />
+                    <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
                   </View>
                 </TouchableOpacity>
 
                 {/* Divider between activities (not after last one) */}
-                {index < activities.length - 1 && (
-                  <View className="h-px bg-border my-1" />
-                )}
+                {index < activities.length - 1 && <View className="h-px bg-border my-1" />}
               </View>
             );
           })}

@@ -4,9 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ROUTES } from "@/lib/constants/routes";
 
 vi.mock("@tanstack/react-query", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
-    "@tanstack/react-query",
-  );
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
 
   return {
     ...actual,
@@ -14,8 +13,7 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-const loadTrainingPlanOverview = async () =>
-  (await import("../training-plan-detail")).default;
+const loadTrainingPlanOverview = async () => (await import("../training-plan-detail")).default;
 
 const {
   alertMock,
@@ -46,15 +44,11 @@ const {
       projection: { at_goal_date: {} },
       adherence_summary: {
         interpretation: "Adherence interpretation from timeline summary.",
-        contributors: [
-          { detail: "Adherence contributor detail from timeline summary." },
-        ],
+        contributors: [{ detail: "Adherence contributor detail from timeline summary." }],
       },
       readiness_summary: {
         interpretation: "Readiness interpretation from timeline summary.",
-        contributors: [
-          { detail: "Readiness contributor detail from timeline summary." },
-        ],
+        contributors: [{ detail: "Readiness contributor detail from timeline summary." }],
       },
     } as any,
   },
@@ -213,13 +207,7 @@ vi.mock("@/components/plan/PlanCapabilityMiniChart", () => ({
   PlanCapabilityMiniChart: createHost("PlanCapabilityMiniChart"),
 }));
 vi.mock("@/components/shared/DetailChartModal", () => ({
-  DetailChartModal: ({
-    children,
-    visible,
-    onClose,
-    title,
-    defaultDateRange = "30d",
-  }: any) => {
+  DetailChartModal: ({ children, visible, onClose, title, defaultDateRange = "30d" }: any) => {
     const [range, setRange] = React.useState(defaultDateRange);
 
     if (!visible) {
@@ -270,7 +258,7 @@ vi.mock("@repo/ui/components/card", () => ({
 vi.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
-vi.mock("@/components/training-plan/create/inputs/DateField", () => ({
+vi.mock("@repo/ui/components/date-input", () => ({
   DateField: createHost("DateField"),
 }));
 vi.mock("@repo/ui/components/input", () => ({
@@ -324,10 +312,7 @@ const getNodeText = (children: any): string => {
   return "";
 };
 
-const hasTextContaining = (
-  renderer: TestRenderer.ReactTestRenderer,
-  text: string,
-) =>
+const hasTextContaining = (renderer: TestRenderer.ReactTestRenderer, text: string) =>
   renderer.root.findAll((node: any) => {
     if (node.type !== "Text") {
       return false;
@@ -336,28 +321,16 @@ const hasTextContaining = (
     return getNodeText(node.props?.children).includes(text);
   }).length > 0;
 
-const findTouchableByText = (
-  renderer: TestRenderer.ReactTestRenderer,
-  text: string,
-) =>
+const findTouchableByText = (renderer: TestRenderer.ReactTestRenderer, text: string) =>
   renderer.root.find((node: any) => {
-    if (
-      node.type !== "TouchableOpacity" ||
-      typeof node.props.onPress !== "function"
-    ) {
+    if (node.type !== "TouchableOpacity" || typeof node.props.onPress !== "function") {
       return false;
     }
 
-    return (
-      node.findAll((child: any) => getNodeText(child.props?.children) === text)
-        .length > 0
-    );
+    return node.findAll((child: any) => getNodeText(child.props?.children) === text).length > 0;
   });
 
-const findButtonByText = (
-  renderer: TestRenderer.ReactTestRenderer,
-  text: string,
-) =>
+const findButtonByText = (renderer: TestRenderer.ReactTestRenderer, text: string) =>
   renderer.root.find((node: any) => {
     if (node.type !== "Button" || typeof node.props.onPress !== "function") {
       return false;
@@ -366,15 +339,9 @@ const findButtonByText = (
     return getNodeText(node.props?.children) === text;
   });
 
-const findInsightCardTouchable = (
-  renderer: TestRenderer.ReactTestRenderer,
-  chartType: string,
-) =>
+const findInsightCardTouchable = (renderer: TestRenderer.ReactTestRenderer, chartType: string) =>
   renderer.root.find((node: any) => {
-    if (
-      node.type !== "TouchableOpacity" ||
-      typeof node.props.onPress !== "function"
-    ) {
+    if (node.type !== "TouchableOpacity" || typeof node.props.onPress !== "function") {
       return false;
     }
 
@@ -383,8 +350,7 @@ const findInsightCardTouchable = (
 
 const getModalTimelineLength = (renderer: TestRenderer.ReactTestRenderer) => {
   const timelineCharts = renderer.root.findAll(
-    (node: any) =>
-      node.type === "PlanVsActualChart" && Array.isArray(node.props.timeline),
+    (node: any) => node.type === "PlanVsActualChart" && Array.isArray(node.props.timeline),
   );
 
   if (timelineCharts.length === 0) {
@@ -414,15 +380,11 @@ describe("TrainingPlanOverview deep-link routing", () => {
       projection: { at_goal_date: {} },
       adherence_summary: {
         interpretation: "Adherence interpretation from timeline summary.",
-        contributors: [
-          { detail: "Adherence contributor detail from timeline summary." },
-        ],
+        contributors: [{ detail: "Adherence contributor detail from timeline summary." }],
       },
       readiness_summary: {
         interpretation: "Readiness interpretation from timeline summary.",
-        contributors: [
-          { detail: "Readiness contributor detail from timeline summary." },
-        ],
+        contributors: [{ detail: "Readiness contributor detail from timeline summary." }],
       },
     } as any;
     Object.keys(localSearchParamsMock).forEach((key) => {
@@ -432,9 +394,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
   it("redirects to create when no selected plan id exists", () => {
     resetTestState();
-    let TrainingPlanOverview: Awaited<
-      ReturnType<typeof loadTrainingPlanOverview>
-    >;
+    let TrainingPlanOverview: Awaited<ReturnType<typeof loadTrainingPlanOverview>>;
 
     return loadTrainingPlanOverview().then((Component) => {
       TrainingPlanOverview = Component;
@@ -442,9 +402,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
         TestRenderer.create(<TrainingPlanOverview />);
       });
 
-      expect(replaceMock).toHaveBeenCalledWith(
-        ROUTES.PLAN.TRAINING_PLAN.CREATE,
-      );
+      expect(replaceMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
     });
   });
 
@@ -458,9 +416,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       renderer = TestRenderer.create(<TrainingPlanOverview />);
     });
 
-    expect(replaceMock).not.toHaveBeenCalledWith(
-      ROUTES.PLAN.TRAINING_PLAN.CREATE,
-    );
+    expect(replaceMock).not.toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
     expect(hasTextContaining(renderer, "No Training Plan")).toBe(true);
     expect(pushMock).not.toHaveBeenCalled();
   });
@@ -571,14 +527,10 @@ describe("TrainingPlanOverview deep-link routing", () => {
       renderer = TestRenderer.create(<TrainingPlanOverview />);
     });
 
-    expect(
-      hasTextContaining(renderer, "How should this schedule line up?"),
-    ).toBe(true);
+    expect(hasTextContaining(renderer, "How should this schedule line up?")).toBe(true);
     expect(hasTextContaining(renderer, "Start On")).toBe(true);
     expect(hasTextContaining(renderer, "Finish By")).toBe(true);
-    expect(
-      renderer.root.findAll((node: any) => node.type === "DateField"),
-    ).toHaveLength(1);
+    expect(renderer.root.findAll((node: any) => node.type === "DateField")).toHaveLength(1);
     expect(hasTextContaining(renderer, "Target Date (Optional)")).toBe(false);
     expect(hasTextContaining(renderer, "Start Date")).toBe(false);
   });
@@ -606,9 +558,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       finishByButton.props.onPress();
     });
 
-    const anchorField = renderer.root.find(
-      (node: any) => node.type === "DateField",
-    );
+    const anchorField = renderer.root.find((node: any) => node.type === "DateField");
     await act(async () => {
       anchorField.props.onChange("2026-04-30");
     });
@@ -687,9 +637,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       activityButton.props.onPress();
     });
 
-    expect(pushMock).toHaveBeenCalledWith(
-      ROUTES.PLAN.ACTIVITY_DETAIL("activity-99"),
-    );
+    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.ACTIVITY_DETAIL("activity-99"));
   });
 
   it("does not show focus banner for unknown nextStep", async () => {
@@ -737,8 +685,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     const duplicateButton = renderer.root.find(
       (node: any) =>
-        node.type === "Button" &&
-        getNodeText(node.props?.children) === "Make Editable Copy",
+        node.type === "Button" && getNodeText(node.props?.children) === "Make Editable Copy",
     );
 
     await act(async () => {

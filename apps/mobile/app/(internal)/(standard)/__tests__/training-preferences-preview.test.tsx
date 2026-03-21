@@ -81,11 +81,11 @@ vi.mock("@/components/charts/PlanVsActualChart", () => ({
   PlanVsActualChart: createHost("PlanVsActualChart"),
 }));
 
-vi.mock("@/components/training-plan/create/inputs/IntegerStepper", () => ({
+vi.mock("@repo/ui/components/integer-stepper", () => ({
   IntegerStepper: createHost("IntegerStepper"),
 }));
 
-vi.mock("@/components/training-plan/create/inputs/PercentSliderInput", () => ({
+vi.mock("@repo/ui/components/percent-slider-input", () => ({
   PercentSliderInput: createHost("PercentSliderInput"),
 }));
 
@@ -229,19 +229,15 @@ describe("training preferences projection preview", () => {
       renderer = TestRenderer.create(<TrainingPreferencesScreen />);
     });
 
-    const initialChart = renderer.root.findAll(
-      (node: any) => node.type === "PlanVsActualChart",
-    )[0];
+    const initialChart = renderer.root.findAll((node: any) => node.type === "PlanVsActualChart")[0];
     const initialLastCtl =
-      initialChart.props.projectedData[
-        initialChart.props.projectedData.length - 1
-      ].ctl;
+      initialChart.props.projectedData[initialChart.props.projectedData.length - 1].ctl;
 
     const behaviorTab = renderer.root.findAll(
       (node: any) =>
         node.type === "Pressable" &&
-        node.findAll((child: any) => child.type === "Text")[0]?.props
-          ?.children === "Training style",
+        node.findAll((child: any) => child.type === "Text")[0]?.props?.children ===
+          "Training style",
     )[0];
 
     act(() => {
@@ -250,21 +246,16 @@ describe("training preferences projection preview", () => {
 
     const aggressivenessSlider = renderer.root.findAll(
       (node: any) =>
-        node.type === "PercentSliderInput" &&
-        node.props.id === "preferences-progression-pace",
+        node.type === "PercentSliderInput" && node.props.id === "preferences-progression-pace",
     )[0];
 
     act(() => {
       aggressivenessSlider.props.onChange(80);
     });
 
-    const updatedChart = renderer.root.findAll(
-      (node: any) => node.type === "PlanVsActualChart",
-    )[0];
+    const updatedChart = renderer.root.findAll((node: any) => node.type === "PlanVsActualChart")[0];
     const updatedLastCtl =
-      updatedChart.props.projectedData[
-        updatedChart.props.projectedData.length - 1
-      ].ctl;
+      updatedChart.props.projectedData[updatedChart.props.projectedData.length - 1].ctl;
 
     expect(updatedLastCtl).not.toEqual(initialLastCtl);
   });
@@ -282,24 +273,14 @@ describe("training preferences projection preview", () => {
       .findAll((node: any) => node.type === "Text")
       .map((node: any) => {
         const value = node.props.children;
-        return typeof value === "string"
-          ? value
-          : Array.isArray(value)
-            ? value.join("")
-            : "";
+        return typeof value === "string" ? value : Array.isArray(value) ? value.join("") : "";
       });
 
+    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(true);
     expect(
-      textValues.some((value: string) => value.includes("Preview unavailable")),
+      textValues.some((value: string) => value.includes("Start or activate a training plan")),
     ).toBe(true);
-    expect(
-      textValues.some((value: string) =>
-        value.includes("Start or activate a training plan"),
-      ),
-    ).toBe(true);
-    expect(
-      renderer.root.findAll((node: any) => node.type === "PlanVsActualChart"),
-    ).toHaveLength(0);
+    expect(renderer.root.findAll((node: any) => node.type === "PlanVsActualChart")).toHaveLength(0);
   });
 
   it("shows a baseline-curve message when projection data is missing", () => {
@@ -322,23 +303,15 @@ describe("training preferences projection preview", () => {
       .findAll((node: any) => node.type === "Text")
       .map((node: any) => {
         const value = node.props.children;
-        return typeof value === "string"
-          ? value
-          : Array.isArray(value)
-            ? value.join("")
-            : "";
+        return typeof value === "string" ? value : Array.isArray(value) ? value.join("") : "";
       });
 
-    expect(
-      textValues.some((value: string) =>
-        value.includes("Baseline curve not ready"),
-      ),
-    ).toBe(true);
-    expect(
-      textValues.some((value: string) =>
-        value.includes("baseline-vs-draft comparison"),
-      ),
-    ).toBe(true);
+    expect(textValues.some((value: string) => value.includes("Baseline curve not ready"))).toBe(
+      true,
+    );
+    expect(textValues.some((value: string) => value.includes("baseline-vs-draft comparison"))).toBe(
+      true,
+    );
   });
 
   it("blocks saving when schedule limits conflict", () => {
@@ -349,9 +322,7 @@ describe("training preferences projection preview", () => {
     });
 
     const minSessionsStepper = renderer.root.findAll(
-      (node: any) =>
-        node.type === "IntegerStepper" &&
-        node.props.id === "preferences-min-sessions",
+      (node: any) => node.type === "IntegerStepper" && node.props.id === "preferences-min-sessions",
     )[0];
 
     act(() => {
@@ -369,11 +340,7 @@ describe("training preferences projection preview", () => {
       .findAll((node: any) => node.type === "Text")
       .map((node: any) => {
         const value = node.props.children;
-        return typeof value === "string"
-          ? value
-          : Array.isArray(value)
-            ? value.join("")
-            : "";
+        return typeof value === "string" ? value : Array.isArray(value) ? value.join("") : "";
       });
 
     expect(saveButton?.props.disabled).toBe(true);
@@ -395,8 +362,7 @@ describe("training preferences projection preview", () => {
     const goalStrategyTab = renderer.root.findAll(
       (node: any) =>
         node.type === "Pressable" &&
-        node.findAll((child: any) => child.type === "Text")[0]?.props
-          ?.children === "Goal strategy",
+        node.findAll((child: any) => child.type === "Text")[0]?.props?.children === "Goal strategy",
     )[0];
 
     act(() => {
@@ -405,8 +371,7 @@ describe("training preferences projection preview", () => {
 
     const surplusSlider = renderer.root.findAll(
       (node: any) =>
-        node.type === "PercentSliderInput" &&
-        node.props.id === "preferences-target-surplus",
+        node.type === "PercentSliderInput" && node.props.id === "preferences-target-surplus",
     )[0];
 
     act(() => {

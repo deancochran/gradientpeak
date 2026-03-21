@@ -1,27 +1,28 @@
+import DateTimePicker from "@react-native-community/datetimepicker";
+import type { ActivityPayload } from "@repo/core";
+import { formatDurationSec } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
-import { ROUTES } from "@/lib/constants/routes";
-import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { Textarea } from "@repo/ui/components/textarea";
-import { trpc } from "@/lib/trpc";
-import { formatDurationSec } from "@repo/core/utils/dates";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Calendar, CheckCircle2, Clock, Edit, Play, Trash2, Zap } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
+import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
+import { ROUTES } from "@/lib/constants/routes";
+import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { trpc } from "@/lib/trpc";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
+import { getActivityBgClass, getActivityColor } from "@/lib/utils/plan/colors";
+import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
 type EventMutationScope = "single" | "future" | "series";
 
@@ -41,10 +42,7 @@ function buildAllDayStartIso(value: Date) {
   return `${toDateOnly(value)}T00:00:00.000Z`;
 }
 
-function parseEventDateForEditor(event: {
-  starts_at: string;
-  all_day?: boolean | null;
-}) {
+function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean | null }) {
   if (event.all_day) {
     const dateOnly = event.starts_at.slice(0, 10);
     const [year, month, day] = dateOnly.split("-").map(Number);
@@ -80,10 +78,9 @@ export default function EventDetailScreen() {
   const eventId = typeof id === "string" ? id : "";
   const startsInEditMode = mode === "edit";
 
-  const { beginRedirect, isRedirecting, redirectOnNotFound } =
-    useDeletedDetailRedirect({
-      onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
-    });
+  const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
+    onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+  });
 
   const {
     data: event,
@@ -105,6 +102,8 @@ export default function EventDetailScreen() {
   const [startsAt, setStartsAt] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleScope, setRescheduleScope] = useState<EventMutationScope>("single");
 
   useEffect(() => {
     redirectOnNotFound(error);
@@ -119,7 +118,9 @@ export default function EventDetailScreen() {
     setNotes(event.notes ?? "");
     setAllDay(!!event.all_day);
     setStartsAt(parseEventDateForEditor(event));
-    setIsEditing(startsInEditMode);
+    setIsEditing(
+      startsInEditMode && event.event_type !== "planned" && event.event_type !== "imported",
+    );
   }, [event, startsInEditMode]);
 
   const updateMutation = trpc.events.update.useMutation({
@@ -138,21 +139,32 @@ export default function EventDetailScreen() {
 
   const recurring = useMemo(() => isRecurringEvent(event), [event]);
   const isReadOnlyImported = event?.event_type === "imported";
+  const isPlannedEvent = event?.event_type === "planned";
   const activityPlan = event?.activity_plan as any;
   const estimatedTss = readMetric(activityPlan?.estimated_tss);
   const estimatedDurationSeconds = readMetric(activityPlan?.estimated_duration);
-  const estimatedDurationMinutes = readMetric(
-    activityPlan?.estimated_duration_minutes,
-  );
+  const estimatedDurationMinutes = readMetric(activityPlan?.estimated_duration_minutes);
+  const completed = isPlannedEvent ? isActivityCompleted(event) : false;
+  const activityType = activityPlan?.activity_category || "other";
+  const activityColor = getActivityColor(activityType);
+  const isPastScheduledEvent =
+    typeof event?.scheduled_date === "string"
+      ? event.scheduled_date < toDateOnly(new Date())
+      : false;
+  const canStartPlanned = isPlannedEvent && !completed && !isPastScheduledEvent;
+  const structureSteps =
+    activityPlan?.structure && typeof activityPlan.structure === "object"
+      ? (activityPlan.structure as any).steps
+      : null;
 
   const promptForScope = (
-    action: "save" | "delete",
+    action: "save" | "delete" | "reschedule",
     onSelect: (scope: EventMutationScope) => void,
   ) => {
-    const actionLabel = action === "save" ? "save" : "delete";
+    const actionLabel = action === "save" ? "save" : action === "delete" ? "delete" : "update";
 
     Alert.alert(
-      `Recurring Event`,
+      action === "reschedule" ? "Recurring Schedule" : `Recurring Event`,
       `Choose how much of this series to ${actionLabel}.`,
       [
         { text: "Cancel", style: "cancel" },
@@ -186,9 +198,7 @@ export default function EventDetailScreen() {
         notes: notes.trim() ? notes.trim() : null,
         all_day: allDay,
         timezone: "UTC",
-        starts_at: allDay
-          ? buildAllDayStartIso(startsAt)
-          : startsAt.toISOString(),
+        starts_at: allDay ? buildAllDayStartIso(startsAt) : startsAt.toISOString(),
       },
     });
   };
@@ -211,21 +221,69 @@ export default function EventDetailScreen() {
   };
 
   const handleDelete = () => {
-    Alert.alert("Delete Event", "Are you sure you want to delete this event?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          if (recurring) {
-            promptForScope("delete", submitDelete);
-            return;
-          }
+    Alert.alert(
+      isPlannedEvent ? "Delete Activity" : "Delete Event",
+      isPlannedEvent
+        ? "Are you sure you want to remove this activity from your schedule?"
+        : "Are you sure you want to delete this event?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            if (recurring) {
+              promptForScope("delete", submitDelete);
+              return;
+            }
 
-          submitDelete("single");
+            submitDelete("single");
+          },
         },
+      ],
+    );
+  };
+
+  const handleStartActivity = () => {
+    if (!activityPlan || !event) return;
+
+    const payload: ActivityPayload = {
+      category: activityPlan.activity_category as any,
+      gpsRecordingEnabled: true,
+      eventId: event.id,
+      plan: activityPlan,
+    };
+
+    activitySelectionStore.setSelection(payload);
+    router.push(ROUTES.RECORD);
+  };
+
+  const handleOpenPlanDetail = () => {
+    if (!activityPlan?.id || !event) return;
+
+    router.push({
+      pathname: "/activity-plan-detail",
+      params: {
+        eventId: event.id,
+        planId: activityPlan.id,
       },
-    ]);
+    });
+  };
+
+  const openRescheduleModal = (scope: EventMutationScope) => {
+    setRescheduleScope(scope);
+    setShowRescheduleModal(true);
+  };
+
+  const handleReschedule = () => {
+    if (!event) return;
+
+    if (recurring) {
+      promptForScope("reschedule", openRescheduleModal);
+      return;
+    }
+
+    openRescheduleModal("single");
   };
 
   if (isLoading || isRedirecting) {
@@ -242,9 +300,7 @@ export default function EventDetailScreen() {
   if (!event) {
     return (
       <View className="flex-1 items-center justify-center px-6 bg-background">
-        <Text className="text-lg font-semibold text-foreground">
-          Event not found
-        </Text>
+        <Text className="text-lg font-semibold text-foreground">Event not found</Text>
         <Text className="text-sm text-muted-foreground text-center mt-2">
           This event may have been removed.
         </Text>
@@ -258,14 +314,30 @@ export default function EventDetailScreen() {
   return (
     <View className="flex-1 bg-background">
       <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
+        {completed ? (
+          <Card className="border-green-200 bg-green-50">
+            <CardContent className="p-3">
+              <View className="flex-row items-center gap-2">
+                <Icon as={CheckCircle2} size={20} className="text-green-600" />
+                <Text className="font-semibold text-green-600">Activity Completed</Text>
+              </View>
+            </CardContent>
+          </Card>
+        ) : null}
+
         <Card>
           <CardContent className="p-4 gap-4">
             <View className="gap-1">
               <CardTitle>
-                {isEditing ? "Edit Event" : title || "Event"}
+                {isEditing
+                  ? "Edit Event"
+                  : isPlannedEvent
+                    ? activityPlan?.name || title || "Planned activity"
+                    : title || "Event"}
               </CardTitle>
               <Text className="text-sm text-muted-foreground capitalize">
                 {formatEventType(event.event_type)}
+                {isPlannedEvent && activityColor.name ? ` · ${activityColor.name}` : ""}
                 {recurring ? " · recurring" : ""}
               </Text>
             </View>
@@ -319,12 +391,8 @@ export default function EventDetailScreen() {
 
                 <View className="flex-row items-center justify-between rounded-md border border-border bg-card px-3 py-3">
                   <View>
-                    <Text className="text-sm font-medium text-foreground">
-                      All day
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      Hide time for this event
-                    </Text>
+                    <Text className="text-sm font-medium text-foreground">All day</Text>
+                    <Text className="text-xs text-muted-foreground">Hide time for this event</Text>
                   </View>
                   <Switch
                     checked={allDay}
@@ -340,9 +408,7 @@ export default function EventDetailScreen() {
                     disabled={isReadOnlyImported}
                     onPress={() => setShowTimePicker(true)}
                   >
-                    <Text className="text-sm text-foreground">
-                      {format(startsAt, "h:mm a")}
-                    </Text>
+                    <Text className="text-sm text-foreground">{format(startsAt, "h:mm a")}</Text>
                   </TouchableOpacity>
                 ) : null}
 
@@ -364,12 +430,52 @@ export default function EventDetailScreen() {
               </Text>
             ) : recurring ? (
               <Text className="text-xs text-muted-foreground">
-                Recurring changes will ask whether to update one event, future
-                events, or the full series.
+                Recurring changes will ask whether to update one event, future events, or the full
+                series.
               </Text>
             ) : null}
           </CardContent>
         </Card>
+
+        {isPlannedEvent ? (
+          <Card>
+            <CardContent className="p-4 gap-4">
+              <View className="flex-row items-center gap-3">
+                <View
+                  className={`h-12 w-12 ${getActivityBgClass(activityType)} items-center justify-center rounded-xl`}
+                >
+                  <Icon as={Calendar} size={22} className="text-white" />
+                </View>
+                <View className="flex-1 gap-1">
+                  <Text className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Activity Type
+                  </Text>
+                  <Text className="text-sm font-semibold text-foreground">
+                    {activityColor.name}
+                  </Text>
+                </View>
+              </View>
+
+              <View className="rounded-md border border-border bg-muted/10 p-3 gap-3">
+                <View className="flex-row items-center gap-2">
+                  <Icon as={Clock} size={16} className="text-muted-foreground" />
+                  <Text className="font-semibold text-foreground">Schedule</Text>
+                </View>
+                <Text className="text-sm text-foreground">
+                  {format(startsAt, "EEEE, MMMM d, yyyy")}
+                </Text>
+                <Text className="text-sm text-muted-foreground">
+                  {allDay ? "All day" : format(startsAt, "h:mm a")}
+                </Text>
+                {isPastScheduledEvent && !completed ? (
+                  <Text className="text-xs text-amber-700">
+                    This scheduled workout is in the past and can be rescheduled.
+                  </Text>
+                ) : null}
+              </View>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {activityPlan ? (
           <Card>
@@ -384,6 +490,10 @@ export default function EventDetailScreen() {
                 </Text>
               </View>
 
+              {activityPlan.description ? (
+                <Text className="text-sm text-muted-foreground">{activityPlan.description}</Text>
+              ) : null}
+
               {estimatedTss !== null ||
               estimatedDurationSeconds !== null ||
               estimatedDurationMinutes !== null ? (
@@ -396,17 +506,12 @@ export default function EventDetailScreen() {
                       </Text>
                     </View>
                   ) : null}
-                  {estimatedDurationSeconds !== null ||
-                  estimatedDurationMinutes !== null ? (
+                  {estimatedDurationSeconds !== null || estimatedDurationMinutes !== null ? (
                     <View>
-                      <Text className="text-xs text-muted-foreground">
-                        Duration
-                      </Text>
+                      <Text className="text-xs text-muted-foreground">Duration</Text>
                       <Text className="text-sm font-semibold text-foreground">
                         {estimatedDurationSeconds !== null
-                          ? formatDurationSec(
-                              Math.max(0, estimatedDurationSeconds),
-                            )
+                          ? formatDurationSec(Math.max(0, estimatedDurationSeconds))
                           : `${Math.round(estimatedDurationMinutes || 0)}min`}
                       </Text>
                     </View>
@@ -415,23 +520,44 @@ export default function EventDetailScreen() {
               ) : null}
 
               {hasIntervals(activityPlan.structure) ? (
-                <Text className="text-xs text-muted-foreground">
-                  Includes interval structure.
-                </Text>
+                <Text className="text-xs text-muted-foreground">Includes interval structure.</Text>
               ) : null}
 
-              <Button
-                variant="outline"
-                onPress={() => {
-                  router.push({
-                    pathname: "/activity-plan-detail",
-                    params: {
-                      eventId: event.id,
-                      planId: activityPlan.id,
-                    },
-                  });
-                }}
-              >
+              {Array.isArray(structureSteps) && structureSteps.length > 0 ? (
+                <View className="gap-2">
+                  <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Activity Structure
+                  </Text>
+                  {structureSteps.slice(0, 5).map((step: any, index: number) => (
+                    <View
+                      key={`${step.name || "step"}-${index}`}
+                      className="flex-row items-start gap-2"
+                    >
+                      <View className="mt-0.5 h-6 w-6 items-center justify-center rounded-full bg-primary/10">
+                        <Text className="text-xs font-semibold text-primary">{index + 1}</Text>
+                      </View>
+                      <View className="flex-1 gap-0.5">
+                        <Text className="text-sm font-medium text-foreground">
+                          {step.name || `Step ${index + 1}`}
+                        </Text>
+                        {step.duration && step.duration !== "untilFinished" ? (
+                          <Text className="text-xs text-muted-foreground">
+                            {step.duration.value}{" "}
+                            {step.duration.unit === "minutes" ? "min" : step.duration.unit}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  ))}
+                  {structureSteps.length > 5 ? (
+                    <Text className="ml-8 text-xs text-muted-foreground">
+                      +{structureSteps.length - 5} more steps
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              <Button variant="outline" onPress={handleOpenPlanDetail}>
                 <Text>Open Activity Plan Detail</Text>
               </Button>
             </CardContent>
@@ -444,6 +570,33 @@ export default function EventDetailScreen() {
           <Button variant="outline" onPress={() => router.back()}>
             <Text>Close</Text>
           </Button>
+        ) : isPlannedEvent ? (
+          <View className="gap-2">
+            {canStartPlanned ? (
+              <Button onPress={handleStartActivity}>
+                <Icon as={Play} size={18} className="mr-2 text-primary-foreground" />
+                <Text className="text-primary-foreground">Start Activity</Text>
+              </Button>
+            ) : null}
+
+            <View className="flex-row gap-2">
+              <Button variant="outline" className="flex-1" onPress={handleReschedule}>
+                <Icon as={Edit} size={16} className="mr-2 text-foreground" />
+                <Text>Reschedule</Text>
+              </Button>
+              <Button variant="outline" className="flex-1" onPress={handleOpenPlanDetail}>
+                <Icon as={Zap} size={16} className="mr-2 text-foreground" />
+                <Text>Open Plan</Text>
+              </Button>
+            </View>
+
+            <Button variant="outline" onPress={handleDelete} disabled={deleteMutation.isPending}>
+              <Icon as={Trash2} size={16} className="mr-2 text-destructive" />
+              <Text className="text-destructive">
+                {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              </Text>
+            </Button>
+          </View>
         ) : isEditing ? (
           <View className="flex-row gap-2">
             <Button
@@ -454,17 +607,13 @@ export default function EventDetailScreen() {
                 setTitle(event.title ?? "");
                 setNotes(event.notes ?? "");
                 setAllDay(!!event.all_day);
-                setStartsAt(new Date(event.starts_at));
+                setStartsAt(parseEventDateForEditor(event));
               }}
               disabled={updateMutation.isPending}
             >
               <Text>Cancel</Text>
             </Button>
-            <Button
-              className="flex-1"
-              onPress={handleSave}
-              disabled={updateMutation.isPending}
-            >
+            <Button className="flex-1" onPress={handleSave} disabled={updateMutation.isPending}>
               <Text className="text-primary-foreground">
                 {updateMutation.isPending ? "Saving..." : "Save Changes"}
               </Text>
@@ -472,11 +621,7 @@ export default function EventDetailScreen() {
           </View>
         ) : (
           <View className="flex-row gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onPress={() => setIsEditing(true)}
-            >
+            <Button variant="outline" className="flex-1" onPress={() => setIsEditing(true)}>
               <Text>Edit Event</Text>
             </Button>
             <Button
@@ -504,11 +649,7 @@ export default function EventDetailScreen() {
               return;
             }
             const next = new Date(startsAt);
-            next.setFullYear(
-              selected.getFullYear(),
-              selected.getMonth(),
-              selected.getDate(),
-            );
+            next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
             setStartsAt(next);
           }}
         />
@@ -527,6 +668,23 @@ export default function EventDetailScreen() {
             const next = new Date(startsAt);
             next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
             setStartsAt(next);
+          }}
+        />
+      ) : null}
+
+      {event && showRescheduleModal ? (
+        <ScheduleActivityModal
+          visible={showRescheduleModal}
+          onClose={() => {
+            setShowRescheduleModal(false);
+            setRescheduleScope("single");
+          }}
+          eventId={event.id}
+          editScope={rescheduleScope}
+          onSuccess={async () => {
+            await refetch();
+            setShowRescheduleModal(false);
+            setRescheduleScope("single");
           }}
         />
       ) : null}

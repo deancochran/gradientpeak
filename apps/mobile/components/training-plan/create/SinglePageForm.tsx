@@ -1,8 +1,30 @@
+import type {
+  BlockingIssue,
+  CompositeWeightLocks,
+  CreationAvailabilityConfig,
+  CreationBehaviorControlsV1,
+  CreationConfigLocks,
+  CreationConstraints,
+  CreationContextSummary,
+  CreationFeasibilitySafetySummary,
+  CreationProvenance,
+  CreationRecentInfluenceAction,
+  CreationValueSource,
+  NoHistoryProjectionMetadata,
+  ProjectionChartPayload,
+  ReadinessDeltaDiagnostics,
+  TrainingPlanCalibrationConfig,
+} from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
+import { DateInput as DateField } from "@repo/ui/components/date-input";
+import { DurationInput } from "@repo/ui/components/duration-input";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import { Textarea } from "@repo/ui/components/textarea";
+import { NumberSliderInput } from "@repo/ui/components/number-slider-input";
+import { PaceInput } from "@repo/ui/components/pace-input";
+import { PercentSliderInput } from "@repo/ui/components/percent-slider-input";
 import {
   Select,
   SelectContent,
@@ -12,12 +34,7 @@ import {
 } from "@repo/ui/components/select";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { BoundedNumberInput } from "./inputs/BoundedNumberInput";
-import { DateField } from "./inputs/DateField";
-import { DurationInput } from "./inputs/DurationInput";
-import { NumberSliderInput } from "./inputs/NumberSliderInput";
-import { PaceInput } from "./inputs/PaceInput";
-import { PercentSliderInput } from "./inputs/PercentSliderInput";
+import { Textarea } from "@repo/ui/components/textarea";
 import {
   Flag,
   Gauge,
@@ -25,38 +42,15 @@ import {
   Pencil,
   Plus,
   ShieldAlert,
-  Trophy,
   Trash2,
+  Trophy,
   Zap,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { Modal, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { CreationProjectionChart } from "./CreationProjectionChart";
-import { type CompositeWeightLocks } from "../../../lib/training-plan-form/calibration";
 import { parseNumberOrUndefined } from "../../../lib/training-plan-form/input-parsers";
-import type { BlockingIssue } from "../../../lib/training-plan-form/validation";
-import type {
-  CreationAvailabilityConfig,
-  CreationConfigLocks,
-  CreationConstraints,
-  CreationBehaviorControlsV1,
-  CreationContextSummary,
-  CreationFeasibilitySafetySummary,
-  NoHistoryProjectionMetadata,
-  ProjectionChartPayload,
-  ReadinessDeltaDiagnostics,
-  CreationProvenance,
-  CreationRecentInfluenceAction,
-  TrainingPlanCalibrationConfig,
-  CreationValueSource,
-} from "@repo/core";
+import { CreationProjectionChart } from "./CreationProjectionChart";
 
 export type GoalTargetType =
   | "race_performance"
@@ -149,13 +143,7 @@ interface EditingTargetRef {
   targetId: string;
 }
 
-type FormTabKey =
-  | "plan"
-  | "goals"
-  | "availability"
-  | "constraints"
-  | "calibration"
-  | "review";
+type FormTabKey = "plan" | "goals" | "availability" | "constraints" | "calibration" | "review";
 
 const allFormTabs: { key: FormTabKey; label: string }[] = [
   { key: "plan", label: "Plan" },
@@ -168,8 +156,7 @@ const allFormTabs: { key: FormTabKey; label: string }[] = [
 
 type TabIssueCounts = Record<FormTabKey, number>;
 
-const createLocalId = () =>
-  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const createLocalId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 const createEmptyTarget = (): GoalTargetFormData => ({
   id: createLocalId(),
@@ -275,12 +262,10 @@ const tabPanelClass = "gap-3 rounded-lg border border-border bg-card p-3";
 const sectionCardClass = "gap-2";
 const helperTextClass = "text-xs text-muted-foreground";
 
-const getWeekDayLabel = (day: string) =>
-  day.slice(0, 1).toUpperCase() + day.slice(1, 3);
+const getWeekDayLabel = (day: string) => day.slice(0, 1).toUpperCase() + day.slice(1, 3);
 
-const getActivityCategoryLabel = (
-  category?: GoalTargetFormData["activityCategory"],
-) => activityCategoryOptions.find((option) => option.value === category)?.label;
+const getActivityCategoryLabel = (category?: GoalTargetFormData["activityCategory"]) =>
+  activityCategoryOptions.find((option) => option.value === category)?.label;
 
 const getTargetTypeLabel = (targetType: GoalTargetType) => {
   return targetTypeOptions.find((option) => option.value === targetType)?.label;
@@ -339,12 +324,7 @@ const getTargetSummary = (target: GoalTargetFormData) => {
 };
 
 const formatFeasibilityBandLabel = (
-  band:
-    | "feasible"
-    | "stretch"
-    | "aggressive"
-    | "nearly_impossible"
-    | "infeasible",
+  band: "feasible" | "stretch" | "aggressive" | "nearly_impossible" | "infeasible",
 ) => {
   if (band === "feasible") return "On track";
   if (band === "stretch") return "Challenging";
@@ -377,8 +357,7 @@ const formatDriverLabel = (driver: string) => {
   return driver.replaceAll("_", " ");
 };
 
-const formatNoteLabel = (note: string) =>
-  note.replaceAll("_", " ").replaceAll("-", " ");
+const formatNoteLabel = (note: string) => note.replaceAll("_", " ").replaceAll("-", " ");
 
 const toRecord = (value: unknown): Record<string, unknown> | undefined => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -464,9 +443,7 @@ const resolveGoalAssessmentConfidenceHint = (
           );
         },
       )
-      .filter(
-        (value: number | undefined): value is number => value !== undefined,
-      ),
+      .filter((value: number | undefined): value is number => value !== undefined),
   );
   if (targetUncertainty !== undefined) {
     return `Uncertainty hint: forecast spread ${Math.round(targetUncertainty)}%.`;
@@ -509,10 +486,7 @@ const readStringArray = (value: unknown): string[] => {
   return value.filter((item): item is string => typeof item === "string");
 };
 
-const formatNumericDiagnostics = (
-  record: Record<string, unknown> | undefined,
-  limit: number,
-) => {
+const formatNumericDiagnostics = (record: Record<string, unknown> | undefined, limit: number) => {
   if (!record) {
     return "";
   }
@@ -559,8 +533,7 @@ const resolveProjectionReviewDiagnostics = (
     toRecord(scoped?.effective_optimizer_config) ??
     toRecord(scoped?.effectiveOptimizerConfig);
   const objectiveContributions =
-    toRecord(scoped?.objective_contributions) ??
-    toRecord(scoped?.objectiveContributions);
+    toRecord(scoped?.objective_contributions) ?? toRecord(scoped?.objectiveContributions);
   const objectiveComposition =
     toRecord(scoped?.objective_composition) ??
     toRecord(scoped?.objectiveComposition) ??
@@ -568,16 +541,13 @@ const resolveProjectionReviewDiagnostics = (
     objectiveContributions;
   const activeConstraintsRaw = readStringArray(scoped?.active_constraints);
   const bindingConstraintsRaw = readStringArray(scoped?.binding_constraints);
-  const clampCounts =
-    toRecord(scoped?.clamp_counts) ?? toRecord(scoped?.clampCounts);
+  const clampCounts = toRecord(scoped?.clamp_counts) ?? toRecord(scoped?.clampCounts);
   const sampledWeeks =
     readNumber(objectiveContributions?.sampled_weeks) ??
     readNumber(objectiveContributions?.sampledWeeks);
   const derivedClampPressure =
     clampCounts && sampledWeeks && sampledWeeks > 0
-      ? ((readNumber(clampCounts.tss) ?? 0) +
-          (readNumber(clampCounts.ctl) ?? 0)) /
-        sampledWeeks
+      ? ((readNumber(clampCounts.tss) ?? 0) + (readNumber(clampCounts.ctl) ?? 0)) / sampledWeeks
       : undefined;
 
   return {
@@ -748,9 +718,7 @@ function GoalReadinessRing(props: { score: number; goalTitle: string }) {
         />
       </Svg>
       <View className="absolute items-center justify-center">
-        <Text className="text-xs font-semibold text-foreground">
-          {Math.round(normalizedScore)}
-        </Text>
+        <Text className="text-xs font-semibold text-foreground">{Math.round(normalizedScore)}</Text>
       </View>
     </View>
   );
@@ -804,8 +772,7 @@ export function SinglePageForm({
   const [activeGoalId, setActiveGoalId] = useState<string | null>(
     () => formData.goals[0]?.id ?? null,
   );
-  const [editingTargetRef, setEditingTargetRef] =
-    useState<EditingTargetRef | null>(null);
+  const [editingTargetRef, setEditingTargetRef] = useState<EditingTargetRef | null>(null);
   const visibleTabKeys = useMemo<FormTabKey[]>(
     () =>
       showCreationConfig
@@ -890,16 +857,14 @@ export function SinglePageForm({
   ).length;
   const noHistoryMetadata = projectionChart?.no_history;
   const noHistoryReasons = noHistoryMetadata?.fitness_inference_reasons ?? [];
-  const projectionStartingState =
-    projectionChart?.constraint_summary?.starting_state;
+  const projectionStartingState = projectionChart?.constraint_summary?.starting_state;
   const noHistoryConfidenceLabel = noHistoryMetadata
     ? toNoHistoryConfidenceLabel(noHistoryMetadata.projection_floor_confidence)
     : "n/a";
-  const noHistoryFloorAppliedLabel = noHistoryMetadata?.projection_floor_applied
+  const noHistoryFloorAppliedLabel = noHistoryMetadata?.projection_floor_applied ? "Yes" : "No";
+  const noHistoryAvailabilityClampLabel = noHistoryMetadata?.floor_clamped_by_availability
     ? "Yes"
     : "No";
-  const noHistoryAvailabilityClampLabel =
-    noHistoryMetadata?.floor_clamped_by_availability ? "Yes" : "No";
   const noHistoryFitnessSignal =
     typeof noHistoryMetadata?.fitness_signal_0_1 === "number"
       ? Math.round(noHistoryMetadata.fitness_signal_0_1 * 100)
@@ -909,9 +874,7 @@ export function SinglePageForm({
       ? Math.round(noHistoryMetadata.goal_demand_score_0_1 * 100)
       : null;
   const projectionRiskScore =
-    typeof projectionChart?.risk_score === "number"
-      ? Math.round(projectionChart.risk_score)
-      : null;
+    typeof projectionChart?.risk_score === "number" ? Math.round(projectionChart.risk_score) : null;
   const noHistoryAccessibilitySummary = noHistoryMetadata
     ? `No-history cues. Confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}.${noHistoryFitnessSignal !== null ? ` Fitness signal ${noHistoryFitnessSignal} percent.` : ""}${noHistoryDemandScore !== null ? ` Goal demand ${noHistoryDemandScore} percent.` : ""}${projectionRiskScore !== null ? ` Risk score ${projectionRiskScore} percent.` : ""}`
     : undefined;
@@ -936,12 +899,8 @@ export function SinglePageForm({
       return;
     }
 
-    const goal = formData.goals.find(
-      (item) => item.id === editingTargetRef.goalId,
-    );
-    const target = goal?.targets.find(
-      (item) => item.id === editingTargetRef.targetId,
-    );
+    const goal = formData.goals.find((item) => item.id === editingTargetRef.goalId);
+    const target = goal?.targets.find((item) => item.id === editingTargetRef.targetId);
     if (!goal || !target) {
       setEditingTargetRef(null);
     }
@@ -952,17 +911,13 @@ export function SinglePageForm({
       return null;
     }
 
-    const goalIndex = formData.goals.findIndex(
-      (goal) => goal.id === editingTargetRef.goalId,
-    );
+    const goalIndex = formData.goals.findIndex((goal) => goal.id === editingTargetRef.goalId);
     if (goalIndex < 0) {
       return null;
     }
 
     const goal = formData.goals[goalIndex];
-    const targetIndex = goal.targets.findIndex(
-      (target) => target.id === editingTargetRef.targetId,
-    );
+    const targetIndex = goal.targets.findIndex((target) => target.id === editingTargetRef.targetId);
     if (targetIndex < 0) {
       return null;
     }
@@ -978,17 +933,11 @@ export function SinglePageForm({
   const updateGoal = (goalId: string, updates: Partial<GoalFormData>) => {
     onFormDataChange({
       ...formData,
-      goals: formData.goals.map((goal) =>
-        goal.id === goalId ? { ...goal, ...updates } : goal,
-      ),
+      goals: formData.goals.map((goal) => (goal.id === goalId ? { ...goal, ...updates } : goal)),
     });
   };
 
-  const updateTarget = (
-    goalId: string,
-    targetId: string,
-    updates: Partial<GoalTargetFormData>,
-  ) => {
+  const updateTarget = (goalId: string, targetId: string, updates: Partial<GoalTargetFormData>) => {
     onFormDataChange({
       ...formData,
       goals: formData.goals.map((goal) => {
@@ -1008,9 +957,7 @@ export function SinglePageForm({
 
   const addGoal = () => {
     const referenceTargetDate =
-      formData.goals[0]?.targetDate ??
-      new Date().toISOString().split("T")[0] ??
-      "";
+      formData.goals[0]?.targetDate ?? new Date().toISOString().split("T")[0] ?? "";
 
     const newGoalIndex = formData.goals.length + 1;
     const newGoal = {
@@ -1040,9 +987,7 @@ export function SinglePageForm({
     onFormDataChange({
       ...formData,
       goals: formData.goals.map((goal) =>
-        goal.id === goalId
-          ? { ...goal, targets: [...goal.targets, target] }
-          : goal,
+        goal.id === goalId ? { ...goal, targets: [...goal.targets, target] } : goal,
       ),
     });
     setEditingTargetRef({ goalId, targetId: target.id });
@@ -1114,9 +1059,7 @@ export function SinglePageForm({
   const closeTargetEditor = () => setEditingTargetRef(null);
 
   const activeGoal = useMemo(
-    () =>
-      formData.goals.find((goal) => goal.id === activeGoalId) ??
-      formData.goals[0],
+    () => formData.goals.find((goal) => goal.id === activeGoalId) ?? formData.goals[0],
     [activeGoalId, formData.goals],
   );
   const activeGoalIndex = activeGoal
@@ -1178,13 +1121,7 @@ export function SinglePageForm({
     projectionReviewDiagnostics.clampPressure !== undefined ||
     projectionReviewDiagnostics.curvatureContribution !== undefined;
   const goalMarkersById = useMemo(
-    () =>
-      new Map(
-        (projectionChart?.goal_markers ?? []).map((marker) => [
-          marker.id,
-          marker,
-        ]),
-      ),
+    () => new Map((projectionChart?.goal_markers ?? []).map((marker) => [marker.id, marker])),
     [projectionChart?.goal_markers],
   );
 
@@ -1253,10 +1190,7 @@ export function SinglePageForm({
         ) : null}
       </View>
 
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="gap-3 px-4 pt-3 pb-8"
-      >
+      <ScrollView className="flex-1" contentContainerClassName="gap-3 px-4 pt-3 pb-8">
         {activeTab === "plan" && (
           <View className={tabPanelClass}>
             <Text className="font-semibold">Plan details</Text>
@@ -1288,9 +1222,7 @@ export function SinglePageForm({
                 }
               />
               {resolvedPlanMetadata.name.trim().length === 0 ? (
-                <Text className="text-xs text-destructive">
-                  Plan name is required.
-                </Text>
+                <Text className="text-xs text-destructive">Plan name is required.</Text>
               ) : null}
             </View>
             <View className="gap-1.5">
@@ -1313,8 +1245,7 @@ export function SinglePageForm({
               />
             </View>
             <Text className="text-xs text-muted-foreground">
-              Training plan activation is controlled when you apply a template
-              to your schedule.
+              Training plan activation is controlled when you apply a template to your schedule.
             </Text>
           </View>
         )}
@@ -1337,28 +1268,18 @@ export function SinglePageForm({
                 {contextSummary && (
                   <View className="gap-1 rounded-md bg-muted/40 p-2">
                     <Text className="text-xs text-muted-foreground">
-                      Consistency:{" "}
-                      {formatMarkerLabel(
-                        contextSummary.recent_consistency_marker,
-                      )}
+                      Consistency: {formatMarkerLabel(contextSummary.recent_consistency_marker)}
                     </Text>
                     <Text className="text-xs text-muted-foreground">
                       Effort confidence:{" "}
-                      {formatMarkerLabel(
-                        contextSummary.effort_confidence_marker,
-                      )}
+                      {formatMarkerLabel(contextSummary.effort_confidence_marker)}
                     </Text>
                     <Text className="text-xs text-muted-foreground">
                       Profile completeness:{" "}
-                      {formatMarkerLabel(
-                        contextSummary.profile_metric_completeness_marker,
-                      )}
+                      {formatMarkerLabel(contextSummary.profile_metric_completeness_marker)}
                     </Text>
                     {contextSummary.rationale_codes.slice(0, 4).map((code) => (
-                      <Text
-                        key={code}
-                        className="text-xs text-muted-foreground"
-                      >
+                      <Text key={code} className="text-xs text-muted-foreground">
                         - {formatCodeAsSentence(code)}
                       </Text>
                     ))}
@@ -1411,11 +1332,7 @@ export function SinglePageForm({
               <View className={tabPanelClass}>
                 <View className="flex-row items-center justify-between">
                   <Text className="font-semibold">Availability</Text>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={() => onResetAvailability?.()}
-                  >
+                  <Button variant="outline" size="sm" onPress={() => onResetAvailability?.()}>
                     <Text>Reset</Text>
                   </Button>
                 </View>
@@ -1446,9 +1363,8 @@ export function SinglePageForm({
                   <View className="flex-row flex-wrap gap-2">
                     {weekDays.map((day) => {
                       const dayConfig =
-                        configData.availabilityConfig.days.find(
-                          (item) => item.day === day,
-                        ) ?? configData.availabilityConfig.days[0];
+                        configData.availabilityConfig.days.find((item) => item.day === day) ??
+                        configData.availabilityConfig.days[0];
                       if (!dayConfig) {
                         return null;
                       }
@@ -1464,22 +1380,21 @@ export function SinglePageForm({
                               draft.availabilityConfig = {
                                 ...draft.availabilityConfig,
                                 template: "custom",
-                                days: draft.availabilityConfig.days.map(
-                                  (candidate) =>
-                                    candidate.day === day
-                                      ? {
-                                          ...candidate,
-                                          windows: isAvailable
-                                            ? []
-                                            : [
-                                                {
-                                                  start_minute_of_day: 360,
-                                                  end_minute_of_day: 450,
-                                                },
-                                              ],
-                                          max_sessions: isAvailable ? 0 : 1,
-                                        }
-                                      : candidate,
+                                days: draft.availabilityConfig.days.map((candidate) =>
+                                  candidate.day === day
+                                    ? {
+                                        ...candidate,
+                                        windows: isAvailable
+                                          ? []
+                                          : [
+                                              {
+                                                start_minute_of_day: 360,
+                                                end_minute_of_day: 450,
+                                              },
+                                            ],
+                                        max_sessions: isAvailable ? 0 : 1,
+                                      }
+                                    : candidate,
                                 ),
                               };
                               draft.availabilityProvenance = {
@@ -1503,11 +1418,7 @@ export function SinglePageForm({
               <View className={tabPanelClass}>
                 <View className="flex-row items-center justify-between">
                   <Text className="font-semibold">Limits</Text>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={() => onResetLimits?.()}
-                  >
+                  <Button variant="outline" size="sm" onPress={() => onResetLimits?.()}>
                     <Text>Reset</Text>
                   </Button>
                 </View>
@@ -1516,9 +1427,7 @@ export function SinglePageForm({
                     id="starting-ctl-assumption"
                     label="Initial CTL (fitness)"
                     value={
-                      configData.startingCtlAssumption ??
-                      projectionStartingState?.starting_ctl ??
-                      0
+                      configData.startingCtlAssumption ?? projectionStartingState?.starting_ctl ?? 0
                     }
                     min={0}
                     max={250}
@@ -1566,11 +1475,7 @@ export function SinglePageForm({
               <View className={tabPanelClass}>
                 <View className="flex-row items-center justify-between">
                   <Text className="font-semibold">Tuning</Text>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onPress={() => onResetProjectionAll?.()}
-                  >
+                  <Button variant="outline" size="sm" onPress={() => onResetProjectionAll?.()}>
                     <Text>Reset</Text>
                   </Button>
                 </View>
@@ -1602,9 +1507,7 @@ export function SinglePageForm({
                     helperText="Higher values allow more week-to-week variation."
                     onChange={(percent) => {
                       updateConfig((draft) => {
-                        draft.behaviorControlsV1.variability = Number(
-                          (percent / 100).toFixed(2),
-                        );
+                        draft.behaviorControlsV1.variability = Number((percent / 100).toFixed(2));
                       });
                     }}
                     showNumericInput={false}
@@ -1637,9 +1540,7 @@ export function SinglePageForm({
                     helperText="Negative values bias early load, positive values bias later load."
                     onChange={(value) => {
                       updateConfig((draft) => {
-                        draft.behaviorControlsV1.shape_target = Number(
-                          value.toFixed(2),
-                        );
+                        draft.behaviorControlsV1.shape_target = Number(value.toFixed(2));
                       });
                     }}
                   />
@@ -1663,9 +1564,7 @@ export function SinglePageForm({
                   <NumberSliderInput
                     id="behavior-recovery-priority"
                     label="Recovery priority"
-                    value={
-                      configData.behaviorControlsV1.recovery_priority * 100
-                    }
+                    value={configData.behaviorControlsV1.recovery_priority * 100}
                     min={0}
                     max={100}
                     decimals={0}
@@ -1683,10 +1582,7 @@ export function SinglePageForm({
                   <NumberSliderInput
                     id="behavior-starting-fitness-confidence"
                     label="Starting fitness confidence"
-                    value={
-                      configData.behaviorControlsV1
-                        .starting_fitness_confidence * 100
-                    }
+                    value={configData.behaviorControlsV1.starting_fitness_confidence * 100}
                     min={0}
                     max={100}
                     decimals={0}
@@ -1695,8 +1591,9 @@ export function SinglePageForm({
                     helperText="Lower values anchor early weeks more conservatively."
                     onChange={(value) => {
                       updateConfig((draft) => {
-                        draft.behaviorControlsV1.starting_fitness_confidence =
-                          Number((value / 100).toFixed(2));
+                        draft.behaviorControlsV1.starting_fitness_confidence = Number(
+                          (value / 100).toFixed(2),
+                        );
                       });
                     }}
                   />
@@ -1715,38 +1612,30 @@ export function SinglePageForm({
                       accessibilityLabel={`${reviewNoticeCount} plan notice${reviewNoticeCount === 1 ? "" : "s"} to review`}
                     >
                       <Trophy size={12} className="text-muted-foreground" />
-                      <Text className="text-xs font-medium">
-                        {reviewNoticeCount}
-                      </Text>
+                      <Text className="text-xs font-medium">{reviewNoticeCount}</Text>
                     </View>
                     {isPreviewPending && (
-                      <Text className="text-xs text-muted-foreground">
-                        Refreshing...
-                      </Text>
+                      <Text className="text-xs text-muted-foreground">Refreshing...</Text>
                     )}
                   </View>
                 </View>
                 <Text className={helperTextClass}>
-                  Review plan fit, risk, and trend changes before create.
-                  Unresolved blocking issues prevent create unless you
-                  explicitly acknowledge an override.
+                  Review plan fit, risk, and trend changes before create. Unresolved blocking issues
+                  prevent create unless you explicitly acknowledge an override.
                 </Text>
                 {feasibilitySafetySummary ? (
                   <>
                     <View className="flex-row gap-2">
                       <Badge
                         variant={
-                          feasibilitySafetySummary.feasibility_band ===
-                          "on-track"
+                          feasibilitySafetySummary.feasibility_band === "on-track"
                             ? "default"
                             : "secondary"
                         }
                       >
                         <Text>
                           Plan fit:{" "}
-                          {formatReviewBandLabel(
-                            feasibilitySafetySummary.feasibility_band,
-                          )}
+                          {formatReviewBandLabel(feasibilitySafetySummary.feasibility_band)}
                         </Text>
                       </Badge>
                       <Badge
@@ -1759,57 +1648,38 @@ export function SinglePageForm({
                         }
                       >
                         <Text>
-                          Risk:{" "}
-                          {formatSafetyBandLabel(
-                            feasibilitySafetySummary.safety_band,
-                          )}
+                          Risk: {formatSafetyBandLabel(feasibilitySafetySummary.safety_band)}
                         </Text>
                       </Badge>
                     </View>
-                    {feasibilitySafetySummary.top_drivers
-                      .slice(0, 3)
-                      .map((driver) => (
-                        <Text
-                          key={driver.code}
-                          className="text-xs text-muted-foreground"
-                        >
-                          - {formatDriverText(driver.message, driver.code)}
-                        </Text>
-                      ))}
+                    {feasibilitySafetySummary.top_drivers.slice(0, 3).map((driver) => (
+                      <Text key={driver.code} className="text-xs text-muted-foreground">
+                        - {formatDriverText(driver.message, driver.code)}
+                      </Text>
+                    ))}
                     {hasProjectionReviewDiagnostics ? (
                       <>
                         {projectionReviewDiagnostics.effectiveOptimizerSummary ? (
                           <Text className="text-xs text-muted-foreground">
                             Effective optimizer:{" "}
-                            {
-                              projectionReviewDiagnostics.effectiveOptimizerSummary
-                            }
-                            .
+                            {projectionReviewDiagnostics.effectiveOptimizerSummary}.
                           </Text>
                         ) : null}
                         {projectionReviewDiagnostics.activeConstraints ? (
                           <Text className="text-xs text-muted-foreground">
-                            Active constraints:{" "}
-                            {projectionReviewDiagnostics.activeConstraints}.
+                            Active constraints: {projectionReviewDiagnostics.activeConstraints}.
                           </Text>
                         ) : null}
                         {projectionReviewDiagnostics.bindingConstraints ||
-                        projectionReviewDiagnostics.clampPressure !==
-                          undefined ? (
+                        projectionReviewDiagnostics.clampPressure !== undefined ? (
                           <Text className="text-xs text-muted-foreground">
                             Binding constraints:{" "}
-                            {projectionReviewDiagnostics.bindingConstraints ||
-                              "none"}
-                            {projectionReviewDiagnostics.clampPressure !==
-                            undefined
+                            {projectionReviewDiagnostics.bindingConstraints || "none"}
+                            {projectionReviewDiagnostics.clampPressure !== undefined
                               ? ` | clamp pressure ${Math.round(
                                   Math.max(
                                     0,
-                                    Math.min(
-                                      100,
-                                      projectionReviewDiagnostics.clampPressure *
-                                        100,
-                                    ),
+                                    Math.min(100, projectionReviewDiagnostics.clampPressure * 100),
                                   ),
                                 )}%`
                               : ""}
@@ -1818,39 +1688,32 @@ export function SinglePageForm({
                         ) : null}
                         {projectionReviewDiagnostics.objectiveSummary ? (
                           <Text className="text-xs text-muted-foreground">
-                            Objective mix:{" "}
-                            {projectionReviewDiagnostics.objectiveSummary}
-                            {projectionReviewDiagnostics.curvatureContribution !==
-                            undefined
+                            Objective mix: {projectionReviewDiagnostics.objectiveSummary}
+                            {projectionReviewDiagnostics.curvatureContribution !== undefined
                               ? ` | curvature ${projectionReviewDiagnostics.curvatureContribution.toFixed(2)}`
                               : ""}
                             .
                           </Text>
-                        ) : projectionReviewDiagnostics.curvatureContribution !==
-                          undefined ? (
+                        ) : projectionReviewDiagnostics.curvatureContribution !== undefined ? (
                           <Text className="text-xs text-muted-foreground">
                             Curvature contribution:{" "}
-                            {projectionReviewDiagnostics.curvatureContribution.toFixed(
-                              2,
-                            )}
-                            .
+                            {projectionReviewDiagnostics.curvatureContribution.toFixed(2)}.
                           </Text>
                         ) : null}
                       </>
                     ) : null}
                     <Text className="text-xs text-muted-foreground">
-                      The planner always prefers a safer progression that still
-                      moves you toward your goals.
+                      The planner always prefers a safer progression that still moves you toward
+                      your goals.
                     </Text>
                     <Text className="text-xs text-muted-foreground">
-                      If a blocking issue remains unresolved, create stays
-                      disabled until you explicitly acknowledge an override.
+                      If a blocking issue remains unresolved, create stays disabled until you
+                      explicitly acknowledge an override.
                     </Text>
                   </>
                 ) : (
                   <Text className="text-xs text-muted-foreground">
-                    Your plan check appears here once enough setup details are
-                    available.
+                    Your plan check appears here once enough setup details are available.
                   </Text>
                 )}
               </View>
@@ -1858,86 +1721,43 @@ export function SinglePageForm({
 
             {activeTab === "review" && readinessDeltaDiagnostics ? (
               <View className={tabPanelClass}>
-                <Text className="font-semibold">
-                  What changed most recently
-                </Text>
+                <Text className="font-semibold">What changed most recently</Text>
                 <Text className="text-xs text-muted-foreground">
-                  Readiness{" "}
-                  {formatDirectionLabel(
-                    readinessDeltaDiagnostics.readiness.direction,
-                  )}{" "}
-                  by{" "}
-                  {Math.abs(readinessDeltaDiagnostics.readiness.delta).toFixed(
-                    2,
-                  )}{" "}
-                  points ({" "}
-                  {readinessDeltaDiagnostics.readiness.previous_score.toFixed(
-                    2,
-                  )}
+                  Readiness {formatDirectionLabel(readinessDeltaDiagnostics.readiness.direction)} by{" "}
+                  {Math.abs(readinessDeltaDiagnostics.readiness.delta).toFixed(2)} points ({" "}
+                  {readinessDeltaDiagnostics.readiness.previous_score.toFixed(2)}
                   {" -> "}
                   {readinessDeltaDiagnostics.readiness.current_score.toFixed(2)}
                   ).
                 </Text>
                 <Text className="text-xs text-muted-foreground">
-                  Main reason:{" "}
-                  {formatDriverLabel(readinessDeltaDiagnostics.dominant_driver)}
-                  .
+                  Main reason: {formatDriverLabel(readinessDeltaDiagnostics.dominant_driver)}.
                 </Text>
                 <Text className="text-xs text-muted-foreground">
                   Training load{" "}
-                  {formatDirectionLabel(
-                    readinessDeltaDiagnostics.impacts.load.direction,
-                  )}{" "}
-                  by{" "}
-                  {Math.abs(
-                    readinessDeltaDiagnostics.impacts.load.delta,
-                  ).toFixed(2)}{" "}
-                  ({" "}
-                  {readinessDeltaDiagnostics.impacts.load.previous_value.toFixed(
-                    2,
-                  )}
+                  {formatDirectionLabel(readinessDeltaDiagnostics.impacts.load.direction)} by{" "}
+                  {Math.abs(readinessDeltaDiagnostics.impacts.load.delta).toFixed(2)} ({" "}
+                  {readinessDeltaDiagnostics.impacts.load.previous_value.toFixed(2)}
                   {" -> "}
-                  {readinessDeltaDiagnostics.impacts.load.current_value.toFixed(
-                    2,
-                  )}
+                  {readinessDeltaDiagnostics.impacts.load.current_value.toFixed(2)}
                   ).
                 </Text>
                 <Text className="text-xs text-muted-foreground">
                   Fatigue{" "}
-                  {formatDirectionLabel(
-                    readinessDeltaDiagnostics.impacts.fatigue.direction,
-                  )}{" "}
-                  by{" "}
-                  {Math.abs(
-                    readinessDeltaDiagnostics.impacts.fatigue.delta,
-                  ).toFixed(2)}{" "}
-                  ({" "}
-                  {readinessDeltaDiagnostics.impacts.fatigue.previous_value.toFixed(
-                    2,
-                  )}
+                  {formatDirectionLabel(readinessDeltaDiagnostics.impacts.fatigue.direction)} by{" "}
+                  {Math.abs(readinessDeltaDiagnostics.impacts.fatigue.delta).toFixed(2)} ({" "}
+                  {readinessDeltaDiagnostics.impacts.fatigue.previous_value.toFixed(2)}
                   {" -> "}
-                  {readinessDeltaDiagnostics.impacts.fatigue.current_value.toFixed(
-                    2,
-                  )}
+                  {readinessDeltaDiagnostics.impacts.fatigue.current_value.toFixed(2)}
                   ).
                 </Text>
                 <Text className="text-xs text-muted-foreground">
                   Timeline pressure{" "}
-                  {formatDirectionLabel(
-                    readinessDeltaDiagnostics.impacts.feasibility.direction,
-                  )}{" "}
-                  by{" "}
-                  {Math.abs(
-                    readinessDeltaDiagnostics.impacts.feasibility.delta,
-                  ).toFixed(2)}{" "}
-                  ({" "}
-                  {readinessDeltaDiagnostics.impacts.feasibility.previous_value.toFixed(
-                    2,
-                  )}
+                  {formatDirectionLabel(readinessDeltaDiagnostics.impacts.feasibility.direction)} by{" "}
+                  {Math.abs(readinessDeltaDiagnostics.impacts.feasibility.delta).toFixed(2)} ({" "}
+                  {readinessDeltaDiagnostics.impacts.feasibility.previous_value.toFixed(2)}
                   {" -> "}
-                  {readinessDeltaDiagnostics.impacts.feasibility.current_value.toFixed(
-                    2,
-                  )}
+                  {readinessDeltaDiagnostics.impacts.feasibility.current_value.toFixed(2)}
                   ).
                 </Text>
               </View>
@@ -1948,9 +1768,7 @@ export function SinglePageForm({
                 <Text className="font-semibold">Goal-by-goal check</Text>
                 {goalAssessments.map((assessment, index) => {
                   const marker = goalMarkersById.get(assessment.goal_id);
-                  const title = marker?.name?.trim()
-                    ? marker.name
-                    : `Goal ${index + 1}`;
+                  const title = marker?.name?.trim() ? marker.name : `Goal ${index + 1}`;
                   const fallbackReadinessScore =
                     assessment.target_scores.length > 0
                       ? assessment.target_scores.reduce(
@@ -1971,16 +1789,10 @@ export function SinglePageForm({
                       className="gap-2 rounded-md border border-border bg-muted/20 p-2.5"
                     >
                       <View className="flex-row items-center gap-3">
-                        <GoalReadinessRing
-                          score={goalReadinessScore}
-                          goalTitle={title}
-                        />
+                        <GoalReadinessRing score={goalReadinessScore} goalTitle={title} />
                         <View className="flex-1 gap-1">
                           <View className="flex-row items-center justify-between gap-2">
-                            <Text
-                              className="flex-1 text-sm font-medium"
-                              numberOfLines={1}
-                            >
+                            <Text className="flex-1 text-sm font-medium" numberOfLines={1}>
                               {title}
                             </Text>
                             <Badge variant="outline">
@@ -1992,25 +1804,17 @@ export function SinglePageForm({
                           </Text>
                           {assessment.state_readiness_score !== undefined ? (
                             <Text className="text-xs text-muted-foreground">
-                              State readiness:{" "}
-                              {Math.round(assessment.state_readiness_score)} /
+                              State readiness: {Math.round(assessment.state_readiness_score)} / 100
+                            </Text>
+                          ) : null}
+                          {assessment.goal_alignment_loss_0_100 !== undefined ? (
+                            <Text className="text-xs text-muted-foreground">
+                              Alignment loss: {Math.round(assessment.goal_alignment_loss_0_100)} /
                               100
                             </Text>
                           ) : null}
-                          {assessment.goal_alignment_loss_0_100 !==
-                          undefined ? (
-                            <Text className="text-xs text-muted-foreground">
-                              Alignment loss:{" "}
-                              {Math.round(assessment.goal_alignment_loss_0_100)}{" "}
-                              / 100
-                            </Text>
-                          ) : null}
                           <Badge variant="outline" className="self-start">
-                            <Text>
-                              {formatFeasibilityBandLabel(
-                                assessment.feasibility_band,
-                              )}
-                            </Text>
+                            <Text>{formatFeasibilityBandLabel(assessment.feasibility_band)}</Text>
                           </Badge>
                         </View>
                       </View>
@@ -2019,8 +1823,8 @@ export function SinglePageForm({
                           key={`${assessment.goal_id}-${target.kind}-${targetIndex}`}
                           className="text-xs text-muted-foreground"
                         >
-                          {getAssessmentTargetKindLabel(target.kind)}{" "}
-                          confidence: {Math.round(target.score_0_100)} / 100
+                          {getAssessmentTargetKindLabel(target.kind)} confidence:{" "}
+                          {Math.round(target.score_0_100)} / 100
                           {target.unmet_gap !== undefined
                             ? ` | shortfall ${Number(target.unmet_gap.toFixed(2))}`
                             : ""}
@@ -2049,22 +1853,17 @@ export function SinglePageForm({
               <View className="gap-2 rounded-lg border border-amber-300 bg-amber-100/40 p-3">
                 <View className="flex-row items-center gap-2">
                   <ShieldAlert size={16} className="text-amber-800" />
-                  <Text className="font-semibold text-amber-800">
-                    Blocking issues
-                  </Text>
+                  <Text className="font-semibold text-amber-800">Blocking issues</Text>
                 </View>
                 <Text className="text-xs text-amber-800">
-                  Resolve these issues, or acknowledge an override to allow
-                  create.
+                  Resolve these issues, or acknowledge an override to allow create.
                 </Text>
                 {blockingIssues.map((conflict) => (
                   <View
                     key={`${conflict.code}-${conflict.message}`}
                     className="gap-1 rounded-md border border-amber-300 p-2"
                   >
-                    <Text className="text-sm text-amber-800">
-                      {conflict.message}
-                    </Text>
+                    <Text className="text-sm text-amber-800">{conflict.message}</Text>
                   </View>
                 ))}
                 <View className="gap-2 rounded-md border border-amber-300 p-2">
@@ -2074,8 +1873,7 @@ export function SinglePageForm({
                         Allow create despite blockers
                       </Text>
                       <Text className="text-xs text-amber-800">
-                        I understand this create may violate safety or
-                        feasibility guardrails.
+                        I understand this create may violate safety or feasibility guardrails.
                       </Text>
                     </View>
                     <Switch
@@ -2097,21 +1895,14 @@ export function SinglePageForm({
           <View className={tabPanelClass}>
             <View className="flex-row items-center justify-between">
               <Text className="font-semibold">Goals</Text>
-              <Button
-                variant="outline"
-                size="sm"
-                onPress={() => onResetGoals?.()}
-              >
+              <Button variant="outline" size="sm" onPress={() => onResetGoals?.()}>
                 <Text>Reset</Text>
               </Button>
             </View>
             <Text className={helperTextClass}>
-              Add one or more goals and mix race, pace, power, or heart-rate
-              targets.
+              Add one or more goals and mix race, pace, power, or heart-rate targets.
             </Text>
-            {errors.goals ? (
-              <Text className="text-xs text-destructive">{errors.goals}</Text>
-            ) : null}
+            {errors.goals ? <Text className="text-xs text-destructive">{errors.goals}</Text> : null}
 
             <View className="relative">
               <ScrollView
@@ -2135,9 +1926,7 @@ export function SinglePageForm({
                       <View className="flex-row items-center gap-1.5">
                         <Flag
                           size={13}
-                          className={
-                            isActive ? "text-primary" : "text-muted-foreground"
-                          }
+                          className={isActive ? "text-primary" : "text-muted-foreground"}
                         />
                         <Text
                           className={`text-xs ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
@@ -2198,9 +1987,7 @@ export function SinglePageForm({
                     variant="outline"
                     size="icon"
                     onPress={() => removeGoal(activeGoal.id)}
-                    disabled={
-                      formData.goals.length <= 1 || activeGoalIndex === 0
-                    }
+                    disabled={formData.goals.length <= 1 || activeGoalIndex === 0}
                     accessibilityLabel="Delete goal"
                   >
                     <Trash2 size={16} className="text-muted-foreground" />
@@ -2241,16 +2028,12 @@ export function SinglePageForm({
 
                 <View className="gap-2 rounded-md border border-border bg-background/70 p-2">
                   <View className="flex-row items-center justify-between">
-                    <Text className="text-xs text-muted-foreground">
-                      Targets
-                    </Text>
+                    <Text className="text-xs text-muted-foreground">Targets</Text>
                     <View className="flex-row gap-1.5">
                       <Button
                         variant="outline"
                         size="icon"
-                        onPress={() =>
-                          addTargetWithType(activeGoal.id, "race_performance")
-                        }
+                        onPress={() => addTargetWithType(activeGoal.id, "race_performance")}
                         accessibilityLabel="Add race target"
                       >
                         <Flag size={14} className="text-muted-foreground" />
@@ -2258,9 +2041,7 @@ export function SinglePageForm({
                       <Button
                         variant="outline"
                         size="icon"
-                        onPress={() =>
-                          addTargetWithType(activeGoal.id, "pace_threshold")
-                        }
+                        onPress={() => addTargetWithType(activeGoal.id, "pace_threshold")}
                         accessibilityLabel="Add pace target"
                       >
                         <Gauge size={14} className="text-muted-foreground" />
@@ -2268,9 +2049,7 @@ export function SinglePageForm({
                       <Button
                         variant="outline"
                         size="icon"
-                        onPress={() =>
-                          addTargetWithType(activeGoal.id, "power_threshold")
-                        }
+                        onPress={() => addTargetWithType(activeGoal.id, "power_threshold")}
                         accessibilityLabel="Add power target"
                       >
                         <Zap size={14} className="text-muted-foreground" />
@@ -2278,9 +2057,7 @@ export function SinglePageForm({
                       <Button
                         variant="outline"
                         size="icon"
-                        onPress={() =>
-                          addTargetWithType(activeGoal.id, "hr_threshold")
-                        }
+                        onPress={() => addTargetWithType(activeGoal.id, "hr_threshold")}
                         accessibilityLabel="Add heart-rate target"
                       >
                         <Heart size={14} className="text-muted-foreground" />
@@ -2289,10 +2066,7 @@ export function SinglePageForm({
                   </View>
 
                   {activeGoal.targets.map((target, targetIndex) => {
-                    const rowError = getTargetRowError(
-                      activeGoalIndex,
-                      targetIndex,
-                    );
+                    const rowError = getTargetRowError(activeGoalIndex, targetIndex);
                     const icon =
                       target.targetType === "race_performance" ? (
                         <Flag size={13} className="text-muted-foreground" />
@@ -2323,10 +2097,7 @@ export function SinglePageForm({
                             <Text className="text-xs font-medium">
                               {getTargetTypeLabel(target.targetType)}
                             </Text>
-                            <Text
-                              className="text-xs text-muted-foreground"
-                              numberOfLines={1}
-                            >
+                            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
                               {getTargetSummary(target)}
                             </Text>
                           </Pressable>
@@ -2341,37 +2112,23 @@ export function SinglePageForm({
                             }
                             accessibilityLabel="Edit target"
                           >
-                            <Pencil
-                              size={14}
-                              className="text-muted-foreground"
-                            />
+                            <Pencil size={14} className="text-muted-foreground" />
                           </Button>
                           <Button
                             variant="outline"
                             size="icon"
-                            onPress={() =>
-                              removeTarget(activeGoal.id, target.id)
-                            }
+                            onPress={() => removeTarget(activeGoal.id, target.id)}
                             disabled={activeGoal.targets.length <= 1}
                             accessibilityLabel="Delete target"
                           >
-                            <Trash2
-                              size={14}
-                              className="text-muted-foreground"
-                            />
+                            <Trash2 size={14} className="text-muted-foreground" />
                           </Button>
                           {rowError ? (
-                            <Text className="text-[11px] font-medium text-destructive">
-                              Adjust
-                            </Text>
+                            <Text className="text-[11px] font-medium text-destructive">Adjust</Text>
                           ) : null}
                         </View>
 
-                        {rowError && (
-                          <Text className="text-xs text-destructive">
-                            {rowError}
-                          </Text>
-                        )}
+                        {rowError && <Text className="text-xs text-destructive">{rowError}</Text>}
                       </View>
                     );
                   })}
@@ -2397,10 +2154,7 @@ export function SinglePageForm({
           </View>
 
           {editingContext && (
-            <ScrollView
-              className="flex-1"
-              contentContainerClassName="gap-4 px-4 py-4 pb-10"
-            >
+            <ScrollView className="flex-1" contentContainerClassName="gap-4 px-4 py-4 pb-10">
               <View className="gap-2">
                 <Label nativeID="editor-target-type">
                   <Text className="text-sm font-medium">
@@ -2410,9 +2164,7 @@ export function SinglePageForm({
                 <Select
                   value={{
                     value: editingContext.target.targetType,
-                    label:
-                      getTargetTypeLabel(editingContext.target.targetType) ??
-                      "Target Type",
+                    label: getTargetTypeLabel(editingContext.target.targetType) ?? "Target Type",
                   }}
                   onValueChange={(option) => {
                     if (!option?.value) {
@@ -2420,26 +2172,20 @@ export function SinglePageForm({
                     }
                     const nextType = option.value as GoalTargetType;
                     const defaultCategory =
-                      nextType === "race_performance" ||
-                      nextType === "pace_threshold"
+                      nextType === "race_performance" || nextType === "pace_threshold"
                         ? "run"
                         : nextType === "power_threshold"
                           ? "bike"
                           : undefined;
-                    updateTarget(
-                      editingContext.goal.id,
-                      editingContext.target.id,
-                      {
-                        targetType: nextType,
-                        activityCategory:
-                          nextType === "race_performance" ||
-                          nextType === "pace_threshold" ||
-                          nextType === "power_threshold"
-                            ? editingContext.target.activityCategory ??
-                              defaultCategory
-                            : undefined,
-                      },
-                    );
+                    updateTarget(editingContext.goal.id, editingContext.target.id, {
+                      targetType: nextType,
+                      activityCategory:
+                        nextType === "race_performance" ||
+                        nextType === "pace_threshold" ||
+                        nextType === "power_threshold"
+                          ? (editingContext.target.activityCategory ?? defaultCategory)
+                          : undefined,
+                    });
                   }}
                 >
                   <SelectTrigger
@@ -2456,11 +2202,7 @@ export function SinglePageForm({
                   </SelectTrigger>
                   <SelectContent>
                     {targetTypeOptions.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        label={option.label}
-                        value={option.value}
-                      >
+                      <SelectItem key={option.value} label={option.label} value={option.value}>
                         {option.label}
                       </SelectItem>
                     ))}
@@ -2491,9 +2233,8 @@ export function SinglePageForm({
                           ? {
                               value: editingContext.target.activityCategory,
                               label:
-                                getActivityCategoryLabel(
-                                  editingContext.target.activityCategory,
-                                ) ?? "Activity",
+                                getActivityCategoryLabel(editingContext.target.activityCategory) ??
+                                "Activity",
                             }
                           : undefined
                       }
@@ -2501,17 +2242,9 @@ export function SinglePageForm({
                         if (!option?.value) {
                           return;
                         }
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            activityCategory: option.value as
-                              | "run"
-                              | "bike"
-                              | "swim"
-                              | "other",
-                          },
-                        );
+                        updateTarget(editingContext.goal.id, editingContext.target.id, {
+                          activityCategory: option.value as "run" | "bike" | "swim" | "other",
+                        });
                       }}
                     >
                       <SelectTrigger
@@ -2554,13 +2287,9 @@ export function SinglePageForm({
                     label="Distance"
                     value={editingContext.target.distanceKm ?? ""}
                     onChange={(nextValue) => {
-                      updateTarget(
-                        editingContext.goal.id,
-                        editingContext.target.id,
-                        {
-                          distanceKm: nextValue,
-                        },
-                      );
+                      updateTarget(editingContext.goal.id, editingContext.target.id, {
+                        distanceKm: nextValue,
+                      });
                     }}
                     min={0.1}
                     max={1000}
@@ -2588,13 +2317,9 @@ export function SinglePageForm({
                     label="Completion Time"
                     value={editingContext.target.completionTimeHms ?? ""}
                     onChange={(nextValue) => {
-                      updateTarget(
-                        editingContext.goal.id,
-                        editingContext.target.id,
-                        {
-                          completionTimeHms: nextValue,
-                        },
-                      );
+                      updateTarget(editingContext.goal.id, editingContext.target.id, {
+                        completionTimeHms: nextValue,
+                      });
                     }}
                     placeholder="e.g., 1:35:00"
                     required
@@ -2620,9 +2345,8 @@ export function SinglePageForm({
                           ? {
                               value: editingContext.target.activityCategory,
                               label:
-                                getActivityCategoryLabel(
-                                  editingContext.target.activityCategory,
-                                ) ?? "Activity",
+                                getActivityCategoryLabel(editingContext.target.activityCategory) ??
+                                "Activity",
                             }
                           : undefined
                       }
@@ -2630,17 +2354,9 @@ export function SinglePageForm({
                         if (!option?.value) {
                           return;
                         }
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            activityCategory: option.value as
-                              | "run"
-                              | "bike"
-                              | "swim"
-                              | "other",
-                          },
-                        );
+                        updateTarget(editingContext.goal.id, editingContext.target.id, {
+                          activityCategory: option.value as "run" | "bike" | "swim" | "other",
+                        });
                       }}
                     >
                       <SelectTrigger
@@ -2683,13 +2399,9 @@ export function SinglePageForm({
                     label="Target Pace"
                     value={editingContext.target.paceMmSs ?? ""}
                     onChange={(nextValue) => {
-                      updateTarget(
-                        editingContext.goal.id,
-                        editingContext.target.id,
-                        {
-                          paceMmSs: nextValue,
-                        },
-                      );
+                      updateTarget(editingContext.goal.id, editingContext.target.id, {
+                        paceMmSs: nextValue,
+                      });
                     }}
                     required
                     error={getError(
@@ -2703,13 +2415,9 @@ export function SinglePageForm({
                     label="Required Test Duration"
                     value={editingContext.target.testDurationHms ?? ""}
                     onChange={(nextValue) => {
-                      updateTarget(
-                        editingContext.goal.id,
-                        editingContext.target.id,
-                        {
-                          testDurationHms: nextValue,
-                        },
-                      );
+                      updateTarget(editingContext.goal.id, editingContext.target.id, {
+                        testDurationHms: nextValue,
+                      });
                     }}
                     placeholder="e.g., 0:20:00"
                     required
@@ -2735,9 +2443,8 @@ export function SinglePageForm({
                           ? {
                               value: editingContext.target.activityCategory,
                               label:
-                                getActivityCategoryLabel(
-                                  editingContext.target.activityCategory,
-                                ) ?? "Activity",
+                                getActivityCategoryLabel(editingContext.target.activityCategory) ??
+                                "Activity",
                             }
                           : undefined
                       }
@@ -2745,17 +2452,9 @@ export function SinglePageForm({
                         if (!option?.value) {
                           return;
                         }
-                        updateTarget(
-                          editingContext.goal.id,
-                          editingContext.target.id,
-                          {
-                            activityCategory: option.value as
-                              | "run"
-                              | "bike"
-                              | "swim"
-                              | "other",
-                          },
-                        );
+                        updateTarget(editingContext.goal.id, editingContext.target.id, {
+                          activityCategory: option.value as "run" | "bike" | "swim" | "other",
+                        });
                       }}
                     >
                       <SelectTrigger
@@ -2802,13 +2501,9 @@ export function SinglePageForm({
                         : String(editingContext.target.targetWatts)
                     }
                     onChange={(value) => {
-                      updateTarget(
-                        editingContext.goal.id,
-                        editingContext.target.id,
-                        {
-                          targetWatts: parseNumberOrUndefined(value),
-                        },
-                      );
+                      updateTarget(editingContext.goal.id, editingContext.target.id, {
+                        targetWatts: parseNumberOrUndefined(value),
+                      });
                     }}
                     min={1}
                     max={2000}
@@ -2828,13 +2523,9 @@ export function SinglePageForm({
                     label="Required Test Duration"
                     value={editingContext.target.testDurationHms ?? ""}
                     onChange={(nextValue) => {
-                      updateTarget(
-                        editingContext.goal.id,
-                        editingContext.target.id,
-                        {
-                          testDurationHms: nextValue,
-                        },
-                      );
+                      updateTarget(editingContext.goal.id, editingContext.target.id, {
+                        testDurationHms: nextValue,
+                      });
                     }}
                     placeholder="e.g., 0:20:00"
                     required
@@ -2856,13 +2547,9 @@ export function SinglePageForm({
                       : String(editingContext.target.targetLthrBpm)
                   }
                   onChange={(value) => {
-                    updateTarget(
-                      editingContext.goal.id,
-                      editingContext.target.id,
-                      {
-                        targetLthrBpm: parseNumberOrUndefined(value),
-                      },
-                    );
+                    updateTarget(editingContext.goal.id, editingContext.target.id, {
+                      targetLthrBpm: parseNumberOrUndefined(value),
+                    });
                   }}
                   min={1}
                   max={260}

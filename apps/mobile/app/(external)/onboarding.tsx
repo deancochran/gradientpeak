@@ -1,3 +1,5 @@
+import { estimateConservativeFTPFromWeight, estimateMaxHRFromDOB } from "@repo/core";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -6,35 +8,24 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { Icon } from "@repo/ui/components/icon";
 import { Label } from "@repo/ui/components/label";
-import { PaceSecondsField } from "@/components/profile/PaceSecondsField";
-import { WeightInputField } from "@/components/profile/WeightInputField";
-import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
-import { DateField } from "@/components/training-plan/create/inputs/DateField";
+import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { Text } from "@repo/ui/components/text";
-import {
-  estimateFtpFromWeight,
-  estimateMaxHrFromDob,
-} from "@/lib/profile/metricUnits";
-import { trpc } from "@/lib/trpc";
+import { WeightInputField } from "@repo/ui/components/weight-input-field";
 import { router } from "expo-router";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react-native";
 import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
+import { trpc } from "@/lib/trpc";
 
 interface OnboardingData {
   dob: string | null;
   weight_kg: number | null;
   weight_unit: "kg" | "lbs";
   gender: "male" | "female" | "other" | null;
-  primary_sport:
-    | "cycling"
-    | "running"
-    | "swimming"
-    | "triathlon"
-    | "other"
-    | null;
+  primary_sport: "cycling" | "running" | "swimming" | "triathlon" | "other" | null;
   max_hr: number | null;
   resting_hr: number | null;
   lthr: number | null;
@@ -126,21 +117,15 @@ export default function OnboardingScreen() {
         });
       }
 
-      Alert.alert(
-        "Welcome to GradientPeak!",
-        "Your profile has been set up successfully.",
-        [
-          {
-            text: "Get Started",
-            onPress: () => router.replace("/(internal)/(tabs)/home" as any),
-          },
-        ],
-      );
+      Alert.alert("Welcome to GradientPeak!", "Your profile has been set up successfully.", [
+        {
+          text: "Get Started",
+          onPress: () => router.replace("/(internal)/(tabs)/home" as any),
+        },
+      ]);
     } catch (error) {
       console.error("[Onboarding] Failed to save profile:", error);
-      Alert.alert("Error", "Failed to save your profile. Please try again.", [
-        { text: "OK" },
-      ]);
+      Alert.alert("Error", "Failed to save your profile. Please try again.", [{ text: "OK" }]);
     }
   };
 
@@ -196,21 +181,13 @@ export default function OnboardingScreen() {
         </View>
 
         {currentStep === 1 ? (
-          <Step1BasicProfile
-            data={data}
-            updateData={updateData}
-            errors={errors}
-          />
+          <Step1BasicProfile data={data} updateData={updateData} errors={errors} />
         ) : null}
-        {currentStep === 2 ? (
-          <Step2HeartRateMetrics data={data} updateData={updateData} />
-        ) : null}
+        {currentStep === 2 ? <Step2HeartRateMetrics data={data} updateData={updateData} /> : null}
         {currentStep === 3 ? (
           <Step3SportSpecificMetrics data={data} updateData={updateData} />
         ) : null}
-        {currentStep === 4 ? (
-          <Step4ActivityEquipment data={data} updateData={updateData} />
-        ) : null}
+        {currentStep === 4 ? <Step4ActivityEquipment data={data} updateData={updateData} /> : null}
 
         <View className="mt-6 gap-3">
           <Button onPress={goNext} size="lg">
@@ -271,9 +248,7 @@ function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
             placeholder="Select date of birth"
             maximumDate={new Date()}
           />
-          {errors.dob ? (
-            <Text className="text-destructive text-sm mt-1">{errors.dob}</Text>
-          ) : null}
+          {errors.dob ? <Text className="text-destructive text-sm mt-1">{errors.dob}</Text> : null}
         </View>
 
         <View>
@@ -289,9 +264,7 @@ function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
             required
           />
           {errors.weight_kg ? (
-            <Text className="text-destructive text-sm mt-1">
-              {errors.weight_kg}
-            </Text>
+            <Text className="text-destructive text-sm mt-1">{errors.weight_kg}</Text>
           ) : null}
         </View>
 
@@ -306,11 +279,7 @@ function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
                 className="flex-1"
               >
                 <Text
-                  className={
-                    data.gender === gender
-                      ? "text-primary-foreground"
-                      : "text-foreground"
-                  }
+                  className={data.gender === gender ? "text-primary-foreground" : "text-foreground"}
                 >
                   {gender.charAt(0).toUpperCase() + gender.slice(1)}
                 </Text>
@@ -318,18 +287,14 @@ function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
             ))}
           </View>
           {errors.gender ? (
-            <Text className="text-destructive text-sm mt-1">
-              {errors.gender}
-            </Text>
+            <Text className="text-destructive text-sm mt-1">{errors.gender}</Text>
           ) : null}
         </View>
 
         <View>
           <Label>Primary Sport *</Label>
           <View className="flex-row flex-wrap gap-2">
-            {(
-              ["cycling", "running", "swimming", "triathlon", "other"] as const
-            ).map((sport) => (
+            {(["cycling", "running", "swimming", "triathlon", "other"] as const).map((sport) => (
               <Button
                 key={sport}
                 variant={data.primary_sport === sport ? "default" : "outline"}
@@ -338,9 +303,7 @@ function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
               >
                 <Text
                   className={
-                    data.primary_sport === sport
-                      ? "text-primary-foreground"
-                      : "text-foreground"
+                    data.primary_sport === sport ? "text-primary-foreground" : "text-foreground"
                   }
                 >
                   {sport.charAt(0).toUpperCase() + sport.slice(1)}
@@ -349,9 +312,7 @@ function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
             ))}
           </View>
           {errors.primary_sport ? (
-            <Text className="text-destructive text-sm mt-1">
-              {errors.primary_sport}
-            </Text>
+            <Text className="text-destructive text-sm mt-1">{errors.primary_sport}</Text>
           ) : null}
         </View>
       </CardContent>
@@ -360,7 +321,7 @@ function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
 }
 
 function Step2HeartRateMetrics({ data, updateData }: StepProps) {
-  const estimatedMaxHr = estimateMaxHrFromDob(data.dob);
+  const estimatedMaxHr = estimateMaxHRFromDOB(data.dob);
 
   const estimateMaxHR = () => {
     if (!estimatedMaxHr) {
@@ -387,9 +348,7 @@ function Step2HeartRateMetrics({ data, updateData }: StepProps) {
     <Card>
       <CardHeader>
         <CardTitle>Heart Rate Metrics</CardTitle>
-        <CardDescription>
-          Optional - Add tested values now or estimate later
-        </CardDescription>
+        <CardDescription>Optional - Add tested values now or estimate later</CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
         <View>
@@ -408,9 +367,7 @@ function Step2HeartRateMetrics({ data, updateData }: StepProps) {
                     updateData({ max_hr: null });
                   }
                 }}
-                onNumberChange={(value) =>
-                  updateData({ max_hr: value ? Math.round(value) : null })
-                }
+                onNumberChange={(value) => updateData({ max_hr: value ? Math.round(value) : null })}
                 min={100}
                 max={220}
                 decimals={0}
@@ -444,9 +401,7 @@ function Step2HeartRateMetrics({ data, updateData }: StepProps) {
                 updateData({ resting_hr: null });
               }
             }}
-            onNumberChange={(value) =>
-              updateData({ resting_hr: value ? Math.round(value) : null })
-            }
+            onNumberChange={(value) => updateData({ resting_hr: value ? Math.round(value) : null })}
             min={30}
             max={100}
             decimals={0}
@@ -459,8 +414,7 @@ function Step2HeartRateMetrics({ data, updateData }: StepProps) {
         <View>
           <Label>Lactate Threshold HR (LTHR)</Label>
           <Text className="text-xs text-muted-foreground mb-2">
-            Optional. Usually close to the best heart rate you can hold for
-            about an hour.
+            Optional. Usually close to the best heart rate you can hold for about an hour.
           </Text>
           <View className="flex-row gap-2">
             <View className="flex-1">
@@ -473,9 +427,7 @@ function Step2HeartRateMetrics({ data, updateData }: StepProps) {
                     updateData({ lthr: null });
                   }
                 }}
-                onNumberChange={(value) =>
-                  updateData({ lthr: value ? Math.round(value) : null })
-                }
+                onNumberChange={(value) => updateData({ lthr: value ? Math.round(value) : null })}
                 min={80}
                 max={210}
                 decimals={0}
@@ -490,8 +442,7 @@ function Step2HeartRateMetrics({ data, updateData }: StepProps) {
           </View>
           {data.max_hr ? (
             <Text className="text-xs text-muted-foreground mt-1">
-              Quick estimate: about 85% of max HR ={" "}
-              {Math.round(data.max_hr * 0.85)} bpm
+              Quick estimate: about 85% of max HR = {Math.round(data.max_hr * 0.85)} bpm
             </Text>
           ) : null}
         </View>
@@ -501,18 +452,13 @@ function Step2HeartRateMetrics({ data, updateData }: StepProps) {
 }
 
 function Step3SportSpecificMetrics({ data, updateData }: StepProps) {
-  const estimatedFtp = estimateFtpFromWeight(data.weight_kg);
-  const showCyclingMetrics =
-    data.primary_sport === "cycling" || data.primary_sport === "triathlon";
-  const showRunningMetrics =
-    data.primary_sport === "running" || data.primary_sport === "triathlon";
+  const estimatedFtp = estimateConservativeFTPFromWeight(data.weight_kg);
+  const showCyclingMetrics = data.primary_sport === "cycling" || data.primary_sport === "triathlon";
+  const showRunningMetrics = data.primary_sport === "running" || data.primary_sport === "triathlon";
 
   const estimateFTP = () => {
     if (!estimatedFtp) {
-      Alert.alert(
-        "Weight Required",
-        "Please enter your weight in Step 1 first.",
-      );
+      Alert.alert("Weight Required", "Please enter your weight in Step 1 first.");
       return;
     }
 
@@ -523,17 +469,14 @@ function Step3SportSpecificMetrics({ data, updateData }: StepProps) {
     <Card>
       <CardHeader>
         <CardTitle>Sport-Specific Metrics</CardTitle>
-        <CardDescription>
-          Optional - Based on your primary sport
-        </CardDescription>
+        <CardDescription>Optional - Based on your primary sport</CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
         {showCyclingMetrics ? (
           <View>
             <Label>FTP - Functional Threshold Power (watts)</Label>
             <Text className="text-xs text-muted-foreground mb-2">
-              Optional. Use a tested value or start with a conservative
-              estimate.
+              Optional. Use a tested value or start with a conservative estimate.
             </Text>
             <View className="flex-row gap-2">
               <View className="flex-1">
@@ -546,9 +489,7 @@ function Step3SportSpecificMetrics({ data, updateData }: StepProps) {
                       updateData({ ftp: null });
                     }
                   }}
-                  onNumberChange={(value) =>
-                    updateData({ ftp: value ? Math.round(value) : null })
-                  }
+                  onNumberChange={(value) => updateData({ ftp: value ? Math.round(value) : null })}
                   min={50}
                   max={500}
                   decimals={0}
@@ -607,9 +548,8 @@ function Step3SportSpecificMetrics({ data, updateData }: StepProps) {
         {!showCyclingMetrics && !showRunningMetrics ? (
           <View className="p-4 bg-muted rounded-lg">
             <Text className="text-sm text-muted-foreground">
-              Sport-specific metrics are available for cycling, running, and
-              triathlon. Select one of those sports in Step 1 to add them now,
-              or skip and update later.
+              Sport-specific metrics are available for cycling, running, and triathlon. Select one
+              of those sports in Step 1 to add them now, or skip and update later.
             </Text>
           </View>
         ) : null}
@@ -623,9 +563,7 @@ function Step4ActivityEquipment({ data, updateData }: StepProps) {
     <Card>
       <CardHeader>
         <CardTitle>Activity & Equipment</CardTitle>
-        <CardDescription>
-          Optional - Help us personalize your experience
-        </CardDescription>
+        <CardDescription>Optional - Help us personalize your experience</CardDescription>
       </CardHeader>
       <CardContent className="gap-4">
         <View>
@@ -634,17 +572,13 @@ function Step4ActivityEquipment({ data, updateData }: StepProps) {
             {(["1-2", "3-4", "5-6", "7+"] as const).map((freq) => (
               <Button
                 key={freq}
-                variant={
-                  data.training_frequency === freq ? "default" : "outline"
-                }
+                variant={data.training_frequency === freq ? "default" : "outline"}
                 onPress={() => updateData({ training_frequency: freq })}
                 className="flex-grow"
               >
                 <Text
                   className={
-                    data.training_frequency === freq
-                      ? "text-primary-foreground"
-                      : "text-foreground"
+                    data.training_frequency === freq ? "text-primary-foreground" : "text-foreground"
                   }
                 >
                   {freq} days
@@ -656,8 +590,8 @@ function Step4ActivityEquipment({ data, updateData }: StepProps) {
 
         <View className="p-4 bg-muted rounded-lg">
           <Text className="text-sm text-muted-foreground">
-            Equipment tracking and goal selection will be available soon. You
-            can update them later in settings.
+            Equipment tracking and goal selection will be available soon. You can update them later
+            in settings.
           </Text>
         </View>
       </CardContent>

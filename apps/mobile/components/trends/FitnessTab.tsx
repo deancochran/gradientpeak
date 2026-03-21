@@ -1,11 +1,12 @@
-import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { TrendsOverviewSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
 import {
   TrainingLoadChart,
-  ZoneDistributionOverTimeChart,
   type TrainingLoadData,
+  ZoneDistributionOverTimeChart,
   type ZoneDistributionWeekData,
 } from "@/components/charts";
 
@@ -89,44 +90,28 @@ export function FitnessTab({
           <View className="gap-3">
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-sm text-card-foreground">
-                  Chronic Training Load (CTL)
-                </Text>
-                <Text className="text-xs text-muted-foreground">
-                  42-day fitness
-                </Text>
+                <Text className="text-sm text-card-foreground">Chronic Training Load (CTL)</Text>
+                <Text className="text-xs text-muted-foreground">42-day fitness</Text>
               </View>
-              <Text className="text-2xl font-bold text-blue-600">
-                {currentStatus.ctl}
-              </Text>
+              <Text className="text-2xl font-bold text-blue-600">{currentStatus.ctl}</Text>
             </View>
 
             <View className="h-px bg-border" />
 
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-sm text-card-foreground">
-                  Acute Training Load (ATL)
-                </Text>
-                <Text className="text-xs text-muted-foreground">
-                  7-day fatigue
-                </Text>
+                <Text className="text-sm text-card-foreground">Acute Training Load (ATL)</Text>
+                <Text className="text-xs text-muted-foreground">7-day fatigue</Text>
               </View>
-              <Text className="text-2xl font-bold text-orange-600">
-                {currentStatus.atl}
-              </Text>
+              <Text className="text-2xl font-bold text-orange-600">{currentStatus.atl}</Text>
             </View>
 
             <View className="h-px bg-border" />
 
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-sm text-card-foreground">
-                  Training Stress Balance (TSB)
-                </Text>
-                <Text className="text-xs text-muted-foreground">
-                  Form indicator
-                </Text>
+                <Text className="text-sm text-card-foreground">Training Stress Balance (TSB)</Text>
+                <Text className="text-xs text-muted-foreground">Form indicator</Text>
               </View>
               <Text
                 className={`text-2xl font-bold ${currentStatus.tsb > 0 ? "text-green-600" : currentStatus.tsb < -10 ? "text-orange-500" : "text-foreground"}`}
@@ -141,10 +126,7 @@ export function FitnessTab({
 
       {/* Zone Distribution Over Time */}
       {zoneDistributionData && zoneDistributionData.weeklyData.length > 0 && (
-        <ZoneDistributionOverTimeChart
-          data={zoneDistributionData.weeklyData}
-          height={350}
-        />
+        <ZoneDistributionOverTimeChart data={zoneDistributionData.weeklyData} height={350} />
       )}
 
       {/* Form Status Guide */}
@@ -157,45 +139,31 @@ export function FitnessTab({
           <View className="flex-row items-center gap-2">
             <View className="w-3 h-3 rounded-full bg-green-600" />
             <View className="flex-1">
-              <Text className="text-sm font-medium text-foreground">
-                Fresh (TSB &gt; +25)
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                Well rested, ready to race
-              </Text>
+              <Text className="text-sm font-medium text-foreground">Fresh (TSB &gt; +25)</Text>
+              <Text className="text-xs text-muted-foreground">Well rested, ready to race</Text>
             </View>
           </View>
 
           <View className="flex-row items-center gap-2">
             <View className="w-3 h-3 rounded-full bg-blue-600" />
             <View className="flex-1">
-              <Text className="text-sm font-medium text-foreground">
-                Optimal (+5 to +25)
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                Peak performance zone
-              </Text>
+              <Text className="text-sm font-medium text-foreground">Optimal (+5 to +25)</Text>
+              <Text className="text-xs text-muted-foreground">Peak performance zone</Text>
             </View>
           </View>
 
           <View className="flex-row items-center gap-2">
             <View className="w-3 h-3 rounded-full bg-gray-600" />
             <View className="flex-1">
-              <Text className="text-sm font-medium text-foreground">
-                Neutral (-10 to +5)
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                Balanced training state
-              </Text>
+              <Text className="text-sm font-medium text-foreground">Neutral (-10 to +5)</Text>
+              <Text className="text-xs text-muted-foreground">Balanced training state</Text>
             </View>
           </View>
 
           <View className="flex-row items-center gap-2">
             <View className="w-3 h-3 rounded-full bg-orange-600" />
             <View className="flex-1">
-              <Text className="text-sm font-medium text-foreground">
-                Tired (-30 to -10)
-              </Text>
+              <Text className="text-sm font-medium text-foreground">Tired (-30 to -10)</Text>
               <Text className="text-xs text-muted-foreground">
                 Productive fatigue, recovery needed
               </Text>

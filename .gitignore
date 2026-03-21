@@ -66,6 +66,7 @@ packages/supabase/.branches/
 # Logs & Debug
 # ------------------------------
 logs/
+.logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -94,10 +95,8 @@ packages/*/lib/
 .opencode/state/
 .opencode/logs/
 
-# Claude Code - ignore only temporary/active task files
-.claude/task/active/
-.claude/.temp/
-.claude/settings.local.json
+# Claude Code
+.claude/
 
 # Allow these to be tracked (valuable project assets):
 # OpenCode:
@@ -105,10 +104,4 @@ packages/*/lib/
 # - .opencode/skills/ (reusable skills)
 # - .opencode/commands/ (custom commands)
 # - opencode.json (agent config)
-# Claude Code:
-# - .claude/rules/ (project rules)
-# - .claude/research/ (persistent knowledge base)
-# - .claude/task/completed/ (audit trail)
-# - .claude/agents/ (agent definitions)
-# - .claude/skills/ (skill definitions)
 # - CLAUDE.md (project documentation)

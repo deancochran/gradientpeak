@@ -1,3 +1,4 @@
+import { type DurationV2, type IntensityTargetV2, type PlanStepV2 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Dialog,
@@ -19,11 +20,6 @@ import {
 } from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
-import {
-  type DurationV2,
-  type IntensityTargetV2,
-  type PlanStepV2,
-} from "@repo/core";
 import { Copy, Trash2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
@@ -176,10 +172,7 @@ export function StepEditSheet({
     if (targetIntensity.trim()) {
       const intensityVal = parseFloat(targetIntensity);
       if (isNaN(intensityVal) || intensityVal <= 0) {
-        Alert.alert(
-          "Validation Error",
-          "Please enter a valid target intensity",
-        );
+        Alert.alert("Validation Error", "Please enter a valid target intensity");
         return;
       }
 
@@ -217,15 +210,9 @@ export function StepEditSheet({
     ]);
   };
 
-  const handleDurationTypeChange = (
-    option: { value: string; label: string } | undefined,
-  ) => {
+  const handleDurationTypeChange = (option: { value: string; label: string } | undefined) => {
     if (!option) return;
-    const durType = option.value as
-      | "time"
-      | "distance"
-      | "repetitions"
-      | "untilFinished";
+    const durType = option.value as "time" | "distance" | "repetitions" | "untilFinished";
     setDurationType(durType);
 
     // Auto-adjust unit based on type
@@ -296,12 +283,8 @@ export function StepEditSheet({
     <Dialog open={isVisible} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="w-full max-w-lg mx-4 max-h-[85%]">
         <DialogHeader>
-          <DialogTitle>
-            {step ? `Edit Step ${(stepIndex ?? 0) + 1}` : "Add New Step"}
-          </DialogTitle>
-          <DialogDescription>
-            Configure the step duration and target intensity
-          </DialogDescription>
+          <DialogTitle>{step ? `Edit Step ${(stepIndex ?? 0) + 1}` : "Add New Step"}</DialogTitle>
+          <DialogDescription>Configure the step duration and target intensity</DialogDescription>
         </DialogHeader>
 
         <ScrollView className="max-h-[500px]">
@@ -333,10 +316,7 @@ export function StepEditSheet({
 
               <View className="gap-2">
                 <Label>Duration Type</Label>
-                <Select
-                  value={durationTypeOption}
-                  onValueChange={handleDurationTypeChange}
-                >
+                <Select value={durationTypeOption} onValueChange={handleDurationTypeChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select duration type" />
                   </SelectTrigger>
@@ -373,9 +353,7 @@ export function StepEditSheet({
                     <Label>Unit</Label>
                     <Select
                       value={durationUnitOption}
-                      onValueChange={(option) =>
-                        option && setDurationUnit(option.value as any)
-                      }
+                      onValueChange={(option) => option && setDurationUnit(option.value as any)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Unit" />
@@ -424,9 +402,7 @@ export function StepEditSheet({
                 <Label>Target Type</Label>
                 <Select
                   value={targetTypeOption}
-                  onValueChange={(option) =>
-                    option && setTargetType(option.value)
-                  }
+                  onValueChange={(option) => option && setTargetType(option.value)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select target type" />
@@ -503,19 +479,13 @@ export function StepEditSheet({
               </Button>
 
               <Button variant="destructive" onPress={handleDelete}>
-                <Icon
-                  as={Trash2}
-                  size={16}
-                  className="text-destructive-foreground"
-                />
+                <Icon as={Trash2} size={16} className="text-destructive-foreground" />
               </Button>
             </>
           )}
 
           <Button onPress={handleSave}>
-            <Text className="text-primary-foreground">
-              {step ? "Save Changes" : "Add Step"}
-            </Text>
+            <Text className="text-primary-foreground">{step ? "Save Changes" : "Add Step"}</Text>
           </Button>
         </DialogFooter>
       </DialogContent>

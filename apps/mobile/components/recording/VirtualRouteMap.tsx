@@ -10,11 +10,11 @@
  * Distance is tracked via speed sensors, not GPS.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
-import { View, StyleSheet } from "react-native";
-import { Text } from "@repo/ui/components/text";
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { decodePolyline } from "@repo/core";
+import { Text } from "@repo/ui/components/text";
+import React, { useEffect, useMemo, useState } from "react";
+import { StyleSheet, View } from "react-native";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface VirtualRouteMapProps {
   service: ActivityRecorderService;
@@ -33,7 +33,7 @@ interface VirtualPosition {
  */
 function mapDistanceToPosition(
   distance: number,
-  coordinates: Array<{ latitude: number; longitude: number; elevation?: number }>
+  coordinates: Array<{ latitude: number; longitude: number; elevation?: number }>,
 ): VirtualPosition | null {
   if (coordinates.length === 0) return null;
   if (distance <= 0) return coordinates[0] || null;
@@ -128,12 +128,7 @@ export function VirtualRouteMap({ service, isFocused = false }: VirtualRouteMapP
       setRouteProgress(service.routeProgress || 0);
       // Get current grade using the getter
       // Note: getCurrentGrade is a getter, not a method
-      try {
-        const grade = (service as any).getCurrentGrade || 0;
-        setCurrentGrade(typeof grade === 'number' ? grade : 0);
-      } catch {
-        setCurrentGrade(0);
-      }
+      setCurrentGrade(service.currentRouteGrade || 0);
     }, 1000);
 
     return () => clearInterval(interval);
@@ -164,9 +159,7 @@ export function VirtualRouteMap({ service, isFocused = false }: VirtualRouteMapP
   if (!route || coordinates.length === 0) {
     return (
       <View style={styles.container}>
-        <Text className="text-muted-foreground text-center">
-          No route data available
-        </Text>
+        <Text className="text-muted-foreground text-center">No route data available</Text>
       </View>
     );
   }
@@ -175,15 +168,11 @@ export function VirtualRouteMap({ service, isFocused = false }: VirtualRouteMapP
     <View style={styles.container}>
       {/* Map Placeholder - Will be replaced with actual MapView component */}
       <View style={styles.mapPlaceholder}>
-        <Text className="text-muted-foreground text-xs mb-2">
-          Virtual Route Map
-        </Text>
+        <Text className="text-muted-foreground text-xs mb-2">Virtual Route Map</Text>
         <Text className="text-xs text-muted-foreground">
           Route: {route.name || "Unnamed Route"}
         </Text>
-        <Text className="text-xs text-muted-foreground">
-          Points: {coordinates.length}
-        </Text>
+        <Text className="text-xs text-muted-foreground">Points: {coordinates.length}</Text>
         {virtualPosition && (
           <Text className="text-xs text-primary mt-2">
             Position: {virtualPosition.latitude.toFixed(5)}, {virtualPosition.longitude.toFixed(5)}
@@ -203,8 +192,11 @@ export function VirtualRouteMap({ service, isFocused = false }: VirtualRouteMapP
         {currentGrade !== 0 && (
           <View style={styles.gradeCard}>
             <Text className="text-xs text-muted-foreground">Grade</Text>
-            <Text className={`text-xl font-bold ${currentGrade > 0 ? "text-orange-500" : "text-blue-500"}`}>
-              {currentGrade > 0 ? "+" : ""}{currentGrade.toFixed(1)}%
+            <Text
+              className={`text-xl font-bold ${currentGrade > 0 ? "text-orange-500" : "text-blue-500"}`}
+            >
+              {currentGrade > 0 ? "+" : ""}
+              {currentGrade.toFixed(1)}%
             </Text>
           </View>
         )}
@@ -222,9 +214,7 @@ export function VirtualRouteMap({ service, isFocused = false }: VirtualRouteMapP
       {virtualPosition && (
         <View style={styles.markerIndicator}>
           <View style={styles.markerDot} />
-          <Text className="text-xs text-primary ml-2">
-            Your position on route
-          </Text>
+          <Text className="text-xs text-primary ml-2">Your position on route</Text>
         </View>
       )}
     </View>

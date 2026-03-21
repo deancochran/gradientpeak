@@ -1,4 +1,5 @@
-import { ChartSkeleton, EmptyStateCard } from "@/components/shared";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { ChartSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { Activity } from "lucide-react-native";
 import { View } from "react-native";
@@ -157,8 +158,8 @@ export function IntensityTab({
           📊 Intensity Calculated from IF
         </Text>
         <Text className="text-xs text-blue-700">
-          Zones are calculated from your actual Intensity Factor (IF) after each
-          activity. This shows your real training distribution.
+          Zones are calculated from your actual Intensity Factor (IF) after each activity. This
+          shows your real training distribution.
         </Text>
       </View>
 
@@ -168,20 +169,15 @@ export function IntensityTab({
           Intensity Distribution Details
         </Text>
         <Text className="text-sm text-muted-foreground">
-          {totalActivities} total activities • {activitiesWithIntensity} with
-          power data
+          {totalActivities} total activities • {activitiesWithIntensity} with power data
         </Text>
-        <Text className="text-xs text-muted-foreground mt-1">
-          Total TSS: {totalTSS}
-        </Text>
+        <Text className="text-xs text-muted-foreground mt-1">Total TSS: {totalTSS}</Text>
       </View>
 
       {/* Recommendations */}
       {recommendations.length > 0 && (
         <View className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <Text className="text-sm font-semibold text-blue-900 mb-2">
-            💡 Training Insights
-          </Text>
+          <Text className="text-sm font-semibold text-blue-900 mb-2">💡 Training Insights</Text>
           {recommendations.map((rec, index) => (
             <Text key={index} className="text-xs text-blue-700 mb-1">
               • {rec}
@@ -193,10 +189,7 @@ export function IntensityTab({
       {/* Distribution Bars */}
       <View className="bg-card rounded-lg border border-border overflow-hidden">
         {intensities.map((intensity, index) => {
-          const percentage =
-            distributionPercent[
-              intensity.key as keyof typeof distributionPercent
-            ];
+          const percentage = distributionPercent[intensity.key as keyof typeof distributionPercent];
 
           return (
             <View
@@ -207,12 +200,8 @@ export function IntensityTab({
                 <View className="flex-row items-center flex-1">
                   <Text className="text-lg mr-2">{intensity.emoji}</Text>
                   <View className="flex-1">
-                    <Text className="text-sm font-medium text-foreground">
-                      {intensity.label}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {intensity.description}
-                    </Text>
+                    <Text className="text-sm font-medium text-foreground">{intensity.label}</Text>
+                    <Text className="text-xs text-muted-foreground">{intensity.description}</Text>
                   </View>
                 </View>
                 <Text className="text-sm font-semibold text-foreground">
@@ -222,10 +211,7 @@ export function IntensityTab({
 
               {/* Progress Bar */}
               <View className="h-3 bg-muted rounded-full overflow-hidden">
-                <View
-                  className={`h-full ${intensity.color}`}
-                  style={{ width: `${percentage}%` }}
-                />
+                <View className={`h-full ${intensity.color}`} style={{ width: `${percentage}%` }} />
               </View>
 
               {/* TSS breakdown */}
@@ -245,12 +231,11 @@ export function IntensityTab({
           💡 Training Distribution Tips
         </Text>
         <Text className="text-xs text-card-foreground leading-5">
-          • <Text className="font-semibold">80/20 Rule:</Text> 80%
-          recovery/endurance, 20% threshold/vo2max/anaerobic{"\n"}•{" "}
-          <Text className="font-semibold">Polarized:</Text> Lots of endurance +
-          some vo2max/anaerobic, minimal tempo/threshold{"\n"}•{" "}
-          <Text className="font-semibold">Pyramidal:</Text> Most endurance,
-          moderate tempo, least threshold/vo2max
+          • <Text className="font-semibold">80/20 Rule:</Text> 80% recovery/endurance, 20%
+          threshold/vo2max/anaerobic{"\n"}• <Text className="font-semibold">Polarized:</Text> Lots
+          of endurance + some vo2max/anaerobic, minimal tempo/threshold{"\n"}•{" "}
+          <Text className="font-semibold">Pyramidal:</Text> Most endurance, moderate tempo, least
+          threshold/vo2max
         </Text>
       </View>
     </View>

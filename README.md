@@ -6,16 +6,16 @@ A sophisticated, enterprise-grade fitness tracking platform built with modern lo
 
 ### Modern Development Stack
 
-- **Turborepo + npm** - High-performance monorepo build system with fast package manager
+- **Turborepo + pnpm** - High-performance monorepo build system with workspace-aware package management
 - **TypeScript 5.9** - Full type safety with strict mode and modern features
-- **ESLint + Prettier** - Consistent code formatting and linting across all packages
+- **Biome** - Consistent formatting and linting across the monorepo
 - **tRPC v11** - End-to-end type-safe API layer with React Query integration
 - **Zustand** - Lightweight state management with persistence middleware
 
 ### Development Workflow
 
 - **Hot Reloading** - Instant updates across mobile and web during development
-- **Shared Tooling** - Consistent ESLint, TypeScript, and Prettier configurations
+- **Shared Tooling** - Consistent Biome and TypeScript configurations
 - **Parallel Execution** - Turborepo caching for fast build and test runs
 - **Type Safety** - Full-stack type sharing between frontend and backend
 
@@ -65,26 +65,26 @@ A shared TypeScript configuration used across all apps and packages in the Gradi
 
 ---
 
-### 📦 ESLint Config Package (`packages/eslint-config`)
+### 📦 Repo Tooling
 
-A shared ESLint configuration used across all apps and packages in the GradientPeak monorepo.
+GradientPeak uses shared repo-level tooling for formatting, linting, and workspace automation.
 
 **Responsibilities:**
 
-- **Centralized Linting Rules** — Base ESLint rules and plugins (`@eslint/js`, `typescript-eslint`, `eslint-config-prettier`) applied across all apps
-- **Next.js & React Support** — Optional per-app overrides for Next.js or React library requirements
-- **Custom Plugins** — Turbo-specific rules, `eslint-plugin-only-warn`, and other shared rules enforced consistently
-- **Ignored Paths** — Standard exclusions for `dist`, `.next`, and build artifacts
+- **Biome** — Linting and formatting across apps and packages
+- **Turborepo** — Task orchestration, caching, and workspace builds
+- **pnpm Workspaces** — Shared dependency and package management
+- **TypeScript Config** — Consistent compiler settings through `@repo/typescript-config`
 
-**Key Benefit:** Provides **uniform code quality standards** across all apps and packages, making maintenance and onboarding simpler.
+**Key Benefit:** Provides **uniform developer workflows** across the monorepo without duplicating tool configuration by package.
 
 ---
 
 ### 📱 Mobile App (`apps/mobile`)
 
-- **Expo SDK 54 + React Native 0.81.4** - Modern React Native development with new architecture
+- **Expo SDK 54 + React Native 0.81.5** - Modern React Native development with new architecture
 - **Expo Router v6** - File-based routing with fully typed routes and deep linking
-- **NativeWind v4** - Tailwind CSS for React Native with dark mode support
+- **NativeWind v5 Preview** - Utility styling for React Native and shared UI work
 - **tRPC + React Query** - Type-safe API calls with caching and optimistic updates
 - **Zustand + AsyncStorage** - Persistent local state management
 - **Expo SQLite + FileSystem** - Offline-first data persistence
@@ -101,7 +101,7 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 
 * Expo + React Native
 * Local-first storage with SQLite for offline recording
-* Powered by `@gradientpeak/core` for validation and calculations (database-independent)
+* Powered by `@repo/core` for validation and calculations (database-independent)
 * Cloud sync handled via API endpoints
 
 ---
@@ -125,7 +125,7 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 
 * Next.js + React
 * Real-time analytics and dashboards
-* Powered by `@gradientpeak/core` for calculations and validation
+* Powered by `@repo/core` for calculations and validation
 
 ---
 
@@ -146,12 +146,12 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 - **Error Handling** - Consistent error types and handling patterns
 - **Middleware** - Authentication, logging, and rate limiting
 
-#### `@repo/eslint-config` - Code Quality
+#### Repo Tooling - Code Quality & Automation
 
-- **Base Configuration** - Shared ESLint rules across all projects
-- **TypeScript Support** - Comprehensive type-aware linting rules
-- **React Hooks** - Complete React hooks linting configuration
-- **Import Sorting** - Consistent import organization
+- **Biome** - Shared linting and formatting rules at the repo level
+- **Turborepo** - Cached task execution across apps and packages
+- **pnpm Workspaces** - Consistent package management and linking
+- **TypeScript Config** - Shared compiler configuration via `@repo/typescript-config`
 
 #### `@repo/typescript-config` - Type Safety
 
@@ -160,12 +160,12 @@ A shared ESLint configuration used across all apps and packages in the GradientP
 - **Module Resolution** - Standardized module resolution strategy
 - **Target Environments** - Appropriate settings for Node.js, React Native, and browsers
 
-* **Turborepo + Bun** - High-performance monorepo management
+* **Turborepo + pnpm** - High-performance monorepo management
 * **TypeScript Throughout** - End-to-end type safety from database to UI
 * **Shared Core Package** - Database-independent business logic and calculations
 * **tRPC API Layer** - Type-safe client-server communication
 * **Local-First Architecture** - Offline recording with intelligent sync
-* **Consistent Tooling** - Unified ESLint, Prettier, and TypeScript configurations
+* **Consistent Tooling** - Unified Biome and TypeScript configurations
 * **Parallel Development** - Fast iteration with Turborepo caching
 
 ---
@@ -307,16 +307,16 @@ Time-series data processed from JSON source through core package utilities:
 
 | Layer                | Mobile                          | Web                             | Shared Packages                |
 | -------------------- | ------------------------------- | ------------------------------- | ------------------------------ |
-| **Framework**        | Expo 54, React Native 0.81.4    | Next.js 15, React 19            | -                              |
+| **Framework**        | Expo 54, React Native 0.81.5    | Next.js 15, React 19            | -                              |
 | **Business Logic**   | `@repo/core`                    | `@repo/core`                    | Core calculations & validation |
 | **API Layer**        | `@repo/trpc` + React Query      | `@repo/trpc` + React Query      | Type-safe API procedures       |
 | **State Management** | Zustand + AsyncStorage          | Zustand + React Query           | Persistent state patterns      |
 | **Local Storage**    | Expo SQLite + FileSystem        | -                               | JSON data structures           |
 | **Cloud Services**   | Supabase Auth + Storage         | Supabase Auth + PostgreSQL      | Real-time capabilities         |
-| **Styling**          | NativeWind v4 + Reusables       | Tailwind CSS + Shadcn/ui        | Design system consistency      |
+| **Styling**          | NativeWind v5 Preview + Reusables | Tailwind CSS + `@repo/ui`      | Design system consistency      |
 | **Navigation**       | Expo Router v6                  | Next.js App Router              | Type-safe routing              |
-| **Development**      | Turborepo + npm                 | Turborepo + npm                 | Monorepo tooling               |
-| **Type Safety**      | TypeScript 5.9 + `@repo/config` | TypeScript 5.9 + `@repo/config` | Shared configurations          |
+| **Development**      | Turborepo + pnpm                | Turborepo + pnpm                | Monorepo tooling               |
+| **Type Safety**      | TypeScript 5.9 + `@repo/typescript-config` | TypeScript 5.9 + `@repo/typescript-config` | Shared configurations |
 
 ---
 
@@ -372,19 +372,19 @@ packages/core/
 **Root level:**
 
 ```bash
-npm dev      # Start all development servers
-npm build    # Build all applications including core package
-npm lint     # Lint all code
-npm test     # Run all tests including core package tests
+pnpm dev          # Start all development servers
+pnpm build        # Build all applications including shared packages
+pnpm lint         # Lint all code
+pnpm test         # Run all tests
+pnpm check-types  # Type check the monorepo
 ```
 
 **Core package development:**
 
 ```bash
-cd packages/core
-npm build    # Build core package
-npm test     # Test core package (no database dependencies)
-npm dev      # Watch mode for core package development
+pnpm --dir packages/core check-types
+pnpm --dir packages/core lint
+pnpm --dir packages/core test
 ```
 
 ---
@@ -433,32 +433,20 @@ npm dev      # Watch mode for core package development
 
 ```bash
 # Start all development servers
-npm dev
+pnpm dev
 
 # Run core package tests in watch mode
-npm test --filter=core
+pnpm --filter @repo/core test
 
 # Lint all code with shared configuration
-npm lint
+pnpm lint
 
 # Build all packages with Turborepo caching
-npm build
+pnpm build
 
 # Type check entire monorepo
-npm check-types
+pnpm check-types
 ```
-
-### Local AI Dev Log Monitoring
-
-Use local scripts to run core dev services with mirrored logs under `.logs/`, then scan for issues before asking the assistant to triage.
-
-```bash
-pnpm dev:monitor:local
-pnpm logs:scan
-pnpm logs:scan:json
-```
-
-Ask the assistant with a prompt like: `Triage the latest critical/high issues from .logs and suggest fixes.`
 
 **Quality Assurance:**
 
@@ -466,7 +454,7 @@ Ask the assistant with a prompt like: `Triage the latest critical/high issues fr
 - 📋 **Code Reviews** - Consistent patterns across all packages
 - 🚦 **CI/CD Pipeline** - Automated testing on every commit
 - 📊 **Coverage Reports** - Comprehensive test coverage requirements
-- 🔍 **Static Analysis** - Advanced ESLint rules and type checking
+- 🔍 **Static Analysis** - Biome linting and TypeScript checking
 
 * **Algorithm Validation** — Mathematical correctness of calculations
 * **Schema Testing** — JSON validation and type safety
@@ -532,6 +520,24 @@ vercel --prod
 vercel env add VARIABLE_NAME
 ```
 
+**Self-Hosting (Docker + GHCR):**
+
+- GradientPeak publishes a web container from `apps/web/Dockerfile` to `ghcr.io/<owner>/<repo>`.
+- Use `:latest` for the newest `main` build or `:sha-<commit>` for a pinned release.
+- Copy `apps/web/selfhost.env.example` to `apps/web/.env.selfhost`, fill in the required values, then run:
+
+```bash
+docker run -d --name gradientpeak-web -p 3000:3000 \
+  --env-file apps/web/.env.selfhost \
+  --restart unless-stopped \
+  ghcr.io/<owner>/<repo>:latest
+
+curl http://127.0.0.1:3000/api/health
+```
+
+- The mobile app can sign in against your host by expanding `Server URL` on the auth screen and entering your hosted base URL, for example `http://<LAN-IP>:3000`.
+- To run the local Supabase stack from this repo, copy `packages/supabase/.env.example` to `packages/supabase/.env`, then use `pnpm self-host:up` and `pnpm self-host:down`.
+
 **CI/CD Pipeline:**
 
 - ✅ **Automated Testing** - Runs on every pull request
@@ -574,7 +580,7 @@ vercel --prod
 
 - Fork the repository and create a feature branch
 - Make your changes with tests and documentation
-- Run quality checks: `npm lint && npm test`
+- Run quality checks: `pnpm lint && pnpm test`
 - Submit a pull request with clear description
 
 ---
@@ -582,7 +588,7 @@ vercel --prod
 ## 📄 Documentation
 
 - [Setup Guide](SETUP_GUIDE.md)
-- [Architecture Guide](CLAUDE.md)
+- [Architecture Guide](AGENTS.md)
 - [Component Library](packages/ui/README.md)
 
 ---

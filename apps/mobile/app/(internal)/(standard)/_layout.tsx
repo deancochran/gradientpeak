@@ -1,8 +1,8 @@
-import React from "react";
-import { Stack, useRouter } from "expo-router";
-import { TouchableOpacity } from "react-native";
 import { Icon } from "@repo/ui/components/icon";
+import { Stack, useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
+import React from "react";
+import { TouchableOpacity } from "react-native";
 
 /**
  * Standard Internal Pages Layout - Flat Stack Architecture
@@ -34,7 +34,6 @@ import { ChevronLeft } from "lucide-react-native";
  * SCHEDULED ACTIVITIES:
  * - schedule-activity - Schedule activity to calendar
  * - scheduled-activities-list - View all scheduled activities
- * - scheduled-activity-detail - Individual scheduled activity details
  *
  * TRAINING PLANS:
  * - training-plans-list - Training plan management
@@ -66,10 +65,7 @@ export default function StandardLayout() {
         gestureDirection: "horizontal",
         presentation: "card",
         headerLeft: () => (
-          <TouchableOpacity
-            onPress={() => router.back()}
-            className="ml-2 p-2 -ml-2"
-          >
+          <TouchableOpacity onPress={() => router.back()} className="ml-2 p-2 -ml-2">
             <Icon as={ChevronLeft} size={24} className="text-foreground" />
           </TouchableOpacity>
         ),
@@ -143,12 +139,6 @@ export default function StandardLayout() {
         name="scheduled-activities-list"
         options={{
           title: "Scheduled Activities",
-        }}
-      />
-      <Stack.Screen
-        name="scheduled-activity-detail"
-        options={{
-          title: "Activity Details",
         }}
       />
       <Stack.Screen

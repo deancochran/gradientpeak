@@ -1,9 +1,9 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
+import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
-import { IntegerStepper } from "@/components/training-plan/create/inputs/IntegerStepper";
-import { AlertCircle, CheckCircle, Calendar } from "lucide-react-native";
+import { AlertCircle, Calendar, CheckCircle } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
 
@@ -17,11 +17,7 @@ interface RecoveryRulesFormProps {
   errors: Record<string, string>;
 }
 
-export function RecoveryRulesForm({
-  data,
-  onChange,
-  errors,
-}: RecoveryRulesFormProps) {
+export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormProps) {
   // Calculate training days available
   const trainingDaysAvailable = 7 - data.min_rest_days_per_week;
   const scheduleValid =
@@ -36,28 +32,22 @@ export function RecoveryRulesForm({
       <View className="gap-2">
         <Text className="text-2xl font-bold">Recovery Rules</Text>
         <Text className="text-muted-foreground">
-          Set guidelines for rest and recovery to prevent overtraining and
-          maintain consistency.
+          Set guidelines for rest and recovery to prevent overtraining and maintain consistency.
         </Text>
       </View>
 
       {/* Max Consecutive Training Days */}
       <View className="gap-3">
-        <Label className="text-base font-semibold">
-          Max Consecutive Training Days
-        </Label>
+        <Label className="text-base font-semibold">Max Consecutive Training Days</Label>
         <Text className="text-sm text-muted-foreground">
-          Maximum number of days you can train in a row before requiring a rest
-          day
+          Maximum number of days you can train in a row before requiring a rest day
         </Text>
         <IntegerStepper
           id="recovery-max-consecutive-days"
           value={data.max_consecutive_days}
           min={1}
           max={7}
-          onChange={(nextValue) =>
-            onChange({ max_consecutive_days: nextValue })
-          }
+          onChange={(nextValue) => onChange({ max_consecutive_days: nextValue })}
           helperText="Set max streak before a required rest day"
           error={errors.max_consecutive_days}
         />
@@ -74,9 +64,7 @@ export function RecoveryRulesForm({
 
       {/* Min Rest Days Per Week */}
       <View className="gap-3">
-        <Label className="text-base font-semibold">
-          Min Rest Days Per Week
-        </Label>
+        <Label className="text-base font-semibold">Min Rest Days Per Week</Label>
         <Text className="text-sm text-muted-foreground">
           Minimum number of complete rest days each week
         </Text>
@@ -85,9 +73,7 @@ export function RecoveryRulesForm({
           value={data.min_rest_days_per_week}
           min={0}
           max={7}
-          onChange={(nextValue) =>
-            onChange({ min_rest_days_per_week: nextValue })
-          }
+          onChange={(nextValue) => onChange({ min_rest_days_per_week: nextValue })}
           helperText="Set guaranteed complete rest days each week"
           error={errors.min_rest_days}
         />
@@ -109,35 +95,21 @@ export function RecoveryRulesForm({
           <CardContent className="p-4 gap-3">
             <View className="flex-row items-center gap-2">
               <Icon as={Calendar} size={20} className="text-primary" />
-              <Text className="font-semibold text-primary">
-                Weekly Schedule Preview
-              </Text>
+              <Text className="font-semibold text-primary">Weekly Schedule Preview</Text>
             </View>
 
             <View className="gap-2">
               <View className="flex-row justify-between">
-                <Text className="text-muted-foreground">
-                  Training days available:
-                </Text>
-                <Text className="font-semibold">
-                  {trainingDaysAvailable} days
-                </Text>
+                <Text className="text-muted-foreground">Training days available:</Text>
+                <Text className="font-semibold">{trainingDaysAvailable} days</Text>
               </View>
               <View className="flex-row justify-between">
-                <Text className="text-muted-foreground">
-                  Activities planned:
-                </Text>
-                <Text className="font-semibold">
-                  {data.target_activities_per_week} activities
-                </Text>
+                <Text className="text-muted-foreground">Activities planned:</Text>
+                <Text className="font-semibold">{data.target_activities_per_week} activities</Text>
               </View>
               <View className="flex-row justify-between">
-                <Text className="text-muted-foreground">
-                  Rest days guaranteed:
-                </Text>
-                <Text className="font-semibold">
-                  {data.min_rest_days_per_week} days
-                </Text>
+                <Text className="text-muted-foreground">Rest days guaranteed:</Text>
+                <Text className="font-semibold">{data.min_rest_days_per_week} days</Text>
               </View>
             </View>
 
@@ -152,11 +124,7 @@ export function RecoveryRulesForm({
             ) : (
               trainingDaysAvailable < data.target_activities_per_week && (
                 <View className="flex-row items-center gap-2 bg-destructive/10 p-2 rounded-md mt-2">
-                  <Icon
-                    as={AlertCircle}
-                    size={16}
-                    className="text-destructive"
-                  />
+                  <Icon as={AlertCircle} size={16} className="text-destructive" />
                   <Text className="text-destructive text-sm font-medium">
                     Not enough training days for planned activities
                   </Text>
@@ -190,19 +158,14 @@ export function RecoveryRulesForm({
       {data.min_rest_days_per_week < 1 && data.max_consecutive_days > 5 && (
         <Card className="bg-amber-500/10 border-amber-500">
           <CardContent className="p-4 flex-row items-start gap-2">
-            <Icon
-              as={AlertCircle}
-              size={20}
-              className="text-amber-500 mt-0.5"
-            />
+            <Icon as={AlertCircle} size={20} className="text-amber-500 mt-0.5" />
             <View className="flex-1">
               <Text className="text-amber-500 font-semibold mb-1">
                 Warning: High Risk of Overtraining
               </Text>
               <Text className="text-amber-500 text-sm">
-                Your current settings allow very little rest. This significantly
-                increases injury risk and may lead to burnout. Consider adding
-                more rest days.
+                Your current settings allow very little rest. This significantly increases injury
+                risk and may lead to burnout. Consider adding more rest days.
               </Text>
             </View>
           </CardContent>
@@ -213,19 +176,12 @@ export function RecoveryRulesForm({
       {data.min_rest_days_per_week > 4 && (
         <Card className="bg-amber-500/10 border-amber-500">
           <CardContent className="p-4 flex-row items-start gap-2">
-            <Icon
-              as={AlertCircle}
-              size={20}
-              className="text-amber-500 mt-0.5"
-            />
+            <Icon as={AlertCircle} size={20} className="text-amber-500 mt-0.5" />
             <View className="flex-1">
-              <Text className="text-amber-500 font-semibold mb-1">
-                Note: Limited Training Days
-              </Text>
+              <Text className="text-amber-500 font-semibold mb-1">Note: Limited Training Days</Text>
               <Text className="text-amber-500 text-sm">
-                With {data.min_rest_days_per_week} rest days, you only have{" "}
-                {trainingDaysAvailable} training days per week. This may limit
-                your ability to build fitness effectively.
+                With {data.min_rest_days_per_week} rest days, you only have {trainingDaysAvailable}{" "}
+                training days per week. This may limit your ability to build fitness effectively.
               </Text>
             </View>
           </CardContent>

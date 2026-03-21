@@ -1,22 +1,18 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   BLE_SERVICE_UUIDS,
+  type CscParserState,
   FTMS_CHARACTERISTICS,
   parseCscMeasurement,
   parseCyclingPowerMeasurement,
   parseFtmsIndoorBikeData,
   parseHeartRateMeasurement,
-  type CscParserState,
 } from "@repo/core";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  BleError,
-  BleManager,
-  Characteristic,
-  Device,
-} from "react-native-ble-plx";
+import { BleError, BleManager, Characteristic, Device } from "react-native-ble-plx";
 import { decodeBase64ToBytes, toDataView } from "./ble-bytes";
 import {
   ControlMode,
+  type FTMSCommandContext,
   FTMSController,
   type FTMSFeatures,
 } from "./FTMSController";
@@ -31,17 +27,10 @@ export function setSensorParserDebugEnabled(enabled: boolean): void {
 }
 
 /** --- Connection states --- */
-export type SensorConnectionState =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "failed";
+export type SensorConnectionState = "disconnected" | "connecting" | "connected" | "failed";
 
 /** --- Valid state transitions for connection state machine --- */
-const VALID_STATE_TRANSITIONS: Record<
-  SensorConnectionState,
-  SensorConnectionState[]
-> = {
+const VALID_STATE_TRANSITIONS: Record<SensorConnectionState, SensorConnectionState[]> = {
   disconnected: ["connecting", "failed"],
   connecting: ["connected", "disconnected", "failed"],
   connected: ["disconnected"],
@@ -111,8 +100,7 @@ export class SensorsManager {
   private bleManager = new BleManager();
   private connectedSensors: Map<string, ConnectedSensor> = new Map();
   private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
-  private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> =
-    new Set();
+  private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> = new Set();
   private connectionMonitorTimer?: ReturnType<typeof setInterval>;
   private readonly DISCONNECT_TIMEOUT_MS = 60000; // 60 seconds (increased from 30s for better stability)
   private readonly HEALTH_CHECK_INTERVAL_MS = 15000; // 15 seconds (increased from 10s to reduce battery drain)
@@ -125,8 +113,7 @@ export class SensorsManager {
 
   // Enhanced reconnection with exponential backoff
   private reconnectionAttempts: Map<string, number> = new Map();
-  private reconnectionTimers: Map<string, ReturnType<typeof setTimeout>> =
-    new Map();
+  private reconnectionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private readonly MAX_RECONNECTION_ATTEMPTS = 8; // Increased from 5 for better reliability
   private readonly RECONNECTION_BACKOFF_BASE_MS = 1000; // Increased from 500ms to 1s
 
@@ -135,8 +122,7 @@ export class SensorsManager {
   private persistenceInitialized: boolean = false;
 
   // State transition debouncing
-  private stateTransitionTimers: Map<string, ReturnType<typeof setTimeout>> =
-    new Map();
+  private stateTransitionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private readonly STATE_TRANSITION_DEBOUNCE_MS = 500;
 
   // CSC parser state must be maintained per-device for delta-based cadence.
@@ -165,9 +151,7 @@ export class SensorsManager {
       return;
     }
 
-    console.log(
-      `[SensorsManager][ParserDebug] ${label} raw=${this.toHex(rawBytes)}`,
-    );
+    console.log(`[SensorsManager][ParserDebug] ${label} raw=${this.toHex(rawBytes)}`);
     console.log(`[SensorsManager][ParserDebug] ${label} parsed=`, parsed);
   }
 
@@ -283,10 +267,7 @@ export class SensorsManager {
   /**
    * Apply state transition and notify listeners
    */
-  private applyStateTransition(
-    sensor: ConnectedSensor,
-    targetState: SensorConnectionState,
-  ): void {
+  private applyStateTransition(sensor: ConnectedSensor, targetState: SensorConnectionState): void {
     const previousState = sensor.connectionState;
     sensor.connectionState = targetState;
     sensor.stateTransitionInProgress = false;
@@ -308,9 +289,7 @@ export class SensorsManager {
       if (data) {
         const sensors: PersistedSensor[] = JSON.parse(data);
         this.persistedSensors = new Map(sensors.map((s) => [s.id, s]));
-        console.log(
-          `[SensorsManager] Loaded ${sensors.length} persisted sensors`,
-        );
+        console.log(`[SensorsManager] Loaded ${sensors.length} persisted sensors`);
       }
     } catch (error) {
       console.warn("[SensorsManager] Failed to load persisted sensors:", error);
@@ -326,10 +305,7 @@ export class SensorsManager {
   private async savePersistedSensors(): Promise<void> {
     try {
       const sensors = Array.from(this.persistedSensors.values());
-      await AsyncStorage.setItem(
-        PERSISTED_SENSORS_KEY,
-        JSON.stringify(sensors),
-      );
+      await AsyncStorage.setItem(PERSISTED_SENSORS_KEY, JSON.stringify(sensors));
       console.log(`[SensorsManager] Saved ${sensors.length} persisted sensors`);
     } catch (error) {
       console.warn("[SensorsManager] Failed to save persisted sensors:", error);
@@ -369,15 +345,11 @@ export class SensorsManager {
       // Skip if already connected
       const existing = this.connectedSensors.get(id);
       if (existing && existing.connectionState === "connected") {
-        console.log(
-          `[SensorsManager] Sensor ${sensorData.name} already connected, skipping`,
-        );
+        console.log(`[SensorsManager] Sensor ${sensorData.name} already connected, skipping`);
         continue;
       }
 
-      console.log(
-        `[SensorsManager] Attempting to reconnect persisted sensor: ${sensorData.name}`,
-      );
+      console.log(`[SensorsManager] Attempting to reconnect persisted sensor: ${sensorData.name}`);
 
       // Attempt connection without blocking
       this.connectSensor(id).catch((error) => {
@@ -403,18 +375,13 @@ export class SensorsManager {
    * Does NOT disconnect currently connected sensors
    */
   async clearPersistedSensors(): Promise<void> {
-    console.log(
-      `[SensorsManager] Clearing ${this.persistedSensors.size} persisted sensors`,
-    );
+    console.log(`[SensorsManager] Clearing ${this.persistedSensors.size} persisted sensors`);
     this.persistedSensors.clear();
     try {
       await AsyncStorage.removeItem(PERSISTED_SENSORS_KEY);
       console.log("[SensorsManager] Persisted sensors cleared successfully");
     } catch (error) {
-      console.warn(
-        "[SensorsManager] Failed to clear persisted sensors:",
-        error,
-      );
+      console.warn("[SensorsManager] Failed to clear persisted sensors:", error);
       throw error;
     }
   }
@@ -458,10 +425,7 @@ export class SensorsManager {
 
     for (const sensor of sensors) {
       // Skip if not in a state that needs checking
-      if (
-        sensor.connectionState === "connecting" ||
-        sensor.connectionState === "failed"
-      ) {
+      if (sensor.connectionState === "connecting" || sensor.connectionState === "failed") {
         continue;
       }
 
@@ -491,15 +455,10 @@ export class SensorsManager {
    * @param sensorId - Sensor to reconnect
    * @param attempt - Current attempt number (1-indexed)
    */
-  private async attemptReconnection(
-    sensorId: string,
-    attempt: number = 1,
-  ): Promise<void> {
+  private async attemptReconnection(sensorId: string, attempt: number = 1): Promise<void> {
     const sensor = this.connectedSensors.get(sensorId);
     if (!sensor) {
-      console.warn(
-        `[SensorsManager] Sensor ${sensorId} not found for reconnection`,
-      );
+      console.warn(`[SensorsManager] Sensor ${sensorId} not found for reconnection`);
       return;
     }
 
@@ -525,9 +484,7 @@ export class SensorsManager {
       const reconnected = await this.connectSensor(sensorId);
 
       if (reconnected) {
-        console.log(
-          `[SensorsManager] Successfully reconnected to ${sensor.name}`,
-        );
+        console.log(`[SensorsManager] Successfully reconnected to ${sensor.name}`);
         this.reconnectionAttempts.delete(sensorId);
         return;
       }
@@ -540,8 +497,7 @@ export class SensorsManager {
       );
 
       // Calculate exponential backoff: 500ms, 1s, 2s, 4s, 8s
-      const delayMs =
-        this.RECONNECTION_BACKOFF_BASE_MS * Math.pow(2, attempt - 1);
+      const delayMs = this.RECONNECTION_BACKOFF_BASE_MS * Math.pow(2, attempt - 1);
       console.log(`[SensorsManager] Retrying in ${delayMs}ms...`);
 
       // Schedule next attempt
@@ -683,9 +639,7 @@ export class SensorsManager {
       const characteristics = new Map<string, string>();
       for (const service of services) {
         const chars = await service.characteristics();
-        chars.forEach((c) =>
-          characteristics.set(c.uuid.toLowerCase(), service.uuid),
-        );
+        chars.forEach((c) => characteristics.set(c.uuid.toLowerCase(), service.uuid));
       }
 
       const connectedSensor: ConnectedSensor = {
@@ -702,14 +656,10 @@ export class SensorsManager {
       await this.monitorKnownCharacteristics(connectedSensor);
 
       // Check if device supports FTMS control
-      const hasFTMS = services.some((s) =>
-        s.uuid.toLowerCase().includes("1826"),
-      );
+      const hasFTMS = services.some((s) => s.uuid.toLowerCase().includes("1826"));
 
       if (hasFTMS) {
-        console.log(
-          `[SensorsManager] Detected FTMS trainer: ${connectedSensor.name}`,
-        );
+        console.log(`[SensorsManager] Detected FTMS trainer: ${connectedSensor.name}`);
         await this.setupFTMSControl(connectedSensor);
       }
 
@@ -721,9 +671,7 @@ export class SensorsManager {
         // Health monitoring will handle reconnection attempt
       });
 
-      console.log(
-        `Connected to ${connectedSensor.name} with ${services.length} services`,
-      );
+      console.log(`Connected to ${connectedSensor.name} with ${services.length} services`);
 
       // Persist sensor for auto-reconnection in future sessions
       await this.addPersistedSensor(connectedSensor.id, connectedSensor.name);
@@ -745,13 +693,8 @@ export class SensorsManager {
   public async reconnectAll(): Promise<void> {
     const sensors = Array.from(this.connectedSensors.values());
     for (const sensor of sensors) {
-      if (
-        sensor.connectionState === "disconnected" &&
-        !this.reconnectionAttempts.has(sensor.id)
-      ) {
-        console.log(
-          `[SensorsManager] Reconnecting ${sensor.name} on app foreground`,
-        );
+      if (sensor.connectionState === "disconnected" && !this.reconnectionAttempts.has(sensor.id)) {
+        console.log(`[SensorsManager] Reconnecting ${sensor.name} on app foreground`);
         await this.attemptReconnection(sensor.id, 1);
       }
     }
@@ -764,9 +707,7 @@ export class SensorsManager {
 
     const sensor = this.connectedSensors.get(deviceId);
     if (!sensor) {
-      console.log(
-        `[SensorsManager] Sensor ${deviceId} not found for disconnection`,
-      );
+      console.log(`[SensorsManager] Sensor ${deviceId} not found for disconnection`);
       return;
     }
 
@@ -804,9 +745,7 @@ export class SensorsManager {
     this.cancelReconnectionAttempts();
 
     await Promise.allSettled(
-      Array.from(this.connectedSensors.keys()).map((id) =>
-        this.disconnectSensor(id),
-      ),
+      Array.from(this.connectedSensors.keys()).map((id) => this.disconnectSensor(id)),
     );
     this.cscParserStates.clear();
   }
@@ -879,23 +818,16 @@ export class SensorsManager {
       const metricType = KnownCharacteristics[charUuid.toLowerCase()];
       if (!metricType) continue;
 
-      const service = (await sensor.device.services()).find(
-        (s) => s.uuid === serviceUuid,
-      );
+      const service = (await sensor.device.services()).find((s) => s.uuid === serviceUuid);
       if (!service) continue;
 
-      const characteristic = (await service.characteristics()).find(
-        (c) => c.uuid === charUuid,
-      );
+      const characteristic = (await service.characteristics()).find((c) => c.uuid === charUuid);
       if (!characteristic) continue;
 
       let retries = 0;
       const maxRetries = 2;
 
-      const monitorCallback = (
-        error: BleError | null,
-        char: Characteristic | null,
-      ) => {
+      const monitorCallback = (error: BleError | null, char: Characteristic | null) => {
         // Check if sensor is still in the connected sensors map
         // If not, it was disconnected intentionally - stop monitoring
         const stillConnected = this.connectedSensors.has(sensor.id);
@@ -909,9 +841,7 @@ export class SensorsManager {
             console.warn(`Error monitoring ${metricType}:`, error);
             if (retries < maxRetries) {
               retries++;
-              console.log(
-                `Retrying monitor for ${metricType} (${retries}/${maxRetries})`,
-              );
+              console.log(`Retrying monitor for ${metricType} (${retries}/${maxRetries})`);
               characteristic.monitor(monitorCallback);
             }
           }
@@ -945,9 +875,7 @@ export class SensorsManager {
     const batteryLevelCharUuid = "00002a19-0000-1000-8000-00805f9b34fb";
 
     if (!sensor.characteristics.has(batteryLevelCharUuid.toLowerCase())) {
-      console.log(
-        `[SensorsManager] ${sensor.name} does not support Battery Service`,
-      );
+      console.log(`[SensorsManager] ${sensor.name} does not support Battery Service`);
       return;
     }
 
@@ -959,9 +887,7 @@ export class SensorsManager {
       );
 
       if (!service) {
-        console.warn(
-          `[SensorsManager] Battery service not found for ${sensor.name}`,
-        );
+        console.warn(`[SensorsManager] Battery service not found for ${sensor.name}`);
         return;
       }
 
@@ -979,9 +905,7 @@ export class SensorsManager {
       if (initialValue?.value) {
         const bytes = decodeBase64ToBytes(initialValue.value);
         const batteryLevel = bytes[0];
-        console.log(
-          `[SensorsManager] Initial battery level for ${sensor.name}: ${batteryLevel}%`,
-        );
+        console.log(`[SensorsManager] Initial battery level for ${sensor.name}: ${batteryLevel}%`);
         this.handleBatteryUpdate(sensor.id, sensor.name, batteryLevel);
       }
 
@@ -1002,9 +926,7 @@ export class SensorsManager {
         const bytes = decodeBase64ToBytes(char.value);
         const batteryLevel = bytes[0];
 
-        console.log(
-          `[SensorsManager] Battery level for ${sensor.name}: ${batteryLevel}%`,
-        );
+        console.log(`[SensorsManager] Battery level for ${sensor.name}: ${batteryLevel}%`);
         this.handleBatteryUpdate(sensor.id, sensor.name, batteryLevel);
       });
     } catch (error) {
@@ -1022,11 +944,7 @@ export class SensorsManager {
    * @param sensorName - Sensor name for display
    * @param level - Battery level (0-100)
    */
-  private handleBatteryUpdate(
-    sensorId: string,
-    sensorName: string,
-    level: number,
-  ): void {
+  private handleBatteryUpdate(sensorId: string, sensorName: string, level: number): void {
     // Store battery level in sensor metadata
     const sensor = this.connectedSensors.get(sensorId);
     if (sensor) {
@@ -1037,13 +955,9 @@ export class SensorsManager {
 
     // Log warnings for low battery (no user-facing notifications)
     if (level <= 20 && level > 10) {
-      console.warn(
-        `[SensorsManager] Low battery warning: ${sensorName} at ${level}%`,
-      );
+      console.warn(`[SensorsManager] Low battery warning: ${sensorName} at ${level}%`);
     } else if (level <= 10) {
-      console.error(
-        `[SensorsManager] Critical battery: ${sensorName} at ${level}%`,
-      );
+      console.error(`[SensorsManager] Critical battery: ${sensorName} at ${level}%`);
     }
   }
 
@@ -1052,11 +966,8 @@ export class SensorsManager {
    * Provides power, cadence, speed, distance, and more from smart trainers
    * https://www.bluetooth.com/specifications/specs/fitness-machine-service-1-0/
    */
-  private async monitorFTMSIndoorBikeData(
-    sensor: ConnectedSensor,
-  ): Promise<void> {
-    const indoorBikeDataUuid =
-      FTMS_CHARACTERISTICS.INDOOR_BIKE_DATA.toLowerCase();
+  private async monitorFTMSIndoorBikeData(sensor: ConnectedSensor): Promise<void> {
+    const indoorBikeDataUuid = FTMS_CHARACTERISTICS.INDOOR_BIKE_DATA.toLowerCase();
 
     if (!sensor.characteristics.has(indoorBikeDataUuid)) {
       console.log(
@@ -1065,21 +976,15 @@ export class SensorsManager {
       return;
     }
 
-    console.log(
-      `[SensorsManager] Monitoring Indoor Bike Data for ${sensor.name}`,
-    );
+    console.log(`[SensorsManager] Monitoring Indoor Bike Data for ${sensor.name}`);
 
     try {
       const service = (await sensor.device.services()).find(
-        (s) =>
-          s.uuid.toLowerCase() ===
-          BLE_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase(),
+        (s) => s.uuid.toLowerCase() === BLE_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase(),
       );
 
       if (!service) {
-        console.warn(
-          `[SensorsManager] Fitness Machine service not found for ${sensor.name}`,
-        );
+        console.warn(`[SensorsManager] Fitness Machine service not found for ${sensor.name}`);
         return;
       }
 
@@ -1088,9 +993,7 @@ export class SensorsManager {
       );
 
       if (!characteristic) {
-        console.warn(
-          `[SensorsManager] Indoor Bike Data characteristic not found`,
-        );
+        console.warn(`[SensorsManager] Indoor Bike Data characteristic not found`);
         return;
       }
 
@@ -1135,10 +1038,7 @@ export class SensorsManager {
    * @param deviceId - Device ID for metadata
    * @returns Array of sensor readings (power, cadence, speed, etc.)
    */
-  private parseIndoorBikeData(
-    data: Uint8Array,
-    deviceId: string,
-  ): SensorReading[] {
+  private parseIndoorBikeData(data: Uint8Array, deviceId: string): SensorReading[] {
     const parsed = parseFtmsIndoorBikeData(data);
     this.logParserDebug(`ftms-indoor-bike:${deviceId}`, data, parsed);
 
@@ -1193,10 +1093,7 @@ export class SensorsManager {
   }
 
   /* --- BLE Data Parsing Helpers --- */
-  parseHeartRate(
-    data: Uint8Array | ArrayBuffer,
-    deviceId: string,
-  ): SensorReading | null {
+  parseHeartRate(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading | null {
     const bytes = this.toBytes(data);
     const parsed = parseHeartRateMeasurement(data);
     this.logParserDebug(`heart-rate:${deviceId}`, bytes, parsed);
@@ -1205,10 +1102,7 @@ export class SensorsManager {
     return this.createReading("heartrate", parsed.hrBpm, deviceId);
   }
 
-  parsePower(
-    data: Uint8Array | ArrayBuffer,
-    deviceId: string,
-  ): SensorReading | null {
+  parsePower(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading | null {
     const bytes = this.toBytes(data);
     const parsed = parseCyclingPowerMeasurement(data);
     this.logParserDebug(`cycling-power:${deviceId}`, bytes, parsed);
@@ -1218,10 +1112,7 @@ export class SensorsManager {
     return this.createReading("power", value, deviceId);
   }
 
-  parseCSCMeasurement(
-    data: Uint8Array | ArrayBuffer,
-    deviceId: string,
-  ): SensorReading | null {
+  parseCSCMeasurement(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading | null {
     const bytes = this.toBytes(data);
     const previousState = this.cscParserStates.get(deviceId);
     const parsed = parseCscMeasurement(data, previousState);
@@ -1239,10 +1130,7 @@ export class SensorsManager {
     return null;
   }
 
-  parseRSCMeasurement(
-    data: Uint8Array | ArrayBuffer,
-    deviceId: string,
-  ): SensorReading | null {
+  parseRSCMeasurement(data: Uint8Array | ArrayBuffer, deviceId: string): SensorReading | null {
     const bytes = this.toBytes(data);
     const view = toDataView(bytes);
     if (bytes.byteLength < 1) return null;
@@ -1279,11 +1167,7 @@ export class SensorsManager {
     return null;
   }
 
-  parseBleData(
-    metricType: BleMetricType,
-    raw: Uint8Array,
-    deviceId: string,
-  ): SensorReading | null {
+  parseBleData(metricType: BleMetricType, raw: Uint8Array, deviceId: string): SensorReading | null {
     let reading: SensorReading | null = null;
 
     switch (metricType) {
@@ -1312,44 +1196,26 @@ export class SensorsManager {
     return values.map((_, i) => {
       const start = Math.max(0, i - Math.floor(window / 2));
       const end = Math.min(values.length, start + window);
-      return (
-        values.slice(start, end).reduce((a, b) => a + b, 0) / (end - start)
-      );
+      return values.slice(start, end).reduce((a, b) => a + b, 0) / (end - start);
     });
   }
 
   validateSensorReading(reading: SensorReading): SensorReading | null {
     switch (reading.metric) {
       case "heartrate":
-        if (
-          typeof reading.value === "number" &&
-          reading.value >= 30 &&
-          reading.value <= 250
-        )
+        if (typeof reading.value === "number" && reading.value >= 30 && reading.value <= 250)
           return reading;
         break;
       case "power":
-        if (
-          typeof reading.value === "number" &&
-          reading.value >= 0 &&
-          reading.value <= 4000
-        )
+        if (typeof reading.value === "number" && reading.value >= 0 && reading.value <= 4000)
           return reading;
         break;
       case "cadence":
-        if (
-          typeof reading.value === "number" &&
-          reading.value >= 0 &&
-          reading.value <= 300
-        )
+        if (typeof reading.value === "number" && reading.value >= 0 && reading.value <= 300)
           return reading;
         break;
       case "speed":
-        if (
-          typeof reading.value === "number" &&
-          reading.value >= 0 &&
-          reading.value <= 100
-        )
+        if (typeof reading.value === "number" && reading.value >= 0 && reading.value <= 100)
           return reading;
         break;
     }
@@ -1368,38 +1234,39 @@ export class SensorsManager {
   /**
    * Set power target in ERG mode
    */
-  async setPowerTarget(watts: number): Promise<boolean> {
+  async setPowerTarget(watts: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.controllableTrainer?.ftmsController) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
     }
 
-    return await this.controllableTrainer.ftmsController.setPowerTarget(watts);
+    return await this.controllableTrainer.ftmsController.setPowerTarget(watts, context);
   }
 
   /**
    * Set resistance target level
    */
-  async setResistanceTarget(level: number): Promise<boolean> {
+  async setResistanceTarget(level: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.controllableTrainer?.ftmsController) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
     }
 
-    return await this.controllableTrainer.ftmsController.setResistanceTarget(
-      level,
-    );
+    return await this.controllableTrainer.ftmsController.setResistanceTarget(level, context);
   }
 
   /**
    * Set terrain simulation parameters
    */
-  async setSimulation(params: {
-    windSpeed?: number;
-    grade?: number;
-    crr?: number;
-    windResistance?: number;
-  }): Promise<boolean> {
+  async setSimulation(
+    params: {
+      windSpeed?: number;
+      grade?: number;
+      crr?: number;
+      windResistance?: number;
+    },
+    context?: FTMSCommandContext,
+  ): Promise<boolean> {
     if (!this.controllableTrainer?.ftmsController) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
@@ -1413,63 +1280,55 @@ export class SensorsManager {
       windResistance: params.windResistance ?? 0.51,
     };
 
-    return await this.controllableTrainer.ftmsController.setSimulation(
-      simParams,
-    );
+    return await this.controllableTrainer.ftmsController.setSimulation(simParams, context);
   }
 
   /**
    * Set target speed
    */
-  async setTargetSpeed(speedKph: number): Promise<boolean> {
+  async setTargetSpeed(speedKph: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.controllableTrainer?.ftmsController) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
     }
 
-    return await this.controllableTrainer.ftmsController.setTargetSpeed(
-      speedKph,
-    );
+    return await this.controllableTrainer.ftmsController.setTargetSpeed(speedKph, context);
   }
 
   /**
    * Set target inclination
    */
-  async setTargetInclination(percent: number): Promise<boolean> {
+  async setTargetInclination(percent: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.controllableTrainer?.ftmsController) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
     }
 
-    return await this.controllableTrainer.ftmsController.setTargetInclination(
-      percent,
-    );
+    return await this.controllableTrainer.ftmsController.setTargetInclination(percent, context);
   }
 
   /**
    * Set target heart rate
    */
-  async setTargetHeartRate(bpm: number): Promise<boolean> {
+  async setTargetHeartRate(bpm: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.controllableTrainer?.ftmsController) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
     }
 
-    return await this.controllableTrainer.ftmsController.setTargetHeartRate(
-      bpm,
-    );
+    return await this.controllableTrainer.ftmsController.setTargetHeartRate(bpm, context);
   }
 
   /**
    * Set target cadence
    */
-  async setTargetCadence(rpm: number): Promise<boolean> {
+  async setTargetCadence(rpm: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.controllableTrainer?.ftmsController) {
       console.warn("[SensorsManager] No controllable trainer connected");
       return false;
     }
 
-    return await this.controllableTrainer.ftmsController.setTargetCadence(rpm);
+    return await this.controllableTrainer.ftmsController.setTargetCadence(rpm, context);
   }
 
   /**
@@ -1487,9 +1346,7 @@ export class SensorsManager {
   /**
    * Get FTMS controller for advanced access
    */
-  getFTMSController(
-    sensorId?: string,
-  ): import("./FTMSController").FTMSController | undefined {
+  getFTMSController(sensorId?: string): import("./FTMSController").FTMSController | undefined {
     if (sensorId) {
       const sensor = this.connectedSensors.get(sensorId);
       return sensor?.ftmsController;
@@ -1511,6 +1368,14 @@ export class SensorsManager {
     }
 
     return this.controllableTrainer.ftmsController.getControlEvents();
+  }
+
+  getLastTrainerCommandStatus() {
+    if (!this.controllableTrainer?.ftmsController) {
+      return null;
+    }
+
+    return this.controllableTrainer.ftmsController.getLastCommandStatus();
   }
 
   /**

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { renderWeb, screen } from "../../test/render-web";
+import { alertDialogFixtures } from "./fixtures";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,22 +16,24 @@ describe("AlertDialog web", () => {
   it("maps normalized test props onto the rendered content", () => {
     renderWeb(
       <AlertDialog open>
-        <AlertDialogContent testId="confirm-delete-dialog">
+        <AlertDialogContent testId={alertDialogFixtures.confirmDelete.testId}>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete workout</AlertDialogTitle>
+            <AlertDialogTitle>{alertDialogFixtures.confirmDelete.title}</AlertDialogTitle>
             <AlertDialogDescription>
-              This cannot be undone.
+              {alertDialogFixtures.confirmDelete.description}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction>Delete</AlertDialogAction>
+            <AlertDialogAction>{alertDialogFixtures.confirmDelete.actionLabel}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>,
     );
 
-    expect(screen.getByTestId("confirm-delete-dialog")).toBeInTheDocument();
-    expect(screen.getByText("Delete workout")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.getByTestId(alertDialogFixtures.confirmDelete.testId)).toBeInTheDocument();
+    expect(screen.getByText(alertDialogFixtures.confirmDelete.title)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: alertDialogFixtures.confirmDelete.actionLabel }),
+    ).toBeInTheDocument();
   });
 });

@@ -1,152 +1,59 @@
 ---
 name: explaining-code
-description: Explains code with visual diagrams and analogies to help users understand how code works.
+description: Explain code clearly with structure, examples, and lightweight diagrams when useful
 ---
 
 # Explaining Code Skill
 
 ## When to Use
 
-- User asks how a function/component works
-- User wants to understand architectural patterns
-- User needs help learning a codebase
-- User asks "how does this work?"
+- Explaining how a function, component, hook, or service works
+- Walking a user through data flow or architecture
+- Teaching repo patterns in a concrete, code-linked way
 
-## What This Skill Does
+## Scope
 
-1. Analyzes the code to explain
-2. Creates analogies for complex concepts
-3. Generates visual diagrams (ASCII/text)
-4. Provides step-by-step explanations
-5. Links to related code patterns
+This skill is for explanation, not implementation.
 
-## Explanation Patterns
+- Prefer concrete repo examples over abstract theory.
+- Use diagrams and analogies only when they improve clarity.
 
-### 1. Function Explanation
+## Rules
 
-```
-Function: calculateNormalizedPower
+1. Start with purpose and role in the system.
+2. Explain flow in the order the code executes.
+3. Link behavior to specific files or functions.
+4. Prefer small ASCII diagrams over long prose when structure matters.
+5. Explain why a pattern exists, not just what it does.
 
-Purpose: Calculates normalized power using 30-second rolling average
+## Default Structure
 
-Input: Array of power readings (watts), sample rate (Hz)
-Output: Normalized power (watts)
+1. What it is
+2. Inputs and outputs
+3. Step-by-step flow
+4. Important constraints or edge cases
+5. Related files or patterns
 
-Algorithm:
-1. Calculate 30-second rolling average of power
-2. Raise each value to the 4th power
-3. Average these values
-4. Take 4th root
+## Example Pattern
 
-Analogy: It's like finding the "metabolic cost" of a ride,
-accounting for how hard you actually worked, not just average speed.
-```
-
-### 2. Component Flow
-
-```
-Component: ActivityRecorderService
-
-State Machine:
-  pending -> ready -> recording -> paused -> finished
-
-Flow:
-1. User navigates to /record screen
-2. Service created, transitions to 'ready'
-3. User taps start, transitions to 'recording'
-4. Service captures GPS/HR/power data
-5. User pauses, transitions to 'paused'
-6. User resumes, transitions back to 'recording'
-7. User finishes, transitions to 'finished'
-8. Service cleans up when leaving screen
+```text
+ActivityRecorderService
+  -> receives user actions
+  -> coordinates GPS and sensor inputs
+  -> updates session state
+  -> persists local recording data
+  -> hands results to sync/export flows
 ```
 
-### 3. Data Flow
+## Avoid
 
-```
-Data Flow: Activity Recording -> Sync
+- repeating the entire file line by line
+- using analogies when direct explanation is clearer
+- skipping important constraints, state transitions, or failure paths
 
-1. Record Locally
-   └─ SQLite stores JSON activity
-       { id, name, type, distance, duration, ... }
+## Quick Checklist
 
-2. Upload to Cloud
-   └─ JSON uploaded to Supabase Storage
-   └─ Source of truth: Storage bucket
-
-3. Create Metadata
-   └─ Activity record created in database
-   └─ References Storage URL
-
-4. Generate Streams
-   └─ Time-series data compressed and embedded
-   └─ Stored in activities.metrics.streams
-
-5. Calculate Analytics
-   └─ @repo/core processes metrics
-   └─ TSS, IF, power zones calculated
-```
-
-### 4. Pattern Explanation
-
-```
-Pattern: Event-Driven Hooks
-
-Instead of: Subscribing to all service data
-Use: Specific hooks for specific data
-
-Bad:
-const data = useEffect(() => {
-  service.on('update', () => setData(service.getAllData()));
-}, []);
-
-Good:
-const state = useRecordingState(service);
-const readings = useCurrentReadings(service);
-const stats = useSessionStats(service);
-
-Benefits:
-- Surgical re-renders (only what changes)
-- No over-subscription
-- Better performance
-```
-
-## Visual Examples
-
-### Architecture Diagram
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   Mobile App                         │
-├─────────────────────────────────────────────────────┤
-│  ┌─────────────┐    ┌─────────────────────────────┐ │
-│  │ Recording   │───>│ ActivityRecorderService     │ │
-│  │ Screen      │    │ - GPS tracking              │ │
-│  └─────────────┘    │ - Sensor data               │ │
-│                     │ - State management           │ │
-│                     └─────────────────────────────┘ │
-│                              │                       │
-│                              ▼                       │
-│                     ┌─────────────┐                 │
-│                     │   SQLite    │                 │
-│                     │ (local)     │                 │
-│                     └─────────────┘                 │
-│                              │                       │
-│                    (when online)                     │
-│                              ▼                       │
-│                     ┌─────────────┐                 │
-│                     │ Supabase    │                 │
-│                     │ Storage     │                 │
-│                     └─────────────┘                 │
-└─────────────────────────────────────────────────────┘
-```
-
-## Best Practices
-
-1. Start with purpose/what it does
-2. Use analogies for complex concepts
-3. Show step-by-step flow
-4. Provide visual diagrams
-5. Link to actual code
-6. Explain why, not just what
-7. Cover edge cases
+- [ ] purpose explained first
+- [ ] execution order made clear
+- [ ] file/function references included
+- [ ] constraints and edge cases covered

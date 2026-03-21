@@ -1,4 +1,4 @@
-type RecordingState = "pending" | "ready" | "recording" | "paused" | "finished";
+type RecordingState = "pending" | "ready" | "recording" | "paused" | "finishing" | "finished";
 
 export function getNextGpsRecordingEnabled(current: boolean): boolean {
   return !current;

@@ -41,10 +41,8 @@ interface StreamChunk {
 // ================================
 
 export class StreamBuffer {
-  private readings: Map<
-    PublicActivityMetric,
-    Array<{ value: number; timestamp: number }>
-  > = new Map();
+  private readings: Map<PublicActivityMetric, Array<{ value: number; timestamp: number }>> =
+    new Map();
   private locations: LocationReading[] = [];
   private allLocations: LocationReading[] = []; // Keep ALL locations for GPS path display
   private chunkIndex = 0;
@@ -109,10 +107,7 @@ export class StreamBuffer {
     const MAX_GPS_PATH_POINTS = 1000;
     if (this.allLocations.length > MAX_GPS_PATH_POINTS) {
       // Remove oldest points to maintain rolling window
-      this.allLocations.splice(
-        0,
-        this.allLocations.length - MAX_GPS_PATH_POINTS,
-      );
+      this.allLocations.splice(0, this.allLocations.length - MAX_GPS_PATH_POINTS);
     }
   }
 
@@ -161,9 +156,7 @@ export class StreamBuffer {
         await this.writeChunk("latlng", latlngChunk);
 
         // Write altitude separately if available
-        const altitudes = this.locations.filter(
-          (loc) => loc.altitude !== undefined,
-        );
+        const altitudes = this.locations.filter((loc) => loc.altitude !== undefined);
         if (altitudes.length > 0) {
           const altitudeChunk: StreamChunk = {
             metric: "altitude",
@@ -198,18 +191,13 @@ export class StreamBuffer {
   /**
    * Write a single chunk to file
    */
-  private async writeChunk(
-    metric: PublicActivityMetric,
-    chunk: StreamChunk,
-  ): Promise<void> {
+  private async writeChunk(metric: PublicActivityMetric, chunk: StreamChunk): Promise<void> {
     const filename = `chunk_${this.chunkIndex}_${metric}.json`;
     const file = new File(this.storageDir.uri, filename);
 
     try {
       file.write(JSON.stringify(chunk));
-      console.log(
-        `[StreamBuffer] Wrote chunk ${filename} (${chunk.sampleCount} samples)`,
-      );
+      console.log(`[StreamBuffer] Wrote chunk ${filename} (${chunk.sampleCount} samples)`);
     } catch (error) {
       console.error(`[StreamBuffer] Failed to write chunk ${filename}:`, error);
       throw error;
@@ -254,10 +242,7 @@ export class StreamBuffer {
           return indexA - indexB;
         });
 
-        const aggregatedStream = await this.aggregateMetricChunks(
-          metric,
-          files,
-        );
+        const aggregatedStream = await this.aggregateMetricChunks(metric, files);
         aggregated.set(metric, aggregatedStream);
       }
 
@@ -289,10 +274,7 @@ export class StreamBuffer {
         const chunk = JSON.parse(content) as StreamChunk;
         chunks.push(chunk);
       } catch (error) {
-        console.error(
-          `[StreamBuffer] Failed to read chunk ${filename}:`,
-          error,
-        );
+        console.error(`[StreamBuffer] Failed to read chunk ${filename}:`, error);
         throw error;
       }
     }
@@ -378,9 +360,7 @@ export class StreamBuffer {
   /**
    * Determine data type for a metric
    */
-  private getDataTypeForMetric(
-    metric: PublicActivityMetric,
-  ): PublicActivityMetricDataType {
+  private getDataTypeForMetric(metric: PublicActivityMetric): PublicActivityMetricDataType {
     switch (metric) {
       case "latlng":
         return "latlng";
@@ -424,7 +404,7 @@ export class StreamBuffer {
       chunkIndex: this.chunkIndex,
       lastFlushTime: this.lastFlushTime,
       memoryEstimateMB: totalBytes / (1024 * 1024),
-      storageDir: this.storageDir.name,
+      storageDir: this.storageDir.uri,
     };
   }
 
@@ -473,27 +453,19 @@ export class StreamBuffer {
         (item) => item instanceof Directory && item.uri.includes("recording_"),
       );
 
-      console.log(
-        `[StreamBuffer] Found ${recordingDirs.length} recording directories to clean up`,
-      );
+      console.log(`[StreamBuffer] Found ${recordingDirs.length} recording directories to clean up`);
 
       for (const dir of recordingDirs) {
         try {
           (dir as Directory).delete();
         } catch (error) {
-          console.warn(
-            `[StreamBuffer] Failed to delete orphaned directory:`,
-            error,
-          );
+          console.warn(`[StreamBuffer] Failed to delete orphaned directory:`, error);
         }
       }
 
       console.log("[StreamBuffer] Orphaned recordings cleanup complete");
     } catch (error) {
-      console.error(
-        "[StreamBuffer] Failed to cleanup orphaned recordings:",
-        error,
-      );
+      console.error("[StreamBuffer] Failed to cleanup orphaned recordings:", error);
       // Don't throw - cleanup failure shouldn't prevent app startup
     }
   }

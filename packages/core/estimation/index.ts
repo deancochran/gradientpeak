@@ -11,11 +11,7 @@
 import { addDays } from "../calculations";
 import { estimateWeeklyLoad, predictFatigue } from "./fatigue";
 import { estimateMetrics as estimateMetricsInternal } from "./metrics";
-import {
-  estimateFromRoute,
-  estimateFromStructure,
-  estimateFromTemplate,
-} from "./strategies";
+import { estimateFromRoute, estimateFromStructure, estimateFromTemplate } from "./strategies";
 import type {
   EstimationContext,
   EstimationResult,
@@ -26,27 +22,25 @@ import type {
   WeeklyLoadEstimation,
 } from "./types";
 
+export * from "./baselines";
+// Re-export default estimation functions
+export {
+  estimateConservativeFTPFromWeight,
+  estimateCriticalVelocity,
+  estimateFTPFromRecentActivities,
+  estimateFTPFromWeight,
+  estimateLTHR,
+  estimateLTHRFromRecentActivities,
+  estimateMaxHR,
+  estimateMaxHRFromDOB,
+  estimateThresholdPaceFromFitnessLevel,
+  estimateThresholdPaceFromRecentRuns,
+} from "./defaults";
 // Re-export types
 export * from "./types";
 
-// Re-export default estimation functions
-export {
-  estimateFTPFromWeight,
-  estimateFTPFromRecentActivities,
-  estimateMaxHR,
-  estimateLTHR,
-  estimateLTHRFromRecentActivities,
-  estimateThresholdPaceFromFitnessLevel,
-  estimateThresholdPaceFromRecentRuns,
-  estimateCriticalVelocity,
-} from "./defaults";
-
 // Re-export functions
-export {
-  estimateMetricsInternal as estimateMetrics,
-  estimateWeeklyLoad,
-  predictFatigue,
-};
+export { estimateMetricsInternal as estimateMetrics, estimateWeeklyLoad, predictFatigue };
 
 /**
  * Main estimation function - automatically selects best strategy
@@ -70,10 +64,7 @@ export function estimateActivity(context: EstimationContext): EstimationResult {
     try {
       return estimateFromStructure(context);
     } catch (error) {
-      console.warn(
-        "Structure-based estimation failed, falling back to route/template",
-        error,
-      );
+      console.warn("Structure-based estimation failed, falling back to route/template", error);
     }
   }
 
@@ -82,10 +73,7 @@ export function estimateActivity(context: EstimationContext): EstimationResult {
     try {
       return estimateFromRoute(context);
     } catch (error) {
-      console.warn(
-        "Route-based estimation failed, falling back to template",
-        error,
-      );
+      console.warn("Route-based estimation failed, falling back to template", error);
     }
   }
 
@@ -198,11 +186,7 @@ export function estimateWeeklyLoadComplete(
   const weekEnd = addDays(weekStart, 6);
 
   // Get base weekly estimation
-  const baseEstimation = estimateWeeklyLoad(
-    weekStart,
-    plannedActivities,
-    currentState,
-  );
+  const baseEstimation = estimateWeeklyLoad(weekStart, plannedActivities, currentState);
 
   // Create daily breakdown with activity details
   const dailyBreakdown = baseEstimation.dailyBreakdown.map((day) => {
@@ -222,15 +206,11 @@ export function estimateWeeklyLoadComplete(
   const recommendations: string[] = [];
 
   if (!baseEstimation.isSafe) {
-    recommendations.push(
-      "⚠️ Reduce training load - ramp rate exceeds safe limits",
-    );
+    recommendations.push("⚠️ Reduce training load - ramp rate exceeds safe limits");
   }
 
   if (baseEstimation.totalTSS < currentState.ctl * 0.7) {
-    recommendations.push(
-      "Consider adding volume - weekly load is below maintenance level",
-    );
+    recommendations.push("Consider adding volume - weekly load is below maintenance level");
   }
 
   if (baseEstimation.totalTSS > currentState.ctl * 1.4) {
@@ -322,14 +302,8 @@ export function buildEstimationContext(params: {
   scheduledDate?: Date;
   weeklyPlannedTSS?: number;
 }): EstimationContext {
-  const {
-    userProfile,
-    fitnessState,
-    activityPlan,
-    route,
-    scheduledDate,
-    weeklyPlannedTSS,
-  } = params;
+  const { userProfile, fitnessState, activityPlan, route, scheduledDate, weeklyPlannedTSS } =
+    params;
 
   // Note: This function builds a context but needs proper profile type
   // The profile parameter should match PublicProfilesRow from the database
@@ -338,8 +312,7 @@ export function buildEstimationContext(params: {
     ftp: userProfile.ftp ?? undefined,
     thresholdHr: userProfile.threshold_hr ?? undefined,
     weightKg: userProfile.weight_kg ?? undefined,
-    thresholdPaceSecondsPerKm:
-      userProfile.threshold_pace_seconds_per_km ?? undefined,
+    thresholdPaceSecondsPerKm: userProfile.threshold_pace_seconds_per_km ?? undefined,
     fitnessState,
     activityCategory: activityPlan.activity_category as any,
     structure: activityPlan.structure,

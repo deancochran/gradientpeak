@@ -71,6 +71,13 @@ export default function ExternalLayout() {
         }}
       />
       <Stack.Screen
+        name="storybook"
+        options={{
+          title: "Storybook",
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
         name="ui-preview"
         options={{
           title: "UI Preview",

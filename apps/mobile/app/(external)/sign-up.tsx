@@ -1,35 +1,16 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Form, FormMessage, FormTextField } from "@repo/ui/components/form";
+import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
 import { z } from "zod";
-
-import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
-import { Text } from "@repo/ui/components/text";
 import { useAuth } from "@/lib/hooks/useAuth";
-import {
-  getHostedApiUrl,
-  setServerUrlOverride,
-  useServerConfig,
-} from "@/lib/server-config";
+import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
 
@@ -64,8 +45,7 @@ export default function SignUpScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [isServerConfigExpanded, setIsServerConfigExpanded] =
-    React.useState(false);
+  const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
     serverConfig.overrideUrl ?? serverConfig.apiUrl,
@@ -75,8 +55,8 @@ export default function SignUpScreen() {
     setServerUrlInput(serverConfig.overrideUrl ?? serverConfig.apiUrl);
   }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
-  const form = useForm<SignUpFields>({
-    resolver: zodResolver(signUpSchema),
+  const form = useZodForm({
+    schema: signUpSchema,
   });
 
   const onSignUp = async (data: SignUpFields) => {
@@ -173,85 +153,51 @@ export default function SignUpScreen() {
             <Form {...form}>
               <View className="gap-4" testID="sign-up-form">
                 {/* Email Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  label="Email"
                   name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="m@example.com"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          autoFocus
-                          autoCapitalize="none"
-                          keyboardType="email-address"
-                          autoComplete="email"
-                          testID="email-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="m@example.com"
+                  testId="email-input"
                 />
 
                 {/* Password Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  label="Password"
                   name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter your password"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          secureTextEntry
-                          testID="password-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-
-                      {/* Password Requirements */}
-                      <View className="mt-2 gap-1" testID="password-hints">
-                        <Text variant="muted" className="text-xs">
-                          Password must contain:
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • At least 8 characters
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • One uppercase letter
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • One number
-                        </Text>
-                      </View>
-                    </FormItem>
-                  )}
+                  placeholder="Enter your password"
+                  secureTextEntry
+                  testId="password-input"
                 />
 
+                {/* Password Requirements */}
+                <View className="mt-2 gap-1" testID="password-hints">
+                  <Text variant="muted" className="text-xs">
+                    Password must contain:
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • At least 8 characters
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • One uppercase letter
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • One number
+                  </Text>
+                </View>
+
                 {/* Repeat Password Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  label="Repeat Password"
                   name="repeatPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Repeat Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Confirm your password"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          secureTextEntry
-                          testID="repeat-password-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="Confirm your password"
+                  secureTextEntry
+                  testId="repeat-password-input"
                 />
 
                 {/* Root Error */}
@@ -260,10 +206,7 @@ export default function SignUpScreen() {
                     className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
                     testID="form-error"
                   >
-                    <Text
-                      variant="small"
-                      className="text-destructive text-center"
-                    >
+                    <Text variant="small" className="text-destructive text-center">
                       {form.formState.errors.root.message}
                     </Text>
                   </View>
@@ -280,18 +223,14 @@ export default function SignUpScreen() {
               testID="sign-up-button"
               className="w-full"
             >
-              <Text>
-                {isLoading ? "Creating Account..." : "Create Account"}
-              </Text>
+              <Text>{isLoading ? "Creating Account..." : "Create Account"}</Text>
             </Button>
 
             <ServerUrlOverride
               expanded={isServerConfigExpanded}
               value={serverUrlInput}
               usingHostedDefault={!serverConfig.overrideUrl}
-              onToggle={() =>
-                setIsServerConfigExpanded((currentValue) => !currentValue)
-              }
+              onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
               onChange={setServerUrlInput}
             />
 
@@ -309,13 +248,8 @@ export default function SignUpScreen() {
 
             {/* Terms */}
             <View className="pt-4" testID="terms-container">
-              <Text
-                variant="muted"
-                className="text-center text-xs"
-                testID="terms-text"
-              >
-                By creating an account, you agree to our{"\n"}Terms of Service
-                and Privacy Policy
+              <Text variant="muted" className="text-center text-xs" testID="terms-text">
+                By creating an account, you agree to our{"\n"}Terms of Service and Privacy Policy
               </Text>
             </View>
           </CardContent>

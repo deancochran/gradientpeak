@@ -1,89 +1,43 @@
 ---
 name: managing-context-window
-description: Helps manage context window efficiently by summarizing, focusing, and pruning context to stay within token limits.
+description: Manage OpenCode context by focusing active work and using compress on closed ranges
 ---
 
 # Managing Context Window Skill
 
 ## When to Use
 
-- Context is approaching token limits
-- User asks to summarize conversation history
-- Need to focus on specific task
-- Working with large files or codebases
+- A task branch is finished and no longer needs raw message history
+- The conversation has accumulated exploratory noise
+- You need to keep active implementation context sharp
 
-## What This Skill Does
+## Primary Tool
 
-1. Analyzes current context usage
-2. Identifies non-essential information
-3. Creates summaries of conversation history
-4. Focuses context on current task
-5. Prunes redundant or outdated information
+Use `compress` to replace a closed conversation range with a high-fidelity technical summary.
 
-## Strategies
+## Rules
 
-### 1. Summarize Previous Work
+1. Compress only closed ranges that are unlikely to be needed in raw form.
+2. Prefer small, independent compressions over one large sweep.
+3. Keep active editing, precise errors, and immediately relevant file details uncompressed.
+4. Summaries must preserve decisions, constraints, paths, and outcomes.
+5. Reference files and focused reads instead of re-pasting large content into the conversation.
 
-```
-Summary of work so far:
-- Implemented activity recording service
-- Added GPS tracking functionality
-- Created activity list screen
-- Working on: activity detail view
+## Good Candidates for Compression
 
-Current task: Add activity statistics calculation
-```
+- completed research passes
+- resolved audits
+- finished implementation chunks
+- dead-end explorations that produced a clear conclusion
 
-### 2. Focus on Current Task
+## Avoid Compressing
 
-Keep only:
+- active debugging loops
+- file content you still need verbatim
+- tool outputs you are about to act on directly
 
-- Current implementation goal
-- Relevant code files
-- Recent error messages
-- Specific questions to answer
+## Working Style
 
-### 3. Prune Redundant Information
-
-- Remove completed sub-tasks
-- Remove duplicate information
-- Remove outdated context
-- Remove exploratory messages
-
-### 4. Use File References
-
-Instead of pasting full file contents:
-
-- Reference file paths
-- Use Grep to find specific sections
-- Read specific line ranges
-
-## Implementation
-
-```typescript
-// Use TodoWrite to track progress instead of comments
-const todos = [
-  { id: "1", content: "Implement activity recording", status: "completed" },
-  { id: "2", content: "Add GPS tracking", status: "completed" },
-  { id: "3", content: "Create activity detail view", status: "in_progress" },
-];
-
-// When switching tasks, update context
-function switchTask(newTask: string) {
-  return {
-    task: newTask,
-    relevantFiles: getRelevantFiles(newTask),
-    summary: summarizeCompletedWork(),
-  };
-}
-```
-
-## Best Practices
-
-1. Use TodoWrite for tracking
-2. Reference files instead of pasting
-3. Summarize completed work
-4. Focus on current task
-5. Remove outdated context
-6. Keep error messages relevant
-7. Use specific line ranges when reading
+- keep the current task, relevant files, and latest blockers in active context
+- summarize stale work once it is stable
+- use file paths and targeted reads to recover detail when needed

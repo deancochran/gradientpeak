@@ -1,11 +1,11 @@
+import { downsampleStream, removeNullValues } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import type { DecompressedStream } from "@/lib/utils/streamDecompression";
-import { downsampleStream, removeNullValues } from "@/lib/utils/streamSampling";
-import { CartesianChart, Area, useChartPressState } from "victory-native";
 import { LinearGradient, useFont, vec } from "@shopify/react-native-skia";
 import React, { useMemo } from "react";
 import { View } from "react-native";
+import { Area, CartesianChart, useChartPressState } from "victory-native";
+import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 interface ElevationProfileChartProps {
   elevationStream: DecompressedStream;
@@ -33,17 +33,20 @@ export function ElevationProfileChart({
     );
 
     // Downsample for performance
-    const { values: sampledElevation, timestamps: sampledTimestamps } =
-      downsampleStream(elevationValues, timestamps, 500, "avg");
+    const { values: sampledElevation, timestamps: sampledTimestamps } = downsampleStream(
+      elevationValues,
+      timestamps,
+      500,
+      "avg",
+    );
 
     // Calculate distance if not provided
     let xValues: number[];
     if (distanceStream) {
-      const { values: distanceValues, timestamps: distanceTimestamps } =
-        removeNullValues(
-          distanceStream.values as number[],
-          distanceStream.timestamps,
-        );
+      const { values: distanceValues, timestamps: distanceTimestamps } = removeNullValues(
+        distanceStream.values as number[],
+        distanceStream.timestamps,
+      );
       const { values: sampledDistance } = downsampleStream(
         distanceValues,
         distanceTimestamps,
@@ -99,13 +102,8 @@ export function ElevationProfileChart({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <View
-            style={{ height }}
-            className="items-center justify-center bg-muted rounded-lg"
-          >
-            <Text className="text-muted-foreground">
-              No elevation data available
-            </Text>
+          <View style={{ height }} className="items-center justify-center bg-muted rounded-lg">
+            <Text className="text-muted-foreground">No elevation data available</Text>
           </View>
         </CardContent>
       </Card>
@@ -120,15 +118,11 @@ export function ElevationProfileChart({
           <View className="flex-row gap-4 mt-2">
             <View>
               <Text className="text-xs text-muted-foreground">Ascent</Text>
-              <Text className="text-sm font-semibold">
-                {stats.totalAscent}m ↗
-              </Text>
+              <Text className="text-sm font-semibold">{stats.totalAscent}m ↗</Text>
             </View>
             <View>
               <Text className="text-xs text-muted-foreground">Descent</Text>
-              <Text className="text-sm font-semibold">
-                {stats.totalDescent}m ↘
-              </Text>
+              <Text className="text-sm font-semibold">{stats.totalDescent}m ↘</Text>
             </View>
             <View>
               <Text className="text-xs text-muted-foreground">Range</Text>
@@ -149,9 +143,7 @@ export function ElevationProfileChart({
               axisOptions={{
                 font,
                 formatXLabel: (value) =>
-                  distanceStream
-                    ? `${value.toFixed(1)}km`
-                    : `${Math.floor(value / 60)}m`,
+                  distanceStream ? `${value.toFixed(1)}km` : `${Math.floor(value / 60)}m`,
                 formatYLabel: (value) => `${value.toFixed(0)}m`,
               }}
               chartPressState={state}

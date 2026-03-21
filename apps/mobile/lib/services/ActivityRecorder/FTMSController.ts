@@ -1,23 +1,26 @@
 import {
   BLE_SERVICE_UUIDS,
+  ControlMode,
+  canTrainerIntentPreempt,
   FTMS_CHARACTERISTICS,
-  FTMS_OPCODES,
   FTMS_FEATURE_BITS,
-  FTMS_TARGET_SETTING_BITS,
+  FTMS_OPCODES,
   FTMS_RESULT_CODES,
+  FTMS_TARGET_SETTING_BITS,
+  type FTMSControlEvent,
   // Import FTMS types from core
   type FTMSFeatures,
   type FTMSResponse,
-  type FTMSControlEvent,
-  ControlMode,
+  type RecordingTrainerIntentSource,
 } from "@repo/core";
 import { Buffer } from "buffer";
 import { Device } from "react-native-ble-plx";
 import { decodeBase64ToBytes, toDataView } from "./ble-bytes";
+import type { RecordingTrainerCommandStatus } from "./types";
 
+export type { FTMSControlEvent, FTMSFeatures, FTMSResponse };
 // Re-export for backwards compatibility
 export { ControlMode };
-export type { FTMSFeatures, FTMSResponse, FTMSControlEvent };
 
 export interface SimulationParams {
   windSpeed: number; // m/s
@@ -26,12 +29,36 @@ export interface SimulationParams {
   windResistance: number; // kg/m (0.01 to 2.55)
 }
 
+export interface FTMSCommandContext {
+  source?: RecordingTrainerIntentSource;
+  coalesceKey?: string;
+  createdAt?: string;
+}
+
+interface FTMSQueuedCommand {
+  buffer: Uint8Array;
+  requestOpCode: number;
+  commandType: RecordingTrainerCommandStatus["commandType"];
+  controlType: FTMSControlEvent["controlType"];
+  targetValue?: number;
+  targetMode?: ControlMode;
+  context: Required<FTMSCommandContext>;
+  resolve: (value: boolean) => void;
+  sequence: number;
+}
+
+const DEFAULT_COMMAND_SOURCE: RecordingTrainerIntentSource = "manual";
+const CONTROL_POINT_SETTLE_MS = 250;
+
 export class FTMSController {
   private device: Device;
-  private isBlocked = false;
   private currentControlMode?: ControlMode;
   private features?: FTMSFeatures;
   public controlEvents: FTMSControlEvent[] = [];
+  private commandQueue: FTMSQueuedCommand[] = [];
+  private isProcessingQueue = false;
+  private queueSequence = 0;
+  private lastCommandStatus: RecordingTrainerCommandStatus | null = null;
 
   constructor(device: Device) {
     this.device = device;
@@ -70,47 +97,28 @@ export class FTMSController {
       const targetFeatures = view.getUint32(4, true);
 
       // Helper to check if bit is set
-      const checkBit = (value: number, bit: number): boolean =>
-        !!(value & (1 << bit));
+      const checkBit = (value: number, bit: number): boolean => !!(value & (1 << bit));
 
       this.features = {
         // Fitness Machine Features (Bytes 0-3)
-        averageSpeedSupported: checkBit(
-          machineFeatures,
-          FTMS_FEATURE_BITS.AVERAGE_SPEED_SUPPORTED,
-        ),
-        cadenceSupported: checkBit(
-          machineFeatures,
-          FTMS_FEATURE_BITS.CADENCE_SUPPORTED,
-        ),
+        averageSpeedSupported: checkBit(machineFeatures, FTMS_FEATURE_BITS.AVERAGE_SPEED_SUPPORTED),
+        cadenceSupported: checkBit(machineFeatures, FTMS_FEATURE_BITS.CADENCE_SUPPORTED),
         totalDistanceSupported: checkBit(
           machineFeatures,
           FTMS_FEATURE_BITS.TOTAL_DISTANCE_SUPPORTED,
         ),
-        inclinationSupported: checkBit(
-          machineFeatures,
-          FTMS_FEATURE_BITS.INCLINATION_SUPPORTED,
-        ),
+        inclinationSupported: checkBit(machineFeatures, FTMS_FEATURE_BITS.INCLINATION_SUPPORTED),
         elevationGainSupported: checkBit(
           machineFeatures,
           FTMS_FEATURE_BITS.ELEVATION_GAIN_SUPPORTED,
         ),
-        paceSupported: checkBit(
-          machineFeatures,
-          FTMS_FEATURE_BITS.PACE_SUPPORTED,
-        ),
-        stepCountSupported: checkBit(
-          machineFeatures,
-          FTMS_FEATURE_BITS.STEP_COUNT_SUPPORTED,
-        ),
+        paceSupported: checkBit(machineFeatures, FTMS_FEATURE_BITS.PACE_SUPPORTED),
+        stepCountSupported: checkBit(machineFeatures, FTMS_FEATURE_BITS.STEP_COUNT_SUPPORTED),
         resistanceLevelSupported: checkBit(
           machineFeatures,
           FTMS_FEATURE_BITS.RESISTANCE_LEVEL_SUPPORTED,
         ),
-        strideCountSupported: checkBit(
-          machineFeatures,
-          FTMS_FEATURE_BITS.STRIDE_COUNT_SUPPORTED,
-        ),
+        strideCountSupported: checkBit(machineFeatures, FTMS_FEATURE_BITS.STRIDE_COUNT_SUPPORTED),
         expendedEnergySupported: checkBit(
           machineFeatures,
           FTMS_FEATURE_BITS.EXPENDED_ENERGY_SUPPORTED,
@@ -123,10 +131,7 @@ export class FTMSController {
           machineFeatures,
           FTMS_FEATURE_BITS.METABOLIC_EQUIVALENT_SUPPORTED,
         ),
-        elapsedTimeSupported: checkBit(
-          machineFeatures,
-          FTMS_FEATURE_BITS.ELAPSED_TIME_SUPPORTED,
-        ),
+        elapsedTimeSupported: checkBit(machineFeatures, FTMS_FEATURE_BITS.ELAPSED_TIME_SUPPORTED),
         remainingTimeSupported: checkBit(
           machineFeatures,
           FTMS_FEATURE_BITS.REMAINING_TIME_SUPPORTED,
@@ -135,10 +140,7 @@ export class FTMSController {
           machineFeatures,
           FTMS_FEATURE_BITS.POWER_MEASUREMENT_SUPPORTED,
         ),
-        forceOnBeltSupported: checkBit(
-          machineFeatures,
-          FTMS_FEATURE_BITS.FORCE_ON_BELT_SUPPORTED,
-        ),
+        forceOnBeltSupported: checkBit(machineFeatures, FTMS_FEATURE_BITS.FORCE_ON_BELT_SUPPORTED),
         userDataRetentionSupported: checkBit(
           machineFeatures,
           FTMS_FEATURE_BITS.USER_DATA_RETENTION_SUPPORTED,
@@ -317,19 +319,14 @@ export class FTMSController {
         if (inclinationChar?.value) {
           const view = toDataView(decodeBase64ToBytes(inclinationChar.value));
           if (view.byteLength < 6) {
-            console.warn(
-              "[FTMS] Malformed supported inclination range payload",
-            );
+            console.warn("[FTMS] Malformed supported inclination range payload");
           } else {
             this.features.inclinationRange = {
               min: view.getInt16(0, true) * 0.1, // Convert to percent
               max: view.getInt16(2, true) * 0.1,
               increment: view.getUint16(4, true) * 0.1,
             };
-            console.log(
-              "[FTMS] Inclination range:",
-              this.features.inclinationRange,
-            );
+            console.log("[FTMS] Inclination range:", this.features.inclinationRange);
           }
         }
       }
@@ -353,10 +350,7 @@ export class FTMSController {
               max: view.getInt16(2, true) * 0.1,
               increment: view.getUint16(4, true) * 0.1,
             };
-            console.log(
-              "[FTMS] Resistance range:",
-              this.features.resistanceRange,
-            );
+            console.log("[FTMS] Resistance range:", this.features.resistanceRange);
           }
         }
       }
@@ -380,10 +374,7 @@ export class FTMSController {
               max: view.getUint8(1),
               increment: view.getUint8(2),
             };
-            console.log(
-              "[FTMS] Heart rate range:",
-              this.features.heartRateRange,
-            );
+            console.log("[FTMS] Heart rate range:", this.features.heartRateRange);
           }
         }
       }
@@ -398,20 +389,12 @@ export class FTMSController {
    * Must be called before sending any control commands
    */
   async requestControl(): Promise<boolean> {
-    const buffer = new Uint8Array([FTMS_OPCODES.REQUEST_CONTROL]);
-
-    try {
-      const response = await this.writeControlPoint(buffer);
-      if (response.success) {
-        console.log("[FTMS] Control granted");
-      } else {
-        console.warn("[FTMS] Control request failed:", response.resultCodeName);
-      }
-      return response.success;
-    } catch (error) {
-      console.error("[FTMS] Failed to request control:", error);
-      return false;
-    }
+    return this.enqueueBooleanCommand({
+      buffer: new Uint8Array([FTMS_OPCODES.REQUEST_CONTROL]),
+      commandType: "request_control",
+      controlType: "resistance",
+      context: this.normalizeCommandContext(),
+    });
   }
 
   /**
@@ -419,21 +402,12 @@ export class FTMSController {
    * Recommended when switching control modes
    */
   async reset(): Promise<boolean> {
-    const buffer = new Uint8Array([FTMS_OPCODES.RESET]);
-
-    try {
-      const response = await this.writeControlPoint(buffer);
-      if (response.success) {
-        console.log("[FTMS] Trainer reset");
-        this.currentControlMode = undefined;
-      } else {
-        console.warn("[FTMS] Reset failed:", response.resultCodeName);
-      }
-      return response.success;
-    } catch (error) {
-      console.error("[FTMS] Failed to reset:", error);
-      return false;
-    }
+    return this.enqueueBooleanCommand({
+      buffer: new Uint8Array([FTMS_OPCODES.RESET]),
+      commandType: "reset",
+      controlType: "resistance",
+      context: this.normalizeCommandContext(),
+    });
   }
 
   // ==================== ERG Mode (Power Target) ====================
@@ -444,7 +418,7 @@ export class FTMSController {
    *
    * @param watts - Target power (0-4000W)
    */
-  async setPowerTarget(watts: number): Promise<boolean> {
+  async setPowerTarget(watts: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.powerTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support power target setting");
       return false;
@@ -463,44 +437,14 @@ export class FTMSController {
     buffer[1] = targetPower & 0xff; // Low byte
     buffer[2] = (targetPower >> 8) & 0xff; // High byte
 
-    try {
-      // Switch to ERG mode if needed
-      if (this.currentControlMode !== ControlMode.ERG) {
-        await this.reset();
-        this.currentControlMode = ControlMode.ERG;
-      }
-
-      const response = await this.writeControlPoint(buffer);
-
-      // Log control event
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "power_target",
-        targetValue: targetPower,
-        success: response.success,
-        errorMessage: response.success ? undefined : response.resultCodeName,
-      });
-
-      if (response.success) {
-        console.log(`[FTMS] Set power target: ${targetPower}W`);
-      } else {
-        console.warn(
-          `[FTMS] Failed to set power target: ${response.resultCodeName}`,
-        );
-      }
-
-      return response.success;
-    } catch (error) {
-      console.error("[FTMS] Failed to set power target:", error);
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "power_target",
-        targetValue: targetPower,
-        success: false,
-        errorMessage: String(error),
-      });
-      return false;
-    }
+    return this.enqueueBooleanCommand({
+      buffer,
+      commandType: "set_power",
+      controlType: "power_target",
+      targetValue: targetPower,
+      targetMode: ControlMode.ERG,
+      context: this.normalizeCommandContext(context, "set_power"),
+    });
   }
 
   // ==================== SIM Mode (Terrain Simulation) ====================
@@ -511,7 +455,7 @@ export class FTMSController {
    *
    * @param params - Simulation parameters
    */
-  async setSimulation(params: SimulationParams): Promise<boolean> {
+  async setSimulation(params: SimulationParams, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.indoorBikeSimulationSupported) {
       console.warn("[FTMS] Trainer does not support indoor bike simulation");
       return false;
@@ -537,44 +481,14 @@ export class FTMSController {
     // Wind resistance (kg/m, 8-bit, resolution 0.01 kg/m)
     buffer[6] = Math.round(params.windResistance * 100) & 0xff;
 
-    try {
-      // Switch to SIM mode if needed
-      if (this.currentControlMode !== ControlMode.SIM) {
-        await this.reset();
-        this.currentControlMode = ControlMode.SIM;
-      }
-
-      const response = await this.writeControlPoint(buffer);
-
-      // Log control event (using grade as primary value)
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "simulation",
-        targetValue: params.grade,
-        success: response.success,
-        errorMessage: response.success ? undefined : response.resultCodeName,
-      });
-
-      if (response.success) {
-        console.log(`[FTMS] Set simulation: ${params.grade}% grade`);
-      } else {
-        console.warn(
-          `[FTMS] Failed to set simulation: ${response.resultCodeName}`,
-        );
-      }
-
-      return response.success;
-    } catch (error) {
-      console.error("[FTMS] Failed to set simulation:", error);
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "simulation",
-        targetValue: params.grade,
-        success: false,
-        errorMessage: String(error),
-      });
-      return false;
-    }
+    return this.enqueueBooleanCommand({
+      buffer,
+      commandType: "set_simulation",
+      controlType: "simulation",
+      targetValue: params.grade,
+      targetMode: ControlMode.SIM,
+      context: this.normalizeCommandContext(context, "set_simulation"),
+    });
   }
 
   // ==================== Resistance Mode ====================
@@ -585,7 +499,7 @@ export class FTMSController {
    *
    * @param level - Resistance level (0-100, unitless)
    */
-  async setResistanceTarget(level: number): Promise<boolean> {
+  async setResistanceTarget(level: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.resistanceTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support resistance target setting");
       return false;
@@ -605,44 +519,14 @@ export class FTMSController {
     buffer[1] = resistanceValue & 0xff;
     buffer[2] = (resistanceValue >> 8) & 0xff;
 
-    try {
-      // Switch to resistance mode if needed
-      if (this.currentControlMode !== ControlMode.RESISTANCE) {
-        await this.reset();
-        this.currentControlMode = ControlMode.RESISTANCE;
-      }
-
-      const response = await this.writeControlPoint(buffer);
-
-      // Log control event
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "resistance",
-        targetValue: targetResistance,
-        success: response.success,
-        errorMessage: response.success ? undefined : response.resultCodeName,
-      });
-
-      if (response.success) {
-        console.log(`[FTMS] Set resistance: ${targetResistance}`);
-      } else {
-        console.warn(
-          `[FTMS] Failed to set resistance: ${response.resultCodeName}`,
-        );
-      }
-
-      return response.success;
-    } catch (error) {
-      console.error("[FTMS] Failed to set resistance:", error);
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "resistance",
-        targetValue: targetResistance,
-        success: false,
-        errorMessage: String(error),
-      });
-      return false;
-    }
+    return this.enqueueBooleanCommand({
+      buffer,
+      commandType: "set_resistance",
+      controlType: "resistance",
+      targetValue: targetResistance,
+      targetMode: ControlMode.RESISTANCE,
+      context: this.normalizeCommandContext(context, "set_resistance"),
+    });
   }
 
   // ==================== Speed Target Mode ====================
@@ -653,7 +537,7 @@ export class FTMSController {
    *
    * @param speedKph - Target speed in km/h
    */
-  async setTargetSpeed(speedKph: number): Promise<boolean> {
+  async setTargetSpeed(speedKph: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.speedTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support speed target setting");
       return false;
@@ -673,44 +557,14 @@ export class FTMSController {
     buffer[1] = speedValue & 0xff; // Low byte
     buffer[2] = (speedValue >> 8) & 0xff; // High byte
 
-    try {
-      // Switch to speed mode if needed
-      if (this.currentControlMode !== ControlMode.SPEED) {
-        await this.reset();
-        this.currentControlMode = ControlMode.SPEED;
-      }
-
-      const response = await this.writeControlPoint(buffer);
-
-      // Log control event
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "power_target", // Reusing existing type for logging
-        targetValue: targetSpeed,
-        success: response.success,
-        errorMessage: response.success ? undefined : response.resultCodeName,
-      });
-
-      if (response.success) {
-        console.log(`[FTMS] Set speed target: ${targetSpeed.toFixed(1)} km/h`);
-      } else {
-        console.warn(
-          `[FTMS] Failed to set speed target: ${response.resultCodeName}`,
-        );
-      }
-
-      return response.success;
-    } catch (error) {
-      console.error("[FTMS] Failed to set speed target:", error);
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "power_target",
-        targetValue: targetSpeed,
-        success: false,
-        errorMessage: String(error),
-      });
-      return false;
-    }
+    return this.enqueueBooleanCommand({
+      buffer,
+      commandType: "set_speed",
+      controlType: "power_target",
+      targetValue: targetSpeed,
+      targetMode: ControlMode.SPEED,
+      context: this.normalizeCommandContext(context, "set_speed"),
+    });
   }
 
   // ==================== Inclination Target Mode ====================
@@ -721,11 +575,9 @@ export class FTMSController {
    *
    * @param percent - Target inclination in percent (-10 to +40)
    */
-  async setTargetInclination(percent: number): Promise<boolean> {
+  async setTargetInclination(percent: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.inclinationTargetSettingSupported) {
-      console.warn(
-        "[FTMS] Trainer does not support inclination target setting",
-      );
+      console.warn("[FTMS] Trainer does not support inclination target setting");
       return false;
     }
 
@@ -743,46 +595,14 @@ export class FTMSController {
     buffer[1] = inclinationValue & 0xff; // Low byte
     buffer[2] = (inclinationValue >> 8) & 0xff; // High byte
 
-    try {
-      // Switch to inclination mode if needed
-      if (this.currentControlMode !== ControlMode.INCLINATION) {
-        await this.reset();
-        this.currentControlMode = ControlMode.INCLINATION;
-      }
-
-      const response = await this.writeControlPoint(buffer);
-
-      // Log control event
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "simulation", // Similar to grade in simulation
-        targetValue: targetInclination,
-        success: response.success,
-        errorMessage: response.success ? undefined : response.resultCodeName,
-      });
-
-      if (response.success) {
-        console.log(
-          `[FTMS] Set inclination target: ${targetInclination.toFixed(1)}%`,
-        );
-      } else {
-        console.warn(
-          `[FTMS] Failed to set inclination target: ${response.resultCodeName}`,
-        );
-      }
-
-      return response.success;
-    } catch (error) {
-      console.error("[FTMS] Failed to set inclination target:", error);
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "simulation",
-        targetValue: targetInclination,
-        success: false,
-        errorMessage: String(error),
-      });
-      return false;
-    }
+    return this.enqueueBooleanCommand({
+      buffer,
+      commandType: "set_incline",
+      controlType: "simulation",
+      targetValue: targetInclination,
+      targetMode: ControlMode.INCLINATION,
+      context: this.normalizeCommandContext(context, "set_incline"),
+    });
   }
 
   // ==================== Heart Rate Target Mode ====================
@@ -793,7 +613,7 @@ export class FTMSController {
    *
    * @param bpm - Target heart rate in beats per minute
    */
-  async setTargetHeartRate(bpm: number): Promise<boolean> {
+  async setTargetHeartRate(bpm: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.heartRateTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support heart rate target setting");
       return false;
@@ -811,46 +631,14 @@ export class FTMSController {
     buffer[0] = FTMS_OPCODES.SET_TARGET_HEART_RATE;
     buffer[1] = Math.round(targetHR) & 0xff;
 
-    try {
-      // Switch to heart rate mode if needed
-      if (this.currentControlMode !== ControlMode.HEART_RATE) {
-        await this.reset();
-        this.currentControlMode = ControlMode.HEART_RATE;
-      }
-
-      const response = await this.writeControlPoint(buffer);
-
-      // Log control event
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "power_target", // Reusing for logging
-        targetValue: targetHR,
-        success: response.success,
-        errorMessage: response.success ? undefined : response.resultCodeName,
-      });
-
-      if (response.success) {
-        console.log(
-          `[FTMS] Set heart rate target: ${Math.round(targetHR)} bpm`,
-        );
-      } else {
-        console.warn(
-          `[FTMS] Failed to set heart rate target: ${response.resultCodeName}`,
-        );
-      }
-
-      return response.success;
-    } catch (error) {
-      console.error("[FTMS] Failed to set heart rate target:", error);
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "power_target",
-        targetValue: targetHR,
-        success: false,
-        errorMessage: String(error),
-      });
-      return false;
-    }
+    return this.enqueueBooleanCommand({
+      buffer,
+      commandType: "set_heart_rate",
+      controlType: "power_target",
+      targetValue: targetHR,
+      targetMode: ControlMode.HEART_RATE,
+      context: this.normalizeCommandContext(context, "set_heart_rate"),
+    });
   }
 
   // ==================== Cadence Target Mode ====================
@@ -861,7 +649,7 @@ export class FTMSController {
    *
    * @param rpm - Target cadence in revolutions per minute
    */
-  async setTargetCadence(rpm: number): Promise<boolean> {
+  async setTargetCadence(rpm: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.targetedCadenceSupported) {
       console.warn("[FTMS] Trainer does not support cadence target setting");
       return false;
@@ -878,208 +666,363 @@ export class FTMSController {
     buffer[1] = cadenceValue & 0xff; // Low byte
     buffer[2] = (cadenceValue >> 8) & 0xff; // High byte
 
-    try {
-      // Switch to cadence mode if needed
-      if (this.currentControlMode !== ControlMode.CADENCE) {
-        await this.reset();
-        this.currentControlMode = ControlMode.CADENCE;
+    return this.enqueueBooleanCommand({
+      buffer,
+      commandType: "set_cadence",
+      controlType: "power_target",
+      targetValue: targetCadence,
+      targetMode: ControlMode.CADENCE,
+      context: this.normalizeCommandContext(context, "set_cadence"),
+    });
+  }
+
+  // ==================== Control Point Write ====================
+
+  private normalizeCommandContext(
+    context?: FTMSCommandContext,
+    defaultCoalesceKey?: string,
+  ): Required<FTMSCommandContext> {
+    return {
+      source: context?.source ?? DEFAULT_COMMAND_SOURCE,
+      coalesceKey: context?.coalesceKey ?? defaultCoalesceKey ?? "default",
+      createdAt: context?.createdAt ?? new Date().toISOString(),
+    };
+  }
+
+  private enqueueBooleanCommand(params: {
+    buffer: Uint8Array;
+    commandType: RecordingTrainerCommandStatus["commandType"];
+    controlType: FTMSControlEvent["controlType"];
+    targetValue?: number;
+    targetMode?: ControlMode;
+    context: Required<FTMSCommandContext>;
+  }): Promise<boolean> {
+    return new Promise((resolve) => {
+      const queuedCommand: FTMSQueuedCommand = {
+        buffer: params.buffer,
+        requestOpCode: params.buffer[0],
+        commandType: params.commandType,
+        controlType: params.controlType,
+        targetValue: params.targetValue,
+        targetMode: params.targetMode,
+        context: params.context,
+        resolve,
+        sequence: this.queueSequence++,
+      };
+
+      const shouldQueue = this.insertQueuedCommand(queuedCommand);
+      if (!shouldQueue) {
+        return;
       }
 
-      const response = await this.writeControlPoint(buffer);
-
-      // Log control event
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "power_target", // Reusing for logging
-        targetValue: targetCadence,
-        success: response.success,
-        errorMessage: response.success ? undefined : response.resultCodeName,
+      this.processQueue().catch((error) => {
+        console.error("[FTMS] Failed to process command queue:", error);
       });
+    });
+  }
 
-      if (response.success) {
-        console.log(
-          `[FTMS] Set cadence target: ${Math.round(targetCadence)} rpm`,
-        );
-      } else {
-        console.warn(
-          `[FTMS] Failed to set cadence target: ${response.resultCodeName}`,
-        );
+  private insertQueuedCommand(command: FTMSQueuedCommand): boolean {
+    for (let index = this.commandQueue.length - 1; index >= 0; index--) {
+      const existing = this.commandQueue[index];
+      if (existing.context.coalesceKey !== command.context.coalesceKey) {
+        continue;
       }
 
+      const nextCanPreempt = canTrainerIntentPreempt(
+        command.context.source,
+        existing.context.source,
+      );
+      const existingCanPreempt = canTrainerIntentPreempt(
+        existing.context.source,
+        command.context.source,
+      );
+
+      if (nextCanPreempt && !existingCanPreempt) {
+        this.commandQueue.splice(index, 1);
+        this.finishSupersededCommand(existing, command.context.source);
+        continue;
+      }
+
+      if (existingCanPreempt && !nextCanPreempt) {
+        this.finishSupersededCommand(command, existing.context.source);
+        return false;
+      }
+
+      const nextCreatedAt = Date.parse(command.context.createdAt);
+      const existingCreatedAt = Date.parse(existing.context.createdAt);
+      if (nextCreatedAt >= existingCreatedAt) {
+        this.commandQueue.splice(index, 1);
+        this.finishSupersededCommand(existing, command.context.source);
+      } else {
+        this.finishSupersededCommand(command, existing.context.source);
+        return false;
+      }
+    }
+
+    this.commandQueue.push(command);
+    return true;
+  }
+
+  private finishSupersededCommand(
+    command: FTMSQueuedCommand,
+    supersededBy: RecordingTrainerIntentSource,
+  ): void {
+    const completedAt = Date.now();
+    this.lastCommandStatus = {
+      source: command.context.source,
+      commandType: command.commandType,
+      controlMode: command.targetMode ?? this.currentControlMode ?? null,
+      targetValue: command.targetValue,
+      success: false,
+      errorMessage: `Superseded by ${supersededBy}`,
+      queuedAt: Date.parse(command.context.createdAt),
+      completedAt,
+    };
+    command.resolve(false);
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingQueue) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    try {
+      while (this.commandQueue.length > 0) {
+        const nextCommand = this.commandQueue.shift();
+        if (!nextCommand) {
+          continue;
+        }
+
+        const success = await this.executeQueuedCommand(nextCommand);
+        nextCommand.resolve(success);
+
+        if (this.commandQueue.length > 0) {
+          await new Promise((resolve) => setTimeout(resolve, CONTROL_POINT_SETTLE_MS));
+        }
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
+  private async executeQueuedCommand(command: FTMSQueuedCommand): Promise<boolean> {
+    try {
+      if (command.targetMode) {
+        const switched = await this.ensureControlMode(command.targetMode, command.context);
+        if (!switched) {
+          this.recordCommandResult(command, {
+            requestOpCode: command.requestOpCode,
+            resultCode: FTMS_RESULT_CODES.OPERATION_FAILED,
+            resultCodeName: "Failed to switch control mode",
+            success: false,
+          });
+          return false;
+        }
+      }
+
+      const response = await this.writeControlPoint(command.buffer);
+      this.recordCommandResult(command, response);
       return response.success;
     } catch (error) {
-      console.error("[FTMS] Failed to set cadence target:", error);
-      this.controlEvents.push({
-        timestamp: Date.now(),
-        controlType: "power_target",
-        targetValue: targetCadence,
+      this.recordCommandResult(command, {
+        requestOpCode: command.requestOpCode,
+        resultCode: FTMS_RESULT_CODES.OPERATION_FAILED,
+        resultCodeName: String(error),
         success: false,
-        errorMessage: String(error),
       });
       return false;
     }
   }
 
-  // ==================== Control Point Write ====================
+  private async ensureControlMode(
+    targetMode: ControlMode,
+    context: Required<FTMSCommandContext>,
+  ): Promise<boolean> {
+    if (this.currentControlMode === targetMode) {
+      return true;
+    }
+
+    const response = await this.writeControlPoint(new Uint8Array([FTMS_OPCODES.RESET]));
+    if (!response.success) {
+      this.lastCommandStatus = {
+        source: context.source,
+        commandType: "reset",
+        controlMode: this.currentControlMode ?? null,
+        success: false,
+        errorMessage: response.resultCodeName,
+        queuedAt: Date.parse(context.createdAt),
+        completedAt: Date.now(),
+      };
+      return false;
+    }
+
+    this.currentControlMode = targetMode;
+    this.lastCommandStatus = {
+      source: context.source,
+      commandType: "reset",
+      controlMode: this.currentControlMode,
+      success: true,
+      queuedAt: Date.parse(context.createdAt),
+      completedAt: Date.now(),
+    };
+    return true;
+  }
+
+  private recordCommandResult(command: FTMSQueuedCommand, response: FTMSResponse): void {
+    const completedAt = Date.now();
+
+    this.controlEvents.push({
+      timestamp: completedAt,
+      controlType: command.controlType,
+      targetValue: command.targetValue ?? 0,
+      success: response.success,
+      errorMessage: response.success ? undefined : response.resultCodeName,
+    });
+
+    this.lastCommandStatus = {
+      source: command.context.source,
+      commandType: command.commandType,
+      controlMode: command.targetMode ?? this.currentControlMode ?? null,
+      targetValue: command.targetValue,
+      success: response.success,
+      errorMessage: response.success ? undefined : response.resultCodeName,
+      queuedAt: Date.parse(command.context.createdAt),
+      completedAt,
+    };
+
+    if (response.success) {
+      console.log(`[FTMS] ${command.commandType} applied`);
+    } else {
+      console.warn(`[FTMS] ${command.commandType} failed: ${response.resultCodeName}`);
+    }
+  }
 
   /**
-   * Write to FTMS Control Point characteristic with blocking and response validation
-   * Prevents multiple simultaneous writes and validates responses according to FTMS spec
+   * Write to FTMS Control Point characteristic and validate responses according to FTMS spec
    */
-  private async writeControlPoint(
-    buffer: Uint8Array,
-    retries = 3,
-  ): Promise<FTMSResponse> {
-    // Check if control point is blocked
-    if (this.isBlocked) {
-      console.warn("[FTMS] Control point blocked, rejecting write");
-      return {
-        requestOpCode: buffer[0],
-        resultCode: FTMS_RESULT_CODES.OPERATION_FAILED,
-        resultCodeName: "Blocked",
-        success: false,
-      };
-    }
-
-    // Block control point
-    this.isBlocked = true;
-
+  private async writeControlPoint(buffer: Uint8Array, retries = 3): Promise<FTMSResponse> {
     const requestOpCode = buffer[0];
 
-    try {
-      for (let attempt = 0; attempt < retries; attempt++) {
-        try {
-          let abortResponseWait: (() => void) | undefined;
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        let abortResponseWait: (() => void) | undefined;
 
-          const responsePromise = new Promise<FTMSResponse>(
-            (resolve, reject) => {
-              let settled = false;
-              let subscription: { remove: () => void } | undefined;
-              let timeout: ReturnType<typeof setTimeout> | undefined;
+        const responsePromise = new Promise<FTMSResponse>((resolve, reject) => {
+          let settled = false;
+          let subscription: { remove: () => void } | undefined;
+          let timeout: ReturnType<typeof setTimeout> | undefined;
 
-              const cleanup = () => {
-                if (timeout) {
-                  clearTimeout(timeout);
-                  timeout = undefined;
-                }
-                if (subscription) {
-                  subscription.remove();
-                  subscription = undefined;
-                }
-              };
+          const cleanup = () => {
+            if (timeout) {
+              clearTimeout(timeout);
+              timeout = undefined;
+            }
+            if (subscription) {
+              subscription.remove();
+              subscription = undefined;
+            }
+          };
 
-              const succeed = (response: FTMSResponse) => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                resolve(response);
-              };
+          const succeed = (response: FTMSResponse) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve(response);
+          };
 
-              const fail = (error: Error) => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                reject(error);
-              };
+          const fail = (error: Error) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(error);
+          };
 
-              timeout = setTimeout(() => {
-                fail(new Error("Response timeout"));
-              }, 2000);
+          timeout = setTimeout(() => {
+            fail(new Error("Response timeout"));
+          }, 2000);
 
-              abortResponseWait = () => {
-                fail(new Error("Control point write aborted"));
-              };
+          abortResponseWait = () => {
+            fail(new Error("Control point write aborted"));
+          };
 
-              subscription = this.device.monitorCharacteristicForService(
-                BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-                FTMS_CHARACTERISTICS.CONTROL_POINT,
-                (error, characteristic) => {
-                  if (error) {
-                    fail(
-                      error instanceof Error ? error : new Error(String(error)),
-                    );
-                    return;
-                  }
+          subscription = this.device.monitorCharacteristicForService(
+            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+            FTMS_CHARACTERISTICS.CONTROL_POINT,
+            (error, characteristic) => {
+              if (error) {
+                fail(error instanceof Error ? error : new Error(String(error)));
+                return;
+              }
 
-                  if (!characteristic?.value) return;
+              if (!characteristic?.value) return;
 
-                  const responseBytes = decodeBase64ToBytes(
-                    characteristic.value,
-                  );
+              const responseBytes = decodeBase64ToBytes(characteristic.value);
 
-                  if (responseBytes.byteLength < 1) {
-                    return;
-                  }
+              if (responseBytes.byteLength < 1) {
+                return;
+              }
 
-                  const responseOpCode = responseBytes[0];
-                  if (responseOpCode !== FTMS_OPCODES.RESPONSE_CODE) {
-                    return;
-                  }
+              const responseOpCode = responseBytes[0];
+              if (responseOpCode !== FTMS_OPCODES.RESPONSE_CODE) {
+                return;
+              }
 
-                  if (responseBytes.byteLength < 3) {
-                    fail(new Error("Malformed FTMS response payload"));
-                    return;
-                  }
+              if (responseBytes.byteLength < 3) {
+                fail(new Error("Malformed FTMS response payload"));
+                return;
+              }
 
-                  const receivedRequestOpCode = responseBytes[1];
-                  if (receivedRequestOpCode !== requestOpCode) {
-                    console.warn(
-                      `[FTMS] Ignoring response for opcode 0x${receivedRequestOpCode.toString(16)} while waiting for 0x${requestOpCode.toString(16)}`,
-                    );
-                    return;
-                  }
+              const receivedRequestOpCode = responseBytes[1];
+              if (receivedRequestOpCode !== requestOpCode) {
+                console.warn(
+                  `[FTMS] Ignoring response for opcode 0x${receivedRequestOpCode.toString(16)} while waiting for 0x${requestOpCode.toString(16)}`,
+                );
+                return;
+              }
 
-                  const resultCode = responseBytes[2];
-                  succeed({
-                    requestOpCode,
-                    resultCode,
-                    resultCodeName: this.getResultCodeName(resultCode),
-                    success: resultCode === FTMS_RESULT_CODES.SUCCESS,
-                    parameters:
-                      responseBytes.byteLength > 3
-                        ? responseBytes.slice(3)
-                        : undefined,
-                  });
-                },
-              );
+              const resultCode = responseBytes[2];
+              succeed({
+                requestOpCode,
+                resultCode,
+                resultCodeName: this.getResultCodeName(resultCode),
+                success: resultCode === FTMS_RESULT_CODES.SUCCESS,
+                parameters: responseBytes.byteLength > 3 ? responseBytes.slice(3) : undefined,
+              });
             },
           );
+        });
 
-          try {
-            await this.device.writeCharacteristicWithResponseForService(
-              BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-              FTMS_CHARACTERISTICS.CONTROL_POINT,
-              Buffer.from(buffer).toString("base64"),
-            );
-          } catch (writeError) {
-            abortResponseWait?.();
-            throw writeError;
-          }
+        try {
+          await this.device.writeCharacteristicWithResponseForService(
+            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+            FTMS_CHARACTERISTICS.CONTROL_POINT,
+            Buffer.from(buffer).toString("base64"),
+          );
+        } catch (writeError) {
+          abortResponseWait?.();
+          throw writeError;
+        }
 
-          const response = await responsePromise;
-          return response;
-        } catch (error) {
-          console.warn(`[FTMS] Write attempt ${attempt + 1} failed:`, error);
+        const response = await responsePromise;
+        return response;
+      } catch (error) {
+        console.warn(`[FTMS] Write attempt ${attempt + 1} failed:`, error);
 
-          if (attempt < retries - 1) {
-            const delay = Math.pow(2, attempt) * 500;
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
+        if (attempt < retries - 1) {
+          const delay = Math.pow(2, attempt) * 500;
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
-
-      // All retries failed
-      return {
-        requestOpCode,
-        resultCode: FTMS_RESULT_CODES.OPERATION_FAILED,
-        resultCodeName: "All retries failed",
-        success: false,
-      };
-    } finally {
-      setTimeout(() => {
-        this.isBlocked = false;
-      }, 500);
     }
+
+    return {
+      requestOpCode,
+      resultCode: FTMS_RESULT_CODES.OPERATION_FAILED,
+      resultCodeName: "All retries failed",
+      success: false,
+    };
   }
 
   /**
@@ -1138,9 +1081,7 @@ export class FTMSController {
             0x12: "Indoor bike simulation parameters changed",
           };
 
-          const message =
-            statusMessages[opCode] ||
-            `Unknown status (0x${opCode.toString(16)})`;
+          const message = statusMessages[opCode] || `Unknown status (0x${opCode.toString(16)})`;
           console.log("[FTMS] Status:", message);
           callback(message);
         },
@@ -1162,6 +1103,10 @@ export class FTMSController {
 
   getControlEvents(): FTMSControlEvent[] {
     return this.controlEvents;
+  }
+
+  getLastCommandStatus(): RecordingTrainerCommandStatus | null {
+    return this.lastCommandStatus;
   }
 
   clearControlEvents(): void {

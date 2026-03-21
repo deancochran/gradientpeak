@@ -1,16 +1,8 @@
-import {
-  calculateATL,
-  calculateCTL,
-  calculateTSB,
-  getFormStatus,
-} from "../calculations";
 import { addDays } from "../calculations";
-import type {
-  FatiguePrediction,
-  FitnessState,
-  PlannedActivity,
-  FormStatus,
-} from "./types";
+import { getFormStatus } from "../load/form";
+import { calculateATL, calculateCTL, calculateTSB } from "../load/progression";
+import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "../load/replay";
+import type { FatiguePrediction, FitnessState, FormStatus, PlannedActivity } from "./types";
 
 /**
  * Predict fatigue impact after completing a planned activity
@@ -66,15 +58,11 @@ export function predictFatigue(
   const warnings: string[] = [];
 
   if (!isSafe) {
-    warnings.push(
-      `Ramp rate of ${rampRate.toFixed(1)} TSS/week exceeds safe limit (8 TSS/week)`,
-    );
+    warnings.push(`Ramp rate of ${rampRate.toFixed(1)} TSS/week exceeds safe limit (8 TSS/week)`);
   }
 
   if (newTSB < -30) {
-    warnings.push(
-      "This activity will push you into overreaching territory (TSB < -30)",
-    );
+    warnings.push("This activity will push you into overreaching territory (TSB < -30)");
   }
 
   if (totalWeeklyTSS > currentState.ctl * 1.5) {
@@ -209,36 +197,32 @@ function projectWeekEndCTL(
   scheduledDate: Date,
   weekEnd: Date,
 ): number {
-  // Collect all activities for the week
-  const weekActivities = plannedActivities.filter((activity) => {
+  const tssByDate = new Map<string, number>();
+
+  for (const activity of plannedActivities) {
     const activityDate = new Date(activity.scheduledDate);
-    return activityDate <= weekEnd;
-  });
+    if (activityDate > weekEnd) {
+      continue;
+    }
 
-  // Add the current activity being planned
-  const allActivities = [
-    ...weekActivities,
-    {
-      id: "current",
-      scheduledDate: scheduledDate,
-      estimatedTSS: additionalTSS,
-      name: "Current",
-    },
-  ];
-
-  // Sort by date
-  allActivities.sort(
-    (a, b) =>
-      new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime(),
-  );
-
-  // Project CTL day by day
-  let projectedCTL = currentCTL;
-  for (const activity of allActivities) {
-    projectedCTL = calculateCTL(projectedCTL, activity.estimatedTSS);
+    const dateKey = activityDate.toISOString().split("T")[0]!;
+    tssByDate.set(dateKey, (tssByDate.get(dateKey) ?? 0) + activity.estimatedTSS);
   }
 
-  return projectedCTL;
+  const scheduledDateKey = scheduledDate.toISOString().split("T")[0]!;
+  tssByDate.set(scheduledDateKey, (tssByDate.get(scheduledDateKey) ?? 0) + additionalTSS);
+
+  const replayed = replayTrainingLoadByDate({
+    dailyTss: buildDailyTssByDateSeries({
+      startDate: getStartOfWeek(scheduledDate).toISOString().split("T")[0]!,
+      endDate: weekEnd.toISOString().split("T")[0]!,
+      tssByDate,
+    }),
+    initialCTL: currentCTL,
+    initialATL: currentCTL,
+  });
+
+  return replayed.at(-1)?.ctl ?? currentCTL;
 }
 
 /**
@@ -286,10 +270,7 @@ export function estimateWeeklyLoad(
   });
 
   // Calculate total TSS
-  const totalTSS = weekActivities.reduce(
-    (sum, activity) => sum + activity.estimatedTSS,
-    0,
-  );
+  const totalTSS = weekActivities.reduce((sum, activity) => sum + activity.estimatedTSS, 0);
 
   // Create daily breakdown
   const dailyBreakdown: Array<{ date: Date; tss: number; count: number }> = [];
@@ -300,10 +281,7 @@ export function estimateWeeklyLoad(
       return activityDate.toDateString() === date.toDateString();
     });
 
-    const dayTSS = dayActivities.reduce(
-      (sum, activity) => sum + activity.estimatedTSS,
-      0,
-    );
+    const dayTSS = dayActivities.reduce((sum, activity) => sum + activity.estimatedTSS, 0);
 
     dailyBreakdown.push({
       date,
@@ -312,11 +290,22 @@ export function estimateWeeklyLoad(
     });
   }
 
-  // Project end-of-week CTL
-  let projectedCTL = currentState.ctl;
+  const tssByDate = new Map<string, number>();
   for (const activity of weekActivities) {
-    projectedCTL = calculateCTL(projectedCTL, activity.estimatedTSS);
+    const dateKey = new Date(activity.scheduledDate).toISOString().split("T")[0]!;
+    tssByDate.set(dateKey, (tssByDate.get(dateKey) ?? 0) + activity.estimatedTSS);
   }
+
+  const replayed = replayTrainingLoadByDate({
+    dailyTss: buildDailyTssByDateSeries({
+      startDate: weekStart.toISOString().split("T")[0]!,
+      endDate: weekEnd.toISOString().split("T")[0]!,
+      tssByDate,
+    }),
+    initialCTL: currentState.ctl,
+    initialATL: currentState.atl,
+  });
+  const projectedCTL = replayed.at(-1)?.ctl ?? currentState.ctl;
 
   // Calculate ramp rate
   const rampRate = projectedCTL - currentState.ctl;

@@ -1,22 +1,15 @@
+import { formatDurationSec } from "@repo/core";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { getActivityCategoryConfig } from "@/lib/constants/activities";
-import { formatDurationSec } from "@repo/core/utils/dates";
-import {
-  Heart,
-  MessageCircle,
-  MapPin,
-  Clock,
-  Zap,
-  TrendingUp,
-} from "lucide-react-native";
-import { TouchableOpacity, View } from "react-native";
-import { trpc } from "@/lib/trpc";
-import { useState, useCallback } from "react";
-import { useRouter } from "expo-router";
 import { formatDistanceToNow } from "date-fns";
+import { useRouter } from "expo-router";
+import { Clock, Heart, MapPin, MessageCircle, TrendingUp, Zap } from "lucide-react-native";
+import { useCallback, useState } from "react";
+import { TouchableOpacity, View } from "react-native";
+import { getActivityCategoryConfig } from "@/lib/constants/activities";
+import { trpc } from "@/lib/trpc";
 
 // ============================================
 // TYPES
@@ -124,14 +117,8 @@ export function ActivityFeedItem({
     <Card className="mb-3 mx-4 mt-2">
       <CardContent className="p-4">
         {/* Header: Avatar, Username, Timestamp */}
-        <TouchableOpacity
-          className="flex-row items-center mb-3"
-          onPress={handleProfilePress}
-        >
-          <Avatar
-            alt={activity.profile?.username || "User"}
-            className="h-10 w-10 mr-3"
-          >
+        <TouchableOpacity className="flex-row items-center mb-3" onPress={handleProfilePress}>
+          <Avatar alt={activity.profile?.username || "User"} className="h-10 w-10 mr-3">
             {activity.profile?.avatar_url && (
               <AvatarImage source={{ uri: activity.profile.avatar_url }} />
             )}
@@ -152,11 +139,7 @@ export function ActivityFeedItem({
           <View
             className={`flex-row items-center px-2 py-1 rounded-full ${activityConfig.bgColor}`}
           >
-            <Icon
-              as={activityConfig.icon}
-              size={14}
-              className={`mr-1 ${activityConfig.color}`}
-            />
+            <Icon as={activityConfig.icon} size={14} className={`mr-1 ${activityConfig.color}`} />
             <Text className={`text-xs font-medium ${activityConfig.color}`}>
               {activityConfig.name}
             </Text>
@@ -165,19 +148,13 @@ export function ActivityFeedItem({
 
         {/* Activity Details - Clickable */}
         <TouchableOpacity onPress={handleActivityPress}>
-          <Text className="text-lg font-bold text-foreground mb-2">
-            {activity.name}
-          </Text>
+          <Text className="text-lg font-bold text-foreground mb-2">{activity.name}</Text>
 
           {/* Stats Row */}
           <View className="flex-row flex-wrap gap-x-3 gap-y-1 mb-2">
             {activity.distance_meters > 0 && (
               <View className="flex-row items-center">
-                <Icon
-                  as={MapPin}
-                  size={12}
-                  className="text-muted-foreground mr-1"
-                />
+                <Icon as={MapPin} size={12} className="text-muted-foreground mr-1" />
                 <Text className="text-sm text-foreground">
                   {formatDistanceDisplay(activity.distance_meters)}
                 </Text>
@@ -186,11 +163,7 @@ export function ActivityFeedItem({
 
             {activity.duration_seconds > 0 && (
               <View className="flex-row items-center">
-                <Icon
-                  as={Clock}
-                  size={12}
-                  className="text-muted-foreground mr-1"
-                />
+                <Icon as={Clock} size={12} className="text-muted-foreground mr-1" />
                 <Text className="text-sm text-foreground">
                   {formatDurationDisplay(activity.duration_seconds)}
                 </Text>
@@ -199,40 +172,22 @@ export function ActivityFeedItem({
 
             {activity.avg_heart_rate !== null && (
               <View className="flex-row items-center">
-                <Icon
-                  as={Heart}
-                  size={12}
-                  className="text-muted-foreground mr-1"
-                />
-                <Text className="text-sm text-foreground">
-                  {activity.avg_heart_rate}
-                </Text>
+                <Icon as={Heart} size={12} className="text-muted-foreground mr-1" />
+                <Text className="text-sm text-foreground">{activity.avg_heart_rate}</Text>
               </View>
             )}
 
             {activity.avg_power !== null && (
               <View className="flex-row items-center">
-                <Icon
-                  as={Zap}
-                  size={12}
-                  className="text-muted-foreground mr-1"
-                />
-                <Text className="text-sm text-foreground">
-                  {activity.avg_power}
-                </Text>
+                <Icon as={Zap} size={12} className="text-muted-foreground mr-1" />
+                <Text className="text-sm text-foreground">{activity.avg_power}</Text>
               </View>
             )}
 
             {activity.training_stress_score !== null && (
               <View className="flex-row items-center">
-                <Icon
-                  as={TrendingUp}
-                  size={12}
-                  className="text-muted-foreground mr-1"
-                />
-                <Text className="text-sm text-foreground">
-                  {activity.training_stress_score}
-                </Text>
+                <Icon as={TrendingUp} size={12} className="text-muted-foreground mr-1" />
+                <Text className="text-sm text-foreground">{activity.training_stress_score}</Text>
               </View>
             )}
           </View>
@@ -241,9 +196,7 @@ export function ActivityFeedItem({
           {activity.polyline && (
             <View className="flex-row items-center mt-2">
               <MapPin size={14} className="text-muted-foreground mr-1" />
-              <Text className="text-xs text-muted-foreground">
-                Route available
-              </Text>
+              <Text className="text-xs text-muted-foreground">Route available</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -261,22 +214,15 @@ export function ActivityFeedItem({
               className={`mr-1 ${isLiked ? "fill-red-500 text-red-500" : "text-muted-foreground"}`}
               color={isLiked ? "#ef4444" : undefined}
             />
-            <Text
-              className={`text-sm ${isLiked ? "text-red-500" : "text-muted-foreground"}`}
-            >
+            <Text className={`text-sm ${isLiked ? "text-red-500" : "text-muted-foreground"}`}>
               {likesCount}
             </Text>
           </TouchableOpacity>
 
           {/* Comment Button */}
-          <TouchableOpacity
-            className="flex-row items-center"
-            onPress={handleCommentPress}
-          >
+          <TouchableOpacity className="flex-row items-center" onPress={handleCommentPress}>
             <MessageCircle size={20} className="mr-1 text-muted-foreground" />
-            <Text className="text-sm text-muted-foreground">
-              {activity.comments_count}
-            </Text>
+            <Text className="text-sm text-muted-foreground">{activity.comments_count}</Text>
           </TouchableOpacity>
         </View>
       </CardContent>

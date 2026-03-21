@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "pnpm exec expo start -c --lan",
     "start": "pnpm exec expo start -c",
+    "storybook": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 pnpm exec expo start -c --lan",
+    "storybook:generate": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 sb-rn-get-stories --config-path ./.rnstorybook",
+    "storybook:watch": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 sb-rn-watcher --config-path ./.rnstorybook",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "bash -lc 'set -euo pipefail; AVD_NAME=\"${GP_ANDROID_AVD:-Pixel_8_API_35}\"; EMULATOR_BIN=\"${ANDROID_HOME:-/opt/android-sdk}/emulator/emulator\"; LOG_DIR=.maestro; mkdir -p \"$LOG_DIR\"; SERIAL=$(adb devices | awk \"/^emulator-[0-9]+[[:space:]]+device$/ { print \\\\$1; exit }\"); if [ -z \"${SERIAL:-}\" ]; then nohup env ANDROID_EMULATOR_USE_SYSTEM_LIBS=1 \"$EMULATOR_BIN\" -avd \"$AVD_NAME\" -no-window -gpu swiftshader_indirect -no-boot-anim -no-snapshot-save > \"$LOG_DIR/emulator.log\" 2>&1 & for _ in $(seq 1 120); do SERIAL=$(adb devices | awk \"/^emulator-[0-9]+[[:space:]]+device$/ { print \\\\$1; exit }\"); [ -n \"${SERIAL:-}\" ] && break; sleep 2; done; fi; [ -n \"${SERIAL:-}\" ] || { echo \"[mobile-android] ERROR: no emulator detected\" >&2; exit 1; }; adb -s \"$SERIAL\" wait-for-device >/dev/null; for _ in $(seq 1 180); do BOOT=$(adb -s \"$SERIAL\" shell getprop sys.boot_completed 2>/dev/null | tr -d \"\\r\"); [ \"$BOOT\" = \"1\" ] && break; sleep 2; done; [ \"${BOOT:-}\" = \"1\" ] || { echo \"[mobile-android] ERROR: emulator boot timed out\" >&2; exit 1; }; pnpm exec expo run:android -d \"$SERIAL\"'",
     "ios": "pnpm exec expo run:ios",
@@ -123,6 +126,9 @@
   "devDependencies": {
     "@babel/core": "^7.28.5",
     "@expo/metro-config": "~54.0.8",
+    "@storybook/addon-ondevice-actions": "^9.1.4",
+    "@storybook/addon-ondevice-controls": "^9.1.4",
+    "@storybook/react-native": "^9.1.4",
     "@repo/typescript-config": "workspace:*",
     "@tailwindcss/postcss": "^4.1.16",
     "@types/lodash": "^4.17.23",
@@ -134,6 +140,7 @@
     "lightningcss": "1.30.1",
     "postcss": "^8.5.8",
     "react-test-renderer": "19.1.0",
+    "storybook": "^9.1.4",
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3"
   },

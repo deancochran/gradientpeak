@@ -1,26 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import { renderWeb, screen } from "../../test/render-web";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "./index.web";
+import { accordionFixtures } from "./fixtures";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./index.web";
 
 describe("Accordion web", () => {
   it("maps normalized test props onto accordion items", () => {
     renderWeb(
-      <Accordion collapsible defaultValue="profile" type="single">
-        <AccordionItem testId="settings-section" value="profile">
-          <AccordionTrigger>Profile</AccordionTrigger>
-          <AccordionContent>Profile content</AccordionContent>
+      <Accordion collapsible defaultValue={accordionFixtures.settings.value} type="single">
+        <AccordionItem
+          testId={accordionFixtures.settings.testId}
+          value={accordionFixtures.settings.value}
+        >
+          <AccordionTrigger>{accordionFixtures.settings.title}</AccordionTrigger>
+          <AccordionContent>{accordionFixtures.settings.content}</AccordionContent>
         </AccordionItem>
       </Accordion>,
     );
 
-    expect(screen.getByTestId("settings-section")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Profile" })).toBeInTheDocument();
-    expect(screen.getByText("Profile content")).toBeInTheDocument();
+    expect(screen.getByTestId(accordionFixtures.settings.testId)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: accordionFixtures.settings.title }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(accordionFixtures.settings.content)).toBeInTheDocument();
   });
 });

@@ -1,16 +1,23 @@
 import {
-  RecordingServiceActivityPlan,
+  type ControlMode,
+  type CurrentMetricValue as CoreCurrentMetricValue,
+  type RecordingSessionArtifact as CoreRecordingSessionArtifact,
+  type RecordingSessionOverride as CoreRecordingSessionOverride,
+  type RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
+  type IntervalStepV2,
+  type MetricFamily,
+  type MetricProvenance,
+  type MetricSourceSelection,
   type PublicActivityMetric,
   type PublicActivityMetricDataType,
+  type RecordingConfiguration,
+  type RecordingControlPolicy,
+  RecordingServiceActivityPlan,
+  type RecordingTrainerIntentSource,
+  type RecordingTrainerMachineType,
 } from "@repo/core";
 import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
-import {
-  Activity,
-  Bike,
-  Dumbbell,
-  Footprints,
-  Waves,
-} from "lucide-react-native";
+import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
 /**
  * @deprecated Use getActivityDisplayName from @repo/core instead
@@ -377,12 +384,7 @@ export interface RecordingFinishedPayload {
 
 // === Error Types ===
 export interface LiveMetricsError {
-  type:
-    | "calculation"
-    | "buffer_overflow"
-    | "sensor_timeout"
-    | "memory_limit"
-    | "invalid_data";
+  type: "calculation" | "buffer_overflow" | "sensor_timeout" | "memory_limit" | "invalid_data";
   message: string;
   timestamp: number;
   metric?: string;
@@ -419,6 +421,117 @@ export interface RecordingMetadata {
   eventId?: string;
   activityPlan?: RecordingServiceActivityPlan;
   fitFilePath?: string;
+}
+
+export type RecorderLifecycleState =
+  | "pending"
+  | "ready"
+  | "recording"
+  | "paused"
+  | "finishing"
+  | "finished";
+
+export type RecordingSessionSnapshot = CoreRecordingSessionSnapshot;
+export type RecordingSessionOverride = CoreRecordingSessionOverride;
+export type CurrentMetricValue = CoreCurrentMetricValue;
+
+export interface RecordingSourceChangeEvent {
+  metricFamily: MetricFamily;
+  previousSourceId: string | null;
+  nextSourceId: string | null;
+  previousProvenance: MetricProvenance;
+  nextProvenance: MetricProvenance;
+  recordedAt: string;
+}
+
+export interface RecordingDegradedState {
+  isDegraded: boolean;
+  metrics: MetricFamily[];
+}
+
+export interface RecordingRuntimeSourceState {
+  selectedSources: MetricSourceSelection[];
+  currentMetrics: Partial<Record<MetricFamily, CurrentMetricValue>>;
+  degradedState: RecordingDegradedState;
+  sourceChanges: RecordingSourceChangeEvent[];
+}
+
+export type RecordingSessionArtifact = CoreRecordingSessionArtifact & {
+  runtimeSourceState: RecordingRuntimeSourceState;
+};
+
+export interface RecordingSessionOverrideState {
+  trainerMode: "auto" | "manual";
+  intensityScale: number;
+  preferredSources: Partial<Record<MetricFamily, string>>;
+}
+
+export interface RecordingPlanView {
+  hasPlan: boolean;
+  name?: string;
+  description?: string | null;
+  activityType?: PublicActivityCategory | null;
+  stepIndex: number;
+  stepCount: number;
+  currentStep?: IntervalStepV2;
+  progress: {
+    movingTime: number;
+    duration: number;
+    progress: number;
+    requiresManualAdvance: boolean;
+    canAdvance: boolean;
+  } | null;
+  isLast: boolean;
+  isFinished: boolean;
+  canAdvance: boolean;
+  planTimeRemaining: number;
+}
+
+export interface RecordingTrainerCommandStatus {
+  source: RecordingTrainerIntentSource;
+  commandType:
+    | "request_control"
+    | "reset"
+    | "set_power"
+    | "set_simulation"
+    | "set_resistance"
+    | "set_speed"
+    | "set_incline"
+    | "set_heart_rate"
+    | "set_cadence";
+  controlMode: ControlMode | null;
+  targetValue?: number;
+  success: boolean;
+  errorMessage?: string;
+  queuedAt: number;
+  completedAt: number;
+}
+
+export type RecordingTrainerRecoveryState =
+  | "idle"
+  | "applying_reconnect_recovery"
+  | "recovered"
+  | "failed";
+
+export interface RecordingTrainerView {
+  machineType: RecordingTrainerMachineType | null;
+  currentControlMode: ControlMode | null;
+  recoveryState: RecordingTrainerRecoveryState;
+  lastCommandStatus: RecordingTrainerCommandStatus | null;
+}
+
+export interface RecordingSessionView {
+  lifecycle: RecorderLifecycleState;
+  snapshot: RecordingSessionSnapshot | null;
+  overrides: RecordingSessionOverride[];
+  overrideState: RecordingSessionOverrideState;
+  trainerControlPolicy: RecordingControlPolicy;
+  trainer: RecordingTrainerView;
+  currentReadings: CurrentReadings;
+  sessionStats: SessionStats;
+  recordingConfiguration: RecordingConfiguration;
+  runtimeSourceState: RecordingRuntimeSourceState;
+  plan: RecordingPlanView;
 }
 
 // ================================
