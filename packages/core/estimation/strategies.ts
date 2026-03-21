@@ -1,5 +1,12 @@
 import type { PublicActivityCategory } from "@repo/supabase";
+import { getDurationSeconds as getCanonicalDurationSeconds } from "../duration";
 import type { IntervalStepV2 } from "../schemas/activity_plan_v2";
+import {
+  getSportRouteBaseSpeed,
+  getSportTemplateDefaults,
+  getSportThresholdToEndurancePaceMultiplier,
+} from "../sports";
+import { getHrZoneIndexFromThresholdPercent, getPowerZoneIndexFromFtpPercent } from "../zones";
 import type { EstimationContext, EstimationResult, Route } from "./types";
 
 /**
@@ -12,51 +19,9 @@ interface UserSettings {
 }
 
 /**
- * Get duration in seconds for a V2 step
- */
-function getDurationSeconds(
-  duration: IntervalStepV2["duration"],
-  options?: {
-    paceSecondsPerKm?: number;
-    secondsPerRep?: number;
-    activityCategory?: PublicActivityCategory;
-  },
-): number {
-  const categoryPaceSecondsPerKm: Record<PublicActivityCategory, number> = {
-    run: 300,
-    bike: 120,
-    swim: 1000,
-    strength: 300,
-    other: 300,
-  };
-  const defaultPaceSecondsPerKm = options?.activityCategory
-    ? categoryPaceSecondsPerKm[options.activityCategory]
-    : 300;
-
-  switch (duration.type) {
-    case "time":
-      return duration.seconds;
-    case "distance":
-      const paceSecondsPerKm =
-        options?.paceSecondsPerKm ?? defaultPaceSecondsPerKm;
-      return (duration.meters / 1000) * paceSecondsPerKm;
-    case "repetitions":
-      const secondsPerRep = options?.secondsPerRep ?? 10; // 10 sec/rep default
-      return duration.count * secondsPerRep;
-    case "untilFinished":
-      return 300; // 5 minutes default
-    default:
-      return 0;
-  }
-}
-
-/**
  * Calculate Intensity Factor (IF) for a V2 step
  */
-function calculateStepIntensityFactor(
-  step: IntervalStepV2,
-  userSettings: UserSettings,
-): number {
+function calculateStepIntensityFactor(step: IntervalStepV2, userSettings: UserSettings): number {
   const target = step.targets?.[0];
   if (!target) return 0;
 
@@ -98,17 +63,9 @@ function calculateStepIntensityFactor(
  * Highest accuracy for activities with defined step structure
  * Accuracy: 90-95% for power-based, 80-85% for HR-based
  */
-export function estimateFromStructure(
-  context: EstimationContext,
-): EstimationResult {
-  const {
-    structure,
-    profile,
-    activityCategory,
-    ftp,
-    thresholdHr,
-    thresholdPaceSecondsPerKm,
-  } = context;
+export function estimateFromStructure(context: EstimationContext): EstimationResult {
+  const { structure, profile, activityCategory, ftp, thresholdHr, thresholdPaceSecondsPerKm } =
+    context;
 
   if (!structure?.intervals || structure.intervals.length === 0) {
     throw new Error("Structure-based estimation requires intervals");
@@ -136,30 +93,25 @@ export function estimateFromStructure(
           activityCategory,
           paceSecondsPerKm:
             activityCategory === "run" && thresholdPaceSecondsPerKm
-              ? Math.round(thresholdPaceSecondsPerKm * 1.12)
+              ? Math.round(
+                  thresholdPaceSecondsPerKm * getSportThresholdToEndurancePaceMultiplier("run"),
+                )
               : undefined,
         } as const;
-        const stepDurationWithCategory = getDurationSeconds(
+        const stepDurationWithCategory = getCanonicalDurationSeconds(
           step.duration,
           durationOptions,
         );
 
         const stepIF = calculateStepIntensityFactor(step, userSettings);
-        const stepTSS =
-          (stepDurationWithCategory / 3600) * Math.pow(stepIF, 2) * 100;
+        const stepTSS = (stepDurationWithCategory / 3600) * Math.pow(stepIF, 2) * 100;
 
         totalTSS += stepTSS;
         totalDuration += stepDurationWithCategory;
         totalWeightedIF += stepIF * stepDurationWithCategory;
 
         // Distribute time into zones based on targets
-        distributeStepIntoZones(
-          step,
-          stepDurationWithCategory,
-          hrZones,
-          powerZones,
-          userSettings,
-        );
+        distributeStepIntoZones(step, stepDurationWithCategory, hrZones, powerZones, userSettings);
       }
     }
   }
@@ -170,21 +122,14 @@ export function estimateFromStructure(
   const factors = ["structure-based"];
 
   if (!ftp && activityCategory === "bike") {
-    warnings.push(
-      "Missing FTP - using estimated values. Add FTP for better accuracy.",
-    );
+    warnings.push("Missing FTP - using estimated values. Add FTP for better accuracy.");
     factors.push("default-ftp");
   } else if (ftp) {
     factors.push("user-ftp");
   }
 
-  if (
-    !thresholdHr &&
-    (activityCategory === "run" || activityCategory === "bike")
-  ) {
-    warnings.push(
-      "Missing Threshold HR - heart rate estimates may be less accurate.",
-    );
+  if (!thresholdHr && (activityCategory === "run" || activityCategory === "bike")) {
+    warnings.push("Missing Threshold HR - heart rate estimates may be less accurate.");
   } else if (thresholdHr) {
     factors.push("user-threshold-hr");
   }
@@ -223,11 +168,8 @@ function distributeStepIntoZones(
       ftpPercent = (primaryTarget.intensity / profile.ftp) * 100;
     }
 
-    const powerZoneIndex = getPowerZoneIndex(ftpPercent);
-    if (
-      powerZoneIndex !== undefined &&
-      powerZones[powerZoneIndex] !== undefined
-    ) {
+    const powerZoneIndex = getPowerZoneIndexFromFtpPercent(ftpPercent);
+    if (powerZoneIndex !== undefined && powerZones[powerZoneIndex] !== undefined) {
       powerZones[powerZoneIndex] += duration;
     }
   }
@@ -254,7 +196,7 @@ function distributeStepIntoZones(
       hrPercent = (primaryTarget.intensity / profile.thresholdHR) * 100;
     }
 
-    const hrZoneIndex = getHRZoneIndex(hrPercent);
+    const hrZoneIndex = getHrZoneIndexFromThresholdPercent(hrPercent);
     if (hrZoneIndex !== undefined && hrZones[hrZoneIndex] !== undefined) {
       hrZones[hrZoneIndex] += duration;
     }
@@ -265,28 +207,6 @@ function distributeStepIntoZones(
  * Get power zone index based on FTP percentage
  * Z1: < 55% | Z2: 56-75% | Z3: 76-90% | Z4: 91-105% | Z5: 106-120% | Z6: 121-150% | Z7: 150%+
  */
-function getPowerZoneIndex(ftpPercent: number): number {
-  if (ftpPercent < 55) return 0;
-  if (ftpPercent < 76) return 1;
-  if (ftpPercent < 91) return 2;
-  if (ftpPercent < 106) return 3;
-  if (ftpPercent < 121) return 4;
-  if (ftpPercent < 151) return 5;
-  return 6;
-}
-
-/**
- * Get HR zone index based on threshold HR percentage
- * Z1: < 81% | Z2: 81-89% | Z3: 90-93% | Z4: 94-99% | Z5: 100%+
- */
-function getHRZoneIndex(thresholdPercent: number): number {
-  if (thresholdPercent < 81) return 0;
-  if (thresholdPercent < 90) return 1;
-  if (thresholdPercent < 94) return 2;
-  if (thresholdPercent < 100) return 3;
-  return 4;
-}
-
 // ==============================
 // Strategy 2: Route-Based
 // ==============================
@@ -296,9 +216,7 @@ function getHRZoneIndex(thresholdPercent: number): number {
  * Medium accuracy for GPS-enabled activities without structure
  * Accuracy: 70-80% depending on route detail
  */
-export function estimateFromRoute(
-  context: EstimationContext,
-): EstimationResult {
+export function estimateFromRoute(context: EstimationContext): EstimationResult {
   const {
     route,
     profile,
@@ -316,7 +234,8 @@ export function estimateFromRoute(
   // Estimate base speed based on activity type and fitness level
   let baseSpeed = estimateBaseSpeed(activityCategory, fitnessState);
   if (activityCategory === "run" && thresholdPaceSecondsPerKm) {
-    const endurancePaceSecondsPerKm = thresholdPaceSecondsPerKm * 1.12;
+    const endurancePaceSecondsPerKm =
+      thresholdPaceSecondsPerKm * getSportThresholdToEndurancePaceMultiplier(activityCategory);
     baseSpeed = 1000 / endurancePaceSecondsPerKm;
   }
 
@@ -382,24 +301,14 @@ function estimateBaseSpeed(
   fitnessState?: { ctl: number },
 ): number {
   // Base speeds in m/s for moderate effort
-  const baseSpeeds: Record<PublicActivityCategory, number> = {
-    run: 3.5, // ~4:45/km pace
-    bike: 8.5, // ~30 km/h
-    swim: 1.2, // ~1:25/100m pace
-    strength: 0, // Not applicable
-    other: 3.0,
-  };
-
-  let speed = baseSpeeds[activityCategory];
+  let speed = getSportRouteBaseSpeed(activityCategory);
 
   // Adjust for fitness level (CTL)
   if (fitnessState && fitnessState.ctl > 0) {
     // Higher fitness = faster base speed
     // CTL of 50 = baseline, CTL of 100 = 10% faster
     const fitnessMultiplier = 1 + (fitnessState.ctl - 50) / 500;
-    speed = speed
-      ? speed * Math.max(0.8, Math.min(1.2, fitnessMultiplier))
-      : speed;
+    speed = speed ? speed * Math.max(0.8, Math.min(1.2, fitnessMultiplier)) : speed;
   }
   if (!speed) {
     throw new Error("Assumed Speed, found not");
@@ -485,29 +394,13 @@ function estimatePowerFromElevation(
  * Lowest accuracy - fallback for activities without structure/route
  * Accuracy: 50-65%
  */
-export function estimateFromTemplate(
-  context: EstimationContext,
-): EstimationResult {
+export function estimateFromTemplate(context: EstimationContext): EstimationResult {
   const { activityCategory, fitnessState } = context;
 
-  // Default templates for different activity types
-  const templates: Record<
-    PublicActivityCategory,
-    { avgIF: number; avgDuration: number; avgTSS: number }
-  > = {
-    bike: { avgIF: 0.75, avgDuration: 3600, avgTSS: 60 },
-    run: { avgIF: 0.8, avgDuration: 2700, avgTSS: 55 },
-    swim: { avgIF: 0.7, avgDuration: 2400, avgTSS: 45 },
-    strength: { avgIF: 0.65, avgDuration: 2700, avgTSS: 40 },
-    other: { avgIF: 0.65, avgDuration: 1800, avgTSS: 30 },
-  };
-
-  const template = templates[activityCategory];
+  const template = getSportTemplateDefaults(activityCategory);
 
   // Adjust based on user fitness level (CTL)
-  const fitnessMultiplier = fitnessState
-    ? 1 + (fitnessState.ctl - 50) / 100
-    : 1.0;
+  const fitnessMultiplier = fitnessState ? 1 + (fitnessState.ctl - 50) / 100 : 1.0;
 
   const warnings = [
     "No structure or route provided - using default estimates.",

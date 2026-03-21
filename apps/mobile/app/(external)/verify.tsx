@@ -1,35 +1,17 @@
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Form, FormTextField } from "@repo/ui/components/form";
+import { Text } from "@repo/ui/components/text";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
 import { z } from "zod";
-
-import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
-import { Text } from "@repo/ui/components/text";
+import { supabase } from "@/lib/supabase/client";
 
 const verifySchema = z.object({
-  token: z
-    .string()
-    .length(6, "Code must be 6 digits")
-    .regex(/^\d+$/, "Must be numbers only"),
+  token: z.string().length(6, "Code must be 6 digits").regex(/^\d+$/, "Must be numbers only"),
 });
 
 type VerifyFields = z.infer<typeof verifySchema>;
@@ -42,8 +24,8 @@ export default function VerifyScreen() {
   const [isResending, setIsResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
 
-  const form = useForm<VerifyFields>({
-    resolver: zodResolver(verifySchema),
+  const form = useZodForm({
+    schema: verifySchema,
     defaultValues: {
       token: "",
     },
@@ -65,9 +47,7 @@ export default function VerifyScreen() {
       } = await supabase.auth.getUser();
 
       if (user && user.email_confirmed_at) {
-        console.log(
-          "✅ Email verified via external link, refreshing session...",
-        );
+        console.log("✅ Email verified via external link, refreshing session...");
         // Refresh session to update the auth store
         // This will trigger the useEffect above via isEmailVerified
         await supabase.auth.refreshSession();
@@ -132,6 +112,11 @@ export default function VerifyScreen() {
     }
   };
 
+  const submitForm = useZodFormSubmit({
+    form,
+    onSubmit: onVerify,
+  });
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -157,26 +142,13 @@ export default function VerifyScreen() {
           <CardContent className="gap-6">
             <Form {...form}>
               <View className="gap-4">
-                <FormField
+                <FormTextField
                   control={form.control}
+                  keyboardType="number-pad"
+                  label="Verification Code"
                   name="token"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Verification Code</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="123456"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          keyboardType="number-pad"
-                          maxLength={6}
-                          className="text-center text-lg tracking-widest"
-                          autoFocus
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="123456"
+                  className="text-center text-lg tracking-widest"
                 />
 
                 {form.formState.errors.root && (
@@ -188,7 +160,7 @@ export default function VerifyScreen() {
                 )}
 
                 <Button
-                  onPress={form.handleSubmit(onVerify)}
+                  onPress={submitForm.handleSubmit}
                   disabled={isVerifying}
                   className="w-full"
                   size="lg"
@@ -199,20 +171,13 @@ export default function VerifyScreen() {
             </Form>
 
             <View className="gap-2 pt-2">
-              <Button
-                variant="ghost"
-                onPress={onResend}
-                disabled={isResending}
-                className="w-full"
-              >
+              <Button variant="ghost" onPress={onResend} disabled={isResending} className="w-full">
                 <Text>{isResending ? "Sending..." : "Resend Code"}</Text>
               </Button>
               {resendMessage && (
                 <Text
                   className={`text-center text-xs ${
-                    resendMessage.includes("sent")
-                      ? "text-success"
-                      : "text-destructive"
+                    resendMessage.includes("sent") ? "text-success" : "text-destructive"
                   }`}
                 >
                   {resendMessage}

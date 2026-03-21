@@ -22,8 +22,8 @@ export const useThemeStore = create<ThemeStore>()(
   persist(
     (set, get) => ({
       // State
-      userPreference: "light" as ThemePreference,
-      resolvedTheme: "light" as ResolvedThemeMode,
+      userPreference: "system" as ThemePreference,
+      resolvedTheme: resolveThemeMode("system") as ResolvedThemeMode,
       isLoaded: false as boolean,
       hydrated: false as boolean,
 
@@ -44,22 +44,21 @@ export const useThemeStore = create<ThemeStore>()(
             });
             Appearance.setColorScheme(preference === "system" ? null : preference);
           } else {
-            // Default to light mode
-            const defaultTheme = "light";
+            const defaultTheme = "system";
             set({
               userPreference: defaultTheme,
               resolvedTheme: resolveThemeMode(defaultTheme),
             });
-            Appearance.setColorScheme(defaultTheme);
+            Appearance.setColorScheme(null);
             await AsyncStorage.setItem(THEME_STORAGE_KEY, defaultTheme);
           }
         } catch (error) {
           console.warn("Failed to load theme preference:", error);
           set({
-            userPreference: "light",
-            resolvedTheme: resolveThemeMode("light"),
+            userPreference: "system",
+            resolvedTheme: resolveThemeMode("system"),
           });
-          Appearance.setColorScheme("light");
+          Appearance.setColorScheme(null);
         } finally {
           set({ isLoaded: true });
         }

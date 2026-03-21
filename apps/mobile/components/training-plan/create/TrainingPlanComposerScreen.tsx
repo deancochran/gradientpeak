@@ -1,3 +1,35 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import type {
+  CreationAvailabilityConfig,
+  CreationContextSummary,
+  CreationFeasibilitySafetySummary,
+  CreationProvenance,
+  CreationValueSource,
+  PreviewState,
+  ProjectionChartPayload,
+  ReadinessDeltaDiagnostics,
+} from "@repo/core";
+import {
+  buildPreviewMinimalPlanFromForm,
+  getTopBlockingIssues,
+  reducePreviewState,
+  trainingPlanCalibrationConfigSchema,
+} from "@repo/core";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
+import { Stack, useRouter } from "expo-router";
+import { X } from "lucide-react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FieldError, type FieldErrors, useWatch } from "react-hook-form";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  View,
+} from "react-native";
 import {
   SinglePageForm,
   type TrainingPlanConfigConflict,
@@ -15,62 +47,17 @@ import {
   toTrainingPlanFormDataFromStructure,
 } from "@/lib/training-plan-form/adapters";
 import {
-  getTopBlockingIssues,
-  trainingPlanFormSchema,
-} from "@/lib/training-plan-form/validation";
-import {
   hasBehaviorControlsChanged,
   shouldApplyBehaviorControlSuggestions,
 } from "@/lib/training-plan-form/behaviorControlsState";
 import { computeLocalCreationPreview } from "@/lib/training-plan-form/localPreview";
-import { mapTrainingPlanSaveError } from "@/lib/training-plan-form/saveErrorMapping";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   nextPendingPreviewCount,
   shouldIgnorePreviewResponse,
 } from "@/lib/training-plan-form/previewRequestState";
+import { mapTrainingPlanSaveError } from "@/lib/training-plan-form/saveErrorMapping";
+import { trainingPlanFormSchema } from "@/lib/training-plan-form/validation";
 import { trpc } from "@/lib/trpc";
-import { Text } from "@repo/ui/components/text";
-import {
-  buildPreviewMinimalPlanFromForm,
-  reducePreviewState,
-  trainingPlanCalibrationConfigSchema,
-} from "@repo/core";
-import type {
-  CreationAvailabilityConfig,
-  CreationContextSummary,
-  CreationFeasibilitySafetySummary,
-  CreationProvenance,
-  CreationValueSource,
-  PreviewState,
-  ProjectionChartPayload,
-  ReadinessDeltaDiagnostics,
-} from "@repo/core";
-import { Stack, useRouter } from "expo-router";
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import {
-  type FieldError,
-  type FieldErrors,
-  useForm,
-  useWatch,
-} from "react-hook-form";
-import {
-  Alert,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  View,
-} from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { X } from "lucide-react-native";
-import { Icon } from "@repo/ui/components/icon";
 
 export type TrainingPlanComposerModeContract =
   | {
@@ -94,9 +81,7 @@ type TrainingPlanComposerScreenProps = TrainingPlanComposerModeContract & {
 };
 
 const isUuid = (value: string): boolean =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 function assertModeContract(contract: TrainingPlanComposerModeContract): void {
   if (contract.mode === "edit" && !isUuid(contract.planId)) {
@@ -119,8 +104,7 @@ const weekDays: CreationAvailabilityConfig["days"][number]["day"][] = [
   "sunday",
 ];
 
-const createLocalId = () =>
-  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const createLocalId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 const createDefaultGoal = (targetDate: string) => ({
   id: createLocalId(),
@@ -146,16 +130,13 @@ const ensureInternalGoal = (formData: TrainingPlanFormData) => {
 
   const candidateDate = formData.goals[0]?.targetDate;
   const hasValidCandidateDate =
-    typeof candidateDate === "string" &&
-    /^\d{4}-\d{2}-\d{2}$/.test(candidateDate)
+    typeof candidateDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(candidateDate)
       ? new Date(`${candidateDate}T00:00:00.000Z`) >= today
       : false;
 
   return {
     ...formData,
-    goals: [
-      createDefaultGoal(hasValidCandidateDate ? candidateDate : fallbackDate),
-    ],
+    goals: [createDefaultGoal(hasValidCandidateDate ? candidateDate : fallbackDate)],
   };
 };
 
@@ -184,9 +165,7 @@ type EditableTrainingPlan = {
   description: string | null;
 };
 
-const isEditableTrainingPlan = (
-  value: unknown,
-): value is EditableTrainingPlan => {
+const isEditableTrainingPlan = (value: unknown): value is EditableTrainingPlan => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
@@ -202,9 +181,7 @@ const isEditableTrainingPlan = (
   );
 };
 
-const flattenFormErrors = (
-  errors: FieldErrors<TrainingPlanFormData>,
-): Record<string, string> => {
+const flattenFormErrors = (errors: FieldErrors<TrainingPlanFormData>): Record<string, string> => {
   const flattened: Record<string, string> = {};
 
   const walk = (node: unknown, path: string) => {
@@ -248,19 +225,11 @@ const createDefaultAvailability = (): CreationAvailabilityConfig => ({
   days: weekDays.map((day) => ({
     day,
     windows:
-      day === "wednesday" ||
-      day === "friday" ||
-      day === "saturday" ||
-      day === "sunday"
+      day === "wednesday" || day === "friday" || day === "saturday" || day === "sunday"
         ? [{ start_minute_of_day: 360, end_minute_of_day: 450 }]
         : [],
     max_sessions:
-      day === "wednesday" ||
-      day === "friday" ||
-      day === "saturday" ||
-      day === "sunday"
-        ? 1
-        : 0,
+      day === "wednesday" || day === "friday" || day === "saturday" || day === "sunday" ? 1 : 0,
   })),
 });
 
@@ -323,9 +292,7 @@ const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   },
 });
 
-export function TrainingPlanComposerScreen(
-  contract: TrainingPlanComposerScreenProps,
-) {
+export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenProps) {
   assertModeContract(contract);
 
   const isEditMode = contract.mode === "edit";
@@ -346,29 +313,23 @@ export function TrainingPlanComposerScreen(
     [defaultTargetDate],
   );
 
-  const form = useForm<TrainingPlanFormData>({
-    resolver: zodResolver(trainingPlanFormSchema),
+  const form = useZodForm({
+    schema: trainingPlanFormSchema,
     defaultValues: defaultFormData,
     mode: "onChange",
     reValidateMode: "onChange",
   });
 
   const watchedFormData = useWatch({ control: form.control });
-  const formData = (watchedFormData ??
-    form.getValues()) as TrainingPlanFormData;
-  const errors = useMemo(
-    () => flattenFormErrors(form.formState.errors),
-    [form.formState.errors],
-  );
+  const formData = (watchedFormData ?? form.getValues()) as TrainingPlanFormData;
+  const errors = useMemo(() => flattenFormErrors(form.formState.errors), [form.formState.errors]);
 
-  const [configData, setConfigData] = useState<TrainingPlanConfigFormData>(
-    createDefaultConfigState,
-  );
-  const [planMetadata, setPlanMetadata] =
-    useState<TrainingPlanMetadataFormData>(() => ({
-      name: "New Training Plan",
-      description: "",
-    }));
+  const [configData, setConfigData] =
+    useState<TrainingPlanConfigFormData>(createDefaultConfigState);
+  const [planMetadata, setPlanMetadata] = useState<TrainingPlanMetadataFormData>(() => ({
+    name: "New Training Plan",
+    description: "",
+  }));
   const [hasHydratedFromEditPlan, setHasHydratedFromEditPlan] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewPending, setIsPreviewPending] = useState(false);
@@ -379,27 +340,20 @@ export function TrainingPlanComposerScreen(
     constraints: false,
     behaviorControls: false,
   });
-  const [contextSummary, setContextSummary] = useState<
-    CreationContextSummary | undefined
-  >(undefined);
+  const [contextSummary, setContextSummary] = useState<CreationContextSummary | undefined>(
+    undefined,
+  );
   const [feasibilitySummary, setFeasibilitySummary] = useState<
     CreationFeasibilitySafetySummary | undefined
   >(undefined);
-  const [conflictItems, setConflictItems] = useState<
-    TrainingPlanConfigConflict[]
-  >([]);
-  const [previewState, setPreviewState] = useState<
-    PreviewState<ProjectionChartPayload>
-  >({});
+  const [conflictItems, setConflictItems] = useState<TrainingPlanConfigConflict[]>([]);
+  const [previewState, setPreviewState] = useState<PreviewState<ProjectionChartPayload>>({});
   const [readinessDeltaDiagnostics, setReadinessDeltaDiagnostics] = useState<
     ReadinessDeltaDiagnostics | undefined
   >(undefined);
-  const [informationalConflicts, setInformationalConflicts] = useState<
-    string[]
-  >([]);
+  const [informationalConflicts, setInformationalConflicts] = useState<string[]>([]);
   const [showHierarchyExplainer, setShowHierarchyExplainer] = useState(false);
-  const [allowBlockingIssueOverride, setAllowBlockingIssueOverride] =
-    useState(false);
+  const [allowBlockingIssueOverride, setAllowBlockingIssueOverride] = useState(false);
   const [recomputeNonce, setRecomputeNonce] = useState(0);
   const lastHandledRecomputeNonceRef = useRef(0);
   const previewRequestIdRef = useRef(0);
@@ -408,13 +362,10 @@ export function TrainingPlanComposerScreen(
   const previewBaselineSnapshotRef = useRef<
     Parameters<typeof computeLocalCreationPreview>[0]["previewBaseline"] | null
   >(null);
-  const scheduledPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const scheduledPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activePreviewCancellationRef = useRef<(() => void) | null>(null);
   const initializedFormDefaultsRef = useRef<TrainingPlanFormData | null>(null);
-  const initializedConfigDefaultsRef =
-    useRef<TrainingPlanConfigFormData | null>(null);
+  const initializedConfigDefaultsRef = useRef<TrainingPlanConfigFormData | null>(null);
 
   const editPlanQuery = trpc.trainingPlans.get.useQuery(
     isEditMode ? { id: contract.planId } : undefined,
@@ -435,66 +386,42 @@ export function TrainingPlanComposerScreen(
   );
   const hasBlockingIssues = blockingIssues.length > 0;
   const isCreateBlockedByPolicy =
-    featureFlags.trainingPlanCreateConfigMvp &&
-    hasBlockingIssues &&
-    !allowBlockingIssueOverride;
+    featureFlags.trainingPlanCreateConfigMvp && hasBlockingIssues && !allowBlockingIssueOverride;
   const canCreatePlan = !isCreating && !isCreateBlockedByPolicy;
 
-  const suggestionsQuery = trpc.trainingPlans.getCreationSuggestions.useQuery(
-    undefined,
-    {
-      refetchOnWindowFocus: false,
-      enabled: featureFlags.trainingPlanCreateConfigMvp && !isEditMode,
-    },
-  );
-  const getCreationSuggestionsQuery =
-    utils.client.trainingPlans.getCreationSuggestions.query;
-  type CreationSuggestionsResponse = Awaited<
-    ReturnType<typeof getCreationSuggestionsQuery>
-  >;
+  const suggestionsQuery = trpc.trainingPlans.getCreationSuggestions.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    enabled: featureFlags.trainingPlanCreateConfigMvp && !isEditMode,
+  });
+  const getCreationSuggestionsQuery = utils.client.trainingPlans.getCreationSuggestions.query;
+  type CreationSuggestionsResponse = Awaited<ReturnType<typeof getCreationSuggestionsQuery>>;
 
-  const createPlanMutation = useReliableMutation(
-    trpc.trainingPlans.createFromCreationConfig,
-    {
-      invalidate: [utils.trainingPlans],
-      onError: (error) => {
-        const mapped = mapTrainingPlanSaveError(error);
-        Alert.alert("Error", mapped.message, [{ text: "OK" }]);
-        setIsCreating(false);
-      },
+  const createPlanMutation = useReliableMutation(trpc.trainingPlans.createFromCreationConfig, {
+    invalidate: [utils.trainingPlans],
+    onError: (error) => {
+      const mapped = mapTrainingPlanSaveError(error);
+      Alert.alert("Error", mapped.message, [{ text: "OK" }]);
+      setIsCreating(false);
     },
-  );
+  });
 
-  const updatePlanMutation = useReliableMutation(
-    trpc.trainingPlans.updateFromCreationConfig,
-    {
-      invalidate: [utils.trainingPlans],
-      onError: (error) => {
-        const mapped = mapTrainingPlanSaveError(error);
-        Alert.alert("Error", mapped.message, [{ text: "OK" }]);
-        setIsCreating(false);
-      },
+  const updatePlanMutation = useReliableMutation(trpc.trainingPlans.updateFromCreationConfig, {
+    invalidate: [utils.trainingPlans],
+    onError: (error) => {
+      const mapped = mapTrainingPlanSaveError(error);
+      Alert.alert("Error", mapped.message, [{ text: "OK" }]);
+      setIsCreating(false);
     },
-  );
+  });
 
-  const updatePlanMetadataMutation = useReliableMutation(
-    trpc.trainingPlans.update,
-    {
-      invalidate: [utils.trainingPlans],
-      onError: (error) => {
-        Alert.alert(
-          "Error",
-          error.message || "Failed to update training plan.",
-          [{ text: "OK" }],
-        );
-      },
+  const updatePlanMetadataMutation = useReliableMutation(trpc.trainingPlans.update, {
+    invalidate: [utils.trainingPlans],
+    onError: (error) => {
+      Alert.alert("Error", error.message || "Failed to update training plan.", [{ text: "OK" }]);
     },
-  );
+  });
 
-  const effectiveFormData = useMemo(
-    () => ensureInternalGoal(formData),
-    [formData],
-  );
+  const effectiveFormData = useMemo(() => ensureInternalGoal(formData), [formData]);
 
   const buildMinimalPayload = useCallback(
     () =>
@@ -515,9 +442,7 @@ export function TrainingPlanComposerScreen(
     return editPlanQuery.data;
   }, [editPlanQuery.data]);
 
-  const resolveStartingAtlOverride = (
-    config: TrainingPlanConfigFormData,
-  ): number | undefined => {
+  const resolveStartingAtlOverride = (config: TrainingPlanConfigFormData): number | undefined => {
     if (typeof config.startingCtlAssumption !== "number") {
       return undefined;
     }
@@ -528,11 +453,7 @@ export function TrainingPlanComposerScreen(
         : config.startingFatigueState === "fatigued"
           ? 8
           : 0;
-    return Number(
-      Math.max(0, Math.min(200, config.startingCtlAssumption + offset)).toFixed(
-        1,
-      ),
-    );
+    return Number(Math.max(0, Math.min(200, config.startingCtlAssumption + offset)).toFixed(1));
   };
 
   const mergeSuggestionsIntoConfig = useCallback(
@@ -545,22 +466,18 @@ export function TrainingPlanComposerScreen(
       const next = { ...current };
 
       const canApplyAvailability =
-        mode === "seed" ||
-        (!dirtyState.availability && !current.locks.availability_config.locked);
+        mode === "seed" || (!dirtyState.availability && !current.locks.availability_config.locked);
       if (canApplyAvailability) {
         next.availabilityConfig = suggestions.availability_config;
         next.availabilityProvenance = suggestions.availability_provenance;
       }
 
       const canApplyRecent =
-        mode === "seed" ||
-        (!dirtyState.recent && !current.locks.recent_influence.locked);
+        mode === "seed" || (!dirtyState.recent && !current.locks.recent_influence.locked);
       if (canApplyRecent) {
-        next.recentInfluenceScore =
-          suggestions.recent_influence.influence_score;
+        next.recentInfluenceScore = suggestions.recent_influence.influence_score;
         next.recentInfluenceAction = suggestions.recent_influence_action;
-        next.recentInfluenceProvenance =
-          suggestions.recent_influence_provenance;
+        next.recentInfluenceProvenance = suggestions.recent_influence_provenance;
       }
 
       const canApplyConstraints = mode === "seed" || !dirtyState.constraints;
@@ -598,8 +515,7 @@ export function TrainingPlanComposerScreen(
       return;
     }
 
-    const previewMinimalPlan =
-      buildPreviewMinimalPlanFromForm(effectiveFormData);
+    const previewMinimalPlan = buildPreviewMinimalPlanFromForm(effectiveFormData);
     if (!previewMinimalPlan) {
       previewBaselineSnapshotRef.current = null;
       setReadinessDeltaDiagnostics(undefined);
@@ -665,13 +581,11 @@ export function TrainingPlanComposerScreen(
         }),
       );
 
-      const previewStartingState =
-        preview.projectionChart.constraint_summary?.starting_state;
+      const previewStartingState = preview.projectionChart.constraint_summary?.starting_state;
       if (previewStartingState) {
         setConfigData((previous) => {
           const nextCtl =
-            previous.startingCtlAssumption ??
-            Number(previewStartingState.starting_ctl.toFixed(1));
+            previous.startingCtlAssumption ?? Number(previewStartingState.starting_ctl.toFixed(1));
           const nextFatigueState =
             previous.startingFatigueState ??
             (previewStartingState.starting_tsb > 5
@@ -695,14 +609,12 @@ export function TrainingPlanComposerScreen(
         });
       }
 
-      const nextConflicts: TrainingPlanConfigConflict[] = preview.conflicts.map(
-        (conflict) => ({
-          code: conflict.code,
-          severity: conflict.severity,
-          message: conflict.message,
-          suggestions: conflict.suggestions,
-        }),
-      );
+      const nextConflicts: TrainingPlanConfigConflict[] = preview.conflicts.map((conflict) => ({
+        code: conflict.code,
+        severity: conflict.severity,
+        message: conflict.message,
+        suggestions: conflict.suggestions,
+      }));
       setConflictItems(nextConflicts);
 
       return;
@@ -722,8 +634,7 @@ export function TrainingPlanComposerScreen(
       setPreviewState((previous) =>
         reducePreviewState(previous, {
           status: "failure",
-          errorMessage:
-            "Could not compute the local projection preview. Review inputs and retry.",
+          errorMessage: "Could not compute the local projection preview. Review inputs and retry.",
         }),
       );
       return;
@@ -822,9 +733,7 @@ export function TrainingPlanComposerScreen(
           },
         });
 
-        setConfigData((previous) =>
-          mergeSuggestionsIntoConfig(previous, suggestions, "recompute"),
-        );
+        setConfigData((previous) => mergeSuggestionsIntoConfig(previous, suggestions, "recompute"));
       } catch {
         // Keep user-edited values intact if recompute fails.
       }
@@ -899,10 +808,7 @@ export function TrainingPlanComposerScreen(
 
   const dismissHierarchyExplainer = useCallback(() => {
     setShowHierarchyExplainer(false);
-    AsyncStorage.setItem(
-      TRAINING_PLAN_HIERARCHY_EXPLAINER_DISMISS_KEY,
-      "1",
-    ).catch(() => null);
+    AsyncStorage.setItem(TRAINING_PLAN_HIERARCHY_EXPLAINER_DISMISS_KEY, "1").catch(() => null);
   }, []);
 
   const handleFormDataChange = (nextData: TrainingPlanFormData) => {
@@ -920,14 +826,8 @@ export function TrainingPlanComposerScreen(
     const suggestionRelevantChanged =
       configData.recentInfluenceScore !== nextData.recentInfluenceScore ||
       configData.recentInfluenceAction !== nextData.recentInfluenceAction ||
-      !areJsonStructurallyEqual(
-        configData.availabilityConfig,
-        nextData.availabilityConfig,
-      ) ||
-      !areJsonStructurallyEqual(
-        configData.behaviorControlsV1,
-        nextData.behaviorControlsV1,
-      ) ||
+      !areJsonStructurallyEqual(configData.availabilityConfig, nextData.availabilityConfig) ||
+      !areJsonStructurallyEqual(configData.behaviorControlsV1, nextData.behaviorControlsV1) ||
       !areJsonStructurallyEqual(configData.constraints, nextData.constraints) ||
       !areJsonStructurallyEqual(configData.locks, nextData.locks);
 
@@ -936,21 +836,15 @@ export function TrainingPlanComposerScreen(
     }
 
     setDirtyState((previous) => ({
-      availability:
-        previous.availability ||
-        nextData.availabilityProvenance.source === "user",
+      availability: previous.availability || nextData.availabilityProvenance.source === "user",
       recent:
         previous.recent ||
         nextData.recentInfluenceAction !== "accepted" ||
         nextData.recentInfluenceProvenance.source === "user",
-      constraints:
-        previous.constraints || nextData.constraintsSource === "user",
+      constraints: previous.constraints || nextData.constraintsSource === "user",
       behaviorControls:
         previous.behaviorControls ||
-        hasBehaviorControlsChanged(
-          configData.behaviorControlsV1,
-          nextData.behaviorControlsV1,
-        ),
+        hasBehaviorControlsChanged(configData.behaviorControlsV1, nextData.behaviorControlsV1),
     }));
 
     setConfigData(nextData);
@@ -1000,9 +894,7 @@ export function TrainingPlanComposerScreen(
       availabilityProvenance: cloneJson(baselineConfig.availabilityProvenance),
       locks: {
         ...previous.locks,
-        availability_config: cloneJson(
-          baselineConfig.locks.availability_config,
-        ),
+        availability_config: cloneJson(baselineConfig.locks.availability_config),
       },
     }));
 
@@ -1024,12 +916,8 @@ export function TrainingPlanComposerScreen(
       startingFatigueState: baselineConfig.startingFatigueState,
       locks: {
         ...previous.locks,
-        post_goal_recovery_days: cloneJson(
-          baselineConfig.locks.post_goal_recovery_days,
-        ),
-        behavior_controls_v1: cloneJson(
-          baselineConfig.locks.behavior_controls_v1,
-        ),
+        post_goal_recovery_days: cloneJson(baselineConfig.locks.post_goal_recovery_days),
+        behavior_controls_v1: cloneJson(baselineConfig.locks.behavior_controls_v1),
       },
     }));
 
@@ -1046,9 +934,7 @@ export function TrainingPlanComposerScreen(
     setConfigData((previous) => ({
       ...previous,
       calibration: cloneJson(baselineConfig.calibration),
-      calibrationCompositeLocks: cloneJson(
-        baselineConfig.calibrationCompositeLocks,
-      ),
+      calibrationCompositeLocks: cloneJson(baselineConfig.calibrationCompositeLocks),
     }));
 
     setRecomputeNonce((value) => value + 1);
@@ -1064,9 +950,7 @@ export function TrainingPlanComposerScreen(
     try {
       const planName = planMetadata.name.trim();
       if (!planName) {
-        Alert.alert("Invalid Input", "Plan name cannot be empty", [
-          { text: "OK" },
-        ]);
+        Alert.alert("Invalid Input", "Plan name cannot be empty", [{ text: "OK" }]);
         return;
       }
 
@@ -1113,14 +997,9 @@ export function TrainingPlanComposerScreen(
         description: description.length > 0 ? description : null,
       });
 
-      router.replace(
-        `${ROUTES.PLAN.TRAINING_PLAN.DETAIL(createdPlan.id)}&nextStep=refine` as any,
-      );
+      router.replace(`${ROUTES.PLAN.TRAINING_PLAN.DETAIL(createdPlan.id)}&nextStep=refine` as any);
     } catch (error) {
-      console.error(
-        "Failed to save training plan from creation config:",
-        error,
-      );
+      console.error("Failed to save training plan from creation config:", error);
       const mapped = mapTrainingPlanSaveError(error);
       if (mapped.action === "refresh_preview") {
         Alert.alert("Error", mapped.message, [
@@ -1144,9 +1023,7 @@ export function TrainingPlanComposerScreen(
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
-        <Text className="mt-3 text-sm text-muted-foreground">
-          Loading plan...
-        </Text>
+        <Text className="mt-3 text-sm text-muted-foreground">Loading plan...</Text>
       </View>
     );
   }
@@ -1195,11 +1072,7 @@ export function TrainingPlanComposerScreen(
               }}
             >
               <Text className="font-semibold text-primary">
-                {isCreating
-                  ? "Saving..."
-                  : isEditMode
-                    ? "Save changes"
-                    : "Create"}
+                {isCreating ? "Saving..." : isEditMode ? "Save changes" : "Create"}
               </Text>
             </Pressable>
           ),
@@ -1215,13 +1088,10 @@ export function TrainingPlanComposerScreen(
             <View className="rounded-lg border border-border bg-card p-3">
               <View className="flex-row items-start justify-between gap-3">
                 <View className="flex-1">
-                  <Text className="text-xs font-semibold text-foreground">
-                    Plan Hierarchy
-                  </Text>
+                  <Text className="text-xs font-semibold text-foreground">Plan Hierarchy</Text>
                   <Text className="mt-1 text-xs text-muted-foreground">
-                    Activity plans are single workouts. Training plans arrange
-                    workouts on a timeline. Templates are reusable versions of
-                    either one.
+                    Activity plans are single workouts. Training plans arrange workouts on a
+                    timeline. Templates are reusable versions of either one.
                   </Text>
                 </View>
                 <Pressable
@@ -1239,9 +1109,7 @@ export function TrainingPlanComposerScreen(
 
         {previewState.previewError ? (
           <View className="px-4 pt-3">
-            <Text className="text-xs text-destructive">
-              {previewState.previewError}
-            </Text>
+            <Text className="text-xs text-destructive">{previewState.previewError}</Text>
             <Pressable
               onPress={() => {
                 void refreshPreview();
@@ -1252,17 +1120,14 @@ export function TrainingPlanComposerScreen(
               accessibilityLabel="Retry projection preview"
               accessibilityState={{ disabled: isPreviewPending }}
             >
-              <Text className="text-xs font-medium text-destructive">
-                Retry preview
-              </Text>
+              <Text className="text-xs font-medium text-destructive">Retry preview</Text>
             </Pressable>
           </View>
         ) : null}
         {isEditMode ? (
           <View className="px-4 pt-2">
             <Text className="text-xs text-muted-foreground">
-              Saving updates future plan structure only. Completed activity
-              history is unchanged.
+              Saving updates future plan structure only. Completed activity history is unchanged.
             </Text>
           </View>
         ) : null}
@@ -1288,9 +1153,7 @@ export function TrainingPlanComposerScreen(
           allowBlockingIssueOverride={allowBlockingIssueOverride}
           onAllowBlockingIssueOverrideChange={setAllowBlockingIssueOverride}
           isPreviewPending={
-            isPreviewPending ||
-            suggestionsQuery.isLoading ||
-            suggestionsQuery.isFetching
+            isPreviewPending || suggestionsQuery.isLoading || suggestionsQuery.isFetching
           }
           errors={errors}
         />

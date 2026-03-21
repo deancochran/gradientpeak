@@ -1,11 +1,5 @@
-import {
-  calculateRollingTrainingQuality,
-  calculateATL,
-  calculateAge,
-  calculateCTL,
-  calculateTSB,
-  getFormStatus,
-} from "@repo/core";
+import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
+import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { featureFlags } from "../lib/features";
@@ -50,15 +44,9 @@ export const homeRouter = createTRPCRouter({
 
       const userAge = calculateAge(profile?.dob ?? null);
       const userGender =
-        profile?.gender === "male" || profile?.gender === "female"
-          ? profile.gender
-          : null;
-      const effectiveAge = featureFlags.personalizationAgeConstants
-        ? userAge
-        : undefined;
-      const effectiveGender = featureFlags.personalizationGenderAdjustment
-        ? userGender
-        : undefined;
+        profile?.gender === "male" || profile?.gender === "female" ? profile.gender : null;
+      const effectiveAge = featureFlags.personalizationAgeConstants ? userAge : undefined;
+      const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
 
       // --- 1. Fetch Active Plan & Settings ---
       const [
@@ -101,9 +89,7 @@ export const homeRouter = createTRPCRouter({
           .from("training_plans")
           .select("id, name, description, structure")
           .eq("id", nextPlannedEvent.training_plan_id)
-          .or(
-            `profile_id.eq.${userId},is_system_template.eq.true,template_visibility.eq.public`,
-          )
+          .or(`profile_id.eq.${userId},is_system_template.eq.true,template_visibility.eq.public`)
           .maybeSingle();
 
         if (activePlanError) {
@@ -169,22 +155,21 @@ export const homeRouter = createTRPCRouter({
       // --- 4. Fetch Planned Activities (Future & Current Week) ---
       // We need planned activities for the Schedule (Future) AND for the Weekly Summary (Past days of this week)
       // So we fetch from startOfWeek to scheduleEnd
-      const { data: plannedActivitiesRaw, error: plannedError } =
-        await ctx.supabase
-          .from("events")
-          .select(
-            `
+      const { data: plannedActivitiesRaw, error: plannedError } = await ctx.supabase
+        .from("events")
+        .select(
+          `
           id,
           starts_at,
           notes,
           activity_plan:activity_plans (*)
         `,
-          )
-          .eq("profile_id", userId)
-          .eq("event_type", "planned_activity")
-          .gte("starts_at", startOfWeek.toISOString())
-          .lt("starts_at", scheduleEnd.toISOString())
-          .order("starts_at", { ascending: true });
+        )
+        .eq("profile_id", userId)
+        .eq("event_type", "planned_activity")
+        .gte("starts_at", startOfWeek.toISOString())
+        .lt("starts_at", scheduleEnd.toISOString())
+        .order("starts_at", { ascending: true });
 
       if (plannedError) {
         throw new TRPCError({
@@ -206,20 +191,14 @@ export const homeRouter = createTRPCRouter({
           .filter((p): p is NonNullable<typeof p> => !!p);
 
         if (plans.length > 0) {
-          const plansWithEstimation = await addEstimationToPlans(
-            plans,
-            ctx.supabase,
-            userId,
-          );
+          const plansWithEstimation = await addEstimationToPlans(plans, ctx.supabase, userId);
           const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
 
           activitiesWithEstimations = activitiesWithEstimations.map((pa) => ({
             ...pa,
             activity_plan:
               pa.activity_plan && plansMap.get(pa.activity_plan.id)
-                ? (plansMap.get(
-                    pa.activity_plan.id,
-                  )! as unknown as typeof pa.activity_plan)
+                ? (plansMap.get(pa.activity_plan.id)! as unknown as typeof pa.activity_plan)
                 : pa.activity_plan,
           }));
         }
@@ -234,8 +213,6 @@ export const homeRouter = createTRPCRouter({
         tssByDate.set(dateStr, (tssByDate.get(dateStr) || 0) + tss);
       });
 
-      let currentCTL = 0;
-      let currentATL = 0;
       const fitnessTrends = [];
       let todayStatus = { ctl: 0, atl: 0, tsb: 0, form: "fresh" };
 
@@ -243,28 +220,37 @@ export const homeRouter = createTRPCRouter({
       const settings = profileSettingsData?.settings as any;
       const baselineFitness = settings?.baseline_fitness;
       let effectiveHistoryStart = historyStart;
+      let initialCTL = 0;
+      let initialATL = 0;
 
       if (baselineFitness?.is_enabled && baselineFitness.override_date) {
         const overrideDate = new Date(baselineFitness.override_date);
         if (!Number.isNaN(overrideDate.getTime())) {
-          currentCTL = baselineFitness.override_ctl ?? 0;
-          currentATL = baselineFitness.override_atl ?? 0;
+          initialCTL = baselineFitness.override_ctl ?? 0;
+          initialATL = baselineFitness.override_atl ?? 0;
 
           // If the override date is before our history start, we need to decay it up to history start
           if (overrideDate < historyStart) {
-            const daysToDecay = Math.floor(
-              (historyStart.getTime() - overrideDate.getTime()) /
-                (1000 * 60 * 60 * 24),
-            );
-            for (let i = 0; i < daysToDecay; i++) {
-              currentCTL = calculateCTL(currentCTL, 0, effectiveAge);
-              currentATL = calculateATL(
-                currentATL,
-                0,
-                effectiveAge,
-                effectiveGender,
-                rollingTrainingQuality,
-              );
+            const decayEnd = new Date(historyStart);
+            decayEnd.setDate(historyStart.getDate() - 1);
+            if (decayEnd >= overrideDate) {
+              const decayed = replayTrainingLoadByDate({
+                dailyTss: buildDailyTssByDateSeries({
+                  startDate: overrideDate.toISOString().split("T")[0]!,
+                  endDate: decayEnd.toISOString().split("T")[0]!,
+                  tssByDate: {},
+                }),
+                initialCTL,
+                initialATL,
+                userAge: effectiveAge,
+                userGender: effectiveGender,
+                trainingQuality: rollingTrainingQuality,
+              });
+              const lastDecayPoint = decayed.at(-1);
+              if (lastDecayPoint) {
+                initialCTL = lastDecayPoint.ctl;
+                initialATL = lastDecayPoint.atl;
+              }
             }
           } else if (overrideDate > historyStart && overrideDate <= today) {
             // If the override date is within our window, we start calculating from the override date
@@ -279,55 +265,49 @@ export const homeRouter = createTRPCRouter({
         }
       }
 
-      // Iterate day by day from effectiveHistoryStart
-      const dayCount = Math.floor(
-        (today.getTime() - effectiveHistoryStart.getTime()) /
-          (1000 * 60 * 60 * 24),
-      );
+      const historicalReplay = replayTrainingLoadByDate({
+        dailyTss: buildDailyTssByDateSeries({
+          startDate: effectiveHistoryStart.toISOString().split("T")[0]!,
+          endDate: today.toISOString().split("T")[0]!,
+          tssByDate,
+        }),
+        initialCTL,
+        initialATL,
+        userAge: effectiveAge,
+        userGender: effectiveGender,
+        trainingQuality: rollingTrainingQuality,
+      });
 
-      for (let i = 0; i <= dayCount; i++) {
-        const date = new Date(effectiveHistoryStart);
-        date.setDate(effectiveHistoryStart.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0]!;
-
-        const tss = tssByDate.get(dateStr) || 0;
-        currentCTL = calculateCTL(currentCTL, tss, effectiveAge);
-        currentATL = calculateATL(
-          currentATL,
-          tss,
-          effectiveAge,
-          effectiveGender,
-          rollingTrainingQuality,
-        );
-        const tsb = calculateTSB(currentCTL, currentATL);
-
-        // Only add to result if within chart range
+      for (const point of historicalReplay) {
+        const date = new Date(`${point.date}T00:00:00.000Z`);
         if (date >= chartStart) {
           fitnessTrends.push({
-            date: dateStr,
-            ctl: Math.round(currentCTL * 10) / 10,
-            atl: Math.round(currentATL * 10) / 10,
-            tsb: Math.round(tsb * 10) / 10,
+            date: point.date,
+            ctl: Math.round(point.ctl * 10) / 10,
+            atl: Math.round(point.atl * 10) / 10,
+            tsb: Math.round(point.tsb * 10) / 10,
           });
         }
 
-        if (dateStr === today.toISOString().split("T")[0]) {
+        if (point.date === today.toISOString().split("T")[0]) {
           todayStatus = {
-            ctl: Math.round(currentCTL * 10) / 10,
-            atl: Math.round(currentATL * 10) / 10,
-            tsb: Math.round(tsb * 10) / 10,
-            form: getFormStatus(tsb),
+            ctl: Math.round(point.ctl * 10) / 10,
+            atl: Math.round(point.atl * 10) / 10,
+            tsb: Math.round(point.tsb * 10) / 10,
+            form: getFormStatus(point.tsb),
           };
         }
       }
+
+      const latestHistoricalLoad = historicalReplay.at(-1);
+      const currentCTL = latestHistoricalLoad?.ctl ?? initialCTL;
+      const currentATL = latestHistoricalLoad?.atl ?? initialATL;
 
       // --- 7. Calculate Consistency (Streak) ---
       // Iterate backwards from yesterday
       let streak = 0;
       const uniqueActivityDays = new Set(
-        activities
-          ?.filter((a) => a.started_at)
-          .map((a) => a.started_at!.split("T")[0]),
+        activities?.filter((a) => a.started_at).map((a) => a.started_at!.split("T")[0]),
       );
       // Check today
       if (uniqueActivityDays.has(today.toISOString().split("T")[0])) {
@@ -354,19 +334,9 @@ export const homeRouter = createTRPCRouter({
         }) || [];
 
       const weeklyActualStats = {
-        distance:
-          weeklyActuals.reduce((sum, a) => sum + (a.distance_meters || 0), 0) /
-          1000, // km
-        duration: weeklyActuals.reduce(
-          (sum, a) => sum + (a.duration_seconds || 0),
-          0,
-        ),
-        tss: Math.round(
-          weeklyActuals.reduce(
-            (sum, a) => sum + (a.training_stress_score || 0),
-            0,
-          ),
-        ),
+        distance: weeklyActuals.reduce((sum, a) => sum + (a.distance_meters || 0), 0) / 1000, // km
+        duration: weeklyActuals.reduce((sum, a) => sum + (a.duration_seconds || 0), 0),
+        tss: Math.round(weeklyActuals.reduce((sum, a) => sum + (a.training_stress_score || 0), 0)),
         count: weeklyActuals.length,
       };
 
@@ -379,13 +349,11 @@ export const homeRouter = createTRPCRouter({
       const weeklyPlannedStats = {
         distance:
           weeklyPlanned.reduce(
-            (sum, pa) =>
-              sum + ((pa.activity_plan as any)?.estimated_distance || 0),
+            (sum, pa) => sum + ((pa.activity_plan as any)?.estimated_distance || 0),
             0,
           ) / 1000,
         duration: weeklyPlanned.reduce(
-          (sum, pa) =>
-            sum + ((pa.activity_plan as any)?.estimated_duration || 0),
+          (sum, pa) => sum + ((pa.activity_plan as any)?.estimated_duration || 0),
           0,
         ),
         tss: Math.round(
@@ -400,11 +368,7 @@ export const homeRouter = createTRPCRouter({
       // --- 9. Current Workload Envelopes (ACWR/Monotony) ---
       const workloadWindowStart = new Date(today);
       workloadWindowStart.setDate(today.getDate() - 27);
-      const workload = buildWorkloadEnvelopes(
-        activities || [],
-        workloadWindowStart,
-        today,
-      );
+      const workload = buildWorkloadEnvelopes(activities || [], workloadWindowStart, today);
 
       // --- 10. Schedule (Future) ---
       const todayStr = today.toISOString().split("T")[0]!;
@@ -469,8 +433,6 @@ export const homeRouter = createTRPCRouter({
       }));
 
       const projectedFitness = [];
-      let projectedCTL = currentCTL;
-      let projectedATL = currentATL;
 
       // Process future activities with estimations
       let futureWithEstimations = futureActivities || [];
@@ -485,17 +447,13 @@ export const homeRouter = createTRPCRouter({
             ctx.supabase,
             userId,
           );
-          const futurePlansMap = new Map(
-            futurePlansWithEstimation.map((p) => [p.id, p]),
-          );
+          const futurePlansMap = new Map(futurePlansWithEstimation.map((p) => [p.id, p]));
 
           futureWithEstimations = futureWithEstimations.map((pa) => ({
             ...pa,
             activity_plan:
               pa.activity_plan && futurePlansMap.get(pa.activity_plan.id)
-                ? (futurePlansMap.get(
-                    pa.activity_plan.id,
-                  )! as unknown as typeof pa.activity_plan)
+                ? (futurePlansMap.get(pa.activity_plan.id)! as unknown as typeof pa.activity_plan)
                 : pa.activity_plan,
           }));
         }
@@ -510,29 +468,26 @@ export const homeRouter = createTRPCRouter({
         futureTssByDate.set(dateStr, (futureTssByDate.get(dateStr) || 0) + tss);
       });
 
-      // Project CTL forward
-      for (let i = 1; i <= projectionDays; i++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0]!;
+      const projectionReplay = replayTrainingLoadByDate({
+        dailyTss: buildDailyTssByDateSeries({
+          startDate: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split("T")[0]!,
+          endDate: projectionEnd.toISOString().split("T")[0]!,
+          tssByDate: futureTssByDate,
+        }),
+        initialCTL: currentCTL,
+        initialATL: currentATL,
+        userAge: effectiveAge,
+        userGender: effectiveGender,
+        trainingQuality: rollingTrainingQuality,
+      });
 
-        const plannedTss = futureTssByDate.get(dateStr) || 0;
-        projectedCTL = calculateCTL(projectedCTL, plannedTss, effectiveAge);
-        projectedATL = calculateATL(
-          projectedATL,
-          plannedTss,
-          effectiveAge,
-          effectiveGender,
-          rollingTrainingQuality,
-        );
-        const projectedTsb = calculateTSB(projectedCTL, projectedATL);
-
+      for (const point of projectionReplay) {
         projectedFitness.push({
-          date: dateStr,
-          ctl: Math.round(projectedCTL * 10) / 10,
-          atl: Math.round(projectedATL * 10) / 10,
-          tsb: Math.round(projectedTsb * 10) / 10,
-          plannedTss,
+          date: point.date,
+          ctl: Math.round(point.ctl * 10) / 10,
+          atl: Math.round(point.atl * 10) / 10,
+          tsb: Math.round(point.tsb * 10) / 10,
+          plannedTss: point.tss,
         });
       }
 
@@ -564,21 +519,15 @@ export const homeRouter = createTRPCRouter({
 
             // Calculate the ideal curve from chart start to target date
             // This shows where user should be at each point in time
-            const curveStart =
-              chartStart < new Date() ? chartStart : new Date();
+            const curveStart = chartStart < new Date() ? chartStart : new Date();
             const daysToTarget = Math.floor(
-              (targetDate.getTime() - curveStart.getTime()) /
-                (1000 * 60 * 60 * 24),
+              (targetDate.getTime() - curveStart.getTime()) / (1000 * 60 * 60 * 24),
             );
 
             if (daysToTarget > 0) {
               let idealCTL = startingCTL;
 
-              for (
-                let i = 0;
-                i <= daysToTarget && i <= trendDays + projectionDays;
-                i++
-              ) {
+              for (let i = 0; i <= daysToTarget && i <= trendDays + projectionDays; i++) {
                 const date = new Date(curveStart);
                 date.setDate(curveStart.getDate() + i);
                 const dateStr = date.toISOString().split("T")[0]!;

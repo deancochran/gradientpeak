@@ -1,20 +1,15 @@
-import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { ListSkeleton } from "@/components/shared";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
+import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { ROUTES } from "@/lib/constants/routes";
-import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import { ChevronRight, Eye, EyeOff, Plus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { ROUTES } from "@/lib/constants/routes";
+import { trpc } from "@/lib/trpc";
 
 function TrainingPlansListScreen() {
   const router = useRouter();
@@ -53,13 +48,9 @@ function TrainingPlansListScreen() {
       <ScrollView
         className="flex-1"
         contentContainerClassName="gap-3 px-4 py-4"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        <Button
-          onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
-        >
+        <Button onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}>
           <Icon as={Plus} size={16} className="text-primary-foreground mr-2" />
           <Text className="text-primary-foreground">Create Training Plan</Text>
         </Button>
@@ -67,9 +58,7 @@ function TrainingPlansListScreen() {
         {sortedPlans.length === 0 ? (
           <Card>
             <CardContent className="p-4 gap-2">
-              <Text className="text-base font-semibold text-foreground">
-                No training plans yet
-              </Text>
+              <Text className="text-base font-semibold text-foreground">No training plans yet</Text>
               <Text className="text-sm text-muted-foreground">
                 Create your first plan to start scheduling structured training.
               </Text>
@@ -83,9 +72,7 @@ function TrainingPlansListScreen() {
             return (
               <TouchableOpacity
                 key={plan.id}
-                onPress={() =>
-                  router.push(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)
-                }
+                onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
                 activeOpacity={0.8}
               >
                 <Card>
@@ -106,9 +93,7 @@ function TrainingPlansListScreen() {
                           size={12}
                           className="text-muted-foreground"
                         />
-                        <Text className="text-xs text-muted-foreground">
-                          {visibilityLabel}
-                        </Text>
+                        <Text className="text-xs text-muted-foreground">{visibilityLabel}</Text>
                       </View>
                     </View>
 
@@ -116,11 +101,7 @@ function TrainingPlansListScreen() {
                       <Text className="text-xs text-muted-foreground">
                         Open to edit, apply, or delete.
                       </Text>
-                      <Icon
-                        as={ChevronRight}
-                        size={16}
-                        className="text-muted-foreground"
-                      />
+                      <Icon as={ChevronRight} size={16} className="text-muted-foreground" />
                     </View>
                   </CardContent>
                 </Card>

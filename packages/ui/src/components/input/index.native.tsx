@@ -1,17 +1,10 @@
 import * as React from "react";
-import { TextInput, type TextInputProps } from "../../lib/react-native";
-
 import { cn } from "../../lib/cn";
+import { TextInput, type TextInputProps } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";
 import type { InputTestProps } from "./shared";
 
-function inputVariants({
-  className,
-  editable,
-}: {
-  className?: string;
-  editable?: boolean;
-} = {}) {
+function inputVariants({ className, editable }: { className?: string; editable?: boolean } = {}) {
   return cn(
     "border-input flex w-full min-w-0 rounded-md border px-3 py-1 text-base",
     "bg-background text-foreground dark:bg-input/30 h-10 flex-row items-center leading-5 shadow-sm shadow-black/5 sm:h-9 placeholder:text-muted-foreground/50",
@@ -20,9 +13,7 @@ function inputVariants({
   );
 }
 
-type InputProps = TextInputProps &
-  React.RefAttributes<TextInput> &
-  InputTestProps;
+type InputProps = TextInputProps & React.RefAttributes<TextInput> & InputTestProps;
 
 function Input({
   accessibilityLabel,
@@ -38,10 +29,7 @@ function Input({
     id,
     role,
     testId,
-  }) as Pick<
-    TextInputProps,
-    "accessibilityLabel" | "nativeID" | "role" | "testID"
-  >;
+  }) as Pick<TextInputProps, "accessibilityLabel" | "nativeID" | "role" | "testID">;
 
   return (
     <TextInput
@@ -53,4 +41,5 @@ function Input({
   );
 }
 
+export type { InputProps };
 export { Input, inputVariants };

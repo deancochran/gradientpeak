@@ -23,6 +23,11 @@ export * from "./ftms-types";
 // that works with DurationV2 objects. Both are exported - TypeScript will
 // handle overload resolution based on the argument type.
 
+export type {
+  AggregatedStream,
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
+} from "./calculations";
 // Export all calculations functions and types
 export {
   addDays,
@@ -100,29 +105,11 @@ export {
   projectCTL,
   startOfDay,
 } from "./calculations";
-export type {
-  AggregatedStream,
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
-} from "./calculations";
-
-// V2 Calculations (for ActivityPlanStructureV2)
-export {
-  extractActivityProfileV2,
-  calculateActivityStatsV2,
-  calculateTotalDurationSecondsV2,
-  getStepAtTimeV2,
-} from "./calculations_v2";
-export type {
-  ActivityProfilePointV2,
-  ActivityStatsV2,
-} from "./calculations_v2";
-
 // Onboarding & Performance Estimation Functions
 export {
+  calculateAge as calculateAgeFromDOB,
   getBaselineProfile,
   mergeWithBaseline,
-  calculateAge as calculateAgeFromDOB,
 } from "./calculations/baseline-profiles";
 export {
   calculateHRReserve,
@@ -153,39 +140,22 @@ export {
   pacePerHundredMetersToSpeed,
   speedToPacePerHundredMeters,
 } from "./calculations/swim-pace-curve";
+export type {
+  ActivityProfilePointV2,
+  ActivityStatsV2,
+} from "./calculations_v2";
+// V2 Calculations (for ActivityPlanStructureV2)
+export {
+  calculateActivityStatsV2,
+  calculateTotalDurationSecondsV2,
+  extractActivityProfileV2,
+  getStepAtTimeV2,
+} from "./calculations_v2";
 
 // ============================================================================
 // Constants Module
 // ============================================================================
-export {
-  ACTIVITY_CATEGORIES,
-  ACTIVITY_CATEGORY_CONFIG,
-  BLE_SERVICE_UUIDS,
-  CONVERSION_FACTORS,
-  EARTH_RADIUS_METERS,
-  FATIGUE_LEVEL_THRESHOLDS,
-  FITNESS_LEVEL_THRESHOLDS,
-  FTMS_CHARACTERISTICS,
-  FTMS_FEATURE_BITS,
-  FTMS_OPCODES,
-  FTMS_RESULT_CODES,
-  FTMS_TARGET_SETTING_BITS,
-  HR_ZONE_MAX_PERCENTAGES,
-  HR_ZONE_NAMES,
-  HR_ZONE_PERCENTAGES,
-  INTENSITY_ZONES,
-  MET_VALUES,
-  NORMALIZED_POWER,
-  PACE_ZONE_PERCENTAGES,
-  PHYSIOLOGICAL_DEFAULTS,
-  POWER_ZONE_NAMES,
-  POWER_ZONE_PERCENTAGES,
-  TIME_CONSTANTS,
-  TRAINING_RECOMMENDATIONS,
-  TSB_THRESHOLDS,
-  TSS_CONSTANTS,
-  VALIDATION_RANGES,
-} from "./constants";
+export * from "./constants";
 
 // ============================================================================
 // Barrel File Exports - Automatically export from subdirectories
@@ -193,46 +163,45 @@ export {
 // These barrel files (index.ts in each directory) handle their own exports
 // and will automatically pick up new files added to their directories
 
+export * from "./bluetooth"; // Canonical BLE parsers
+export * from "./contracts"; // Shared API contracts
+export * from "./duration"; // Canonical duration helpers
 export * from "./estimation"; // TSS estimation system
+export * from "./goals"; // Goal draft/payload helpers
+export * from "./load"; // Canonical load-domain helpers
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
-export * from "./contracts"; // Shared API contracts
-export * from "./bluetooth"; // Canonical BLE parsers
+export * from "./sports"; // Canonical sport registry and heuristics
 export * from "./utils"; // Utility functions
+export * from "./zones"; // Canonical zones and threshold metadata
 
 // ============================================================================
 // FIT File Parsing and Encoding Module
 // ============================================================================
 
-export * from "./lib/fit-sdk-parser";
-export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
-export type { StandardActivity } from "./types/normalization";
-
+// Performance curves (power, pace, HR)
+export * from "./calculations/curves";
 // ============================================================================
 // Performance Metrics Calculations
 // Multi-modal TSS calculations (power, heart rate, pace)
 export * from "./calculations/defaults";
 export * from "./calculations/duration";
-
-export * from "./calculations/tss";
 export * from "./calculations/training-quality";
+export * from "./calculations/tss";
 export * from "./calculations/workload";
-
-// Performance curves (power, pace, HR)
-export * from "./calculations/curves";
-
+// Heart rate test detection
+export * from "./detection/hr-tests";
+// Running test detection
+export * from "./detection/pace-tests";
 // ============================================================================
 // Test Effort Detection
 // ============================================================================
 // Power test detection
 export * from "./detection/power-tests";
-
-// Running test detection
-export * from "./detection/pace-tests";
-
-// Heart rate test detection
-export * from "./detection/hr-tests";
+export * from "./lib/fit-sdk-parser";
+export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
+export type { StandardActivity } from "./types/normalization";
 
 // ============================================================================
 // Namespace Exports - For organized imports
@@ -240,12 +209,17 @@ export * from "./detection/hr-tests";
 // Allows consumers to import as: import { Calculations } from '@repo/core'
 // and use as: Calculations.calculateTSS(...)
 
+export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
 export * as CalculationsV2 from "./calculations_v2";
 export * as Constants from "./constants";
-export * as Bluetooth from "./bluetooth";
+export * as Duration from "./duration";
 export * as Estimation from "./estimation";
+export * as Estimators from "./estimators";
+export * as Load from "./load";
 export * as Plan from "./plan";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
+export * as Sports from "./sports";
 export * as Utils from "./utils";
+export * as Zones from "./zones";

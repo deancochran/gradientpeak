@@ -1,11 +1,11 @@
-import { Badge } from "@repo/ui/components/badge";
-import { Button } from "@repo/ui/components/button";
-import { Text } from "@repo/ui/components/text";
-import type { BlockingIssue } from "@/lib/training-plan-form/validation";
 import type {
+  BlockingIssue,
   CreationContextSummary,
   CreationFeasibilitySafetySummary,
 } from "@repo/core";
+import { Badge } from "@repo/ui/components/badge";
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import { ShieldAlert } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
@@ -104,14 +104,12 @@ export function ReviewTab({
           </Text>
           {typeof noHistoryMetadata.fitness_signal_0_1 === "number" ? (
             <Text className="text-xs text-muted-foreground">
-              Fitness signal:{" "}
-              {(noHistoryMetadata.fitness_signal_0_1 * 100).toFixed(0)}%
+              Fitness signal: {(noHistoryMetadata.fitness_signal_0_1 * 100).toFixed(0)}%
             </Text>
           ) : null}
           {typeof noHistoryMetadata.goal_demand_score_0_1 === "number" ? (
             <Text className="text-xs text-muted-foreground">
-              Goal demand:{" "}
-              {(noHistoryMetadata.goal_demand_score_0_1 * 100).toFixed(0)}%
+              Goal demand: {(noHistoryMetadata.goal_demand_score_0_1 * 100).toFixed(0)}%
             </Text>
           ) : null}
           {typeof riskScore === "number" ? (
@@ -130,18 +128,14 @@ export function ReviewTab({
       <View className="gap-2 rounded-lg border border-border bg-card p-2.5">
         <View className="flex-row items-center justify-between">
           <Text className="font-semibold">Feasibility and safety</Text>
-          {isPreviewPending && (
-            <Text className="text-xs text-muted-foreground">Refreshing...</Text>
-          )}
+          {isPreviewPending && <Text className="text-xs text-muted-foreground">Refreshing...</Text>}
         </View>
         {feasibilitySafetySummary ? (
           <>
             <View className="flex-row gap-2">
               <Badge
                 variant={
-                  feasibilitySafetySummary.feasibility_band === "on-track"
-                    ? "default"
-                    : "secondary"
+                  feasibilitySafetySummary.feasibility_band === "on-track" ? "default" : "secondary"
                 }
               >
                 <Text>{feasibilitySafetySummary.feasibility_band}</Text>
@@ -184,9 +178,7 @@ export function ReviewTab({
               key={`${conflict.code}-${conflict.message}`}
               className="gap-1 rounded-md border border-destructive/30 p-2"
             >
-              <Text className="text-sm text-destructive">
-                {conflict.message}
-              </Text>
+              <Text className="text-sm text-destructive">{conflict.message}</Text>
             </View>
           ))}
         </View>

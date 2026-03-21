@@ -14,41 +14,60 @@
  */
 
 import {
-  RecordingServiceActivityPlan,
-  type IntervalStepV2,
-  type RecordingCapabilities,
-  type RecordingConfiguration,
+  type CurrentMetricValue,
+  type FTMSFeatures,
   GLOBAL_DEFAULTS,
+  type IntervalStepV2,
+  type MetricFamily,
+  type MetricSourceCandidate,
+  type MetricSourceSelection,
+  type MetricSourceType,
   type PerformanceMetrics,
+  RecordingConfigResolver,
+  type RecordingConfiguration,
+  type RecordingLaunchIntent,
+  RecordingServiceActivityPlan,
+  resolveMetricSources as resolveCoreMetricSources,
 } from "@repo/core";
-
 import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
-
-import { FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
-import {
-  areAllPermissionsGranted,
-  checkAllPermissions,
-  type AllPermissionsStatus,
-} from "../permissions-check";
-import { LiveMetricsManager } from "./LiveMetricsManager";
-import { LocationManager } from "./location";
-import { NotificationsManager } from "./notification";
-import { PlanManager } from "./plan";
-import { SensorsManager } from "./sensors";
-import { RecordingMetadata, SensorReading } from "./types";
-
 import { EventEmitter } from "expo";
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
+import { FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
+import {
+  type AllPermissionsStatus,
+  areAllPermissionsGranted,
+  checkAllPermissions,
+} from "../permissions-check";
+import { persistPendingFinalizedArtifact } from "./finalizedArtifactStorage";
+import { getNextGpsRecordingEnabled, shouldStartGpsTracking } from "./gpsRuntime";
+import { LiveMetricsManager } from "./LiveMetricsManager";
+import { LocationManager } from "./location";
+import { NotificationsManager } from "./notification";
+import {
+  PlanExecution,
+  type PlanExecutionProgress,
+  type PlanExecutionStepInfo,
+} from "./planExecution";
+import { type PlanValidationResult, validatePlanRequirements } from "./planValidation";
 import { SimplifiedMetrics } from "./SimplifiedMetrics";
+import { type ConnectedSensor, SensorsManager } from "./sensors";
+import { RecordingSessionController } from "./sessionController";
+import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
 import {
-  validatePlanRequirements,
-  type PlanValidationResult,
-} from "./planValidation";
-import {
-  getNextGpsRecordingEnabled,
-  shouldStartGpsTracking,
-} from "./gpsRuntime";
+  type RecordingMetadata,
+  type RecordingPlanView,
+  type RecordingRuntimeSourceState,
+  type RecordingSessionArtifact,
+  type RecordingSessionOverride,
+  type RecordingSessionOverrideState,
+  type RecordingSessionSnapshot,
+  type RecordingSessionView,
+  type RecordingSourceChangeEvent,
+  type RecordingTrainerView,
+  SensorReading,
+} from "./types";
+
 export { SimplifiedMetrics };
 
 // ================================
@@ -60,6 +79,7 @@ export type RecordingState =
   | "ready"
   | "recording"
   | "paused"
+  | "finishing"
   | "finished";
 
 export interface StepProgress {
@@ -84,6 +104,17 @@ export interface TimeUpdate {
   moving: number;
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const nested of Object.values(value as Record<string, unknown>)) {
+      deepFreeze(nested);
+    }
+  }
+
+  return value;
+}
+
 // ================================
 // Core Events (minimal, focused)
 // ================================
@@ -93,6 +124,11 @@ export interface ServiceEvents {
 
   // Recording fully persisted and ready for processing
   recordingComplete: () => void;
+
+  // Canonical finalized artifact is ready for submit/retry
+  artifactReady: (artifact: RecordingSessionArtifact) => void;
+
+  lapRecorded: () => void;
 
   // Unplanned activity was selected
   activitySelected: (data: {
@@ -104,13 +140,10 @@ export interface ServiceEvents {
   payloadProcessed: (payload: import("@repo/core").ActivityPayload) => void;
 
   // Sensors connected/disconnected
-  sensorsChanged: (sensors: any[]) => void;
+  sensorsChanged: (sensors: ConnectedSensor[]) => void;
 
   // Plan events
-  planSelected: (data: {
-    plan: RecordingServiceActivityPlan;
-    eventId?: string;
-  }) => void;
+  planSelected: (data: { plan: RecordingServiceActivityPlan; eventId?: string }) => void;
   stepChanged: (info: StepInfo) => void;
   planCleared: () => void;
   planCompleted: () => void;
@@ -127,9 +160,30 @@ export interface ServiceEvents {
   // Performance metrics updated (base values or scale)
   metricsUpdated: () => void;
 
+  // Canonical session view changed
+  sessionUpdated: (view: RecordingSessionView) => void;
+
+  // Immutable snapshot changed (created/reset)
+  snapshotUpdated: (snapshot: RecordingSessionSnapshot | null) => void;
+
   // Index signature for EventsMap
   [key: string]: (...args: any[]) => void;
 }
+
+type LoadedRoute = {
+  id: string;
+  name: string;
+  coordinates: Array<{
+    latitude: number;
+    longitude: number;
+    elevation?: number;
+  }>;
+  polyline?: string | null;
+  elevation_profile?: Array<{
+    distance: number;
+    elevation: number;
+  }>;
+};
 
 // ================================
 // Activity Recorder Service
@@ -141,11 +195,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   public selectedActivityCategory: PublicActivityCategory = "bike";
   private _gpsRecordingEnabled: boolean = true;
   public recordingMetadata?: RecordingMetadata;
+  private finalizedArtifact: RecordingSessionArtifact | null = null;
+  private readonly sessionController = new RecordingSessionController();
 
   // === Public Managers (direct access - no forwarding) ===
   public readonly liveMetricsManager: LiveMetricsManager;
   public readonly locationManager: LocationManager;
   public readonly sensorsManager: SensorsManager;
+  private readonly planExecution = new PlanExecution();
+  private readonly trainerControl: TrainerControl;
   private _permissionsStatus: AllPermissionsStatus = {
     bluetooth: null,
     location: null,
@@ -155,18 +213,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Plan State (minimal tracking) ===
   private _plan?: RecordingServiceActivityPlan;
   private _eventId?: string;
-  private _steps: IntervalStepV2[] = [];
-  private _stepIndex: number = 0;
-  private _stepStartMovingTime: number = 0; // Moving time when current step started
-
-  // === Manual Control Override ===
-  private manualControlOverride: boolean = false;
 
   // === GPS Availability Cache ===
   private _gpsAvailable: boolean = false;
 
   // === Route State ===
-  private _currentRoute: any | null = null; // Full route data with coordinates
+  private _currentRoute: LoadedRoute | null = null;
   private _routeDistance: number = 0; // Total route distance in meters
   private _currentRouteDistance: number = 0; // User's current distance along route
 
@@ -222,8 +274,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this._baseThresholdHr = metrics?.thresholdHr ?? GLOBAL_DEFAULTS.thresholdHr;
     this._baseWeightKg = metrics?.weightKg ?? GLOBAL_DEFAULTS.weightKg;
     this._baseThresholdPaceSecondsPerKm =
-      metrics?.thresholdPaceSecondsPerKm ??
-      GLOBAL_DEFAULTS.thresholdPaceSecondsPerKm;
+      metrics?.thresholdPaceSecondsPerKm ?? GLOBAL_DEFAULTS.thresholdPaceSecondsPerKm;
 
     this._ftpScale = 1.0;
 
@@ -240,8 +291,25 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       weightKg: this.weightKg,
       thresholdPaceSecondsPerKm: this.thresholdPaceSecondsPerKm,
     });
+    this.liveMetricsManager.addListener("sensorUpdate", () => {
+      this.publishSessionUpdate();
+    });
+    this.liveMetricsManager.addListener("statsUpdate", () => {
+      this.publishSessionUpdate();
+    });
+    this.liveMetricsManager.addListener("metricsUpdated", () => {
+      this.publishSessionUpdate();
+    });
     this.locationManager = new LocationManager();
     this.sensorsManager = new SensorsManager();
+    this.trainerControl = new TrainerControl({
+      sensorsManager: this.sensorsManager,
+      getCurrentReadings: () => this.getCurrentReadings(),
+      getSessionOverrideState: () => this.getSessionOverrideState(),
+      getSessionSnapshot: () => this.getSessionSnapshot(),
+      onCommandStatus: () => this.publishSessionUpdate(),
+      onError: (message) => this.emit("error", message),
+    });
 
     // Note: Location tracking is started conditionally when GPS recording is enabled
 
@@ -253,33 +321,37 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Setup sensor connection listeners
     this.sensorsManager.subscribeConnection((sensor) => {
-      console.log(
-        "[Service] Sensor connection changed:",
-        sensor.name,
-        sensor.connectionState,
-      );
+      console.log("[Service] Sensor connection changed:", sensor.name, sensor.connectionState);
       this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
+      this.publishSessionUpdate();
+
+      if (
+        sensor.isControllable &&
+        sensor.connectionState === "connected" &&
+        this.state === "recording" &&
+        this.currentStep
+      ) {
+        this.trainerControl
+          .applyStepTargets(this.currentStep, "reconnect_recovery")
+          .catch(console.error);
+      }
     });
 
     // Setup location listeners
-    this.locationManager.addCallback((location) =>
-      this.handleLocationData(location),
-    );
+    this.locationManager.addCallback((location) => this.handleLocationData(location));
 
     // No permission listeners needed - permissions are checked independently
 
     // Setup app state listener
-    this.appStateSubscription = AppState.addEventListener(
-      "change",
-      (nextState) => this.handleAppStateChange(nextState),
+    this.appStateSubscription = AppState.addEventListener("change", (nextState) =>
+      this.handleAppStateChange(nextState),
     );
-
-    // Setup plan-based trainer control
-    this.setupPlanTrainerIntegration();
 
     console.log("[ActivityRecorderService] Initialized", {
       profileId: profile.id,
     });
+    this.sessionController.setLifecycle(this.state);
+    this.publishSessionUpdate();
   }
 
   // ================================
@@ -345,10 +417,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // If recording and has a plan, re-apply targets (e.g. for %FTP targets in ERG mode)
     if (this.state === "recording" && this.hasPlan && this.currentStep) {
       console.log("[Service] Re-applying targets with new metrics");
-      this.applyStepTargets(this.currentStep).catch(console.error);
+      this.trainerControl
+        .applyStepTargets(this.currentStep, "periodic_refinement")
+        .catch(console.error);
     }
 
     this.emit("metricsUpdated");
+    this.publishSessionUpdate();
   }
 
   /**
@@ -358,6 +433,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   public setIntensityScale(scale: number): void {
     console.log(`[Service] Setting intensity scale: ${scale * 100}%`);
     this._ftpScale = scale;
+    this.sessionController.updateOverrideState((state) => ({
+      ...state,
+      intensityScale: scale,
+    }));
 
     const updates: Partial<PerformanceMetrics> = {};
 
@@ -368,9 +447,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     if (this._baseThresholdPaceSecondsPerKm) {
       // Pace is seconds per km. Higher intensity = lower pace (faster).
-      this.thresholdPaceSecondsPerKm = Math.round(
-        this._baseThresholdPaceSecondsPerKm / scale,
-      );
+      this.thresholdPaceSecondsPerKm = Math.round(this._baseThresholdPaceSecondsPerKm / scale);
       updates.thresholdPaceSecondsPerKm = this.thresholdPaceSecondsPerKm;
     }
 
@@ -380,11 +457,23 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
       // Re-apply targets if recording with plan
       if (this.state === "recording" && this.hasPlan && this.currentStep) {
-        this.applyStepTargets(this.currentStep).catch(console.error);
+        this.trainerControl
+          .applyStepTargets(this.currentStep, "periodic_refinement")
+          .catch(console.error);
       }
     }
 
+    if (this.getSessionSnapshot()) {
+      this.applySessionOverride({
+        type: "intensity_scale",
+        value: scale,
+        scope: "until_changed",
+        recordedAt: new Date().toISOString(),
+      });
+    }
+
     this.emit("metricsUpdated");
+    this.publishSessionUpdate();
   }
 
   public getIntensityScale(): number {
@@ -405,6 +494,614 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public getBaseWeight(): number | undefined {
     return this._baseWeightKg;
+  }
+
+  public getSessionSnapshot(): RecordingSessionSnapshot | null {
+    return this.sessionController.getSnapshot();
+  }
+
+  public getSessionOverrides(): RecordingSessionOverride[] {
+    return this.sessionController.getOverrides();
+  }
+
+  public getFinalizedArtifact(): RecordingSessionArtifact | null {
+    return this.finalizedArtifact;
+  }
+
+  public getCurrentReadings() {
+    return this.liveMetricsManager.getCurrentReadings();
+  }
+
+  public getSessionStats() {
+    const stats = this.liveMetricsManager.getSessionStats();
+
+    return {
+      ...stats,
+      duration: Math.floor(this.getElapsedTime() / 1000),
+      movingTime: Math.floor(this.getMovingTime() / 1000),
+      pausedTime: Math.floor(this.pausedTime / 1000),
+    };
+  }
+
+  public getSessionOverrideState(): RecordingSessionOverrideState {
+    return this.sessionController.getOverrideState();
+  }
+
+  public getTrainerControlPolicy(): RecordingSessionSnapshot["policies"]["controlPolicy"] {
+    return {
+      trainerMode: this.getSessionOverrideState().trainerMode,
+      autoAdvanceSteps: !this.planExecution.hasManualAdvanceSteps(),
+    };
+  }
+
+  public getAvailableMetricSources(metricFamily?: MetricFamily): MetricSourceCandidate[] {
+    const candidates = this.buildMetricSourceCandidates();
+
+    if (!metricFamily) {
+      return candidates;
+    }
+
+    return candidates.filter((candidate) => candidate.metricFamily === metricFamily);
+  }
+
+  public setPreferredMetricSource(metricFamily: MetricFamily, sourceId: string): void {
+    this.applySessionOverride({
+      type: "preferred_source",
+      metricFamily,
+      sourceId,
+      scope: "until_changed",
+      recordedAt: new Date().toISOString(),
+    });
+  }
+
+  public clearPreferredMetricSource(metricFamily: MetricFamily): void {
+    const { [metricFamily]: _removed, ...remainingPreferredSources } =
+      this.getSessionOverrideState().preferredSources;
+    this.sessionController.updateOverrideState((state) => ({
+      ...state,
+      preferredSources: remainingPreferredSources,
+    }));
+
+    this.publishSessionUpdate();
+  }
+
+  public getSessionView(): RecordingSessionView {
+    return this.sessionController.buildView({
+      trainerControlPolicy: this.getTrainerControlPolicy(),
+      trainer: this.buildTrainerView(),
+      currentReadings: this.getCurrentReadings(),
+      sessionStats: this.getSessionStats(),
+      recordingConfiguration: this.getRecordingConfiguration(),
+      plan: this.buildPlanView(),
+    });
+  }
+
+  private buildTrainerView(): RecordingTrainerView {
+    const trainer = this.sensorsManager.getControllableTrainer();
+    const controller = trainer?.ftmsController;
+
+    return {
+      machineType: inferTrainerMachineType(trainer) ?? null,
+      currentControlMode: controller?.getCurrentMode() ?? null,
+      recoveryState: this.trainerControl.getRecoveryState(),
+      lastCommandStatus: this.sensorsManager.getLastTrainerCommandStatus(),
+    };
+  }
+
+  private publishSnapshotUpdate(): void {
+    this.emit("snapshotUpdated", this.sessionController.getSnapshot());
+  }
+
+  private publishSessionUpdate(): void {
+    this.syncRuntimeSourceState({ recordChanges: true });
+    this.emit("sessionUpdated", this.getSessionView());
+  }
+
+  private isMetricSelectionDegraded(selection: MetricSourceSelection): boolean {
+    return (
+      selection.provenance !== "actual" ||
+      selection.selectionMethod === "fallback" ||
+      selection.selectionMethod === "defaulted" ||
+      selection.selectionMethod === "unavailable"
+    );
+  }
+
+  private buildCurrentMetricValue(
+    metricFamily: MetricFamily,
+    selection: MetricSourceSelection | undefined,
+  ): CurrentMetricValue {
+    const readings = this.getCurrentReadings();
+    const stats = this.getSessionStats();
+
+    switch (metricFamily) {
+      case "heart_rate":
+        return {
+          value: readings.heartRate ?? null,
+          sourceId: selection?.sourceId ?? null,
+          provenance: selection?.provenance ?? "unavailable",
+          recordedAt: readings.lastUpdated?.heartRate
+            ? new Date(readings.lastUpdated.heartRate).toISOString()
+            : null,
+        };
+      case "power":
+        return {
+          value: readings.power ?? null,
+          sourceId: selection?.sourceId ?? null,
+          provenance: selection?.provenance ?? "unavailable",
+          recordedAt: readings.lastUpdated?.power
+            ? new Date(readings.lastUpdated.power).toISOString()
+            : null,
+        };
+      case "cadence":
+        return {
+          value: readings.cadence ?? null,
+          sourceId: selection?.sourceId ?? null,
+          provenance: selection?.provenance ?? "unavailable",
+          recordedAt: readings.lastUpdated?.cadence
+            ? new Date(readings.lastUpdated.cadence).toISOString()
+            : null,
+        };
+      case "speed":
+        return {
+          value: readings.speed ?? null,
+          sourceId: selection?.sourceId ?? null,
+          provenance: selection?.provenance ?? "unavailable",
+          recordedAt: readings.lastUpdated?.speed
+            ? new Date(readings.lastUpdated.speed).toISOString()
+            : readings.lastUpdated?.position
+              ? new Date(readings.lastUpdated.position).toISOString()
+              : null,
+        };
+      case "distance":
+        return {
+          value: Number.isFinite(stats.distance) ? stats.distance : null,
+          sourceId: selection?.sourceId ?? null,
+          provenance: selection?.provenance ?? "unavailable",
+          recordedAt: readings.lastUpdated?.speed
+            ? new Date(readings.lastUpdated.speed).toISOString()
+            : readings.lastUpdated?.position
+              ? new Date(readings.lastUpdated.position).toISOString()
+              : null,
+        };
+      default:
+        return {
+          value: null,
+          sourceId: selection?.sourceId ?? null,
+          provenance: selection?.provenance ?? "unavailable",
+          recordedAt: null,
+        };
+    }
+  }
+
+  private buildMetricSourceCandidates(): MetricSourceCandidate[] {
+    const connectedSensors = this.sensorsManager.getConnectedSensors();
+    const candidates: MetricSourceCandidate[] = connectedSensors.flatMap((sensor) =>
+      this.getMetricSourceTypesForSensor(sensor).flatMap((sourceType) =>
+        this.getMetricFamiliesForSourceType(sourceType).map((metricFamily) => ({
+          metricFamily,
+          sourceId: sensor.id,
+          sourceType,
+          provenance: "actual" as const,
+          isAvailable: sensor.connectionState === "connected",
+        })),
+      ),
+    );
+
+    if (this._gpsRecordingEnabled) {
+      candidates.push(
+        {
+          metricFamily: "speed",
+          sourceId: "gps-runtime",
+          sourceType: "gps",
+          provenance: "actual",
+          isAvailable: this._gpsAvailable,
+        },
+        {
+          metricFamily: "distance",
+          sourceId: "gps-runtime",
+          sourceType: "gps",
+          provenance: "actual",
+          isAvailable: this._gpsAvailable,
+        },
+        {
+          metricFamily: "position",
+          sourceId: "gps-runtime",
+          sourceType: "gps",
+          provenance: "actual",
+          isAvailable: this._gpsAvailable,
+        },
+        {
+          metricFamily: "elevation",
+          sourceId: "gps-runtime",
+          sourceType: "gps",
+          provenance: "actual",
+          isAvailable: this._gpsAvailable,
+        },
+      );
+    }
+
+    if (!this._gpsRecordingEnabled) {
+      candidates.push(
+        {
+          metricFamily: "speed",
+          sourceId: "derived-runtime",
+          sourceType: "derived",
+          provenance: "derived",
+          isAvailable: true,
+        },
+        {
+          metricFamily: "distance",
+          sourceId: "derived-runtime",
+          sourceType: "derived",
+          provenance: "derived",
+          isAvailable: true,
+        },
+      );
+    }
+
+    return candidates;
+  }
+
+  private getMetricFamiliesForSourceType(sourceType: MetricSourceType): MetricFamily[] {
+    switch (sourceType) {
+      case "manual":
+        return [];
+      case "chest_strap":
+      case "optical":
+      case "trainer_passthrough":
+        return ["heart_rate"];
+      case "power_meter":
+        return ["power", "cadence"];
+      case "trainer_power":
+        return ["power"];
+      case "cadence_sensor":
+      case "trainer_cadence":
+        return ["cadence"];
+      case "speed_sensor":
+      case "trainer_speed":
+        return ["speed", "distance"];
+      case "gps":
+        return ["speed", "distance", "position", "elevation"];
+      case "derived":
+        return ["speed", "distance", "elevation"];
+      default:
+        return [];
+    }
+  }
+
+  private resolveMetricSources(selectedAt = new Date().toISOString()): MetricSourceSelection[] {
+    return resolveCoreMetricSources(
+      ["heart_rate", "power", "cadence", "speed", "distance", "position", "elevation"],
+      this.buildMetricSourceCandidates(),
+      {
+        isIndoor: !this._gpsRecordingEnabled,
+        preferredSourceIds: this.getSessionOverrideState().preferredSources,
+        selectedAt,
+      },
+    );
+  }
+
+  private syncRuntimeSourceState(options: { recordChanges: boolean }): void {
+    const nextSelections = this.resolveMetricSources();
+    const currentRuntimeSourceState = this.sessionController.getRuntimeSourceState();
+    const previousSelectionsByMetric = new Map(
+      currentRuntimeSourceState.selectedSources.map((selection) => [
+        selection.metricFamily,
+        selection,
+      ]),
+    );
+    const nextSelectionsByMetric = new Map(
+      nextSelections.map((selection) => [selection.metricFamily, selection]),
+    );
+
+    const sourceChanges: RecordingSourceChangeEvent[] = options.recordChanges
+      ? [...currentRuntimeSourceState.sourceChanges]
+      : currentRuntimeSourceState.sourceChanges;
+
+    if (options.recordChanges) {
+      for (const nextSelection of nextSelections) {
+        const previousSelection = previousSelectionsByMetric.get(nextSelection.metricFamily);
+
+        if (
+          previousSelection &&
+          previousSelection.sourceId === nextSelection.sourceId &&
+          previousSelection.provenance === nextSelection.provenance &&
+          previousSelection.selectionMethod === nextSelection.selectionMethod
+        ) {
+          continue;
+        }
+
+        if (!previousSelection) {
+          continue;
+        }
+
+        sourceChanges.push({
+          metricFamily: nextSelection.metricFamily,
+          previousSourceId: previousSelection.sourceId,
+          nextSourceId: nextSelection.sourceId,
+          previousProvenance: previousSelection.provenance,
+          nextProvenance: nextSelection.provenance,
+          recordedAt: nextSelection.selectedAt ?? new Date().toISOString(),
+        });
+      }
+    }
+
+    const degradedMetrics = nextSelections
+      .filter((selection) => this.isMetricSelectionDegraded(selection))
+      .map((selection) => selection.metricFamily);
+
+    this.sessionController.setRuntimeSourceState({
+      selectedSources: nextSelections,
+      currentMetrics: {
+        heart_rate: this.buildCurrentMetricValue(
+          "heart_rate",
+          nextSelectionsByMetric.get("heart_rate"),
+        ),
+        power: this.buildCurrentMetricValue("power", nextSelectionsByMetric.get("power")),
+        cadence: this.buildCurrentMetricValue("cadence", nextSelectionsByMetric.get("cadence")),
+        speed: this.buildCurrentMetricValue("speed", nextSelectionsByMetric.get("speed")),
+        distance: this.buildCurrentMetricValue("distance", nextSelectionsByMetric.get("distance")),
+      },
+      degradedState: {
+        isDegraded: degradedMetrics.length > 0,
+        metrics: degradedMetrics,
+      },
+      sourceChanges,
+    });
+  }
+
+  private getRuntimeSourceState(): RecordingRuntimeSourceState {
+    this.syncRuntimeSourceState({ recordChanges: false });
+    return this.sessionController.getRuntimeSourceState();
+  }
+
+  private buildPlanView(): RecordingPlanView {
+    if (!this.hasPlan) {
+      return {
+        hasPlan: false,
+        stepIndex: 0,
+        stepCount: 0,
+        progress: null,
+        isLast: false,
+        isFinished: false,
+        canAdvance: false,
+        planTimeRemaining: 0,
+      };
+    }
+
+    const info = this.getStepInfo();
+
+    return {
+      hasPlan: true,
+      name: this._plan?.name,
+      description: this._plan?.description,
+      activityType: this._plan?.activity_category,
+      stepIndex: info.index,
+      stepCount: info.total,
+      currentStep: info.current,
+      progress: info.progress,
+      isLast: info.isLast,
+      isFinished: info.isFinished,
+      canAdvance: info.progress?.canAdvance ?? false,
+      planTimeRemaining: this.planTimeRemaining,
+    };
+  }
+
+  private isTrainerManualMode(): boolean {
+    return this.getSessionOverrideState().trainerMode === "manual";
+  }
+
+  private isSessionIdentityLocked(): boolean {
+    return this.sessionController.hasLockedSnapshot();
+  }
+
+  private ensureMutableSessionIdentity(action: string): boolean {
+    if (!this.isSessionIdentityLocked()) {
+      return true;
+    }
+
+    const message = `${action} is locked after recording starts for the active session.`;
+    console.warn(`[Service] ${message}`);
+    this.emit("error", message);
+    return false;
+  }
+
+  private buildRecordingLaunchIntent(): RecordingLaunchIntent {
+    return {
+      activityCategory: this.selectedActivityCategory,
+      mode: this.hasPlan ? "planned" : "free",
+      gpsMode: this._gpsRecordingEnabled ? "on" : "off",
+      eventId: this._eventId ?? null,
+      activityPlanId: this._plan?.id ?? null,
+      routeId: this._plan?.route_id ?? this._currentRoute?.id ?? null,
+      sourcePreferences: Object.entries(this.getSessionOverrideState().preferredSources).map(
+        ([metricFamily, sourceId]) => ({
+          metricFamily: metricFamily as MetricFamily,
+          sourceId,
+        }),
+      ),
+      controlPolicy: this.getTrainerControlPolicy(),
+    };
+  }
+
+  private buildConnectedDevicesSnapshot(): RecordingSessionSnapshot["devices"] {
+    const connectedSensors = this.sensorsManager.getConnectedSensors();
+    const trainer = this.sensorsManager.getControllableTrainer();
+
+    return {
+      connected: connectedSensors.map((sensor) => this.buildConnectedDeviceDescriptor(sensor)),
+      controllableTrainer: trainer
+        ? {
+            deviceId: trainer.id,
+            deviceName: trainer.name,
+            sourceTypes: this.getMetricSourceTypesForSensor(trainer),
+            supportsAutoControl: Boolean(trainer.ftmsFeatures),
+            supportsManualControl: true,
+          }
+        : null,
+      selectedSources: this.resolveMetricSources(),
+    };
+  }
+
+  private buildConnectedDeviceDescriptor(
+    sensor: ConnectedSensor,
+  ): RecordingSessionSnapshot["devices"]["connected"][number] {
+    const sourceTypes = this.getMetricSourceTypesForSensor(sensor);
+
+    return {
+      deviceId: sensor.id,
+      deviceName: sensor.name,
+      role: this.getConnectedDeviceRole(sensor),
+      sourceTypes,
+      controllable: Boolean(sensor.isControllable),
+    };
+  }
+
+  private getConnectedDeviceRole(
+    sensor: ConnectedSensor,
+  ): RecordingSessionSnapshot["devices"]["connected"][number]["role"] {
+    const sourceTypes = this.getMetricSourceTypesForSensor(sensor);
+
+    if (sensor.isControllable) return "trainer";
+    if (sourceTypes.includes("power_meter")) return "power_meter";
+    if (sourceTypes.includes("cadence_sensor")) return "cadence_sensor";
+    if (sourceTypes.includes("speed_sensor")) return "speed_sensor";
+    if (sourceTypes.includes("chest_strap") || sourceTypes.includes("optical")) {
+      return "heart_rate_monitor";
+    }
+
+    return "gps";
+  }
+
+  private getMetricSourceTypesForSensor(sensor: ConnectedSensor): MetricSourceType[] {
+    const sourceTypes = new Set<MetricSourceType>();
+
+    if (sensor.characteristics.has("00002a37-0000-1000-8000-00805f9b34fb")) {
+      sourceTypes.add("chest_strap");
+    }
+    if (sensor.characteristics.has("00002a63-0000-1000-8000-00805f9b34fb")) {
+      sourceTypes.add("power_meter");
+    }
+    if (sensor.characteristics.has("00002a5b-0000-1000-8000-00805f9b34fb")) {
+      sourceTypes.add("cadence_sensor");
+      sourceTypes.add("speed_sensor");
+    }
+    if (sensor.characteristics.has("00002a53-0000-1000-8000-00805f9b34fb")) {
+      sourceTypes.add("speed_sensor");
+      sourceTypes.add("cadence_sensor");
+    }
+    if (sensor.characteristics.has("00002ad2-0000-1000-8000-00805f9b34fb")) {
+      sourceTypes.add("trainer_power");
+      sourceTypes.add("trainer_cadence");
+      sourceTypes.add("trainer_speed");
+      sourceTypes.add("trainer_passthrough");
+    }
+
+    return [...sourceTypes];
+  }
+
+  private buildProfileSnapshot(): RecordingSessionSnapshot["profileSnapshot"] {
+    const defaultsApplied: string[] = [];
+
+    if (!this._baseFtp) defaultsApplied.push("ftp");
+    if (!this._baseThresholdHr) defaultsApplied.push("thresholdHr");
+    if (!this._baseThresholdPaceSecondsPerKm) defaultsApplied.push("thresholdPaceSecondsPerKm");
+    if (!this._baseWeightKg) defaultsApplied.push("weightKg");
+
+    return {
+      ftp: this._baseFtp,
+      thresholdHr: this._baseThresholdHr,
+      thresholdPaceSecondsPerKm: this._baseThresholdPaceSecondsPerKm,
+      weightKg: this._baseWeightKg,
+      defaultsApplied,
+    };
+  }
+
+  private buildSessionSnapshot(startedAt: string): RecordingSessionSnapshot {
+    const devices = this.buildConnectedDevicesSnapshot();
+    const intent = this.buildRecordingLaunchIntent();
+    const configuration = RecordingConfigResolver.resolveFromLaunchIntent(intent, {
+      plan: this.buildPlanConfigInput(),
+      devices: this.buildConfigDevicesInput(),
+      gpsAvailable: this._gpsAvailable,
+    });
+
+    return deepFreeze({
+      identity: {
+        sessionId: `${this.profile.id}:${Date.now()}`,
+        revision: 1,
+        startedAt,
+        appBuild: "mobile-recorder-v1",
+      },
+      activity: {
+        category: this.selectedActivityCategory,
+        mode: this.hasPlan ? "planned" : "free",
+        gpsMode: this._gpsRecordingEnabled ? "on" : "off",
+        eventId: this._eventId ?? null,
+        activityPlanId: this._plan?.id ?? null,
+        routeId: this._plan?.route_id ?? this._currentRoute?.id ?? null,
+      },
+      profileSnapshot: this.buildProfileSnapshot(),
+      devices,
+      capabilities: configuration.capabilities,
+      policies: {
+        sourcePolicy: {
+          preferUserSelection: true,
+          allowDerivedSpeed: true,
+          allowDerivedDistance: true,
+        },
+        controlPolicy: intent.controlPolicy,
+        degradedModePolicy: {
+          allowWithoutGps: true,
+          allowWithoutSensors: true,
+          exposeSourceWarnings: true,
+        },
+      },
+    });
+  }
+
+  private buildPlanConfigInput(): RecordingConfiguration["input"]["plan"] {
+    if (!this.hasPlan) {
+      return undefined;
+    }
+
+    return {
+      hasStructure: this.stepCount > 0,
+      hasRoute: Boolean(this._plan?.route_id || this.hasRoute),
+      stepCount: this.stepCount,
+      requiresManualAdvance: this.planExecution.hasManualAdvanceSteps(),
+    };
+  }
+
+  private buildConfigDevicesInput(): RecordingConfiguration["input"]["devices"] {
+    const connectedSensors = this.sensorsManager.getConnectedSensors();
+    const sourceTypes = connectedSensors.flatMap((sensor) =>
+      this.getMetricSourceTypesForSensor(sensor),
+    );
+    const ftmsTrainer = this.sensorsManager.getControllableTrainer();
+
+    return {
+      ftmsTrainer: ftmsTrainer
+        ? {
+            deviceId: ftmsTrainer.id,
+            autoControlEnabled: !this.isTrainerManualMode(),
+          }
+        : undefined,
+      hasPowerMeter: sourceTypes.includes("power_meter") || sourceTypes.includes("trainer_power"),
+      hasHeartRateMonitor:
+        sourceTypes.includes("chest_strap") ||
+        sourceTypes.includes("optical") ||
+        sourceTypes.includes("trainer_passthrough"),
+      hasCadenceSensor:
+        sourceTypes.includes("cadence_sensor") ||
+        sourceTypes.includes("trainer_cadence") ||
+        sourceTypes.includes("power_meter"),
+    };
+  }
+
+  private applySessionOverride(override: RecordingSessionOverride): void {
+    this.sessionController.applyOverride(override);
+    this.publishSessionUpdate();
   }
 
   // ================================
@@ -449,27 +1146,27 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   get stepIndex(): number {
-    return this._stepIndex;
+    return this.planExecution.getStepIndex();
   }
 
   get stepCount(): number {
-    return this._steps.length;
+    return this.planExecution.getStepCount();
   }
 
   get currentStep(): IntervalStepV2 | undefined {
-    return this._steps[this._stepIndex];
+    return this.planExecution.getCurrentStep();
   }
 
   get nextStep(): IntervalStepV2 | undefined {
-    return this._steps[this._stepIndex + 1];
+    return this.planExecution.getNextStep();
   }
 
   get allSteps(): IntervalStepV2[] {
-    return this._steps;
+    return this.planExecution.getAllSteps();
   }
 
   get isFinished(): boolean {
-    return this.hasPlan && this._stepIndex >= this._steps.length;
+    return this.hasPlan && this.planExecution.isFinished();
   }
 
   // ================================
@@ -480,7 +1177,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._currentRoute !== null;
   }
 
-  get currentRoute(): any | null {
+  get currentRoute(): LoadedRoute | null {
     return this._currentRoute;
   }
 
@@ -505,8 +1202,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (!this.liveMetricsManager?.streamBuffer) return [];
 
     // Get all locations from StreamBuffer's persistent array (not cleared on flush)
-    const allLocations =
-      (this.liveMetricsManager.streamBuffer as any).getAllLocations?.() || [];
+    const allLocations = this.liveMetricsManager.streamBuffer.getAllLocations();
 
     return allLocations.map((loc: any) => ({
       latitude: loc.latitude,
@@ -550,93 +1246,17 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   get stepProgress(): StepProgress {
-    if (!this.hasPlan || !this.currentStep)
-      throw new Error("No plan or current step");
-
-    const step = this.currentStep;
-    const movingTime = this.getMovingTime() - this._stepStartMovingTime;
-
-    let durationMs = 0;
-    let requiresManualAdvance = false;
-
-    if (step.duration.type === "untilFinished") {
-      requiresManualAdvance = true;
-    } else if (step.duration.type === "time") {
-      durationMs = step.duration.seconds * 1000;
-    } else if (step.duration.type === "distance") {
-      // Placeholder: Assuming 5 m/s (18 km/h) average speed for distance-based steps
-      // This should ideally come from user profile or activity type for better accuracy
-      const estimatedSpeedMPS = 5; // meters per second
-      durationMs = (step.duration.meters / estimatedSpeedMPS) * 1000;
-    } else if (step.duration.type === "repetitions") {
-      // For repetitions, we can't estimate duration - treat as manual advance
-      requiresManualAdvance = true;
-    }
-
-    if (requiresManualAdvance) {
-      return {
-        movingTime,
-        duration: 0, // Duration is not applicable for untilFinished
-        progress: 0,
-        requiresManualAdvance: true,
-        canAdvance: this._stepIndex < this._steps.length - 1,
-      };
-    }
-
-    const progress = Math.min(1, movingTime / durationMs);
-
-    return {
-      movingTime,
-      duration: durationMs,
-      progress,
-      requiresManualAdvance: false,
-      canAdvance: progress >= 1 && this._stepIndex < this._steps.length - 1,
-    };
+    const progress = this.planExecution.getStepProgress(this.getMovingTime());
+    if (!progress) throw new Error("No plan or current step");
+    return progress;
   }
 
   getStepInfo(): StepInfo {
-    return {
-      index: this._stepIndex,
-      total: this._steps.length,
-      current: this.currentStep,
-      progress: this.hasPlan && this.currentStep ? this.stepProgress : null,
-      isLast: this._stepIndex >= this._steps.length - 1,
-      isFinished: this.isFinished,
-    };
+    return this.planExecution.getStepInfo(this.getMovingTime());
   }
   get planTimeRemaining(): number {
-    if (!this.hasPlan || this.isFinished || !this.currentStep) return 0;
-
-    let totalRemainingMs = 0;
-
-    // Add time remaining for the current step
-    const currentStepProgress = this.stepProgress;
-    if (currentStepProgress && !currentStepProgress.requiresManualAdvance) {
-      totalRemainingMs += Math.max(
-        0,
-        currentStepProgress.duration - currentStepProgress.movingTime,
-      );
-    }
-
-    // Add durations for all subsequent steps
-    for (let i = this._stepIndex + 1; i < this._steps.length; i++) {
-      const step = this._steps[i];
-      if (step.duration.type === "untilFinished") {
-        // If a step is "untilFinished", we cannot determine total remaining time
-        // For simplicity, we'll return 0 to signify indefinite
-        return 0;
-      } else if (step.duration.type === "time") {
-        totalRemainingMs += step.duration.seconds * 1000;
-      } else if (step.duration.type === "distance") {
-        const estimatedSpeedMPS = 5; // meters per second (placeholder)
-        totalRemainingMs += (step.duration.meters / estimatedSpeedMPS) * 1000;
-      } else if (step.duration.type === "repetitions") {
-        // Can't estimate duration for repetitions
-        return 0;
-      }
-    }
-
-    return totalRemainingMs;
+    if (!this.hasPlan) return 0;
+    return this.planExecution.getPlanTimeRemaining(this.getMovingTime());
   }
 
   // ================================
@@ -644,11 +1264,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   selectPlan(plan: RecordingServiceActivityPlan, eventId?: string): void {
+    if (!this.ensureMutableSessionIdentity("Plan selection")) {
+      return;
+    }
+
     console.log("[Service] Selected plan:", plan.name);
-    console.log(
-      "[Service] Plan structure:",
-      JSON.stringify(plan.structure, null, 2),
-    );
+    console.log("[Service] Plan structure:", JSON.stringify(plan.structure, null, 2));
 
     this._plan = plan;
     this._eventId = eventId;
@@ -658,27 +1279,19 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Load route if plan has one
     if (plan.route_id) {
-      console.log(
-        "[Service] Plan has route, loading route data:",
-        plan.route_id,
-      );
+      console.log("[Service] Plan has route, loading route data:", plan.route_id);
       this.loadRoute(plan.route_id).catch((error) => {
         console.error("[Service] Failed to load route:", error);
         // Continue without route - don't fail the whole plan selection
       });
     }
 
-    // Create PlanManager which will handle expanding intervals to flat steps
     try {
-      // PlanManager constructor expands intervals × repetitions into flat steps internally
-      const planManager = new PlanManager(plan, eventId);
-      this._steps = (planManager as any).steps || []; // Access private steps array
+      this.planExecution.loadPlan(plan, eventId);
 
-      console.log(
-        `[Service] Loaded ${this._steps.length} steps from plan manager`,
-      );
+      console.log(`[Service] Loaded ${this.planExecution.getStepCount()} steps from plan manager`);
 
-      if (this._steps.length === 0) {
+      if (this.planExecution.getStepCount() === 0) {
         console.warn("[Service] Plan structure has 0 steps");
       }
     } catch (error) {
@@ -687,12 +1300,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         "[Service] Error details:",
         error instanceof Error ? error.message : String(error),
       );
-      this._steps = [];
+      this.planExecution.clear();
     }
-
-    // Initialize to step 0 (first step)
-    this._stepIndex = 0;
-    this._stepStartMovingTime = 0; // Will be set when recording starts
 
     this.selectedActivityCategory = plan.activity_category;
     this.syncGpsTrackingForCurrentState();
@@ -701,26 +1310,27 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Emit step changed immediately so UI shows the first step
     this.emit("stepChanged", this.getStepInfo());
+    this.publishSessionUpdate();
 
-    console.log(
-      "[Service] Plan ready with first step:",
-      this.currentStep?.name,
-    );
+    console.log("[Service] Plan ready with first step:", this.currentStep?.name);
   }
 
   clearPlan(): void {
+    if (!this.ensureMutableSessionIdentity("Plan clearing")) {
+      return;
+    }
+
     console.log("[Service] Clearing plan");
 
     this._plan = undefined;
     this._eventId = undefined;
-    this._steps = [];
-    this._stepIndex = 0;
-    this._stepStartMovingTime = 0;
+    this.planExecution.clear();
     this._currentRoute = null;
     this._routeDistance = 0;
     this._currentRouteDistance = 0;
 
     this.emit("planCleared");
+    this.publishSessionUpdate();
   }
 
   /**
@@ -756,8 +1366,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         distance: this._routeDistance,
       });
 
-      // Emit event for UI to update
-      this.emit("routeLoaded" as any, route);
+      this.publishSessionUpdate();
     } catch (error) {
       console.error("[Service] Failed to load route:", error);
       throw error;
@@ -790,12 +1399,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Calculate distance between two GPS coordinates using Haversine formula
    */
-  private calculateDistance(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number,
-  ): number {
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371e3; // Earth's radius in meters
     const φ1 = (lat1 * Math.PI) / 180;
     const φ2 = (lat2 * Math.PI) / 180;
@@ -828,8 +1432,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const distance = this.calculateDistance(
         latitude,
         longitude,
-        coordinates[i].lat,
-        coordinates[i].lng,
+        coordinates[i].latitude,
+        coordinates[i].longitude,
       );
       if (distance < minDistance) {
         minDistance = distance;
@@ -841,10 +1445,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     let distanceAlongRoute = 0;
     for (let i = 1; i <= closestIndex; i++) {
       distanceAlongRoute += this.calculateDistance(
-        coordinates[i - 1].lat,
-        coordinates[i - 1].lng,
-        coordinates[i].lat,
-        coordinates[i].lng,
+        coordinates[i - 1].latitude,
+        coordinates[i - 1].longitude,
+        coordinates[i].latitude,
+        coordinates[i].longitude,
       );
     }
 
@@ -855,10 +1459,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (
       !this._gpsRecordingEnabled &&
       this.state === "recording" &&
-      !this.manualControlOverride &&
+      !this.isTrainerManualMode() &&
       Math.abs(distanceAlongRoute - previousDistance) > 10 // Only update every 10m
     ) {
-      this.applyRouteGradeToTrainer();
+      this.trainerControl.applyRouteGrade(this.currentRouteGrade).catch(console.error);
     }
   }
 
@@ -885,32 +1489,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   /**
-   * Clean up resources when service is destroyed
-   */
-  private async applyRouteGradeToTrainer(): Promise<void> {
-    const trainer = this.sensorsManager.getControllableTrainer();
-    if (!trainer) return;
-
-    const grade = this.currentRouteGrade;
-
-    // Check if trainer supports slope/grade control
-    if (trainer.ftmsFeatures?.inclinationSupported) {
-      console.log(
-        `[Service] Applying route grade to trainer: ${grade.toFixed(1)}%`,
-      );
-
-      try {
-        const success = await this.sensorsManager.setTargetInclination(grade);
-        if (!success) {
-          console.warn(`[Service] Failed to set grade: ${grade.toFixed(1)}%`);
-        }
-      } catch (error) {
-        console.error("[Service] Error applying route grade:", error);
-      }
-    }
-  }
-
-  /**
    * Start GPS location tracking early (before recording starts)
    * This allows the map to show the user's location in pending state
    */
@@ -920,17 +1498,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     try {
-      console.log(
-        "[Service] Starting early location tracking for GPS map preview",
-      );
+      console.log("[Service] Starting early location tracking for GPS map preview");
       await this.locationManager.startForegroundTracking();
       this._gpsAvailable = true;
       console.log("[Service] Early location tracking started successfully");
+      this.publishSessionUpdate();
     } catch (error) {
-      console.error(
-        "[Service] Failed to start early location tracking:",
-        error,
-      );
+      console.error("[Service] Failed to start early location tracking:", error);
       // Don't throw - this is a nice-to-have for map preview
     }
   }
@@ -943,6 +1517,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       await this.locationManager.stopForegroundTracking();
       this._gpsAvailable = false;
       console.log("[Service] Early location tracking stopped");
+      this.publishSessionUpdate();
     } catch (error) {
       console.error("[Service] Failed to stop early location tracking:", error);
     }
@@ -956,6 +1531,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         await this.locationManager.stopForegroundTracking();
         await this.locationManager.stopBackgroundTracking();
         this._gpsAvailable = false;
+        this.publishSessionUpdate();
       }
       return;
     }
@@ -965,6 +1541,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       await this.locationManager.startBackgroundTracking();
       await this.locationManager.startHeadingTracking();
       this._gpsAvailable = true;
+      this.publishSessionUpdate();
       return;
     }
 
@@ -996,17 +1573,65 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    console.log(`[Service] Advancing to step ${this._stepIndex + 1}`);
+    console.log(`[Service] Advancing to step ${this.stepIndex + 1}`);
 
-    this._stepIndex++;
-    this._stepStartMovingTime = this.getMovingTime();
+    this.planExecution.advance(this.getMovingTime());
 
     this.emit("stepChanged", this.getStepInfo());
+
+    if (this.state === "recording" && this.currentStep) {
+      this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
+    }
 
     if (this.isFinished) {
       console.log("[Service] Plan completed!");
       this.emit("planCompleted");
     }
+  }
+
+  public getTrainerMachineType() {
+    return inferTrainerMachineType(this.sensorsManager.getControllableTrainer());
+  }
+
+  public getTrainerFeatures(): FTMSFeatures | null {
+    return this.sensorsManager.getControllableTrainer()?.ftmsFeatures ?? null;
+  }
+
+  public getBleState(): string {
+    return this.sensorsManager.getBleState();
+  }
+
+  public async resetAllSensors(): Promise<void> {
+    await this.sensorsManager.resetAllSensors();
+  }
+
+  public async applyManualTrainerPower(watts: number): Promise<boolean> {
+    return this.trainerControl.applyManualPower(watts);
+  }
+
+  public async applyManualTrainerResistance(resistance: number): Promise<boolean> {
+    return this.trainerControl.applyManualResistance(resistance);
+  }
+
+  public async applyManualTrainerSimulation(params: {
+    gradePercent: number;
+    windSpeedMps: number;
+    rollingResistanceCoefficient?: number;
+    aerodynamicDragCoefficient?: number;
+  }): Promise<boolean> {
+    return this.trainerControl.applyManualSimulation(params);
+  }
+
+  public async applyManualTrainerSpeed(speedKph: number): Promise<boolean> {
+    return this.trainerControl.applyManualSpeed(speedKph);
+  }
+
+  public async applyManualTrainerIncline(inclinePercent: number): Promise<boolean> {
+    return this.trainerControl.applyManualIncline(inclinePercent);
+  }
+
+  public async applyManualTrainerCadence(rpm: number): Promise<boolean> {
+    return this.trainerControl.applyManualCadence(rpm);
   }
 
   // ================================
@@ -1018,6 +1643,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public async enableGpsRecording(): Promise<void> {
+    if (!this.ensureMutableSessionIdentity("GPS mode")) {
+      return;
+    }
+
     if (this._gpsRecordingEnabled) {
       return;
     }
@@ -1029,9 +1658,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       gpsRecordingEnabled: true,
     });
     await this.syncGpsTrackingForCurrentState();
+    this.publishSessionUpdate();
   }
 
   public async disableGpsRecording(): Promise<void> {
+    if (!this.ensureMutableSessionIdentity("GPS mode")) {
+      return;
+    }
+
     if (!this._gpsRecordingEnabled) {
       return;
     }
@@ -1043,6 +1677,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       gpsRecordingEnabled: false,
     });
     await this.syncGpsTrackingForCurrentState();
+    this.publishSessionUpdate();
   }
 
   public async toggleGpsRecording(): Promise<void> {
@@ -1077,97 +1712,31 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Get the current recording configuration based on state and sensors
    */
   public getRecordingConfiguration(): RecordingConfiguration {
-    const connectedSensors = this.sensorsManager.getConnectedSensors();
-    const ftmsTrainer = this.sensorsManager.getControllableTrainer();
+    const sessionSnapshot = this.getSessionSnapshot();
+    const baseConfiguration = sessionSnapshot
+      ? RecordingConfigResolver.resolveFromSessionSnapshot(sessionSnapshot, {
+          plan: this.buildPlanConfigInput(),
+          gpsAvailable: this._gpsAvailable,
+        })
+      : RecordingConfigResolver.resolveFromLaunchIntent(this.buildRecordingLaunchIntent(), {
+          plan: this.buildPlanConfigInput(),
+          devices: this.buildConfigDevicesInput(),
+          gpsAvailable: this._gpsAvailable,
+        });
 
-    // Check for specific sensor capabilities
-    // Note: This checks for dedicated sensors or FTMS trainers providing these metrics
-    const hasHeartRate = connectedSensors.some((s) =>
-      s.characteristics.has("00002a37-0000-1000-8000-00805f9b34fb"),
-    );
-
-    // Power: dedicated power meter (0x2A63) or FTMS Indoor Bike Data (0x2AD2)
-    const hasPower = connectedSensors.some(
-      (s) =>
-        s.characteristics.has("00002a63-0000-1000-8000-00805f9b34fb") ||
-        s.characteristics.has("00002ad2-0000-1000-8000-00805f9b34fb"),
-    );
-
-    // Cadence: CSC (0x2A5B), RSC (0x2A53), or FTMS Indoor Bike Data (0x2AD2)
-    const hasCadence = connectedSensors.some(
-      (s) =>
-        s.characteristics.has("00002a5b-0000-1000-8000-00805f9b34fb") ||
-        s.characteristics.has("00002a53-0000-1000-8000-00805f9b34fb") ||
-        s.characteristics.has("00002ad2-0000-1000-8000-00805f9b34fb"),
-    );
-
-    // Plan validation
     const validation = this.validatePlanRequirements();
 
-    // Construct Input
-    const input: RecordingConfiguration["input"] = {
-      activityCategory: this.selectedActivityCategory,
-      gpsRecordingEnabled: this._gpsRecordingEnabled,
-      mode: this.hasPlan ? "planned" : "unplanned",
-      plan: this.hasPlan
-        ? {
-            hasStructure: this.stepCount > 0,
-            hasRoute: !!this._plan?.route_id || this.hasRoute,
-            stepCount: this.stepCount,
-            requiresManualAdvance: this._steps.some(
-              (s) => s.duration.type === "untilFinished",
-            ),
-          }
-        : undefined,
-      devices: {
-        ftmsTrainer: ftmsTrainer
-          ? {
-              deviceId: ftmsTrainer.id,
-              features: ftmsTrainer.ftmsFeatures as any,
-              autoControlEnabled: !this.manualControlOverride,
-            }
-          : undefined,
-        hasPowerMeter: hasPower,
-        hasHeartRateMonitor: hasHeartRate,
-        hasCadenceSensor: hasCadence,
+    return {
+      input: baseConfiguration.input,
+      capabilities: {
+        ...baseConfiguration.capabilities,
+        isValid: validation?.isValid ?? baseConfiguration.capabilities.isValid,
+        errors:
+          validation?.missingMetrics.map((metric) => metric.name) ??
+          baseConfiguration.capabilities.errors,
+        warnings: validation?.warnings ?? baseConfiguration.capabilities.warnings,
       },
-      gpsAvailable: this._gpsAvailable,
     };
-
-    // Construct Capabilities
-    const capabilities: RecordingCapabilities = {
-      // Data collection
-      canTrackLocation: input.gpsRecordingEnabled && input.gpsAvailable,
-      canTrackPower: input.devices.hasPowerMeter,
-      canTrackHeartRate: input.devices.hasHeartRateMonitor,
-      canTrackCadence: input.devices.hasCadenceSensor,
-
-      // UI features
-      shouldShowMap: input.gpsRecordingEnabled,
-      shouldShowSteps: !!input.plan?.hasStructure,
-      shouldShowRouteOverlay: !!input.plan?.hasRoute,
-      shouldShowTurnByTurn: false, // Not implemented yet
-      shouldShowFollowAlong: false, // Not implemented yet
-      shouldShowTrainerControl: !!input.devices.ftmsTrainer,
-
-      // Automation
-      canAutoAdvanceSteps:
-        !!input.plan?.hasStructure && !input.plan.requiresManualAdvance,
-      shouldAutoFollowTargets:
-        !!input.plan?.hasStructure &&
-        !!input.devices.ftmsTrainer &&
-        input.devices.ftmsTrainer.autoControlEnabled,
-
-      // Primary metric
-      primaryMetric: input.gpsRecordingEnabled ? "distance" : "time",
-
-      // Validation
-      isValid: validation?.isValid ?? true,
-      errors: validation?.missingMetrics.map((m) => m.name) ?? [],
-      warnings: validation?.warnings ?? [],
-    };
-
-    return { input, capabilities };
   }
 
   async startRecording() {
@@ -1175,15 +1744,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Prevent concurrent recordings
     if (this.state === "recording") {
-      const error =
-        "Cannot start recording: A recording is already in progress";
+      const error = "Cannot start recording: A recording is already in progress";
       console.error(`[Service] ${error}`);
       throw new Error(error);
     }
 
     if (this.state === "paused") {
-      const error =
-        "Cannot start recording: Please resume the paused recording first";
+      const error = "Cannot start recording: Please resume the paused recording first";
       console.error(`[Service] ${error}`);
       throw new Error(error);
     }
@@ -1197,18 +1764,25 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       );
     }
 
+    const startedAt = new Date().toISOString();
+    this.finalizedArtifact = null;
+    const sessionSnapshot = this.buildSessionSnapshot(startedAt);
+    this.sessionController.resetForNewSession(sessionSnapshot);
+    this.publishSnapshotUpdate();
+
     // Create recording metadata (in-memory)
     this.recordingMetadata = {
-      startedAt: new Date().toISOString(),
-      activityCategory: this.selectedActivityCategory,
-      gpsRecordingEnabled: this._gpsRecordingEnabled,
+      startedAt,
+      activityCategory: sessionSnapshot.activity.category,
+      gpsRecordingEnabled: sessionSnapshot.activity.gpsMode === "on",
       profileId: this.profile.id,
       profile: this.profile,
-      eventId: this._eventId,
+      eventId: sessionSnapshot.activity.eventId ?? undefined,
       activityPlan: this._plan,
     };
 
     this.state = "recording";
+    this.sessionController.setLifecycle(this.state);
 
     // Configure LiveMetricsManager before starting
     this.liveMetricsManager.setGpsRecordingEnabled(this._gpsRecordingEnabled);
@@ -1222,16 +1796,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.pausedTime = 0;
     this.lastPauseTime = undefined;
 
-    // Reset step timer for plan (will be 0 when recording starts)
-    this._stepStartMovingTime = 0;
+    this.planExecution.resetForRecordingStart(0);
 
     // If we have a plan, emit the initial step info now that recording has started
     if (this.hasPlan && this.currentStep) {
-      console.log(
-        "[Service] Recording started with plan, step:",
-        this.currentStep.name,
-      );
+      console.log("[Service] Recording started with plan, step:", this.currentStep.name);
       this.emit("stepChanged", this.getStepInfo());
+      this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
     }
 
     this.startElapsedTimeUpdates();
@@ -1271,6 +1842,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Emit initial sensor state
     this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
     this.emit("stateChanged", this.state);
+    this.publishSessionUpdate();
     console.log("[Service] Recording started successfully");
   }
 
@@ -1283,6 +1855,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     const pauseTimestamp = Date.now();
     this.state = "paused";
+    this.sessionController.setLifecycle(this.state);
     this.lastPauseTime = pauseTimestamp;
 
     // Pause LiveMetricsManager
@@ -1296,6 +1869,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.stopElapsedTimeUpdates();
 
     this.emit("stateChanged", this.state);
+    this.publishSessionUpdate();
   }
 
   async resumeRecording() {
@@ -1307,6 +1881,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     const resumeTimestamp = Date.now();
     this.state = "recording";
+    this.sessionController.setLifecycle(this.state);
 
     // Resume LiveMetricsManager
     this.liveMetricsManager.resumeRecording();
@@ -1326,6 +1901,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.startElapsedTimeUpdates();
 
     this.emit("stateChanged", this.state);
+    this.publishSessionUpdate();
   }
 
   async finishRecording() {
@@ -1333,21 +1909,30 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       throw new Error("No active recording to finish");
     }
 
+    if (this.state === "finishing") {
+      throw new Error("Recording finalization is already in progress");
+    }
+
     console.log("[Service] Finishing recording");
+
+    const previousState = this.state;
+    this.state = "finishing";
+    this.sessionController.setLifecycle(this.state);
+    this.emit("stateChanged", this.state);
+    this.publishSessionUpdate();
 
     try {
       // Finish LiveMetricsManager (flushes final data to files)
       await this.liveMetricsManager.finishRecording();
 
       // Check StreamBuffer status before finalizing
-      const bufferStatus =
-        this.liveMetricsManager.streamBuffer.getBufferStatus();
+      const bufferStatus = this.liveMetricsManager.streamBuffer.getBufferStatus();
       console.log("[Service] StreamBuffer status:", bufferStatus);
 
       // Finalize FIT file
       if (this.fitEncoder) {
         try {
-          const stats = this.liveMetricsManager.getSessionStats();
+          const stats = this.getSessionStats();
 
           // VALIDATION: Ensure we have some data
           const status = this.fitEncoder.getStatus();
@@ -1385,10 +1970,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
           // Add file path to metadata
           this.recordingMetadata.fitFilePath = this.fitEncoder.getFilePath();
-          console.log(
-            "[Service] FIT file finalized:",
-            this.recordingMetadata.fitFilePath,
-          );
+          console.log("[Service] FIT file finalized:", this.recordingMetadata.fitFilePath);
         } catch (error) {
           console.error("[Service] Failed to finalize FIT file:", error);
           // Re-throw so UI can show proper error
@@ -1401,9 +1983,33 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       // Update recording metadata with end time
       this.recordingMetadata.endedAt = new Date().toISOString();
 
+      const sessionSnapshot = this.getSessionSnapshot();
+      if (sessionSnapshot) {
+        this.finalizedArtifact = {
+          sessionId: sessionSnapshot.identity.sessionId,
+          snapshot: sessionSnapshot,
+          overrides: this.getSessionOverrides(),
+          finalStats: {
+            durationSeconds: this.getSessionStats().duration,
+            movingSeconds: this.getSessionStats().movingTime,
+            distanceMeters: this.getSessionStats().distance,
+            calories: this.getSessionStats().calories,
+          },
+          fitFilePath: this.recordingMetadata.fitFilePath ?? null,
+          streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
+          completedAt: this.recordingMetadata.endedAt,
+          runtimeSourceState: this.getRuntimeSourceState(),
+        };
+
+        await persistPendingFinalizedArtifact(this.finalizedArtifact);
+        this.emit("artifactReady", this.finalizedArtifact);
+      }
+
       // Update state
       this.state = "finished";
+      this.sessionController.setLifecycle(this.state);
       this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
 
       // Emit completion event to signal data is ready for processing
       this.emit("recordingComplete");
@@ -1416,6 +2022,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       console.log("[Service] Recording finished successfully");
     } catch (err) {
       console.error("[Service] Failed to finish recording:", err);
+      this.state = previousState;
+      this.sessionController.setLifecycle(this.state);
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
       this.emit("error", "Failed to save recording data.");
       throw err;
     }
@@ -1429,23 +2039,30 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     category: PublicActivityCategory,
     gpsRecordingEnabled: boolean,
   ): void {
+    if (!this.ensureMutableSessionIdentity("Activity configuration")) {
+      return;
+    }
+
     this.selectedActivityCategory = category;
     this._gpsRecordingEnabled = gpsRecordingEnabled;
     this.syncGpsTrackingForCurrentState().catch(console.error);
     this.emit("gpsTrackingChanged", gpsRecordingEnabled);
     this.emit("activitySelected", { category, gpsRecordingEnabled });
+    this.publishSessionUpdate();
   }
 
-  selectUnplannedActivity(
-    category: PublicActivityCategory,
-    gpsRecordingEnabled: boolean,
-  ): void {
+  selectUnplannedActivity(category: PublicActivityCategory, gpsRecordingEnabled: boolean): void {
+    if (!this.ensureMutableSessionIdentity("Activity selection")) {
+      return;
+    }
+
     this.selectedActivityCategory = category;
     this._gpsRecordingEnabled = gpsRecordingEnabled;
     this.clearPlan();
     this.syncGpsTrackingForCurrentState().catch(console.error);
     this.emit("gpsTrackingChanged", gpsRecordingEnabled);
     this.emit("activitySelected", { category, gpsRecordingEnabled });
+    this.publishSessionUpdate();
   }
 
   /**
@@ -1454,12 +2071,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    *
    * @param payload - ActivityPayload containing activity type and optional plan
    */
-  selectActivityFromPayload(
-    payload: import("@repo/core").ActivityPayload,
-  ): void {
+  selectActivityFromPayload(payload: import("@repo/core").ActivityPayload): void {
     console.log("[Service] Initializing from payload:", payload);
 
     try {
+      if (!this.ensureMutableSessionIdentity("Activity payload changes")) {
+        this.emit("payloadProcessed", payload);
+        return;
+      }
+
       if (payload.plan) {
         // Template or planned activity with structure
         const plan: RecordingServiceActivityPlan = {
@@ -1487,10 +2107,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             payload.category,
             payload.gpsRecordingEnabled,
           );
-          this.selectUnplannedActivity(
-            payload.category,
-            payload.gpsRecordingEnabled,
-          );
+          this.selectUnplannedActivity(payload.category, payload.gpsRecordingEnabled);
         } else {
           // Plan exists OR recording has started: preserve plan and just update config
           console.log(
@@ -1500,10 +2117,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             "hasPlan:",
             this.hasPlan,
           );
-          this.updateActivityConfiguration(
-            payload.category,
-            payload.gpsRecordingEnabled,
-          );
+          this.updateActivityConfiguration(payload.category, payload.gpsRecordingEnabled);
         }
       }
 
@@ -1524,169 +2138,35 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * When disabled (back to auto), plan targets are reapplied
    */
   public setManualControlMode(enabled: boolean): void {
-    this.manualControlOverride = enabled;
-    console.log(
-      `[Service] Manual control: ${enabled ? "enabled" : "disabled"}`,
-    );
+    this.sessionController.updateOverrideState((state) => ({
+      ...state,
+      trainerMode: enabled ? "manual" : "auto",
+    }));
+    console.log(`[Service] Manual control: ${enabled ? "enabled" : "disabled"}`);
+
+    if (this.getSessionSnapshot()) {
+      this.applySessionOverride({
+        type: "trainer_mode",
+        value: enabled ? "manual" : "auto",
+        scope: "until_changed",
+        recordedAt: new Date().toISOString(),
+      });
+    }
 
     if (!enabled && this.state === "recording" && this.currentStep) {
       // Re-apply plan targets when switching back to auto
-      console.log(
-        "[Service] Reapplying plan targets after manual override disabled",
-      );
-      this.applyStepTargets(this.currentStep);
+      console.log("[Service] Reapplying plan targets after manual override disabled");
+      this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
     }
+
+    this.publishSessionUpdate();
   }
 
   /**
    * Check if manual control override is currently active
    */
   public isManualControlActive(): boolean {
-    return this.manualControlOverride;
-  }
-
-  // ================================
-  // FTMS Trainer Control Integration
-  // ================================
-
-  /**
-   * Setup automatic trainer control based on workout plan
-   * Applies power/grade targets when steps change
-   */
-  private setupPlanTrainerIntegration(): void {
-    // Apply targets when step changes
-    this.addListener("stepChanged", async ({ current }) => {
-      // Skip if manual control is active
-      if (this.manualControlOverride) {
-        console.log("[Service] Manual control active, skipping auto target");
-        return;
-      }
-
-      if (!current || this.state !== "recording") return;
-
-      const trainer = this.sensorsManager.getControllableTrainer();
-      if (!trainer) return;
-
-      console.log("[Service] Applying step targets:", current.name);
-      await this.applyStepTargets(current);
-    });
-
-    // Apply initial target when recording starts
-    this.addListener("stateChanged", async (state) => {
-      // Skip if manual control is active
-      if (this.manualControlOverride) {
-        console.log("[Service] Manual control active, skipping auto target");
-        return;
-      }
-
-      if (state !== "recording") return;
-
-      const step = this.currentStep;
-      if (!step) return;
-
-      const trainer = this.sensorsManager.getControllableTrainer();
-      if (!trainer) return;
-
-      console.log("[Service] Applying initial targets");
-      await this.applyStepTargets(step);
-    });
-
-    // Hot-plug detection: Apply targets when a controllable trainer connects mid-workout
-    this.sensorsManager.subscribeConnection(async (sensor) => {
-      // Skip if manual control is active
-      if (this.manualControlOverride) {
-        console.log("[Service] Manual control active, skipping auto target");
-        return;
-      }
-
-      // Only react to newly connected controllable trainers
-      if (!sensor.isControllable || sensor.connectionState !== "connected") {
-        return;
-      }
-
-      // Only apply if we're actively recording with a plan
-      if (this.state !== "recording" || !this.hasPlan || !this.currentStep) {
-        return;
-      }
-
-      console.log(
-        `[Service] Controllable trainer "${sensor.name}" connected during recording - applying Auto ERG`,
-      );
-
-      // Apply current step targets to the newly connected trainer
-      await this.applyStepTargets(this.currentStep);
-
-      // Show success notification (optional - can be removed if too noisy)
-      console.log(
-        `[Service] Auto ERG activated for "${sensor.name}" at ${this.currentStep.name}`,
-      );
-    });
-  }
-
-  /**
-   * Apply targets from a plan step to the trainer
-   */
-  private async applyStepTargets(step: IntervalStepV2): Promise<void> {
-    if (!step.targets) {
-      console.log("[Service] No targets for this step");
-      return;
-    }
-
-    const trainer = this.sensorsManager.getControllableTrainer();
-    if (!trainer) {
-      console.log("[Service] No controllable trainer");
-      return;
-    }
-
-    try {
-      // Find power or FTP target (ERG mode)
-      const powerTarget = step.targets.find(
-        (t) => t.type === "watts" || t.type === "%FTP",
-      );
-
-      if (powerTarget) {
-        const powerWatts = this.resolvePowerTarget(powerTarget);
-        if (powerWatts) {
-          console.log(`[Service] Applying power target: ${powerWatts}W`);
-          const success = await this.sensorsManager.setPowerTarget(powerWatts);
-
-          if (!success) {
-            this.emit("error", `Failed to set power target: ${powerWatts}W`);
-          }
-        }
-      }
-      // Note: Grade targets are not part of IntensityTargetV2
-      // If you need grade/simulation mode, it should be added to the schema
-    } catch (error) {
-      console.error("[Service] Failed to apply step targets:", error);
-      this.emit("error", "Failed to apply workout targets to trainer");
-    }
-  }
-
-  /**
-   * Resolve power target from plan step to absolute watts
-   */
-  private resolvePowerTarget(
-    target: import("@repo/core").IntensityTargetV2,
-  ): number | null {
-    // Handle percentage of FTP
-    if (target.type === "%FTP") {
-      const percentage = target.intensity;
-      const ftp = this.ftp || GLOBAL_DEFAULTS.ftp;
-      const watts = Math.round((percentage / 100) * ftp);
-      console.log(
-        `[Service] Resolved %FTP target: ${percentage}% of ${ftp}W = ${watts}W`,
-      );
-      return watts;
-    }
-
-    // Handle absolute watts
-    if (target.type === "watts") {
-      return Math.round(target.intensity);
-    }
-
-    console.warn("[Service] Unable to resolve power target:", target);
-    return null;
+    return this.isTrainerManualMode();
   }
 
   // ================================
@@ -1708,8 +2188,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       typeof reading.value === "number"
     ) {
       const metrics = this.liveMetricsManager.getMetrics();
-      const progress =
-        this.hasPlan && this.currentStep ? this.stepProgress : null;
+      const progress = this.hasPlan && this.currentStep ? this.stepProgress : null;
       this.notificationsManager
         .update({
           elapsedInStep: progress?.movingTime || 0,
@@ -1743,10 +2222,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Update route progress if a route is loaded
     if (this.hasRoute) {
-      this.updateRouteProgress(
-        location.coords.latitude,
-        location.coords.longitude,
-      );
+      this.updateRouteProgress(location.coords.latitude, location.coords.longitude);
     }
   }
 
@@ -1781,6 +2257,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       elapsed: Math.floor(this.getElapsedTime() / 1000),
       moving: Math.floor(this.getMovingTime() / 1000),
     });
+    this.publishSessionUpdate();
 
     // Auto-advance plan steps when recording
     if (this.state === "recording") {
@@ -1789,11 +2266,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
       if (this.hasPlan && this.currentStep) {
         const progress = this.stepProgress;
-        if (
-          progress &&
-          !progress.requiresManualAdvance &&
-          progress.progress >= 1
-        ) {
+        if (progress && !progress.requiresManualAdvance && progress.progress >= 1) {
           this.advanceStep();
         }
       }
@@ -1836,9 +2309,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         // Log periodically (every 10 seconds) to track recording progress
         const status = this.fitEncoder.getStatus();
         if (status.recordCount % 10 === 0 && status.recordCount > 0) {
-          console.log(
-            `[Service] FIT recording progress: ${status.recordCount} records`,
-          );
+          console.log(`[Service] FIT recording progress: ${status.recordCount} records`);
         }
       }
     } catch (error) {
@@ -1884,7 +2355,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.laps.push(lapTime);
     this.lastLapTime = movingTime;
 
-    this.emit("lapRecorded" as any);
+    this.emit("lapRecorded");
   }
 
   /**
@@ -1904,17 +2375,23 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   cleanup() {
     console.log("[Service] Cleaning up...");
 
+    const preserveFinalizedArtifact = this.finalizedArtifact !== null;
+
     this.stopElapsedTimeUpdates();
+    this.liveMetricsManager.cleanup().catch(console.error);
     this.locationManager.cleanup();
     this.sensorsManager.cleanup();
     if (this.notificationsManager) {
       this.notificationsManager.stopForegroundService().catch(console.error);
     }
-    if (this.fitEncoder) {
+    if (this.fitEncoder && !preserveFinalizedArtifact) {
       this.fitEncoder.cleanup().catch(console.error);
     }
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
     }
+
+    this.sessionController.resetAll();
+    this.publishSnapshotUpdate();
   }
 }

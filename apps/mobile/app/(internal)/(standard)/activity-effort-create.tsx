@@ -1,16 +1,21 @@
-import React from "react";
-import { View, ScrollView, Alert } from "react-native";
-import { useRouter } from "expo-router";
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { trpc } from "@/lib/trpc";
-import { useFormMutation } from "@/lib/hooks/useFormMutation";
-import { Text } from "@repo/ui/components/text";
 import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
+import {
+  Form,
+  FormBoundedNumberField,
+  FormIntegerStepperField,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
+import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
+import { useRouter } from "expo-router";
+import React from "react";
+import { Controller } from "react-hook-form";
+import { Alert, ScrollView, View } from "react-native";
+import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { useFormMutation } from "@/lib/hooks/useFormMutation";
+import { trpc } from "@/lib/trpc";
 
 const effortSchema = z.object({
   activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
@@ -26,8 +31,8 @@ type FormValues = z.infer<typeof effortSchema>;
 function ActivityEffortCreate() {
   const router = useRouter();
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(effortSchema),
+  const form = useZodForm({
+    schema: effortSchema,
     defaultValues: {
       activity_category: "run",
       effort_type: "power",
@@ -134,87 +139,46 @@ function ActivityEffortCreate() {
         )}
       </View>
 
-      <View className="gap-2">
-        <Label nativeID="durationLabel">Duration (seconds)</Label>
-        <Controller
-          control={form.control}
-          name="duration_seconds"
-          render={({ field }) => (
-            <Input
-              value={field.value?.toString() || ""}
-              onChangeText={(val) => {
-                const parsed = parseInt(val, 10);
-                field.onChange(isNaN(parsed) ? 0 : parsed);
-              }}
-              keyboardType="numeric"
-              placeholder="e.g. 60"
-            />
-          )}
-        />
-        {form.formState.errors.duration_seconds && (
-          <Text className="text-destructive text-sm">
-            {form.formState.errors.duration_seconds.message}
-          </Text>
-        )}
-      </View>
+      <Form {...form}>
+        <View className="gap-6">
+          <FormIntegerStepperField
+            control={form.control}
+            description="Use whole seconds for the effort duration."
+            label="Duration (seconds)"
+            min={1}
+            max={7200}
+            name="duration_seconds"
+            step={5}
+            testId="duration-seconds-stepper"
+          />
 
-      <View className="gap-2">
-        <Label nativeID="valueLabel">Value</Label>
-        <Controller
-          control={form.control}
-          name="value"
-          render={({ field }) => (
-            <Input
-              value={field.value?.toString() || ""}
-              onChangeText={(val) => {
-                const parsed = parseFloat(val);
-                field.onChange(isNaN(parsed) ? 0 : parsed);
-              }}
-              keyboardType="numeric"
-              placeholder="e.g. 300"
-            />
-          )}
-        />
-        {form.formState.errors.value && (
-          <Text className="text-destructive text-sm">
-            {form.formState.errors.value.message}
-          </Text>
-        )}
-      </View>
+          <FormBoundedNumberField
+            control={form.control}
+            decimals={1}
+            label="Value"
+            min={0}
+            name="value"
+            placeholder="e.g. 300"
+            testId="effort-value-input"
+          />
 
-      <View className="gap-2">
-        <Label nativeID="unitLabel">Unit</Label>
-        <Controller
-          control={form.control}
-          name="unit"
-          render={({ field }) => (
-            <Input
-              value={field.value}
-              onChangeText={field.onChange}
-              placeholder="e.g. W or m/s"
-              autoCapitalize="none"
-            />
-          )}
-        />
-        {form.formState.errors.unit && (
-          <Text className="text-destructive text-sm">
-            {form.formState.errors.unit.message}
-          </Text>
-        )}
-      </View>
+          <FormTextField
+            autoCapitalize="none"
+            control={form.control}
+            label="Unit"
+            name="unit"
+            placeholder="e.g. W or m/s"
+            testId="unit-input"
+          />
+        </View>
+      </Form>
 
       <Button
         className="mt-4"
         onPress={form.handleSubmit((data) => mutation.mutate(data))}
         disabled={mutation.isLoading}
       >
-        <Text
-          className={
-            mutation.isLoading
-              ? "text-muted-foreground"
-              : "text-primary-foreground"
-          }
-        >
+        <Text className={mutation.isLoading ? "text-muted-foreground" : "text-primary-foreground"}>
           {mutation.isLoading ? "Saving..." : "Save Effort"}
         </Text>
       </Button>

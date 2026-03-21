@@ -1,9 +1,6 @@
+import { downsampleGPSRoute, downsampleStream } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import {
-  downsampleGPSRoute,
-  downsampleStream,
-} from "@/lib/utils/streamSampling";
 import React, { useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
@@ -81,16 +78,15 @@ export function ActivityRouteMap({
     }
 
     // Downsample GPS route with timestamps
-    const coordPairs = coordinates.map((c) => [c.latitude, c.longitude]) as [
-      number,
-      number,
-    ][];
+    const coordPairs = coordinates.map((c) => [c.latitude, c.longitude]) as [number, number][];
 
-    const timestampsToUse =
-      timestamps.length > 0 ? timestamps : coordPairs.map((_, i) => i);
+    const timestampsToUse = timestamps.length > 0 ? timestamps : coordPairs.map((_, i) => i);
 
-    const { coordinates: sampledCoords, timestamps: sampledTimestamps } =
-      downsampleGPSRoute(coordPairs, timestampsToUse, 500);
+    const { coordinates: sampledCoords, timestamps: sampledTimestamps } = downsampleGPSRoute(
+      coordPairs,
+      timestampsToUse,
+      500,
+    );
 
     const sampledCoordinates = sampledCoords.map(([lat, lng]) => ({
       latitude: lat,
@@ -102,12 +98,7 @@ export function ActivityRouteMap({
     if (colorBy !== "none" && colorData.length > 0) {
       // Only downsample if colorData matches original coordinates length
       if (colorData.length === coordinates.length) {
-        const { values: downsampled } = downsampleStream(
-          colorData,
-          timestampsToUse,
-          500,
-          "avg",
-        );
+        const { values: downsampled } = downsampleStream(colorData, timestampsToUse, 500, "avg");
         sampledColorData = downsampled;
       } else {
         // If already downsampled or misaligned, use as is
@@ -158,10 +149,7 @@ export function ActivityRouteMap({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <View
-            style={{ height }}
-            className="items-center justify-center bg-muted rounded-lg"
-          >
+          <View style={{ height }} className="items-center justify-center bg-muted rounded-lg">
             <Text className="text-muted-foreground">No GPS data available</Text>
           </View>
         </CardContent>
@@ -179,9 +167,7 @@ export function ActivityRouteMap({
           <CardTitle>{title}</CardTitle>
           {colorBy !== "none" && (
             <View className="flex-row items-center gap-2 mt-1">
-              <Text className="text-xs text-muted-foreground">
-                Color by: {colorBy}
-              </Text>
+              <Text className="text-xs text-muted-foreground">Color by: {colorBy}</Text>
               <View className="flex-row items-center gap-1">
                 <View className="w-3 h-3 rounded-full bg-[hsl(240,100%,50%)]" />
                 <Text className="text-xs text-muted-foreground">Low</Text>
@@ -195,10 +181,7 @@ export function ActivityRouteMap({
         </CardHeader>
       )}
       <CardContent className={compact ? "p-2" : undefined}>
-        <View
-          style={{ height }}
-          className="rounded-lg overflow-hidden border border-border"
-        >
+        <View style={{ height }} className="rounded-lg overflow-hidden border border-border">
           <MapView
             ref={mapRef}
             provider={PROVIDER_DEFAULT}
@@ -230,22 +213,14 @@ export function ActivityRouteMap({
 
             {/* Start marker */}
             {showMarkers && (
-              <Marker
-                coordinate={startCoord}
-                anchor={{ x: 0.5, y: 0.5 }}
-                title="Start"
-              >
+              <Marker coordinate={startCoord} anchor={{ x: 0.5, y: 0.5 }} title="Start">
                 <View className="w-3 h-3 rounded-full bg-green-500 border-2 border-white" />
               </Marker>
             )}
 
             {/* End marker */}
             {showMarkers && (
-              <Marker
-                coordinate={endCoord}
-                anchor={{ x: 0.5, y: 0.5 }}
-                title="Finish"
-              >
+              <Marker coordinate={endCoord} anchor={{ x: 0.5, y: 0.5 }} title="Finish">
                 <View className="w-3 h-3 rounded-full bg-red-500 border-2 border-white" />
               </Marker>
             )}

@@ -5,57 +5,20 @@
  */
 
 import type { RecordingCapabilities, RecordingConfiguration } from "@repo/core";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import type { ActivityRecorderService } from "../services/ActivityRecorder";
-import { isEqual } from "lodash";
+import { useSessionView } from "./useActivityRecorder";
 
 /**
  * Get the current recording configuration
- * Automatically recomputes when relevant state changes
+ * Compatibility selector over the canonical session view.
  */
 export function useRecordingConfig(
   service: ActivityRecorderService | null,
 ): RecordingConfiguration | null {
-  const [config, setConfig] = useState<RecordingConfiguration | null>(null);
+  const sessionView = useSessionView(service);
 
-  useEffect(() => {
-    if (!service) {
-      setConfig(null);
-      return;
-    }
-
-    // Compute initial config
-    const updateConfig = () => {
-      const newConfig = service.getRecordingConfiguration();
-      setConfig((prev) => {
-        if (isEqual(prev, newConfig)) return prev;
-        return newConfig;
-      });
-    };
-
-    updateConfig();
-
-    // Recompute when these events fire
-    const events = [
-      "activitySelected",
-      "planSelected",
-      "planCleared",
-      "sensorsChanged",
-      "stateChanged",
-    ] as const;
-
-    events.forEach((event) => {
-      service.addListener(event as any, updateConfig);
-    });
-
-    return () => {
-      events.forEach((event) => {
-        service.removeListener(event as any, updateConfig);
-      });
-    };
-  }, [service]);
-
-  return config;
+  return useMemo(() => sessionView?.recordingConfiguration ?? null, [sessionView]);
 }
 
 /**
@@ -73,9 +36,11 @@ export function useRecordingCapabilities(
  * Get validation errors/warnings
  * Useful for showing pre-recording checks
  */
-export function useRecordingValidation(
-  service: ActivityRecorderService | null,
-): { isValid: boolean; errors: string[]; warnings: string[] } {
+export function useRecordingValidation(service: ActivityRecorderService | null): {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+} {
   const capabilities = useRecordingCapabilities(service);
 
   return {

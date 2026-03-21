@@ -1,9 +1,4 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { profileQuickUpdateSchema } from "@repo/core";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { View } from "react-native";
-
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -12,16 +7,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormBoundedNumberField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
+import { useState } from "react";
+import { View } from "react-native";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { trpc } from "@/lib/trpc";
 
@@ -35,10 +25,7 @@ interface ProfileSectionProps {
   onRefreshProfile: () => Promise<void>;
 }
 
-export function ProfileSection({
-  profile,
-  onRefreshProfile,
-}: ProfileSectionProps) {
+export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProps) {
   const [isEditing, setIsEditing] = useState(false);
   const utils = trpc.useUtils();
 
@@ -51,8 +38,8 @@ export function ProfileSection({
     },
   });
 
-  const form = useForm({
-    resolver: zodResolver(profileQuickUpdateSchema),
+  const form = useZodForm({
+    schema: profileQuickUpdateSchema,
     defaultValues: {
       username: profile?.username || "",
       weight_kg: profile?.weight_kg || undefined,
@@ -84,9 +71,7 @@ export function ProfileSection({
       <CardHeader className="pb-4">
         <View className="flex-row items-center justify-between">
           <View className="flex-1">
-            <CardTitle className="text-card-foreground">
-              Profile Information
-            </CardTitle>
+            <CardTitle className="text-card-foreground">Profile Information</CardTitle>
             <CardDescription className="text-muted-foreground">
               Manage your personal information and training metrics
             </CardDescription>
@@ -102,12 +87,7 @@ export function ProfileSection({
             </Button>
           ) : (
             <View className="flex-row gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onPress={onCancel}
-                testId="cancel-button"
-              >
+              <Button variant="outline" size="sm" onPress={onCancel} testId="cancel-button">
                 <Text>Cancel</Text>
               </Button>
               <Button
@@ -117,9 +97,7 @@ export function ProfileSection({
                 disabled={updateProfileMutation.isPending}
                 testId="save-button"
               >
-                <Text>
-                  {updateProfileMutation.isPending ? "Saving..." : "Save"}
-                </Text>
+                <Text>{updateProfileMutation.isPending ? "Saving..." : "Save"}</Text>
               </Button>
             </View>
           )}
@@ -128,96 +106,49 @@ export function ProfileSection({
       <CardContent className="gap-6">
         <Form {...form}>
           <View className="gap-4">
-            <FormField
+            <FormTextField
               control={form.control}
+              disabled={!isEditing}
+              label="Username"
               name="username"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Username</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Enter username"
-                      value={field.value?.toString() ?? ""}
-                      onChangeText={field.onChange}
-                      editable={isEditing}
-                      testId="username-input"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              placeholder="Enter username"
+              testId="username-input"
             />
 
-            <FormField
+            <FormBoundedNumberField
               control={form.control}
+              decimals={1}
+              disabled={!isEditing}
+              label="Weight (kg)"
+              min={0}
               name="weight_kg"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Weight (kg)</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Enter weight"
-                      value={field.value ? field.value.toString() : ""}
-                      onChangeText={(text) => {
-                        const num = text ? Number(text) : undefined;
-                        field.onChange(num);
-                      }}
-                      keyboardType="numeric"
-                      editable={isEditing}
-                      testId="weight-input"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              placeholder="Enter weight"
+              testId="weight-input"
+              unitLabel="kg"
             />
 
-            <FormField
+            <FormBoundedNumberField
               control={form.control}
+              decimals={0}
+              disabled={!isEditing}
+              label="FTP (watts)"
+              min={0}
               name="ftp"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>FTP (watts)</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Enter FTP"
-                      value={field.value ? field.value.toString() : ""}
-                      onChangeText={(text) => {
-                        const num = text ? Number(text) : undefined;
-                        field.onChange(num);
-                      }}
-                      keyboardType="numeric"
-                      editable={isEditing}
-                      testId="ftp-input"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              placeholder="Enter FTP"
+              testId="ftp-input"
+              unitLabel="W"
             />
 
-            <FormField
+            <FormBoundedNumberField
               control={form.control}
+              decimals={0}
+              disabled={!isEditing}
+              label="Threshold HR (bpm)"
+              min={0}
               name="threshold_hr"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Threshold HR (bpm)</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Enter threshold HR"
-                      value={field.value ? field.value.toString() : ""}
-                      onChangeText={(text) => {
-                        const num = text ? Number(text) : undefined;
-                        field.onChange(num);
-                      }}
-                      keyboardType="numeric"
-                      editable={isEditing}
-                      testId="threshold-hr-input"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              placeholder="Enter threshold HR"
+              testId="threshold-hr-input"
+              unitLabel="bpm"
             />
           </View>
         </Form>

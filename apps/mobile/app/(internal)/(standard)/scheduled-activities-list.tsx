@@ -1,19 +1,15 @@
-import { ActivityList } from "@/components/plan/calendar/ActivityList";
-import { EmptyStateCard, ListSkeleton } from "@/components/shared";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
+import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { ROUTES } from "@/lib/constants/routes";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
-import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import { Calendar, Plus } from "lucide-react-native";
 import React, { useState } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityList } from "@/components/plan/calendar/ActivityList";
+import { ROUTES } from "@/lib/constants/routes";
+import { trpc } from "@/lib/trpc";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 
 export default function ScheduledScreen() {
   const router = useRouter();
@@ -42,7 +38,7 @@ export default function ScheduledScreen() {
   };
 
   const handleActivityTap = (activityId: string) => {
-    router.push(`/scheduled-activity-detail?id=${activityId}` as any);
+    router.push(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
   };
 
   const handleScheduleNew = () => {
@@ -61,9 +57,7 @@ export default function ScheduledScreen() {
     return (
       <ScrollView
         className="flex-1 bg-background"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         <View className="flex-1 p-6 items-center justify-center min-h-[500px]">
           <EmptyStateCard
@@ -86,8 +80,7 @@ export default function ScheduledScreen() {
       <View className="px-4 pt-4 pb-3 border-b border-border bg-card">
         <Text className="text-sm text-muted-foreground">
           {scheduledActivities.length}{" "}
-          {scheduledActivities.length === 1 ? "activity" : "activities"}{" "}
-          scheduled
+          {scheduledActivities.length === 1 ? "activity" : "activities"} scheduled
         </Text>
       </View>
 
@@ -95,9 +88,7 @@ export default function ScheduledScreen() {
       <ScrollView
         className="flex-1"
         contentContainerClassName="py-4"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         <ActivityList
           activities={scheduledActivities}

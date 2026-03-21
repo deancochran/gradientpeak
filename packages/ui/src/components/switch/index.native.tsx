@@ -1,10 +1,13 @@
 import * as SwitchPrimitives from "@rn-primitives/switch";
 import type * as React from "react";
-import { Platform } from "../../lib/react-native";
-
 import { cn } from "../../lib/cn";
+import { Platform } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";
 import { SWITCH_NATIVE_MINIMUM_HIT_SLOP, type SwitchTestProps } from "./shared";
+
+type SwitchProps = SwitchPrimitives.RootProps &
+  React.RefAttributes<SwitchPrimitives.RootRef> &
+  SwitchTestProps;
 
 function Switch({
   accessibilityLabel,
@@ -15,18 +18,13 @@ function Switch({
   role,
   testId,
   ...props
-}: SwitchPrimitives.RootProps &
-  React.RefAttributes<SwitchPrimitives.RootRef> &
-  SwitchTestProps) {
+}: SwitchProps) {
   const nativeTestProps = getNativeTestProps({
     accessibilityLabel,
     id,
     role,
     testId,
-  }) as Pick<
-    SwitchPrimitives.RootProps,
-    "accessibilityLabel" | "nativeID" | "role" | "testID"
-  >;
+  }) as Pick<SwitchPrimitives.RootProps, "accessibilityLabel" | "nativeID" | "role" | "testID">;
 
   return (
     <SwitchPrimitives.Root
@@ -36,10 +34,7 @@ function Switch({
         checked: Boolean(props.checked),
         disabled: Boolean(props.disabled),
       }}
-      hitSlop={
-        hitSlop ??
-        (Platform.OS === "web" ? undefined : SWITCH_NATIVE_MINIMUM_HIT_SLOP)
-      }
+      hitSlop={hitSlop ?? (Platform.OS === "web" ? undefined : SWITCH_NATIVE_MINIMUM_HIT_SLOP)}
       className={cn(
         "flex h-[1.15rem] w-8 shrink-0 flex-row items-center rounded-full border border-transparent shadow-sm shadow-black/5",
         Platform.select({
@@ -67,4 +62,5 @@ function Switch({
   );
 }
 
+export type { SwitchProps };
 export { Switch };

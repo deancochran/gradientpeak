@@ -1,31 +1,23 @@
 import * as React from "react";
 import {
   Controller,
+  type FieldPath,
+  type FieldValues,
   FormProvider,
   useFormContext,
   useFormState,
-  type FieldPath,
-  type FieldValues,
 } from "react-hook-form";
-import { View, type TextProps, type ViewProps } from "react-native";
+import { type TextProps, View, type ViewProps } from "react-native";
 
 import { cn } from "../../lib/cn";
 import { Text } from "../text/index.native";
-import type {
-  FormFieldContextValue,
-  FormFieldProps,
-  FormItemContextValue,
-} from "./shared";
+import type { FormFieldContextValue, FormFieldProps, FormItemContextValue } from "./shared";
 
 const Form = FormProvider;
 
-const FormFieldContext = React.createContext<FormFieldContextValue>(
-  {} as FormFieldContextValue,
-);
+const FormFieldContext = React.createContext<FormFieldContextValue>({} as FormFieldContextValue);
 
-const FormItemContext = React.createContext<FormItemContextValue>(
-  {} as FormItemContextValue,
-);
+const FormItemContext = React.createContext<FormItemContextValue>({} as FormItemContextValue);
 
 const FormField = <
   TFieldValues extends FieldValues = FieldValues,
@@ -87,11 +79,7 @@ function FormLabel({ className, ...props }: FormLabelProps) {
 
   return (
     <Text
-      className={cn(
-        "text-sm font-medium text-foreground",
-        error && "text-destructive",
-        className,
-      )}
+      className={cn("text-sm font-medium text-foreground", error && "text-destructive", className)}
       nativeID={formItemId}
       {...props}
     />
@@ -109,8 +97,7 @@ function FormControl({ children }: FormControlProps) {
     ...(children.props as Record<string, unknown>),
     accessibilityInvalid: !!error,
     accessibilityLabel:
-      (children.props as Record<string, unknown>)?.accessibilityLabel ||
-      formItemId,
+      (children.props as Record<string, unknown>)?.accessibilityLabel || formItemId,
   };
 
   return React.cloneElement(children, enhancedProps);
@@ -157,6 +144,19 @@ function FormMessage({ className, children, ...props }: FormMessageProps) {
   );
 }
 
+export {
+  FormBoundedNumberField,
+  FormDateInputField,
+  FormDurationField,
+  FormIntegerStepperField,
+  FormNumberField,
+  FormPaceField,
+  FormSelectField,
+  FormSwitchField,
+  FormTextareaField,
+  FormTextField,
+  FormWeightInputField,
+} from "../form-fields/index.native";
 export {
   Form,
   FormControl,

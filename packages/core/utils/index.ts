@@ -6,7 +6,12 @@
 
 // Export all activity defaults
 export * from "./activity-defaults";
-
+// Export date grouping utilities
+export * from "./date-grouping";
+// Export date utilities
+export * from "./dates";
+export * from "./fitness-inputs";
+export type { LatLng, LatLngAlt, RouteStats } from "./polyline";
 // Export from polyline (exclude calculateDistance - in calculations)
 export {
   calculateBounds,
@@ -17,16 +22,12 @@ export {
   encodePolyline,
   simplifyCoordinates,
 } from "./polyline";
-export type { LatLng, LatLngAlt, RouteStats } from "./polyline";
-
 // Export all recording config utilities
 export * from "./recording-config-resolver";
-
-// Export date utilities
-export * from "./dates";
-
-// Export date grouping utilities
-export * from "./date-grouping";
+export * from "./recording-plan-target-resolver";
+export * from "./recording-source-resolver";
+export * from "./recording-trainer-policy";
+export * from "./stream-sampling";
 
 // Export temporal metrics utilities
 export * from "./temporal-metrics";

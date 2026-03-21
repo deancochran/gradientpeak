@@ -1,27 +1,23 @@
+import type { IntensityTargetV2, IntervalStepV2 } from "@repo/core/schemas/activity_plan_v2";
 import { Button } from "@repo/ui/components/button";
 import { Dialog, DialogContent } from "@repo/ui/components/dialog";
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
+  Form,
+  FormNumberField,
+  FormSelectField,
+  FormTextareaField,
+  FormTextField,
+} from "@repo/ui/components/form";
+import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
-
-import type {
-  IntervalStepV2,
-  IntensityTargetV2,
-} from "@repo/core/schemas/activity_plan_v2";
+import { useZodForm } from "@repo/ui/hooks";
 import * as Haptics from "expo-haptics";
 import { Plus, Trash2 } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller } from "react-hook-form";
 import { Dimensions, ScrollView, View } from "react-native";
 import { z } from "zod";
+import { StepDurationField } from "./StepDurationField";
 
 interface StepEditorDialogProps {
   open: boolean;
@@ -53,16 +49,7 @@ const formSchema = z.object({
   targets: z
     .array(
       z.object({
-        type: z.enum([
-          "%FTP",
-          "%MaxHR",
-          "%ThresholdHR",
-          "watts",
-          "bpm",
-          "speed",
-          "cadence",
-          "RPE",
-        ]),
+        type: z.enum(["%FTP", "%MaxHR", "%ThresholdHR", "watts", "bpm", "speed", "cadence", "RPE"]),
         intensity: z.number().positive(),
       }),
     )
@@ -80,23 +67,6 @@ type DurationUI =
   | { type: "repetitions"; value: number; unit: "reps" }
   | { type: "untilFinished" };
 
-const DURATION_TYPES = [
-  { value: "time", label: "Time-based" },
-  { value: "distance", label: "Distance-based" },
-  { value: "repetitions", label: "Repetitions" },
-];
-
-const TIME_UNITS = [
-  { value: "seconds", label: "seconds" },
-  { value: "minutes", label: "minutes" },
-  { value: "hours", label: "hours" },
-];
-
-const DISTANCE_UNITS = [
-  { value: "meters", label: "meters" },
-  { value: "km", label: "km" },
-];
-
 const INTENSITY_TYPES = [
   { value: "%FTP", label: "% FTP" },
   { value: "%MaxHR", label: "% Max HR" },
@@ -107,51 +77,6 @@ const INTENSITY_TYPES = [
   { value: "cadence", label: "Cadence (rpm)" },
   { value: "RPE", label: "RPE (1-10)" },
 ];
-
-// Helper functions to convert between V2 format and UI display
-function v2ToUIValue(duration: FormData["duration"]): {
-  value: number;
-  unit: string;
-} {
-  if (duration.type === "time") {
-    const seconds = duration.seconds;
-    if (seconds >= 3600 && seconds % 3600 === 0) {
-      return { value: seconds / 3600, unit: "hours" };
-    }
-    if (seconds >= 60 && seconds % 60 === 0) {
-      return { value: seconds / 60, unit: "minutes" };
-    }
-    return { value: seconds, unit: "seconds" };
-  }
-  if (duration.type === "distance") {
-    const meters = duration.meters;
-    if (meters >= 1000 && meters % 1000 === 0) {
-      return { value: meters / 1000, unit: "km" };
-    }
-    return { value: meters, unit: "meters" };
-  }
-  if (duration.type === "repetitions") {
-    return { value: duration.count, unit: "reps" };
-  }
-  return { value: 0, unit: "seconds" };
-}
-
-function uiToV2Value(
-  type: "time" | "distance" | "repetitions",
-  value: number,
-  unit: string,
-): number {
-  if (type === "time") {
-    if (unit === "hours") return Math.round(value * 3600);
-    if (unit === "minutes") return Math.round(value * 60);
-    return Math.round(value);
-  }
-  if (type === "distance") {
-    if (unit === "km") return Math.round(value * 1000);
-    return Math.round(value);
-  }
-  return Math.round(value); // repetitions
-}
 
 export function StepEditorDialog({
   open,
@@ -164,7 +89,8 @@ export function StepEditorDialog({
   const isMountedRef = useRef(true);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const form = useForm<FormData>({
+  const form = useZodForm({
+    schema: formSchema,
     defaultValues: {
       name: "New Step",
       description: "",
@@ -194,9 +120,7 @@ export function StepEditorDialog({
         name: step.name || "",
         description: step.description || "",
         duration:
-          step.duration.type === "untilFinished"
-            ? { type: "time", seconds: 300 }
-            : step.duration,
+          step.duration.type === "untilFinished" ? { type: "time", seconds: 300 } : step.duration,
         targets: step.targets || [],
         notes: step.notes || "",
       });
@@ -278,20 +202,6 @@ export function StepEditorDialog({
     }
   };
 
-  const getDurationUnits = () => {
-    if (!durationType) return [];
-    if (durationType.type === "time") return TIME_UNITS;
-    if (durationType.type === "distance") return DISTANCE_UNITS;
-    return [{ value: "reps", label: "reps" }];
-  };
-
-  const currentDurationType = durationType?.type || "time";
-
-  // Get current UI value and unit for display
-  const currentUIValue = durationType
-    ? v2ToUIValue(durationType)
-    : { value: 10, unit: "minutes" };
-
   const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
   const dialogWidth = Math.min(screenWidth * 0.9, 400);
   const dialogHeight = Math.min(screenHeight * 0.85, screenHeight - 100);
@@ -313,9 +223,7 @@ export function StepEditorDialog({
           </Text>
 
           <Button onPress={handleSave} size="sm">
-            <Text className="text-primary-foreground">
-              {step ? "Save" : "Add"}
-            </Text>
+            <Text className="text-primary-foreground">{step ? "Save" : "Add"}</Text>
           </Button>
         </View>
 
@@ -327,217 +235,35 @@ export function StepEditorDialog({
           >
             <View className="gap-4 p-4">
               {/* Step Name */}
-              <View>
-                <Label nativeID="step-name">Step Name</Label>
-                <Controller
+              <Form {...form}>
+                <FormTextField
                   control={form.control}
+                  label="Step Name"
                   name="name"
-                  render={({
-                    field: { onChange, value },
-                    fieldState: { error },
-                  }) => (
-                    <>
-                      <Input
-                        value={value || ""}
-                        onChangeText={onChange}
-                        placeholder="e.g., Warm-up, Main Set, Cool-down"
-                        aria-labelledby="step-name"
-                      />
-                      {error && (
-                        <Text className="text-xs text-destructive mt-1">
-                          {error.message}
-                        </Text>
-                      )}
-                    </>
-                  )}
+                  placeholder="e.g., Warm-up, Main Set, Cool-down"
                 />
-              </View>
+              </Form>
 
               {/* Description */}
-              <View>
-                <Label nativeID="step-description">
-                  Description (Optional)
-                </Label>
-                <Controller
+              <Form {...form}>
+                <FormTextField
                   control={form.control}
+                  label="Description"
                   name="description"
-                  render={({ field: { onChange, value } }) => (
-                    <Input
-                      value={value || ""}
-                      onChangeText={onChange}
-                      placeholder="Brief description of this step"
-                      aria-labelledby="step-description"
-                    />
-                  )}
+                  placeholder="Brief description of this step"
                 />
-              </View>
+              </Form>
 
-              {/* Duration Type */}
-              <View>
-                <Label nativeID="duration-type">Duration Type</Label>
-                <Select
-                  defaultValue={{
-                    value: currentDurationType,
-                    label: currentDurationType,
-                  }}
-                  onValueChange={(option) => {
-                    if (typeof option === "object" && option.value) {
-                      handleDurationTypeChange(option.value);
-                    }
-                  }}
-                >
-                  <SelectTrigger aria-labelledby="duration-type">
-                    <SelectValue placeholder="Select duration type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DURATION_TYPES.map((type) => (
-                      <SelectItem
-                        key={type.value}
-                        value={type.value}
-                        label={type.label}
-                      >
-                        <Text>{type.label}</Text>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </View>
-
-              {/* Duration Value & Unit */}
-              {durationType && (
-                <View className="flex-row gap-3">
-                  <View className="flex-1">
-                    <Label nativeID="duration-value">Value</Label>
-                    <Controller
-                      control={form.control}
-                      name="duration"
-                      render={({ fieldState: { error } }) => (
-                        <>
-                          <Input
-                            value={currentUIValue.value.toString()}
-                            onChangeText={(text) => {
-                              const num = parseFloat(text);
-                              if (!isNaN(num) && durationType) {
-                                const duration = form.getValues("duration");
-                                if (duration.type === "time") {
-                                  const seconds = uiToV2Value(
-                                    "time",
-                                    num,
-                                    currentUIValue.unit,
-                                  );
-                                  form.setValue("duration", {
-                                    type: "time",
-                                    seconds,
-                                  });
-                                } else if (duration.type === "distance") {
-                                  const meters = uiToV2Value(
-                                    "distance",
-                                    num,
-                                    currentUIValue.unit,
-                                  );
-                                  form.setValue("duration", {
-                                    type: "distance",
-                                    meters,
-                                  });
-                                } else if (duration.type === "repetitions") {
-                                  form.setValue("duration", {
-                                    type: "repetitions",
-                                    count: Math.round(num),
-                                  });
-                                }
-                              }
-                            }}
-                            keyboardType="numeric"
-                            placeholder="0"
-                            aria-labelledby="duration-value"
-                          />
-                          {error && (
-                            <Text className="text-xs text-destructive mt-1">
-                              {error.message}
-                            </Text>
-                          )}
-                        </>
-                      )}
-                    />
-                  </View>
-
-                  {getDurationUnits().length > 0 && (
-                    <View className="w-32">
-                      <Label nativeID="duration-unit">Unit</Label>
-                      <Controller
-                        control={form.control}
-                        name="duration"
-                        render={() => (
-                          <Select
-                            defaultValue={{
-                              value: currentUIValue.unit,
-                              label: currentUIValue.unit,
-                            }}
-                            onValueChange={(option) => {
-                              if (
-                                typeof option === "object" &&
-                                option.value &&
-                                durationType
-                              ) {
-                                const newUnit = option.value;
-                                const duration = form.getValues("duration");
-                                if (duration.type === "time") {
-                                  const seconds = uiToV2Value(
-                                    "time",
-                                    currentUIValue.value,
-                                    newUnit,
-                                  );
-                                  form.setValue("duration", {
-                                    type: "time",
-                                    seconds,
-                                  });
-                                } else if (duration.type === "distance") {
-                                  const meters = uiToV2Value(
-                                    "distance",
-                                    currentUIValue.value,
-                                    newUnit,
-                                  );
-                                  form.setValue("duration", {
-                                    type: "distance",
-                                    meters,
-                                  });
-                                }
-                              }
-                            }}
-                          >
-                            <SelectTrigger aria-labelledby="duration-unit">
-                              <SelectValue placeholder="Select unit" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {getDurationUnits().map((unit) => (
-                                <SelectItem
-                                  key={unit.value}
-                                  value={unit.value}
-                                  label={unit.label}
-                                >
-                                  <Text>{unit.label}</Text>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      />
-                    </View>
-                  )}
-                </View>
-              )}
+              <Form {...form}>
+                <StepDurationField form={form as never} />
+              </Form>
 
               {/* Intensity Targets */}
               <View>
                 <View className="flex-row items-center justify-between mb-2">
                   <Label>Intensity Targets</Label>
                   {targets.length < 3 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onPress={handleAddTarget}
-                      className="h-8"
-                    >
+                    <Button variant="outline" size="sm" onPress={handleAddTarget} className="h-8">
                       <Plus size={14} className="text-primary" />
                       <Text className="text-xs ml-1">Add Target</Text>
                     </Button>
@@ -553,94 +279,41 @@ export function StepEditorDialog({
                 )}
 
                 {targets.map((target, index) => (
-                  <View
-                    key={index}
-                    className="border border-border rounded-lg p-3 mb-2"
-                  >
+                  <View key={index} className="border border-border rounded-lg p-3 mb-2">
                     <View className="flex-row items-start gap-2">
                       {/* Target Type */}
                       <View className="flex-1">
-                        <Label
-                          nativeID={`target-type-${index}`}
-                          className="text-xs mb-1"
-                        >
+                        <Label nativeID={`target-type-${index}`} className="text-xs mb-1">
                           Type
                         </Label>
-                        <Controller
-                          control={form.control}
-                          name={`targets.${index}.type`}
-                          render={({ field: { onChange, value } }) => (
-                            <Select
-                              defaultValue={{
-                                value: value || "",
-                                label: value || "",
-                              }}
-                              onValueChange={(option) => {
-                                if (
-                                  typeof option === "object" &&
-                                  option.value
-                                ) {
-                                  onChange(option.value);
-                                }
-                              }}
-                            >
-                              <SelectTrigger
-                                aria-labelledby={`target-type-${index}`}
-                                className="h-10"
-                              >
-                                <SelectValue placeholder="Select type" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {INTENSITY_TYPES.map((type) => (
-                                  <SelectItem
-                                    key={type.value}
-                                    value={type.value}
-                                    label={type.label}
-                                  >
-                                    <Text>{type.label}</Text>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        />
+                        <Form {...form}>
+                          <FormSelectField
+                            control={form.control}
+                            label="Type"
+                            name={`targets.${index}.type` as never}
+                            options={INTENSITY_TYPES}
+                            placeholder="Select type"
+                            testId={`target-type-${index}`}
+                          />
+                        </Form>
                       </View>
 
                       {/* Target Value */}
                       <View className="w-20">
-                        <Label
-                          nativeID={`target-value-${index}`}
-                          className="text-xs mb-1"
-                        >
+                        <Label nativeID={`target-value-${index}`} className="text-xs mb-1">
                           Value
                         </Label>
-                        <Controller
-                          control={form.control}
-                          name={`targets.${index}.intensity`}
-                          render={({
-                            field: { onChange, value },
-                            fieldState: { error },
-                          }) => (
-                            <>
-                              <Input
-                                value={value?.toString() || ""}
-                                onChangeText={(text) => {
-                                  const num = parseFloat(text);
-                                  if (!isNaN(num)) onChange(num);
-                                }}
-                                keyboardType="numeric"
-                                placeholder="0"
-                                aria-labelledby={`target-value-${index}`}
-                                className="h-10"
-                              />
-                              {error && (
-                                <Text className="text-xs text-destructive mt-1">
-                                  {error.message}
-                                </Text>
-                              )}
-                            </>
-                          )}
-                        />
+                        <Form {...form}>
+                          <FormNumberField
+                            allowDecimal
+                            control={form.control}
+                            label="Value"
+                            min={0}
+                            name={`targets.${index}.intensity` as never}
+                            placeholder="0"
+                            testId={`target-value-${index}`}
+                          />
+                        </Form>
                       </View>
 
                       {/* Delete Button */}
@@ -665,26 +338,19 @@ export function StepEditorDialog({
                 )}
               </View>
 
-              {saveError ? (
-                <Text className="text-xs text-destructive">{saveError}</Text>
-              ) : null}
+              {saveError ? <Text className="text-xs text-destructive">{saveError}</Text> : null}
 
               {/* Notes */}
               <View>
-                <Label nativeID="notes">Notes (Optional)</Label>
-                <Controller
-                  control={form.control}
-                  name="notes"
-                  render={({ field: { onChange, value } }) => (
-                    <Textarea
-                      value={value || ""}
-                      onChangeText={onChange}
-                      placeholder="Add any additional notes or instructions..."
-                      aria-labelledby="notes"
-                      className="min-h-[80px]"
-                    />
-                  )}
-                />
+                <Form {...form}>
+                  <FormTextareaField
+                    control={form.control}
+                    label="Notes"
+                    name="notes"
+                    placeholder="Add any additional notes or instructions..."
+                    className="min-h-[80px]"
+                  />
+                </Form>
               </View>
             </View>
           </ScrollView>

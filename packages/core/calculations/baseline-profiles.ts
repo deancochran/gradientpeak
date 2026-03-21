@@ -14,16 +14,12 @@
  * performance metrics, and confidence levels.
  */
 
+import type { ExperienceLevel } from "../estimators/types";
+import { calculateVO2MaxFromHR, estimateLTHR, estimateMaxHRFromAge } from "./heart-rate";
 import {
-  calculateVO2MaxFromHR,
-  estimateLTHR,
-  estimateMaxHRFromAge,
-} from "./heart-rate";
-import {
+  estimateCSSFromGender,
   estimateFTPFromWeight,
   estimateThresholdPaceFromGender,
-  estimateCSSFromGender,
-  type ExperienceLevel,
 } from "./performance-estimates";
 
 /**
@@ -130,7 +126,9 @@ export function getBaselineProfile(
     },
   };
 
-  const resting_hr = restingHRBaselines[experienceLevel][gender];
+  const resolvedExperienceLevel = experienceLevel as "beginner" | "intermediate";
+
+  const resting_hr = restingHRBaselines[resolvedExperienceLevel][gender];
 
   // Calculate derived HR metrics
   const lthr = estimateLTHR(max_hr);
@@ -143,33 +141,27 @@ export function getBaselineProfile(
 
   // Cycling or triathlon: include FTP
   if (sport === "cycling" || sport === "triathlon") {
-    ftp = estimateFTPFromWeight(weightKg, gender, experienceLevel);
+    ftp = estimateFTPFromWeight(weightKg, gender, resolvedExperienceLevel);
   }
 
   // Running or triathlon: include threshold pace
   if (sport === "running" || sport === "triathlon") {
     threshold_pace_seconds_per_km = estimateThresholdPaceFromGender(
       gender,
-      experienceLevel,
+      resolvedExperienceLevel,
     );
   }
 
   // Swimming or triathlon: include CSS
   if (sport === "swimming" || sport === "triathlon") {
-    css_seconds_per_hundred_meters = estimateCSSFromGender(
-      gender,
-      experienceLevel,
-    );
+    css_seconds_per_hundred_meters = estimateCSSFromGender(gender, resolvedExperienceLevel);
   }
 
   // Determine confidence level
   const confidence = experienceLevel === "beginner" ? "low" : "medium";
 
   // Determine source
-  const source =
-    experienceLevel === "beginner"
-      ? "baseline_beginner"
-      : "baseline_intermediate";
+  const source = experienceLevel === "beginner" ? "baseline_beginner" : "baseline_intermediate";
 
   return {
     max_hr,
@@ -299,11 +291,9 @@ export function mergeWithBaseline(
     // Performance metrics
     ftp: userMetrics.ftp ?? baseline.ftp,
     threshold_pace_seconds_per_km:
-      userMetrics.threshold_pace_seconds_per_km ??
-      baseline.threshold_pace_seconds_per_km,
+      userMetrics.threshold_pace_seconds_per_km ?? baseline.threshold_pace_seconds_per_km,
     css_seconds_per_hundred_meters:
-      userMetrics.css_seconds_per_hundred_meters ??
-      baseline.css_seconds_per_hundred_meters,
+      userMetrics.css_seconds_per_hundred_meters ?? baseline.css_seconds_per_hundred_meters,
 
     // Metadata
     confidence: userMetrics.confidence ?? baseline.confidence,
@@ -329,10 +319,7 @@ export function calculateAge(dob: string | Date): number {
   const monthDiff = today.getMonth() - birthDate.getMonth();
 
   // Adjust if birthday hasn't occurred yet this year
-  if (
-    monthDiff < 0 ||
-    (monthDiff === 0 && today.getDate() < birthDate.getDate())
-  ) {
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
 

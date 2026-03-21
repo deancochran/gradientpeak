@@ -1,11 +1,9 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ConstraintValidator.tsx
 
 import { Text } from "@repo/ui/components/text";
+import React from "react";
 import { View } from "react-native";
-import {
-  ConstraintIndicator,
-  type ConstraintStatus,
-} from "./ConstraintIndicator";
+import { ConstraintIndicator, type ConstraintStatus } from "./ConstraintIndicator";
 
 interface ConstraintValidationResult {
   constraints: {
@@ -73,16 +71,11 @@ interface ConstraintValidatorProps {
  * <ConstraintValidator validation={validation} isLoading={isLoading} />
  * ```
  */
-export function ConstraintValidator({
-  validation,
-  isLoading = false,
-}: ConstraintValidatorProps) {
+export function ConstraintValidator({ validation, isLoading = false }: ConstraintValidatorProps) {
   if (isLoading) {
     return (
       <View className="p-4 bg-gray-50 rounded-lg">
-        <Text className="text-sm text-gray-600 text-center">
-          Validating constraints...
-        </Text>
+        <Text className="text-sm text-gray-600 text-center">Validating constraints...</Text>
       </View>
     );
   }
@@ -103,28 +96,20 @@ export function ConstraintValidator({
     <View className="space-y-3">
       {/* Header */}
       <View className="flex-row items-center justify-between mb-2">
-        <Text className="text-base font-semibold text-gray-900">
-          Constraint Validation
-        </Text>
+        <Text className="text-base font-semibold text-gray-900">Constraint Validation</Text>
         {canSchedule && !hasWarnings && (
           <View className="flex-row items-center">
-            <Text className="text-sm font-medium text-green-600">
-              ✓ All constraints satisfied
-            </Text>
+            <Text className="text-sm font-medium text-green-600">✓ All constraints satisfied</Text>
           </View>
         )}
         {hasWarnings && canSchedule && (
           <View className="flex-row items-center">
-            <Text className="text-sm font-medium text-yellow-600">
-              ⚠️ Has warnings
-            </Text>
+            <Text className="text-sm font-medium text-yellow-600">⚠️ Has warnings</Text>
           </View>
         )}
         {!canSchedule && (
           <View className="flex-row items-center">
-            <Text className="text-sm font-medium text-red-600">
-              ❌ Constraints violated
-            </Text>
+            <Text className="text-sm font-medium text-red-600">❌ Constraints violated</Text>
           </View>
         )}
       </View>

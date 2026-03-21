@@ -5,9 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import EventDetailScreen from "../event-detail";
 
 vi.mock("@tanstack/react-query", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
-    "@tanstack/react-query",
-  );
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
 
   return {
     ...actual,
@@ -41,7 +40,11 @@ vi.mock("react-native", () => ({
 
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "event-1" }),
-  useRouter: () => ({ back: vi.fn(), replace: routerReplace }),
+  useRouter: () => ({ back: vi.fn(), push: vi.fn(), replace: routerReplace }),
+}));
+
+vi.mock("@/components/ScheduleActivityModal", () => ({
+  ScheduleActivityModal: createHost("ScheduleActivityModal"),
 }));
 
 vi.mock("@repo/ui/components/button", () => ({
@@ -52,6 +55,10 @@ vi.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardTitle: createHost("CardTitle"),
+}));
+
+vi.mock("@repo/ui/components/icon", () => ({
+  Icon: createHost("Icon"),
 }));
 
 vi.mock("@repo/ui/components/input", () => ({
@@ -72,6 +79,41 @@ vi.mock("@repo/ui/components/textarea", () => ({
 
 vi.mock("@react-native-community/datetimepicker", () => ({
   default: createHost("DateTimePicker"),
+}));
+
+vi.mock("@repo/core", async () => {
+  const actual = await vi.importActual<typeof import("@repo/core")>("@repo/core");
+  return {
+    ...actual,
+    formatDurationSec: vi.fn(() => "60 min"),
+  };
+});
+
+vi.mock("@repo/core/utils/dates", () => ({
+  formatDurationSec: vi.fn(() => "60 min"),
+}));
+
+vi.mock("@/lib/stores/activitySelectionStore", () => ({
+  activitySelectionStore: { setSelection: vi.fn() },
+}));
+
+vi.mock("@/lib/utils/plan/colors", () => ({
+  getActivityBgClass: () => "bg-primary",
+  getActivityColor: () => ({ name: "Run" }),
+}));
+
+vi.mock("@/lib/utils/plan/dateGrouping", () => ({
+  isActivityCompleted: () => false,
+}));
+
+vi.mock("lucide-react-native", () => ({
+  Calendar: "Calendar",
+  CheckCircle2: "CheckCircle2",
+  Clock: "Clock",
+  Edit: "Edit",
+  Play: "Play",
+  Trash2: "Trash2",
+  Zap: "Zap",
 }));
 
 vi.mock("@/lib/trpc", () => ({
@@ -134,8 +176,7 @@ describe("event detail deleted record redirect", () => {
     expect(routerReplace).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
 
     const textNodes = renderer.root.findAll(
-      (node: any) =>
-        node.type === "Text" && typeof node.props.children === "string",
+      (node: any) => node.type === "Text" && typeof node.props.children === "string",
     );
     const textContent = textNodes.map((node: any) => node.props.children);
 

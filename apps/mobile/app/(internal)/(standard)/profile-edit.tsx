@@ -1,9 +1,4 @@
-import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@repo/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -14,29 +9,21 @@ import {
 } from "@repo/ui/components/card";
 import {
   Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
+  FormDateInputField,
+  FormSelectField,
+  FormSwitchField,
+  FormTextareaField,
+  FormTextField,
+  FormWeightInputField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
-import { WeightInputField } from "@/components/profile/WeightInputField";
-import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
-import { DateField } from "@/components/training-plan/create/inputs/DateField";
-import { useAuth } from "@/lib/hooks/useAuth";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "expo-router";
+import { useZodForm } from "@repo/ui/hooks";
+import { File as ExpoFile } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
 import { Camera, Loader2, Upload } from "lucide-react-native";
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useState } from "react";
 import {
   ActionSheetIOS,
   Alert,
@@ -47,14 +34,14 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { supabase } from "@/lib/supabase/client";
-import { File as ExpoFile } from "expo-file-system";
+import { trpc } from "@/lib/trpc";
 
 const profileEditSchema = z.object({
-  username: z
-    .string()
-    .min(3, "Username must be at least 3 characters")
-    .nullable(),
+  username: z.string().min(3, "Username must be at least 3 characters").nullable(),
   bio: z.string().max(500, "Bio must be 500 characters or less").nullable(),
   dob: z.string().nullable(), // Format: YYYY-MM-DD
   weight_kg: z.number().min(1).max(500).nullable(),
@@ -102,8 +89,8 @@ function ProfileEditScreen() {
     },
   });
 
-  const form = useForm<ProfileEditForm>({
-    resolver: zodResolver(profileEditSchema),
+  const form = useZodForm({
+    schema: profileEditSchema,
     defaultValues: {
       username: profile?.username || null,
       bio: profile?.bio || null,
@@ -115,8 +102,7 @@ function ProfileEditScreen() {
     },
   });
 
-  const preferredWeightUnit =
-    form.watch("preferred_units") === "imperial" ? "lbs" : "kg";
+  const preferredWeightUnit = form.watch("preferred_units") === "imperial" ? "lbs" : "kg";
 
   const onSubmit = async (data: ProfileEditForm) => {
     try {
@@ -172,13 +158,9 @@ function ProfileEditScreen() {
     };
 
     const launchCamera = async () => {
-      const { status: cameraStatus } =
-        await ImagePicker.requestCameraPermissionsAsync();
+      const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
       if (cameraStatus !== "granted") {
-        Alert.alert(
-          "Permission Required",
-          "Camera permission is required to take photos.",
-        );
+        Alert.alert("Permission Required", "Camera permission is required to take photos.");
         return;
       }
 
@@ -292,16 +274,12 @@ function ProfileEditScreen() {
         <Card>
           <CardHeader>
             <CardTitle>Profile Picture</CardTitle>
-            <CardDescription>
-              Upload or change your profile avatar
-            </CardDescription>
+            <CardDescription>Upload or change your profile avatar</CardDescription>
           </CardHeader>
           <CardContent className="items-center">
             <View className="relative mb-4">
               <Avatar alt={profile?.username || "User"} className="w-32 h-32">
-                {profile?.avatar_url ? (
-                  <AvatarImage source={{ uri: profile.avatar_url }} />
-                ) : null}
+                {profile?.avatar_url ? <AvatarImage source={{ uri: profile.avatar_url }} /> : null}
                 <AvatarFallback>
                   <Text className="text-4xl">
                     {profile?.username?.charAt(0)?.toUpperCase() || "U"}
@@ -315,17 +293,9 @@ function ProfileEditScreen() {
                 disabled={avatarUploadLoading}
               >
                 {avatarUploadLoading ? (
-                  <Icon
-                    as={Loader2}
-                    size={20}
-                    className="text-primary-foreground animate-spin"
-                  />
+                  <Icon as={Loader2} size={20} className="text-primary-foreground animate-spin" />
                 ) : (
-                  <Icon
-                    as={Camera}
-                    size={20}
-                    className="text-primary-foreground"
-                  />
+                  <Icon as={Camera} size={20} className="text-primary-foreground" />
                 )}
               </TouchableOpacity>
             </View>
@@ -336,9 +306,7 @@ function ProfileEditScreen() {
               onPress={handleAvatarUpload}
               disabled={avatarUploadLoading}
             >
-              <Text>
-                {avatarUploadLoading ? "Uploading..." : "Change Avatar"}
-              </Text>
+              <Text>{avatarUploadLoading ? "Uploading..." : "Change Avatar"}</Text>
             </Button>
           </CardContent>
         </Card>
@@ -352,72 +320,36 @@ function ProfileEditScreen() {
           <CardContent>
             <Form {...form}>
               <View className="gap-4">
-                <FormField
+                <FormTextField
                   control={form.control}
+                  label="Username"
                   name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter username"
-                          value={field.value || ""}
-                          onChangeText={field.onChange}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  parseValue={(value) => value || null}
+                  placeholder="Enter username"
                 />
 
-                <FormField
+                <FormTextareaField
                   control={form.control}
+                  description="Brief description about yourself (max 500 characters)"
+                  formatValue={(value) => value ?? ""}
+                  label="Bio"
                   name="bio"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bio</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Tell us about yourself..."
-                          value={field.value || ""}
-                          onChangeText={field.onChange}
-                          numberOfLines={4}
-                          className="min-h-[100px]"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Brief description about yourself (max 500 characters)
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  numberOfLines={4}
+                  parseValue={(value) => value || null}
+                  placeholder="Tell us about yourself..."
+                  className="min-h-[100px]"
                 />
 
-                <FormField
+                <FormDateInputField
                   control={form.control}
+                  clearable
+                  description="Used to estimate age-based training metrics."
+                  label="Date of Birth"
+                  maximumDate={new Date()}
                   name="dob"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <DateField
-                          id="profile-edit-dob"
-                          label="Date of Birth"
-                          value={field.value ?? undefined}
-                          onChange={(nextDate) =>
-                            field.onChange(nextDate ?? null)
-                          }
-                          placeholder="Select date"
-                          clearable
-                          maximumDate={new Date()}
-                          accessibilityHint="Set your date of birth"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Used to estimate age-based training metrics.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="Select date"
+                  testId="profile-edit-dob"
+                  accessibilityHint="Set your date of birth"
                 />
               </View>
             </Form>
@@ -428,44 +360,23 @@ function ProfileEditScreen() {
         <Card>
           <CardHeader>
             <CardTitle>Training Metrics</CardTitle>
-            <CardDescription>
-              Your physical and training zone information
-            </CardDescription>
+            <CardDescription>Your physical and training zone information</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
               <View className="gap-4">
-                <FormField
+                <FormWeightInputField
                   control={form.control}
+                  description={`Shown in ${preferredWeightUnit}. Used for calorie, W/kg, and readiness estimates. This stays saved as kilograms behind the scenes so existing analytics keep working.`}
+                  label="Weight"
                   name="weight_kg"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <WeightInputField
-                          id="profile-edit-weight"
-                          label="Weight"
-                          valueKg={field.value}
-                          onChangeKg={field.onChange}
-                          unit={preferredWeightUnit}
-                          helperText={`Shown in ${preferredWeightUnit}. Used for calorie, W/kg, and readiness estimates.`}
-                          placeholder={
-                            preferredWeightUnit === "kg" ? "70.0" : "154.3"
-                          }
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        This stays saved as kilograms behind the scenes so
-                        existing analytics keep working.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder={preferredWeightUnit === "kg" ? "70.0" : "154.3"}
+                  unit={preferredWeightUnit}
+                  testId="profile-edit-weight"
                 />
 
                 <View>
-                  <Text className="text-sm font-medium mb-1">
-                    Estimated FTP
-                  </Text>
+                  <Text className="text-sm font-medium mb-1">Estimated FTP</Text>
                   <View className="bg-muted p-3 rounded-md">
                     <Text className="text-foreground">
                       {estimatedFTP?.predicted_value
@@ -473,8 +384,7 @@ function ProfileEditScreen() {
                         : "Not enough data"}
                     </Text>
                     <Text className="text-xs text-muted-foreground mt-1">
-                      Read-only estimate from your best recent ride efforts
-                      (last 90 days).
+                      Read-only estimate from your best recent ride efforts (last 90 days).
                     </Text>
                   </View>
                 </View>
@@ -488,8 +398,7 @@ function ProfileEditScreen() {
                         : "Not detected yet"}
                     </Text>
                     <Text className="text-xs text-muted-foreground mt-1">
-                      Read-only estimate from your strongest recent 20-minute
-                      heart rate effort.
+                      Read-only estimate from your strongest recent 20-minute heart rate effort.
                     </Text>
                   </View>
                 </View>
@@ -507,61 +416,24 @@ function ProfileEditScreen() {
           <CardContent>
             <Form {...form}>
               <View className="gap-4">
-                <FormField
+                <FormSelectField
                   control={form.control}
+                  description="Choose between km/kg or miles/lbs"
+                  label="Preferred Units"
                   name="preferred_units"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Preferred Units</FormLabel>
-                      <View className="flex-row gap-2">
-                        <Button
-                          variant={
-                            field.value === "metric" ? "default" : "outline"
-                          }
-                          className="flex-1"
-                          onPress={() => field.onChange("metric")}
-                        >
-                          <Text>Metric</Text>
-                        </Button>
-                        <Button
-                          variant={
-                            field.value === "imperial" ? "default" : "outline"
-                          }
-                          className="flex-1"
-                          onPress={() => field.onChange("imperial")}
-                        >
-                          <Text>Imperial</Text>
-                        </Button>
-                      </View>
-                      <FormDescription>
-                        Choose between km/kg or miles/lbs
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  options={[
+                    { label: "Metric", value: "metric" },
+                    { label: "Imperial", value: "imperial" },
+                  ]}
+                  placeholder="Choose units"
                 />
 
-                <FormField
+                <FormSwitchField
                   control={form.control}
+                  description="Allow anyone to view your profile and activities"
+                  label="Public Account"
                   name="is_public"
-                  render={({ field }) => (
-                    <FormItem className="flex-row items-center justify-between rounded-lg border border-border p-4">
-                      <View className="space-y-0.5">
-                        <FormLabel className="text-base">
-                          Public Account
-                        </FormLabel>
-                        <FormDescription>
-                          Allow anyone to view your profile and activities
-                        </FormDescription>
-                      </View>
-                      <FormControl>
-                        <Switch
-                          checked={field.value ?? true}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
+                  switchLabel="Public account visibility"
                 />
               </View>
             </Form>

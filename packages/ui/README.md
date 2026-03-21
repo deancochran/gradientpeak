@@ -15,15 +15,17 @@ If a primitive is intentionally platform-only, keep the same folder and omit the
 
 ## Theme workflow
 
-- Canonical theme source: `src/theme/new-york.json`
+- Canonical upstream sources: `src/theme/shadcn/style.json` and `src/theme/shadcn/theme-neutral.json`
+- Docs-standard shared CSS output: `src/theme/web.css` (`:root`, `.dark`, and `@theme inline`)
 - Generated outputs: `src/theme/tokens.css`, `src/theme/web.css`, `src/theme/native.css`, `src/theme/native.ts`
-- Regenerate after token changes:
+- Refresh from the official shadcn registry and regenerate after token changes:
 
 ```bash
+pnpm --filter @repo/ui sync:shadcn-theme
 pnpm --filter @repo/ui generate:theme
 ```
 
-Do not hand-edit generated theme outputs.
+Do not hand-edit the synced shadcn source files or generated theme outputs.
 
 ## Preview ownership
 

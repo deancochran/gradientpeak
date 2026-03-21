@@ -1,10 +1,10 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import { Bell, MessageSquare } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
+import { trpc } from "@/lib/trpc";
 
 export function MessagesHeaderButton() {
   const router = useRouter();
@@ -29,8 +29,7 @@ export function MessagesHeaderButton() {
 
 export function NotificationsHeaderButton() {
   const router = useRouter();
-  const { data: unreadCount = 0 } =
-    trpc.notifications.getUnreadCount.useQuery();
+  const { data: unreadCount = 0 } = trpc.notifications.getUnreadCount.useQuery();
 
   return (
     <TouchableOpacity

@@ -1,9 +1,7 @@
 import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
-import type {
-  EstimationContext,
-  EstimationResult,
-  MetricEstimations,
-} from "./types";
+import { getSportTypicalSpeed } from "../sports";
+import { estimatePowerZoneDistribution, getHrZoneIndexFromThresholdPercent } from "../zones";
+import type { EstimationContext, EstimationResult, MetricEstimations } from "./types";
 
 /**
  * Estimate additional metrics (calories, distance, speed, HR, etc.)
@@ -29,12 +27,7 @@ export function estimateMetrics(
   );
 
   // Estimate distance
-  const distance = estimateDistance(
-    duration,
-    intensityFactor,
-    activityCategory,
-    route,
-  );
+  const distance = estimateDistance(duration, intensityFactor, activityCategory, route);
 
   // Estimate average power
   const avgPower =
@@ -120,9 +113,7 @@ function estimateCaloriesFromHR(
   // Using male formula as default (could be enhanced with gender data)
   // Formula: ((Age × 0.2017) + (Weight × 0.1988) + (HR × 0.6309) - 55.0969) × Time / 4.184
   const calories =
-    ((age * 0.2017 + weight * 0.1988 + avgHR * 0.6309 - 55.0969) *
-      durationMinutes) /
-    4.184;
+    ((age * 0.2017 + weight * 0.1988 + avgHR * 0.6309 - 55.0969) * durationMinutes) / 4.184;
 
   return Math.max(0, calories); // Ensure non-negative
 }
@@ -210,35 +201,7 @@ function getTypicalSpeeds(
   activityCategory: PublicActivityCategory,
   effortLevel: "easy" | "moderate" | "hard",
 ): number {
-  const speedTables = {
-    run: {
-      easy: 3.0, // ~5:33/km
-      moderate: 3.5, // ~4:45/km
-      hard: 4.2, // ~4:00/km
-    },
-    bike: {
-      easy: 7.0, // ~25 km/h
-      moderate: 8.5, // ~30 km/h
-      hard: 10.0, // ~36 km/h
-    },
-    swim: {
-      easy: 1.0, // ~1:40/100m
-      moderate: 1.2, // ~1:25/100m
-      hard: 1.4, // ~1:12/100m
-    },
-    strength: {
-      easy: 0,
-      moderate: 0,
-      hard: 0,
-    },
-    other: {
-      easy: 2.5,
-      moderate: 3.0,
-      hard: 3.5,
-    },
-  };
-
-  return speedTables[activityCategory]?.[effortLevel] || 3.0;
+  return getSportTypicalSpeed(activityCategory, effortLevel);
 }
 
 /**
@@ -258,7 +221,7 @@ export function estimateZoneDistribution(
 
   if (activityCategory === "bike") {
     return {
-      powerZones: estimatePowerZones(duration, intensityFactor),
+      powerZones: estimatePowerZoneDistribution(duration, intensityFactor),
       hrZones: estimateHRZones(duration, intensityFactor),
     };
   }
@@ -273,41 +236,6 @@ export function estimateZoneDistribution(
 }
 
 /**
- * Estimate power zone distribution
- */
-function estimatePowerZones(duration: number, avgIF: number): number[] {
-  // Simplified assumption: Most time spent near average IF
-  // With some variation above and below
-
-  const zones = [0, 0, 0, 0, 0, 0, 0]; // 7 power zones
-  const avgFTPPercent = avgIF * 100;
-
-  // Distribute time across zones (bell curve around average)
-  if (avgFTPPercent < 55) {
-    zones[0] = duration * 0.8;
-    zones[1] = duration * 0.2;
-  } else if (avgFTPPercent < 75) {
-    zones[0] = duration * 0.2;
-    zones[1] = duration * 0.6;
-    zones[2] = duration * 0.2;
-  } else if (avgFTPPercent < 90) {
-    zones[1] = duration * 0.3;
-    zones[2] = duration * 0.5;
-    zones[3] = duration * 0.2;
-  } else if (avgFTPPercent < 105) {
-    zones[2] = duration * 0.2;
-    zones[3] = duration * 0.6;
-    zones[4] = duration * 0.2;
-  } else {
-    zones[3] = duration * 0.2;
-    zones[4] = duration * 0.5;
-    zones[5] = duration * 0.3;
-  }
-
-  return zones.map(Math.round);
-}
-
-/**
  * Calculate age from date of birth string
  */
 function calculateAgeFromDOB(dob: string): number {
@@ -316,10 +244,7 @@ function calculateAgeFromDOB(dob: string): number {
   let age = today.getFullYear() - birthDate.getFullYear();
   const monthDiff = today.getMonth() - birthDate.getMonth();
 
-  if (
-    monthDiff < 0 ||
-    (monthDiff === 0 && today.getDate() < birthDate.getDate())
-  ) {
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
 
@@ -332,21 +257,21 @@ function calculateAgeFromDOB(dob: string): number {
 function estimateHRZones(duration: number, avgIF: number): number[] {
   // Simplified assumption: Most time spent near average IF
   const zones = [0, 0, 0, 0, 0]; // 5 HR zones
-  const avgThresholdPercent = avgIF * 100;
+  const hrZoneIndex = getHrZoneIndexFromThresholdPercent(avgIF * 100);
 
   // Distribute time across zones
-  if (avgThresholdPercent < 81) {
+  if (hrZoneIndex === 0) {
     zones[0] = duration * 0.8;
     zones[1] = duration * 0.2;
-  } else if (avgThresholdPercent < 90) {
+  } else if (hrZoneIndex === 1) {
     zones[0] = duration * 0.2;
     zones[1] = duration * 0.6;
     zones[2] = duration * 0.2;
-  } else if (avgThresholdPercent < 94) {
+  } else if (hrZoneIndex === 2) {
     zones[1] = duration * 0.3;
     zones[2] = duration * 0.5;
     zones[3] = duration * 0.2;
-  } else if (avgThresholdPercent < 100) {
+  } else if (hrZoneIndex === 3) {
     zones[2] = duration * 0.2;
     zones[3] = duration * 0.6;
     zones[4] = duration * 0.2;

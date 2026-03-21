@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
-import type { CreationFeasibilitySafetySummary } from "@repo/core";
 import {
+  type CreationFeasibilitySafetySummary,
   getCreateDisabledReason,
   getMinimumGoalGapDays,
   getTopBlockingIssues,
-  validateTrainingPlanForm,
-} from "../validation";
+} from "@repo/core";
+import { describe, expect, it } from "vitest";
+import { validateTrainingPlanForm } from "../validation";
 
 describe("training-plan form validation", () => {
   it("returns no errors for valid minimal form", () => {
@@ -55,9 +55,7 @@ describe("training-plan form validation", () => {
     });
 
     expect(errors["goals.0.name"]).toBe("Goal name is required");
-    expect(errors["goals.0.priority"]).toBe(
-      "Priority must be between 0 and 10",
-    );
+    expect(errors["goals.0.priority"]).toBe("Priority must be between 0 and 10");
     expect(errors["goals.0.targets.0.paceMmSs"]).toBe("Pace must use mm:ss");
     expect(errors.planStartDate).toBe("Plan start date must use yyyy-mm-dd");
     expect(errors.goals).toBe("Each goal must include valid target details");

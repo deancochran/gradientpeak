@@ -1,7 +1,7 @@
+import { Stack } from "expo-router";
+import { FocusModeProvider } from "@/lib/contexts/FocusModeContext";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { ActivityRecorderProvider } from "@/lib/providers/ActivityRecorderProvider";
-import { FocusModeProvider } from "@/lib/contexts/FocusModeContext";
-import { Stack } from "expo-router";
 
 /**
  * Record Modal Layout
@@ -73,20 +73,6 @@ export default function RecordLayout() {
             name="plan"
             options={{
               title: "Select Activity Plan",
-              gestureEnabled: true,
-            }}
-          />
-          <Stack.Screen
-            name="route"
-            options={{
-              title: "Select Route",
-              gestureEnabled: true,
-            }}
-          />
-          <Stack.Screen
-            name="route-preview"
-            options={{
-              title: "Route Preview",
               gestureEnabled: true,
             }}
           />

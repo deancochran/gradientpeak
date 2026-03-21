@@ -14,23 +14,22 @@
  * ```
  */
 
+import type { RecordingServiceActivityPlan } from "@repo/core";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import type { Device } from "react-native-ble-plx";
 import {
   ActivityRecorderService,
   RecordingState,
   TimeUpdate,
 } from "@/lib/services/ActivityRecorder";
-
 import type { ConnectedSensor } from "@/lib/services/ActivityRecorder/sensors";
 import type {
   CurrentReadings,
-  SensorUpdateEvent,
+  RecordingSessionSnapshot,
+  RecordingSessionView,
   SessionStats,
-  StatsUpdateEvent,
 } from "@/lib/services/ActivityRecorder/types";
-import type { RecordingServiceActivityPlan } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import type { Device } from "react-native-ble-plx";
 
 // ================================
 // Types
@@ -55,10 +54,7 @@ export interface RecorderActions {
   finish: () => Promise<void>;
 
   // Activity selection
-  selectActivity: (
-    category: PublicActivityCategory,
-    gpsRecordingEnabled: boolean,
-  ) => void;
+  selectActivity: (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => void;
 
   // Device management
   startScan: () => Promise<void>; // Event-based scanning
@@ -66,7 +62,51 @@ export interface RecorderActions {
   subscribeScan: (callback: (device: Device) => void) => () => void;
   connectDevice: (deviceId: string) => Promise<void>;
   disconnectDevice: (deviceId: string) => Promise<void>;
+  resetSensors: () => Promise<void>;
 }
+
+export type RecorderHookCompatibilityStatus =
+  | "canonical_selector"
+  | "compatibility_wrapper"
+  | "legacy_direct_access";
+
+export const RECORDER_HOOK_COMPATIBILITY_PLAN = {
+  useSessionView: {
+    status: "canonical_selector",
+    replacement: "useSessionView",
+  },
+  useSessionSnapshot: {
+    status: "canonical_selector",
+    replacement: "useSessionSnapshot",
+  },
+  useCurrentReadings: {
+    status: "compatibility_wrapper",
+    replacement: "useSessionView",
+  },
+  useSessionStats: {
+    status: "compatibility_wrapper",
+    replacement: "useSessionView",
+  },
+  usePlan: {
+    status: "compatibility_wrapper",
+    replacement: "useSessionView",
+  },
+  useActivityRecorderData: {
+    status: "compatibility_wrapper",
+    replacement: "useSessionView",
+  },
+  useSensors: {
+    status: "legacy_direct_access",
+    replacement: "future session-connected-devices selector",
+  },
+  useRecorderActions: {
+    status: "compatibility_wrapper",
+    replacement: "controller-backed actions",
+  },
+} as const satisfies Record<
+  string,
+  { status: RecorderHookCompatibilityStatus; replacement: string }
+>;
 
 // ================================
 // 1. useActivityRecorder - Service Creation & Lifecycle
@@ -88,10 +128,7 @@ export function useActivityRecorder(
 ): ActivityRecorderService | null {
   const service = useMemo(() => {
     if (!profile) return null;
-    console.log(
-      "[useActivityRecorder] Creating new service instance for profile:",
-      profile.id,
-    );
+    console.log("[useActivityRecorder] Creating new service instance for profile:", profile.id);
     return new ActivityRecorderService(profile);
   }, [profile]);
 
@@ -119,9 +156,7 @@ export function useActivityRecorder(
  * console.log(stats.avgHeartRate); // Average HR
  * ```
  */
-export function useActivityRecorderData(
-  service: ActivityRecorderService | null,
-) {
+export function useActivityRecorderData(service: ActivityRecorderService | null) {
   const current = useCurrentReadings(service);
   const stats = useSessionStats(service);
   const recordingState = useRecordingState(service);
@@ -159,12 +194,8 @@ export function useActivityRecorderData(
  * // 'pending' | 'recording' | 'paused' | 'finished'
  * ```
  */
-export function useRecordingState(
-  service: ActivityRecorderService | null,
-): RecordingState {
-  const [state, setState] = useState<RecordingState>(
-    service?.state ?? "pending",
-  );
+export function useRecordingState(service: ActivityRecorderService | null): RecordingState {
+  const [state, setState] = useState<RecordingState>(service?.state ?? "pending");
 
   useEffect(() => {
     if (!service) return;
@@ -209,9 +240,7 @@ export function useRecordingState(
  * const hrSensor = byType.heartRate;
  * ```
  */
-export function useSensors(
-  service: ActivityRecorderService | null,
-): SensorsState {
+export function useSensors(service: ActivityRecorderService | null): SensorsState {
   const [sensors, setSensors] = useState<ConnectedSensor[]>(
     () => service?.sensorsManager.getConnectedSensors() || [],
   );
@@ -230,10 +259,7 @@ export function useSensors(
       setSensors(updatedSensors);
     };
 
-    const subscription = service.addListener(
-      "sensorsChanged",
-      handleSensorsChange,
-    );
+    const subscription = service.addListener("sensorsChanged", handleSensorsChange);
 
     return () => {
       subscription.remove();
@@ -253,10 +279,7 @@ export function useSensors(
 /**
  * Helper hook to subscribe to service events and trigger re-renders
  */
-function useServiceEvent(
-  service: ActivityRecorderService | null,
-  event: string,
-): void {
+function useServiceEvent(service: ActivityRecorderService | null, event: string): void {
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
   useEffect(() => {
@@ -300,26 +323,18 @@ function useServiceEvent(
  * ```
  */
 export function usePlan(service: ActivityRecorderService | null) {
-  const [, forceUpdate] = useReducer((x) => x + 1, 0);
+  const planView = useSessionSelector(service, (view) => view.plan, {
+    hasPlan: false,
+    stepIndex: 0,
+    stepCount: 0,
+    progress: null,
+    isLast: false,
+    isFinished: false,
+    canAdvance: false,
+    planTimeRemaining: 0,
+  });
 
-  useEffect(() => {
-    if (!service) return;
-
-    const handleUpdate = () => forceUpdate();
-    const sub1 = service.addListener("stepChanged", handleUpdate);
-    const sub2 = service.addListener("planCleared", handleUpdate);
-    const sub3 = service.addListener("timeUpdated", handleUpdate);
-    const sub4 = service.addListener("planSelected", handleUpdate);
-
-    return () => {
-      sub1.remove();
-      sub2.remove();
-      sub3.remove();
-      sub4.remove();
-    };
-  }, [service]);
-
-  if (!service?.hasPlan) {
+  if (!planView.hasPlan) {
     return {
       hasPlan: false as const,
       select: (plan: RecordingServiceActivityPlan, eventId?: string) =>
@@ -328,26 +343,23 @@ export function usePlan(service: ActivityRecorderService | null) {
     };
   }
 
-  const info = service.getStepInfo();
-  const planDetails = service.plan;
-
   return {
     hasPlan: true as const,
-    name: planDetails?.name,
-    description: planDetails?.description,
-    activityType: planDetails?.activity_category,
-    stepIndex: info.index,
-    stepCount: info.total,
-    currentStep: info.current,
-    progress: info.progress,
-    isLast: info.isLast,
-    isFinished: info.isFinished,
-    canAdvance: info.progress?.canAdvance ?? false,
-    advance: () => service.advanceStep(),
+    name: planView.name,
+    description: planView.description,
+    activityType: planView.activityType,
+    stepIndex: planView.stepIndex,
+    stepCount: planView.stepCount,
+    currentStep: planView.currentStep,
+    progress: planView.progress,
+    isLast: planView.isLast,
+    isFinished: planView.isFinished,
+    canAdvance: planView.canAdvance,
+    advance: () => service?.advanceStep(),
     select: (plan: RecordingServiceActivityPlan, eventId?: string) =>
-      service.selectPlan(plan, eventId),
-    clear: () => service.clearPlan(),
-    planTimeRemaining: service.planTimeRemaining,
+      service?.selectPlan(plan, eventId),
+    clear: () => service?.clearPlan(),
+    planTimeRemaining: planView.planTimeRemaining,
   };
 }
 
@@ -360,9 +372,7 @@ export function usePlan(service: ActivityRecorderService | null) {
  * return <Text>{formatTime(elapsed)}</Text>;
  * ```
  */
-export function useElapsedTime(
-  service: ActivityRecorderService | null,
-): number {
+export function useElapsedTime(service: ActivityRecorderService | null): number {
   const [time, setTime] = useState(0);
 
   useEffect(() => {
@@ -424,14 +434,8 @@ export function useLapTime(service: ActivityRecorderService | null): number {
       setLapTime(0);
     };
 
-    const timeSubscription = service.addListener(
-      "timeUpdated",
-      handleTimeUpdate,
-    );
-    const lapSubscription = service.addListener(
-      "lapRecorded",
-      handleLapRecorded,
-    );
+    const timeSubscription = service.addListener("timeUpdated", handleTimeUpdate);
+    const lapSubscription = service.addListener("lapRecorded", handleLapRecorded);
 
     return () => {
       timeSubscription.remove();
@@ -466,11 +470,13 @@ export function useActivityStatus(service: ActivityRecorderService | null): {
   gpsRecordingEnabled: boolean;
   activityCategory: PublicActivityCategory;
 } {
-  useServiceEvent(service, "activitySelected");
-  useServiceEvent(service, "gpsTrackingChanged");
+  const snapshot = useSessionSnapshot(service);
 
-  const activityCategory = service?.selectedActivityCategory || "bike";
-  const gpsRecordingEnabled = service?.isGpsRecordingEnabled() ?? true;
+  const activityCategory =
+    snapshot?.activity.category ?? service?.selectedActivityCategory ?? "bike";
+  const gpsRecordingEnabled =
+    snapshot?.activity.gpsMode === "on" ||
+    (!snapshot && (service?.isGpsRecordingEnabled() ?? true));
 
   return {
     gpsRecordingEnabled,
@@ -500,9 +506,7 @@ export function useActivityStatus(service: ActivityRecorderService | null): {
  * ```
  */
 export function useGpsTracking(service: ActivityRecorderService | null) {
-  const [gpsEnabled, setGpsEnabled] = useState(
-    service?.isGpsRecordingEnabled() ?? true,
-  );
+  const [gpsEnabled, setGpsEnabled] = useState(service?.isGpsRecordingEnabled() ?? true);
 
   useEffect(() => {
     if (!service) return;
@@ -516,10 +520,7 @@ export function useGpsTracking(service: ActivityRecorderService | null) {
       setGpsEnabled(enabled);
     };
 
-    const subscription = service.addListener(
-      "gpsTrackingChanged",
-      handleGpsTrackingChange,
-    );
+    const subscription = service.addListener("gpsTrackingChanged", handleGpsTrackingChange);
 
     return () => {
       subscription.remove();
@@ -555,13 +556,9 @@ export function useGpsTracking(service: ActivityRecorderService | null) {
 export function useIntensityScale(service: ActivityRecorderService | null) {
   const [scale, setScale] = useState(service?.getIntensityScale() ?? 1.0);
   const [baseFtp, setBaseFtp] = useState(service?.getBaseFtp());
-  const [baseThresholdHr, setBaseThresholdHr] = useState(
-    service?.getBaseThresholdHr(),
-  );
+  const [baseThresholdHr, setBaseThresholdHr] = useState(service?.getBaseThresholdHr());
   const [baseWeight, setBaseWeight] = useState(service?.getBaseWeight());
-  const [baseThresholdPace, setBaseThresholdPace] = useState(
-    service?.getBaseThresholdPace(),
-  );
+  const [baseThresholdPace, setBaseThresholdPace] = useState(service?.getBaseThresholdPace());
 
   useEffect(() => {
     if (!service) return;
@@ -588,9 +585,8 @@ export function useIntensityScale(service: ActivityRecorderService | null) {
     baseWeight,
     baseThresholdPace,
     setIntensityScale: (s: number) => service?.setIntensityScale(s),
-    updateMetrics: (
-      m: Parameters<ActivityRecorderService["updateMetrics"]>[0],
-    ) => service?.updateMetrics(m),
+    updateMetrics: (m: Parameters<ActivityRecorderService["updateMetrics"]>[0]) =>
+      service?.updateMetrics(m),
   };
 }
 
@@ -615,9 +611,7 @@ export function useIntensityScale(service: ActivityRecorderService | null) {
  * }
  * ```
  */
-export function useRecorderActions(
-  service: ActivityRecorderService | null,
-): RecorderActions {
+export function useRecorderActions(service: ActivityRecorderService | null): RecorderActions {
   // Recording controls
   const start = useCallback(async () => {
     if (!service) return;
@@ -683,6 +677,11 @@ export function useRecorderActions(
     [service],
   );
 
+  const resetSensors = useCallback(async () => {
+    if (!service) return;
+    await service.resetAllSensors();
+  }, [service]);
+
   return {
     // Recording controls
     start,
@@ -699,99 +698,94 @@ export function useRecorderActions(
     subscribeScan,
     connectDevice,
     disconnectDevice,
+    resetSensors,
   };
 }
 
 /**
- * Hook for current sensor readings - updates on sensor changes only
+ * Compatibility selector over `useSessionView()` for current sensor readings.
  */
-export function useCurrentReadings(
-  service: ActivityRecorderService | null,
-): CurrentReadings {
-  const [readings, setReadings] = useState<CurrentReadings>({});
-
-  useEffect(() => {
-    if (!service?.liveMetricsManager) {
-      setReadings({});
-      return;
-    }
-
-    // Get initial readings
-    setReadings(service.liveMetricsManager.getCurrentReadings());
-
-    // Subscribe to sensor updates
-    const handleSensorUpdate = (event: SensorUpdateEvent) => {
-      setReadings(event.readings);
-    };
-
-    const subscription = service.liveMetricsManager.addListener(
-      "sensorUpdate",
-      handleSensorUpdate,
-    );
-
-    return () => {
-      subscription.remove();
-    };
-  }, [service]);
-
-  return readings;
+export function useCurrentReadings(service: ActivityRecorderService | null): CurrentReadings {
+  return useSessionSelector(service, (view) => view.currentReadings, EMPTY_CURRENT_READINGS);
 }
 
 /**
- * Hook for session statistics - updates every second
+ * Compatibility selector over `useSessionView()` for session statistics.
  */
-export function useSessionStats(
+export function useSessionStats(service: ActivityRecorderService | null): SessionStats {
+  return useSessionSelector(service, (view) => view.sessionStats, EMPTY_SESSION_STATS);
+}
+
+export function useSessionSelector<T>(
   service: ActivityRecorderService | null,
-): SessionStats {
-  const [stats, setStats] = useState<SessionStats>(getEmptySessionStats());
+  selector: (view: RecordingSessionView) => T,
+  fallback: T,
+): T {
+  const view = useSessionView(service);
+  return view ? selector(view) : fallback;
+}
+
+export function useSessionSnapshot(
+  service: ActivityRecorderService | null,
+): RecordingSessionSnapshot | null {
+  const [snapshot, setSnapshot] = useState<RecordingSessionSnapshot | null>(
+    service?.getSessionSnapshot() ?? null,
+  );
 
   useEffect(() => {
-    if (!service?.liveMetricsManager) {
-      setStats(getEmptySessionStats());
+    if (!service) {
+      setSnapshot(null);
       return;
     }
 
-    // Get initial stats
-    setStats(service.liveMetricsManager.getSessionStats());
+    setSnapshot(service.getSessionSnapshot());
 
-    // Subscribe to stats updates
-    const handleStatsUpdate = (event: StatsUpdateEvent) => {
-      setStats(event.stats);
-    };
-
-    const subscription = service.liveMetricsManager.addListener(
-      "statsUpdate",
-      handleStatsUpdate,
-    );
-
-    return () => {
-      subscription.remove();
-    };
+    const subscription = service.addListener("snapshotUpdated", setSnapshot);
+    return () => subscription.remove();
   }, [service]);
 
-  return stats;
+  return snapshot;
 }
 
-// Helper function
-function getEmptySessionStats(): SessionStats {
-  return {
-    duration: 0,
-    movingTime: 0,
-    pausedTime: 0,
-    distance: 0,
-    calories: 0,
-    work: 0,
-    ascent: 0,
-    descent: 0,
-    avgHeartRate: 0,
-    avgPower: 0,
-    avgSpeed: 0,
-    avgCadence: 0,
-    maxHeartRate: 0,
-    maxPower: 0,
-    maxSpeed: 0,
-    maxCadence: 0,
-    hrZones: [0, 0, 0, 0, 0],
-    powerZones: [0, 0, 0, 0, 0, 0, 0],
-  };
+export function useSessionView(
+  service: ActivityRecorderService | null,
+): RecordingSessionView | null {
+  const [view, setView] = useState<RecordingSessionView | null>(service?.getSessionView() ?? null);
+
+  useEffect(() => {
+    if (!service) {
+      setView(null);
+      return;
+    }
+
+    setView(service.getSessionView());
+
+    const subscription = service.addListener("sessionUpdated", setView);
+    return () => subscription.remove();
+  }, [service]);
+
+  return view;
 }
+
+const EMPTY_CURRENT_READINGS: CurrentReadings = {};
+
+const EMPTY_SESSION_STATS: SessionStats = {
+  duration: 0,
+  movingTime: 0,
+  pausedTime: 0,
+  distance: 0,
+  calories: 0,
+  work: 0,
+  ascent: 0,
+  descent: 0,
+  avgHeartRate: 0,
+  avgPower: 0,
+  avgSpeed: 0,
+  avgCadence: 0,
+  maxHeartRate: 0,
+  maxPower: 0,
+  maxSpeed: 0,
+  maxCadence: 0,
+  hrZones: [0, 0, 0, 0, 0],
+  powerZones: [0, 0, 0, 0, 0, 0, 0],
+};

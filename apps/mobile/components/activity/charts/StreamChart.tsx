@@ -1,15 +1,11 @@
+import { downsampleStream, getSamplingStrategy, removeNullValues } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import type { DecompressedStream } from "@/lib/utils/streamDecompression";
-import {
-  downsampleStream,
-  getSamplingStrategy,
-  removeNullValues,
-} from "@/lib/utils/streamSampling";
 import { Circle, useFont } from "@shopify/react-native-skia";
 import React, { useMemo } from "react";
 import { View } from "react-native";
 import { CartesianChart, Line, useChartPressState } from "victory-native";
+import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 interface StreamData {
   type: string;
@@ -45,15 +41,16 @@ export function StreamChart({
     // Process each stream: remove nulls and downsample
     const processedStreams = streams.map((streamData) => {
       const stream = streamData.stream;
-      const { values, timestamps } = removeNullValues(
-        stream.values as number[],
-        stream.timestamps,
-      );
+      const { values, timestamps } = removeNullValues(stream.values as number[], stream.timestamps);
 
       // Downsample if needed
       const strategy = getSamplingStrategy(stream.type);
-      const { values: sampledValues, timestamps: sampledTimestamps } =
-        downsampleStream(values, timestamps, 500, strategy);
+      const { values: sampledValues, timestamps: sampledTimestamps } = downsampleStream(
+        values,
+        timestamps,
+        500,
+        strategy,
+      );
 
       return {
         ...streamData,
@@ -120,10 +117,7 @@ export function StreamChart({
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <View
-            style={{ height }}
-            className="items-center justify-center bg-muted rounded-lg"
-          >
+          <View style={{ height }} className="items-center justify-center bg-muted rounded-lg">
             <Text className="text-muted-foreground">No data available</Text>
           </View>
         </CardContent>
@@ -139,13 +133,8 @@ export function StreamChart({
           <View className="flex-row flex-wrap gap-3 mt-2">
             {streams.map((stream) => (
               <View key={stream.type} className="flex-row items-center gap-1">
-                <View
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: stream.color }}
-                />
-                <Text className="text-xs text-muted-foreground">
-                  {stream.label}
-                </Text>
+                <View className="w-3 h-3 rounded-full" style={{ backgroundColor: stream.color }} />
+                <Text className="text-xs text-muted-foreground">{stream.label}</Text>
               </View>
             ))}
           </View>
@@ -212,10 +201,7 @@ export function StreamChart({
               {streams.map((stream) => {
                 const value = (state.y as any)[stream.type]?.value;
                 return (
-                  <View
-                    key={stream.type}
-                    className="flex-row items-center gap-1"
-                  >
+                  <View key={stream.type} className="flex-row items-center gap-1">
                     <Text className="text-xs font-medium">{stream.label}:</Text>
                     <Text className="text-xs">
                       {value?.toFixed(0)} {stream.unit}

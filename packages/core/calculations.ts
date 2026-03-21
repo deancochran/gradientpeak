@@ -1,12 +1,38 @@
+/**
+ * Compatibility calculations surface.
+ *
+ * Canonical ownership now lives in focused domain modules such as `load/`,
+ * `zones/`, `duration/`, and `estimators/`. Keep this file stable while
+ * callers migrate to narrower imports.
+ */
 import type { PublicProfilesRow } from "@repo/supabase";
+import { calculateNormalizedPower as calculateNormalizedPowerFromStream } from "./calculations/normalized-power";
+import { type TrainingQualityProfile } from "./calculations/training-quality";
 import {
-  getAgeAdjustedCTLTimeConstant,
-  getPersonalizedATLTimeConstant,
-} from "./plan/calibration-constants";
+  getFormStatusColor as getFormStatusColorFromLoad,
+  getFormStatus as getFormStatusFromLoad,
+} from "./load/form";
 import {
-  getIntensityAdjustedATLTimeConstant,
-  type TrainingQualityProfile,
-} from "./calculations/training-quality";
+  calculateATL as calculateATLFromLoad,
+  calculateCTL as calculateCTLFromLoad,
+  calculateCTLProjection as calculateCTLProjectionFromLoad,
+  calculateTargetDailyTSS as calculateTargetDailyTSSFromLoad,
+  calculateTrainingLoadSeries as calculateTrainingLoadSeriesFromLoad,
+  calculateTSB as calculateTSBFromLoad,
+  projectCTL as projectCTLFromLoad,
+} from "./load/progression";
+import {
+  calculateRampRate as calculateRampRateFromLoad,
+  isRampRateSafe as isRampRateSafeFromLoad,
+} from "./load/ramp";
+import {
+  calculateTrainingIntensityFactor as calculateTrainingIntensityFactorFromLoad,
+  calculateTrainingTSS as calculateTrainingTSSFromLoad,
+  estimateTSS as estimateTSSFromLoad,
+  getTrainingIntensityZone as getTrainingIntensityZoneFromLoad,
+} from "./load/tss";
+import { calculateHRZoneDistribution } from "./zones/hr";
+import { calculatePowerZoneDistribution } from "./zones/power";
 
 export type PublicActivityMetric = string;
 export type PublicActivityMetricDataType = "float" | "latlng" | "boolean";
@@ -23,14 +49,9 @@ export interface AggregatedStream {
   avgValue?: number;
 }
 
-export function calculateElapsedTime(
-  startedAt: Date | string,
-  endedAt: Date | string,
-): number {
+export function calculateElapsedTime(startedAt: Date | string, endedAt: Date | string): number {
   if (!startedAt || !endedAt) return 0;
-  return Math.floor(
-    (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000,
-  );
+  return Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000);
 }
 
 export function calculateMovingTime(
@@ -54,32 +75,12 @@ export function calculateMovingTime(
 // Power Calculations
 // ================================
 
-export function calculateNormalizedPower(
-  powerStream?: AggregatedStream,
-): number | undefined {
+export function calculateNormalizedPower(powerStream?: AggregatedStream): number | undefined {
   if (!powerStream?.values) return undefined;
 
   const powers = powerStream.values as number[];
   if (powers.length === 0) return undefined;
-
-  // Proper NP calculation: rolling 30s average, then 4th power average
-  const windowSize = 30; // 30 samples for 30 seconds (assuming 1Hz)
-  const rollingAvgs: number[] = [];
-
-  for (let i = 0; i < powers.length; i++) {
-    const start = Math.max(0, i - windowSize + 1);
-    const window = powers.slice(start, i + 1);
-    const avg = window.reduce((sum, p) => sum + p, 0) / window.length;
-    rollingAvgs.push(avg);
-  }
-
-  // Calculate 4th power average
-  const fourthPowers = rollingAvgs.map((p) => Math.pow(p, 4));
-  const avgFourthPower =
-    fourthPowers.reduce((sum, p) => sum + p, 0) / fourthPowers.length;
-  const np = Math.pow(avgFourthPower, 0.25);
-
-  return Math.round(np);
+  return calculateNormalizedPowerFromStream(powers);
 }
 
 export function calculateIntensityFactor(
@@ -132,44 +133,7 @@ export function calculateHRZones(
   hrStream?: AggregatedStream,
   thresholdHR?: number | null,
 ): Record<string, number | undefined> {
-  if (!hrStream?.values || !thresholdHR) {
-    return {
-      zone1: undefined,
-      zone2: undefined,
-      zone3: undefined,
-      zone4: undefined,
-      zone5: undefined,
-    };
-  }
-
-  const hrs = hrStream.values as number[];
-  const timestamps = hrStream.timestamps;
-
-  // HR Zones based on threshold HR (LTHR)
-  // Z1: < 81% | Z2: 81-89% | Z3: 90-93% | Z4: 94-99% | Z5: 100%+
-  const zones = { zone1: 0, zone2: 0, zone3: 0, zone4: 0, zone5: 0 };
-
-  for (let i = 0; i < hrs.length; i++) {
-    const pct = hrs[i]! / thresholdHR!;
-    const timeInZone =
-      i < timestamps.length - 1
-        ? (timestamps[i + 1]! - timestamps[i]!) / 1000
-        : 1; // Default 1 second
-
-    if (pct < 0.81) zones.zone1 += timeInZone;
-    else if (pct < 0.9) zones.zone2 += timeInZone;
-    else if (pct < 0.94) zones.zone3 += timeInZone;
-    else if (pct < 1.0) zones.zone4 += timeInZone;
-    else zones.zone5 += timeInZone;
-  }
-
-  return {
-    zone1: Math.round(zones.zone1),
-    zone2: Math.round(zones.zone2),
-    zone3: Math.round(zones.zone3),
-    zone4: Math.round(zones.zone4),
-    zone5: Math.round(zones.zone5),
-  };
+  return calculateHRZoneDistribution(hrStream, thresholdHR);
 }
 
 export function calculateMaxHRPercent(
@@ -188,58 +152,7 @@ export function calculatePowerZones(
   powerStream?: AggregatedStream,
   ftp?: number | null,
 ): Record<string, number | undefined> {
-  if (!powerStream?.values || !ftp) {
-    return {
-      zone1: undefined,
-      zone2: undefined,
-      zone3: undefined,
-      zone4: undefined,
-      zone5: undefined,
-      zone6: undefined,
-      zone7: undefined,
-    };
-  }
-
-  const powers = powerStream.values as number[];
-  const timestamps = powerStream.timestamps;
-
-  // Power Zones based on FTP
-  // Z1: < 55% | Z2: 56-75% | Z3: 76-90% | Z4: 91-105% | Z5: 106-120% | Z6: 121-150% | Z7: 150%+
-  const zones = {
-    zone1: 0,
-    zone2: 0,
-    zone3: 0,
-    zone4: 0,
-    zone5: 0,
-    zone6: 0,
-    zone7: 0,
-  };
-
-  for (let i = 0; i < powers.length; i++) {
-    const pct = powers[i]! / ftp!;
-    const timeInZone =
-      i < timestamps.length - 1
-        ? (timestamps[i + 1]! - timestamps[i]!) / 1000
-        : 1;
-
-    if (pct < 0.55) zones.zone1 += timeInZone;
-    else if (pct < 0.76) zones.zone2 += timeInZone;
-    else if (pct < 0.91) zones.zone3 += timeInZone;
-    else if (pct < 1.06) zones.zone4 += timeInZone;
-    else if (pct < 1.21) zones.zone5 += timeInZone;
-    else if (pct < 1.51) zones.zone6 += timeInZone;
-    else zones.zone7 += timeInZone;
-  }
-
-  return {
-    zone1: Math.round(zones.zone1),
-    zone2: Math.round(zones.zone2),
-    zone3: Math.round(zones.zone3),
-    zone4: Math.round(zones.zone4),
-    zone5: Math.round(zones.zone5),
-    zone6: Math.round(zones.zone6),
-    zone7: Math.round(zones.zone7),
-  };
+  return calculatePowerZoneDistribution(powerStream, ftp);
 }
 
 // ================================
@@ -270,25 +183,18 @@ export function calculateDecoupling(
   // Split into first and second half
   const midpoint = Math.floor(powers.length / 2);
 
-  const firstHalfPower =
-    powers.slice(0, midpoint).reduce((a, b) => a + b, 0) / midpoint;
+  const firstHalfPower = powers.slice(0, midpoint).reduce((a, b) => a + b, 0) / midpoint;
   const secondHalfPower =
-    powers.slice(midpoint).reduce((a, b) => a + b, 0) /
-    (powers.length - midpoint);
+    powers.slice(midpoint).reduce((a, b) => a + b, 0) / (powers.length - midpoint);
 
-  const firstHalfHR =
-    hrs.slice(0, midpoint).reduce((a, b) => a + b, 0) / midpoint;
-  const secondHalfHR =
-    hrs.slice(midpoint).reduce((a, b) => a + b, 0) / (hrs.length - midpoint);
+  const firstHalfHR = hrs.slice(0, midpoint).reduce((a, b) => a + b, 0) / midpoint;
+  const secondHalfHR = hrs.slice(midpoint).reduce((a, b) => a + b, 0) / (hrs.length - midpoint);
 
   const firstHalfRatio = firstHalfPower / firstHalfHR;
   const secondHalfRatio = secondHalfPower / secondHalfHR;
 
   // Decoupling percentage
-  return (
-    Math.round(((secondHalfRatio - firstHalfRatio) / firstHalfRatio) * 10000) /
-    100
-  );
+  return Math.round(((secondHalfRatio - firstHalfRatio) / firstHalfRatio) * 10000) / 100;
 }
 
 export function calculatePowerHeartRateRatio(
@@ -333,9 +239,7 @@ export function calculateElevationChanges(elevationStream?: AggregatedStream): {
   };
 }
 
-export function calculateAverageGrade(
-  gradientStream?: AggregatedStream,
-): number | undefined {
+export function calculateAverageGrade(gradientStream?: AggregatedStream): number | undefined {
   if (!gradientStream?.avgValue) return undefined;
   return Math.round(gradientStream.avgValue * 100) / 100;
 }
@@ -344,8 +248,7 @@ export function calculateElevationGainPerKm(
   totalAscent: number,
   distanceStream?: AggregatedStream,
 ): number | undefined {
-  if (!distanceStream?.maxValue || distanceStream.maxValue === 0)
-    return undefined;
+  if (!distanceStream?.maxValue || distanceStream.maxValue === 0) return undefined;
   const distanceKm = distanceStream.maxValue / 1000;
   return Math.round((totalAscent / distanceKm) * 100) / 100;
 }
@@ -376,9 +279,7 @@ export function calculateCalories(
 
     // Gender-specific calorie estimation (assuming male, adjust if you have gender data)
     const calories =
-      ((age * 0.2017 + weightKg * 0.1988 + avgHR * 0.6309 - 55.0969) *
-        duration) /
-      4.184;
+      ((age * 0.2017 + weightKg * 0.1988 + avgHR * 0.6309 - 55.0969) * duration) / 4.184;
     return Math.round(calories);
   }
 
@@ -409,12 +310,7 @@ export function calculateAge(dob: string | null): number | undefined {
  * @param lon2 - Longitude of second point in degrees
  * @returns Distance in meters
  */
-export function calculateDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
+export function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000; // Earth's radius in meters
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -546,10 +442,7 @@ export function estimateCalories(
  * @param newValue - New value
  * @returns Percentage change (positive for increase, negative for decrease)
  */
-export function calculatePercentageChange(
-  oldValue: number,
-  newValue: number,
-): number {
+export function calculatePercentageChange(oldValue: number, newValue: number): number {
   if (oldValue === 0) return 0;
   return ((newValue - oldValue) / oldValue) * 100;
 }
@@ -560,10 +453,7 @@ export function calculatePercentageChange(
  * @param windowSize - Size of moving window
  * @returns Array of moving averages
  */
-export function calculateMovingAverage(
-  values: number[],
-  windowSize: number,
-): number[] {
+export function calculateMovingAverage(values: number[], windowSize: number): number[] {
   if (windowSize <= 0 || windowSize > values.length) {
     throw new Error("Invalid window size");
   }
@@ -571,9 +461,7 @@ export function calculateMovingAverage(
   const result: number[] = [];
 
   for (let i = 0; i <= values.length - windowSize; i++) {
-    const windowSum = values
-      .slice(i, i + windowSize)
-      .reduce((sum, val) => sum + val, 0);
+    const windowSum = values.slice(i, i + windowSize).reduce((sum, val) => sum + val, 0);
     result.push(windowSum / windowSize);
   }
 
@@ -776,10 +664,7 @@ export function fahrenheitToCelsius(fahrenheit: number): number {
  * @param unit - Unit system ('metric' or 'imperial')
  * @returns Formatted distance string
  */
-export function formatDistance(
-  meters: number,
-  unit: "metric" | "imperial" = "metric",
-): string {
+export function formatDistance(meters: number, unit: "metric" | "imperial" = "metric"): string {
   if (unit === "imperial") {
     const miles = kmToMiles(meters / 1000);
     if (miles >= 1) {
@@ -803,10 +688,7 @@ export function formatDistance(
  * @param unit - Unit system ('metric' or 'imperial')
  * @returns Formatted speed string
  */
-export function formatSpeed(
-  mps: number,
-  unit: "metric" | "imperial" = "metric",
-): string {
+export function formatSpeed(mps: number, unit: "metric" | "imperial" = "metric"): string {
   if (unit === "imperial") {
     const mph = metersPerSecondToMph(mps);
     return `${mph.toFixed(1)} mph`;
@@ -822,10 +704,7 @@ export function formatSpeed(
  * @param unit - Unit system ('metric' or 'imperial')
  * @returns Formatted speed string (min/km or min/mi)
  */
-export function formatPace(
-  speedMs: number,
-  unit: "metric" | "imperial" = "metric",
-): string {
+export function formatPace(speedMs: number, unit: "metric" | "imperial" = "metric"): string {
   if (speedMs <= 0) return "--:--";
 
   let paceSeconds: number;
@@ -855,10 +734,7 @@ export function formatPace(
  * @param unit - Unit system ('metric' or 'imperial')
  * @returns Formatted weight string
  */
-export function formatWeight(
-  kg: number,
-  unit: "metric" | "imperial" = "metric",
-): string {
+export function formatWeight(kg: number, unit: "metric" | "imperial" = "metric"): string {
   if (unit === "imperial") {
     const lbs = kgToLbs(kg);
     return `${Math.round(lbs)} lbs`;
@@ -1022,14 +898,8 @@ export function formatDurationCompactMs(milliseconds: number): string {
  * @param userAge - Optional user age for age-adjusted time constants
  * @returns New CTL value
  */
-export function calculateCTL(
-  previousCTL: number,
-  todayTSS: number,
-  userAge?: number,
-): number {
-  const timeConstant = getAgeAdjustedCTLTimeConstant(userAge);
-  const alpha = 2 / (timeConstant + 1);
-  return previousCTL + alpha * (todayTSS - previousCTL);
+export function calculateCTL(previousCTL: number, todayTSS: number, userAge?: number): number {
+  return calculateCTLFromLoad(previousCTL, todayTSS, userAge);
 }
 
 /**
@@ -1048,13 +918,7 @@ export function calculateATL(
   userGender?: "male" | "female" | null,
   trainingQuality?: TrainingQualityProfile,
 ): number {
-  const baseTimeConstant = getPersonalizedATLTimeConstant(userAge, userGender);
-  const timeConstant = getIntensityAdjustedATLTimeConstant(
-    baseTimeConstant,
-    trainingQuality,
-  );
-  const alpha = 2 / (timeConstant + 1);
-  return previousATL + alpha * (todayTSS - previousATL);
+  return calculateATLFromLoad(previousATL, todayTSS, userAge, userGender, trainingQuality);
 }
 
 /**
@@ -1069,7 +933,7 @@ export function calculateATL(
  * @returns TSB value
  */
 export function calculateTSB(ctl: number, atl: number): number {
-  return ctl - atl;
+  return calculateTSBFromLoad(ctl, atl);
 }
 
 /**
@@ -1088,38 +952,14 @@ export function calculateTrainingLoadSeries(
   userGender?: "male" | "female" | null,
   trainingQuality?: TrainingQualityProfile,
 ): Array<{ date: number; tss: number; ctl: number; atl: number; tsb: number }> {
-  const results: Array<{
-    date: number;
-    tss: number;
-    ctl: number;
-    atl: number;
-    tsb: number;
-  }> = [];
-
-  let currentCTL = initialCTL;
-  let currentATL = initialATL;
-
-  dailyTSS.forEach((tss, index) => {
-    currentCTL = calculateCTL(currentCTL, tss, userAge);
-    currentATL = calculateATL(
-      currentATL,
-      tss,
-      userAge,
-      userGender,
-      trainingQuality,
-    );
-    const tsb = calculateTSB(currentCTL, currentATL);
-
-    results.push({
-      date: index,
-      tss,
-      ctl: currentCTL,
-      atl: currentATL,
-      tsb,
-    });
-  });
-
-  return results;
+  return calculateTrainingLoadSeriesFromLoad(
+    dailyTSS,
+    initialCTL,
+    initialATL,
+    userAge,
+    userGender,
+    trainingQuality,
+  );
 }
 
 /**
@@ -1131,11 +971,7 @@ export function calculateTrainingLoadSeries(
 export function getFormStatus(
   tsb: number,
 ): "fresh" | "optimal" | "neutral" | "tired" | "overreaching" {
-  if (tsb > 25) return "fresh";
-  if (tsb > 5) return "optimal";
-  if (tsb >= -10) return "neutral";
-  if (tsb >= -30) return "tired";
-  return "overreaching";
+  return getFormStatusFromLoad(tsb);
 }
 
 /**
@@ -1145,19 +981,7 @@ export function getFormStatus(
  * @returns Color string for UI
  */
 export function getFormStatusColor(tsb: number): string {
-  const status = getFormStatus(tsb);
-  switch (status) {
-    case "fresh":
-      return "#22c55e"; // green-500
-    case "optimal":
-      return "#10b981"; // emerald-500
-    case "neutral":
-      return "#eab308"; // yellow-500
-    case "tired":
-      return "#f97316"; // orange-500
-    case "overreaching":
-      return "#ef4444"; // red-500
-  }
+  return getFormStatusColorFromLoad(tsb);
 }
 
 /**
@@ -1184,72 +1008,7 @@ export function calculateCTLProjection(config: {
   recoveryWeekFrequency?: number;
   recoveryWeekReduction?: number;
 }): Array<{ week: number; ctl: number; date: string }> {
-  const {
-    startingCTL,
-    targetCTL,
-    weeklyTSSAvg,
-    mesocycles,
-    recoveryWeekFrequency = 3,
-    recoveryWeekReduction = 0.5,
-  } = config;
-
-  let currentCTL = startingCTL;
-  const points: Array<{ week: number; ctl: number; date: string }> = [];
-  let weekCounter = 0;
-
-  // Add starting point
-  const startDate = new Date();
-  points.push({
-    week: 0,
-    ctl: startingCTL,
-    date: startDate.toISOString().split("T")[0]!,
-  });
-
-  // Iterate through mesocycles
-  for (const meso of mesocycles) {
-    for (let week = 0; week < meso.duration_weeks; week++) {
-      weekCounter++;
-
-      // Check if this is a recovery week
-      const isRecoveryWeek = weekCounter % recoveryWeekFrequency === 0;
-
-      if (isRecoveryWeek) {
-        // Recovery week: reduce CTL slightly
-        // Simulate lower training load for the week
-        const recoveryWeeklyTSS = weeklyTSSAvg * recoveryWeekReduction;
-        const dailyTSS = recoveryWeeklyTSS / 7;
-
-        // Apply CTL formula for each day of the recovery week
-        for (let day = 0; day < 7; day++) {
-          currentCTL = calculateCTL(currentCTL, dailyTSS);
-        }
-      } else {
-        // Normal training week: apply mesocycle TSS multiplier
-        const adjustedWeeklyTSS = weeklyTSSAvg * meso.tss_multiplier;
-        const dailyTSS = adjustedWeeklyTSS / 7;
-
-        // Apply CTL formula for each day of the week
-        for (let day = 0; day < 7; day++) {
-          currentCTL = calculateCTL(currentCTL, dailyTSS);
-        }
-      }
-
-      // Cap at target CTL (can't exceed goal)
-      currentCTL = Math.min(currentCTL, targetCTL);
-
-      // Calculate date for this week
-      const weekDate = new Date(startDate);
-      weekDate.setDate(startDate.getDate() + weekCounter * 7);
-
-      points.push({
-        week: weekCounter,
-        ctl: Math.round(currentCTL * 10) / 10, // Round to 1 decimal
-        date: weekDate.toISOString().split("T")[0]!,
-      });
-    }
-  }
-
-  return points;
+  return calculateCTLProjectionFromLoad(config);
 }
 
 /**
@@ -1264,8 +1023,7 @@ export function calculateTrainingIntensityFactor(
   normalizedPower: number,
   functionalThreshold: number,
 ): number {
-  if (functionalThreshold === 0) return 0;
-  return normalizedPower / functionalThreshold;
+  return calculateTrainingIntensityFactorFromLoad(normalizedPower, functionalThreshold);
 }
 
 /**
@@ -1286,21 +1044,8 @@ export function calculateTrainingIntensityFactor(
  */
 export function getTrainingIntensityZone(
   intensityFactor: number,
-):
-  | "recovery"
-  | "endurance"
-  | "tempo"
-  | "threshold"
-  | "vo2max"
-  | "anaerobic"
-  | "neuromuscular" {
-  if (intensityFactor < 0.55) return "recovery";
-  if (intensityFactor < 0.75) return "endurance";
-  if (intensityFactor < 0.85) return "tempo";
-  if (intensityFactor < 0.95) return "threshold";
-  if (intensityFactor < 1.05) return "vo2max";
-  if (intensityFactor < 1.15) return "anaerobic";
-  return "neuromuscular";
+): "recovery" | "endurance" | "tempo" | "threshold" | "vo2max" | "anaerobic" | "neuromuscular" {
+  return getTrainingIntensityZoneFromLoad(intensityFactor);
 }
 
 /**
@@ -1311,11 +1056,8 @@ export function getTrainingIntensityZone(
  * @param intensityFactor - IF score
  * @returns Training Stress Score
  */
-export function calculateTrainingTSS(
-  durationSeconds: number,
-  intensityFactor: number,
-): number {
-  return (durationSeconds * Math.pow(intensityFactor, 2) * 100) / 3600;
+export function calculateTrainingTSS(durationSeconds: number, intensityFactor: number): number {
+  return calculateTrainingTSSFromLoad(durationSeconds, intensityFactor);
 }
 
 /**
@@ -1330,15 +1072,7 @@ export function estimateTSS(
   durationMinutes: number,
   effortLevel: "easy" | "moderate" | "hard",
 ): number {
-  // Average IF values for planning
-  const estimatedIF = {
-    easy: 0.65,
-    moderate: 0.8,
-    hard: 0.95,
-  };
-
-  const durationSeconds = durationMinutes * 60;
-  return calculateTrainingTSS(durationSeconds, estimatedIF[effortLevel]);
+  return estimateTSSFromLoad(durationMinutes, effortLevel);
 }
 
 /**
@@ -1348,11 +1082,8 @@ export function estimateTSS(
  * @param previousCTL - CTL from one week ago
  * @returns Weekly CTL change
  */
-export function calculateRampRate(
-  currentCTL: number,
-  previousCTL: number,
-): number {
-  return currentCTL - previousCTL;
+export function calculateRampRate(currentCTL: number, previousCTL: number): number {
+  return calculateRampRateFromLoad(currentCTL, previousCTL);
 }
 
 /**
@@ -1363,7 +1094,7 @@ export function calculateRampRate(
  * @returns true if safe, false if too aggressive
  */
 export function isRampRateSafe(rampRate: number, threshold = 5): boolean {
-  return rampRate <= threshold;
+  return isRampRateSafeFromLoad(rampRate, threshold);
 }
 
 /**
@@ -1373,17 +1104,8 @@ export function isRampRateSafe(rampRate: number, threshold = 5): boolean {
  * @param plannedDailyTSS - Array of planned TSS values
  * @returns Projected CTL at end of period
  */
-export function projectCTL(
-  currentCTL: number,
-  plannedDailyTSS: number[],
-): number {
-  let projectedCTL = currentCTL;
-
-  for (const tss of plannedDailyTSS) {
-    projectedCTL = calculateCTL(projectedCTL, tss);
-  }
-
-  return projectedCTL;
+export function projectCTL(currentCTL: number, plannedDailyTSS: number[]): number {
+  return projectCTLFromLoad(currentCTL, plannedDailyTSS);
 }
 
 /**
@@ -1399,11 +1121,5 @@ export function calculateTargetDailyTSS(
   targetCTL: number,
   daysToTarget: number,
 ): number {
-  // Simplified approximation - actual calculation is iterative
-  // This gives a reasonable estimate for planning
-  const ctlGap = targetCTL - currentCTL;
-  const dailyIncrease = ctlGap / daysToTarget;
-  const alpha = 2 / (getAgeAdjustedCTLTimeConstant(undefined) + 1);
-
-  return currentCTL + dailyIncrease / alpha;
+  return calculateTargetDailyTSSFromLoad(currentCTL, targetCTL, daysToTarget);
 }

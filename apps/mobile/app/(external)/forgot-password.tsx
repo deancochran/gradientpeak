@@ -1,27 +1,12 @@
-import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Form, FormTextField } from "@repo/ui/components/form";
+import { Text } from "@repo/ui/components/text";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import React from "react";
-import { useForm } from "react-hook-form";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
-
-import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
-import { Text } from "@repo/ui/components/text";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { supabase } from "@/lib/supabase/client";
 
@@ -37,8 +22,11 @@ export default function ForgotPasswordScreen() {
   const [emailSent, setEmailSent] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
 
-  const form = useForm<ForgotPasswordFields>({
-    resolver: zodResolver(forgotPasswordSchema),
+  const form = useZodForm({
+    schema: forgotPasswordSchema,
+    defaultValues: {
+      email: "",
+    },
   });
 
   const onSendResetEmail = async (data: ForgotPasswordFields) => {
@@ -85,6 +73,10 @@ export default function ForgotPasswordScreen() {
   };
 
   const isLoading = authLoading || isSubmitting;
+  const submitForm = useZodFormSubmit({
+    form,
+    onSubmit: onSendResetEmail,
+  });
 
   if (emailSent) {
     return (
@@ -98,9 +90,7 @@ export default function ForgotPasswordScreen() {
             <CardContent className="p-8 items-center">
               {/* Success Icon */}
               <View className="w-16 h-16 bg-success rounded-full items-center justify-center mb-6">
-                <Text className="text-success-foreground text-2xl font-bold">
-                  ✓
-                </Text>
+                <Text className="text-success-foreground text-2xl font-bold">✓</Text>
               </View>
 
               {/* Success Message */}
@@ -164,8 +154,7 @@ export default function ForgotPasswordScreen() {
               </Text>
             </CardTitle>
             <Text variant="muted" className="text-center">
-              Enter your email address and we will send you instructions to
-              reset your password
+              Enter your email address and we will send you instructions to reset your password
             </Text>
           </CardHeader>
 
@@ -173,27 +162,15 @@ export default function ForgotPasswordScreen() {
             {/* Form */}
             <Form {...form}>
               <View className="gap-4" testID="forgot-password-form">
-                <FormField
+                <FormTextField
+                  autoCapitalize="none"
+                  autoComplete="email"
                   control={form.control}
+                  keyboardType="email-address"
+                  label="Email"
                   name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Email address"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          autoFocus
-                          autoCapitalize="none"
-                          keyboardType="email-address"
-                          autoComplete="email"
-                          testID="email-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="Email address"
+                  testId="email-input"
                 />
               </View>
             </Form>
@@ -202,14 +179,12 @@ export default function ForgotPasswordScreen() {
             <Button
               variant="default"
               size="lg"
-              onPress={form.handleSubmit(onSendResetEmail)}
+              onPress={submitForm.handleSubmit}
               disabled={isLoading}
               testID="send-reset-button"
               className="w-full"
             >
-              <Text>
-                {isLoading ? "Sending..." : "Send Reset Instructions"}
-              </Text>
+              <Text>{isLoading ? "Sending..." : "Send Reset Instructions"}</Text>
             </Button>
 
             {/* Back to Sign In Link */}

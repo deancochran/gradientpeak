@@ -10,8 +10,32 @@
  */
 
 import type { PublicActivityCategory } from "@repo/supabase";
+import { z } from "zod";
 
 import type { FTMSFeatures } from "../ftms-types";
+
+export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);
+
+export const recordingCapabilitiesSchema = z
+  .object({
+    canTrackLocation: z.boolean(),
+    canTrackPower: z.boolean(),
+    canTrackHeartRate: z.boolean(),
+    canTrackCadence: z.boolean(),
+    shouldShowMap: z.boolean(),
+    shouldShowSteps: z.boolean(),
+    shouldShowRouteOverlay: z.boolean(),
+    shouldShowTurnByTurn: z.boolean(),
+    shouldShowFollowAlong: z.boolean(),
+    shouldShowTrainerControl: z.boolean(),
+    canAutoAdvanceSteps: z.boolean(),
+    shouldAutoFollowTargets: z.boolean(),
+    primaryMetric: recordingPrimaryMetricSchema,
+    isValid: z.boolean(),
+    errors: z.array(z.string()),
+    warnings: z.array(z.string()),
+  })
+  .strict();
 
 // ============================================================================
 // Configuration Input
@@ -35,7 +59,7 @@ export interface RecordingConfigInput {
   devices: {
     ftmsTrainer?: {
       deviceId: string;
-      features: FTMSFeatures;
+      features?: FTMSFeatures;
       autoControlEnabled: boolean;
     };
     hasPowerMeter: boolean;

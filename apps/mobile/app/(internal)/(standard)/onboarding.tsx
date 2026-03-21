@@ -1,23 +1,23 @@
+import {
+  estimateConservativeFTPFromWeight,
+  estimateMaxHRFromDOB,
+  formatWeightForDisplay,
+} from "@repo/core";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { Icon } from "@repo/ui/components/icon";
+import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { Text } from "@repo/ui/components/text";
+import { WeightInputField } from "@repo/ui/components/weight-input-field";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { Activity, ArrowRight, Check, ChevronRight } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Alert, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { PaceSecondsField } from "@/components/profile/PaceSecondsField";
-import { WeightInputField } from "@/components/profile/WeightInputField";
-import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
-import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { useAuth } from "@/lib/hooks/useAuth";
-import {
-  estimateFtpFromWeight,
-  estimateMaxHrFromDob,
-  formatWeightForDisplay,
-} from "@/lib/profile/metricUnits";
 import { trpc } from "@/lib/trpc";
 
 type HealthKitPermissions = {
@@ -230,7 +230,7 @@ const SportStep = ({ data, updateData }: StepProps) => (
 );
 
 const MaxHrStep = ({ data, updateData }: StepProps) => {
-  const estimatedMaxHr = estimateMaxHrFromDob(data.dob);
+  const estimatedMaxHr = estimateMaxHRFromDOB(data.dob);
 
   return (
     <View className="gap-4">
@@ -289,7 +289,7 @@ const RestingHrStep = ({ data, updateData }: StepProps) => (
 );
 
 const FtpStep = ({ data, updateData }: StepProps) => {
-  const estimatedFtp = estimateFtpFromWeight(data.weight_kg);
+  const estimatedFtp = estimateConservativeFTPFromWeight(data.weight_kg);
 
   return (
     <View className="gap-4">

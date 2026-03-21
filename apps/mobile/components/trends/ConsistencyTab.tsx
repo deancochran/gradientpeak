@@ -1,7 +1,7 @@
-import { TrendsOverviewSkeleton } from "@/components/shared";
+import { TrendsOverviewSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
-import { ConsistencyHeatmap, type ConsistencyData } from "@/components/charts";
+import { type ConsistencyData, ConsistencyHeatmap } from "@/components/charts";
 
 interface ConsistencyTabProps {
   consistencyData: ConsistencyData | null;
@@ -34,25 +34,17 @@ export function ConsistencyTab({
     <View className="space-y-4">
       {/* Consistency Heatmap */}
       {consistencyData && (
-        <ConsistencyHeatmap
-          data={consistencyData}
-          startDate={startDate}
-          endDate={endDate}
-        />
+        <ConsistencyHeatmap data={consistencyData} startDate={startDate} endDate={endDate} />
       )}
 
       {/* Training Frequency */}
       <View className="bg-card rounded-lg border border-border p-4">
-        <Text className="text-base font-semibold text-foreground mb-3">
-          Training Frequency
-        </Text>
+        <Text className="text-base font-semibold text-foreground mb-3">Training Frequency</Text>
 
         <View className="gap-3">
           <View>
             <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-sm text-card-foreground">
-                Training Days
-              </Text>
+              <Text className="text-sm text-card-foreground">Training Days</Text>
               <Text className="text-sm font-medium text-foreground">
                 {trainingDaysPercentage.toFixed(1)}%
               </Text>
@@ -64,8 +56,7 @@ export function ConsistencyTab({
               />
             </View>
             <Text className="text-xs text-muted-foreground mt-1">
-              {consistencyData?.totalActivities ?? 0} of{" "}
-              {consistencyData?.totalDays ?? 0} days
+              {consistencyData?.totalActivities ?? 0} of {consistencyData?.totalDays ?? 0} days
             </Text>
           </View>
 
@@ -79,15 +70,11 @@ export function ConsistencyTab({
               </Text>
             </View>
             <View className="h-3 bg-muted rounded-full overflow-hidden">
-              <View
-                className="h-full bg-gray-400"
-                style={{ width: `${restDaysPercentage}%` }}
-              />
+              <View className="h-full bg-gray-400" style={{ width: `${restDaysPercentage}%` }} />
             </View>
             <Text className="text-xs text-muted-foreground mt-1">
-              {(consistencyData?.totalDays ?? 0) -
-                (consistencyData?.totalActivities ?? 0)}{" "}
-              of {consistencyData?.totalDays ?? 0} days
+              {(consistencyData?.totalDays ?? 0) - (consistencyData?.totalActivities ?? 0)} of{" "}
+              {consistencyData?.totalDays ?? 0} days
             </Text>
           </View>
         </View>
@@ -95,45 +82,37 @@ export function ConsistencyTab({
 
       {/* Streak Insights */}
       <View className="bg-card rounded-lg border border-border p-4">
-        <Text className="text-base font-semibold text-foreground mb-3">
-          Streak Insights
-        </Text>
+        <Text className="text-base font-semibold text-foreground mb-3">Streak Insights</Text>
 
         <View className="gap-3">
           {consistencyData && consistencyData.currentStreak > 0 ? (
             <View className="p-3 bg-green-50 rounded-lg">
-              <Text className="text-sm font-medium text-green-900 mb-1">
-                🔥 Active Streak!
-              </Text>
+              <Text className="text-sm font-medium text-green-900 mb-1">🔥 Active Streak!</Text>
               <Text className="text-xs text-green-700">
-                You&apos;ve trained {consistencyData.currentStreak} days in a
-                row. Keep it up!
+                You&apos;ve trained {consistencyData.currentStreak} days in a row. Keep it up!
               </Text>
             </View>
           ) : (
             <View className="p-3 bg-gray-50 rounded-lg">
-              <Text className="text-sm font-medium text-gray-900 mb-1">
-                No Active Streak
-              </Text>
+              <Text className="text-sm font-medium text-gray-900 mb-1">No Active Streak</Text>
               <Text className="text-xs text-gray-700">
                 Complete an activity today to start a new streak!
               </Text>
             </View>
           )}
 
-          {consistencyData &&
-            consistencyData.longestStreak > consistencyData.currentStreak && (
-              <View className="p-3 bg-blue-50 rounded-lg">
-                <Text className="text-sm font-medium text-blue-900 mb-1">
-                  🏆 Longest Streak: {consistencyData.longestStreak} days
-                </Text>
-                <Text className="text-xs text-blue-700">
-                  {consistencyData.currentStreak > 0
-                    ? `${consistencyData.longestStreak - consistencyData.currentStreak} more days to beat your record!`
-                    : "Try to beat your personal best!"}
-                </Text>
-              </View>
-            )}
+          {consistencyData && consistencyData.longestStreak > consistencyData.currentStreak && (
+            <View className="p-3 bg-blue-50 rounded-lg">
+              <Text className="text-sm font-medium text-blue-900 mb-1">
+                🏆 Longest Streak: {consistencyData.longestStreak} days
+              </Text>
+              <Text className="text-xs text-blue-700">
+                {consistencyData.currentStreak > 0
+                  ? `${consistencyData.longestStreak - consistencyData.currentStreak} more days to beat your record!`
+                  : "Try to beat your personal best!"}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -145,18 +124,14 @@ export function ConsistencyTab({
 
         <View className="gap-2">
           <View className="flex-row items-center justify-between">
-            <Text className="text-sm text-card-foreground">
-              Average activities per week
-            </Text>
+            <Text className="text-sm text-card-foreground">Average activities per week</Text>
             <Text className="text-lg font-semibold text-foreground">
               {consistencyData?.weeklyAvg.toFixed(1) ?? "0.0"}
             </Text>
           </View>
 
           <View className="flex-row items-center justify-between">
-            <Text className="text-sm text-card-foreground">
-              Average rest days per week
-            </Text>
+            <Text className="text-sm text-card-foreground">Average rest days per week</Text>
             <Text className="text-lg font-semibold text-foreground">
               {weeklyRestDays.toFixed(1)}
             </Text>
@@ -177,9 +152,7 @@ export function ConsistencyTab({
 
       {/* Consistency Score */}
       <View className="bg-card rounded-lg border border-border p-4">
-        <Text className="text-base font-semibold text-foreground mb-3">
-          Consistency Rating
-        </Text>
+        <Text className="text-base font-semibold text-foreground mb-3">Consistency Rating</Text>
 
         <View className="items-center">
           <View className="w-32 h-32 rounded-full items-center justify-center border-8 border-green-500 bg-green-50">

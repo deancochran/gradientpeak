@@ -2,13 +2,10 @@
 
 import { Text } from "@repo/ui/components/text";
 import { AlertTriangle, Check, X } from "lucide-react-native";
+import React from "react";
 import { View } from "react-native";
 
-export type ConstraintStatus =
-  | "satisfied"
-  | "warning"
-  | "violated"
-  | "not_applicable";
+export type ConstraintStatus = "satisfied" | "warning" | "violated" | "not_applicable";
 
 interface ConstraintIndicatorProps {
   label: string;
@@ -107,9 +104,7 @@ export function ConstraintIndicator({
       <View className="flex-row items-center justify-between">
         {/* Left: Icon and Label */}
         <View className="flex-row items-center flex-1">
-          <View className={`rounded-full p-1 ${getStatusBgColor()}`}>
-            {getStatusIcon()}
-          </View>
+          <View className={`rounded-full p-1 ${getStatusBgColor()}`}>{getStatusIcon()}</View>
           <Text className="ml-3 font-semibold text-base">{label}</Text>
         </View>
 
@@ -117,16 +112,12 @@ export function ConstraintIndicator({
         <View className="items-end">
           {currentValue !== undefined && newValue !== undefined && (
             <View className="flex-row items-center">
-              <Text className="text-sm text-gray-600">
-                {formatValue(currentValue)}
-              </Text>
+              <Text className="text-sm text-gray-600">{formatValue(currentValue)}</Text>
               <Text className="mx-1 text-gray-400">→</Text>
               <Text className={`text-sm font-semibold ${getStatusColor()}`}>
                 {formatValue(newValue)}
               </Text>
-              {unit && (
-                <Text className="ml-1 text-xs text-gray-500">{unit}</Text>
-              )}
+              {unit && <Text className="ml-1 text-xs text-gray-500">{unit}</Text>}
             </View>
           )}
           {limit !== undefined && (
@@ -138,20 +129,14 @@ export function ConstraintIndicator({
       </View>
 
       {/* Description */}
-      {description && (
-        <Text className="mt-2 text-sm text-gray-600 ml-9">{description}</Text>
-      )}
+      {description && <Text className="mt-2 text-sm text-gray-600 ml-9">{description}</Text>}
 
       {/* Status Message */}
       {status === "warning" && (
-        <Text className="mt-2 text-xs text-yellow-700 ml-9">
-          ⚠️ Close to limit
-        </Text>
+        <Text className="mt-2 text-xs text-yellow-700 ml-9">⚠️ Close to limit</Text>
       )}
       {status === "violated" && (
-        <Text className="mt-2 text-xs text-red-700 ml-9">
-          ❌ Exceeds recommended limit
-        </Text>
+        <Text className="mt-2 text-xs text-red-700 ml-9">❌ Exceeds recommended limit</Text>
       )}
     </View>
   );

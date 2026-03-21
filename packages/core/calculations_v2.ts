@@ -1,3 +1,13 @@
+/**
+ * Compatibility surface for V2 structured-workout helpers.
+ *
+ * Canonical duration and zone ownership lives in `duration/` and `zones/`.
+ * Keep this file as a thin adapter while callers migrate.
+ */
+import {
+  calculateTotalDurationFromIntervals,
+  getDurationSeconds as getCanonicalDurationSeconds,
+} from "./duration";
 import type {
   ActivityPlanStructureV2,
   IntensityTargetV2,
@@ -5,6 +15,7 @@ import type {
   IntervalV2,
 } from "./schemas/activity_plan_v2";
 import { getStepIntensityColor } from "./schemas/activity_plan_v2";
+import { getFiveIntensityZone } from "./zones";
 
 // ================================
 // TYPES
@@ -46,54 +57,6 @@ export interface ActivityStatsV2 {
 // HELPER FUNCTIONS
 // ================================
 
-/**
- * Convert V2 duration to seconds
- * Provides estimation for distance/rep-based durations
- */
-function getDurationSeconds(
-  duration: IntervalStepV2["duration"],
-  options?: {
-    paceSecondsPerKm?: number; // for distance-based
-    secondsPerRep?: number; // for repetition-based
-  },
-): number {
-  switch (duration.type) {
-    case "time":
-      return duration.seconds;
-
-    case "distance":
-      // Estimate based on pace (default: 5 min/km = 300 sec/km)
-      const paceSecondsPerKm = options?.paceSecondsPerKm ?? 300;
-      const kilometers = duration.meters / 1000;
-      return kilometers * paceSecondsPerKm;
-
-    case "repetitions":
-      // Estimate based on seconds per rep (default: 10 seconds)
-      const secondsPerRep = options?.secondsPerRep ?? 10;
-      return duration.count * secondsPerRep;
-
-    case "untilFinished":
-      // Default estimate: 5 minutes
-      return 300;
-
-    default:
-      return 300;
-  }
-}
-
-/**
- * Get intensity zone from FTP percentage
- */
-function getIntensityZone(
-  ftpPercent: number,
-): "z1" | "z2" | "z3" | "z4" | "z5" {
-  if (ftpPercent >= 106) return "z5";
-  if (ftpPercent >= 91) return "z4";
-  if (ftpPercent >= 76) return "z3";
-  if (ftpPercent >= 56) return "z2";
-  return "z1";
-}
-
 // ================================
 // PUBLIC API
 // ================================
@@ -122,7 +85,7 @@ export function extractActivityProfileV2(
       for (const step of interval.steps) {
         const primaryTarget = step.targets?.[0];
         const intensity = primaryTarget?.intensity ?? 0;
-        const duration = getDurationSeconds(step.duration, options);
+        const duration = getCanonicalDurationSeconds(step.duration, options);
 
         const point: ActivityProfilePointV2 = {
           index: globalIndex,
@@ -188,7 +151,7 @@ export function calculateActivityStatsV2(
     for (let rep = 0; rep < interval.repetitions; rep++) {
       for (const step of interval.steps) {
         // Calculate duration
-        const duration = getDurationSeconds(step.duration, options);
+        const duration = getCanonicalDurationSeconds(step.duration, options);
         stats.totalDuration += duration;
 
         // Analyze targets
@@ -197,10 +160,7 @@ export function calculateActivityStatsV2(
             const intensity = target.intensity;
 
             // Convert watts to FTP% for consistent analysis
-            const ftpPercent =
-              target.type === "watts"
-                ? (intensity / ftpWatts) * 100
-                : intensity;
+            const ftpPercent = target.type === "watts" ? (intensity / ftpWatts) * 100 : intensity;
 
             totalIntensity += ftpPercent * duration; // Weight by duration
             totalIntensityTime += duration;
@@ -209,7 +169,7 @@ export function calculateActivityStatsV2(
             if (ftpPercent > 85) stats.intervalCount++; // High intensity intervals
 
             // Track intensity zones weighted by duration
-            const zone = getIntensityZone(ftpPercent);
+            const zone = getFiveIntensityZone(ftpPercent);
             stats.intensityZones[zone] += duration;
           }
         });
@@ -218,8 +178,7 @@ export function calculateActivityStatsV2(
   }
 
   // Calculate weighted averages
-  stats.avgPower =
-    totalIntensityTime > 0 ? totalIntensity / totalIntensityTime : 0;
+  stats.avgPower = totalIntensityTime > 0 ? totalIntensity / totalIntensityTime : 0;
 
   // Estimate TSS (Training Stress Score)
   // TSS = (duration in hours) × (avg intensity as FTP decimal)² × 100
@@ -243,12 +202,7 @@ export function calculateTotalDurationSecondsV2(
     secondsPerRep?: number;
   },
 ): number {
-  return intervals.reduce((total, interval) => {
-    const intervalDuration = interval.steps.reduce((stepTotal, step) => {
-      return stepTotal + getDurationSeconds(step.duration, options);
-    }, 0);
-    return total + intervalDuration * interval.repetitions;
-  }, 0);
+  return calculateTotalDurationFromIntervals(intervals, options);
 }
 
 /**
@@ -275,7 +229,7 @@ export function getStepAtTimeV2(
   for (const interval of intervals) {
     for (let rep = 0; rep < interval.repetitions; rep++) {
       for (const step of interval.steps) {
-        const duration = getDurationSeconds(step.duration, options);
+        const duration = getCanonicalDurationSeconds(step.duration, options);
 
         if (elapsedSeconds < cumulativeTime + duration) {
           const stepElapsed = elapsedSeconds - cumulativeTime;
