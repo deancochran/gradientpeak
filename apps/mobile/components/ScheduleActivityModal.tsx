@@ -72,39 +72,36 @@
  * ```
  */
 
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { zodResolver } from "@hookform/resolvers/zod";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { plannedActivityScheduleFormSchema } from "@repo/core";
+import { AlertDescription, AlertTitle, Alert as UiAlert } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
-import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
-import { trpc } from "@/lib/trpc";
-import { zodResolver } from "@hookform/resolvers/zod";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { plannedActivityScheduleFormSchema } from "@repo/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Calendar, Clock, TrendingUp, X } from "lucide-react-native";
+import { AlertCircle, Calendar, Clock, TrendingUp, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
+  Alert as NativeAlert,
   Pressable,
   ScrollView,
   View,
 } from "react-native";
-import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
 import { z } from "zod";
+import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { trpc } from "@/lib/trpc";
+import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
 
-type PlannedActivityScheduleFormInput = z.input<
-  typeof plannedActivityScheduleFormSchema
->;
-type PlannedActivityScheduleFormOutput = z.output<
-  typeof plannedActivityScheduleFormSchema
->;
+type PlannedActivityScheduleFormInput = z.input<typeof plannedActivityScheduleFormSchema>;
+type PlannedActivityScheduleFormOutput = z.output<typeof plannedActivityScheduleFormSchema>;
 
 interface ScheduleActivityModalProps {
   visible: boolean;
@@ -146,19 +143,11 @@ function toPickerDate(value: string | null | undefined): Date {
     return new Date();
   }
 
-  return new Date(
-    parsed.getFullYear(),
-    parsed.getMonth(),
-    parsed.getDate(),
-    12,
-    0,
-    0,
-    0,
-  );
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0);
 }
 
 function alertSuccess(message: string) {
-  Alert.alert("Success", message);
+  NativeAlert.alert("Success", message);
 }
 
 export function ScheduleActivityModal({
@@ -194,11 +183,7 @@ export function ScheduleActivityModal({
     watch,
     reset,
     formState: { errors },
-  } = useForm<
-    PlannedActivityScheduleFormInput,
-    unknown,
-    PlannedActivityScheduleFormOutput
-  >({
+  } = useForm<PlannedActivityScheduleFormInput, unknown, PlannedActivityScheduleFormOutput>({
     resolver: zodResolver(plannedActivityScheduleFormSchema),
     defaultValues: {
       scheduled_date: preselectedDate || toDateOnlyString(new Date()),
@@ -217,17 +202,13 @@ export function ScheduleActivityModal({
 
   // Fetch existing activity if editing
   const { data: existingActivity, isLoading: loadingExistingActivity } =
-    trpc.events.getById.useQuery(
-      { id: eventId! },
-      { enabled: isEditMode && visible },
-    );
+    trpc.events.getById.useQuery({ id: eventId! }, { enabled: isEditMode && visible });
 
   // Fetch plan details (only if we have an ID, not a template)
-  const { data: planDetails, isLoading: loadingPlan } =
-    trpc.activityPlans.getById.useQuery(
-      { id: currentActivityPlanId },
-      { enabled: !!currentActivityPlanId && visible && !isTemplate },
-    );
+  const { data: planDetails, isLoading: loadingPlan } = trpc.activityPlans.getById.useQuery(
+    { id: currentActivityPlanId },
+    { enabled: !!currentActivityPlanId && visible && !isTemplate },
+  );
 
   // Use template if provided, otherwise use fetched plan
   const displayPlan = isTemplate ? activityPlan : planDetails;
@@ -345,14 +326,9 @@ export function ScheduleActivityModal({
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
   const isLoading = (loadingPlan && !isTemplate) || loadingExistingActivity;
-  const isValidationPending =
-    !!trainingPlanId && validationLoading && !validation;
+  const isValidationPending = !!trainingPlanId && validationLoading && !validation;
   const canSchedule =
-    !isLoading &&
-    displayPlan &&
-    !!currentActivityPlanId &&
-    !isValidationPending &&
-    !isSubmitting;
+    !isLoading && displayPlan && !!currentActivityPlanId && !isValidationPending && !isSubmitting;
 
   return (
     <Modal
@@ -369,9 +345,7 @@ export function ScheduleActivityModal({
               {isEditMode ? "Update Schedule" : "Schedule Activity"}
             </Text>
             {!isLoading && displayPlan && (
-              <Text className="text-sm text-muted-foreground mt-0.5">
-                {displayPlan.name}
-              </Text>
+              <Text className="text-sm text-muted-foreground mt-0.5">{displayPlan.name}</Text>
             )}
           </View>
           <Pressable
@@ -408,14 +382,9 @@ export function ScheduleActivityModal({
                         </Text>
                       </View>
                       <View className="flex-1">
-                        <Text className="font-semibold text-lg">
-                          {displayPlan.name}
-                        </Text>
+                        <Text className="font-semibold text-lg">{displayPlan.name}</Text>
                         {displayPlan.description && (
-                          <Text
-                            className="text-sm text-muted-foreground mt-1"
-                            numberOfLines={2}
-                          >
+                          <Text className="text-sm text-muted-foreground mt-1" numberOfLines={2}>
                             {displayPlan.description}
                           </Text>
                         )}
@@ -426,11 +395,7 @@ export function ScheduleActivityModal({
                     <View className="flex-row gap-4 mb-3">
                       {displayPlan.estimated_duration && (
                         <View className="flex-row items-center gap-1.5">
-                          <Icon
-                            as={Clock}
-                            size={16}
-                            className="text-muted-foreground"
-                          />
+                          <Icon as={Clock} size={16} className="text-muted-foreground" />
                           <Text className="text-sm font-medium">
                             {formatDuration(displayPlan.estimated_duration)}
                           </Text>
@@ -438,11 +403,7 @@ export function ScheduleActivityModal({
                       )}
                       {displayPlan.estimated_tss && (
                         <View className="flex-row items-center gap-1.5">
-                          <Icon
-                            as={TrendingUp}
-                            size={16}
-                            className="text-muted-foreground"
-                          />
+                          <Icon as={TrendingUp} size={16} className="text-muted-foreground" />
                           <Text className="text-sm font-medium">
                             {Math.round(displayPlan.estimated_tss)} TSS
                           </Text>
@@ -469,19 +430,10 @@ export function ScheduleActivityModal({
 
                 {/* Date Picker */}
                 <View>
-                  <Text className="mb-2 font-semibold text-base">
-                    Scheduled Date
-                  </Text>
-                  <Pressable
-                    onPress={() => setShowDatePicker(true)}
-                    disabled={isSubmitting}
-                  >
+                  <Text className="mb-2 font-semibold text-base">Scheduled Date</Text>
+                  <Pressable onPress={() => setShowDatePicker(true)} disabled={isSubmitting}>
                     <View className="flex-row items-center gap-3 p-4 rounded-lg bg-muted border border-border">
-                      <Icon
-                        as={Calendar}
-                        size={20}
-                        className="text-foreground"
-                      />
+                      <Icon as={Calendar} size={20} className="text-foreground" />
                       <Text className="flex-1 text-base">
                         {format(scheduledDate, "EEEE, MMMM d, yyyy")}
                       </Text>
@@ -523,9 +475,7 @@ export function ScheduleActivityModal({
 
                 {/* Notes */}
                 <View>
-                  <Text className="mb-2 font-semibold text-base">
-                    Notes (optional)
-                  </Text>
+                  <Text className="mb-2 font-semibold text-base">Notes (optional)</Text>
                   <Controller
                     control={control}
                     name="notes"
@@ -543,33 +493,26 @@ export function ScheduleActivityModal({
 
                 {/* Error Messages */}
                 {!currentActivityPlanId ? (
-                  <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                    <Text className="text-destructive font-medium">
-                      This activity cannot be scheduled yet
-                    </Text>
-                    <Text className="text-destructive/80 text-sm mt-1">
-                      Duplicate the activity plan first, then schedule it from
-                      its detail screen.
-                    </Text>
-                  </View>
+                  <UiAlert icon={AlertCircle} variant="destructive">
+                    <AlertTitle>This activity cannot be scheduled yet</AlertTitle>
+                    <AlertDescription>
+                      Duplicate the activity plan first, then schedule it from its detail screen.
+                    </AlertDescription>
+                  </UiAlert>
                 ) : null}
                 {(createMutation.error || updateMutation.error) && (
-                  <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                    <Text className="text-destructive font-medium">
-                      Failed to {isEditMode ? "update" : "schedule"} activity
-                    </Text>
-                    <Text className="text-destructive/80 text-sm mt-1">
-                      {(createMutation.error || updateMutation.error)
-                        ?.message || "Please try again"}
-                    </Text>
-                  </View>
+                  <UiAlert icon={AlertCircle} variant="destructive">
+                    <AlertTitle>Failed to {isEditMode ? "update" : "schedule"} activity</AlertTitle>
+                    <AlertDescription>
+                      {(createMutation.error || updateMutation.error)?.message ||
+                        "Please try again"}
+                    </AlertDescription>
+                  </UiAlert>
                 )}
               </>
             ) : (
               <View className="py-8 items-center">
-                <Text className="text-destructive">
-                  Failed to load activity details
-                </Text>
+                <Text className="text-destructive">Failed to load activity details</Text>
               </View>
             )}
           </View>
@@ -578,19 +521,10 @@ export function ScheduleActivityModal({
         {/* Footer Actions */}
         <View className="px-4 py-4 border-t border-border bg-background">
           <View className="flex-row gap-3">
-            <Button
-              variant="outline"
-              onPress={onClose}
-              disabled={isSubmitting}
-              className="flex-1"
-            >
+            <Button variant="outline" onPress={onClose} disabled={isSubmitting} className="flex-1">
               <Text>Cancel</Text>
             </Button>
-            <Button
-              onPress={handleSubmit(onSubmit)}
-              disabled={!canSchedule}
-              className="flex-1"
-            >
+            <Button onPress={handleSubmit(onSubmit)} disabled={!canSchedule} className="flex-1">
               {isSubmitting ? (
                 <ActivityIndicator size="small" color="#fff" className="mr-2" />
               ) : null}

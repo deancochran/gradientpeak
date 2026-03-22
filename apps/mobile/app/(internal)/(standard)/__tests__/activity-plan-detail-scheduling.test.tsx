@@ -3,9 +3,8 @@ import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tanstack/react-query", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
-    "@tanstack/react-query",
-  );
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
 
   return {
     ...actual,
@@ -13,8 +12,7 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-const loadActivityPlanDetail = async () =>
-  (await import("../activity-plan-detail")).default;
+const loadActivityPlanDetail = async () => (await import("../activity-plan-detail")).default;
 
 const {
   alertMock,
@@ -106,6 +104,10 @@ vi.mock("@repo/ui/components/switch", () => ({
 
 vi.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
+}));
+
+vi.mock("@repo/ui/components/textarea", () => ({
+  Textarea: createHost("Textarea"),
 }));
 
 vi.mock("@/lib/hooks/useAuth", () => ({
@@ -243,8 +245,7 @@ describe("activity plan detail scheduling", () => {
 
     const scheduleButton = renderer.root.findAll(
       (node) =>
-        (node.type as any) === "Button" &&
-        getTextContent(node.props.children).includes("Schedule"),
+        (node.type as any) === "Button" && getTextContent(node.props.children).includes("Schedule"),
     )[0];
 
     await act(async () => {
@@ -279,8 +280,7 @@ describe("activity plan detail scheduling", () => {
 
     const scheduleButton = renderer.root.findAll(
       (node) =>
-        (node.type as any) === "Button" &&
-        getTextContent(node.props.children).includes("Schedule"),
+        (node.type as any) === "Button" && getTextContent(node.props.children).includes("Schedule"),
     )[0];
 
     await act(async () => {
@@ -320,8 +320,7 @@ describe("activity plan detail scheduling", () => {
 
     const scheduleButton = renderer.root.findAll(
       (node) =>
-        (node.type as any) === "Button" &&
-        getTextContent(node.props.children).includes("Schedule"),
+        (node.type as any) === "Button" && getTextContent(node.props.children).includes("Schedule"),
     )[0];
 
     await act(async () => {
@@ -366,8 +365,7 @@ describe("activity plan detail scheduling", () => {
 
     const duplicateButton = renderer.root.findAll(
       (node) =>
-        (node.type as any) === "Button" &&
-        getTextContent(node.props.children) === "Duplicate",
+        (node.type as any) === "Button" && getTextContent(node.props.children) === "Duplicate",
     )[0];
 
     await act(async () => {

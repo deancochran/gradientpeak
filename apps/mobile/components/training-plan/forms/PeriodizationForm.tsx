@@ -1,20 +1,21 @@
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
+import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { IntegerStepper } from "@/components/training-plan/create/inputs/IntegerStepper";
 import {
   AlertCircle,
-  CheckCircle,
-  TrendingUp,
   Calendar as CalendarIcon,
+  CheckCircle,
   Lock,
+  TrendingUp,
 } from "lucide-react-native";
 import React from "react";
-import { View, Platform } from "react-native";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { Platform, View } from "react-native";
 
 interface PeriodizationTemplate {
   starting_ctl: number;
@@ -42,9 +43,7 @@ export function PeriodizationForm({
   // Use currentCTL as starting point (not editable)
   const startingCtl = currentCTL;
 
-  const [targetCtlText, setTargetCtlText] = React.useState(
-    data?.target_ctl?.toString() || "85",
-  );
+  const [targetCtlText, setTargetCtlText] = React.useState(data?.target_ctl?.toString() || "85");
   const [rampRateText, setRampRateText] = React.useState(
     data?.ramp_rate ? (data.ramp_rate * 100).toFixed(0) : "5",
   );
@@ -61,9 +60,7 @@ export function PeriodizationForm({
     const rampRate = (parseInt(rampRateText) || 5) / 100;
 
     const now = new Date();
-    const daysToTarget = Math.floor(
-      (targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-    );
+    const daysToTarget = Math.floor((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     const weeksToTarget = Math.floor(daysToTarget / 7);
 
     // Calculate if the progression is achievable
@@ -81,8 +78,7 @@ export function PeriodizationForm({
       weeksNeeded,
       achievable: weeksNeeded <= weeksToTarget,
       ctlIncrease: targetCtl - startCtl,
-      weeklyGain:
-        weeksToTarget > 0 ? (targetCtl - startCtl) / weeksToTarget : 0,
+      weeklyGain: weeksToTarget > 0 ? (targetCtl - startCtl) / weeksToTarget : 0,
     };
   }, [startingCtl, targetCtlText, rampRateText, targetDate]);
 
@@ -147,8 +143,8 @@ export function PeriodizationForm({
       <View className="gap-2">
         <Text className="text-2xl font-bold">Periodization Planning</Text>
         <Text className="text-muted-foreground">
-          Use periodization to progressively build your Chronic Training Load
-          (CTL) toward a specific goal or event.
+          Use periodization to progressively build your Chronic Training Load (CTL) toward a
+          specific goal or event.
         </Text>
       </View>
 
@@ -157,12 +153,9 @@ export function PeriodizationForm({
         <CardContent className="p-4">
           <View className="flex-row items-center justify-between">
             <View className="flex-1 pr-4">
-              <Text className="font-semibold mb-1">
-                Enable Periodization Planning
-              </Text>
+              <Text className="font-semibold mb-1">Enable Periodization Planning</Text>
               <Text className="text-sm text-muted-foreground">
-                Plan your training progression toward a target date and fitness
-                level
+                Plan your training progression toward a target date and fitness level
               </Text>
             </View>
             <Switch checked={isEnabled} onCheckedChange={handleToggle} />
@@ -175,30 +168,21 @@ export function PeriodizationForm({
         <>
           {/* Current CTL (Read-Only) */}
           <View className="gap-3">
-            <Label className="text-base font-semibold">
-              Your Current Fitness
-            </Label>
+            <Label className="text-base font-semibold">Your Current Fitness</Label>
             <Card className="bg-muted/50 border-muted">
               <CardContent className="p-4">
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1">
                     <View className="flex-row items-center gap-2 mb-1">
-                      <Icon
-                        as={Lock}
-                        size={16}
-                        className="text-muted-foreground"
-                      />
+                      <Icon as={Lock} size={16} className="text-muted-foreground" />
                       <Text className="text-sm text-muted-foreground font-medium">
                         Starting CTL
                       </Text>
                     </View>
-                    <Text className="text-3xl font-bold text-foreground">
-                      {startingCtl} CTL
-                    </Text>
+                    <Text className="text-3xl font-bold text-foreground">{startingCtl} CTL</Text>
                     {startingCtl === 0 ? (
                       <Text className="text-xs text-muted-foreground mt-2">
-                        Your fitness will update as you sync activities from
-                        connected services
+                        Your fitness will update as you sync activities from connected services
                       </Text>
                     ) : (
                       <Text className="text-xs text-muted-foreground mt-2">
@@ -230,9 +214,7 @@ export function PeriodizationForm({
 
           {/* Ramp Rate */}
           <View className="gap-3">
-            <Label className="text-base font-semibold">
-              Weekly Ramp Rate (%)
-            </Label>
+            <Label className="text-base font-semibold">Weekly Ramp Rate (%)</Label>
             <Text className="text-sm text-muted-foreground">
               How much your CTL increases each week (5-7% is typical)
             </Text>
@@ -258,14 +240,8 @@ export function PeriodizationForm({
               onPress={() => setShowDatePicker(true)}
               className="justify-start"
             >
-              <Icon
-                as={CalendarIcon}
-                size={18}
-                className="text-foreground mr-2"
-              />
-              <Text className="text-foreground">
-                {targetDate.toLocaleDateString()}
-              </Text>
+              <Icon as={CalendarIcon} size={18} className="text-foreground mr-2" />
+              <Text className="text-foreground">{targetDate.toLocaleDateString()}</Text>
             </Button>
             {showDatePicker && (
               <DateTimePicker
@@ -277,91 +253,65 @@ export function PeriodizationForm({
               />
             )}
             {errors.target_date && (
-              <Text className="text-destructive text-xs">
-                {errors.target_date}
-              </Text>
+              <Text className="text-destructive text-xs">{errors.target_date}</Text>
             )}
           </View>
 
           {/* Progression Preview */}
-          {startingCtl > 0 &&
-            parseInt(targetCtlText) > 0 &&
-            parseInt(rampRateText) > 0 && (
-              <Card className="bg-primary/5 border-primary/20">
-                <CardContent className="p-4 gap-3">
-                  <View className="flex-row items-center gap-2">
-                    <Icon as={TrendingUp} size={20} className="text-primary" />
-                    <Text className="font-semibold text-primary">
-                      Progression Preview
+          {startingCtl > 0 && parseInt(targetCtlText) > 0 && parseInt(rampRateText) > 0 && (
+            <Card className="bg-primary/5 border-primary/20">
+              <CardContent className="p-4 gap-3">
+                <View className="flex-row items-center gap-2">
+                  <Icon as={TrendingUp} size={20} className="text-primary" />
+                  <Text className="font-semibold text-primary">Progression Preview</Text>
+                </View>
+
+                <View className="gap-2">
+                  <View className="flex-row justify-between">
+                    <Text className="text-muted-foreground">CTL increase:</Text>
+                    <Text className="font-semibold">
+                      +{progressionPreview.ctlIncrease} ({startingCtl} → {targetCtlText})
                     </Text>
                   </View>
-
-                  <View className="gap-2">
-                    <View className="flex-row justify-between">
-                      <Text className="text-muted-foreground">
-                        CTL increase:
-                      </Text>
-                      <Text className="font-semibold">
-                        +{progressionPreview.ctlIncrease} ({startingCtl} →{" "}
-                        {targetCtlText})
-                      </Text>
-                    </View>
-                    <View className="flex-row justify-between">
-                      <Text className="text-muted-foreground">
-                        Time to target:
-                      </Text>
-                      <Text className="font-semibold">
-                        {progressionPreview.weeksToTarget} weeks (
-                        {progressionPreview.daysToTarget} days)
-                      </Text>
-                    </View>
-                    <View className="flex-row justify-between">
-                      <Text className="text-muted-foreground">
-                        Avg weekly gain:
-                      </Text>
-                      <Text className="font-semibold">
-                        +{progressionPreview.weeklyGain.toFixed(1)} CTL/week
-                      </Text>
-                    </View>
-                    <View className="flex-row justify-between">
-                      <Text className="text-muted-foreground">
-                        Weeks needed:
-                      </Text>
-                      <Text className="font-semibold">
-                        {progressionPreview.weeksNeeded} weeks
-                      </Text>
-                    </View>
+                  <View className="flex-row justify-between">
+                    <Text className="text-muted-foreground">Time to target:</Text>
+                    <Text className="font-semibold">
+                      {progressionPreview.weeksToTarget} weeks ({progressionPreview.daysToTarget}{" "}
+                      days)
+                    </Text>
                   </View>
+                  <View className="flex-row justify-between">
+                    <Text className="text-muted-foreground">Avg weekly gain:</Text>
+                    <Text className="font-semibold">
+                      +{progressionPreview.weeklyGain.toFixed(1)} CTL/week
+                    </Text>
+                  </View>
+                  <View className="flex-row justify-between">
+                    <Text className="text-muted-foreground">Weeks needed:</Text>
+                    <Text className="font-semibold">{progressionPreview.weeksNeeded} weeks</Text>
+                  </View>
+                </View>
 
-                  {/* Achievability indicator */}
-                  {progressionPreview.achievable ? (
-                    <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md mt-2">
-                      <Icon
-                        as={CheckCircle}
-                        size={16}
-                        className="text-success"
-                      />
-                      <Text className="text-success text-sm font-medium">
-                        Goal is achievable with this plan
-                      </Text>
-                    </View>
-                  ) : (
-                    <View className="flex-row items-center gap-2 bg-destructive/10 p-2 rounded-md mt-2">
-                      <Icon
-                        as={AlertCircle}
-                        size={16}
-                        className="text-destructive"
-                      />
-                      <Text className="text-destructive text-sm font-medium">
-                        Goal may not be achievable - need{" "}
-                        {progressionPreview.weeksNeeded} weeks but only have{" "}
-                        {progressionPreview.weeksToTarget}
-                      </Text>
-                    </View>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+                {/* Achievability indicator */}
+                {progressionPreview.achievable ? (
+                  <View className="flex-row items-center gap-2 bg-success/10 p-2 rounded-md mt-2">
+                    <Icon as={CheckCircle} size={16} className="text-success" />
+                    <Text className="text-success text-sm font-medium">
+                      Goal is achievable with this plan
+                    </Text>
+                  </View>
+                ) : (
+                  <View className="flex-row items-center gap-2 bg-destructive/10 p-2 rounded-md mt-2">
+                    <Icon as={AlertCircle} size={16} className="text-destructive" />
+                    <Text className="text-destructive text-sm font-medium">
+                      Goal may not be achievable - need {progressionPreview.weeksNeeded} weeks but
+                      only have {progressionPreview.weeksToTarget}
+                    </Text>
+                  </View>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Tips Card */}
           <Card className="bg-muted/50">
@@ -384,25 +334,13 @@ export function PeriodizationForm({
 
           {/* Warning for aggressive ramp rate */}
           {parseInt(rampRateText) > 10 && (
-            <Card className="bg-amber-500/10 border-amber-500">
-              <CardContent className="p-4 flex-row items-start gap-2">
-                <Icon
-                  as={AlertCircle}
-                  size={20}
-                  className="text-amber-500 mt-0.5"
-                />
-                <View className="flex-1">
-                  <Text className="text-amber-500 font-semibold mb-1">
-                    Warning: Very Aggressive Ramp Rate
-                  </Text>
-                  <Text className="text-amber-500 text-sm">
-                    A ramp rate above 10% per week is very aggressive and
-                    significantly increases injury risk. Most athletes should
-                    aim for 5-7% per week.
-                  </Text>
-                </View>
-              </CardContent>
-            </Card>
+            <Alert icon={AlertCircle} iconClassName="text-amber-500">
+              <AlertTitle className="text-amber-500">Warning: Very Aggressive Ramp Rate</AlertTitle>
+              <AlertDescription className="text-amber-500">
+                A ramp rate above 10% per week is very aggressive and significantly increases injury
+                risk. Most athletes should aim for 5-7% per week.
+              </AlertDescription>
+            </Alert>
           )}
         </>
       )}
@@ -413,14 +351,11 @@ export function PeriodizationForm({
           <CardContent className="p-4 gap-3">
             <Text className="font-semibold">What is Periodization?</Text>
             <Text className="text-sm text-muted-foreground">
-              Periodization is a systematic approach to training that
-              progressively builds your fitness (CTL) over time toward a
-              specific goal or event. It helps you:
+              Periodization is a systematic approach to training that progressively builds your
+              fitness (CTL) over time toward a specific goal or event. It helps you:
             </Text>
             <View className="gap-1 ml-2">
-              <Text className="text-sm text-muted-foreground">
-                • Peak at the right time
-              </Text>
+              <Text className="text-sm text-muted-foreground">• Peak at the right time</Text>
               <Text className="text-sm text-muted-foreground">
                 • Avoid overtraining and burnout
               </Text>
@@ -432,8 +367,8 @@ export function PeriodizationForm({
               </Text>
             </View>
             <Text className="text-sm text-muted-foreground mt-2">
-              Enable periodization if you&apos;re training for a specific event
-              or want structured fitness progression.
+              Enable periodization if you&apos;re training for a specific event or want structured
+              fitness progression.
             </Text>
           </CardContent>
         </Card>

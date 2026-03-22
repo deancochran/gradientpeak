@@ -1,6 +1,8 @@
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
+import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -10,7 +12,6 @@ import { Alert, Platform, ScrollView, TouchableOpacity, View } from "react-nativ
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PaceSecondsField } from "@/components/profile/PaceSecondsField";
 import { WeightInputField } from "@/components/profile/WeightInputField";
-import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
 import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { useAuth } from "@/lib/hooks/useAuth";
 import {
@@ -741,14 +742,10 @@ export default function OnboardingScreen() {
           <Text className="text-sm font-medium text-muted-foreground">
             Step {currentStepIndex + 1} of {activeSteps.length}
           </Text>
-          <View className="h-1 flex-1 mx-4 bg-muted rounded-full overflow-hidden">
-            <View
-              className="h-full bg-primary"
-              style={{
-                width: `${((currentStepIndex + 1) / activeSteps.length) * 100}%`,
-              }}
-            />
-          </View>
+          <Progress
+            value={((currentStepIndex + 1) / activeSteps.length) * 100}
+            className="mx-4 h-1 flex-1"
+          />
         </View>
 
         {/* Body - Scrollable */}

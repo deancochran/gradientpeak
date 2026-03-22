@@ -1,22 +1,17 @@
-import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
-import { IntegerStepper } from "@/components/training-plan/create/inputs/IntegerStepper";
-import { PercentSliderInput } from "@/components/training-plan/create/inputs/PercentSliderInput";
+import type { AthleteTrainingSettings } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Input } from "@repo/ui/components/input";
+import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { Input } from "@repo/ui/components/input";
+import React, { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
+import { PercentSliderInput } from "@/components/training-plan/create/inputs/PercentSliderInput";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { trpc } from "@/lib/trpc";
-import type { AthleteTrainingSettings } from "@repo/core";
-import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 
 type PreferencesTabKey =
   | "schedule"
@@ -68,27 +63,19 @@ function deriveProjectionPreview(
   }
 
   const progressionFactor = (draft.training_style.progression_pace - 0.5) * 0.8;
-  const recoveryFactor =
-    (draft.recovery_preferences.recovery_priority - 0.5) * 0.6;
+  const recoveryFactor = (draft.recovery_preferences.recovery_priority - 0.5) * 0.6;
   const sessionRange =
-    (draft.dose_limits.max_sessions_per_week ?? 7) -
-    (draft.dose_limits.min_sessions_per_week ?? 0);
+    (draft.dose_limits.max_sessions_per_week ?? 7) - (draft.dose_limits.min_sessions_per_week ?? 0);
   const sessionFactor = (sessionRange - 4) / 20;
   const durationFactor =
-    ((draft.dose_limits.max_single_session_duration_minutes ?? 180) - 180) /
-    420;
+    ((draft.dose_limits.max_single_session_duration_minutes ?? 180) - 180) / 420;
 
   const growthFactor = clamp(
-    1 +
-      progressionFactor -
-      recoveryFactor +
-      sessionFactor * 0.2 +
-      durationFactor * 0.2,
+    1 + progressionFactor - recoveryFactor + sessionFactor * 0.2 + durationFactor * 0.2,
     0.6,
     1.5,
   );
-  const variabilityAmplitude =
-    (draft.training_style.week_pattern_preference - 0.5) * 0.35;
+  const variabilityAmplitude = (draft.training_style.week_pattern_preference - 0.5) * 0.35;
 
   const preview = [baseCurve[0]!];
 
@@ -115,9 +102,7 @@ export default function TrainingPreferencesScreen() {
   const activePlan = activePlanQuery.data;
   const settingsQuery = useProfileSettings();
   const [activeTab, setActiveTab] = useState<PreferencesTabKey>("schedule");
-  const [draft, setDraft] = useState<AthleteTrainingSettings>(
-    settingsQuery.settings,
-  );
+  const [draft, setDraft] = useState<AthleteTrainingSettings>(settingsQuery.settings);
   const snapshot = useTrainingPlanSnapshot({
     planId: activePlan?.id,
     includeWeeklySummaries: false,
@@ -159,16 +144,13 @@ export default function TrainingPreferencesScreen() {
   const scheduleValidation = useMemo(() => {
     const minSessions = draft.dose_limits.min_sessions_per_week ?? 0;
     const maxSessions = draft.dose_limits.max_sessions_per_week ?? 0;
-    const maxSingleSessionDuration =
-      draft.dose_limits.max_single_session_duration_minutes;
+    const maxSingleSessionDuration = draft.dose_limits.max_single_session_duration_minutes;
     const maxWeeklyDuration = draft.dose_limits.max_weekly_duration_minutes;
 
     const issues: string[] = [];
 
     if (minSessions > maxSessions) {
-      issues.push(
-        "Fewest sessions per week cannot be higher than most sessions per week.",
-      );
+      issues.push("Fewest sessions per week cannot be higher than most sessions per week.");
     }
 
     if (
@@ -176,9 +158,7 @@ export default function TrainingPreferencesScreen() {
       typeof maxWeeklyDuration === "number" &&
       maxSingleSessionDuration > maxWeeklyDuration
     ) {
-      issues.push(
-        "Weekly time budget must be at least as long as your longest workout.",
-      );
+      issues.push("Weekly time budget must be at least as long as your longest workout.");
     }
 
     return {
@@ -207,10 +187,7 @@ export default function TrainingPreferencesScreen() {
   }, [draft]);
 
   const goalMetrics = useMemo(() => {
-    if (
-      !snapshot.idealCurveData?.targetCTL ||
-      !snapshot.idealCurveData?.targetDate
-    ) {
+    if (!snapshot.idealCurveData?.targetCTL || !snapshot.idealCurveData?.targetDate) {
       return null;
     }
 
@@ -238,11 +215,7 @@ export default function TrainingPreferencesScreen() {
   }, [idealFitnessCurve, previewIdealCurve]);
 
   const projectionPreviewState = useMemo(() => {
-    if (
-      activePlanQuery.isLoading ||
-      snapshot.loading.plan ||
-      snapshot.loading.idealCurve
-    ) {
+    if (activePlanQuery.isLoading || snapshot.loading.plan || snapshot.loading.idealCurve) {
       return {
         tone: "loading" as const,
         title: "Loading projection preview",
@@ -299,12 +272,8 @@ export default function TrainingPreferencesScreen() {
   const scheduleSnapshot = useMemo(() => {
     const minSessions = draft.dose_limits.min_sessions_per_week ?? 0;
     const maxSessions = draft.dose_limits.max_sessions_per_week ?? 0;
-    const weeklyBudget = formatMinutes(
-      draft.dose_limits.max_weekly_duration_minutes,
-    );
-    const longestWorkout = formatMinutes(
-      draft.dose_limits.max_single_session_duration_minutes,
-    );
+    const weeklyBudget = formatMinutes(draft.dose_limits.max_weekly_duration_minutes);
+    const longestWorkout = formatMinutes(draft.dose_limits.max_single_session_duration_minutes);
 
     return `${minSessions}-${maxSessions} sessions per week, ${weeklyBudget ?? "no weekly cap"}, longest workout ${longestWorkout ?? "not set"}.`;
   }, [draft.dose_limits]);
@@ -324,9 +293,7 @@ export default function TrainingPreferencesScreen() {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
-        <Text className="mt-3 text-sm text-muted-foreground">
-          Loading preferences...
-        </Text>
+        <Text className="mt-3 text-sm text-muted-foreground">Loading preferences...</Text>
       </View>
     );
   }
@@ -356,9 +323,7 @@ export default function TrainingPreferencesScreen() {
                 <Text className="text-sm font-semibold text-foreground">
                   {projectionPreviewState.title}
                 </Text>
-                <Text className="text-sm text-muted-foreground">
-                  {projectionPreviewState.body}
-                </Text>
+                <Text className="text-sm text-muted-foreground">{projectionPreviewState.body}</Text>
               </View>
             )}
             <Text className="text-sm font-medium text-foreground">
@@ -370,9 +335,8 @@ export default function TrainingPreferencesScreen() {
                 : projectionPreviewState.body}
             </Text>
             <Text className="text-xs text-muted-foreground">
-              Progression pace changes how fast training builds. Target surplus
-              is separate and only nudges scoring past your stated goal when the
-              model has enough support.
+              Progression pace changes how fast training builds. Target surplus is separate and only
+              nudges scoring past your stated goal when the model has enough support.
             </Text>
           </CardContent>
         </Card>
@@ -409,9 +373,8 @@ export default function TrainingPreferencesScreen() {
             {activeTab === "schedule" ? (
               <>
                 <Text className="text-xs text-muted-foreground">
-                  Set the weekly training floor, ceiling, and time budget the
-                  planner should respect. Planner-only tuning stays out of this
-                  profile view.
+                  Set the weekly training floor, ceiling, and time budget the planner should
+                  respect. Planner-only tuning stays out of this profile view.
                 </Text>
                 <Text className="text-xs text-muted-foreground">
                   Current draft: {scheduleSnapshot}
@@ -465,9 +428,7 @@ export default function TrainingPreferencesScreen() {
                 <IntegerStepper
                   id="preferences-max-duration"
                   label="Longest workout (minutes)"
-                  value={
-                    draft.dose_limits.max_single_session_duration_minutes ?? 180
-                  }
+                  value={draft.dose_limits.max_single_session_duration_minutes ?? 180}
                   min={20}
                   max={600}
                   helperText="Use the longest workout you can realistically absorb in one day."
@@ -506,8 +467,8 @@ export default function TrainingPreferencesScreen() {
             {activeTab === "training-style" ? (
               <>
                 <Text className="text-xs text-muted-foreground">
-                  Training style is about progression and week feel, not bounded
-                  upside beyond the goal target.
+                  Training style is about progression and week feel, not bounded upside beyond the
+                  goal target.
                 </Text>
                 <PercentSliderInput
                   id="preferences-progression-pace"
@@ -550,10 +511,7 @@ export default function TrainingPreferencesScreen() {
                 <PercentSliderInput
                   id="preferences-key-session-density"
                   label="Key session density"
-                  value={
-                    (draft.training_style.key_session_density_preference ??
-                      0.5) * 100
-                  }
+                  value={(draft.training_style.key_session_density_preference ?? 0.5) * 100}
                   min={0}
                   max={100}
                   step={1}
@@ -564,8 +522,7 @@ export default function TrainingPreferencesScreen() {
                       ...current,
                       training_style: {
                         ...current.training_style,
-                        key_session_density_preference:
-                          toFractionFromPercent(value),
+                        key_session_density_preference: toFractionFromPercent(value),
                       },
                     }))
                   }
@@ -613,10 +570,7 @@ export default function TrainingPreferencesScreen() {
                 <PercentSliderInput
                   id="preferences-double-day-tolerance"
                   label="Double day tolerance"
-                  value={
-                    (draft.recovery_preferences.double_day_tolerance ?? 0.25) *
-                    100
-                  }
+                  value={(draft.recovery_preferences.double_day_tolerance ?? 0.25) * 100}
                   min={0}
                   max={100}
                   step={1}
@@ -635,10 +589,7 @@ export default function TrainingPreferencesScreen() {
                 <PercentSliderInput
                   id="preferences-long-session-fatigue"
                   label="Long session fatigue tolerance"
-                  value={
-                    (draft.recovery_preferences
-                      .long_session_fatigue_tolerance ?? 0.5) * 100
-                  }
+                  value={(draft.recovery_preferences.long_session_fatigue_tolerance ?? 0.5) * 100}
                   min={0}
                   max={100}
                   step={1}
@@ -649,8 +600,7 @@ export default function TrainingPreferencesScreen() {
                       ...current,
                       recovery_preferences: {
                         ...current.recovery_preferences,
-                        long_session_fatigue_tolerance:
-                          toFractionFromPercent(value),
+                        long_session_fatigue_tolerance: toFractionFromPercent(value),
                       },
                     }))
                   }
@@ -661,18 +611,14 @@ export default function TrainingPreferencesScreen() {
             {activeTab === "goal-strategy" ? (
               <>
                 <Text className="text-xs text-muted-foreground">
-                  Goal strategy changes how closely the planner hugs the stated
-                  target versus aiming for bounded upside when confidence
-                  supports it. This stays separate from progression pace and
-                  schedule limits.
+                  Goal strategy changes how closely the planner hugs the stated target versus aiming
+                  for bounded upside when confidence supports it. This stays separate from
+                  progression pace and schedule limits.
                 </Text>
                 <PercentSliderInput
                   id="preferences-target-surplus"
                   label="Target surplus preference"
-                  value={
-                    draft.goal_strategy_preferences.target_surplus_preference *
-                    100
-                  }
+                  value={draft.goal_strategy_preferences.target_surplus_preference * 100}
                   min={0}
                   max={100}
                   step={1}
@@ -692,8 +638,7 @@ export default function TrainingPreferencesScreen() {
                   id="preferences-priority-tradeoff"
                   label="Priority tradeoff"
                   value={
-                    (draft.goal_strategy_preferences
-                      .priority_tradeoff_preference ?? 0.5) * 100
+                    (draft.goal_strategy_preferences.priority_tradeoff_preference ?? 0.5) * 100
                   }
                   min={0}
                   max={100}
@@ -705,8 +650,7 @@ export default function TrainingPreferencesScreen() {
                       ...current,
                       goal_strategy_preferences: {
                         ...current.goal_strategy_preferences,
-                        priority_tradeoff_preference:
-                          toFractionFromPercent(value),
+                        priority_tradeoff_preference: toFractionFromPercent(value),
                       },
                     }))
                   }
@@ -717,10 +661,9 @@ export default function TrainingPreferencesScreen() {
             {activeTab === "baseline-fitness" ? (
               <>
                 <Text className="text-xs text-muted-foreground">
-                  Override your baseline fitness to unlock higher volume
-                  training plans without historical data. This tells the system
-                  your current CTL (fitness) and ATL (fatigue) so it doesn't cap
-                  your plan due to low historical load.
+                  Override your baseline fitness to unlock higher volume training plans without
+                  historical data. This tells the system your current CTL (fitness) and ATL
+                  (fatigue) so it doesn't cap your plan due to low historical load.
                 </Text>
                 <View className="flex-row items-center justify-between py-2">
                   <View className="flex-1">
@@ -738,18 +681,13 @@ export default function TrainingPreferencesScreen() {
                         ...current,
                         baseline_fitness: {
                           is_enabled: checked,
-                          override_ctl:
-                            current.baseline_fitness?.override_ctl ?? 0,
-                          override_atl:
-                            current.baseline_fitness?.override_atl ?? 0,
-                          override_date:
-                            current.baseline_fitness?.override_date,
+                          override_ctl: current.baseline_fitness?.override_ctl ?? 0,
+                          override_atl: current.baseline_fitness?.override_atl ?? 0,
+                          override_date: current.baseline_fitness?.override_date,
                           max_weekly_tss_ramp_pct:
-                            current.baseline_fitness?.max_weekly_tss_ramp_pct ??
-                            10,
+                            current.baseline_fitness?.max_weekly_tss_ramp_pct ?? 10,
                           max_ctl_ramp_per_week:
-                            current.baseline_fitness?.max_ctl_ramp_per_week ??
-                            5,
+                            current.baseline_fitness?.max_ctl_ramp_per_week ?? 5,
                         },
                       }))
                     }
@@ -768,19 +706,14 @@ export default function TrainingPreferencesScreen() {
                         setDraft((current) => ({
                           ...current,
                           baseline_fitness: {
-                            is_enabled:
-                              current.baseline_fitness?.is_enabled ?? false,
+                            is_enabled: current.baseline_fitness?.is_enabled ?? false,
                             override_ctl: value,
-                            override_atl:
-                              current.baseline_fitness?.override_atl ?? 0,
-                            override_date:
-                              current.baseline_fitness?.override_date,
+                            override_atl: current.baseline_fitness?.override_atl ?? 0,
+                            override_date: current.baseline_fitness?.override_date,
                             max_weekly_tss_ramp_pct:
-                              current.baseline_fitness
-                                ?.max_weekly_tss_ramp_pct ?? 10,
+                              current.baseline_fitness?.max_weekly_tss_ramp_pct ?? 10,
                             max_ctl_ramp_per_week:
-                              current.baseline_fitness?.max_ctl_ramp_per_week ??
-                              5,
+                              current.baseline_fitness?.max_ctl_ramp_per_week ?? 5,
                           },
                         }))
                       }
@@ -796,19 +729,14 @@ export default function TrainingPreferencesScreen() {
                         setDraft((current) => ({
                           ...current,
                           baseline_fitness: {
-                            is_enabled:
-                              current.baseline_fitness?.is_enabled ?? false,
-                            override_ctl:
-                              current.baseline_fitness?.override_ctl ?? 0,
+                            is_enabled: current.baseline_fitness?.is_enabled ?? false,
+                            override_ctl: current.baseline_fitness?.override_ctl ?? 0,
                             override_atl: value,
-                            override_date:
-                              current.baseline_fitness?.override_date,
+                            override_date: current.baseline_fitness?.override_date,
                             max_weekly_tss_ramp_pct:
-                              current.baseline_fitness
-                                ?.max_weekly_tss_ramp_pct ?? 10,
+                              current.baseline_fitness?.max_weekly_tss_ramp_pct ?? 10,
                             max_ctl_ramp_per_week:
-                              current.baseline_fitness?.max_ctl_ramp_per_week ??
-                              5,
+                              current.baseline_fitness?.max_ctl_ramp_per_week ?? 5,
                           },
                         }))
                       }
@@ -829,19 +757,14 @@ export default function TrainingPreferencesScreen() {
                           setDraft((current) => ({
                             ...current,
                             baseline_fitness: {
-                              is_enabled:
-                                current.baseline_fitness?.is_enabled ?? false,
-                              override_ctl:
-                                current.baseline_fitness?.override_ctl ?? 0,
-                              override_atl:
-                                current.baseline_fitness?.override_atl ?? 0,
+                              is_enabled: current.baseline_fitness?.is_enabled ?? false,
+                              override_ctl: current.baseline_fitness?.override_ctl ?? 0,
+                              override_atl: current.baseline_fitness?.override_atl ?? 0,
                               override_date: value,
                               max_weekly_tss_ramp_pct:
-                                current.baseline_fitness
-                                  ?.max_weekly_tss_ramp_pct ?? 10,
+                                current.baseline_fitness?.max_weekly_tss_ramp_pct ?? 10,
                               max_ctl_ramp_per_week:
-                                current.baseline_fitness
-                                  ?.max_ctl_ramp_per_week ?? 5,
+                                current.baseline_fitness?.max_ctl_ramp_per_week ?? 5,
                             },
                           }))
                         }
@@ -854,17 +777,14 @@ export default function TrainingPreferencesScreen() {
                         Advanced: Ramp Rate Settings
                       </Text>
                       <Text className="mt-1 text-xs text-muted-foreground">
-                        Override the default weekly ramp caps. Higher values
-                        allow faster training load progression but increase
-                        injury risk.
+                        Override the default weekly ramp caps. Higher values allow faster training
+                        load progression but increase injury risk.
                       </Text>
                     </View>
                     <IntegerStepper
                       id="preferences-ramp-tss-pct"
                       label="Max Weekly TSS Ramp %"
-                      value={
-                        draft.baseline_fitness?.max_weekly_tss_ramp_pct ?? 10
-                      }
+                      value={draft.baseline_fitness?.max_weekly_tss_ramp_pct ?? 10}
                       min={1}
                       max={40}
                       helperText="Maximum weekly TSS increase (default: 10%)"
@@ -872,18 +792,13 @@ export default function TrainingPreferencesScreen() {
                         setDraft((current) => ({
                           ...current,
                           baseline_fitness: {
-                            is_enabled:
-                              current.baseline_fitness?.is_enabled ?? false,
-                            override_ctl:
-                              current.baseline_fitness?.override_ctl ?? 0,
-                            override_atl:
-                              current.baseline_fitness?.override_atl ?? 0,
-                            override_date:
-                              current.baseline_fitness?.override_date,
+                            is_enabled: current.baseline_fitness?.is_enabled ?? false,
+                            override_ctl: current.baseline_fitness?.override_ctl ?? 0,
+                            override_atl: current.baseline_fitness?.override_atl ?? 0,
+                            override_date: current.baseline_fitness?.override_date,
                             max_weekly_tss_ramp_pct: value,
                             max_ctl_ramp_per_week:
-                              current.baseline_fitness?.max_ctl_ramp_per_week ??
-                              5,
+                              current.baseline_fitness?.max_ctl_ramp_per_week ?? 5,
                           },
                         }))
                       }
@@ -899,42 +814,31 @@ export default function TrainingPreferencesScreen() {
                         setDraft((current) => ({
                           ...current,
                           baseline_fitness: {
-                            is_enabled:
-                              current.baseline_fitness?.is_enabled ?? false,
-                            override_ctl:
-                              current.baseline_fitness?.override_ctl ?? 0,
-                            override_atl:
-                              current.baseline_fitness?.override_atl ?? 0,
-                            override_date:
-                              current.baseline_fitness?.override_date,
+                            is_enabled: current.baseline_fitness?.is_enabled ?? false,
+                            override_ctl: current.baseline_fitness?.override_ctl ?? 0,
+                            override_atl: current.baseline_fitness?.override_atl ?? 0,
+                            override_date: current.baseline_fitness?.override_date,
                             max_weekly_tss_ramp_pct:
-                              current.baseline_fitness
-                                ?.max_weekly_tss_ramp_pct ?? 10,
+                              current.baseline_fitness?.max_weekly_tss_ramp_pct ?? 10,
                             max_ctl_ramp_per_week: value,
                           },
                         }))
                       }
                     />
                     <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
-                      <Text className="text-sm font-medium text-info">
-                        Why Adjust Ramp Rates?
-                      </Text>
+                      <Text className="text-sm font-medium text-info">Why Adjust Ramp Rates?</Text>
                       <Text className="mt-1 text-xs text-muted-foreground">
-                        If your plan's readiness score feels too low, it may be
-                        because the goal requires more training load than the
-                        default ramp caps allow. Try increasing the Max Weekly
-                        TSS Ramp % or Max CTL Ramp Per Week above to see if that
-                        unlocks a higher readiness. Higher values allow faster
-                        progression but increase injury risk.
+                        If your plan's readiness score feels too low, it may be because the goal
+                        requires more training load than the default ramp caps allow. Try increasing
+                        the Max Weekly TSS Ramp % or Max CTL Ramp Per Week above to see if that
+                        unlocks a higher readiness. Higher values allow faster progression but
+                        increase injury risk.
                       </Text>
                     </View>
                     <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
-                      <Text className="text-sm font-medium text-info">
-                        Example CTL Values
-                      </Text>
+                      <Text className="text-sm font-medium text-info">Example CTL Values</Text>
                       <Text className="mt-1 text-xs text-muted-foreground">
-                        Recreatonal: 30-50 | Intermediate: 50-80 | Advanced:
-                        80-120 | Elite: 120+
+                        Recreatonal: 30-50 | Intermediate: 50-80 | Advanced: 80-120 | Elite: 120+
                       </Text>
                     </View>
                   </>

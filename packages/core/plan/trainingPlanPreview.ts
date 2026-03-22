@@ -1,18 +1,17 @@
+import {
+  parseDistanceKmToMeters,
+  parseHmsToSeconds,
+  parseMmSsToSeconds,
+} from "../forms/input-parsers";
 import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
 import { canonicalizeMinimalTrainingPlanCreate } from "./canonicalization";
 
-const HMS_PATTERN = /^([0-9]+):([0-5][0-9]):([0-5][0-9])$/;
-const MMS_PATTERN = /^([0-9]+):([0-5][0-9])$/;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 type PreviewActivityCategory = "run" | "bike" | "swim" | "other";
 
 export type PreviewGoalTargetInput = {
-  targetType:
-    | "race_performance"
-    | "pace_threshold"
-    | "power_threshold"
-    | "hr_threshold";
+  targetType: "race_performance" | "pace_threshold" | "power_threshold" | "hr_threshold";
   activityCategory?: PreviewActivityCategory;
   distanceKm?: string;
   completionTimeHms?: string;
@@ -174,12 +173,8 @@ export function buildReadinessDeltaDiagnostics(input: {
   previous: PreviewReadinessSnapshot;
   current: PreviewReadinessSnapshot;
 }): ReadinessDeltaDiagnostics {
-  const readinessDelta = round2(
-    input.current.readiness_score - input.previous.readiness_score,
-  );
-  const loadDelta = round2(
-    input.current.predicted_load_tss - input.previous.predicted_load_tss,
-  );
+  const readinessDelta = round2(input.current.readiness_score - input.previous.readiness_score);
+  const loadDelta = round2(input.current.predicted_load_tss - input.previous.predicted_load_tss);
   const fatigueDelta = round2(
     input.current.predicted_fatigue_atl - input.previous.predicted_fatigue_atl,
   );
@@ -191,9 +186,7 @@ export function buildReadinessDeltaDiagnostics(input: {
     toFeasibilityPressure(input.current.feasibility_state) +
     input.current.tss_ramp_clamp_weeks +
     input.current.ctl_ramp_clamp_weeks;
-  const feasibilityDelta = round2(
-    feasibilityPressureCurrent - feasibilityPressurePrevious,
-  );
+  const feasibilityDelta = round2(feasibilityPressureCurrent - feasibilityPressurePrevious);
 
   const loadImpact = buildImpactDiagnostics({
     key: "load",
@@ -217,9 +210,7 @@ export function buildReadinessDeltaDiagnostics(input: {
     negativeEffect: "supports_readiness",
     reasonCodes: [
       "impact_fatigue_atl_delta",
-      fatigueDelta > 0
-        ? "impact_fatigue_increased"
-        : "impact_fatigue_decreased",
+      fatigueDelta > 0 ? "impact_fatigue_increased" : "impact_fatigue_decreased",
     ],
   });
 
@@ -243,14 +234,8 @@ export function buildReadinessDeltaDiagnostics(input: {
     fatigue: Math.abs(fatigueImpact.delta),
     feasibility: Math.abs(feasibilityImpact.delta),
   };
-  const sortedDrivers = Object.entries(impactMagnitudes).sort(
-    (left, right) => right[1] - left[1],
-  );
-  const topDriver = sortedDrivers[0]?.[0] as
-    | "load"
-    | "fatigue"
-    | "feasibility"
-    | undefined;
+  const sortedDrivers = Object.entries(impactMagnitudes).sort((left, right) => right[1] - left[1]);
+  const topDriver = sortedDrivers[0]?.[0] as "load" | "fatigue" | "feasibility" | undefined;
   const secondMagnitude = sortedDrivers[1]?.[1] ?? 0;
   const topMagnitude = sortedDrivers[0]?.[1] ?? 0;
   const dominantDriver =
@@ -310,8 +295,7 @@ export function buildPreviewReadinessSnapshot(input: {
     return null;
   }
 
-  const readinessScore =
-    latestPoint.readiness_score ?? input.projectionChart.readiness_score;
+  const readinessScore = latestPoint.readiness_score ?? input.projectionChart.readiness_score;
   if (typeof readinessScore !== "number" || !Number.isFinite(readinessScore)) {
     return null;
   }
@@ -321,10 +305,8 @@ export function buildPreviewReadinessSnapshot(input: {
     predicted_load_tss: round2(latestPoint.predicted_load_tss),
     predicted_fatigue_atl: round2(latestPoint.predicted_fatigue_atl),
     feasibility_state: input.projectionFeasibilityState,
-    tss_ramp_clamp_weeks:
-      input.projectionChart.constraint_summary?.tss_ramp_clamp_weeks ?? 0,
-    ctl_ramp_clamp_weeks:
-      input.projectionChart.constraint_summary?.ctl_ramp_clamp_weeks ?? 0,
+    tss_ramp_clamp_weeks: input.projectionChart.constraint_summary?.tss_ramp_clamp_weeks ?? 0,
+    ctl_ramp_clamp_weeks: input.projectionChart.constraint_summary?.ctl_ramp_clamp_weeks ?? 0,
   };
 }
 
@@ -344,9 +326,7 @@ function toDirection(value: number): ReadinessDirection {
   return "flat";
 }
 
-function toFeasibilityPressure(
-  state: PreviewReadinessSnapshot["feasibility_state"],
-): number {
+function toFeasibilityPressure(state: PreviewReadinessSnapshot["feasibility_state"]): number {
   switch (state) {
     case "feasible":
       return 0;
@@ -448,44 +428,4 @@ function clampInteger(value: number, min: number, max: number): number {
   }
 
   return Math.max(min, Math.min(max, Math.round(value)));
-}
-
-function parseHmsToSeconds(value: string): number | undefined {
-  const trimmed = value.trim();
-  const match = HMS_PATTERN.exec(trimmed);
-  if (!match) {
-    return undefined;
-  }
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3]);
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-function parseMmSsToSeconds(value: string): number | undefined {
-  const trimmed = value.trim();
-  const match = MMS_PATTERN.exec(trimmed);
-  if (!match) {
-    return undefined;
-  }
-
-  const minutes = Number(match[1]);
-  const seconds = Number(match[2]);
-  return minutes * 60 + seconds;
-}
-
-function parseDistanceKmToMeters(
-  value: string | undefined,
-): number | undefined {
-  if (!value?.trim()) {
-    return undefined;
-  }
-
-  const distanceKm = Number(value);
-  if (!Number.isFinite(distanceKm) || distanceKm <= 0) {
-    return undefined;
-  }
-
-  return Math.round(distanceKm * 1000);
 }

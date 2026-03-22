@@ -67,21 +67,14 @@ describe("DateField", () => {
       );
     });
 
-    const trigger = renderer.root.find(
-      (node: any) => node.type === "Pressable",
-    );
+    const trigger = renderer.root.find((node: any) => node.type === "Pressable");
     act(() => {
       trigger.props.onPress();
     });
 
-    const picker = renderer.root.find(
-      (node: any) => node.type === "DateTimePicker",
-    );
+    const picker = renderer.root.find((node: any) => node.type === "DateTimePicker");
     act(() => {
-      picker.props.onChange(
-        { type: "set" },
-        new Date("2026-04-15T00:00:00.000Z"),
-      );
+      picker.props.onChange({ type: "set" }, new Date(2026, 3, 15, 12, 0, 0));
     });
 
     const doneButton = renderer.root

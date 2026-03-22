@@ -16,12 +16,11 @@ vi.mock("@repo/ui/components/text", () => ({
   Text: (props: any) => React.createElement("Text", props, props.children),
 }));
 
-vi.mock("@/components/training-plan/create/inputs/BoundedNumberInput", () => ({
-  BoundedNumberInput: (props: any) =>
-    React.createElement("BoundedNumberInput", props),
+vi.mock("@repo/ui/components/bounded-number-input", () => ({
+  BoundedNumberInput: (props: any) => React.createElement("BoundedNumberInput", props),
 }));
 
-vi.mock("@/components/training-plan/create/inputs/PaceInput", () => ({
+vi.mock("@repo/ui/components/pace-input", () => ({
   PaceInput: (props: any) => React.createElement("PaceInput", props),
 }));
 

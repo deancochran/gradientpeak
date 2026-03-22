@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { toast } from "sonner";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@repo/ui/components/tabs";
+  getNotificationViewModel,
+  getUnreadNotificationIds,
+  normalizeNotificationListItem,
+} from "@repo/core";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
@@ -16,42 +14,26 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { ScrollArea } from "@repo/ui/components/scroll-area";
-import { trpc } from "@/lib/trpc/client";
-import { Bell, Mail, UserPlus } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { cn } from "@repo/ui/lib/cn";
-import { Button } from "@repo/ui/components/button";
-
-const getField = (value: unknown, key: string): unknown => {
-  if (typeof value !== "object" || value === null) {
-    return undefined;
-  }
-  return (value as Record<string, unknown>)[key];
-};
-
-const getStringField = (value: unknown, key: string): string | undefined => {
-  const field = getField(value, key);
-  return typeof field === "string" ? field : undefined;
-};
-
-const getNullableStringField = (
-  value: unknown,
-  key: string,
-): string | null | undefined => {
-  const field = getField(value, key);
-  return typeof field === "string" || field === null ? field : undefined;
-};
-
-const getBooleanField = (value: unknown, key: string): boolean | undefined => {
-  const field = getField(value, key);
-  return typeof field === "boolean" ? field : undefined;
-};
+import { Bell, Mail, UserPlus } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc/client";
 
 export default function NotificationsPage() {
-  const { data: profile } = trpc.profiles.get.useQuery();
-  const { data: notifications = [], isLoading } =
-    trpc.notifications.getRecent.useQuery({ limit: 50 });
+  const { data: notifications = [], isLoading } = trpc.notifications.getRecent.useQuery({
+    limit: 50,
+  });
+  const normalizedNotifications = notifications
+    .map((notification) => normalizeNotificationListItem(notification))
+    .filter(
+      (
+        notification,
+      ): notification is NonNullable<ReturnType<typeof normalizeNotificationListItem>> =>
+        notification !== null,
+    );
   const utils = trpc.useUtils();
-  type Notification = (typeof notifications)[number];
 
   const markReadMutation = trpc.notifications.markRead.useMutation({
     onSuccess: () => {
@@ -62,21 +44,12 @@ export default function NotificationsPage() {
 
   const NotificationItem = ({
     notification,
-    profileData,
   }: {
-    notification: Notification;
-    profileData?: unknown;
+    notification: (typeof normalizedNotifications)[number];
   }) => {
     const [handled, setHandled] = useState(false);
     const itemUtils = trpc.useUtils();
-
-    const readAt = getNullableStringField(notification, "read_at");
-    const isUnread = !readAt;
-    const notificationType = getStringField(notification, "type");
-    const actorId = getStringField(notification, "actor_id");
-    const createdAt = getStringField(notification, "created_at") ?? "";
-    const isPrivate = getBooleanField(profileData, "is_public") === false;
-    const isFollowRequest = notificationType === "new_follower" && isPrivate;
+    const item = getNotificationViewModel(notification);
 
     const acceptMutation = trpc.social.acceptFollowRequest.useMutation({
       onSuccess: () => {
@@ -100,20 +73,18 @@ export default function NotificationsPage() {
     let title = "Notification";
     let description = "Tap to view details.";
 
-    if (notificationType === "new_message") {
+    if (item.type === "new_message") {
       Icon = Mail;
-      title = "New Message";
-      description = "You have a new message in your inbox.";
-    } else if (notificationType === "coaching_invitation") {
+      title = item.title;
+      description = item.description;
+    } else if (item.type === "coaching_invitation") {
       Icon = UserPlus;
-      title = "Coaching Invite";
-      description = "You have received a new coaching invitation.";
-    } else if (notificationType === "new_follower") {
+      title = item.title;
+      description = item.description;
+    } else if (item.type === "new_follower" || item.type === "follow_request") {
       Icon = UserPlus;
-      title = isFollowRequest ? "Follow Request" : "New Follower";
-      description = isFollowRequest
-        ? "Someone requested to follow you."
-        : "Someone new started following you.";
+      title = item.title;
+      description = item.description;
     }
 
     return (
@@ -122,15 +93,15 @@ export default function NotificationsPage() {
           <Icon className="h-5 w-5 text-muted-foreground" />
         </div>
         <div className="flex-1">
-          <p className={cn("font-medium", isUnread && "font-bold")}>{title}</p>
+          <p className={cn("font-medium", item.isUnread && "font-bold")}>{title}</p>
           <p className="text-sm text-muted-foreground">{description}</p>
-          {isFollowRequest && !handled && (
+          {item.requiresFollowRequestAction && !handled && (
             <div className="flex gap-2 mt-2">
               <Button
                 size="sm"
                 onClick={() => {
-                  if (actorId) {
-                    acceptMutation.mutate({ follower_id: actorId });
+                  if (item.actorId) {
+                    acceptMutation.mutate({ follower_id: item.actorId });
                   }
                 }}
                 disabled={acceptMutation.isPending || rejectMutation.isPending}
@@ -141,8 +112,8 @@ export default function NotificationsPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  if (actorId) {
-                    rejectMutation.mutate({ follower_id: actorId });
+                  if (item.actorId) {
+                    rejectMutation.mutate({ follower_id: item.actorId });
                   }
                 }}
                 disabled={acceptMutation.isPending || rejectMutation.isPending}
@@ -152,26 +123,24 @@ export default function NotificationsPage() {
             </div>
           )}
           <p className="text-xs text-muted-foreground mt-1">
-            {new Date(createdAt).toLocaleString()}
+            {item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}
           </p>
         </div>
-        {isUnread && <div className="h-2 w-2 rounded-full bg-primary mt-1" />}
+        {item.isUnread && <div className="h-2 w-2 rounded-full bg-primary mt-1" />}
       </div>
     );
   };
 
   const handleReadAll = () => {
-    const unreadIds = notifications
-      .filter((n) => !getNullableStringField(n, "read_at"))
-      .map((n) => n.id);
+    const unreadIds = getUnreadNotificationIds(normalizedNotifications);
 
     if (unreadIds.length > 0) {
       markReadMutation.mutate({ notification_ids: unreadIds });
     }
   };
 
-  const unreadNotifications = notifications.filter(
-    (n) => !getNullableStringField(n, "read_at"),
+  const unreadNotifications = normalizedNotifications.filter(
+    (notification) => getNotificationViewModel(notification).isUnread,
   );
 
   return (
@@ -179,14 +148,9 @@ export default function NotificationsPage() {
       <div className="flex items-center justify-between space-y-2">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Notifications</h2>
-          <p className="text-muted-foreground">
-            Manage your notifications and alerts.
-          </p>
+          <p className="text-muted-foreground">Manage your notifications and alerts.</p>
         </div>
-        <Button
-          onClick={handleReadAll}
-          disabled={unreadNotifications.length === 0}
-        >
+        <Button onClick={handleReadAll} disabled={unreadNotifications.length === 0}>
           Mark all as read
         </Button>
       </div>
@@ -207,35 +171,21 @@ export default function NotificationsPage() {
             <ScrollArea className="h-[calc(100vh-22rem)]">
               <TabsContent value="all">
                 {isLoading ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    Loading...
-                  </div>
-                ) : notifications.length > 0 ? (
-                  notifications.map((n) => (
-                    <NotificationItem
-                      key={n.id}
-                      notification={n}
-                      profileData={profile}
-                    />
+                  <div className="p-8 text-center text-muted-foreground">Loading...</div>
+                ) : normalizedNotifications.length > 0 ? (
+                  normalizedNotifications.map((notification) => (
+                    <NotificationItem key={notification.id} notification={notification} />
                   ))
                 ) : (
-                  <div className="p-8 text-center text-muted-foreground">
-                    No notifications yet.
-                  </div>
+                  <div className="p-8 text-center text-muted-foreground">No notifications yet.</div>
                 )}
               </TabsContent>
               <TabsContent value="unread">
                 {isLoading ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    Loading...
-                  </div>
+                  <div className="p-8 text-center text-muted-foreground">Loading...</div>
                 ) : unreadNotifications.length > 0 ? (
-                  unreadNotifications.map((n) => (
-                    <NotificationItem
-                      key={n.id}
-                      notification={n}
-                      profileData={profile}
-                    />
+                  unreadNotifications.map((notification) => (
+                    <NotificationItem key={notification.id} notification={notification} />
                   ))
                 ) : (
                   <div className="p-8 text-center text-muted-foreground">

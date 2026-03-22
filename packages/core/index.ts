@@ -5,7 +5,8 @@
  * It provides business logic, calculations, schemas, and utilities.
  *
  * Architecture:
- * - Database types are consumed directly from @repo/supabase
+ * - Prefer package-owned domain schemas and helper types at the public boundary
+ * - Keep database-generated types behind adapters when possible
  * - Business logic, calculations, and utilities are defined here
  * - All exports are organized for easy consumption by consuming packages
  */
@@ -23,6 +24,11 @@ export * from "./ftms-types";
 // that works with DurationV2 objects. Both are exported - TypeScript will
 // handle overload resolution based on the argument type.
 
+export type {
+  AggregatedStream,
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
+} from "./calculations";
 // Export all calculations functions and types
 export {
   addDays,
@@ -100,29 +106,11 @@ export {
   projectCTL,
   startOfDay,
 } from "./calculations";
-export type {
-  AggregatedStream,
-  PublicActivityMetric,
-  PublicActivityMetricDataType,
-} from "./calculations";
-
-// V2 Calculations (for ActivityPlanStructureV2)
-export {
-  extractActivityProfileV2,
-  calculateActivityStatsV2,
-  calculateTotalDurationSecondsV2,
-  getStepAtTimeV2,
-} from "./calculations_v2";
-export type {
-  ActivityProfilePointV2,
-  ActivityStatsV2,
-} from "./calculations_v2";
-
 // Onboarding & Performance Estimation Functions
 export {
+  calculateAge as calculateAgeFromDOB,
   getBaselineProfile,
   mergeWithBaseline,
-  calculateAge as calculateAgeFromDOB,
 } from "./calculations/baseline-profiles";
 export {
   calculateHRReserve,
@@ -153,6 +141,17 @@ export {
   pacePerHundredMetersToSpeed,
   speedToPacePerHundredMeters,
 } from "./calculations/swim-pace-curve";
+export type {
+  ActivityProfilePointV2,
+  ActivityStatsV2,
+} from "./calculations_v2";
+// V2 Calculations (for ActivityPlanStructureV2)
+export {
+  calculateActivityStatsV2,
+  calculateTotalDurationSecondsV2,
+  extractActivityProfileV2,
+  getStepAtTimeV2,
+} from "./calculations_v2";
 
 // ============================================================================
 // Constants Module
@@ -193,46 +192,43 @@ export {
 // These barrel files (index.ts in each directory) handle their own exports
 // and will automatically pick up new files added to their directories
 
+export * from "./bluetooth"; // Canonical BLE parsers
+export * from "./contracts"; // Shared API contracts
 export * from "./estimation"; // TSS estimation system
+export * from "./forms"; // Shared form parsing and normalization helpers
+export * from "./goals"; // Goal drafting and formatting helpers
+export * from "./notifications"; // Shared notification normalization helpers
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
-export * from "./contracts"; // Shared API contracts
-export * from "./bluetooth"; // Canonical BLE parsers
 export * from "./utils"; // Utility functions
 
 // ============================================================================
 // FIT File Parsing and Encoding Module
 // ============================================================================
 
-export * from "./lib/fit-sdk-parser";
-export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
-export type { StandardActivity } from "./types/normalization";
-
+// Performance curves (power, pace, HR)
+export * from "./calculations/curves";
 // ============================================================================
 // Performance Metrics Calculations
 // Multi-modal TSS calculations (power, heart rate, pace)
 export * from "./calculations/defaults";
 export * from "./calculations/duration";
-
-export * from "./calculations/tss";
 export * from "./calculations/training-quality";
+export * from "./calculations/tss";
 export * from "./calculations/workload";
-
-// Performance curves (power, pace, HR)
-export * from "./calculations/curves";
-
+// Heart rate test detection
+export * from "./detection/hr-tests";
+// Running test detection
+export * from "./detection/pace-tests";
 // ============================================================================
 // Test Effort Detection
 // ============================================================================
 // Power test detection
 export * from "./detection/power-tests";
-
-// Running test detection
-export * from "./detection/pace-tests";
-
-// Heart rate test detection
-export * from "./detection/hr-tests";
+export * from "./lib/fit-sdk-parser";
+export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
+export type { StandardActivity } from "./types/normalization";
 
 // ============================================================================
 // Namespace Exports - For organized imports
@@ -240,10 +236,10 @@ export * from "./detection/hr-tests";
 // Allows consumers to import as: import { Calculations } from '@repo/core'
 // and use as: Calculations.calculateTSS(...)
 
+export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
 export * as CalculationsV2 from "./calculations_v2";
 export * as Constants from "./constants";
-export * as Bluetooth from "./bluetooth";
 export * as Estimation from "./estimation";
 export * as Plan from "./plan";
 export * as Samples from "./samples";

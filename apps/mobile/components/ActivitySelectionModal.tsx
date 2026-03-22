@@ -43,29 +43,19 @@
  * ```
  */
 
-import { Icon } from "@repo/ui/components/icon";
-import { Text } from "@repo/ui/components/text";
 import { getActivityDisplayName } from "@repo/core";
 import type { PublicActivityCategory } from "@repo/supabase";
-import {
-  Activity,
-  Bike,
-  Dumbbell,
-  Footprints,
-  MapPin,
-  Waves,
-  X,
-} from "lucide-react-native";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
+import { ToggleGroup, ToggleGroupIcon, ToggleGroupItem } from "@repo/ui/components/toggle-group";
+import { Activity, Bike, Dumbbell, Footprints, MapPin, Waves, X } from "lucide-react-native";
 import { memo } from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
 
 interface ActivitySelectionModalProps {
   visible: boolean;
   onClose: () => void;
-  onActivitySelect: (
-    category: PublicActivityCategory,
-    gpsRecordingEnabled: boolean,
-  ) => void;
+  onActivitySelect: (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => void;
   currentCategory: PublicActivityCategory;
   currentGpsRecordingEnabled: boolean;
 }
@@ -147,12 +137,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
   }
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
       <View className="flex-1 bg-black/50">
         {/* Backdrop - tap to close */}
         <Pressable className="flex-1" onPress={onClose} />
@@ -171,66 +156,69 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
             <View className="px-6 pt-6">
               {/* GPS Toggle at Top */}
               <View className="mb-6">
-                <View className="flex-row bg-muted rounded-xl p-1">
-                  <Pressable
-                    onPress={() => handleGpsChange(true)}
-                    className={`flex-1 py-3 rounded-lg items-center ${
-                      currentGpsRecordingEnabled
-                        ? "bg-background shadow-sm"
-                        : ""
-                    }`}
+                <View className="rounded-xl bg-muted p-1">
+                  <ToggleGroup
+                    type="single"
+                    value={currentGpsRecordingEnabled ? "gps-on" : "gps-off"}
+                    onValueChange={(nextValue) => {
+                      if (nextValue === "gps-on") {
+                        handleGpsChange(true);
+                      } else if (nextValue === "gps-off") {
+                        handleGpsChange(false);
+                      }
+                    }}
+                    className="w-full"
                   >
-                    <View className="flex-row items-center gap-2">
-                      <Icon
-                        as={MapPin}
-                        size={18}
-                        className={
-                          currentGpsRecordingEnabled
-                            ? "text-primary"
-                            : "text-muted-foreground"
-                        }
-                      />
-                      <Text
-                        className={`font-semibold ${
-                          currentGpsRecordingEnabled
-                            ? "text-primary"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        GPS ON
-                      </Text>
-                    </View>
-                  </Pressable>
+                    <ToggleGroupItem
+                      value="gps-on"
+                      isFirst
+                      className={`flex-1 py-3 ${
+                        currentGpsRecordingEnabled ? "bg-background shadow-sm" : ""
+                      }`}
+                    >
+                      <View className="flex-row items-center gap-2">
+                        <ToggleGroupIcon
+                          as={MapPin}
+                          size={18}
+                          className={
+                            currentGpsRecordingEnabled ? "text-primary" : "text-muted-foreground"
+                          }
+                        />
+                        <Text
+                          className={`font-semibold ${
+                            currentGpsRecordingEnabled ? "text-primary" : "text-muted-foreground"
+                          }`}
+                        >
+                          GPS ON
+                        </Text>
+                      </View>
+                    </ToggleGroupItem>
 
-                  <Pressable
-                    onPress={() => handleGpsChange(false)}
-                    className={`flex-1 py-3 rounded-lg items-center ${
-                      !currentGpsRecordingEnabled
-                        ? "bg-background shadow-sm"
-                        : ""
-                    }`}
-                  >
-                    <View className="flex-row items-center gap-2">
-                      <Icon
-                        as={Activity}
-                        size={18}
-                        className={
-                          !currentGpsRecordingEnabled
-                            ? "text-primary"
-                            : "text-muted-foreground"
-                        }
-                      />
-                      <Text
-                        className={`font-semibold ${
-                          !currentGpsRecordingEnabled
-                            ? "text-primary"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        GPS OFF
-                      </Text>
-                    </View>
-                  </Pressable>
+                    <ToggleGroupItem
+                      value="gps-off"
+                      isLast
+                      className={`flex-1 py-3 ${
+                        !currentGpsRecordingEnabled ? "bg-background shadow-sm" : ""
+                      }`}
+                    >
+                      <View className="flex-row items-center gap-2">
+                        <ToggleGroupIcon
+                          as={Activity}
+                          size={18}
+                          className={
+                            !currentGpsRecordingEnabled ? "text-primary" : "text-muted-foreground"
+                          }
+                        />
+                        <Text
+                          className={`font-semibold ${
+                            !currentGpsRecordingEnabled ? "text-primary" : "text-muted-foreground"
+                          }`}
+                        >
+                          GPS OFF
+                        </Text>
+                      </View>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
                 </View>
               </View>
 
@@ -244,37 +232,24 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
                       key={activity.category}
                       onPress={() => handleCategorySelect(activity.category)}
                       className={`flex-row items-center p-4 rounded-xl border-2 ${
-                        isSelected
-                          ? "border-primary bg-primary/10"
-                          : "border-border bg-card"
+                        isSelected ? "border-primary bg-primary/10" : "border-border bg-card"
                       }`}
                     >
                       <View
                         className={`w-12 h-12 rounded-full ${activity.bgColor} items-center justify-center mr-3`}
                       >
-                        <Icon
-                          as={activity.icon}
-                          size={24}
-                          className={activity.color}
-                        />
+                        <Icon as={activity.icon} size={24} className={activity.color} />
                       </View>
 
                       <View className="flex-1">
                         <Text className="font-semibold text-base">
-                          {
-                            getActivityDisplayName(
-                              activity.category,
-                              true,
-                            ).split(" ")[0]
-                          }
+                          {getActivityDisplayName(activity.category, true).split(" ")[0]}
                         </Text>
                       </View>
 
                       {isSelected && (
                         <View className="w-6 h-6 rounded-full bg-primary items-center justify-center">
-                          <Text className="text-primary-foreground text-xs font-bold">
-                            ✓
-                          </Text>
+                          <Text className="text-primary-foreground text-xs font-bold">✓</Text>
                         </View>
                       )}
                     </Pressable>

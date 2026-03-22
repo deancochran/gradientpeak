@@ -1,9 +1,10 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ActivitySelector.tsx
 
+import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { Search } from "lucide-react-native";
 import { useState } from "react";
-import { FlatList, Pressable, TextInput, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
 
 export interface ActivityOption {
   id: string;
@@ -53,9 +54,7 @@ export function ActivitySelector({
 
   // Filter activities based on search query
   const filteredActivities = activities.filter((activity) => {
-    const matchesSearch = activity.name
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase());
+    const matchesSearch = activity.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesSearch;
   });
 
@@ -108,9 +107,7 @@ export function ActivitySelector({
         <View className="flex-row items-start">
           {/* Activity Type Icon */}
           <View className="mr-3 items-center justify-center w-10 h-10 rounded-full bg-gray-100">
-            <Text className="text-2xl">
-              {getActivityTypeIcon(item.activity_category)}
-            </Text>
+            <Text className="text-2xl">{getActivityTypeIcon(item.activity_category)}</Text>
           </View>
 
           {/* Activity Details */}
@@ -154,20 +151,18 @@ export function ActivitySelector({
   return (
     <View className="flex-1">
       {/* Header */}
-      <Text className="text-sm font-semibold text-gray-700 mb-2">
-        Select a Activity
-      </Text>
+      <Text className="text-sm font-semibold text-gray-700 mb-2">Select a Activity</Text>
 
       {/* Search Input */}
       <View className="relative mb-3">
         <View className="absolute left-3 top-3 z-10">
           <Search size={20} className="text-gray-400" />
         </View>
-        <TextInput
+        <Input
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder="Search activities..."
-          className="pl-10 pr-4 py-3 border border-gray-300 rounded-lg bg-white text-base"
+          className="h-12 border-gray-300 bg-white pl-10 pr-4 text-base"
           editable={!disabled}
         />
       </View>
@@ -184,9 +179,7 @@ export function ActivitySelector({
       {filteredActivities.length === 0 ? (
         <View className="flex-1 items-center justify-center py-8">
           <Text className="text-gray-500 text-center">
-            {searchQuery
-              ? "No activities match your search"
-              : "No activities available"}
+            {searchQuery ? "No activities match your search" : "No activities available"}
           </Text>
         </View>
       ) : (

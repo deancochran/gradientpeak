@@ -1,15 +1,13 @@
-import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
-import { Text } from "@repo/ui/components/text";
-import {
-  clampInteger,
-  parseBoundedInteger,
-} from "@/lib/training-plan-form/input-parsers";
-import React, { useEffect, useState } from "react";
-import { View } from "react-native";
+import { clampInteger, parseBoundedInteger } from "@repo/core/forms";
+import * as React from "react";
+import { useEffect, useState } from "react";
+import { View } from "../../lib/react-native";
+import { Button } from "../button/index.native";
+import { Input } from "../input/index.native";
+import { Label } from "../label/index.native";
+import { Text } from "../text/index.native";
 
-interface IntegerStepperProps {
+export interface IntegerStepperProps {
   id: string;
   label?: string;
   value: number;
@@ -84,9 +82,7 @@ export function IntegerStepper({
           onChangeText={setDraftValue}
           onBlur={() => commitDraft(draftValue)}
           keyboardType="numeric"
-          accessibilityHint={
-            accessibilityHint ?? `Enter whole number between ${min} and ${max}`
-          }
+          accessibilityHint={accessibilityHint ?? `Enter whole number between ${min} and ${max}`}
         />
         <Button
           variant="outline"
@@ -97,9 +93,7 @@ export function IntegerStepper({
           <Text>+</Text>
         </Button>
       </View>
-      {helperText ? (
-        <Text className="text-xs text-muted-foreground">{helperText}</Text>
-      ) : null}
+      {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
       {error ? <Text className="text-xs text-destructive">{error}</Text> : null}
     </View>
   );

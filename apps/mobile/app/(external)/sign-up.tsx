@@ -1,19 +1,7 @@
-import { useRouter } from "expo-router";
-import React from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
-import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -24,12 +12,15 @@ import {
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import { useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
+import React from "react";
+import { useForm } from "react-hook-form";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { z } from "zod";
+import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
 import { useAuth } from "@/lib/hooks/useAuth";
-import {
-  getHostedApiUrl,
-  setServerUrlOverride,
-  useServerConfig,
-} from "@/lib/server-config";
+import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
 
@@ -64,8 +55,7 @@ export default function SignUpScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-  const [isServerConfigExpanded, setIsServerConfigExpanded] =
-    React.useState(false);
+  const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
     serverConfig.overrideUrl ?? serverConfig.apiUrl,
@@ -256,17 +246,11 @@ export default function SignUpScreen() {
 
                 {/* Root Error */}
                 {form.formState.errors.root && (
-                  <View
-                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                    testID="form-error"
-                  >
-                    <Text
-                      variant="small"
-                      className="text-destructive text-center"
-                    >
+                  <Alert icon={AlertCircle} variant="destructive" testID="form-error">
+                    <AlertDescription className="text-center">
                       {form.formState.errors.root.message}
-                    </Text>
-                  </View>
+                    </AlertDescription>
+                  </Alert>
                 )}
               </View>
             </Form>
@@ -280,18 +264,14 @@ export default function SignUpScreen() {
               testID="sign-up-button"
               className="w-full"
             >
-              <Text>
-                {isLoading ? "Creating Account..." : "Create Account"}
-              </Text>
+              <Text>{isLoading ? "Creating Account..." : "Create Account"}</Text>
             </Button>
 
             <ServerUrlOverride
               expanded={isServerConfigExpanded}
               value={serverUrlInput}
               usingHostedDefault={!serverConfig.overrideUrl}
-              onToggle={() =>
-                setIsServerConfigExpanded((currentValue) => !currentValue)
-              }
+              onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
               onChange={setServerUrlInput}
             />
 
@@ -309,13 +289,8 @@ export default function SignUpScreen() {
 
             {/* Terms */}
             <View className="pt-4" testID="terms-container">
-              <Text
-                variant="muted"
-                className="text-center text-xs"
-                testID="terms-text"
-              >
-                By creating an account, you agree to our{"\n"}Terms of Service
-                and Privacy Policy
+              <Text variant="muted" className="text-center text-xs" testID="terms-text">
+                By creating an account, you agree to our{"\n"}Terms of Service and Privacy Policy
               </Text>
             </View>
           </CardContent>

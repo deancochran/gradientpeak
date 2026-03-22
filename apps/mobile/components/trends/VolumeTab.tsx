@@ -1,8 +1,9 @@
-import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Text } from "@repo/ui/components/text";
 import { TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
-import { VolumeTrendsChart, type VolumeDataPoint } from "@/components/charts";
+import { type VolumeDataPoint, VolumeTrendsChart } from "@/components/charts";
+import { TrendsOverviewSkeleton } from "@/components/shared";
 
 interface VolumeTrendsData {
   dataPoints: VolumeDataPoint[];
@@ -19,11 +20,7 @@ interface VolumeTabProps {
   timeRange: string;
 }
 
-export function VolumeTab({
-  volumeData,
-  volumeLoading,
-  timeRange,
-}: VolumeTabProps) {
+export function VolumeTab({ volumeData, volumeLoading, timeRange }: VolumeTabProps) {
   if (volumeLoading) {
     return <TrendsOverviewSkeleton />;
   }
@@ -32,9 +29,7 @@ export function VolumeTab({
   const totals = volumeData?.totals ?? null;
 
   // Calculate averages
-  const avgDistance = totals
-    ? totals.totalDistance / totals.totalActivities
-    : 0;
+  const avgDistance = totals ? totals.totalDistance / totals.totalActivities : 0;
   const avgTime = totals ? totals.totalTime / totals.totalActivities : 0;
 
   return (
@@ -45,16 +40,12 @@ export function VolumeTab({
       {/* Summary Stats */}
       {totals && (
         <View className="bg-card rounded-lg border border-border p-4">
-          <Text className="text-base font-semibold text-foreground mb-3">
-            {timeRange} Summary
-          </Text>
+          <Text className="text-base font-semibold text-foreground mb-3">{timeRange} Summary</Text>
 
           <View className="gap-3">
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-sm text-card-foreground">
-                  Total Distance
-                </Text>
+                <Text className="text-sm text-card-foreground">Total Distance</Text>
                 <Text className="text-xs text-muted-foreground">
                   Avg: {(avgDistance / 1000).toFixed(1)} km per activity
                 </Text>
@@ -84,16 +75,12 @@ export function VolumeTab({
 
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-sm text-card-foreground">
-                  Total Activities
-                </Text>
+                <Text className="text-sm text-card-foreground">Total Activities</Text>
                 <Text className="text-xs text-muted-foreground">
                   {dataPoints.length} weeks of data
                 </Text>
               </View>
-              <Text className="text-2xl font-bold text-orange-600">
-                {totals.totalActivities}
-              </Text>
+              <Text className="text-2xl font-bold text-orange-600">{totals.totalActivities}</Text>
             </View>
           </View>
         </View>
@@ -102,15 +89,11 @@ export function VolumeTab({
       {/* Weekly Average */}
       {dataPoints.length > 0 && (
         <View className="bg-card rounded-lg border border-border p-4">
-          <Text className="text-base font-semibold text-foreground mb-3">
-            Weekly Averages
-          </Text>
+          <Text className="text-base font-semibold text-foreground mb-3">Weekly Averages</Text>
 
           <View className="gap-2">
             <View className="flex-row items-center justify-between">
-              <Text className="text-sm text-card-foreground">
-                Distance per week
-              </Text>
+              <Text className="text-sm text-card-foreground">Distance per week</Text>
               <Text className="text-base font-semibold text-foreground">
                 {(
                   dataPoints.reduce((sum, d) => sum + d.totalDistance, 0) /
@@ -122,9 +105,7 @@ export function VolumeTab({
             </View>
 
             <View className="flex-row items-center justify-between">
-              <Text className="text-sm text-card-foreground">
-                Time per week
-              </Text>
+              <Text className="text-sm text-card-foreground">Time per week</Text>
               <Text className="text-base font-semibold text-foreground">
                 {(
                   dataPoints.reduce((sum, d) => sum + d.totalTime, 0) /
@@ -136,13 +117,10 @@ export function VolumeTab({
             </View>
 
             <View className="flex-row items-center justify-between">
-              <Text className="text-sm text-card-foreground">
-                Activities per week
-              </Text>
+              <Text className="text-sm text-card-foreground">Activities per week</Text>
               <Text className="text-base font-semibold text-foreground">
                 {(
-                  dataPoints.reduce((sum, d) => sum + d.activityCount, 0) /
-                  dataPoints.length
+                  dataPoints.reduce((sum, d) => sum + d.activityCount, 0) / dataPoints.length
                 ).toFixed(1)}
               </Text>
             </View>

@@ -1,14 +1,12 @@
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
-import { Text } from "@repo/ui/components/text";
-import {
-  normalizePaceInput,
-  parseMmSsToSeconds,
-} from "@/lib/training-plan-form/input-parsers";
-import React, { useEffect, useState } from "react";
-import { View } from "react-native";
+import { normalizePaceInput, parseMmSsToSeconds } from "@repo/core/forms";
+import * as React from "react";
+import { useEffect, useState } from "react";
+import { View } from "../../lib/react-native";
+import { Input } from "../input/index.native";
+import { Label } from "../label/index.native";
+import { Text } from "../text/index.native";
 
-interface PaceInputProps {
+export interface PaceInputProps {
   id: string;
   label: string;
   value: string;
@@ -77,20 +75,12 @@ export function PaceInput({
           onBlur={handleBlur}
           keyboardType="numbers-and-punctuation"
           placeholder={placeholder}
-          accessibilityHint={
-            accessibilityHint ?? "Enter pace in mm:ss format, for example 4:15"
-          }
+          accessibilityHint={accessibilityHint ?? "Enter pace in mm:ss format, for example 4:15"}
         />
         <Text className="text-xs text-muted-foreground">{unitLabel}</Text>
       </View>
-      {helperText ? (
-        <Text className="text-xs text-muted-foreground">{helperText}</Text>
-      ) : null}
-      {error ? (
-        <Text className="text-xs text-destructive">
-          Adjust this field: {error}
-        </Text>
-      ) : null}
+      {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
+      {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}
     </View>
   );
 }

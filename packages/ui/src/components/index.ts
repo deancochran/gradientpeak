@@ -17,6 +17,7 @@ export * from "./scroll-area/index.web";
 export * from "./separator/index.web";
 export * from "./sheet/index.web";
 export * from "./sonner/index.web";
+export * from "./switch/index.web";
 export * from "./table/index.web";
 export * from "./tabs/index.web";
 export * from "./toggle/index.web";

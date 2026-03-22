@@ -1,8 +1,8 @@
 import { Button } from "@repo/ui/components/button";
 import { Separator } from "@repo/ui/components/separator";
+import { SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
-import { SettingsGroup } from "./SettingsGroup";
 
 interface TrainingZonesSectionProps {
   profile: {
@@ -12,10 +12,7 @@ interface TrainingZonesSectionProps {
   onUpdateZones?: () => void;
 }
 
-export function TrainingZonesSection({
-  profile,
-  onUpdateZones,
-}: TrainingZonesSectionProps) {
+export function TrainingZonesSection({ profile, onUpdateZones }: TrainingZonesSectionProps) {
   const hasFTP = !!profile?.ftp;
   const hasThresholdHR = !!profile?.threshold_hr;
 
@@ -31,9 +28,7 @@ export function TrainingZonesSection({
           <View className="flex-row items-center justify-between">
             <View>
               <Text className="text-foreground font-medium">FTP</Text>
-              <Text className="text-muted-foreground text-sm">
-                {profile.ftp} watts
-              </Text>
+              <Text className="text-muted-foreground text-sm">{profile.ftp} watts</Text>
             </View>
             <Text className="text-foreground text-sm">Power Zones</Text>
           </View>
@@ -54,10 +49,7 @@ export function TrainingZonesSection({
               label="VO2 Max"
               range={`${Math.round(profile.ftp! * 1.05)}-${Math.round(profile.ftp! * 1.2)}W`}
             />
-            <ZoneRow
-              label="Anaerobic"
-              range={`${Math.round(profile.ftp! * 1.2)}+W`}
-            />
+            <ZoneRow label="Anaerobic" range={`${Math.round(profile.ftp! * 1.2)}+W`} />
           </View>
         </View>
       ) : (
@@ -73,12 +65,8 @@ export function TrainingZonesSection({
           <View className="gap-3">
             <View className="flex-row items-center justify-between">
               <View>
-                <Text className="text-foreground font-medium">
-                  Threshold HR
-                </Text>
-                <Text className="text-muted-foreground text-sm">
-                  {profile.threshold_hr} bpm
-                </Text>
+                <Text className="text-foreground font-medium">Threshold HR</Text>
+                <Text className="text-muted-foreground text-sm">{profile.threshold_hr} bpm</Text>
               </View>
               <Text className="text-foreground text-sm">Heart Rate Zones</Text>
             </View>
@@ -95,10 +83,7 @@ export function TrainingZonesSection({
                 label="Threshold"
                 range={`${Math.round(profile.threshold_hr! * 0.94)}-${Math.round(profile.threshold_hr! * 1.05)} bpm`}
               />
-              <ZoneRow
-                label="VO2 Max"
-                range={`${Math.round(profile.threshold_hr! * 1.05)}+ bpm`}
-              />
+              <ZoneRow label="VO2 Max" range={`${Math.round(profile.threshold_hr! * 1.05)}+ bpm`} />
             </View>
           </View>
         </>

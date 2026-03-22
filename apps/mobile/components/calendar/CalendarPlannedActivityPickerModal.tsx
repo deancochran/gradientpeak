@@ -1,17 +1,13 @@
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { ErrorStateCard } from "@repo/ui/components/error-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
-import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { ChevronRight, Clock3, Search } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Modal,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { trpc } from "@/lib/trpc";
 
 type ActivityPlanListItem = {
   id: string;
@@ -39,9 +35,7 @@ function toCategoryLabel(category?: string | null): string {
   return category
     .split("_")
     .map((segment) =>
-      segment.length > 0
-        ? `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}`
-        : segment,
+      segment.length > 0 ? `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}` : segment,
     )
     .join(" ");
 }
@@ -114,12 +108,10 @@ export function CalendarPlannedActivityPickerModal({
         <View className="border-b border-border px-4 py-4">
           <View className="flex-row items-start justify-between gap-3">
             <View className="flex-1">
-              <Text className="text-lg font-semibold text-foreground">
-                Schedule Activity
-              </Text>
+              <Text className="text-lg font-semibold text-foreground">Schedule Activity</Text>
               <Text className="mt-1 text-sm text-muted-foreground">
-                Stay on {toDisplayDateLabel(selectedDate)} and choose one of
-                your saved activity plans.
+                Stay on {toDisplayDateLabel(selectedDate)} and choose one of your saved activity
+                plans.
               </Text>
             </View>
             <TouchableOpacity
@@ -152,43 +144,34 @@ export function CalendarPlannedActivityPickerModal({
           {isLoading ? (
             <View className="items-center gap-3 rounded-xl border border-border bg-card px-4 py-8">
               <ActivityIndicator />
-              <Text className="text-sm text-muted-foreground">
-                Loading your activity plans...
-              </Text>
+              <Text className="text-sm text-muted-foreground">Loading your activity plans...</Text>
             </View>
           ) : null}
 
           {!isLoading && error ? (
-            <View className="gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-4">
-              <Text className="text-sm font-medium text-destructive">
-                Could not load your activity plans.
-              </Text>
-              <TouchableOpacity
-                onPress={() => void refetch()}
-                className="self-start rounded-md border border-border bg-background px-3 py-2"
-                activeOpacity={0.8}
-                testID="calendar-planned-activity-retry"
-              >
-                <Text className="text-xs font-medium text-foreground">
-                  Try again
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <ErrorStateCard
+              title="Could not load your activity plans"
+              message="Please try again in a moment."
+              onRetry={() => void refetch()}
+              retryLabel="Try again"
+            />
           ) : null}
 
           {!isLoading && !error && filteredPlans.length === 0 ? (
-            <View className="gap-2 rounded-xl border border-dashed border-border bg-card px-4 py-6">
-              <Text className="text-sm font-medium text-foreground">
-                {searchQuery.trim().length > 0
+            <EmptyStateCard
+              icon={Search}
+              title={
+                searchQuery.trim().length > 0
                   ? "No matching activity plans"
-                  : "No saved activity plans yet"}
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                {searchQuery.trim().length > 0
+                  : "No saved activity plans yet"
+              }
+              description={
+                searchQuery.trim().length > 0
                   ? "Try a different search term."
-                  : "Create an activity plan first, then come back here to schedule it."}
-              </Text>
-            </View>
+                  : "Create an activity plan first, then come back here to schedule it."
+              }
+              iconSize={32}
+            />
           ) : null}
 
           {!isLoading && !error
@@ -205,9 +188,7 @@ export function CalendarPlannedActivityPickerModal({
                   >
                     <View className="flex-row items-start gap-3">
                       <View className="flex-1 gap-1">
-                        <Text className="text-sm font-semibold text-foreground">
-                          {plan.name}
-                        </Text>
+                        <Text className="text-sm font-semibold text-foreground">{plan.name}</Text>
                         <Text className="text-xs text-muted-foreground">
                           {toCategoryLabel(plan.activity_category)}
                           {durationLabel ? ` • ${durationLabel}` : ""}
@@ -216,25 +197,14 @@ export function CalendarPlannedActivityPickerModal({
                             : ""}
                         </Text>
                         {plan.description ? (
-                          <Text
-                            className="text-xs text-muted-foreground"
-                            numberOfLines={2}
-                          >
+                          <Text className="text-xs text-muted-foreground" numberOfLines={2}>
                             {plan.description}
                           </Text>
                         ) : null}
                       </View>
                       <View className="flex-row items-center gap-1 pt-0.5">
-                        <Icon
-                          as={Clock3}
-                          size={12}
-                          className="text-muted-foreground"
-                        />
-                        <Icon
-                          as={ChevronRight}
-                          size={16}
-                          className="text-muted-foreground"
-                        />
+                        <Icon as={Clock3} size={12} className="text-muted-foreground" />
+                        <Icon as={ChevronRight} size={16} className="text-muted-foreground" />
                       </View>
                     </View>
                   </TouchableOpacity>

@@ -1,11 +1,11 @@
+import type { CreationRecentInfluenceAction } from "@repo/core";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { BoundedNumberInput } from "../inputs/BoundedNumberInput";
-import { parseNumberOrUndefined } from "@/lib/training-plan-form/input-parsers";
-import type { CreationRecentInfluenceAction } from "@repo/core";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
 import React from "react";
 import { Pressable, View } from "react-native";
+import { parseNumberOrUndefined } from "@/lib/training-plan-form/input-parsers";
 import type { TrainingPlanConfigFormData } from "../SinglePageForm";
 
 interface InfluenceTabProps {
@@ -41,8 +41,7 @@ export function InfluenceTab({
   onToggleDetails,
   updateConfig,
 }: InfluenceTabProps) {
-  const influenceActionCopy =
-    recentInfluenceActionOptionCopy[configData.recentInfluenceAction];
+  const influenceActionCopy = recentInfluenceActionOptionCopy[configData.recentInfluenceAction];
 
   return (
     <View className="gap-2 rounded-lg border border-border bg-card p-2.5">
@@ -60,9 +59,7 @@ export function InfluenceTab({
           </Text>
         </View>
         <View className="flex-row items-center gap-1">
-          <Text className="text-xs text-muted-foreground">
-            {expanded ? "Hide" : "Edit"}
-          </Text>
+          <Text className="text-xs text-muted-foreground">{expanded ? "Hide" : "Edit"}</Text>
           {expanded ? (
             <ChevronUp size={16} className="text-muted-foreground" />
           ) : (
@@ -117,16 +114,10 @@ export function InfluenceTab({
             {(["accepted", "edited", "disabled"] as const).map((action) => (
               <Button
                 key={action}
-                variant={
-                  configData.recentInfluenceAction === action
-                    ? "default"
-                    : "outline"
-                }
+                variant={configData.recentInfluenceAction === action ? "default" : "outline"}
                 size="sm"
                 accessibilityLabel={`Recent influence mode: ${recentInfluenceActionOptionCopy[action].label}`}
-                accessibilityHint={
-                  recentInfluenceActionOptionCopy[action].helper
-                }
+                accessibilityHint={recentInfluenceActionOptionCopy[action].helper}
                 onPress={() => {
                   updateConfig((draft) => {
                     draft.recentInfluenceAction = action;
@@ -168,10 +159,7 @@ export function InfluenceTab({
                 return;
               }
               updateConfig((draft) => {
-                draft.recentInfluenceScore = Math.max(
-                  -1,
-                  Math.min(1, Number(parsed.toFixed(3))),
-                );
+                draft.recentInfluenceScore = Math.max(-1, Math.min(1, Number(parsed.toFixed(3))));
                 draft.recentInfluenceAction = "edited";
                 draft.recentInfluenceProvenance = {
                   ...draft.recentInfluenceProvenance,

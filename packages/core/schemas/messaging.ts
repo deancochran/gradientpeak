@@ -1,10 +1,12 @@
-import {
-  publicConversationsRowSchema,
-  publicMessagesRowSchema,
-} from "@repo/supabase";
 import { z } from "zod";
 
-export const ConversationSchema = publicConversationsRowSchema;
+export const ConversationSchema = z.object({
+  created_at: z.string(),
+  group_name: z.string().nullable(),
+  id: z.string().uuid(),
+  is_group: z.boolean(),
+  last_message_at: z.string(),
+});
 export type Conversation = z.infer<typeof ConversationSchema>;
 
 export const CreateConversationSchema = z.object({
@@ -14,11 +16,18 @@ export const CreateConversationSchema = z.object({
 });
 export type CreateConversation = z.infer<typeof CreateConversationSchema>;
 
-export const MessageSchema = publicMessagesRowSchema;
+export const MessageSchema = z.object({
+  content: z.string(),
+  conversation_id: z.string().uuid(),
+  created_at: z.string(),
+  deleted_at: z.string().nullable(),
+  id: z.string().uuid(),
+  sender_id: z.string().uuid(),
+});
 export type Message = z.infer<typeof MessageSchema>;
 
-export const CreateMessageSchema = publicMessagesRowSchema.pick({
-  conversation_id: true,
+export const CreateMessageSchema = MessageSchema.pick({
   content: true,
+  conversation_id: true,
 });
 export type CreateMessage = z.infer<typeof CreateMessageSchema>;

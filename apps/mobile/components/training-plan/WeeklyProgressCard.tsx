@@ -1,5 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
+import { Progress } from "@repo/ui/components/progress";
+import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { CheckCircle2, Target } from "lucide-react-native";
 import { View } from "react-native";
@@ -22,9 +24,7 @@ export function WeeklyProgressCard({
   // Calculate progress percentages
   const tssProgress = targetTSS > 0 ? (completedTSS / targetTSS) * 100 : 0;
   const activityProgress =
-    totalPlannedActivities > 0
-      ? (completedActivities / totalPlannedActivities) * 100
-      : 0;
+    totalPlannedActivities > 0 ? (completedActivities / totalPlannedActivities) * 100 : 0;
 
   // Determine progress bar color based on completion
   const getTSSProgressColor = () => {
@@ -55,24 +55,19 @@ export function WeeklyProgressCard({
                 <Icon as={Target} size={18} className="text-primary" />
                 <Text className="font-semibold">Training Stress Score</Text>
               </View>
-              <Text className="text-sm text-muted-foreground">
-                {Math.round(tssProgress)}%
-              </Text>
+              <Text className="text-sm text-muted-foreground">{Math.round(tssProgress)}%</Text>
             </View>
 
             {/* TSS Progress Bar */}
-            <View className="bg-muted rounded-full h-3 overflow-hidden mb-2">
-              <View
-                className={`${getTSSProgressColor()} h-full rounded-full`}
-                style={{ width: `${Math.min(tssProgress, 100)}%` }}
-              />
-            </View>
+            <Progress
+              value={Math.min(tssProgress, 100)}
+              className="mb-2 h-3"
+              indicatorClassName={getTSSProgressColor()}
+            />
 
             {/* TSS Numbers */}
             <View className="flex-row items-center justify-between">
-              <Text className="text-2xl font-bold">
-                {Math.round(completedTSS)}
-              </Text>
+              <Text className="text-2xl font-bold">{Math.round(completedTSS)}</Text>
               <Text className="text-sm text-muted-foreground">
                 / {Math.round(targetTSS)} TSS target
               </Text>
@@ -90,7 +85,7 @@ export function WeeklyProgressCard({
             )}
           </View>
 
-          <View className="h-px bg-border" />
+          <Separator />
 
           {/* Activity Completion */}
           <View>
@@ -105,12 +100,11 @@ export function WeeklyProgressCard({
             </View>
 
             {/* Activity Progress Bar */}
-            <View className="bg-muted rounded-full h-3 overflow-hidden mb-2">
-              <View
-                className={`${getActivityProgressColor()} h-full rounded-full`}
-                style={{ width: `${Math.min(activityProgress, 100)}%` }}
-              />
-            </View>
+            <Progress
+              value={Math.min(activityProgress, 100)}
+              className="mb-2 h-3"
+              indicatorClassName={getActivityProgressColor()}
+            />
 
             {/* Activity Count */}
             <View className="flex-row items-center justify-between">
@@ -133,8 +127,7 @@ export function WeeklyProgressCard({
           {tssProgress < 50 && totalPlannedActivities > completedActivities && (
             <View className="bg-orange-500/10 rounded-lg p-3">
               <Text className="text-sm text-orange-600 font-medium">
-                ⚠️ Behind on weekly target. Consider completing scheduled
-                activities.
+                ⚠️ Behind on weekly target. Consider completing scheduled activities.
               </Text>
             </View>
           )}

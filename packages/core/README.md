@@ -1,10 +1,10 @@
 # @repo/core - GradientPeak Core Package
 
-The database-independent heart of GradientPeak, providing shared business logic, calculations, and type definitions across all applications.
+The shared heart of GradientPeak, providing business logic, calculations, schemas, and app-facing contracts across all applications.
 
 ## 🎯 Purpose
 
-This package contains **pure TypeScript** business logic with **zero database or ORM dependencies**. It serves as the single source of truth for:
+This package contains **pure TypeScript** business logic and should remain **database-client free at its public boundary**. It serves as the single source of truth for:
 
 - **Type Definitions** - Shared interfaces and types
 - **Zod Schemas** - Data validation and JSON schema validation
@@ -32,11 +32,12 @@ packages/core/
 
 ## 🚀 Key Features
 
-### Database Independence
-- **Zero ORM dependencies** - Pure TypeScript calculations
-- **JSON-first validation** - Works with any storage backend
-- **Platform agnostic** - Runs in mobile, web, and server environments
-- **Fully testable** - No mocking required for unit tests
+### Boundary Policy
+- **No database clients or framework wiring** - `@repo/core` must not import Supabase clients, React, or app runtime code
+- **Own domain contracts here** - Prefer package-owned Zod schemas and helper types for public exports
+- **Adapt database shapes at the edge** - Transform Supabase-generated rows before they become core-facing contracts
+- **Platform agnostic** - Shared logic runs in mobile, web, and server environments
+- **Fully testable** - Unit tests should not require database or network mocking
 
 ### Zod Schema Validation
 - **Activity structures** - Complex activity step validation

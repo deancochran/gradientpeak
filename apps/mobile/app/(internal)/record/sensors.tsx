@@ -1,41 +1,30 @@
-import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { Button } from "@repo/ui/components/button";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import {
-  useRecorderActions,
-  useSensors,
-} from "@/lib/hooks/useActivityRecorder";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import {
-  checkAllPermissions,
-  requestPermission,
-  type AllPermissionsStatus,
-} from "@/lib/services/permissions-check";
 import { Battery, Bluetooth, RefreshCw, Zap } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { useRecorderActions, useSensors } from "@/lib/hooks/useActivityRecorder";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  type AllPermissionsStatus,
+  checkAllPermissions,
+  requestPermission,
+} from "@/lib/services/permissions-check";
 
 function SensorsScreen() {
   const service = useSharedActivityRecorder();
   const { sensors: connectedSensors } = useSensors(service);
-  const {
-    startScan,
-    stopScan,
-    subscribeScan,
-    connectDevice,
-    disconnectDevice,
-  } = useRecorderActions(service);
+  const { startScan, stopScan, subscribeScan, connectDevice, disconnectDevice } =
+    useRecorderActions(service);
 
-  const [permissions, setPermissions] = useState<AllPermissionsStatus | null>(
-    null,
-  );
+  const [permissions, setPermissions] = useState<AllPermissionsStatus | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [availableDevices, setAvailableDevices] = useState<Device[]>([]);
-  const [connectingDevices, setConnectingDevices] = useState<Set<string>>(
-    new Set(),
-  );
+  const [connectingDevices, setConnectingDevices] = useState<Set<string>>(new Set());
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
   const [bleState, setBleState] = useState<string>("Unknown");
   const [scanError, setScanError] = useState<string | null>(null);
@@ -48,9 +37,7 @@ function SensorsScreen() {
       setAvailableDevices((prev) => {
         // Only add if not already in list and not connected
         const isAlreadyAdded = prev.some((d) => d.id === device.id);
-        const isConnected = connectedSensors.some(
-          (sensor) => sensor.id === device.id,
-        );
+        const isConnected = connectedSensors.some((sensor) => sensor.id === device.id);
 
         if (!isAlreadyAdded && !isConnected) {
           return [...prev, device];
@@ -65,9 +52,7 @@ function SensorsScreen() {
   // Remove devices from available list when they become connected
   useEffect(() => {
     setAvailableDevices((prev) =>
-      prev.filter(
-        (device) => !connectedSensors.some((sensor) => sensor.id === device.id),
-      ),
+      prev.filter((device) => !connectedSensors.some((sensor) => sensor.id === device.id)),
     );
   }, [connectedSensors]);
 
@@ -256,11 +241,7 @@ function SensorsScreen() {
             </View>
           ) : (
             <View className="flex-row items-center gap-2">
-              <Icon
-                as={RefreshCw}
-                size={16}
-                className="text-primary-foreground"
-              />
+              <Icon as={RefreshCw} size={16} className="text-primary-foreground" />
               <Text className="text-primary-foreground">Scan for Sensors</Text>
             </View>
           )}
@@ -275,9 +256,7 @@ function SensorsScreen() {
               <View className="flex-row items-center gap-3 flex-1">
                 <Icon as={Bluetooth} size={20} className="text-orange-600" />
                 <Text className="text-sm text-orange-700">
-                  {bluetoothCanAsk
-                    ? "Bluetooth permission needed"
-                    : "Enable Bluetooth in settings"}
+                  {bluetoothCanAsk ? "Bluetooth permission needed" : "Enable Bluetooth in settings"}
                 </Text>
               </View>
               {bluetoothCanAsk && (
@@ -309,9 +288,7 @@ function SensorsScreen() {
         {/* BLE State Indicator (for debugging) */}
         {bleState !== "PoweredOn" && bleState !== "Unknown" && (
           <View className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/20">
-            <Text className="text-xs text-yellow-700">
-              Bluetooth Status: {bleState}
-            </Text>
+            <Text className="text-xs text-yellow-700">Bluetooth Status: {bleState}</Text>
           </View>
         )}
 
@@ -322,12 +299,7 @@ function SensorsScreen() {
               <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Connected ({connectedSensors.length})
               </Text>
-              <Button
-                size="sm"
-                variant="ghost"
-                onPress={handleResetSensors}
-                className="h-7 px-2"
-              >
+              <Button size="sm" variant="ghost" onPress={handleResetSensors} className="h-7 px-2">
                 <Text className="text-xs text-red-600">Reset All</Text>
               </Button>
             </View>
@@ -372,23 +344,18 @@ function SensorsScreen() {
                       {sensor.isControllable && (
                         <View className="bg-green-500/20 px-2 py-1 rounded flex-row items-center gap-1">
                           <Icon as={Zap} size={12} className="text-green-600" />
-                          <Text className="text-xs text-green-600 font-medium">
-                            Control
-                          </Text>
+                          <Text className="text-xs text-green-600 font-medium">Control</Text>
                         </View>
                       )}
                     </View>
                     {/* Show current control mode if controllable */}
                     {sensor.isControllable &&
                       (() => {
-                        const controller =
-                          service?.sensorsManager.getFTMSController(sensor.id);
+                        const controller = service?.sensorsManager.getFTMSController(sensor.id);
                         const mode = controller?.getCurrentMode();
                         if (mode) {
                           return (
-                            <Text className="text-xs text-muted-foreground mt-1">
-                              Mode: {mode}
-                            </Text>
+                            <Text className="text-xs text-muted-foreground mt-1">Mode: {mode}</Text>
                           );
                         }
                         return null;
@@ -401,9 +368,7 @@ function SensorsScreen() {
                   onPress={() => handleDisconnectDevice(sensor.id)}
                   className="h-8"
                 >
-                  <Text className="text-xs text-muted-foreground">
-                    Disconnect
-                  </Text>
+                  <Text className="text-xs text-muted-foreground">Disconnect</Text>
                 </Button>
               </View>
             ))}
@@ -417,30 +382,19 @@ function SensorsScreen() {
           </Text>
 
           {!bluetoothGranted ? (
-            <View className="py-12 items-center">
-              <Icon
-                as={Bluetooth}
-                size={40}
-                className="text-muted-foreground/40 mb-3"
-              />
-              <Text className="text-sm text-muted-foreground">
-                Grant permission to scan
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon={Bluetooth}
+              title="Grant permission to scan"
+              description="Enable Bluetooth permissions to discover nearby sensors."
+              iconSize={40}
+            />
           ) : availableDevices.length === 0 && !isScanning ? (
-            <View className="py-12 items-center">
-              <Icon
-                as={Bluetooth}
-                size={40}
-                className="text-muted-foreground/40 mb-3"
-              />
-              <Text className="text-sm text-muted-foreground mb-1">
-                No devices found
-              </Text>
-              <Text className="text-xs text-muted-foreground/60">
-                {isScanning ? "Searching..." : "Tap scan to search"}
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon={Bluetooth}
+              title="No devices found"
+              description={isScanning ? "Searching..." : "Tap scan to search"}
+              iconSize={40}
+            />
           ) : (
             availableDevices.map((device) => {
               const isConnecting = connectingDevices.has(device.id);
@@ -451,25 +405,15 @@ function SensorsScreen() {
                 >
                   <View className="flex-1">
                     <View className="flex-row items-center gap-2">
-                      <Text className="font-medium">
-                        {device.name || "Unknown Device"}
-                      </Text>
+                      <Text className="font-medium">{device.name || "Unknown Device"}</Text>
                       {/* Check if this is a connected sensor with controllable flag */}
                       {(() => {
-                        const connectedSensor = connectedSensors.find(
-                          (s) => s.id === device.id,
-                        );
+                        const connectedSensor = connectedSensors.find((s) => s.id === device.id);
                         if (connectedSensor?.isControllable) {
                           return (
                             <View className="bg-green-500/20 px-2 py-1 rounded flex-row items-center gap-1">
-                              <Icon
-                                as={Zap}
-                                size={12}
-                                className="text-green-600"
-                              />
-                              <Text className="text-xs text-green-600 font-medium">
-                                Control
-                              </Text>
+                              <Icon as={Zap} size={12} className="text-green-600" />
+                              <Text className="text-xs text-green-600 font-medium">Control</Text>
                             </View>
                           );
                         }
@@ -477,10 +421,7 @@ function SensorsScreen() {
                       })()}
                     </View>
                     {device.id && (
-                      <Text
-                        className="text-xs text-muted-foreground mt-0.5"
-                        numberOfLines={1}
-                      >
+                      <Text className="text-xs text-muted-foreground mt-0.5" numberOfLines={1}>
                         {device.id}
                       </Text>
                     )}

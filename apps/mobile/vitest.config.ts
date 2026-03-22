@@ -9,6 +9,11 @@ export default defineConfig({
     },
   },
   test: {
+    server: {
+      deps: {
+        inline: ["@testing-library/react-native"],
+      },
+    },
     setupFiles: [path.resolve(__dirname, "test/setup.ts")],
   },
 });

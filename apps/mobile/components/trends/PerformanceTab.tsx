@@ -1,12 +1,10 @@
-import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Text } from "@repo/ui/components/text";
 import { Activity } from "lucide-react-native";
 import React, { useState } from "react";
-import { View, TouchableOpacity } from "react-native";
-import {
-  PerformanceTrendsChart,
-  type PerformanceDataPoint,
-} from "@/components/charts";
+import { TouchableOpacity, View } from "react-native";
+import { type PerformanceDataPoint, PerformanceTrendsChart } from "@/components/charts";
+import { TrendsOverviewSkeleton } from "@/components/shared";
 
 interface PerformanceTabProps {
   performanceData: {
@@ -21,9 +19,7 @@ export function PerformanceTab({
   performanceLoading,
   timeRange,
 }: PerformanceTabProps) {
-  const [selectedMetric, setSelectedMetric] = useState<
-    "speed" | "power" | "heartrate"
-  >("speed");
+  const [selectedMetric, setSelectedMetric] = useState<"speed" | "power" | "heartrate">("speed");
 
   const dataPoints = performanceData?.dataPoints ?? [];
 
@@ -36,12 +32,7 @@ export function PerformanceTab({
   React.useEffect(() => {
     if (selectedMetric === "speed" && !hasSpeed && hasPower) {
       setSelectedMetric("power");
-    } else if (
-      selectedMetric === "speed" &&
-      !hasSpeed &&
-      !hasPower &&
-      hasHeartRate
-    ) {
+    } else if (selectedMetric === "speed" && !hasSpeed && !hasPower && hasHeartRate) {
       setSelectedMetric("heartrate");
     }
   }, [hasSpeed, hasPower, hasHeartRate, selectedMetric]);
@@ -54,9 +45,7 @@ export function PerformanceTab({
     <View className="space-y-4">
       {/* Metric Selector */}
       <View className="bg-card rounded-lg border border-border p-4">
-        <Text className="text-sm font-medium text-foreground mb-2">
-          Select Metric
-        </Text>
+        <Text className="text-sm font-medium text-foreground mb-2">Select Metric</Text>
         <View className="flex-row gap-2">
           {hasSpeed && (
             <TouchableOpacity
@@ -67,9 +56,7 @@ export function PerformanceTab({
             >
               <Text
                 className={`text-center text-sm font-medium ${
-                  selectedMetric === "speed"
-                    ? "text-white"
-                    : "text-muted-foreground"
+                  selectedMetric === "speed" ? "text-white" : "text-muted-foreground"
                 }`}
               >
                 Speed
@@ -85,9 +72,7 @@ export function PerformanceTab({
             >
               <Text
                 className={`text-center text-sm font-medium ${
-                  selectedMetric === "power"
-                    ? "text-white"
-                    : "text-muted-foreground"
+                  selectedMetric === "power" ? "text-white" : "text-muted-foreground"
                 }`}
               >
                 Power
@@ -103,9 +88,7 @@ export function PerformanceTab({
             >
               <Text
                 className={`text-center text-sm font-medium ${
-                  selectedMetric === "heartrate"
-                    ? "text-white"
-                    : "text-muted-foreground"
+                  selectedMetric === "heartrate" ? "text-white" : "text-muted-foreground"
                 }`}
               >
                 Heart Rate
@@ -184,13 +167,9 @@ export function PerformanceTab({
                     <Text className="text-sm font-medium text-foreground">
                       {index + 1}. {activity.activityName}
                     </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {date}
-                    </Text>
+                    <Text className="text-xs text-muted-foreground">{date}</Text>
                   </View>
-                  <Text className="text-sm font-semibold text-foreground">
-                    {value}
-                  </Text>
+                  <Text className="text-sm font-semibold text-foreground">{value}</Text>
                 </View>
                 {index < 4 && <View className="h-px bg-border" />}
               </View>

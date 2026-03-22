@@ -1,8 +1,9 @@
-import { ChartSkeleton, EmptyStateCard } from "@/components/shared";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Text } from "@repo/ui/components/text";
 import { Calendar } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { WeeklyProgressChart } from "@/components/charts";
+import { ChartSkeleton } from "@/components/shared";
 
 interface WeeklySummary {
   weekStart: string;
@@ -27,11 +28,7 @@ interface WeeklyTabProps {
   }) => void;
 }
 
-export function WeeklyTab({
-  weeklySummary,
-  weeklyLoading,
-  onWeekPress,
-}: WeeklyTabProps) {
+export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyTabProps) {
   if (weeklyLoading) {
     return <ChartSkeleton height={280} />;
   }
@@ -72,12 +69,7 @@ export function WeeklyTab({
                 ? "border-yellow-200 bg-yellow-50"
                 : "border-red-200 bg-red-50";
 
-          const statusIcon =
-            week.status === "good"
-              ? "✓"
-              : week.status === "warning"
-                ? "⚠️"
-                : "❌";
+          const statusIcon = week.status === "good" ? "✓" : week.status === "warning" ? "⚠️" : "❌";
 
           return (
             <Pressable
@@ -109,16 +101,15 @@ export function WeeklyTab({
                 <View className="flex-row items-center justify-between">
                   <Text className="text-sm text-gray-600">TSS</Text>
                   <Text className="text-sm font-medium text-gray-900">
-                    {week.completedTSS} / {week.plannedTSS} (
-                    {week.tssPercentage}%)
+                    {week.completedTSS} / {week.plannedTSS} ({week.tssPercentage}%)
                   </Text>
                 </View>
 
                 <View className="flex-row items-center justify-between">
                   <Text className="text-sm text-gray-600">Activities</Text>
                   <Text className="text-sm font-medium text-gray-900">
-                    {week.completedActivities} / {week.plannedActivities} (
-                    {week.activityPercentage}%)
+                    {week.completedActivities} / {week.plannedActivities} ({week.activityPercentage}
+                    %)
                   </Text>
                 </View>
               </View>

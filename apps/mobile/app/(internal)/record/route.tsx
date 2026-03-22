@@ -13,19 +13,18 @@
  * - Recording continues in background
  */
 
+import type { PublicActivityCategory } from "@repo/supabase";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import { router } from "expo-router";
+import { Check, Route, Search } from "lucide-react-native";
+import React, { useCallback, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { trpc } from "@/lib/trpc";
-import type {
-  PublicActivityCategory
-} from "@repo/supabase";
-import { router } from "expo-router";
-import { Check, Search } from "lucide-react-native";
-import React, { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 
 const CATEGORY_OPTIONS: {
   value: PublicActivityCategory | "all";
@@ -45,9 +44,7 @@ export default function RoutePickerPage() {
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<
-    PublicActivityCategory | "all"
-  >("all");
+  const [categoryFilter, setCategoryFilter] = useState<PublicActivityCategory | "all">("all");
 
   // Fetch routes (no category filter in query since we filter client-side)
   const { data: routes, isLoading } = trpc.routes.list.useInfiniteQuery(
@@ -82,10 +79,7 @@ export default function RoutePickerPage() {
   const filteredRoutes = React.useMemo(() => {
     return routesList.filter((route: any) => {
       // Category filter
-      if (
-        categoryFilter !== "all" &&
-        route.activity_category !== categoryFilter
-      ) {
+      if (categoryFilter !== "all" && route.activity_category !== categoryFilter) {
         return false;
       }
 
@@ -127,11 +121,7 @@ export default function RoutePickerPage() {
 
         {/* Category Filter Dropdown */}
         <View className="mb-3">
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            className="gap-2"
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="gap-2">
             <View className="flex-row gap-2">
               {CATEGORY_OPTIONS.map((option) => (
                 <Pressable
@@ -140,16 +130,13 @@ export default function RoutePickerPage() {
                   className="px-3 py-2 rounded-full border border-border"
                   style={{
                     backgroundColor:
-                      categoryFilter === option.value
-                        ? "rgb(34, 197, 94)"
-                        : undefined,
+                      categoryFilter === option.value ? "rgb(34, 197, 94)" : undefined,
                   }}
                 >
                   <Text
                     className="text-sm font-medium"
                     style={{
-                      color:
-                        categoryFilter === option.value ? "white" : undefined,
+                      color: categoryFilter === option.value ? "white" : undefined,
                     }}
                   >
                     {option.label}
@@ -164,9 +151,7 @@ export default function RoutePickerPage() {
         {isLoading && (
           <View className="items-center justify-center py-8">
             <ActivityIndicator size="large" />
-            <Text className="text-sm text-muted-foreground mt-2">
-              Loading routes...
-            </Text>
+            <Text className="text-sm text-muted-foreground mt-2">Loading routes...</Text>
           </View>
         )}
 
@@ -178,9 +163,7 @@ export default function RoutePickerPage() {
           >
             <View className="flex-row items-center justify-between">
               <View className="flex-1">
-                <Text className="text-base font-medium text-destructive">
-                  Detach Current Route
-                </Text>
+                <Text className="text-base font-medium text-destructive">Detach Current Route</Text>
                 <Text className="text-sm text-muted-foreground mt-1">
                   Remove route from this workout
                 </Text>
@@ -203,18 +186,20 @@ export default function RoutePickerPage() {
           </View>
         ) : (
           !isLoading && (
-            <View className="items-center justify-center py-8">
-              <Text className="text-sm text-muted-foreground">
-                {searchQuery || categoryFilter !== "all"
+            <EmptyStateCard
+              icon={Route}
+              title={
+                searchQuery || categoryFilter !== "all"
                   ? "No matching routes found"
-                  : "No routes available"}
-              </Text>
-              <Text className="text-xs text-muted-foreground mt-1">
-                {searchQuery || categoryFilter !== "all"
+                  : "No routes available"
+              }
+              description={
+                searchQuery || categoryFilter !== "all"
                   ? "Try adjusting your search or filter"
-                  : "Upload routes from the Library tab"}
-              </Text>
-            </View>
+                  : "Upload routes from the Library tab"
+              }
+              iconSize={32}
+            />
           )
         )}
       </ScrollView>
@@ -254,24 +239,18 @@ function RouteListItem({ route, isSelected, onPress }: RouteListItemProps) {
         <View className="flex-1">
           <Text className="text-base font-medium">{route.name}</Text>
           <View className="flex-row items-center gap-2 mt-1">
-            <Text className="text-sm text-muted-foreground">
-              {distanceKm} km
-            </Text>
+            <Text className="text-sm text-muted-foreground">{distanceKm} km</Text>
             <Text className="text-sm text-muted-foreground">•</Text>
             <Text className="text-sm text-muted-foreground capitalize">
               {route.activity_category}
             </Text>
           </View>
           {route.description && (
-            <Text className="text-sm text-muted-foreground mt-1">
-              {route.description}
-            </Text>
+            <Text className="text-sm text-muted-foreground mt-1">{route.description}</Text>
           )}
         </View>
 
-        {isSelected && (
-          <Icon as={Check} size={20} className="text-green-500 ml-2" />
-        )}
+        {isSelected && <Icon as={Check} size={20} className="text-green-500 ml-2" />}
       </View>
     </Pressable>
   );

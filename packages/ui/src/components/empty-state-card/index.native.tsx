@@ -1,10 +1,12 @@
-import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
-import { Text } from "@repo/ui/components/text";
-import { LucideIcon } from "lucide-react-native";
-import { View } from "react-native";
+import type { LucideIcon } from "lucide-react-native";
+import * as React from "react";
 
-interface EmptyStateCardProps {
+import { View } from "../../lib/react-native";
+import { Button } from "../button/index.native";
+import { Card, CardContent } from "../card/index.native";
+import { Text } from "../text/index.native";
+
+export interface EmptyStateCardProps {
   icon?: LucideIcon;
   title: string;
   description: string;
@@ -27,34 +29,22 @@ export function EmptyStateCard({
     <Card className="bg-card border-border">
       <CardContent className="py-12">
         <View className="items-center justify-center gap-4">
-          {Icon && (
+          {Icon ? (
             <View className="items-center justify-center">
-              <Icon
-                size={iconSize}
-                className={iconColor}
-                strokeWidth={1.5}
-              />
+              <Icon size={iconSize} className={iconColor} strokeWidth={1.5} />
             </View>
-          )}
-
+          ) : null}
           <View className="items-center gap-2">
-            <Text className="text-lg font-semibold text-center text-foreground">
-              {title}
-            </Text>
+            <Text className="text-lg font-semibold text-center text-foreground">{title}</Text>
             <Text className="text-sm text-center text-muted-foreground max-w-[280px]">
               {description}
             </Text>
           </View>
-
-          {actionLabel && onAction && (
-            <Button
-              variant="outline"
-              onPress={onAction}
-              className="mt-2"
-            >
+          {actionLabel && onAction ? (
+            <Button variant="outline" onPress={onAction} className="mt-2">
               <Text>{actionLabel}</Text>
             </Button>
-          )}
+          ) : null}
         </View>
       </CardContent>
     </Card>

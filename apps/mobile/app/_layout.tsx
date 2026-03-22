@@ -18,6 +18,7 @@ import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 
 // Initialize Sentry error tracking for production
@@ -58,9 +59,19 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 function AppContent() {
   console.log("AppContent loaded");
 
-  const { userStatus, onboardingStatus, isAuthenticated, isFullyLoaded, user } = useAuth();
+  const {
+    userStatus,
+    onboardingStatus,
+    isAuthenticated,
+    isFullyLoaded,
+    user,
+    profileLoading,
+    profileError,
+    refreshProfile,
+  } = useAuth();
   const { theme, resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
   const segments = useSegments();
+  const clearSession = useAuthStore((state) => state.clearSession);
 
   const inInternalGroup = segments[0] === "(internal)";
   const inExternalGroup = segments[0] === "(external)";
@@ -95,6 +106,21 @@ function AppContent() {
     }
 
     // Verified but not onboarded: onboarding is mandatory before internal app.
+    if (onboardingStatus === null) {
+      if (profileLoading) {
+        return { type: "loading" as const };
+      }
+
+      if (profileError) {
+        return { type: "profile-error" as const, message: profileError.message };
+      }
+
+      return {
+        type: "redirect" as const,
+        to: "/(internal)/(standard)/onboarding" as const,
+      };
+    }
+
     if (onboardingStatus !== true) {
       return isOnboardingScreen
         ? { type: "allow" as const }
@@ -134,6 +160,23 @@ function AppContent() {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" className="text-foreground" />
+      </View>
+    );
+  }
+
+  if (guardDecision.type === "profile-error") {
+    return (
+      <View className="flex-1 items-center justify-center gap-4 bg-background px-6">
+        <Text variant="h3" className="text-center text-foreground">
+          We couldn&apos;t finish loading your account
+        </Text>
+        <Text className="text-center text-muted-foreground">{guardDecision.message}</Text>
+        <Button onPress={() => void refreshProfile()} className="w-full max-w-xs">
+          <Text className="text-primary-foreground font-semibold">Try Again</Text>
+        </Button>
+        <Button variant="outline" onPress={() => void clearSession()} className="w-full max-w-xs">
+          <Text className="text-foreground">Sign Out</Text>
+        </Button>
       </View>
     );
   }

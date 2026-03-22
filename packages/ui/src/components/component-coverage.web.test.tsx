@@ -22,6 +22,7 @@ import * as ScrollArea from "./scroll-area/index.web";
 import { Separator } from "./separator/index.web";
 import * as Sheet from "./sheet/index.web";
 import * as Sonner from "./sonner/index.web";
+import { Switch } from "./switch/index.web";
 import * as Table from "./table/index.web";
 import { Toggle } from "./toggle/index.web";
 import { ToggleGroup, ToggleGroupItem } from "./toggle-group/index.web";
@@ -58,6 +59,7 @@ describe("web component coverage", () => {
           Email
         </Label>
         <Separator testId="content-separator" />
+        <Switch accessibilityLabel="Notifications" checked testId="settings-switch" />
         <Toggle aria-label="Bold" pressed testId="toggle-bold">
           Bold
         </Toggle>
@@ -74,10 +76,8 @@ describe("web component coverage", () => {
     expect(screen.getByTestId("status-badge")).toHaveTextContent("Active");
     expect(screen.getByTestId("email-label")).toHaveTextContent("Email");
     expect(screen.getByTestId("content-separator")).toBeInTheDocument();
-    expect(screen.getByTestId("toggle-bold")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByTestId("settings-switch")).toHaveAttribute("data-state", "checked");
+    expect(screen.getByTestId("toggle-bold")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("view-grid")).toBeInTheDocument();
     expect(screen.getByTestId("status-icon")).toBeInTheDocument();
   });

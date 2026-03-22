@@ -1,20 +1,18 @@
-import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
-import { Text } from "@repo/ui/components/text";
-import {
-  formatNumberForInput,
-  parseBoundedNumber,
-} from "@/lib/training-plan-form/input-parsers";
-import React, { useEffect, useState } from "react";
-import { View } from "react-native";
+import { formatNumberForInput, parseBoundedNumber } from "@repo/core/forms";
+import * as React from "react";
+import { useEffect, useState } from "react";
+import { View } from "../../lib/react-native";
+import { Button } from "../button/index.native";
+import { Input } from "../input/index.native";
+import { Label } from "../label/index.native";
+import { Text } from "../text/index.native";
 
 interface PresetOption {
   label: string;
   value: string;
 }
 
-interface BoundedNumberInputProps {
+export interface BoundedNumberInputProps {
   id: string;
   label?: string;
   value: string;
@@ -78,13 +76,7 @@ export function BoundedNumberInput({
   const handleTextChange = (nextValue: string) => {
     setDraftValue(nextValue);
     onChange(nextValue);
-    onNumberChange?.(
-      parseBoundedNumber(nextValue, {
-        min,
-        max,
-        decimals,
-      }),
-    );
+    onNumberChange?.(parseBoundedNumber(nextValue, { min, max, decimals }));
   };
 
   return (
@@ -106,13 +98,9 @@ export function BoundedNumberInput({
           onBlur={() => commitValue(draftValue)}
           keyboardType="numbers-and-punctuation"
           placeholder={placeholder}
-          accessibilityHint={
-            accessibilityHint ?? `Enter a number between ${min} and ${max}`
-          }
+          accessibilityHint={accessibilityHint ?? `Enter a number between ${min} and ${max}`}
         />
-        {unitLabel ? (
-          <Text className="text-xs text-muted-foreground">{unitLabel}</Text>
-        ) : null}
+        {unitLabel ? <Text className="text-xs text-muted-foreground">{unitLabel}</Text> : null}
       </View>
       {presets?.length ? (
         <View className="flex-row flex-wrap gap-2">
@@ -129,14 +117,8 @@ export function BoundedNumberInput({
           ))}
         </View>
       ) : null}
-      {helperText ? (
-        <Text className="text-xs text-muted-foreground">{helperText}</Text>
-      ) : null}
-      {error ? (
-        <Text className="text-xs text-destructive">
-          Adjust this field: {error}
-        </Text>
-      ) : null}
+      {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
+      {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}
     </View>
   );
 }

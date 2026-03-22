@@ -1,19 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-
-import { supabase } from "@/lib/supabase/client";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -24,12 +12,17 @@ import {
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
+import React, { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { z } from "zod";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { supabase } from "@/lib/supabase/client";
 
 const verifySchema = z.object({
-  token: z
-    .string()
-    .length(6, "Code must be 6 digits")
-    .regex(/^\d+$/, "Must be numbers only"),
+  token: z.string().length(6, "Code must be 6 digits").regex(/^\d+$/, "Must be numbers only"),
 });
 
 type VerifyFields = z.infer<typeof verifySchema>;
@@ -65,9 +58,7 @@ export default function VerifyScreen() {
       } = await supabase.auth.getUser();
 
       if (user && user.email_confirmed_at) {
-        console.log(
-          "✅ Email verified via external link, refreshing session...",
-        );
+        console.log("✅ Email verified via external link, refreshing session...");
         // Refresh session to update the auth store
         // This will trigger the useEffect above via isEmailVerified
         await supabase.auth.refreshSession();
@@ -180,11 +171,11 @@ export default function VerifyScreen() {
                 />
 
                 {form.formState.errors.root && (
-                  <View className="bg-destructive/15 p-3 rounded-md border border-destructive/25">
-                    <Text className="text-destructive text-center text-sm">
+                  <Alert icon={AlertCircle} variant="destructive">
+                    <AlertDescription className="text-center">
                       {form.formState.errors.root.message}
-                    </Text>
-                  </View>
+                    </AlertDescription>
+                  </Alert>
                 )}
 
                 <Button
@@ -199,20 +190,13 @@ export default function VerifyScreen() {
             </Form>
 
             <View className="gap-2 pt-2">
-              <Button
-                variant="ghost"
-                onPress={onResend}
-                disabled={isResending}
-                className="w-full"
-              >
+              <Button variant="ghost" onPress={onResend} disabled={isResending} className="w-full">
                 <Text>{isResending ? "Sending..." : "Resend Code"}</Text>
               </Button>
               {resendMessage && (
                 <Text
                   className={`text-center text-xs ${
-                    resendMessage.includes("sent")
-                      ? "text-success"
-                      : "text-destructive"
+                    resendMessage.includes("sent") ? "text-success" : "text-destructive"
                   }`}
                 >
                   {resendMessage}

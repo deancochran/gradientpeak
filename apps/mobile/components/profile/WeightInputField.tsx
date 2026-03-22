@@ -1,6 +1,8 @@
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { BoundedNumberInput } from "@/components/training-plan/create/inputs/BoundedNumberInput";
+import React, { useEffect, useMemo, useState } from "react";
+import { View } from "react-native";
 import {
   convertWeightToKg,
   formatWeightForDisplay,
@@ -8,8 +10,6 @@ import {
   roundToDecimals,
   type WeightUnit,
 } from "@/lib/profile/metricUnits";
-import React, { useEffect, useMemo, useState } from "react";
-import { View } from "react-native";
 
 interface WeightInputFieldProps {
   id: string;
@@ -36,9 +36,7 @@ export function WeightInputField({
   placeholder,
   required = false,
 }: WeightInputFieldProps) {
-  const [displayValue, setDisplayValue] = useState(
-    formatWeightForDisplay(valueKg, unit),
-  );
+  const [displayValue, setDisplayValue] = useState(formatWeightForDisplay(valueKg, unit));
 
   useEffect(() => {
     setDisplayValue(formatWeightForDisplay(valueKg, unit));
@@ -61,9 +59,7 @@ export function WeightInputField({
                 return;
               }
 
-              onChangeKg(
-                roundToDecimals(convertWeightToKg(nextValue, unit), 1),
-              );
+              onChangeKg(roundToDecimals(convertWeightToKg(nextValue, unit), 1));
             }}
             min={bounds.min}
             max={bounds.max}

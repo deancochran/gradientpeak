@@ -1,8 +1,11 @@
-import { EmptyStateCard, TrendsOverviewSkeleton } from "@/components/shared";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { Progress } from "@repo/ui/components/progress";
+import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
 import { TrainingLoadChart, type TrainingLoadData } from "@/components/charts";
+import { TrendsOverviewSkeleton } from "@/components/shared";
 
 interface Status {
   form: string;
@@ -83,12 +86,8 @@ export function OverviewTab({
     <View className="space-y-4">
       {/* Current Status Card */}
       <View className="p-4 rounded-lg border bg-card border-border">
-        <Text className="text-sm font-medium text-muted-foreground mb-2">
-          Current Form Status
-        </Text>
-        <Text
-          className={`text-3xl font-bold ${getFormStatusColor(status.form)} capitalize`}
-        >
+        <Text className="text-sm font-medium text-muted-foreground mb-2">Current Form Status</Text>
+        <Text className={`text-3xl font-bold ${getFormStatusColor(status.form)} capitalize`}>
           {status.form}
         </Text>
         <Text className="text-sm text-muted-foreground mt-2">
@@ -98,69 +97,49 @@ export function OverviewTab({
       </View>
 
       {/* Training Load Chart */}
-      {actualCurve &&
-        actualCurve.dataPoints &&
-        actualCurve.dataPoints.length > 0 && (
-          <TrainingLoadChart
-            data={actualCurve.dataPoints.map(
-              (point): TrainingLoadData => ({
-                date: point.date,
-                ctl: point.ctl || 0,
-                atl: point.atl || 0,
-                tsb: point.tsb || 0,
-              }),
-            )}
-            height={250}
-          />
-        )}
+      {actualCurve && actualCurve.dataPoints && actualCurve.dataPoints.length > 0 && (
+        <TrainingLoadChart
+          data={actualCurve.dataPoints.map(
+            (point): TrainingLoadData => ({
+              date: point.date,
+              ctl: point.ctl || 0,
+              atl: point.atl || 0,
+              tsb: point.tsb || 0,
+            }),
+          )}
+          height={250}
+        />
+      )}
 
       {/* Training Metrics */}
       <View className="bg-card rounded-lg border border-border p-4">
-        <Text className="text-base font-semibold text-foreground mb-3">
-          Training Load Metrics
-        </Text>
+        <Text className="text-base font-semibold text-foreground mb-3">Training Load Metrics</Text>
 
         <View className="gap-3">
           <View className="flex-row items-center justify-between">
             <View>
-              <Text className="text-sm text-card-foreground">
-                Chronic Training Load (CTL)
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                42-day fitness
-              </Text>
+              <Text className="text-sm text-card-foreground">Chronic Training Load (CTL)</Text>
+              <Text className="text-xs text-muted-foreground">42-day fitness</Text>
             </View>
-            <Text className="text-2xl font-bold text-foreground">
-              {status.ctl}
-            </Text>
+            <Text className="text-2xl font-bold text-foreground">{status.ctl}</Text>
           </View>
 
-          <View className="h-px bg-border" />
+          <Separator />
 
           <View className="flex-row items-center justify-between">
             <View>
-              <Text className="text-sm text-card-foreground">
-                Acute Training Load (ATL)
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                7-day fatigue
-              </Text>
+              <Text className="text-sm text-card-foreground">Acute Training Load (ATL)</Text>
+              <Text className="text-xs text-muted-foreground">7-day fatigue</Text>
             </View>
-            <Text className="text-2xl font-bold text-foreground">
-              {status.atl}
-            </Text>
+            <Text className="text-2xl font-bold text-foreground">{status.atl}</Text>
           </View>
 
-          <View className="h-px bg-border" />
+          <Separator />
 
           <View className="flex-row items-center justify-between">
             <View>
-              <Text className="text-sm text-card-foreground">
-                Training Stress Balance (TSB)
-              </Text>
-              <Text className="text-xs text-muted-foreground">
-                Form indicator
-              </Text>
+              <Text className="text-sm text-card-foreground">Training Stress Balance (TSB)</Text>
+              <Text className="text-xs text-muted-foreground">Form indicator</Text>
             </View>
             <Text
               className={`text-2xl font-bold ${status.tsb > 0 ? "text-green-600" : status.tsb < -10 ? "text-orange-500" : "text-foreground"}`}
@@ -183,18 +162,17 @@ export function OverviewTab({
             <View className="flex-row items-center justify-between mb-1">
               <Text className="text-sm text-card-foreground">Weekly TSS</Text>
               <Text className="text-sm font-medium text-foreground">
-                {status.weekProgress.completedTSS} /{" "}
-                {status.weekProgress.targetTSS}
+                {status.weekProgress.completedTSS} / {status.weekProgress.targetTSS}
               </Text>
             </View>
-            <View className="h-2 bg-muted rounded-full overflow-hidden">
-              <View
-                className="h-full bg-blue-500"
-                style={{
-                  width: `${Math.min((status.weekProgress.completedTSS / status.weekProgress.targetTSS) * 100, 100)}%`,
-                }}
-              />
-            </View>
+            <Progress
+              value={Math.min(
+                (status.weekProgress.completedTSS / status.weekProgress.targetTSS) * 100,
+                100,
+              )}
+              className="h-2"
+              indicatorClassName="bg-blue-500"
+            />
           </View>
 
           <View>
@@ -205,14 +183,16 @@ export function OverviewTab({
                 {status.weekProgress.totalPlannedActivities}
               </Text>
             </View>
-            <View className="h-2 bg-muted rounded-full overflow-hidden">
-              <View
-                className="h-full bg-green-500"
-                style={{
-                  width: `${Math.min((status.weekProgress.completedActivities / status.weekProgress.totalPlannedActivities) * 100, 100)}%`,
-                }}
-              />
-            </View>
+            <Progress
+              value={Math.min(
+                (status.weekProgress.completedActivities /
+                  status.weekProgress.totalPlannedActivities) *
+                  100,
+                100,
+              )}
+              className="h-2"
+              indicatorClassName="bg-green-500"
+            />
           </View>
         </View>
       </View>
@@ -229,9 +209,7 @@ export function OverviewTab({
 
           {idealCurve && (
             <View className="mt-2 p-3 bg-blue-50 rounded-lg">
-              <Text className="text-sm text-gray-700">
-                📈 Target CTL: {idealCurve.targetCTL}
-              </Text>
+              <Text className="text-sm text-gray-700">📈 Target CTL: {idealCurve.targetCTL}</Text>
               <Text className="text-xs text-gray-600 mt-1">
                 Starting: {idealCurve.startCTL} → Target by{" "}
                 {new Date(idealCurve.targetDate).toLocaleDateString()}

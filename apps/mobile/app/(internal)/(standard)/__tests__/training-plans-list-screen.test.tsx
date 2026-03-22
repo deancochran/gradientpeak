@@ -1,7 +1,7 @@
-import { ROUTES } from "@/lib/constants/routes";
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+import { ROUTES } from "@/lib/constants/routes";
 import TrainingPlansListScreenWithBoundary from "../training-plans-list";
 
 const { pushMock, plansState } = vi.hoisted(() => ({
@@ -52,6 +52,10 @@ vi.mock("@repo/ui/components/card", () => ({
   CardContent: createHost("CardContent"),
 }));
 
+vi.mock("@repo/ui/components/empty-state-card", () => ({
+  EmptyStateCard: createHost("EmptyStateCard"),
+}));
+
 vi.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
@@ -90,9 +94,7 @@ describe("training plans list screen", () => {
       renderer = TestRenderer.create(<TrainingPlansListScreenWithBoundary />);
     });
 
-    const buttons = renderer.root.findAll(
-      (node: any) => node.type === "Button",
-    );
+    const buttons = renderer.root.findAll((node: any) => node.type === "Button");
     const createButton = buttons.find((node: any) => {
       const textNode = node.findAll((child: any) => child.type === "Text")[0];
       return textNode?.props?.children === "Create Training Plan";
@@ -107,17 +109,13 @@ describe("training plans list screen", () => {
     expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
 
     const planCardPressables = renderer.root.findAll(
-      (node: any) =>
-        node.type === "TouchableOpacity" &&
-        typeof node.props.onPress === "function",
+      (node: any) => node.type === "TouchableOpacity" && typeof node.props.onPress === "function",
     );
 
     act(() => {
       planCardPressables[0].props.onPress();
     });
 
-    expect(pushMock).toHaveBeenCalledWith(
-      ROUTES.PLAN.TRAINING_PLAN.DETAIL("plan-1"),
-    );
+    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.DETAIL("plan-1"));
   });
 });

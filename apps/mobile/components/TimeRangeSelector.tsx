@@ -1,7 +1,8 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/TimeRangeSelector.tsx
 
 import { Text } from "@repo/ui/components/text";
-import { Pressable, View } from "react-native";
+import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
+import { View } from "react-native";
 
 export type TimeRange = "1M" | "3M" | "6M" | "12M" | "ALL";
 
@@ -37,43 +38,46 @@ interface TimeRangeSelectorProps {
  * <TimeRangeSelector value={range} onChange={setRange} />
  * ```
  */
-export function TimeRangeSelector({
-  value,
-  onChange,
-  disabled = false,
-}: TimeRangeSelectorProps) {
+export function TimeRangeSelector({ value, onChange, disabled = false }: TimeRangeSelectorProps) {
   return (
     <View className="mb-4">
-      <View className="flex-row bg-gray-100 rounded-lg p-1">
-        {timeRangeOptions.map((option, index) => {
-          const isSelected = value === option.value;
-          const isFirst = index === 0;
-          const isLast = index === timeRangeOptions.length - 1;
+      <View className="rounded-lg bg-gray-100 p-1">
+        <ToggleGroup
+          type="single"
+          value={value}
+          onValueChange={(nextValue) => {
+            if (!disabled && nextValue) {
+              onChange(nextValue as TimeRange);
+            }
+          }}
+          className="w-full"
+        >
+          {timeRangeOptions.map((option, index) => {
+            const isSelected = value === option.value;
+            const isFirst = index === 0;
+            const isLast = index === timeRangeOptions.length - 1;
 
-          return (
-            <Pressable
-              key={option.value}
-              onPress={() => !disabled && onChange(option.value)}
-              disabled={disabled}
-              className={`
-                flex-1 py-2 px-3
-                ${isFirst ? "rounded-l-md" : ""}
-                ${isLast ? "rounded-r-md" : ""}
-                ${isSelected ? "bg-white shadow-sm" : "bg-transparent"}
-                ${disabled ? "opacity-50" : ""}
-              `}
-            >
-              <Text
-                className={`
+            return (
+              <ToggleGroupItem
+                key={option.value}
+                disabled={disabled}
+                value={option.value}
+                isFirst={isFirst}
+                isLast={isLast}
+                className={`flex-1 px-3 py-2 ${isSelected ? "bg-white shadow-sm" : "bg-transparent"}`}
+              >
+                <Text
+                  className={`
                   text-center font-medium text-sm
                   ${isSelected ? "text-blue-600" : "text-gray-600"}
                 `}
-              >
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+                >
+                  {option.label}
+                </Text>
+              </ToggleGroupItem>
+            );
+          })}
+        </ToggleGroup>
       </View>
     </View>
   );

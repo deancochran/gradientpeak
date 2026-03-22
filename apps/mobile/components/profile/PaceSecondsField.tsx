@@ -1,6 +1,6 @@
-import { PaceInput } from "@/components/training-plan/create/inputs/PaceInput";
-import { formatSecondsToMmSs } from "@/lib/training-plan-form/input-parsers";
+import { PaceInput } from "@repo/ui/components/pace-input";
 import React, { useEffect, useState } from "react";
+import { formatSecondsToMmSs } from "@/lib/training-plan-form/input-parsers";
 
 interface PaceSecondsFieldProps {
   id: string;
@@ -28,9 +28,7 @@ export function PaceSecondsField({
   );
 
   useEffect(() => {
-    setDraftValue(
-      valueSeconds == null ? "" : formatSecondsToMmSs(valueSeconds),
-    );
+    setDraftValue(valueSeconds == null ? "" : formatSecondsToMmSs(valueSeconds));
   }, [valueSeconds]);
 
   return (

@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
@@ -12,6 +13,7 @@ import {
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
 import React from "react";
 import { useForm } from "react-hook-form";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
@@ -190,14 +192,11 @@ export default function SignInScreen() {
 
                 {/* Root Error */}
                 {form.formState.errors.root && (
-                  <View
-                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                    testID="root-error-container"
-                  >
-                    <Text variant="small" className="text-destructive text-center">
+                  <Alert icon={AlertCircle} variant="destructive" testID="root-error-container">
+                    <AlertDescription className="text-center">
                       {form.formState.errors.root.message}
-                    </Text>
-                  </View>
+                    </AlertDescription>
+                  </Alert>
                 )}
               </View>
             </Form>

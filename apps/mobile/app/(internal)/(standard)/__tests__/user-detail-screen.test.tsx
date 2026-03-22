@@ -4,43 +4,39 @@ import { describe, expect, it, vi } from "vitest";
 import { ROUTES } from "@/lib/constants/routes";
 import UserDetailScreenWithErrorBoundary from "../user/[userId]";
 
-const {
-  localSearchParamsMock,
-  pushMock,
-  replaceMock,
-  authState,
-  profileQueryState,
-} = vi.hoisted(() => ({
-  localSearchParamsMock: { userId: "11111111-1111-4111-8111-111111111111" },
-  pushMock: vi.fn(),
-  replaceMock: vi.fn(),
-  authState: {
-    user: { id: "11111111-1111-4111-8111-111111111111", email: "own@test.com" },
-    profile: {
-      id: "11111111-1111-4111-8111-111111111111",
-      username: "Owner",
-      avatar_url: null,
-      dob: "1990-01-01",
-      gender: null,
-      preferred_units: "metric",
-      language: "en",
-      bio: "Own profile",
+const { localSearchParamsMock, pushMock, replaceMock, authState, profileQueryState } = vi.hoisted(
+  () => ({
+    localSearchParamsMock: { userId: "11111111-1111-4111-8111-111111111111" },
+    pushMock: vi.fn(),
+    replaceMock: vi.fn(),
+    authState: {
+      user: { id: "11111111-1111-4111-8111-111111111111", email: "own@test.com" },
+      profile: {
+        id: "11111111-1111-4111-8111-111111111111",
+        username: "Owner",
+        avatar_url: null,
+        dob: "1990-01-01",
+        gender: null,
+        preferred_units: "metric",
+        language: "en",
+        bio: "Own profile",
+      },
     },
-  },
-  profileQueryState: {
-    data: {
-      id: "11111111-1111-4111-8111-111111111111",
-      username: "Owner",
-      avatar_url: null,
-      bio: "Own profile",
-      gender: null,
-      preferred_units: "metric",
-      language: "en",
-    } as any,
-    isLoading: false,
-    error: null as any,
-  },
-}));
+    profileQueryState: {
+      data: {
+        id: "11111111-1111-4111-8111-111111111111",
+        username: "Owner",
+        avatar_url: null,
+        bio: "Own profile",
+        gender: null,
+        preferred_units: "metric",
+        language: "en",
+      } as any,
+      isLoading: false,
+      error: null as any,
+    },
+  }),
+);
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -64,7 +60,7 @@ vi.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
-vi.mock("@/components/settings", () => ({
+vi.mock("@repo/ui/components/settings-group", () => ({
   SettingsGroup: createHost("SettingsGroup"),
   SettingItem: createHost("SettingItem"),
 }));

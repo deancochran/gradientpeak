@@ -1,14 +1,12 @@
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
-import { Text } from "@repo/ui/components/text";
-import {
-  normalizeDurationInput,
-  parseHmsToSeconds,
-} from "@/lib/training-plan-form/input-parsers";
-import React, { useEffect, useState } from "react";
-import { View } from "react-native";
+import { normalizeDurationInput, parseHmsToSeconds } from "@repo/core/forms";
+import * as React from "react";
+import { useEffect, useState } from "react";
+import { View } from "../../lib/react-native";
+import { Input } from "../input/index.native";
+import { Label } from "../label/index.native";
+import { Text } from "../text/index.native";
 
-interface DurationInputProps {
+export interface DurationInputProps {
   id: string;
   label: string;
   value: string;
@@ -74,18 +72,10 @@ export function DurationInput({
         onBlur={handleBlur}
         keyboardType="numbers-and-punctuation"
         placeholder={placeholder}
-        accessibilityHint={
-          accessibilityHint ?? "Enter a duration in h:mm:ss format"
-        }
+        accessibilityHint={accessibilityHint ?? "Enter a duration in h:mm:ss format"}
       />
-      {helperText ? (
-        <Text className="text-xs text-muted-foreground">{helperText}</Text>
-      ) : null}
-      {error ? (
-        <Text className="text-xs text-destructive">
-          Adjust this field: {error}
-        </Text>
-      ) : null}
+      {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
+      {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}
     </View>
   );
 }

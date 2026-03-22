@@ -1,13 +1,9 @@
-import { AppHeader } from "@/components/shared";
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
-import { ROUTES } from "@/lib/constants/routes";
-import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -23,14 +19,12 @@ import {
   X,
 } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Dimensions,
-  FlatList,
-  Modal,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Dimensions, FlatList, Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { AppHeader } from "@/components/shared";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ROUTES } from "@/lib/constants/routes";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
 
 const TABS = [
   { id: "activityPlans", label: "Activity Plans", icon: Activity },
@@ -145,9 +139,7 @@ export default function DiscoverPage() {
   });
 
   const activityPlans = useMemo(() => {
-    return (
-      activityPlansInfiniteQuery.data?.pages.flatMap((page) => page.items) || []
-    );
+    return activityPlansInfiniteQuery.data?.pages.flatMap((page) => page.items) || [];
   }, [activityPlansInfiniteQuery.data]);
 
   const routes = useMemo(() => {
@@ -227,9 +219,7 @@ export default function DiscoverPage() {
             <Icon
               as={tab.icon}
               size={16}
-              className={
-                isActive ? "text-primary-foreground" : "text-muted-foreground"
-              }
+              className={isActive ? "text-primary-foreground" : "text-muted-foreground"}
             />
             <Text
               className={`text-xs font-medium ${
@@ -269,9 +259,7 @@ export default function DiscoverPage() {
       {isSearchMode && (
         <View className="flex-row items-center gap-2 mt-2">
           <Icon as={Search} size={14} className="text-muted-foreground" />
-          <Text className="text-sm text-muted-foreground">
-            Searching: {`"${debouncedSearch}"`}
-          </Text>
+          <Text className="text-sm text-muted-foreground">Searching: {`"${debouncedSearch}"`}</Text>
           <TouchableOpacity onPress={() => setSearchQuery("")}>
             <Text className="text-sm text-primary font-medium">Clear</Text>
           </TouchableOpacity>
@@ -289,14 +277,8 @@ export default function DiscoverPage() {
   );
 
   const renderEmptyState = (message: string) => (
-    <View className="flex-1 items-center justify-center py-12 px-4">
-      <Icon as={Search} size={48} className="text-muted-foreground mb-4" />
-      <Text className="text-lg font-medium text-foreground text-center">
-        {message}
-      </Text>
-      <Text className="text-sm text-muted-foreground text-center mt-2">
-        Try adjusting your search
-      </Text>
+    <View className="px-4 py-12">
+      <EmptyStateCard icon={Search} title={message} description="Try adjusting your search" />
     </View>
   );
 
@@ -308,9 +290,7 @@ export default function DiscoverPage() {
             <CategoryRow
               key={category.id}
               category={category}
-              activities={activityPlans.filter(
-                (p) => p.activity_category === category.id,
-              )}
+              activities={activityPlans.filter((p) => p.activity_category === category.id)}
               onViewAll={() => handleViewAll(category.id)}
               onTemplatePress={handleTemplatePress}
             />
@@ -368,10 +348,7 @@ export default function DiscoverPage() {
         contentContainerStyle={{ padding: 16, gap: 12 }}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <TrainingPlanCard
-            template={item}
-            onPress={() => handleTrainingPlanPress(item)}
-          />
+          <TrainingPlanCard template={item} onPress={() => handleTrainingPlanPress(item)} />
         )}
         ListEmptyComponent={renderEmptyState("No training plans found")}
         onRefresh={() => trainingPlansQuery.refetch()}
@@ -394,9 +371,7 @@ export default function DiscoverPage() {
         data={routes}
         contentContainerStyle={{ padding: 16, gap: 12 }}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <RouteCard route={item} onPress={() => handleRoutePress(item)} />
-        )}
+        renderItem={({ item }) => <RouteCard route={item} onPress={() => handleRoutePress(item)} />}
         ListEmptyComponent={renderEmptyState("No routes found")}
         onRefresh={() => routesInfiniteQuery.refetch()}
         refreshing={routesInfiniteQuery.isRefetching}
@@ -411,9 +386,7 @@ export default function DiscoverPage() {
                 disabled={routesInfiniteQuery.isFetchingNextPage}
               >
                 <Text className="text-primary">
-                  {routesInfiniteQuery.isFetchingNextPage
-                    ? "Loading more..."
-                    : "Load More"}
+                  {routesInfiniteQuery.isFetchingNextPage ? "Loading more..." : "Load More"}
                 </Text>
               </Button>
             </View>
@@ -437,9 +410,7 @@ export default function DiscoverPage() {
         data={users}
         contentContainerStyle={{ padding: 16, gap: 12 }}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <UserCard user={item} onPress={() => handleUserPress(item)} />
-        )}
+        renderItem={({ item }) => <UserCard user={item} onPress={() => handleUserPress(item)} />}
         ListEmptyComponent={renderEmptyState("No users found")}
         onRefresh={() => usersQuery.refetch()}
         refreshing={usersQuery.isRefetching}
@@ -479,12 +450,7 @@ interface CategoryRowProps {
   onTemplatePress: (template: any) => void;
 }
 
-function CategoryRow({
-  category,
-  activities,
-  onViewAll,
-  onTemplatePress,
-}: CategoryRowProps) {
+function CategoryRow({ category, activities, onViewAll, onTemplatePress }: CategoryRowProps) {
   if (activities.length === 0) return null;
 
   return (
@@ -527,18 +493,12 @@ interface TrainingPlanCardProps {
 
 function TrainingPlanCard({ template, onPress }: TrainingPlanCardProps) {
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      className="bg-card border border-border rounded-xl p-4"
-    >
+    <TouchableOpacity onPress={onPress} className="bg-card border border-border rounded-xl p-4">
       <View className="flex-row items-start justify-between">
         <View className="flex-1">
-          <Text className="text-lg font-semibold text-foreground">
-            {template.name}
-          </Text>
+          <Text className="text-lg font-semibold text-foreground">{template.name}</Text>
           <Text className="text-sm text-muted-foreground mt-1">
-            {template.durationWeeks?.recommended || template.durationWeeks?.min}{" "}
-            weeks
+            {template.durationWeeks?.recommended || template.durationWeeks?.min} weeks
           </Text>
         </View>
         <View className="bg-primary/10 px-2 py-1 rounded-full">
@@ -550,9 +510,7 @@ function TrainingPlanCard({ template, onPress }: TrainingPlanCardProps) {
       <View className="flex-row gap-2 mt-3">
         {template.sport?.map((s: string) => (
           <View key={s} className="bg-muted px-2 py-1 rounded-md">
-            <Text className="text-xs text-muted-foreground capitalize">
-              {s}
-            </Text>
+            <Text className="text-xs text-muted-foreground capitalize">{s}</Text>
           </View>
         ))}
       </View>
@@ -566,26 +524,16 @@ interface RouteCardProps {
 }
 
 function RouteCard({ route, onPress }: RouteCardProps) {
-  const distanceKm = route.total_distance
-    ? (route.total_distance / 1000).toFixed(1)
-    : "0";
+  const distanceKm = route.total_distance ? (route.total_distance / 1000).toFixed(1) : "0";
   const elevationM = route.total_ascent || 0;
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      className="bg-card border border-border rounded-xl p-4"
-    >
+    <TouchableOpacity onPress={onPress} className="bg-card border border-border rounded-xl p-4">
       <View className="flex-row items-start justify-between">
         <View className="flex-1">
-          <Text className="text-lg font-semibold text-foreground">
-            {route.name}
-          </Text>
+          <Text className="text-lg font-semibold text-foreground">{route.name}</Text>
           {route.description && (
-            <Text
-              className="text-sm text-muted-foreground mt-1"
-              numberOfLines={2}
-            >
+            <Text className="text-sm text-muted-foreground mt-1" numberOfLines={2}>
               {route.description}
             </Text>
           )}
@@ -630,9 +578,7 @@ function UserCard({ user, onPress }: UserCardProps) {
         </AvatarFallback>
       </Avatar>
       <View className="flex-1">
-        <Text className="text-lg font-semibold text-foreground">
-          {user.username}
-        </Text>
+        <Text className="text-lg font-semibold text-foreground">{user.username}</Text>
         <Text className="text-sm text-muted-foreground">
           {user.is_public ? "Public Profile" : "Private Profile"}
         </Text>

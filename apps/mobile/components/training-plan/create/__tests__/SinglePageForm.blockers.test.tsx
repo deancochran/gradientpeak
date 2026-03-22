@@ -1,19 +1,17 @@
 import React from "react";
 import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+import { validateTrainingPlanForm } from "@/lib/training-plan-form/validation";
 import {
   SinglePageForm,
   type TrainingPlanConfigFormData,
   type TrainingPlanFormData,
 } from "../SinglePageForm";
-import { validateTrainingPlanForm } from "@/lib/training-plan-form/validation";
 
 vi.mock("react-native", () => ({
   Modal: (props: any) => React.createElement("Modal", props, props.children),
-  Pressable: (props: any) =>
-    React.createElement("Pressable", props, props.children),
-  ScrollView: (props: any) =>
-    React.createElement("ScrollView", props, props.children),
+  Pressable: (props: any) => React.createElement("Pressable", props, props.children),
+  ScrollView: (props: any) => React.createElement("ScrollView", props, props.children),
   View: (props: any) => React.createElement("View", props, props.children),
   useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
@@ -48,49 +46,42 @@ vi.mock("@repo/ui/components/switch", () => ({
 
 vi.mock("@repo/ui/components/select", () => ({
   Select: (props: any) => React.createElement("Select", props, props.children),
-  SelectContent: (props: any) =>
-    React.createElement("SelectContent", props, props.children),
-  SelectItem: (props: any) =>
-    React.createElement("SelectItem", props, props.children),
-  SelectTrigger: (props: any) =>
-    React.createElement("SelectTrigger", props, props.children),
+  SelectContent: (props: any) => React.createElement("SelectContent", props, props.children),
+  SelectItem: (props: any) => React.createElement("SelectItem", props, props.children),
+  SelectTrigger: (props: any) => React.createElement("SelectTrigger", props, props.children),
   SelectValue: (props: any) => React.createElement("SelectValue", props),
 }));
 
 vi.mock("../CreationProjectionChart", () => ({
-  CreationProjectionChart: (props: any) =>
-    React.createElement("CreationProjectionChart", props),
+  CreationProjectionChart: (props: any) => React.createElement("CreationProjectionChart", props),
 }));
 
-vi.mock("../inputs/BoundedNumberInput", () => ({
-  BoundedNumberInput: (props: any) =>
-    React.createElement("BoundedNumberInput", props),
+vi.mock("@repo/ui/components/bounded-number-input", () => ({
+  BoundedNumberInput: (props: any) => React.createElement("BoundedNumberInput", props),
 }));
 
 vi.mock("../inputs/DateField", () => ({
   DateField: (props: any) => React.createElement("DateField", props),
 }));
 
-vi.mock("../inputs/DurationInput", () => ({
+vi.mock("@repo/ui/components/duration-input", () => ({
   DurationInput: (props: any) => React.createElement("DurationInput", props),
 }));
 
-vi.mock("../inputs/IntegerStepper", () => ({
+vi.mock("@repo/ui/components/integer-stepper", () => ({
   IntegerStepper: (props: any) => React.createElement("IntegerStepper", props),
 }));
 
-vi.mock("../inputs/PaceInput", () => ({
+vi.mock("@repo/ui/components/pace-input", () => ({
   PaceInput: (props: any) => React.createElement("PaceInput", props),
 }));
 
 vi.mock("../inputs/PercentSliderInput", () => ({
-  PercentSliderInput: (props: any) =>
-    React.createElement("PercentSliderInput", props),
+  PercentSliderInput: (props: any) => React.createElement("PercentSliderInput", props),
 }));
 
 vi.mock("../inputs/NumberSliderInput", () => ({
-  NumberSliderInput: (props: any) =>
-    React.createElement("NumberSliderInput", props),
+  NumberSliderInput: (props: any) => React.createElement("NumberSliderInput", props),
 }));
 
 vi.mock("lucide-react-native", () => {
@@ -275,9 +266,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     const textNodes = findMockNodes(renderer!, "Text");
-    const allText = textNodes
-      .map((node: any) => getNodeText(node.props.children))
-      .join("\n");
+    const allText = textNodes.map((node: any) => getNodeText(node.props.children)).join("\n");
 
     expect(allText).toContain("Needs attention: Plan");
   });
@@ -390,18 +379,12 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     const sliderNodes = findMockNodes(renderer!, "PercentSliderInput");
-    expect(
-      sliderNodes.some(
-        (node: any) => node.props.id === "behavior-aggressiveness",
-      ),
-    ).toBe(true);
+    expect(sliderNodes.some((node: any) => node.props.id === "behavior-aggressiveness")).toBe(true);
 
     const textNodes = findMockNodes(renderer!, "Text").map((node: any) =>
       getNodeText(node.props.children),
     );
-    expect(
-      textNodes.some((text) => text.includes("Switch mode to Advanced")),
-    ).toBe(false);
+    expect(textNodes.some((text) => text.includes("Switch mode to Advanced"))).toBe(false);
   });
 
   it("wires single projection reset action to tuning header", () => {
@@ -464,16 +447,10 @@ describe("SinglePageForm blocker surfacing", () => {
     const numberSliders = findMockNodes(renderer!, "NumberSliderInput");
     const percentSliders = findMockNodes(renderer!, "PercentSliderInput");
 
-    expect(
-      percentSliders.some(
-        (node: any) => node.props.id === "max-weekly-load-ramp",
-      ),
-    ).toBe(false);
-    expect(
-      numberSliders.some(
-        (node: any) => node.props.id === "max-weekly-ctl-ramp",
-      ),
-    ).toBe(false);
+    expect(percentSliders.some((node: any) => node.props.id === "max-weekly-load-ramp")).toBe(
+      false,
+    );
+    expect(numberSliders.some((node: any) => node.props.id === "max-weekly-ctl-ramp")).toBe(false);
   });
 
   it("uses behavior control sliders for default tuning", () => {
@@ -498,8 +475,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     const sliderNodes = findMockNodes(renderer!, "NumberSliderInput");
-    const byId = (id: string) =>
-      sliderNodes.find((node: any) => node.props.id === id)?.props;
+    const byId = (id: string) => sliderNodes.find((node: any) => node.props.id === id)?.props;
 
     expect(byId("behavior-shape-target")).toMatchObject({
       min: -1,
@@ -572,12 +548,8 @@ describe("SinglePageForm blocker surfacing", () => {
     const buttonText = findMockNodes(renderer!, "Button").map((node: any) =>
       getNodeText(node.props.children),
     );
-    expect(
-      buttonText.some((text) => text.includes("Apply suggested fix")),
-    ).toBe(false);
-    expect(buttonText.some((text) => text.includes("Apply quick fix"))).toBe(
-      false,
-    );
+    expect(buttonText.some((text) => text.includes("Apply suggested fix"))).toBe(false);
+    expect(buttonText.some((text) => text.includes("Apply quick fix"))).toBe(false);
   });
 
   it("renders goal assessment metadata on review tab when present", () => {
@@ -639,9 +611,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     expect(textNodes).toContain("Goal-by-goal check");
     expect(textNodes).toContain("Plan note: priority precedence");
-    expect(textNodes).toContain(
-      "Finish time confidence: 67 / 100 | shortfall 210",
-    );
+    expect(textNodes).toContain("Finish time confidence: 67 / 100 | shortfall 210");
   });
 
   it("keeps goal readiness primary and adds uncertainty hint when available", () => {
@@ -701,8 +671,7 @@ describe("SinglePageForm blocker surfacing", () => {
 
     const readinessRing = renderer!.root.find(
       (node: any) =>
-        node.props.accessibilityLabel ===
-        "Projected readiness 88 out of 100 for Spring race",
+        node.props.accessibilityLabel === "Projected readiness 88 out of 100 for Spring race",
     );
     expect(readinessRing).toBeDefined();
 
@@ -832,9 +801,7 @@ describe("SinglePageForm blocker surfacing", () => {
             },
           ]}
           allowBlockingIssueOverride={false}
-          onAllowBlockingIssueOverrideChange={
-            onAllowBlockingIssueOverrideChange
-          }
+          onAllowBlockingIssueOverrideChange={onAllowBlockingIssueOverrideChange}
         />,
       );
     });
@@ -848,8 +815,7 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     const overrideSwitch = findMockNodes(renderer!, "Switch").find(
-      (node: any) =>
-        node.props.accessibilityLabel === "Allow create despite blockers",
+      (node: any) => node.props.accessibilityLabel === "Allow create despite blockers",
     );
 
     expect(overrideSwitch).toBeDefined();
@@ -927,17 +893,13 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     expect(textNodes).toContain("What changed most recently");
-    expect(
-      textNodes.some((text) =>
-        text.includes("Readiness decreased by 3.25 points"),
-      ),
-    ).toBe(true);
+    expect(textNodes.some((text) => text.includes("Readiness decreased by 3.25 points"))).toBe(
+      true,
+    );
     expect(textNodes).toContain("Main reason: fatigue.");
-    expect(
-      textNodes.some((text) =>
-        text.includes("Timeline pressure increased by 1.00"),
-      ),
-    ).toBe(true);
+    expect(textNodes.some((text) => text.includes("Timeline pressure increased by 1.00"))).toBe(
+      true,
+    );
   });
 
   it("surfaces continuous projection diagnostics in review panel when available", () => {
@@ -999,23 +961,17 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     expect(
-      textNodes.some((text) =>
-        text.includes("Effective optimizer: preparedness weight 17.2"),
-      ),
+      textNodes.some((text) => text.includes("Effective optimizer: preparedness weight 17.2")),
     ).toBe(true);
     expect(textNodes).toContain("Active constraints: tss ramp cap pressure.");
     expect(
       textNodes.some((text) =>
-        text.includes(
-          "Binding constraints: availability cap | clamp pressure 38%",
-        ),
+        text.includes("Binding constraints: availability cap | clamp pressure 38%"),
       ),
     ).toBe(true);
     expect(
       textNodes.some((text) =>
-        text.includes(
-          "Objective mix: preparedness 2.41, risk penalty -0.52 | curvature 0.18.",
-        ),
+        text.includes("Objective mix: preparedness 2.41, risk penalty -0.52 | curvature 0.18."),
       ),
     ).toBe(true);
   });
@@ -1120,17 +1076,13 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     expect(
-      textNodes.some((text) =>
-        text.includes("Effective optimizer: preparedness weight 19.1"),
-      ),
+      textNodes.some((text) => text.includes("Effective optimizer: preparedness weight 19.1")),
     ).toBe(true);
     expect(textNodes).toContain(
       "Active constraints: single mode safety caps enforced, feasibility caps enforced.",
     );
     expect(
-      textNodes.some((text) =>
-        text.includes("Binding constraints: none | clamp pressure 100%"),
-      ),
+      textNodes.some((text) => text.includes("Binding constraints: none | clamp pressure 100%")),
     ).toBe(true);
     expect(
       textNodes.some((text) =>

@@ -8,20 +8,24 @@ const getSession = async (
   // Check for Authorization header first (mobile/API clients)
   const authHeader = headers.get("authorization");
 
-  if (authHeader) {
+  if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.replace("Bearer ", "");
     if (token) {
-      const { data, error: userError } = await supabase.auth.getUser(token);
+      try {
+        const { data, error: userError } = await supabase.auth.getUser(token);
 
-      if (!userError && data.user) {
-        return {
-          access_token: token,
-          refresh_token: "", // Not available this way
-          user: data.user,
-          token_type: "bearer",
-          expires_in: 0, // Not available this way
-          expires_at: 0, // Not available this way
-        };
+        if (!userError && data.user) {
+          return {
+            access_token: token,
+            refresh_token: "", // Not available this way
+            user: data.user,
+            token_type: "bearer",
+            expires_in: 0, // Not available this way
+            expires_at: 0, // Not available this way
+          };
+        }
+      } catch (err) {
+        console.warn("Could not get session from bearer token:", err);
       }
     }
   }

@@ -1,8 +1,9 @@
 // auth-hooks.ts - Separate file for auth hooks that use tRPC
-import { useAuthStore } from "@/lib/stores/auth-store";
-import { supabase } from "@/lib/supabase/client";
+
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppState } from "react-native";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { supabase } from "@/lib/supabase/client";
 import { trpc } from "../trpc";
 
 /**
@@ -46,7 +47,7 @@ export const useAuth = () => {
     {
       enabled: ready && !!user && isAuthenticated, // Only fetch if auth store is ready and user is authenticated
       staleTime: 5 * 60 * 1000, // Consider data stale after 5 minutes
-      retry: 3,
+      retry: false,
     },
   );
 
@@ -55,6 +56,7 @@ export const useAuth = () => {
     enabled: ready && isAuthenticated && !!session?.access_token,
     staleTime: 0,
     refetchOnMount: "always",
+    retry: false,
   });
   const { refetch: refetchAuthUser } = authUserQuery;
 
@@ -92,10 +94,7 @@ export const useAuth = () => {
       const profileId = profileQuery.data.id;
       const onboarded = profileQuery.data.onboarded;
 
-      if (
-        lastSyncedProfileId.current !== profileId ||
-        lastSyncedOnboarded.current !== onboarded
-      ) {
+      if (lastSyncedProfileId.current !== profileId || lastSyncedOnboarded.current !== onboarded) {
         // Prevent stale query data from overwriting optimistic 'true' status
         if (store.onboardingStatus === true && onboarded === false) {
           console.log(
@@ -178,8 +177,10 @@ export const useAuth = () => {
     profileLoading: profileQuery.isLoading,
     profileError: profileQuery.error,
     refreshProfile: profileQuery.refetch,
+    authUserLoading: authUserQuery.isLoading,
+    authUserError: authUserQuery.error,
 
     // Combined loading state
-    isFullyLoaded: store.ready && !store.loading && !profileQuery.isLoading,
+    isFullyLoaded: store.ready && !store.loading,
   };
 };

@@ -35,8 +35,11 @@ vi.mock("@/components/plan/calendar/ActivityList", () => ({
 }));
 
 vi.mock("@/components/shared", () => ({
-  EmptyStateCard: createHost("EmptyStateCard"),
   ListSkeleton: createHost("ListSkeleton"),
+}));
+
+vi.mock("@repo/ui/components/empty-state-card", () => ({
+  EmptyStateCard: createHost("EmptyStateCard"),
 }));
 
 vi.mock("@repo/ui/components/icon", () => ({

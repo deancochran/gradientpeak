@@ -1,23 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  View,
-} from "react-native";
-import { z } from "zod";
-
+import { AlertDescription, Alert as UiAlert } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
   Form,
   FormControl,
@@ -28,6 +12,12 @@ import {
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { z } from "zod";
 import { supabase } from "@/lib/supabase/client";
 
 const resetPasswordSchema = z
@@ -244,17 +234,11 @@ export default function ResetPasswordScreen() {
 
                 {/* Root Error */}
                 {form.formState.errors.root && (
-                  <View
-                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                    testID="form-error"
-                  >
-                    <Text
-                      variant="small"
-                      className="text-destructive text-center"
-                    >
+                  <UiAlert icon={AlertCircle} variant="destructive" testID="form-error">
+                    <AlertDescription className="text-center">
                       {form.formState.errors.root.message}
-                    </Text>
-                  </View>
+                    </AlertDescription>
+                  </UiAlert>
                 )}
               </View>
             </Form>
@@ -268,16 +252,13 @@ export default function ResetPasswordScreen() {
               testID="update-password-button"
               className="w-full"
             >
-              <Text>
-                {isLoading ? "Updating Password..." : "Update Password"}
-              </Text>
+              <Text>{isLoading ? "Updating Password..." : "Update Password"}</Text>
             </Button>
 
             {/* Help Text */}
             <View className="pt-4" testID="help-container">
               <Text variant="muted" className="text-center text-xs">
-                After updating your password, you will be automatically signed
-                in
+                After updating your password, you will be automatically signed in
               </Text>
             </View>
           </CardContent>

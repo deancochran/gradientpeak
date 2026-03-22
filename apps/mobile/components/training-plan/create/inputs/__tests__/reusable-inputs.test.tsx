@@ -1,9 +1,6 @@
 import React from "react";
 import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { DurationInput } from "../DurationInput";
-import { IntegerStepper } from "../IntegerStepper";
-import { PaceInput } from "../PaceInput";
 import { PercentSliderInput } from "../PercentSliderInput";
 
 vi.mock("react-native", () => ({
@@ -33,108 +30,7 @@ vi.mock("@repo/ui/components/slider", () => ({
 const findMockNode = (renderer: ReactTestRenderer, type: string) =>
   renderer.root.find((node: any) => node.type === type);
 
-const findMockNodes = (renderer: ReactTestRenderer, type: string) =>
-  renderer.root.findAll((node: any) => node.type === type);
-
 describe("training-plan reusable inputs", () => {
-  it("normalizes DurationInput on blur", () => {
-    const onChange = vi.fn();
-    const onDurationSecondsChange = vi.fn();
-
-    let renderer: ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(
-        <DurationInput
-          id="duration"
-          label="Duration"
-          value=""
-          onChange={onChange}
-          onDurationSecondsChange={onDurationSecondsChange}
-        />,
-      );
-    });
-
-    const input = findMockNode(renderer!, "Input");
-    act(() => {
-      input.props.onChangeText("20:00");
-    });
-
-    act(() => {
-      input.props.onBlur();
-    });
-
-    expect(onChange).toHaveBeenNthCalledWith(1, "20:00");
-    expect(onChange).toHaveBeenNthCalledWith(2, "0:20:00");
-    expect(onDurationSecondsChange).toHaveBeenNthCalledWith(1, undefined);
-    expect(onDurationSecondsChange).toHaveBeenNthCalledWith(2, 1200);
-  });
-
-  it("normalizes PaceInput on blur", () => {
-    const onChange = vi.fn();
-    const onPaceSecondsChange = vi.fn();
-
-    let renderer: ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(
-        <PaceInput
-          id="pace"
-          label="Pace"
-          value=""
-          onChange={onChange}
-          onPaceSecondsChange={onPaceSecondsChange}
-        />,
-      );
-    });
-
-    const input = findMockNode(renderer!, "Input");
-    act(() => {
-      input.props.onChangeText("04:05");
-    });
-
-    act(() => {
-      input.props.onBlur();
-    });
-
-    expect(onChange).toHaveBeenNthCalledWith(1, "04:05");
-    expect(onChange).toHaveBeenNthCalledWith(2, "4:05");
-    expect(onPaceSecondsChange).toHaveBeenNthCalledWith(1, 245);
-    expect(onPaceSecondsChange).toHaveBeenNthCalledWith(2, 245);
-  });
-
-  it("enforces IntegerStepper increment and decrement boundaries", () => {
-    const onChange = vi.fn();
-    let renderer: ReactTestRenderer;
-    act(() => {
-      renderer = TestRenderer.create(
-        <IntegerStepper
-          id="sessions"
-          label="Sessions"
-          value={3}
-          min={3}
-          max={6}
-          step={2}
-          onChange={onChange}
-        />,
-      );
-    });
-
-    const buttons = findMockNodes(renderer!, "Button");
-    const decrease = buttons.find(
-      (button: any) => button.props.accessibilityLabel === "Decrease Sessions",
-    );
-    const increase = buttons.find(
-      (button: any) => button.props.accessibilityLabel === "Increase Sessions",
-    );
-
-    act(() => {
-      decrease?.props.onPress();
-      increase?.props.onPress();
-    });
-
-    expect(onChange).toHaveBeenNthCalledWith(1, 3);
-    expect(onChange).toHaveBeenNthCalledWith(2, 5);
-  });
-
   it("commits numeric PercentSliderInput values and falls back on invalid blur", () => {
     const onChange = vi.fn();
     let renderer: ReactTestRenderer;

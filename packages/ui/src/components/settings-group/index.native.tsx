@@ -1,16 +1,12 @@
-import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
-import { Separator } from "@repo/ui/components/separator";
-import { Switch } from "@repo/ui/components/switch";
-import { Text } from "@repo/ui/components/text";
-import React, { type ReactNode } from "react";
-import { View } from "react-native";
+import type { ReactNode } from "react";
+import * as React from "react";
+
+import { View } from "../../lib/react-native";
+import { Button } from "../button/index.native";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../card/index.native";
+import { Separator } from "../separator/index.native";
+import { Switch } from "../switch/index.native";
+import { Text } from "../text/index.native";
 
 interface SettingsGroupProps {
   title: string;
@@ -19,21 +15,14 @@ interface SettingsGroupProps {
   testID?: string;
 }
 
-export function SettingsGroup({
-  title,
-  description,
-  children,
-  testID,
-}: SettingsGroupProps) {
+export function SettingsGroup({ title, description, children, testID }: SettingsGroupProps) {
   return (
     <Card className="bg-card border-border" testId={testID}>
       <CardHeader className="pb-4">
         <CardTitle className="text-card-foreground">{title}</CardTitle>
-        {description && (
-          <CardDescription className="text-muted-foreground">
-            {description}
-          </CardDescription>
-        )}
+        {description ? (
+          <CardDescription className="text-muted-foreground">{description}</CardDescription>
+        ) : null}
       </CardHeader>
       <CardContent className="gap-4">{children}</CardContent>
     </Card>
@@ -57,13 +46,7 @@ interface ButtonSettingItemProps extends SettingItemProps {
   type: "button";
   buttonLabel: string;
   onPress: () => void;
-  variant?:
-    | "default"
-    | "outline"
-    | "secondary"
-    | "ghost"
-    | "link"
-    | "destructive";
+  variant?: "default" | "outline" | "secondary" | "ghost" | "link" | "destructive";
   disabled?: boolean;
 }
 
@@ -95,10 +78,9 @@ export function SettingItem(props: SettingItemPropsUnion) {
             checked={props.value}
             onCheckedChange={props.onValueChange}
             disabled={props.disabled}
-            testId={`${testID}-switch`}
+            testId={testID ? `${testID}-switch` : undefined}
           />
         );
-
       case "button":
         return (
           <Button
@@ -106,29 +88,24 @@ export function SettingItem(props: SettingItemPropsUnion) {
             size="sm"
             onPress={props.onPress}
             disabled={props.disabled}
-            testId={`${testID}-button`}
+            testId={testID ? `${testID}-button` : undefined}
           >
             <Text>{props.buttonLabel}</Text>
           </Button>
         );
-
       case "link":
         return (
           <Button
             variant="link"
             onPress={props.onPress}
             className="self-start p-0"
-            testId={`${testID}-link`}
+            testId={testID ? `${testID}-link` : undefined}
           >
             <Text className="text-primary">{props.linkLabel}</Text>
           </Button>
         );
-
       case "custom":
         return props.children;
-
-      default:
-        return null;
     }
   };
 
@@ -136,22 +113,14 @@ export function SettingItem(props: SettingItemPropsUnion) {
     <View className="flex-row items-center justify-between" testID={testID}>
       <View className="flex-1">
         <Text className="text-foreground font-medium">{label}</Text>
-        {description && (
-          <Text className="text-muted-foreground text-sm">{description}</Text>
-        )}
+        {description ? <Text className="text-muted-foreground text-sm">{description}</Text> : null}
       </View>
-      {props.type !== "link" && <View className="ml-3">{renderControl()}</View>}
-      {props.type === "link" && renderControl()}
+      {props.type !== "link" ? <View className="ml-3">{renderControl()}</View> : null}
+      {props.type === "link" ? renderControl() : null}
     </View>
   );
 }
 
-interface SettingItemSeparatorProps {
-  className?: string;
-}
-
-export function SettingItemSeparator({
-  className,
-}: SettingItemSeparatorProps = {}) {
+export function SettingItemSeparator({ className }: { className?: string } = {}) {
   return <Separator className={`bg-border ${className || ""}`} />;
 }

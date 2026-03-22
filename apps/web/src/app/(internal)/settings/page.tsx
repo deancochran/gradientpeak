@@ -1,15 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { z } from "zod";
-import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-
-import { useAuth } from "@/components/providers/auth-provider";
-import { trpc } from "@/lib/trpc/client";
-
+import { profileQuickUpdateSchema } from "@repo/core";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,11 +13,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@repo/ui/components/alert-dialog";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@repo/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -46,26 +34,25 @@ import {
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
+import { Switch } from "@repo/ui/components/switch";
+import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { z } from "zod";
+import { useAuth } from "@/components/providers/auth-provider";
+import { trpc } from "@/lib/trpc/client";
 
-import {
-  Calendar,
-  Camera,
-  Loader2,
-  Mail,
-  Trash2,
-  UserRound,
-} from "lucide-react";
-
-// Types removed - using tRPC generated types
-
-// Zod schema for profile form validation
-const profileSchema = z.object({
-  username: z
-    .string()
-    .min(2, "Name must be at least 2 characters")
-    .max(50, "Name must be less than 50 characters"),
-  is_public: z.boolean(),
+const webProfileSettingsSchema = profileQuickUpdateSchema.pick({
+  username: true,
+  is_public: true,
 });
+
+type WebProfileSettingsFormData = Pick<
+  z.output<typeof webProfileSettingsSchema>,
+  "username" | "is_public"
+>;
 
 export default function SettingsPage() {
   // Auth and Profile data
@@ -111,8 +98,7 @@ export default function SettingsPage() {
       toast.error("Failed to delete account");
     },
   });
-  const createSignedUploadUrlMutation =
-    trpc.storage.createSignedUploadUrl.useMutation();
+  const createSignedUploadUrlMutation = trpc.storage.createSignedUploadUrl.useMutation();
   // Local state
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -123,8 +109,8 @@ export default function SettingsPage() {
   // Hooks
   const router = useRouter();
 
-  const form = useForm<z.infer<typeof profileSchema>>({
-    resolver: zodResolver(profileSchema),
+  const form = useForm<z.input<typeof webProfileSettingsSchema>, any, WebProfileSettingsFormData>({
+    resolver: zodResolver(webProfileSettingsSchema),
     defaultValues: {
       username: "",
       is_public: false,
@@ -134,8 +120,7 @@ export default function SettingsPage() {
   // Update form when profile data loads
   useEffect(() => {
     if (profile) {
-      const isPublicField = (profile as unknown as { is_public?: unknown })
-        .is_public;
+      const isPublicField = (profile as unknown as { is_public?: unknown }).is_public;
       form.reset({
         username: profile.username || "",
         is_public: typeof isPublicField === "boolean" ? isPublicField : false,
@@ -178,7 +163,7 @@ export default function SettingsPage() {
   }, [avatarBlobUrl]);
 
   // Event handlers
-  const onSubmit = async (values: z.infer<typeof profileSchema>) => {
+  const onSubmit = async (values: WebProfileSettingsFormData) => {
     if (!user) return;
 
     setUpdating(true);
@@ -194,9 +179,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleAvatarUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !user) return;
 
@@ -216,11 +199,10 @@ export default function SettingsPage() {
       }
 
       // Get signed upload URL
-      const { signedUrl, path: filePath } =
-        await createSignedUploadUrlMutation.mutateAsync({
-          fileName: file.name,
-          fileType: file.type,
-        });
+      const { signedUrl, path: filePath } = await createSignedUploadUrlMutation.mutateAsync({
+        fileName: file.name,
+        fileType: file.type,
+      });
 
       // Upload file directly to the signed URL
       const uploadResponse = await fetch(signedUrl, {
@@ -292,9 +274,7 @@ export default function SettingsPage() {
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">
-            Manage your account settings and preferences.
-          </p>
+          <p className="text-muted-foreground">Manage your account settings and preferences.</p>
         </div>
 
         {/* Profile Card */}
@@ -304,9 +284,7 @@ export default function SettingsPage() {
               <UserRound className="h-5 w-5" />
               Profile Information
             </CardTitle>
-            <CardDescription>
-              Update your profile information and avatar.
-            </CardDescription>
+            <CardDescription>Update your profile information and avatar.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Avatar Section */}
@@ -339,9 +317,7 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <h3 className="font-medium">
-                  {profile?.username || "No name set"}
-                </h3>
+                <h3 className="font-medium">{profile?.username || "No name set"}</h3>
                 <p className="text-sm text-muted-foreground">{user?.email}</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   Click avatar to change picture (max 5MB)
@@ -351,10 +327,7 @@ export default function SettingsPage() {
 
             {/* Profile Form */}
             <Form {...form}>
-              <form
-                onSubmit={form.handleSubmit(onSubmit)}
-                className="space-y-4"
-              >
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
                   name="username"
@@ -362,11 +335,14 @@ export default function SettingsPage() {
                     <FormItem>
                       <FormLabel>Username</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter your username" {...field} />
+                        <Input
+                          placeholder="Enter your username"
+                          {...field}
+                          value={typeof field.value === "string" ? field.value : ""}
+                        />
                       </FormControl>
                       <FormDescription>
-                        This is the username that will be displayed on your
-                        profile.
+                        This is the username that will be displayed on your profile.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -379,34 +355,26 @@ export default function SettingsPage() {
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">
-                          Public Account
-                        </FormLabel>
+                        <FormLabel className="text-base">Public Account</FormLabel>
                         <FormDescription>
                           Make your profile and activities visible to everyone.
                         </FormDescription>
                       </div>
                       <FormControl>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={field.value}
-                            onChange={field.onChange}
-                            onBlur={field.onBlur}
-                            ref={field.ref}
-                          />
-                          <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                        </label>
+                        <Switch
+                          accessibilityLabel="Public Account"
+                          checked={Boolean(field.value)}
+                          onBlur={field.onBlur}
+                          onCheckedChange={field.onChange}
+                          ref={field.ref}
+                        />
                       </FormControl>
                     </FormItem>
                   )}
                 />
 
                 <Button type="submit" disabled={updating}>
-                  {updating && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
+                  {updating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Update Profile
                 </Button>
               </form>
@@ -421,9 +389,7 @@ export default function SettingsPage() {
               <Mail className="h-5 w-5" />
               Account Information
             </CardTitle>
-            <CardDescription>
-              View your account details and status.
-            </CardDescription>
+            <CardDescription>View your account details and status.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -435,9 +401,7 @@ export default function SettingsPage() {
               <div>
                 <Label className="text-sm font-medium">Email Verified</Label>
                 <div className="flex items-center gap-2 mt-1">
-                  <Badge
-                    variant={user?.email_confirmed_at ? "default" : "secondary"}
-                  >
+                  <Badge variant={user?.email_confirmed_at ? "default" : "secondary"}>
                     {user?.email_confirmed_at ? "Verified" : "Unverified"}
                   </Badge>
                 </div>
@@ -447,9 +411,7 @@ export default function SettingsPage() {
                 <Label className="text-sm font-medium">Account Created</Label>
                 <p className="text-sm text-muted-foreground flex items-center gap-1">
                   <Calendar className="h-4 w-4" />
-                  {profile?.created_at
-                    ? formatDate(profile.created_at)
-                    : "Unknown"}
+                  {profile?.created_at ? formatDate(profile.created_at) : "Unknown"}
                 </p>
               </div>
             </div>
@@ -460,9 +422,7 @@ export default function SettingsPage() {
         <Card className="border-destructive">
           <CardHeader>
             <CardTitle className="text-destructive">Danger Zone</CardTitle>
-            <CardDescription>
-              Irreversible and destructive actions.
-            </CardDescription>
+            <CardDescription>Irreversible and destructive actions.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-4">
@@ -472,31 +432,23 @@ export default function SettingsPage() {
                 disabled={signOutMutation.isPending}
                 className="flex-1"
               >
-                {signOutMutation.isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
+                {signOutMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Sign Out
               </Button>
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button
-                    variant="destructive"
-                    disabled={deleting}
-                    className="flex-1"
-                  >
+                  <Button variant="destructive" disabled={deleting} className="flex-1">
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete Account
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      Are you absolutely sure?
-                    </AlertDialogTitle>
+                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This action cannot be undone. This will permanently delete
-                      your account and remove all your data from our servers.
+                      This action cannot be undone. This will permanently delete your account and
+                      remove all your data from our servers.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -506,9 +458,7 @@ export default function SettingsPage() {
                       disabled={deleting}
                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
-                      {deleting && (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      )}
+                      {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       Delete Account
                     </AlertDialogAction>
                   </AlertDialogFooter>

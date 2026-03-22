@@ -1,29 +1,13 @@
-import {
-  ActivityHeader,
-  ActivityPlanComparison,
-  MetricCard,
-  ZoneDistributionCard,
-} from "@/components/activity";
-import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
-import { StreamChart } from "@/components/activity/charts/StreamChart";
-import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { decodePolyline } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Skeleton } from "@repo/ui/components/skeleton";
-import { Text } from "@repo/ui/components/text";
 import { Switch } from "@repo/ui/components/switch";
-import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/lib/hooks/useAuth";
-import type { DecompressedStream } from "@/lib/utils/streamDecompression";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import { skipToken } from "@tanstack/react-query";
-import { decodePolyline } from "@repo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Activity,
@@ -41,15 +25,20 @@ import {
   Zap,
 } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Polyline as MapPolyline, Region } from "react-native-maps";
+import {
+  ActivityHeader,
+  ActivityPlanComparison,
+  MetricCard,
+  ZoneDistributionCard,
+} from "@/components/activity";
+import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
+import { StreamChart } from "@/components/activity/charts/StreamChart";
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
+import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 // Re-defining interface from StreamChart as it's not exported
 interface StreamData {
@@ -90,8 +79,7 @@ function formatSpeed(metersPerSecond: number): string {
 }
 
 function isValidUuid(value: string): boolean {
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(value);
 }
 
@@ -129,8 +117,10 @@ function ActivityDetailScreen() {
   const queryClient = trpc.useUtils();
 
   // Fetch activity data
-  const { data: activityData, isLoading: isLoadingActivity } =
-    trpc.activities.getById.useQuery({ id: id! }, { enabled: !!id });
+  const { data: activityData, isLoading: isLoadingActivity } = trpc.activities.getById.useQuery(
+    { id: id! },
+    { enabled: !!id },
+  );
 
   const activity = activityData as any;
 
@@ -208,16 +198,14 @@ function ActivityDetailScreen() {
 
   // Comments state
   const [newComment, setNewComment] = useState("");
-  const commentEntityId =
-    typeof activity?.id === "string" ? activity.id.trim() : "";
+  const commentEntityId = typeof activity?.id === "string" ? activity.id.trim() : "";
 
   // Fetch comments
-  const { data: commentsData, refetch: refetchComments } =
-    trpc.social.getComments.useQuery(
-      isValidUuid(commentEntityId)
-        ? { entity_id: commentEntityId, entity_type: "activity" }
-        : skipToken,
-    );
+  const { data: commentsData, refetch: refetchComments } = trpc.social.getComments.useQuery(
+    isValidUuid(commentEntityId)
+      ? { entity_id: commentEntityId, entity_type: "activity" }
+      : skipToken,
+  );
 
   // Add comment mutation
   const addCommentMutation = trpc.social.addComment.useMutation({
@@ -433,10 +421,8 @@ function ActivityDetailScreen() {
       });
     }
 
-    const elevStream =
-      altData.length > 0 ? createStream("altitude", altData) : null;
-    const distStream =
-      distData.length > 0 ? createStream("distance", distData) : null;
+    const elevStream = altData.length > 0 ? createStream("altitude", altData) : null;
+    const distStream = distData.length > 0 ? createStream("distance", distData) : null;
 
     return {
       chartStreams: streams,
@@ -461,8 +447,7 @@ function ActivityDetailScreen() {
     const powerZone6 = activity?.power_zone_6_seconds || 0;
     const powerZone7 = activity?.power_zone_7_seconds || 0;
 
-    const hasHrZones =
-      hrZone1 > 0 || hrZone2 > 0 || hrZone3 > 0 || hrZone4 > 0 || hrZone5 > 0;
+    const hasHrZones = hrZone1 > 0 || hrZone2 > 0 || hrZone3 > 0 || hrZone4 > 0 || hrZone5 > 0;
     const hasPowerZones =
       powerZone1 > 0 ||
       powerZone2 > 0 ||
@@ -493,13 +478,7 @@ function ActivityDetailScreen() {
             { zone: 7, time: powerZone7, label: "Zone 7 (Neuromuscular)" },
           ]
         : [],
-      hrColors: [
-        "bg-blue-400",
-        "bg-green-400",
-        "bg-yellow-400",
-        "bg-orange-400",
-        "bg-red-400",
-      ],
+      hrColors: ["bg-blue-400", "bg-green-400", "bg-yellow-400", "bg-orange-400", "bg-red-400"],
       powerColors: [
         "bg-gray-400",
         "bg-blue-400",
@@ -562,16 +541,10 @@ function ActivityDetailScreen() {
             >
               <Heart
                 size={24}
-                className={
-                  liked ? "fill-red-500 text-red-500" : "text-muted-foreground"
-                }
+                className={liked ? "fill-red-500 text-red-500" : "text-muted-foreground"}
                 color={liked ? "#ef4444" : undefined}
               />
-              <Text
-                className={
-                  liked ? "text-red-500 font-medium" : "text-muted-foreground"
-                }
-              >
+              <Text className={liked ? "text-red-500 font-medium" : "text-muted-foreground"}>
                 {likesCount} {likesCount === 1 ? "Like" : "Likes"}
               </Text>
             </Pressable>
@@ -592,9 +565,7 @@ function ActivityDetailScreen() {
                         {new Date(comment.created_at).toLocaleDateString()}
                       </Text>
                     </View>
-                    <Text className="text-sm text-foreground">
-                      {comment.content}
-                    </Text>
+                    <Text className="text-sm text-foreground">{comment.content}</Text>
                   </View>
                 ))}
               </View>
@@ -602,13 +573,11 @@ function ActivityDetailScreen() {
 
             {/* Add Comment Input */}
             <View className="flex-row items-center gap-2">
-              <TextInput
-                className="flex-1 border border-border rounded-lg px-3 py-2 text-foreground"
+              <Textarea
+                className="min-h-11 flex-1"
                 placeholder="Add a comment..."
-                placeholderTextColor="#9ca3af"
                 value={newComment}
                 onChangeText={setNewComment}
-                multiline
               />
               <Button
                 onPress={handleAddComment}
@@ -633,11 +602,7 @@ function ActivityDetailScreen() {
                 pitchEnabled={false}
                 rotateEnabled={false}
               >
-                <MapPolyline
-                  coordinates={routeCoordinates}
-                  strokeWidth={3}
-                  strokeColor="#2563eb"
-                />
+                <MapPolyline coordinates={routeCoordinates} strokeWidth={3} strokeColor="#2563eb" />
               </MapView>
             </View>
           </Card>
@@ -705,13 +670,7 @@ function ActivityDetailScreen() {
                       ? formatSwimPace(activity.avg_speed_mps).split(" ")[0]
                       : formatSpeed(activity.avg_speed_mps).split(" ")[0]
                 }
-                unit={
-                  activity.type === "run"
-                    ? "/km"
-                    : activity.type === "swim"
-                      ? "/100m"
-                      : "km/h"
-                }
+                unit={activity.type === "run" ? "/km" : activity.type === "swim" ? "/100m" : "km/h"}
               />
             )}
           </View>
@@ -734,13 +693,7 @@ function ActivityDetailScreen() {
                       ? formatSwimPace(activity.avg_speed_mps).split(" ")[0]
                       : formatSpeed(activity.avg_speed_mps).split(" ")[0]
                 }
-                unit={
-                  activity.type === "run"
-                    ? "/km"
-                    : activity.type === "swim"
-                      ? "/100m"
-                      : "km/h"
-                }
+                unit={activity.type === "run" ? "/km" : activity.type === "swim" ? "/100m" : "km/h"}
               />
               <View className="flex-1" />
             </View>
@@ -759,28 +712,16 @@ function ActivityDetailScreen() {
             <CardContent>
               <View className="flex-row justify-between">
                 <View className="items-center">
-                  <Text className="text-2xl font-bold">
-                    {activity.pool_length ?? "--"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground uppercase">
-                    Pool (m)
-                  </Text>
+                  <Text className="text-2xl font-bold">{activity.pool_length ?? "--"}</Text>
+                  <Text className="text-xs text-muted-foreground uppercase">Pool (m)</Text>
                 </View>
                 <View className="items-center">
-                  <Text className="text-2xl font-bold">
-                    {activity.total_strokes ?? "--"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground uppercase">
-                    Strokes
-                  </Text>
+                  <Text className="text-2xl font-bold">{activity.total_strokes ?? "--"}</Text>
+                  <Text className="text-xs text-muted-foreground uppercase">Strokes</Text>
                 </View>
                 <View className="items-center">
-                  <Text className="text-2xl font-bold">
-                    {activity.avg_swolf ?? "--"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground uppercase">
-                    Swolf
-                  </Text>
+                  <Text className="text-2xl font-bold">{activity.avg_swolf ?? "--"}</Text>
+                  <Text className="text-xs text-muted-foreground uppercase">Swolf</Text>
                 </View>
               </View>
             </CardContent>
@@ -797,14 +738,8 @@ function ActivityDetailScreen() {
               <View className="flex-row gap-4">
                 <View className="flex-1">
                   <View className="flex-row items-center gap-2 mb-1">
-                    <Icon
-                      as={TrendingUp}
-                      size={16}
-                      className="text-muted-foreground"
-                    />
-                    <Text className="text-xs text-muted-foreground uppercase">
-                      TSS
-                    </Text>
+                    <Icon as={TrendingUp} size={16} className="text-muted-foreground" />
+                    <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
                   </View>
                   <Text className="text-3xl font-bold">
                     {Math.round(activity.training_stress_score)}
@@ -862,11 +797,7 @@ function ActivityDetailScreen() {
               <Card>
                 <CardContent className="py-8">
                   <View className="items-center gap-3">
-                    <Icon
-                      as={Activity}
-                      size={32}
-                      className="text-destructive/50"
-                    />
+                    <Icon as={Activity} size={32} className="text-destructive/50" />
                     <Text className="text-sm text-center text-muted-foreground">
                       Failed to load analysis: {streamsError.message}
                     </Text>
@@ -888,25 +819,19 @@ function ActivityDetailScreen() {
                       />
                       <View className="flex-row justify-between px-2 mt-2 mb-4">
                         <View className="items-center">
-                          <Text className="text-xs text-muted-foreground">
-                            Max
-                          </Text>
+                          <Text className="text-xs text-muted-foreground">Max</Text>
                           <Text className="font-semibold">
                             {Math.round(stats.max)} {s.unit}
                           </Text>
                         </View>
                         <View className="items-center">
-                          <Text className="text-xs text-muted-foreground">
-                            Avg
-                          </Text>
+                          <Text className="text-xs text-muted-foreground">Avg</Text>
                           <Text className="font-semibold">
                             {Math.round(stats.avg)} {s.unit}
                           </Text>
                         </View>
                         <View className="items-center">
-                          <Text className="text-xs text-muted-foreground">
-                            Min
-                          </Text>
+                          <Text className="text-xs text-muted-foreground">Min</Text>
                           <Text className="font-semibold">
                             {Math.round(stats.min)} {s.unit}
                           </Text>
@@ -938,12 +863,8 @@ function ActivityDetailScreen() {
             <CardContent>
               <View className="gap-2">
                 <View className="flex-row border-b border-border pb-2 mb-2">
-                  <Text className="w-10 font-semibold text-xs text-muted-foreground">
-                    #
-                  </Text>
-                  <Text className="flex-1 font-semibold text-xs text-muted-foreground">
-                    Time
-                  </Text>
+                  <Text className="w-10 font-semibold text-xs text-muted-foreground">#</Text>
+                  <Text className="flex-1 font-semibold text-xs text-muted-foreground">Time</Text>
                   <Text className="flex-1 font-semibold text-xs text-muted-foreground">
                     Distance
                   </Text>
@@ -956,22 +877,15 @@ function ActivityDetailScreen() {
                   const lapDistance = lap.totalDistance || lap.distance || 0;
                   const lapTime = lap.totalTime || lap.totalTimerTime || 0;
                   const lapSpeed =
-                    lap.avgSpeed ||
-                    (lapDistance > 0 && lapTime > 0
-                      ? lapDistance / lapTime
-                      : 0);
+                    lap.avgSpeed || (lapDistance > 0 && lapTime > 0 ? lapDistance / lapTime : 0);
 
                   return (
                     <View
                       key={index}
                       className="flex-row py-2 border-b border-border/50 last:border-0"
                     >
-                      <Text className="w-10 font-medium text-sm">
-                        {index + 1}
-                      </Text>
-                      <Text className="flex-1 text-sm">
-                        {formatDuration(lapTime)}
-                      </Text>
+                      <Text className="w-10 font-medium text-sm">{index + 1}</Text>
+                      <Text className="flex-1 text-sm">{formatDuration(lapTime)}</Text>
                       <Text className="flex-1 text-sm">
                         {lapDistance >= 1000
                           ? `${(lapDistance / 1000).toFixed(2)} km`
@@ -1032,11 +946,7 @@ function ActivityDetailScreen() {
             <Icon
               as={Trash2}
               size={20}
-              className={
-                deleteMutation.isPending
-                  ? "text-muted-foreground"
-                  : "text-destructive"
-              }
+              className={deleteMutation.isPending ? "text-muted-foreground" : "text-destructive"}
             />
             <Text
               className={`font-semibold ${deleteMutation.isPending ? "text-muted-foreground" : "text-destructive"}`}

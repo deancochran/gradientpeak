@@ -1,4 +1,6 @@
+import type { CreationAvailabilityConfig, CreationConstraints } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
+import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import {
   Select,
   SelectContent,
@@ -7,11 +9,6 @@ import {
   SelectValue,
 } from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
-import { IntegerStepper } from "../inputs/IntegerStepper";
-import type {
-  CreationAvailabilityConfig,
-  CreationConstraints,
-} from "@repo/core";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
 import React from "react";
 import { Pressable, View } from "react-native";
@@ -32,14 +29,8 @@ interface ConstraintsTabProps {
     value: TrainingPlanConfigFormData["optimizationProfile"];
     label: string;
   }>;
-  optimizationProfileHelperCopy: Record<
-    TrainingPlanConfigFormData["optimizationProfile"],
-    string
-  >;
-  optimizationProfileDetailCopy: Record<
-    TrainingPlanConfigFormData["optimizationProfile"],
-    string
-  >;
+  optimizationProfileHelperCopy: Record<TrainingPlanConfigFormData["optimizationProfile"], string>;
+  optimizationProfileDetailCopy: Record<TrainingPlanConfigFormData["optimizationProfile"], string>;
   postGoalRecoveryDetailCopy: string;
   getWeekDayLabel: (day: string) => string;
   onToggleExpanded: () => void;
@@ -73,15 +64,12 @@ export function ConstraintsTab({
         <View className="flex-1">
           <Text className="text-sm font-medium">Limits</Text>
           <Text className="text-xs text-muted-foreground">
-            Rest {restDaysCount}d, sessions{" "}
-            {configData.constraints.min_sessions_per_week ?? 0}-
+            Rest {restDaysCount}d, sessions {configData.constraints.min_sessions_per_week ?? 0}-
             {configData.constraints.max_sessions_per_week ?? 0}
           </Text>
         </View>
         <View className="flex-row items-center gap-1">
-          <Text className="text-xs text-muted-foreground">
-            {expanded ? "Hide" : "Edit"}
-          </Text>
+          <Text className="text-xs text-muted-foreground">{expanded ? "Hide" : "Edit"}</Text>
           {expanded ? (
             <ChevronUp size={16} className="text-muted-foreground" />
           ) : (
@@ -136,8 +124,7 @@ export function ConstraintsTab({
             <Text className="text-sm">Hard rest days</Text>
             <View className="flex-row flex-wrap gap-2">
               {weekDays.map((day) => {
-                const selected =
-                  configData.constraints.hard_rest_days.includes(day);
+                const selected = configData.constraints.hard_rest_days.includes(day);
                 return (
                   <Button
                     key={`rest-${day}`}
@@ -165,15 +152,12 @@ export function ConstraintsTab({
             <Text className="text-sm">Max session (min)</Text>
             <IntegerStepper
               id="max-session-duration"
-              value={
-                configData.constraints.max_single_session_duration_minutes ?? 90
-              }
+              value={configData.constraints.max_single_session_duration_minutes ?? 90}
               min={20}
               max={600}
               onChange={(nextValue) => {
                 updateConfig((draft) => {
-                  draft.constraints.max_single_session_duration_minutes =
-                    nextValue;
+                  draft.constraints.max_single_session_duration_minutes = nextValue;
                   draft.constraintsSource = "user";
                 });
               }}
@@ -184,21 +168,19 @@ export function ConstraintsTab({
             <Text className="text-sm">Goal difficulty</Text>
             <Select
               value={{
-                value:
-                  configData.constraints.goal_difficulty_preference ??
-                  "balanced",
+                value: configData.constraints.goal_difficulty_preference ?? "balanced",
                 label:
                   goalDifficultyOptions.find(
-                    (option) =>
-                      option.value ===
-                      configData.constraints.goal_difficulty_preference,
+                    (option) => option.value === configData.constraints.goal_difficulty_preference,
                   )?.label ?? "Balanced",
               }}
               onValueChange={(option) => {
                 if (!option?.value) return;
                 updateConfig((draft) => {
-                  draft.constraints.goal_difficulty_preference =
-                    option.value as "conservative" | "balanced" | "stretch";
+                  draft.constraints.goal_difficulty_preference = option.value as
+                    | "conservative"
+                    | "balanced"
+                    | "stretch";
                   draft.constraintsSource = "user";
                 });
               }}
@@ -208,11 +190,7 @@ export function ConstraintsTab({
               </SelectTrigger>
               <SelectContent>
                 {goalDifficultyOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    label={option.label}
-                    value={option.value}
-                  >
+                  <SelectItem key={option.value} label={option.label} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
@@ -243,11 +221,7 @@ export function ConstraintsTab({
               </SelectTrigger>
               <SelectContent>
                 {optimizationProfileOptions.map((option) => (
-                  <SelectItem
-                    key={option.value}
-                    label={option.label}
-                    value={option.value}
-                  >
+                  <SelectItem key={option.value} label={option.label} value={option.value}>
                     {option.label}
                   </SelectItem>
                 ))}
