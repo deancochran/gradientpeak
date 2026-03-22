@@ -1,0 +1,41 @@
+export const TSS_CONSTANTS = {
+  CTL_TIME_CONSTANT: 42,
+  ATL_TIME_CONSTANT: 7,
+  CTL_ALPHA: 1 - Math.exp(-1 / 42),
+  ATL_ALPHA: 1 - Math.exp(-1 / 7),
+  BASE_TSS_MULTIPLIER: 100,
+} as const;
+
+export const TSB_THRESHOLDS = {
+  OPTIMAL: 10,
+  GOOD: -10,
+  TIRED: -30,
+  VERY_TIRED: -30,
+} as const;
+
+export const FITNESS_LEVEL_THRESHOLDS = {
+  LOW: 40,
+  MODERATE: 60,
+  HIGH: 80,
+  VERY_HIGH: 80,
+} as const;
+
+export const FATIGUE_LEVEL_THRESHOLDS = {
+  LOW: 40,
+  MODERATE: 60,
+  HIGH: 80,
+  VERY_HIGH: 80,
+} as const;
+
+export const NORMALIZED_POWER = {
+  ROLLING_WINDOW_SECONDS: 30,
+  MIN_DATA_POINTS: 30,
+  POWER_EXPONENT: 4,
+} as const;
+
+export const TRAINING_RECOMMENDATIONS = {
+  DEFAULT_RAMP_RATE: 6,
+  CONSERVATIVE_RAMP_RATE: 3,
+  AGGRESSIVE_RAMP_RATE: 9,
+  MAX_RAMP_RATE: 12,
+} as const;

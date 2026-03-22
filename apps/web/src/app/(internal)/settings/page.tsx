@@ -23,18 +23,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { FileInput } from "@repo/ui/components/file-input";
+import { Form, FormSwitchField, FormTextField } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
-import { Switch } from "@repo/ui/components/switch";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -179,8 +170,10 @@ export default function SettingsPage() {
     }
   };
 
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleAvatarUpload = async (
+    files: Array<{ file?: File; name: string; type?: string | null; size?: number | null }>,
+  ) => {
+    const file = files[0]?.file;
     if (!file || !user) return;
 
     try {
@@ -229,8 +222,6 @@ export default function SettingsPage() {
       toast.error("Failed to upload avatar");
     } finally {
       setUploadingAvatar(false);
-      // Reset file input
-      event.target.value = "";
     }
   };
 
@@ -306,14 +297,14 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* Hidden file input */}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarUpload}
-                  disabled={uploadingAvatar}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-                />
+                <div className="absolute inset-0 opacity-0">
+                  <FileInput
+                    accept="image/*"
+                    buttonLabel="Upload avatar"
+                    label="Avatar upload"
+                    onFilesChange={handleAvatarUpload}
+                  />
+                </div>
               </div>
 
               <div>
@@ -328,49 +319,21 @@ export default function SettingsPage() {
             {/* Profile Form */}
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
+                <FormTextField
                   control={form.control}
+                  description="This is the username that will be displayed on your profile."
+                  label="Username"
                   name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter your username"
-                          {...field}
-                          value={typeof field.value === "string" ? field.value : ""}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        This is the username that will be displayed on your profile.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="Enter your username"
                 />
 
-                <FormField
+                <FormSwitchField
                   control={form.control}
+                  description="Make your profile and activities visible to everyone."
+                  label="Public Account"
                   name="is_public"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">Public Account</FormLabel>
-                        <FormDescription>
-                          Make your profile and activities visible to everyone.
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          accessibilityLabel="Public Account"
-                          checked={Boolean(field.value)}
-                          onBlur={field.onBlur}
-                          onCheckedChange={field.onChange}
-                          ref={field.ref}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
+                  switchLabel="Profile visibility"
+                  testId="profile-visibility-switch"
                 />
 
                 <Button type="submit" disabled={updating}>

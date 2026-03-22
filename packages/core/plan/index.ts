@@ -2,6 +2,7 @@ export * from "./availabilityUtils";
 export * from "./buildProjectionEngineInput";
 export * from "./canonicalization";
 export * from "./classifyCreationFeasibility";
+export * from "./compositeCalibration";
 export * from "./computeLoadBootstrapState";
 export * from "./dateOnlyUtc";
 export * from "./deriveCreationContext";

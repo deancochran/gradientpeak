@@ -1,11 +1,11 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { TrendsOverviewSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Progress } from "@repo/ui/components/progress";
 import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
 import { TrainingLoadChart, type TrainingLoadData } from "@/components/charts";
-import { TrendsOverviewSkeleton } from "@/components/shared";
 
 interface Status {
   form: string;

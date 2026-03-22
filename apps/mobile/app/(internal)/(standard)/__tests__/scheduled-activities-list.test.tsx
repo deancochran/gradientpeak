@@ -34,12 +34,14 @@ vi.mock("@/components/plan/calendar/ActivityList", () => ({
   ActivityList: createHost("ActivityList"),
 }));
 
-vi.mock("@/components/shared", () => ({
-  ListSkeleton: createHost("ListSkeleton"),
-}));
+vi.mock("@/components/shared", () => ({}));
 
 vi.mock("@repo/ui/components/empty-state-card", () => ({
   EmptyStateCard: createHost("EmptyStateCard"),
+}));
+
+vi.mock("@repo/ui/components/loading-skeletons", () => ({
+  ListSkeleton: createHost("ListSkeleton"),
 }));
 
 vi.mock("@repo/ui/components/icon", () => ({

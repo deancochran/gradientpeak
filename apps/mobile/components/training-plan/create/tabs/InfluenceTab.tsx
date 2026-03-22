@@ -153,7 +153,7 @@ export function InfluenceTab({
             decimals={3}
             helperText="-1.00 to 1.00"
             accessibilityHint="Enter a value from minus one point zero zero to plus one point zero zero"
-            onChange={(value) => {
+            onChange={(value: string) => {
               const parsed = parseNumberOrUndefined(value);
               if (parsed === undefined) {
                 return;

@@ -5,9 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import CalendarScreenWithErrorBoundary from "../calendar";
 
 vi.mock("@tanstack/react-query", async () => {
-  const actual = await vi.importActual<typeof import("@tanstack/react-query")>(
-    "@tanstack/react-query",
-  );
+  const actual =
+    await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
 
   return {
     ...actual,
@@ -15,10 +14,11 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-const { pushMock, replaceMock, openRouteMock, today } = vi.hoisted(() => ({
+const { pushMock, replaceMock, openRouteMock, setSelectionMock, today } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   replaceMock: vi.fn(),
   openRouteMock: vi.fn(() => "/event/event-1"),
+  setSelectionMock: vi.fn(),
   today: new Date().toISOString().split("T")[0]!,
 }));
 
@@ -50,11 +50,8 @@ vi.mock("react-native", () => {
           <React.Fragment key={section.dateKey || section.title}>
             {props.renderSectionHeader?.({ section }) ?? null}
             {(section.data || []).map((item: any, itemIndex: number) => (
-              <React.Fragment
-                key={item.key ?? `${section.dateKey}-${itemIndex}`}
-              >
-                {props.renderItem?.({ item, section, index: itemIndex }) ??
-                  null}
+              <React.Fragment key={item.key ?? `${section.dateKey}-${itemIndex}`}>
+                {props.renderItem?.({ item, section, index: itemIndex }) ?? null}
               </React.Fragment>
             ))}
           </React.Fragment>
@@ -95,6 +92,9 @@ vi.mock("@/components/ErrorBoundary", () => ({
 
 vi.mock("@/components/shared", () => ({
   AppHeader: createHost("AppHeader"),
+}));
+
+vi.mock("@repo/ui/components/loading-skeletons", () => ({
   PlanCalendarSkeleton: createHost("PlanCalendarSkeleton"),
 }));
 
@@ -127,16 +127,42 @@ vi.mock("@repo/ui/components/textarea", () => ({
 }));
 
 vi.mock("lucide-react-native", () => ({
+  ArrowUpRight: createHost("ArrowUpRight"),
   CalendarDays: createHost("CalendarDays"),
+  CheckCircle2: createHost("CheckCircle2"),
+  ChevronLeft: createHost("ChevronLeft"),
   ChevronRight: createHost("ChevronRight"),
   Clock3: createHost("Clock3"),
+  Flag: createHost("Flag"),
+  Lock: createHost("Lock"),
+  MoonStar: createHost("MoonStar"),
+  Pencil: createHost("Pencil"),
   Play: createHost("Play"),
   Plus: createHost("Plus"),
+  Repeat2: createHost("Repeat2"),
   Search: createHost("Search"),
+  Zap: createHost("Zap"),
 }));
 
 vi.mock("@/lib/stores/activitySelectionStore", () => ({
-  activitySelectionStore: { setSelection: vi.fn() },
+  activitySelectionStore: { setSelection: setSelectionMock },
+}));
+
+vi.mock("@/lib/constants/routes", () => ({
+  ROUTES: { RECORD: "/record" },
+}));
+
+vi.mock("@/lib/utils/plan/colors", () => ({
+  getActivityColor: (type?: string) => ({
+    name: type === "outdoor_run" ? "Outdoor Run" : "Other",
+    bg: "bg-orange-500",
+    text: "text-orange-600",
+    iconBg: "bg-orange-500",
+  }),
+}));
+
+vi.mock("@/lib/utils/plan/dateGrouping", () => ({
+  isActivityCompleted: (activity: any) => activity?.completed === true,
 }));
 
 vi.mock("@/lib/navigation/useNavigationActionGuard", () => ({
@@ -166,6 +192,22 @@ vi.mock("@/lib/trpc", () => ({
                 starts_at: `${today}T09:00:00.000Z`,
                 all_day: false,
                 notes: null,
+              },
+              {
+                id: "event-2",
+                event_type: "planned",
+                title: "Tempo Builder",
+                scheduled_date: today,
+                starts_at: `${today}T06:30:00.000Z`,
+                all_day: false,
+                completed: false,
+                activity_plan: {
+                  id: "plan-1",
+                  name: "Tempo Builder",
+                  activity_category: "outdoor_run",
+                  estimated_duration: 3600,
+                  estimated_tss: 72,
+                },
               },
             ],
           },
@@ -218,12 +260,8 @@ describe("calendar day scroller", () => {
       renderer = TestRenderer.create(<CalendarScreenWithErrorBoundary />);
     });
 
-    expect(
-      renderer.root.findByProps({ testID: "create-event-entry" }),
-    ).toBeDefined();
-    expect(
-      renderer.root.findByProps({ testID: `schedule-event-event-1` }),
-    ).toBeDefined();
+    expect(renderer.root.findByProps({ testID: "create-event-entry" })).toBeDefined();
+    expect(renderer.root.findByProps({ testID: `schedule-event-event-1` })).toBeDefined();
 
     const textValues = renderer.root
       .findAll((node: any) => node.type === "Text")
@@ -234,14 +272,26 @@ describe("calendar day scroller", () => {
         }
         return typeof value === "string" ? value : "";
       });
+    const combinedText = textValues.join(" ");
 
-    expect(textValues).toContain("Focus Day");
+    expect(textValues).toContain(format(new Date(`${today}T00:00:00.000Z`), "MMMM yyyy"));
+    expect(renderer.root.findByProps({ testID: `calendar-week-day-${today}` })).toBeDefined();
+    expect(renderer.root.findAllByProps({ testID: `calendar-gap-${today}` }).length).toBe(0);
+    expect(
+      renderer.root.findAll((node: any) =>
+        String(node.props?.testID || "").startsWith("calendar-gap-"),
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(combinedText).toContain("From Plan");
+    expect(combinedText).toContain("72 TSS");
+    expect(combinedText).toContain("Start");
+    expect(combinedText).toContain("Next event");
     expect(textValues).not.toContain("Open Full Plan");
     expect(textValues).not.toContain("No Training Plan");
     expect(textValues).not.toContain("Up Next");
   });
 
-  it("updates focused day when another day header is pressed", () => {
+  it("updates focused day when another day is selected from the week strip", () => {
     let renderer!: TestRenderer.ReactTestRenderer;
 
     act(() => {
@@ -252,18 +302,15 @@ describe("calendar day scroller", () => {
     tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     const tomorrowKey = tomorrow.toISOString().split("T")[0]!;
 
-    const tomorrowHeader = renderer.root.findAllByProps({
-      testID: `day-header-${tomorrowKey}`,
-    })[0];
-
-    act(() => {
-      tomorrowHeader.props.onPress();
+    const tomorrowButton = renderer.root.findByProps({
+      testID: `calendar-week-day-${tomorrowKey}`,
     });
 
-    const expectedLabel = format(
-      new Date(`${tomorrowKey}T00:00:00.000Z`),
-      "EEEE, MMM d",
-    );
+    act(() => {
+      tomorrowButton.props.onPress();
+    });
+
+    const expectedLabel = format(new Date(`${tomorrowKey}T00:00:00.000Z`), "EEEE, MMM d");
 
     const textValues = renderer.root
       .findAll((node: any) => node.type === "Text")
@@ -272,6 +319,33 @@ describe("calendar day scroller", () => {
       .filter((value: unknown): value is string => typeof value === "string");
 
     expect(textValues).toContain(expectedLabel);
+  });
+
+  it("shows a guided empty-day state when selecting an unscheduled day", () => {
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = TestRenderer.create(<CalendarScreenWithErrorBoundary />);
+    });
+
+    const tomorrow = new Date();
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const tomorrowKey = tomorrow.toISOString().split("T")[0]!;
+
+    const tomorrowButton = renderer.root.findByProps({
+      testID: `calendar-week-day-${tomorrowKey}`,
+    });
+
+    act(() => {
+      tomorrowButton.props.onPress();
+    });
+
+    expect(
+      renderer.root.findByProps({ testID: `calendar-empty-day-${tomorrowKey}` }),
+    ).toBeDefined();
+    expect(
+      renderer.root.findByProps({ testID: `calendar-empty-create-${tomorrowKey}` }),
+    ).toBeDefined();
   });
 
   it("navigates directly to routed event detail on tap", async () => {
@@ -294,6 +368,31 @@ describe("calendar day scroller", () => {
     expect(pushMock).toHaveBeenCalledWith("/event/event-1");
   });
 
+  it("starts a planned activity from the row quick action", async () => {
+    let renderer!: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      renderer = TestRenderer.create(<CalendarScreenWithErrorBoundary />);
+    });
+
+    const actionButton = renderer.root.findByProps({
+      testID: "schedule-event-action-event-2",
+    });
+
+    await act(async () => {
+      actionButton.props.onPress();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(setSelectionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "outdoor_run",
+        eventId: "event-2",
+      }),
+    );
+    expect(pushMock).toHaveBeenCalledWith("/record");
+  });
+
   it("opens a direct planned-activity scheduling flow from calendar", () => {
     let renderer!: TestRenderer.ReactTestRenderer;
 
@@ -302,15 +401,11 @@ describe("calendar day scroller", () => {
     });
 
     act(() => {
-      renderer.root
-        .findByProps({ testID: "create-event-entry" })
-        .props.onPress();
+      renderer.root.findByProps({ testID: "create-event-entry" }).props.onPress();
     });
 
     act(() => {
-      renderer.root
-        .findByProps({ testID: "create-type-planned" })
-        .props.onPress();
+      renderer.root.findByProps({ testID: "create-type-planned" }).props.onPress();
     });
 
     expect(replaceMock).not.toHaveBeenCalled();
@@ -324,9 +419,7 @@ describe("calendar day scroller", () => {
       planOption.props.onPress();
     });
 
-    const scheduleModal = renderer.root.find(
-      (node: any) => node.type === "ScheduleActivityModal",
-    );
+    const scheduleModal = renderer.root.find((node: any) => node.type === "ScheduleActivityModal");
 
     expect(scheduleModal.props.activityPlanId).toBe("plan-1");
     expect(scheduleModal.props.preselectedDate).toBe(today);

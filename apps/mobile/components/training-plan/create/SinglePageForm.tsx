@@ -1,4 +1,6 @@
 import type {
+  BlockingIssue,
+  CompositeWeightLocks,
   CreationAvailabilityConfig,
   CreationBehaviorControlsV1,
   CreationConfigLocks,
@@ -16,10 +18,13 @@ import type {
 import { Badge } from "@repo/ui/components/badge";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
+import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { DurationInput } from "@repo/ui/components/duration-input";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
+import { NumberSliderInput } from "@repo/ui/components/number-slider-input";
 import { PaceInput } from "@repo/ui/components/pace-input";
+import { PercentSliderInput } from "@repo/ui/components/percent-slider-input";
 import {
   Select,
   SelectContent,
@@ -44,13 +49,8 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { type CompositeWeightLocks } from "../../../lib/training-plan-form/calibration";
 import { parseNumberOrUndefined } from "../../../lib/training-plan-form/input-parsers";
-import type { BlockingIssue } from "../../../lib/training-plan-form/validation";
 import { CreationProjectionChart } from "./CreationProjectionChart";
-import { DateField } from "./inputs/DateField";
-import { NumberSliderInput } from "./inputs/NumberSliderInput";
-import { PercentSliderInput } from "./inputs/PercentSliderInput";
 
 export type GoalTargetType =
   | "race_performance"

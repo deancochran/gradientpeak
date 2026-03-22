@@ -27,12 +27,18 @@
  * ```
  */
 
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { getServerConfig } from "@/lib/server-config";
-import { trpc } from "@/lib/trpc";
 import { queryKeys } from "@repo/trpc/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
+import { getServerConfig } from "@/lib/server-config";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import {
+  clearPendingFinalizedArtifact,
+  deleteFinalizedArtifactFiles,
+  loadPendingFinalizedArtifact,
+} from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
+import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/types";
+import { trpc } from "@/lib/trpc";
 // import * as FileSystem from "expo-file-system"; // Removed as we use File class now
 
 import {
@@ -51,10 +57,8 @@ import {
 } from "@repo/core";
 import type { PublicActivitiesInsert } from "@repo/supabase";
 import { useCallback, useEffect, useReducer } from "react";
-
-import { FitUploader } from "@/lib/services/fit/FitUploader";
-
 import { useAuth } from "@/lib/hooks/useAuth";
+import { FitUploader } from "@/lib/services/fit/FitUploader";
 
 // ================================
 // Types
@@ -64,6 +68,7 @@ type SubmissionPhase = "loading" | "ready" | "uploading" | "success" | "error";
 
 interface SubmissionState {
   phase: SubmissionPhase;
+  artifact: RecordingSessionArtifact | null;
   activity: PublicActivitiesInsert | null;
   error: string | null;
   hasStreams: boolean;
@@ -72,6 +77,7 @@ interface SubmissionState {
 type Action =
   | {
       type: "READY";
+      artifact: RecordingSessionArtifact;
       activity: PublicActivitiesInsert;
       hasStreams: boolean;
     }
@@ -87,14 +93,12 @@ type Action =
 // Reducer
 // ================================
 
-function submissionReducer(
-  state: SubmissionState,
-  action: Action,
-): SubmissionState {
+function submissionReducer(state: SubmissionState, action: Action): SubmissionState {
   switch (action.type) {
     case "READY":
       return {
         phase: "ready",
+        artifact: action.artifact,
         activity: action.activity,
         error: null,
         hasStreams: action.hasStreams,
@@ -126,7 +130,7 @@ function submissionReducer(
 // ================================
 
 function calculateActivityMetrics(
-  metadata: import("@/lib/services/ActivityRecorder/types").RecordingMetadata,
+  timing: { startedAt: string; endedAt: string },
   aggregatedStreams: Map<string, AggregatedStream>,
 ): {
   durationSeconds: number;
@@ -136,10 +140,8 @@ function calculateActivityMetrics(
   hrZoneSeconds: number[] | null;
   powerZoneSeconds: number[] | null;
 } {
-  if (!metadata.startedAt || !metadata.endedAt) {
-    throw new Error(
-      `Invalid recording: startedAt=${metadata.startedAt}, endedAt=${metadata.endedAt}`,
-    );
+  if (!timing.startedAt || !timing.endedAt) {
+    throw new Error(`Invalid recording: startedAt=${timing.startedAt}, endedAt=${timing.endedAt}`);
   }
 
   // Extract stream references
@@ -152,15 +154,9 @@ function calculateActivityMetrics(
   const gradientStream = aggregatedStreams.get("gradient");
 
   // Base calculations
-  const duration_seconds = Math.round(
-    calculateElapsedTime(metadata.startedAt, metadata.endedAt),
-  );
+  const duration_seconds = Math.round(calculateElapsedTime(timing.startedAt, timing.endedAt));
   const moving_seconds = Math.round(
-    calculateMovingTime(
-      metadata.startedAt,
-      metadata.endedAt,
-      aggregatedStreams,
-    ),
+    calculateMovingTime(timing.startedAt, timing.endedAt, aggregatedStreams),
   );
 
   // Distance in meters
@@ -169,20 +165,12 @@ function calculateActivityMetrics(
   // Simple aggregated values
   const avg_hr = hrStream?.avgValue ? Math.round(hrStream.avgValue) : undefined;
   const max_hr = hrStream?.maxValue ? Math.round(hrStream.maxValue) : undefined;
-  const avg_power = powerStream?.avgValue
-    ? Math.round(powerStream.avgValue)
-    : undefined;
-  const max_power = powerStream?.maxValue
-    ? Math.round(powerStream.maxValue)
-    : undefined;
+  const avg_power = powerStream?.avgValue ? Math.round(powerStream.avgValue) : undefined;
+  const max_power = powerStream?.maxValue ? Math.round(powerStream.maxValue) : undefined;
   const avg_speed = speedStream?.avgValue;
   const max_speed = speedStream?.maxValue;
-  const avg_cadence = cadenceStream?.avgValue
-    ? Math.round(cadenceStream.avgValue)
-    : undefined;
-  const max_cadence = cadenceStream?.maxValue
-    ? Math.round(cadenceStream.maxValue)
-    : undefined;
+  const avg_cadence = cadenceStream?.avgValue ? Math.round(cadenceStream.avgValue) : undefined;
+  const max_cadence = cadenceStream?.maxValue ? Math.round(cadenceStream.maxValue) : undefined;
 
   // Power-derived metrics
   // NOTE: Advanced metrics (TSS, IF, zones) will be calculated on server
@@ -190,12 +178,8 @@ function calculateActivityMetrics(
   const normalized_power = calculateNormalizedPower(powerStream);
   const intensity_factor = undefined; // requires FTP from metric logs
   const tss = undefined; // requires FTP from metric logs
-  const vi = Math.round(
-    calculateVariabilityIndex(powerStream, normalized_power) || 0,
-  );
-  const total_work = Math.round(
-    calculateTotalWork(powerStream, duration_seconds) || 0,
-  );
+  const vi = Math.round(calculateVariabilityIndex(powerStream, normalized_power) || 0);
+  const total_work = Math.round(calculateTotalWork(powerStream, duration_seconds) || 0);
 
   // Zone calculations - will be recalculated on server with historical metrics
   const hr_zones = null; // calculateHRZones requires threshold_hr from metric logs
@@ -203,23 +187,17 @@ function calculateActivityMetrics(
 
   // Multi-stream advanced metrics
   const ef = Math.round(calculateEfficiencyFactor(powerStream, hrStream) || 0);
-  const decoupling = Math.round(
-    calculateDecoupling(powerStream, hrStream) || 0,
-  );
+  const decoupling = Math.round(calculateDecoupling(powerStream, hrStream) || 0);
   const power_hr_ratio = calculatePowerHeartRateRatio(powerStream, hrStream);
   // power_weight_ratio requires weight from metric logs - calculated on server
   const power_weight_ratio = undefined;
 
   // Elevation calculations
-  const { totalAscent, totalDescent } =
-    calculateElevationChanges(elevationStream);
+  const { totalAscent, totalDescent } = calculateElevationChanges(elevationStream);
   const total_ascent = Math.round(totalAscent || 0);
   const total_descent = Math.round(totalDescent || 0);
   const avg_grade = calculateAverageGrade(gradientStream);
-  const elevation_gain_per_km = calculateElevationGainPerKm(
-    total_ascent,
-    distanceStream,
-  );
+  const elevation_gain_per_km = calculateElevationGainPerKm(total_ascent, distanceStream);
 
   // Calories - will be calculated on server with weight from metric logs
   const calories = undefined;
@@ -233,12 +211,10 @@ function calculateActivityMetrics(
   // Only include defined values
   if (avg_power !== undefined) metrics.avg_power = avg_power;
   if (max_power !== undefined) metrics.max_power = max_power;
-  if (normalized_power !== undefined)
-    metrics.normalized_power = normalized_power;
+  if (normalized_power !== undefined) metrics.normalized_power = normalized_power;
   if (avg_hr !== undefined) metrics.avg_hr = avg_hr;
   if (max_hr !== undefined) metrics.max_hr = max_hr;
-  if (max_hr_pct_threshold !== undefined)
-    metrics.max_hr_pct_threshold = max_hr_pct_threshold;
+  if (max_hr_pct_threshold !== undefined) metrics.max_hr_pct_threshold = max_hr_pct_threshold;
   if (avg_cadence !== undefined) metrics.avg_cadence = avg_cadence;
   if (max_cadence !== undefined) metrics.max_cadence = max_cadence;
   if (avg_speed !== undefined) metrics.avg_speed = avg_speed;
@@ -248,14 +224,12 @@ function calculateActivityMetrics(
   if (total_ascent !== undefined) metrics.total_ascent = total_ascent;
   if (total_descent !== undefined) metrics.total_descent = total_descent;
   if (avg_grade !== undefined) metrics.avg_grade = avg_grade;
-  if (elevation_gain_per_km !== undefined)
-    metrics.elevation_gain_per_km = elevation_gain_per_km;
+  if (elevation_gain_per_km !== undefined) metrics.elevation_gain_per_km = elevation_gain_per_km;
   if (tss !== undefined) metrics.tss = tss;
   if (intensity_factor !== undefined) metrics.if = intensity_factor;
   if (vi !== undefined) metrics.vi = vi;
   if (ef !== undefined) metrics.ef = ef;
-  if (power_weight_ratio !== undefined)
-    metrics.power_weight_ratio = power_weight_ratio;
+  if (power_weight_ratio !== undefined) metrics.power_weight_ratio = power_weight_ratio;
   if (power_hr_ratio !== undefined) metrics.power_hr_ratio = power_hr_ratio;
   if (decoupling !== undefined) metrics.decoupling = decoupling;
 
@@ -275,36 +249,60 @@ function calculateActivityMetrics(
   };
 }
 
-/**
- * Convert Uint8Array to base64 string (React Native compatible)
- * Uses manual base64 encoding without external dependencies
- */
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  const base64abc =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let result = "";
-  let i;
-  const l = bytes.length;
-  for (i = 2; i < l; i += 3) {
-    result += base64abc[bytes[i - 2] >> 2];
-    result += base64abc[((bytes[i - 2] & 0x03) << 4) | (bytes[i - 1] >> 4)];
-    result += base64abc[((bytes[i - 1] & 0x0f) << 2) | (bytes[i] >> 6)];
-    result += base64abc[bytes[i] & 0x3f];
-  }
-  if (i === l + 1) {
-    // 1 octet yet to write
-    result += base64abc[bytes[i - 2] >> 2];
-    result += base64abc[(bytes[i - 2] & 0x03) << 4];
-    result += "==";
-  }
-  if (i === l) {
-    // 2 octets yet to write
-    result += base64abc[bytes[i - 2] >> 2];
-    result += base64abc[((bytes[i - 2] & 0x03) << 4) | (bytes[i - 1] >> 4)];
-    result += base64abc[(bytes[i - 1] & 0x0f) << 2];
-    result += "=";
-  }
-  return result;
+function buildDefaultActivityName(artifact: RecordingSessionArtifact): string {
+  const category = artifact.snapshot.activity.category;
+  const gpsLabel = artifact.snapshot.activity.gpsMode === "on" ? "GPS ON" : "GPS OFF";
+
+  return `${category} (${gpsLabel}) - ${new Date(
+    artifact.snapshot.identity.startedAt,
+  ).toLocaleDateString()}`;
+}
+
+function buildActivityFromArtifact(args: {
+  artifact: RecordingSessionArtifact;
+  profileId: string;
+  calculatedMetrics?: ReturnType<typeof calculateActivityMetrics> | null;
+}): PublicActivitiesInsert {
+  const { artifact, profileId, calculatedMetrics } = args;
+
+  return {
+    profile_id: profileId,
+    started_at: artifact.snapshot.identity.startedAt,
+    finished_at: artifact.completedAt,
+    name: buildDefaultActivityName(artifact),
+    type: artifact.snapshot.activity.category,
+    duration_seconds: artifact.finalStats.durationSeconds,
+    moving_seconds: artifact.finalStats.movingSeconds,
+    distance_meters: Math.round(artifact.finalStats.distanceMeters),
+    avg_power: calculatedMetrics?.metrics.avg_power as number | undefined,
+    max_power: calculatedMetrics?.metrics.max_power as number | undefined,
+    normalized_power: calculatedMetrics?.metrics.normalized_power as number | undefined,
+    avg_heart_rate: calculatedMetrics?.metrics.avg_hr as number | undefined,
+    max_heart_rate: calculatedMetrics?.metrics.max_hr as number | undefined,
+    avg_cadence: calculatedMetrics?.metrics.avg_cadence as number | undefined,
+    max_cadence: calculatedMetrics?.metrics.max_cadence as number | undefined,
+    avg_speed_mps: calculatedMetrics?.metrics.avg_speed as number | undefined,
+    max_speed_mps: calculatedMetrics?.metrics.max_speed as number | undefined,
+    calories:
+      (calculatedMetrics?.metrics.calories as number | undefined) ?? artifact.finalStats.calories,
+    elevation_gain_meters: calculatedMetrics?.metrics.total_ascent as number | undefined,
+    elevation_loss_meters: calculatedMetrics?.metrics.total_descent as number | undefined,
+    training_stress_score: calculatedMetrics?.metrics.tss as number | undefined,
+    intensity_factor: calculatedMetrics?.metrics.if as number | undefined,
+    hr_zone_1_seconds: calculatedMetrics?.hrZoneSeconds?.[0] ?? undefined,
+    hr_zone_2_seconds: calculatedMetrics?.hrZoneSeconds?.[1] ?? undefined,
+    hr_zone_3_seconds: calculatedMetrics?.hrZoneSeconds?.[2] ?? undefined,
+    hr_zone_4_seconds: calculatedMetrics?.hrZoneSeconds?.[3] ?? undefined,
+    hr_zone_5_seconds: calculatedMetrics?.hrZoneSeconds?.[4] ?? undefined,
+    power_zone_1_seconds: calculatedMetrics?.powerZoneSeconds?.[0] ?? undefined,
+    power_zone_2_seconds: calculatedMetrics?.powerZoneSeconds?.[1] ?? undefined,
+    power_zone_3_seconds: calculatedMetrics?.powerZoneSeconds?.[2] ?? undefined,
+    power_zone_4_seconds: calculatedMetrics?.powerZoneSeconds?.[3] ?? undefined,
+    power_zone_5_seconds: calculatedMetrics?.powerZoneSeconds?.[4] ?? undefined,
+    power_zone_6_seconds: calculatedMetrics?.powerZoneSeconds?.[5] ?? undefined,
+    power_zone_7_seconds: calculatedMetrics?.powerZoneSeconds?.[6] ?? undefined,
+    activity_plan_id: artifact.snapshot.activity.activityPlanId,
+  };
 }
 
 // ================================
@@ -313,51 +311,14 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 
 export function useActivitySubmission(service: ActivityRecorderService | null) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
+  const { profile } = useAuth();
 
   const [state, dispatch] = useReducer(submissionReducer, {
     phase: "loading",
+    artifact: null,
     activity: null,
     error: null,
     hasStreams: false,
-  });
-
-  const createActivityMutation = trpc.activities.create.useMutation({
-    onSuccess: async (data) => {
-      // Invalidate relevant queries after successful upload
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.activities.lists(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.trainingPlans.status(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.events.all,
-      });
-      // Invalidate home dashboard to update CTL/ATL/TSB and weekly stats
-      // Use predicate to invalidate all home-related queries
-      queryClient.invalidateQueries({
-        predicate: (query) =>
-          query.queryKey[0] === "home" ||
-          (Array.isArray(query.queryKey) && query.queryKey[0]?.[0] === "home"),
-      });
-
-      // Invalidate trends to update charts with new activity data
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.trends.all(),
-      });
-
-      // Set the new activity in cache
-      if (data.id) {
-        queryClient.setQueryData(queryKeys.activities.detail(data.id), data);
-      }
-
-      console.log("[useActivitySubmission] Activity uploaded successfully.");
-    },
-    onError: (error) => {
-      // Don't show Alert here - let submitOnce handle it to avoid duplicate alerts
-      console.error("[useActivitySubmission] Upload failed:", error);
-    },
   });
 
   // ================================
@@ -365,121 +326,62 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   // ================================
 
   const processRecording = useCallback(async () => {
-    if (!service) {
-      dispatch({ type: "ERROR", error: "No service found" });
-      return;
-    }
-
-    // Wait for recording to be in finished state
-    if (service.state !== "finished") {
-      console.log(
-        "[useActivitySubmission] Recording not finished yet, waiting...",
-      );
-      return;
-    }
-
-    const metadata = service.recordingMetadata;
-    if (!metadata) {
-      dispatch({ type: "ERROR", error: "No recording metadata found" });
-      return;
-    }
-
     try {
-      console.log("[useActivitySubmission] Processing recording");
+      console.log("[useActivitySubmission] Processing finalized artifact");
 
-      // Verify recording has been properly finished
-      if (!metadata.startedAt || !metadata.endedAt) {
-        throw new Error(
-          "Recording is not properly finished. Missing start or end time.",
-        );
+      const artifact = service?.getFinalizedArtifact() ?? (await loadPendingFinalizedArtifact());
+
+      if (!artifact) {
+        if (service?.state === "finishing") {
+          return;
+        }
+
+        throw new Error("No finalized activity artifact found");
       }
 
-      // 1. Aggregate all chunks from StreamBuffer
-      console.log(
-        "[useActivitySubmission] Aggregating stream data from files...",
-      );
-      const aggregatedStreams =
-        await service.liveMetricsManager.streamBuffer.aggregateAllChunks();
+      let calculatedMetrics: ReturnType<typeof calculateActivityMetrics> | null = null;
 
-      const hasStreams = aggregatedStreams.size > 0;
+      if (service?.getFinalizedArtifact()?.sessionId === artifact.sessionId) {
+        try {
+          const aggregatedStreams =
+            await service.liveMetricsManager.streamBuffer.aggregateAllChunks();
 
-      console.log(
-        `[useActivitySubmission] Aggregated ${aggregatedStreams.size} metrics`,
-      );
+          if (aggregatedStreams.size > 0) {
+            console.log(
+              `[useActivitySubmission] Aggregated ${aggregatedStreams.size} metrics for enrichment`,
+            );
+            calculatedMetrics = calculateActivityMetrics(
+              {
+                startedAt: artifact.snapshot.identity.startedAt,
+                endedAt: artifact.completedAt,
+              },
+              aggregatedStreams,
+            );
+          }
+        } catch (error) {
+          console.warn(
+            "[useActivitySubmission] Failed to aggregate stream data, using artifact stats only",
+            error,
+          );
+        }
+      }
 
-      // 3. Build final activity object
-      const calculatedMetrics = calculateActivityMetrics(
-        metadata,
-        aggregatedStreams,
-      );
+      const profileId = service?.recordingMetadata?.profileId ?? profile?.id;
 
-      // 3a. Get activity_plan_id from the activityPlan if it exists
-      const activityPlanId: string | null = metadata.activityPlan?.id || null;
+      if (!profileId) {
+        throw new Error("No profile found for activity submission");
+      }
 
-      const activity: PublicActivitiesInsert = {
-        profile_id: metadata.profileId,
-        started_at: metadata.startedAt,
-        finished_at: metadata.endedAt,
-        name: `${metadata.activityCategory} (${metadata.gpsRecordingEnabled ? "GPS ON" : "GPS OFF"}) - ${new Date(metadata.startedAt).toLocaleDateString()}`,
-        type: metadata.activityCategory,
-        duration_seconds: calculatedMetrics.durationSeconds,
-        moving_seconds: calculatedMetrics.movingSeconds,
-        distance_meters: calculatedMetrics.distanceMeters,
-        // Map individual metrics
-        avg_power: calculatedMetrics.metrics.avg_power as number | undefined,
-        max_power: calculatedMetrics.metrics.max_power as number | undefined,
-        normalized_power: calculatedMetrics.metrics.normalized_power as
-          | number
-          | undefined,
-        avg_heart_rate: calculatedMetrics.metrics.avg_hr as number | undefined,
-        max_heart_rate: calculatedMetrics.metrics.max_hr as number | undefined,
-        avg_cadence: calculatedMetrics.metrics.avg_cadence as
-          | number
-          | undefined,
-        max_cadence: calculatedMetrics.metrics.max_cadence as
-          | number
-          | undefined,
-        avg_speed_mps: calculatedMetrics.metrics.avg_speed as
-          | number
-          | undefined,
-        max_speed_mps: calculatedMetrics.metrics.max_speed as
-          | number
-          | undefined,
-        calories: calculatedMetrics.metrics.calories as number | undefined,
-        elevation_gain_meters: calculatedMetrics.metrics.total_ascent as
-          | number
-          | undefined,
-        elevation_loss_meters: calculatedMetrics.metrics.total_descent as
-          | number
-          | undefined,
-        training_stress_score: calculatedMetrics.metrics.tss as
-          | number
-          | undefined,
-        intensity_factor: calculatedMetrics.metrics.if as number | undefined,
-        hr_zone_1_seconds: calculatedMetrics.hrZoneSeconds?.[0] ?? undefined,
-        hr_zone_2_seconds: calculatedMetrics.hrZoneSeconds?.[1] ?? undefined,
-        hr_zone_3_seconds: calculatedMetrics.hrZoneSeconds?.[2] ?? undefined,
-        hr_zone_4_seconds: calculatedMetrics.hrZoneSeconds?.[3] ?? undefined,
-        hr_zone_5_seconds: calculatedMetrics.hrZoneSeconds?.[4] ?? undefined,
-        power_zone_1_seconds:
-          calculatedMetrics.powerZoneSeconds?.[0] ?? undefined,
-        power_zone_2_seconds:
-          calculatedMetrics.powerZoneSeconds?.[1] ?? undefined,
-        power_zone_3_seconds:
-          calculatedMetrics.powerZoneSeconds?.[2] ?? undefined,
-        power_zone_4_seconds:
-          calculatedMetrics.powerZoneSeconds?.[3] ?? undefined,
-        power_zone_5_seconds:
-          calculatedMetrics.powerZoneSeconds?.[4] ?? undefined,
-        power_zone_6_seconds:
-          calculatedMetrics.powerZoneSeconds?.[5] ?? undefined,
-        power_zone_7_seconds:
-          calculatedMetrics.powerZoneSeconds?.[6] ?? undefined,
-        activity_plan_id: activityPlanId, // Use activity_plan_id instead of planned_activity_id
-      };
+      const activity = buildActivityFromArtifact({
+        artifact,
+        profileId,
+        calculatedMetrics,
+      });
+
+      const hasStreams = artifact.streamArtifactPaths.length > 0;
 
       console.log("[useActivitySubmission] Activity processed successfully");
-      dispatch({ type: "READY", activity, hasStreams });
+      dispatch({ type: "READY", artifact, activity, hasStreams });
     } catch (err) {
       console.error("[useActivitySubmission] Processing failed:", err);
       dispatch({
@@ -487,30 +389,20 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         error: err instanceof Error ? err.message : "Processing failed",
       });
     }
-  }, [service?.recordingMetadata?.startedAt, service?.state]);
+  }, [profile?.id, service]);
 
   // Listen for recording completion event
   useEffect(() => {
+    processRecording();
+
     if (!service) return;
 
     const handleRecordingComplete = () => {
-      console.log("[useActivitySubmission] Recording complete event received");
+      console.log("[useActivitySubmission] Finalized artifact ready event received");
       processRecording();
     };
 
-    const subscription = service.addListener(
-      "recordingComplete",
-      handleRecordingComplete,
-    );
-
-    // Also check if already finished (in case event was missed)
-    if (service.state === "finished" && service.recordingMetadata) {
-      console.log(
-        "[useActivitySubmission] Recording already finished, processing...",
-      );
-      processRecording();
-    }
-
+    const subscription = service.addListener("artifactReady", handleRecordingComplete);
     return () => {
       subscription.remove();
     };
@@ -547,15 +439,10 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
       // Set the new activity in cache
       if (data.activity?.id) {
-        queryClient.setQueryData(
-          queryKeys.activities.detail(data.activity.id),
-          data.activity,
-        );
+        queryClient.setQueryData(queryKeys.activities.detail(data.activity.id), data.activity);
       }
 
-      console.log(
-        "[useActivitySubmission] Activity processed successfully via FIT file.",
-      );
+      console.log("[useActivitySubmission] Activity processed successfully via FIT file.");
     },
     onError: (error) => {
       // Don't show Alert here - let submitOnce handle it to avoid duplicate alerts
@@ -571,7 +458,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
   const submitOnce = useCallback(
     async (
-      metadata: { fitFilePath: string; [key: string]: any },
+      artifact: RecordingSessionArtifact,
       activity: {
         name?: string;
         notes?: string;
@@ -580,14 +467,15 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       },
     ) => {
       try {
-        console.log(
-          `[useActivitySubmission] Uploading FIT file:`,
-          metadata.fitFilePath,
-        );
+        console.log(`[useActivitySubmission] Uploading FIT file:`, artifact.fitFilePath);
 
         // Simple file verification
         const { File } = await import("expo-file-system");
-        const file = new File(metadata.fitFilePath);
+        if (!artifact.fitFilePath) {
+          throw new Error("FIT file does not exist");
+        }
+
+        const file = new File(artifact.fitFilePath);
 
         if (!file.exists) {
           throw new Error("FIT file does not exist");
@@ -599,9 +487,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           throw new Error("FIT file is empty");
         }
 
-        console.log(
-          `[useActivitySubmission] File verification successful: ${fileSize} bytes`,
-        );
+        console.log(`[useActivitySubmission] File verification successful: ${fileSize} bytes`);
         const fileName = `${Date.now()}.fit`;
 
         // 1. Get signed upload URL from backend
@@ -611,24 +497,16 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           fileSize,
         });
 
-        console.log(
-          "[useActivitySubmission] Got signed URL for path:",
-          signedUrlData.filePath,
-        );
+        console.log("[useActivitySubmission] Got signed URL for path:", signedUrlData.filePath);
 
         const supabaseUrl = getServerConfig().supabaseUrl;
-        const supabaseAnonKey =
-          process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+        const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
-        const uploader = new FitUploader(
-          supabaseUrl,
-          supabaseAnonKey,
-          "fit-files",
-        );
+        const uploader = new FitUploader(supabaseUrl, supabaseAnonKey, "fit-files");
 
         // 2. Upload to signed URL
         const uploadResult = await uploader.uploadToSignedUrl(
-          metadata.fitFilePath,
+          artifact.fitFilePath,
           signedUrlData.signedUrl,
         );
 
@@ -641,9 +519,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         // CRITICAL: Wait for storage to sync (especially on iOS/Supabase)
         // This prevents "Failed to download" errors when processing immediately after upload
         const syncDelay = 1000; // 1 second should be sufficient
-        console.log(
-          `[useActivitySubmission] Waiting ${syncDelay}ms for storage to sync...`,
-        );
+        console.log(`[useActivitySubmission] Waiting ${syncDelay}ms for storage to sync...`);
         await new Promise((resolve) => setTimeout(resolve, syncDelay));
 
         // 3. Process the uploaded file
@@ -663,27 +539,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           throw new Error("FIT file processing failed");
         }
 
-        // Clean up stream files after successful processing
-        if (service?.liveMetricsManager?.streamBuffer?.cleanup) {
-          await service.liveMetricsManager.streamBuffer.cleanup();
-        }
-
-        // Clean up local FIT file
-        try {
-          const fileToDelete = new File(metadata.fitFilePath);
-          if (fileToDelete.exists) {
-            fileToDelete.delete();
-          }
-          console.log("[useActivitySubmission] Local FIT file deleted");
-        } catch (cleanupError) {
-          console.warn(
-            "[useActivitySubmission] Failed to delete local FIT file:",
-            cleanupError,
-          );
-        }
+        await clearPendingFinalizedArtifact();
+        await deleteFinalizedArtifactFiles(artifact);
 
         console.log(
-          "[useActivitySubmission] Activity processed, cache invalidated, and local files deleted",
+          "[useActivitySubmission] Activity processed, cache invalidated, and local artifacts deleted",
         );
         dispatch({ type: "SUCCESS" });
       } catch (err) {
@@ -706,12 +566,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           userMessage =
             "The activity file appears to be corrupted. Please try recording the activity again.";
         } else if (errorMessage.includes("FIT file does not exist")) {
-          userMessage =
-            "Activity file not found. Please try recording the activity again.";
-        } else if (
-          errorMessage.includes("zero duration") ||
-          errorMessage.includes("empty")
-        ) {
+          userMessage = "Activity file not found. Please try recording the activity again.";
+        } else if (errorMessage.includes("zero duration") || errorMessage.includes("empty")) {
           userMessage =
             "Activity has no data or zero duration. Please ensure the recording completed properly.";
         }
@@ -729,41 +585,36 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw err;
       }
     },
-    [getSignedUrlMutation, processFitFileMutation, service],
+    [getSignedUrlMutation, processFitFileMutation],
   );
 
   const submit = useCallback(async () => {
-    if (!state.activity || !service) {
+    if (!state.activity || !state.artifact) {
       throw new Error("No data to submit");
     }
 
     dispatch({ type: "UPLOADING" });
 
     try {
-      // Check if we have a FIT file to upload
-      const metadata = service.recordingMetadata;
-
-      if (metadata?.fitFilePath) {
-        await submitOnce(
-          { ...metadata, fitFilePath: metadata.fitFilePath },
-          { ...state.activity, notes: state.activity.notes || undefined },
-        );
+      if (state.artifact.fitFilePath) {
+        await submitOnce(state.artifact, {
+          ...state.activity,
+          notes: state.activity.notes || undefined,
+        });
+        return true;
       } else {
         // No FIT file found
-        console.error(
-          "[useActivitySubmission] No FIT file found in recording metadata",
-        );
-        throw new Error(
-          "No activity file generated. Please try recording again.",
-        );
+        console.error("[useActivitySubmission] No FIT file found in recording metadata");
+        throw new Error("No activity file generated. Please try recording again.");
       }
     } catch (err) {
       console.error("[useActivitySubmission] Upload failed:", err);
 
       // Error state is already set by submitOnce
       // Don't throw - keep the submission page available for manual retry
+      return false;
     }
-  }, [state.activity, service, submitOnce]);
+  }, [state.activity, state.artifact, submitOnce]);
 
   // ================================
   // Return Clean API
@@ -778,8 +629,10 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     isError: state.phase === "error",
 
     // Data (null-safe access)
+    artifact: state.artifact,
     activity: state.activity,
     error: state.error,
+    hasStreams: state.hasStreams,
 
     // Actions
     update,

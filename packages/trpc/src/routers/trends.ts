@@ -1,12 +1,10 @@
 import {
-  calculateRollingTrainingQuality,
-  calculateATL,
   calculateAge,
-  calculateCTL,
-  calculateTSB,
+  calculateRollingTrainingQuality,
   getFormStatus,
   getTrainingIntensityZone,
 } from "@repo/core";
+import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { featureFlags } from "../lib/features";
@@ -42,103 +40,97 @@ export const trendsRouter = createTRPCRouter({
   // ------------------------------
   // Volume Trends - Distance, Time, Activity Count
   // ------------------------------
-  getVolumeTrends: protectedProcedure
-    .input(volumeTrendsSchema)
-    .query(async ({ ctx, input }) => {
-      // Build query
-      let query = ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", input.start_date)
-        .lte("started_at", input.end_date)
-        .order("started_at", { ascending: true });
+  getVolumeTrends: protectedProcedure.input(volumeTrendsSchema).query(async ({ ctx, input }) => {
+    // Build query
+    let query = ctx.supabase
+      .from("activities")
+      .select("*")
+      .eq("profile_id", ctx.session.user.id)
+      .gte("started_at", input.start_date)
+      .lte("started_at", input.end_date)
+      .order("started_at", { ascending: true });
 
-      // Filter by category if provided
-      if (input.type) {
-        query = query.eq("type", input.type);
+    // Filter by category if provided
+    if (input.type) {
+      query = query.eq("type", input.type);
+    }
+
+    const { data: activities, error } = await query;
+
+    if (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    }
+
+    if (!activities || activities.length === 0) {
+      return { dataPoints: [], totals: null };
+    }
+
+    // Group activities by time period
+    const groupedData = new Map<
+      string,
+      {
+        date: string;
+        totalDistance: number;
+        totalTime: number;
+        activityCount: number;
+      }
+    >();
+
+    for (const activity of activities) {
+      const date = new Date(activity.started_at);
+      let groupKey: string;
+
+      switch (input.groupBy) {
+        case "day":
+          groupKey = date.toISOString().split("T")[0] || "";
+          break;
+        case "week": {
+          // Get Monday of the week
+          const weekStart = new Date(date);
+          weekStart.setDate(date.getDate() - date.getDay() + 1);
+          groupKey = weekStart.toISOString().split("T")[0] || "";
+          break;
+        }
+        case "month":
+          groupKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+          break;
       }
 
-      const { data: activities, error } = await query;
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
+      if (!groupedData.has(groupKey)) {
+        groupedData.set(groupKey, {
+          date: groupKey,
+          totalDistance: 0,
+          totalTime: 0,
+          activityCount: 0,
         });
       }
 
-      if (!activities || activities.length === 0) {
-        return { dataPoints: [], totals: null };
-      }
+      const group = groupedData.get(groupKey)!;
+      group.totalDistance += activity.distance_meters || 0;
+      group.totalTime += activity.moving_seconds || activity.duration_seconds || 0;
+      group.activityCount += 1;
+    }
 
-      // Group activities by time period
-      const groupedData = new Map<
-        string,
-        {
-          date: string;
-          totalDistance: number;
-          totalTime: number;
-          activityCount: number;
-        }
-      >();
+    // Convert to array and sort
+    const dataPoints = Array.from(groupedData.values()).sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
 
-      for (const activity of activities) {
-        const date = new Date(activity.started_at);
-        let groupKey: string;
+    // Calculate totals
+    const totals = {
+      totalDistance: activities.reduce((sum, a) => sum + (a.distance_meters || 0), 0),
+      totalTime: activities.reduce(
+        (sum, a) => sum + (a.moving_seconds || a.duration_seconds || 0),
+        0,
+      ),
+      totalActivities: activities.length,
+    };
 
-        switch (input.groupBy) {
-          case "day":
-            groupKey = date.toISOString().split("T")[0] || "";
-            break;
-          case "week": {
-            // Get Monday of the week
-            const weekStart = new Date(date);
-            weekStart.setDate(date.getDate() - date.getDay() + 1);
-            groupKey = weekStart.toISOString().split("T")[0] || "";
-            break;
-          }
-          case "month":
-            groupKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
-            break;
-        }
-
-        if (!groupedData.has(groupKey)) {
-          groupedData.set(groupKey, {
-            date: groupKey,
-            totalDistance: 0,
-            totalTime: 0,
-            activityCount: 0,
-          });
-        }
-
-        const group = groupedData.get(groupKey)!;
-        group.totalDistance += activity.distance_meters || 0;
-        group.totalTime +=
-          activity.moving_seconds || activity.duration_seconds || 0;
-        group.activityCount += 1;
-      }
-
-      // Convert to array and sort
-      const dataPoints = Array.from(groupedData.values()).sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-      );
-
-      // Calculate totals
-      const totals = {
-        totalDistance: activities.reduce(
-          (sum, a) => sum + (a.distance_meters || 0),
-          0,
-        ),
-        totalTime: activities.reduce(
-          (sum, a) => sum + (a.moving_seconds || a.duration_seconds || 0),
-          0,
-        ),
-        totalActivities: activities.length,
-      };
-
-      return { dataPoints, totals };
-    }),
+    return { dataPoints, totals };
+  }),
 
   // ------------------------------
   // Performance Trends - Speed, Power, HR over time
@@ -190,191 +182,140 @@ export const trendsRouter = createTRPCRouter({
   // ------------------------------
   // Training Load Trends (works WITHOUT training plan)
   // ------------------------------
-  getTrainingLoadTrends: protectedProcedure
-    .input(dateRangeSchema)
-    .query(async ({ ctx, input }) => {
-      const startDate = new Date(input.start_date);
-      const endDate = new Date(input.end_date);
+  getTrainingLoadTrends: protectedProcedure.input(dateRangeSchema).query(async ({ ctx, input }) => {
+    const startDate = new Date(input.start_date);
+    const endDate = new Date(input.end_date);
 
-      const { data: profile, error: profileError } = await ctx.supabase
-        .from("profiles")
-        .select("dob, gender")
-        .eq("id", ctx.session.user.id)
-        .maybeSingle();
+    const { data: profile, error: profileError } = await ctx.supabase
+      .from("profiles")
+      .select("dob, gender")
+      .eq("id", ctx.session.user.id)
+      .maybeSingle();
 
-      if (profileError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: profileError.message,
-        });
-      }
+    if (profileError) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: profileError.message,
+      });
+    }
 
-      const userAge = calculateAge(profile?.dob ?? null);
-      const userGender =
-        profile?.gender === "male" || profile?.gender === "female"
-          ? profile.gender
-          : null;
-      const effectiveAge = featureFlags.personalizationAgeConstants
-        ? userAge
-        : undefined;
-      const effectiveGender = featureFlags.personalizationGenderAdjustment
-        ? userGender
-        : undefined;
+    const userAge = calculateAge(profile?.dob ?? null);
+    const userGender =
+      profile?.gender === "male" || profile?.gender === "female" ? profile.gender : null;
+    const effectiveAge = featureFlags.personalizationAgeConstants ? userAge : undefined;
+    const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
 
-      // Get all activities in the date range plus 42 days before (for CTL calculation)
-      const extendedStart = new Date(startDate);
-      extendedStart.setDate(startDate.getDate() - 42);
+    // Get all activities in the date range plus 42 days before (for CTL calculation)
+    const extendedStart = new Date(startDate);
+    extendedStart.setDate(startDate.getDate() - 42);
 
-      const { data: activities, error: activitiesError } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", extendedStart.toISOString())
-        .lte("started_at", endDate.toISOString())
-        .order("started_at", { ascending: true });
+    const { data: activities, error: activitiesError } = await ctx.supabase
+      .from("activities")
+      .select("*")
+      .eq("profile_id", ctx.session.user.id)
+      .gte("started_at", extendedStart.toISOString())
+      .lte("started_at", endDate.toISOString())
+      .order("started_at", { ascending: true });
 
-      if (activitiesError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: activitiesError.message,
-        });
-      }
+    if (activitiesError) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: activitiesError.message,
+      });
+    }
 
-      if (!activities || activities.length === 0) {
-        const workload = buildWorkloadEnvelopes([], startDate, endDate);
-        return {
-          dataPoints: [],
-          currentStatus: null,
-          workload,
-        };
-      }
-
-      const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
-        ? calculateRollingTrainingQuality(activities)
-        : undefined;
-
-      // Calculate CTL/ATL/TSB for each day
-      const tssData: { date: string; tss: number }[] = [];
-      const activitiesByDate = new Map<string, number>();
-
-      // Group activities by date and sum TSS
-      for (const activity of activities) {
-        const dateStr = new Date(activity.started_at)
-          .toISOString()
-          .split("T")[0];
-        if (!dateStr) continue;
-        const tss = activity.training_stress_score || 0;
-        activitiesByDate.set(
-          dateStr,
-          (activitiesByDate.get(dateStr) || 0) + tss,
-        );
-      }
-
-      // Create daily TSS array
-      const daysDiff = Math.floor(
-        (endDate.getTime() - extendedStart.getTime()) / (1000 * 60 * 60 * 24),
-      );
-
-      let currentCTL = 0;
-      let currentATL = 0;
-
-      for (let i = 0; i <= daysDiff; i++) {
-        const date = new Date(extendedStart.getTime());
-        date.setDate(extendedStart.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
-        if (!dateStr) continue;
-
-        const tss = activitiesByDate.get(dateStr) || 0;
-        currentCTL = calculateCTL(currentCTL, tss, effectiveAge);
-        currentATL = calculateATL(
-          currentATL,
-          tss,
-          effectiveAge,
-          effectiveGender,
-          rollingTrainingQuality,
-        );
-        const tsb = calculateTSB(currentCTL, currentATL);
-
-        tssData.push({ date: dateStr, tss });
-
-        // Only include in results if within requested range
-        if (date >= startDate && date <= endDate) {
-          // Skip entries (keep logic simple)
-        }
-      }
-
-      // Filter to requested date range and create data points
-      const dataPoints = [];
-      let finalCTL = 0;
-      let finalATL = 0;
-      let finalTSB = 0;
-
-      currentCTL = 0;
-      currentATL = 0;
-
-      for (const item of tssData) {
-        const date = new Date(item.date);
-        currentCTL = calculateCTL(currentCTL, item.tss, effectiveAge);
-        currentATL = calculateATL(
-          currentATL,
-          item.tss,
-          effectiveAge,
-          effectiveGender,
-          rollingTrainingQuality,
-        );
-        const tsb = calculateTSB(currentCTL, currentATL);
-
-        if (date >= startDate && date <= endDate) {
-          dataPoints.push({
-            date: item.date,
-            ctl: Math.round(currentCTL * 10) / 10,
-            atl: Math.round(currentATL * 10) / 10,
-            tsb: Math.round(tsb * 10) / 10,
-            tss: item.tss,
-          });
-
-          finalCTL = currentCTL;
-          finalATL = currentATL;
-          finalTSB = tsb;
-        }
-      }
-
-      // Current status
-      const currentStatus =
-        dataPoints.length > 0
-          ? {
-              ctl: Math.round(finalCTL * 10) / 10,
-              atl: Math.round(finalATL * 10) / 10,
-              tsb: Math.round(finalTSB * 10) / 10,
-              form: getFormStatus(finalTSB),
-            }
-          : null;
-
-      const workloadWindowStart = new Date(endDate);
-      workloadWindowStart.setDate(endDate.getDate() - 27);
-      const workload = buildWorkloadEnvelopes(
-        activities,
-        workloadWindowStart,
-        endDate,
-      );
-
+    if (!activities || activities.length === 0) {
+      const workload = buildWorkloadEnvelopes([], startDate, endDate);
       return {
-        dataPoints,
-        currentStatus,
+        dataPoints: [],
+        currentStatus: null,
         workload,
-        personalizationTelemetry: {
-          flags: {
-            age_constants: featureFlags.personalizationAgeConstants,
-            gender_adjustment: featureFlags.personalizationGenderAdjustment,
-            training_quality: featureFlags.personalizationTrainingQuality,
-            ramp_learning: featureFlags.personalizationRampLearning,
-          },
-          user_age: effectiveAge ?? null,
-          user_gender: effectiveGender ?? null,
-          training_quality: rollingTrainingQuality ?? null,
-        },
       };
-    }),
+    }
+
+    const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
+      ? calculateRollingTrainingQuality(activities)
+      : undefined;
+
+    const activitiesByDate = new Map<string, number>();
+
+    // Group activities by date and sum TSS
+    for (const activity of activities) {
+      const dateStr = new Date(activity.started_at).toISOString().split("T")[0];
+      if (!dateStr) continue;
+      const tss = activity.training_stress_score || 0;
+      activitiesByDate.set(dateStr, (activitiesByDate.get(dateStr) || 0) + tss);
+    }
+
+    const replayed = replayTrainingLoadByDate({
+      dailyTss: buildDailyTssByDateSeries({
+        startDate: extendedStart.toISOString().split("T")[0]!,
+        endDate: endDate.toISOString().split("T")[0]!,
+        tssByDate: activitiesByDate,
+      }),
+      initialCTL: 0,
+      initialATL: 0,
+      userAge: effectiveAge,
+      userGender: effectiveGender,
+      trainingQuality: rollingTrainingQuality,
+    });
+
+    // Filter to requested date range and create data points
+    const dataPoints = [];
+    let finalCTL = 0;
+    let finalATL = 0;
+    let finalTSB = 0;
+
+    for (const item of replayed) {
+      const date = new Date(`${item.date}T00:00:00.000Z`);
+
+      if (date >= startDate && date <= endDate) {
+        dataPoints.push({
+          date: item.date,
+          ctl: Math.round(item.ctl * 10) / 10,
+          atl: Math.round(item.atl * 10) / 10,
+          tsb: Math.round(item.tsb * 10) / 10,
+          tss: item.tss,
+        });
+
+        finalCTL = item.ctl;
+        finalATL = item.atl;
+        finalTSB = item.tsb;
+      }
+    }
+
+    // Current status
+    const currentStatus =
+      dataPoints.length > 0
+        ? {
+            ctl: Math.round(finalCTL * 10) / 10,
+            atl: Math.round(finalATL * 10) / 10,
+            tsb: Math.round(finalTSB * 10) / 10,
+            form: getFormStatus(finalTSB),
+          }
+        : null;
+
+    const workloadWindowStart = new Date(endDate);
+    workloadWindowStart.setDate(endDate.getDate() - 27);
+    const workload = buildWorkloadEnvelopes(activities, workloadWindowStart, endDate);
+
+    return {
+      dataPoints,
+      currentStatus,
+      workload,
+      personalizationTelemetry: {
+        flags: {
+          age_constants: featureFlags.personalizationAgeConstants,
+          gender_adjustment: featureFlags.personalizationGenderAdjustment,
+          training_quality: featureFlags.personalizationTrainingQuality,
+          ramp_learning: featureFlags.personalizationRampLearning,
+        },
+        user_age: effectiveAge ?? null,
+        user_gender: effectiveGender ?? null,
+        training_quality: rollingTrainingQuality ?? null,
+      },
+    };
+  }),
 
   // ------------------------------
   // Zone Distribution Over Time
@@ -456,9 +397,7 @@ export const trendsRouter = createTRPCRouter({
         const week = weeklyData.get(weekKey)!;
         const intensityFactorNormalized = intensityFactor / 100;
 
-        const zone = getTrainingIntensityZone(
-          intensityFactorNormalized,
-        ) as IntensityZone;
+        const zone = getTrainingIntensityZone(intensityFactorNormalized) as IntensityZone;
         week.zones[zone] += tss;
         week.totalTSS += tss;
       }
@@ -478,8 +417,7 @@ export const trendsRouter = createTRPCRouter({
         if (week.totalTSS > 0) {
           for (const zone in week.zones) {
             const zoneKey = zone as IntensityZone;
-            zones[zoneKey] =
-              Math.round((week.zones[zoneKey] / week.totalTSS) * 1000) / 10;
+            zones[zoneKey] = Math.round((week.zones[zoneKey] / week.totalTSS) * 1000) / 10;
           }
         }
 
@@ -492,8 +430,7 @@ export const trendsRouter = createTRPCRouter({
 
       return {
         weeklyData: weeklyDataArray.sort(
-          (a, b) =>
-            new Date(a.weekStart).getTime() - new Date(b.weekStart).getTime(),
+          (a, b) => new Date(a.weekStart).getTime() - new Date(b.weekStart).getTime(),
         ),
       };
     }),
@@ -501,120 +438,107 @@ export const trendsRouter = createTRPCRouter({
   // ------------------------------
   // Consistency Metrics
   // ------------------------------
-  getConsistencyMetrics: protectedProcedure
-    .input(dateRangeSchema)
-    .query(async ({ ctx, input }) => {
-      const { data: activities, error } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", input.start_date)
-        .lte("started_at", input.end_date)
-        .order("started_at", { ascending: true });
+  getConsistencyMetrics: protectedProcedure.input(dateRangeSchema).query(async ({ ctx, input }) => {
+    const { data: activities, error } = await ctx.supabase
+      .from("activities")
+      .select("*")
+      .eq("profile_id", ctx.session.user.id)
+      .gte("started_at", input.start_date)
+      .lte("started_at", input.end_date)
+      .order("started_at", { ascending: true });
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+    if (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    }
 
-      if (!activities || activities.length === 0) {
-        return {
-          activityDays: [],
-          weeklyAvg: 0,
-          currentStreak: 0,
-          longestStreak: 0,
-          totalActivities: 0,
-          totalDays: 0,
-        };
-      }
+    if (!activities || activities.length === 0) {
+      return {
+        activityDays: [],
+        weeklyAvg: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        totalActivities: 0,
+        totalDays: 0,
+      };
+    }
 
-      // Get unique activity days
-      const activityDaysSet = new Set<string>();
-      for (const activity of activities) {
-        const dateStr = new Date(activity.started_at)
-          .toISOString()
-          .split("T")[0];
-        if (dateStr) activityDaysSet.add(dateStr);
-      }
+    // Get unique activity days
+    const activityDaysSet = new Set<string>();
+    for (const activity of activities) {
+      const dateStr = new Date(activity.started_at).toISOString().split("T")[0];
+      if (dateStr) activityDaysSet.add(dateStr);
+    }
 
-      const activityDays = Array.from(activityDaysSet).sort();
+    const activityDays = Array.from(activityDaysSet).sort();
 
-      // Calculate streaks
-      let currentStreak = 0;
-      let longestStreak = 0;
-      let tempStreak = 1;
+    // Calculate streaks
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let tempStreak = 1;
 
-      const today = new Date().toISOString().split("T")[0];
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split("T")[0];
+    const today = new Date().toISOString().split("T")[0];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split("T")[0];
 
-      // Check if current streak is active
-      if (
-        activityDays.includes(today || "") ||
-        activityDays.includes(yesterdayStr || "")
-      ) {
-        currentStreak = 1;
+    // Check if current streak is active
+    if (activityDays.includes(today || "") || activityDays.includes(yesterdayStr || "")) {
+      currentStreak = 1;
 
-        // Count backwards from most recent day
-        for (let i = activityDays.length - 2; i >= 0; i--) {
-          const currentDate = new Date(activityDays[i]!);
-          const nextDate = new Date(activityDays[i + 1]!);
-          const diffDays = Math.round(
-            (nextDate.getTime() - currentDate.getTime()) /
-              (1000 * 60 * 60 * 24),
-          );
-
-          if (diffDays === 1) {
-            currentStreak++;
-          } else {
-            break;
-          }
-        }
-      }
-
-      // Calculate longest streak
-      for (let i = 1; i < activityDays.length; i++) {
-        const prevDate = new Date(activityDays[i - 1]!);
-        const currDate = new Date(activityDays[i]!);
+      // Count backwards from most recent day
+      for (let i = activityDays.length - 2; i >= 0; i--) {
+        const currentDate = new Date(activityDays[i]!);
+        const nextDate = new Date(activityDays[i + 1]!);
         const diffDays = Math.round(
-          (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24),
+          (nextDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24),
         );
 
         if (diffDays === 1) {
-          tempStreak++;
-          longestStreak = Math.max(longestStreak, tempStreak);
+          currentStreak++;
         } else {
-          tempStreak = 1;
+          break;
         }
       }
+    }
 
-      longestStreak = Math.max(longestStreak, tempStreak);
+    // Calculate longest streak
+    for (let i = 1; i < activityDays.length; i++) {
+      const prevDate = new Date(activityDays[i - 1]!);
+      const currDate = new Date(activityDays[i]!);
+      const diffDays = Math.round(
+        (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24),
+      );
 
-      // Calculate weekly average
-      const startDate = new Date(input.start_date);
-      const endDate = new Date(input.end_date);
-      const totalDays =
-        Math.round(
-          (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
-        ) + 1;
-      const totalWeeks = totalDays / 7;
-      const weeklyAvg =
-        totalWeeks > 0
-          ? Math.round((activities.length / totalWeeks) * 10) / 10
-          : 0;
+      if (diffDays === 1) {
+        tempStreak++;
+        longestStreak = Math.max(longestStreak, tempStreak);
+      } else {
+        tempStreak = 1;
+      }
+    }
 
-      return {
-        activityDays,
-        weeklyAvg,
-        currentStreak,
-        longestStreak,
-        totalActivities: activities.length,
-        totalDays,
-      };
-    }),
+    longestStreak = Math.max(longestStreak, tempStreak);
+
+    // Calculate weekly average
+    const startDate = new Date(input.start_date);
+    const endDate = new Date(input.end_date);
+    const totalDays =
+      Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const totalWeeks = totalDays / 7;
+    const weeklyAvg = totalWeeks > 0 ? Math.round((activities.length / totalWeeks) * 10) / 10 : 0;
+
+    return {
+      activityDays,
+      weeklyAvg,
+      currentStreak,
+      longestStreak,
+      totalActivities: activities.length,
+      totalDays,
+    };
+  }),
 
   // ------------------------------
   // Peak Performances / Personal Records
@@ -623,10 +547,7 @@ export const trendsRouter = createTRPCRouter({
     .input(peakPerformancesSchema)
     .query(async ({ ctx, input }) => {
       // Build query
-      let query = ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id);
+      let query = ctx.supabase.from("activities").select("*").eq("profile_id", ctx.session.user.id);
 
       if (input.type) {
         query = query.eq("type", input.type);
@@ -651,9 +572,7 @@ export const trendsRouter = createTRPCRouter({
             .not("avg_speed_mps", "is", null);
           break;
         case "power":
-          query = query
-            .order("avg_power", { ascending: false })
-            .not("avg_power", "is", null);
+          query = query.order("avg_power", { ascending: false }).not("avg_power", "is", null);
           break;
         case "tss":
           query = query
@@ -728,12 +647,10 @@ export const trendsRouter = createTRPCRouter({
       }
 
       // Take top N and add ranks
-      const performances = allPerformances
-        .slice(0, input.limit)
-        .map((perf, index) => ({
-          ...perf,
-          rank: index + 1,
-        }));
+      const performances = allPerformances.slice(0, input.limit).map((perf, index) => ({
+        ...perf,
+        rank: index + 1,
+      }));
 
       return { performances };
     }),

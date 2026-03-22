@@ -28,10 +28,8 @@ export const ROUTES = {
     },
 
     // Dynamic Routes (use with params)
-    PLAN_DETAIL: (planId: string) =>
-      `/activity-plan-detail?id=${planId}` as const,
-    ACTIVITY_DETAIL: (activityId: string) =>
-      `/scheduled-activity-detail?id=${activityId}` as const,
+    PLAN_DETAIL: (planId: string) => `/activity-plan-detail?id=${planId}` as const,
+    ACTIVITY_DETAIL: (activityId: string) => `/event-detail?id=${activityId}` as const,
     EVENT_DETAIL: (eventId: string, mode?: "view" | "edit") =>
       mode
         ? (`/event-detail?id=${eventId}&mode=${mode}` as const)
@@ -42,8 +40,7 @@ export const ROUTES = {
   // Activities Routes
   ACTIVITIES: {
     LIST: "/activities-list" as const,
-    DETAIL: (activityId: string) =>
-      `/activity-detail?id=${activityId}` as const,
+    DETAIL: (activityId: string) => `/activity-detail?id=${activityId}` as const,
   },
 
   // Routes Routes
@@ -86,10 +83,7 @@ export function buildRoute<T extends Record<string, any>>(
 /**
  * Type-safe route builder for plan details
  */
-export function buildPlanRoute(
-  planId: string,
-  action?: "view" | "edit" | "schedule",
-) {
+export function buildPlanRoute(planId: string, action?: "view" | "edit" | "schedule") {
   return action
     ? { pathname: "/activity-plan-detail", params: { planId, action } }
     : { pathname: "/activity-plan-detail", params: { planId } };
@@ -98,10 +92,7 @@ export function buildPlanRoute(
 /**
  * Type-safe route builder for activity details
  */
-export function buildActivityRoute(
-  activityId: string,
-  action?: "view" | "reschedule" | "delete",
-) {
+export function buildActivityRoute(activityId: string, action?: "view" | "reschedule" | "delete") {
   const pathname = ROUTES.PLAN.ACTIVITY_DETAIL(activityId);
   return action ? { pathname, params: { action } } : { pathname };
 }

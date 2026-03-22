@@ -1,4 +1,5 @@
 import { fireEvent, renderNative } from "../../test/render-native";
+import { sliderFixtures } from "./fixtures";
 import { Slider } from "./index.native";
 
 describe("Slider native", () => {
@@ -6,14 +7,10 @@ describe("Slider native", () => {
     const onValueChange = jest.fn();
 
     const { getByTestId } = renderNative(
-      <Slider
-        {...({ testID: "effort-slider" } as { testID: string })}
-        onValueChange={onValueChange}
-        value={0.4}
-      />,
+      <Slider {...sliderFixtures.effort} onValueChange={onValueChange} />,
     );
 
-    fireEvent(getByTestId("effort-slider"), "onValueChange", 0.75);
+    fireEvent(getByTestId(sliderFixtures.effort.testId), "onValueChange", 0.75);
     expect(onValueChange).toHaveBeenCalledWith(0.75);
   });
 });

@@ -2,6 +2,7 @@ import RNSlider from "@react-native-community/slider";
 import * as React from "react";
 import { Platform } from "react-native";
 
+import { getNativeTestProps } from "../../lib/test-props";
 import type { SliderProps } from "./shared";
 
 const Slider = React.forwardRef<RNSlider, SliderProps>(
@@ -18,6 +19,10 @@ const Slider = React.forwardRef<RNSlider, SliderProps>(
       maximumTrackTintColor,
       thumbTintColor,
       disabled = false,
+      accessibilityLabel,
+      id,
+      role,
+      testId,
       ...props
     },
     ref,
@@ -25,6 +30,12 @@ const Slider = React.forwardRef<RNSlider, SliderProps>(
     const defaultMinimumTrackTintColor = minimumTrackTintColor || "#3b82f6";
     const defaultMaximumTrackTintColor = maximumTrackTintColor || "#e5e7eb";
     const defaultThumbTintColor = thumbTintColor || "#3b82f6";
+    const { role: _nativeRole, ...nativeTestProps } = getNativeTestProps({
+      accessibilityLabel,
+      id,
+      role,
+      testId,
+    });
 
     return (
       <RNSlider
@@ -38,11 +49,10 @@ const Slider = React.forwardRef<RNSlider, SliderProps>(
         step={step}
         minimumTrackTintColor={defaultMinimumTrackTintColor}
         maximumTrackTintColor={defaultMaximumTrackTintColor}
-        thumbTintColor={
-          Platform.OS === "ios" ? defaultThumbTintColor : undefined
-        }
+        thumbTintColor={Platform.OS === "ios" ? defaultThumbTintColor : undefined}
         disabled={disabled}
         style={{ opacity: disabled ? 0.5 : 1 }}
+        {...nativeTestProps}
         {...props}
       />
     );

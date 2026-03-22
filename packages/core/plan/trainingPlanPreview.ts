@@ -4,9 +4,8 @@ import {
   parseMmSsToSeconds,
 } from "../forms/input-parsers";
 import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
+import { parseDateOnly } from "../utils/fitness-inputs";
 import { canonicalizeMinimalTrainingPlanCreate } from "./canonicalization";
-
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 type PreviewActivityCategory = "run" | "bike" | "swim" | "other";
 
@@ -93,7 +92,7 @@ export function buildPreviewMinimalPlanFromForm(
   const goals = input.goals.flatMap((goal, goalIndex) => {
     const fallbackName = `Goal ${goalIndex + 1}`;
     const name = goal.name.trim() || fallbackName;
-    if (!DATE_ONLY_PATTERN.test(goal.targetDate)) {
+    if (!parseDateOnly(goal.targetDate)) {
       return [];
     }
 
@@ -126,10 +125,7 @@ export function buildPreviewMinimalPlanFromForm(
   }
 
   const trimmedPlanStartDate = input.planStartDate?.trim();
-  const planStartDate =
-    trimmedPlanStartDate && DATE_ONLY_PATTERN.test(trimmedPlanStartDate)
-      ? trimmedPlanStartDate
-      : undefined;
+  const planStartDate = parseDateOnly(trimmedPlanStartDate);
 
   return canonicalizeMinimalTrainingPlanCreate({
     goals,

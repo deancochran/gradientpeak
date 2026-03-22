@@ -1,36 +1,23 @@
-import { clampInteger, parseBoundedInteger } from "@repo/core/forms";
-import * as React from "react";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { clampInteger, parseBoundedInteger } from "../../lib/fitness-inputs";
 import { View } from "../../lib/react-native";
 import { Button } from "../button/index.native";
 import { Input } from "../input/index.native";
 import { Label } from "../label/index.native";
 import { Text } from "../text/index.native";
+import type { IntegerStepperProps } from "./shared";
 
-export interface IntegerStepperProps {
-  id: string;
-  label?: string;
-  value: number;
-  onChange: (value: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  helperText?: string;
-  error?: string;
-  accessibilityHint?: string;
-}
-
-export function IntegerStepper({
+function IntegerStepper({
+  accessibilityHint,
+  error,
+  helperText,
   id,
   label,
-  value,
-  onChange,
-  min = 0,
   max = 20,
+  min = 0,
+  onChange,
   step = 1,
-  helperText,
-  error,
-  accessibilityHint,
+  value,
 }: IntegerStepperProps) {
   const labelText = label || "value";
   const [draftValue, setDraftValue] = useState(String(value));
@@ -51,44 +38,33 @@ export function IntegerStepper({
     onChange(normalized);
   };
 
-  const decrement = () => {
-    onChange(clampInteger(value - step, min, max));
-  };
-
-  const increment = () => {
-    onChange(clampInteger(value + step, min, max));
-  };
-
   return (
     <View className="gap-2">
       {label ? (
         <Label nativeID={id}>
-          <Text className="text-sm font-medium">{label}</Text>
+          <Text className="text-sm font-medium text-foreground">{label}</Text>
         </Label>
       ) : null}
       <View className="flex-row items-center gap-2">
         <Button
           variant="outline"
           size="sm"
-          onPress={decrement}
-          accessibilityLabel={`Decrease ${labelText}`}
+          onPress={() => onChange(clampInteger(value - step, min, max))}
         >
           <Text>-</Text>
         </Button>
         <Input
-          className="flex-1 text-center"
-          aria-labelledby={id}
-          value={draftValue}
-          onChangeText={setDraftValue}
-          onBlur={() => commitDraft(draftValue)}
-          keyboardType="numeric"
           accessibilityHint={accessibilityHint ?? `Enter whole number between ${min} and ${max}`}
+          className="flex-1 text-center"
+          value={draftValue}
+          onBlur={() => commitDraft(draftValue)}
+          onChangeText={setDraftValue}
+          keyboardType="numeric"
         />
         <Button
           variant="outline"
           size="sm"
-          onPress={increment}
-          accessibilityLabel={`Increase ${labelText}`}
+          onPress={() => onChange(clampInteger(value + step, min, max))}
         >
           <Text>+</Text>
         </Button>
@@ -98,3 +74,5 @@ export function IntegerStepper({
     </View>
   );
 }
+
+export { IntegerStepper };

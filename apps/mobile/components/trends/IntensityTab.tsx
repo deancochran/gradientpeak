@@ -1,9 +1,9 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { ChartSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { Activity } from "lucide-react-native";
 import { View } from "react-native";
 import { IntensityDistributionChart } from "@/components/charts";
-import { ChartSkeleton } from "@/components/shared";
 
 interface IntensityDistribution {
   recovery: number;

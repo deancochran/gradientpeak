@@ -1,3 +1,4 @@
+import { estimateConservativeFTPFromWeight, estimateMaxHRFromDOB } from "@repo/core";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -7,17 +8,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { Icon } from "@repo/ui/components/icon";
 import { Label } from "@repo/ui/components/label";
+import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { Text } from "@repo/ui/components/text";
+import { WeightInputField } from "@repo/ui/components/weight-input-field";
 import { router } from "expo-router";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react-native";
 import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
-import { PaceSecondsField } from "@/components/profile/PaceSecondsField";
-import { WeightInputField } from "@/components/profile/WeightInputField";
-import { DateField } from "@/components/training-plan/create/inputs/DateField";
-import { estimateFtpFromWeight, estimateMaxHrFromDob } from "@/lib/profile/metricUnits";
 import { trpc } from "@/lib/trpc";
 
 interface OnboardingData {
@@ -321,7 +321,7 @@ function Step1BasicProfile({ data, updateData, errors }: RequiredStepProps) {
 }
 
 function Step2HeartRateMetrics({ data, updateData }: StepProps) {
-  const estimatedMaxHr = estimateMaxHrFromDob(data.dob);
+  const estimatedMaxHr = estimateMaxHRFromDOB(data.dob);
 
   const estimateMaxHR = () => {
     if (!estimatedMaxHr) {
@@ -452,7 +452,7 @@ function Step2HeartRateMetrics({ data, updateData }: StepProps) {
 }
 
 function Step3SportSpecificMetrics({ data, updateData }: StepProps) {
-  const estimatedFtp = estimateFtpFromWeight(data.weight_kg);
+  const estimatedFtp = estimateConservativeFTPFromWeight(data.weight_kg);
   const showCyclingMetrics = data.primary_sport === "cycling" || data.primary_sport === "triathlon";
   const showRunningMetrics = data.primary_sport === "running" || data.primary_sport === "triathlon";
 

@@ -1,6 +1,6 @@
-import { calculateTrainingLoadSeries } from "../calculations";
-import { addDaysDateOnlyUtc, formatDateOnlyUtc } from "./dateOnlyUtc";
+import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "../load/replay";
 import { resolveNoHistoryStartingPrior } from "./calibration-constants";
+import { addDaysDateOnlyUtc, formatDateOnlyUtc } from "./dateOnlyUtc";
 
 const DEFAULT_BOOTSTRAP_WINDOW_DAYS = 90;
 const DEFAULT_STALE_AFTER_DAYS = 10;
@@ -92,10 +92,7 @@ export function computeLoadBootstrapState(
 ): LoadBootstrapState {
   const safeAsOf = toDate(input.as_of) ?? new Date();
   const asOfDate = formatDateOnlyUtc(safeAsOf);
-  const windowDays = Math.max(
-    7,
-    Math.round(input.window_days ?? DEFAULT_BOOTSTRAP_WINDOW_DAYS),
-  );
+  const windowDays = Math.max(7, Math.round(input.window_days ?? DEFAULT_BOOTSTRAP_WINDOW_DAYS));
   const staleAfterDays = Math.max(
     0,
     Math.round(input.stale_after_days ?? DEFAULT_STALE_AFTER_DAYS),
@@ -124,20 +121,18 @@ export function computeLoadBootstrapState(
     }
   }
 
-  const normalizedDailyTss: number[] = [];
-  for (let offset = 0; offset < windowDays; offset += 1) {
-    const date = addDaysDateOnlyUtc(windowStartDate, offset);
-    normalizedDailyTss.push(dailyTssByDate.get(date) ?? 0);
-  }
+  const normalizedDailyTss = buildDailyTssByDateSeries({
+    startDate: windowStartDate,
+    endDate: asOfDate,
+    tssByDate: dailyTssByDate,
+  });
 
-  const activeDays = normalizedDailyTss.filter((tss) => tss > 0).length;
+  const activeDays = normalizedDailyTss.filter((entry) => entry.tss > 0).length;
   const zeroFillDays = windowDays - activeDays;
   const historyState = deriveHistoryState(activeDays);
 
   const daysSinceLastActivity =
-    latestActivityDate === null
-      ? null
-      : daysBetween(safeAsOf, latestActivityDate);
+    latestActivityDate === null ? null : daysBetween(safeAsOf, latestActivityDate);
 
   if (activeDays === 0) {
     const prior = resolveNoHistoryStartingPrior({ age: input.profile_age });
@@ -157,7 +152,12 @@ export function computeLoadBootstrapState(
     };
   }
 
-  const loadSeries = calculateTrainingLoadSeries(normalizedDailyTss, 0, 0);
+  const loadSeries = replayTrainingLoadByDate({
+    dailyTss: normalizedDailyTss,
+    initialCTL: 0,
+    initialATL: 0,
+    userAge: input.profile_age,
+  });
   const lastPoint = loadSeries[loadSeries.length - 1];
   const rawCtl = lastPoint?.ctl ?? 0;
   const rawAtl = lastPoint?.atl ?? 0;
@@ -172,9 +172,7 @@ export function computeLoadBootstrapState(
 
   const coverageScore = clamp(activeDays / windowDays, 0, 1);
   const recencyScore =
-    daysSinceLastActivity === null
-      ? 0
-      : clamp(1 - daysSinceLastActivity / 45, 0, 1);
+    daysSinceLastActivity === null ? 0 : clamp(1 - daysSinceLastActivity / 45, 0, 1);
   const confidence = round3(coverageScore * 0.6 + recencyScore * 0.4);
 
   const rationaleCodes = [

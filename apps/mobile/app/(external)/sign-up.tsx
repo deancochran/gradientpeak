@@ -1,21 +1,12 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormMessage, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React from "react";
-import { useForm } from "react-hook-form";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
@@ -65,8 +56,8 @@ export default function SignUpScreen() {
     setServerUrlInput(serverConfig.overrideUrl ?? serverConfig.apiUrl);
   }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
-  const form = useForm<SignUpFields>({
-    resolver: zodResolver(signUpSchema),
+  const form = useZodForm({
+    schema: signUpSchema,
   });
 
   const onSignUp = async (data: SignUpFields) => {
@@ -163,85 +154,51 @@ export default function SignUpScreen() {
             <Form {...form}>
               <View className="gap-4" testID="sign-up-form">
                 {/* Email Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  label="Email"
                   name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="m@example.com"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          autoFocus
-                          autoCapitalize="none"
-                          keyboardType="email-address"
-                          autoComplete="email"
-                          testID="email-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="m@example.com"
+                  testId="email-input"
                 />
 
                 {/* Password Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  label="Password"
                   name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter your password"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          secureTextEntry
-                          testID="password-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-
-                      {/* Password Requirements */}
-                      <View className="mt-2 gap-1" testID="password-hints">
-                        <Text variant="muted" className="text-xs">
-                          Password must contain:
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • At least 8 characters
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • One uppercase letter
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • One number
-                        </Text>
-                      </View>
-                    </FormItem>
-                  )}
+                  placeholder="Enter your password"
+                  secureTextEntry
+                  testId="password-input"
                 />
 
+                {/* Password Requirements */}
+                <View className="mt-2 gap-1" testID="password-hints">
+                  <Text variant="muted" className="text-xs">
+                    Password must contain:
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • At least 8 characters
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • One uppercase letter
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • One number
+                  </Text>
+                </View>
+
                 {/* Repeat Password Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  label="Repeat Password"
                   name="repeatPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Repeat Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Confirm your password"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          secureTextEntry
-                          testID="repeat-password-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="Confirm your password"
+                  secureTextEntry
+                  testId="repeat-password-input"
                 />
 
                 {/* Root Error */}

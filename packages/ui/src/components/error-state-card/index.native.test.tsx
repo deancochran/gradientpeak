@@ -1,16 +1,22 @@
 import { fireEvent, renderNative } from "../../test/render-native";
-import { ErrorStateCard, getErrorMessage } from "./index.native";
+import { errorStateCardFixtures } from "./fixtures";
+import { ErrorMessage, ErrorStateCard } from "./index.native";
 
 describe("ErrorStateCard native", () => {
-  it("renders retry actions and maps common errors", () => {
+  it("renders retryable card content from fixtures", () => {
     const onRetry = jest.fn();
-
-    const { getByText } = renderNative(<ErrorStateCard message="Load failed" onRetry={onRetry} />);
-
-    fireEvent.press(getByText("Try Again"));
-    expect(onRetry).toHaveBeenCalled();
-    expect(getErrorMessage(new Error("Network request failed"))).toBe(
-      "Unable to connect. Please check your internet connection.",
+    const { getByText } = renderNative(
+      <ErrorStateCard {...errorStateCardFixtures.generic} onRetry={onRetry} />,
     );
+
+    expect(getByText(errorStateCardFixtures.generic.title!)).toBeTruthy();
+    fireEvent.press(getByText(errorStateCardFixtures.generic.retryLabel!));
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it("renders inline message content", () => {
+    const { getByText } = renderNative(<ErrorMessage {...errorStateCardFixtures.inline} />);
+
+    expect(getByText(errorStateCardFixtures.inline.message)).toBeTruthy();
   });
 });

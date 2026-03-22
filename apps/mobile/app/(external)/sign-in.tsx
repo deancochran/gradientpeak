@@ -1,21 +1,12 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React from "react";
-import { useForm } from "react-hook-form";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
@@ -57,8 +48,12 @@ export default function SignInScreen() {
     setServerUrlInput(serverConfig.overrideUrl ?? serverConfig.apiUrl);
   }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
-  const form = useForm<SignInFields>({
-    resolver: zodResolver(signInSchema),
+  const form = useZodForm({
+    schema: signInSchema,
+    defaultValues: {
+      email: "",
+      password: "",
+    },
   });
 
   const onSignIn = async (data: SignInFields) => {
@@ -117,6 +112,10 @@ export default function SignInScreen() {
   };
 
   const isLoading = authLoading || isSubmitting;
+  const submitForm = useZodFormSubmit({
+    form,
+    onSubmit: onSignIn,
+  });
 
   return (
     <KeyboardAvoidingView
@@ -146,48 +145,25 @@ export default function SignInScreen() {
             <Form {...form}>
               <View className="gap-4" testID="sign-in-form">
                 {/* Email Input */}
-                <FormField
+                <FormTextField
+                  autoCapitalize="none"
+                  autoComplete="email"
                   control={form.control}
+                  keyboardType="email-address"
+                  label="Email"
                   name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Email address"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          autoFocus
-                          autoCapitalize="none"
-                          keyboardType="email-address"
-                          autoComplete="email"
-                          testID="email-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="Email address"
+                  testId="email-input"
                 />
 
                 {/* Password Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  label="Password"
                   name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Password"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          secureTextEntry
-                          testID="password-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="Password"
+                  secureTextEntry
+                  testId="password-input"
                 />
 
                 {/* Root Error */}
@@ -205,7 +181,7 @@ export default function SignInScreen() {
             <Button
               variant="default"
               size="lg"
-              onPress={form.handleSubmit(onSignIn)}
+              onPress={submitForm.handleSubmit}
               disabled={isLoading}
               testID="sign-in-button"
               className="w-full"

@@ -1,14 +1,11 @@
 import type { PublicActivityPlansInsert } from "@repo/supabase";
 import { z } from "zod";
 import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
+import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
 } from "./training_plan_structure";
-import {
-  profileGoalLegacySchema,
-  profileGoalTargetSchema,
-} from "./goals/profile_goals";
 
 // Export from activity_payload (includes ActivityType)
 export * from "./activity_payload";
@@ -19,6 +16,14 @@ export * from "./activity_payload";
 // V2 uses a flat structure where repetitions are expanded at creation time
 // This is the preferred schema for all new code
 
+export type {
+  ActivityPlanStructureV2,
+  DurationV2,
+  IntensityTargetV2,
+  IntervalStepV2,
+  IntervalV2,
+  PlanStepV2,
+} from "./activity_plan_v2";
 export {
   activityPlanStructureSchemaV2,
   durationSchemaV2,
@@ -31,14 +36,6 @@ export {
   planStepSchemaV2,
   validateActivityPlanStructureV2,
 } from "./activity_plan_v2";
-export type {
-  ActivityPlanStructureV2,
-  DurationV2,
-  IntensityTargetV2,
-  IntervalStepV2,
-  IntervalV2,
-  PlanStepV2,
-} from "./activity_plan_v2";
 
 // Export V2 helpers explicitly with V2 suffix to avoid conflicts
 export {
@@ -47,6 +44,32 @@ export {
   formatDuration as formatDurationV2,
   getDurationSeconds as getDurationSecondsV2,
 } from "./duration_helpers";
+// Export from form-schemas
+export * from "./form-schemas";
+// Export profile goals/settings (Phase 1 additive domain schemas)
+export * from "./goals/profile_goals";
+// Export plan builder V2
+export {
+  createEnduranceRidePlan,
+  createPlan,
+  createStrengthPlan,
+  createTempoRunPlan,
+  createThresholdPlan,
+  createVO2MaxPlan,
+  PlanBuilderV2,
+} from "./plan_builder_v2";
+
+// Export from planned_activity
+export * from "./planned_activity";
+export * from "./planning";
+// Export recording config
+export * from "./recording_config";
+// Export recording UI types
+export * from "./recording_ui_types";
+// Export recording session contracts
+export * from "./recording-session";
+export * from "./settings/profile_settings";
+export * from "./sport";
 export {
   convertTargetToAbsolute as convertTargetToAbsoluteV2,
   formatTargetValue,
@@ -60,59 +83,24 @@ export {
   isInTargetRange,
   Target as TargetV2Helpers,
 } from "./target_helpers";
-
-// Export plan builder V2
-export {
-  createEnduranceRidePlan,
-  createPlan,
-  createStrengthPlan,
-  createTempoRunPlan,
-  createThresholdPlan,
-  createVO2MaxPlan,
-  PlanBuilderV2,
-} from "./plan_builder_v2";
-
-// Export from form-schemas
-export * from "./form-schemas";
-
-// Export from planned_activity
-export * from "./planned_activity";
-
-// Export profile goals/settings (Phase 1 additive domain schemas)
-export * from "./goals/profile_goals";
-export * from "./planning";
-export * from "./settings/profile_settings";
-export * from "./sport";
-
 // Export from training_plan_structure
 export * from "./training_plan_structure";
-
-// Export recording config
-export * from "./recording_config";
-
-// Export recording UI types
-export * from "./recording_ui_types";
 
 // Export performance metrics schemas
 // export * from "./performance-metrics";
 
-// Export profile metrics schemas
-export * from "./profile-metrics";
-
 // Export activity efforts schemas
 export * from "./activity_efforts";
-
-// Export notification schemas
-export * from "./notifications";
-
 // Export coaching schemas
 export * from "./coaching";
-
 // Export messaging schemas
 export * from "./messaging";
-
+// Export notification schemas
+export * from "./notifications";
 // Export onboarding schemas
 export * from "./onboarding";
+// Export profile metrics schemas
+export * from "./profile-metrics";
 
 // Export template schemas
 export * from "./template_library";
@@ -147,21 +135,13 @@ export type RecordingServiceActivityPlan = Omit<
 
 // tRPC-specific Training Plans Schemas
 export const trainingPlanCreateInputSchema = z.object({
-  name: z
-    .string()
-    .min(1, "Plan name is required")
-    .max(255, "Plan name is too long"),
-  description: z
-    .string()
-    .max(1000, "Description is too long")
-    .optional()
-    .nullable(),
+  name: z.string().min(1, "Plan name is required").max(255, "Plan name is too long"),
+  description: z.string().max(1000, "Description is too long").optional().nullable(),
   structure: trainingPlanCreateSchema, // Validates structure without ID requirement
   is_active: z.boolean().optional(),
 });
 
-export const trainingPlanUpdateInputSchema =
-  trainingPlanCreateInputSchema.partial();
+export const trainingPlanUpdateInputSchema = trainingPlanCreateInputSchema.partial();
 
 export const trainingPlanGoalTargetInputSchema = profileGoalTargetSchema;
 

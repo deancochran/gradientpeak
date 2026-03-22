@@ -1,15 +1,15 @@
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import type { ActivityPlanStructureV2 } from "@repo/core";
+import { formatDurationSec } from "@repo/core";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { getActivityConfig } from "@/lib/constants/activities";
-import { formatDurationSec } from "@repo/core/utils/dates";
-import type { ActivityPlanStructureV2 } from "@repo/core";
 import { format } from "date-fns";
-import { Heart, Calendar, CheckCircle2 } from "lucide-react-native";
-import { TouchableOpacity, View, Pressable } from "react-native";
-import { trpc } from "@/lib/trpc";
+import { Calendar, CheckCircle2, Heart } from "lucide-react-native";
 import { useState } from "react";
+import { Pressable, TouchableOpacity, View } from "react-native";
+import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { getActivityConfig } from "@/lib/constants/activities";
+import { trpc } from "@/lib/trpc";
 
 // ============================================
 // TYPES
@@ -92,8 +92,7 @@ export function ActivityPlanCard({
   showScheduleInfo = false,
 }: ActivityPlanCardProps) {
   // Transform database objects to internal format
-  const activity =
-    legacyActivity || transformToCardData(activityPlan, plannedActivity);
+  const activity = legacyActivity || transformToCardData(activityPlan, plannedActivity);
 
   const config = getActivityConfig(activity.activityType);
 
@@ -159,20 +158,16 @@ export function ActivityPlanCard({
 
               {/* Duration + TSS inline */}
               <View className="flex-row items-center gap-1.5">
-                {activity.estimatedDuration !== undefined &&
-                  activity.estimatedDuration > 0 && (
-                    <Text className="text-xs text-muted-foreground">
-                      {formatDurationSec(
-                        Math.round(activity.estimatedDuration),
-                      )}
-                    </Text>
-                  )}
-                {activity.estimatedTss !== undefined &&
-                  activity.estimatedTss > 0 && (
-                    <Text className="text-xs text-muted-foreground">
-                      {Math.round(activity.estimatedTss)} TSS
-                    </Text>
-                  )}
+                {activity.estimatedDuration !== undefined && activity.estimatedDuration > 0 && (
+                  <Text className="text-xs text-muted-foreground">
+                    {formatDurationSec(Math.round(activity.estimatedDuration))}
+                  </Text>
+                )}
+                {activity.estimatedTss !== undefined && activity.estimatedTss > 0 && (
+                  <Text className="text-xs text-muted-foreground">
+                    {Math.round(activity.estimatedTss)} TSS
+                  </Text>
+                )}
               </View>
             </View>
           </View>
@@ -180,11 +175,7 @@ export function ActivityPlanCard({
           {/* Schedule Info Badge (if scheduled) */}
           {showScheduleInfo && activity.scheduledDate && (
             <View className="flex-row items-center mb-1.5">
-              <Icon
-                as={Calendar}
-                size={12}
-                className="text-muted-foreground mr-1.5"
-              />
+              <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
               <Text className="text-xs text-muted-foreground">
                 {formatScheduledDateTime(activity.scheduledDate)}
               </Text>
@@ -194,11 +185,7 @@ export function ActivityPlanCard({
           {/* Intensity Profile Chart */}
           {hasStructure && !activity.isCompleted && activity.structure && (
             <View className="mb-1.5 rounded overflow-hidden">
-              <TimelineChart
-                structure={activity.structure}
-                height={50}
-                compact={true}
-              />
+              <TimelineChart structure={activity.structure} height={50} compact={true} />
             </View>
           )}
 
@@ -216,11 +203,7 @@ export function ActivityPlanCard({
           {/* Completed Badge */}
           {activity.isCompleted && (
             <View className="flex-row items-center mt-1.5">
-              <Icon
-                as={CheckCircle2}
-                size={12}
-                className="text-green-600 mr-1"
-              />
+              <Icon as={CheckCircle2} size={12} className="text-green-600 mr-1" />
               <Text className="text-xs text-green-600">Completed</Text>
             </View>
           )}
@@ -237,11 +220,7 @@ export function ActivityPlanCard({
               <Icon
                 as={Heart}
                 size={14}
-                className={
-                  isLiked
-                    ? "text-red-500 fill-red-500"
-                    : "text-muted-foreground"
-                }
+                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
               />
               <Text className="ml-1.5 text-[10px] text-muted-foreground">
                 {likesCount > 0 ? likesCount : ""}
@@ -302,15 +281,9 @@ function formatScheduledDateTime(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const activityDate = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-  );
+  const activityDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-  const diffDays = Math.floor(
-    (activityDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000),
-  );
+  const diffDays = Math.floor((activityDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
 
   // Check if time component exists (not midnight)
   const hasTime = date.getHours() !== 0 || date.getMinutes() !== 0;

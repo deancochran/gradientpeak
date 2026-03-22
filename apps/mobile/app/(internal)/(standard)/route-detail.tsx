@@ -1,10 +1,8 @@
+import { decodePolyline } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
-import { decodePolyline } from "@repo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Calendar,
@@ -18,6 +16,8 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { trpc } from "@/lib/trpc";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Outdoor Run",
@@ -32,10 +32,7 @@ export default function RouteDetailScreen() {
   const utils = trpc.useUtils();
   const mapRef = useRef<MapView>(null);
 
-  const { data: route, isLoading } = trpc.routes.get.useQuery(
-    { id: id! },
-    { enabled: !!id },
-  );
+  const { data: route, isLoading } = trpc.routes.get.useQuery({ id: id! }, { enabled: !!id });
 
   const deleteMutation = useReliableMutation(trpc.routes.delete, {
     invalidate: [utils.routes],
@@ -57,8 +54,7 @@ export default function RouteDetailScreen() {
   const handleToggleLike = () => {
     if (!route?.id) return;
     // Validate UUID format
-    const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(route.id)) {
       Alert.alert("Error", "Cannot like this item - invalid ID");
       return;
@@ -80,10 +76,7 @@ export default function RouteDetailScreen() {
     }
   }, [route?.has_liked]);
 
-  const coordinates = useMemo(
-    () => (route ? decodePolyline(route.polyline) : []),
-    [route],
-  );
+  const coordinates = useMemo(() => (route ? decodePolyline(route.polyline) : []), [route]);
 
   const handleDelete = () => {
     if (!route) return;
@@ -156,12 +149,8 @@ export default function RouteDetailScreen() {
               style={{ flex: 1 }}
               provider={PROVIDER_DEFAULT}
               initialRegion={{
-                latitude:
-                  coordinates[Math.floor(coordinates.length / 2)]?.latitude ||
-                  0,
-                longitude:
-                  coordinates[Math.floor(coordinates.length / 2)]?.longitude ||
-                  0,
+                latitude: coordinates[Math.floor(coordinates.length / 2)]?.latitude || 0,
+                longitude: coordinates[Math.floor(coordinates.length / 2)]?.longitude || 0,
                 latitudeDelta: 0.05,
                 longitudeDelta: 0.05,
               }}
@@ -182,11 +171,7 @@ export default function RouteDetailScreen() {
               />
 
               {/* Start Marker */}
-              <Marker
-                coordinate={coordinates[0]}
-                anchor={{ x: 0.5, y: 0.5 }}
-                title="Start"
-              >
+              <Marker coordinate={coordinates[0]} anchor={{ x: 0.5, y: 0.5 }} title="Start">
                 <View className="w-3 h-3 rounded-full bg-green-500 border-2 border-white" />
               </Marker>
 
@@ -201,9 +186,7 @@ export default function RouteDetailScreen() {
             </MapView>
           ) : (
             <View className="flex-1 items-center justify-center">
-              <Text className="text-muted-foreground">
-                No GPS data available
-              </Text>
+              <Text className="text-muted-foreground">No GPS data available</Text>
             </View>
           )}
         </View>
@@ -213,17 +196,14 @@ export default function RouteDetailScreen() {
           <View>
             <Text className="text-2xl font-bold mb-2">{route.name}</Text>
             <Text className="text-base text-muted-foreground">
-              {ACTIVITY_CATEGORY_LABELS[route.activity_category] ||
-                route.activity_category}
+              {ACTIVITY_CATEGORY_LABELS[route.activity_category] || route.activity_category}
             </Text>
           </View>
 
           {/* Stats Card */}
           <Card>
             <CardContent className="p-4">
-              <Text className="text-sm font-semibold mb-3">
-                Route Statistics
-              </Text>
+              <Text className="text-sm font-semibold mb-3">Route Statistics</Text>
 
               <View className="gap-3">
                 <View className="flex-row items-center justify-between">
@@ -231,18 +211,14 @@ export default function RouteDetailScreen() {
                     <MapPin size={20} className="text-muted-foreground" />
                     <Text className="text-muted-foreground">Distance</Text>
                   </View>
-                  <Text className="font-semibold">
-                    {formatDistance(route.total_distance)}
-                  </Text>
+                  <Text className="font-semibold">{formatDistance(route.total_distance)}</Text>
                 </View>
 
                 {route.total_ascent != null && route.total_ascent > 0 && (
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
                       <TrendingUp size={20} className="text-green-600" />
-                      <Text className="text-muted-foreground">
-                        Elevation Gain
-                      </Text>
+                      <Text className="text-muted-foreground">Elevation Gain</Text>
                     </View>
                     <Text className="font-semibold">{route.total_ascent}m</Text>
                   </View>
@@ -252,13 +228,9 @@ export default function RouteDetailScreen() {
                   <View className="flex-row items-center justify-between">
                     <View className="flex-row items-center gap-2">
                       <TrendingDown size={20} className="text-red-600" />
-                      <Text className="text-muted-foreground">
-                        Elevation Loss
-                      </Text>
+                      <Text className="text-muted-foreground">Elevation Loss</Text>
                     </View>
-                    <Text className="font-semibold">
-                      {route.total_descent}m
-                    </Text>
+                    <Text className="font-semibold">{route.total_descent}m</Text>
                   </View>
                 )}
 
@@ -267,9 +239,7 @@ export default function RouteDetailScreen() {
                     <Calendar size={20} className="text-muted-foreground" />
                     <Text className="text-muted-foreground">Uploaded</Text>
                   </View>
-                  <Text className="font-semibold">
-                    {formatDate(route.created_at)}
-                  </Text>
+                  <Text className="font-semibold">{formatDate(route.created_at)}</Text>
                 </View>
               </View>
             </CardContent>
@@ -280,9 +250,7 @@ export default function RouteDetailScreen() {
             <Card>
               <CardContent className="p-4">
                 <Text className="text-sm font-semibold mb-2">Description</Text>
-                <Text className="text-muted-foreground">
-                  {route.description}
-                </Text>
+                <Text className="text-muted-foreground">{route.description}</Text>
               </CardContent>
             </Card>
           )}
@@ -307,24 +275,14 @@ export default function RouteDetailScreen() {
                 <Icon
                   as={Heart}
                   size={20}
-                  className={
-                    isLiked
-                      ? "text-red-500 fill-red-500"
-                      : "text-muted-foreground"
-                  }
+                  className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
                 />
                 <Text
-                  className={
-                    isLiked
-                      ? "text-red-500 font-medium"
-                      : "text-foreground font-medium"
-                  }
+                  className={isLiked ? "text-red-500 font-medium" : "text-foreground font-medium"}
                 >
                   {isLiked ? "Liked" : "Like"}
                 </Text>
-                {likesCount > 0 && (
-                  <Text className="text-muted-foreground">({likesCount})</Text>
-                )}
+                {likesCount > 0 && <Text className="text-muted-foreground">({likesCount})</Text>}
               </Pressable>
             </View>
 

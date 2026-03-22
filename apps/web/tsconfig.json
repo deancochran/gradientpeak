@@ -13,7 +13,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@repo/core": ["../../packages/core/index.ts"]
     },
     "incremental": true,
     "target": "ES2017",

@@ -1,53 +1,50 @@
 ---
 name: brainstorming
-description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
+description: Must-use pre-design skill for new features, behavior changes, and creative implementation work
 ---
 
-# From Idea to Design: A Collaborative Guide
+# Brainstorming Skill
 
-## Overview
+## When to Use
 
-The key is to first understand the project's context, then clarify the idea with targeted questions, and finally, present the design incrementally for validation.
+- Before creating a feature, component, or behavior change
+- When requirements are still fuzzy or there are multiple plausible designs
+- When a short design pass will reduce implementation risk
 
----
+## Scope
 
-### The Design Process
+This skill turns an idea into a small, validated design.
 
-#### 1. Understanding the Idea
-*   **Review Project Context:** Begin by examining the current state of the project, including files, documentation, and recent code commits.
-*   **Ask Clarifying Questions:** Refine the idea by asking questions one at a time.
-    *   Whenever possible, frame questions as multiple-choice, but open-ended questions are also acceptable.
-    *   Pose only one question per message. For complex topics, break them down into a series of questions.
-*   **Focus on the Core:** Concentrate on understanding the idea's purpose, any constraints, and what defines success.
+- Start by understanding intent and constraints.
+- Explore options before committing to implementation.
 
-#### 2. Exploring Solutions
-*   **Propose Alternatives:** Suggest two to three different ways to approach the design, each with its own set of trade-offs.
-*   **Recommend and Justify:** Present the options in a conversational manner, starting with your recommended solution and explaining the reasoning behind your choice.
+## Rules
 
-#### 3. Presenting the Design
-*   **Incremental Presentation:** Once the idea is clear, present the design in manageable sections of 200-300 words.
-*   **Validate as You Go:** After each section, pause and ask for feedback to ensure the design is on the right track.
-*   **Comprehensive Coverage:** The design should address architecture, components, data flow, error handling, and testing strategies.
-*   **Iterate as Needed:** Be prepared to revisit and clarify any part of the design that isn't clear.
+1. Review project context before proposing solutions.
+2. Ask at most one clarifying question at a time when needed.
+3. Prefer multiple-choice questions when they simplify decisions.
+4. Offer two to three approaches with trade-offs.
+5. Recommend one approach and explain why.
+6. Present design in small sections and validate as you go.
+7. Build only what is clearly needed.
 
----
+## Default Flow
 
-### After the Design is Complete
+1. clarify goals, constraints, and success criteria
+2. propose options and trade-offs
+3. recommend a direction
+4. outline architecture, data flow, edge cases, and testing
+5. document the validated design if needed
 
-#### Documentation
-*   Once the design is validated, document it in `docs/plans/YYYY-MM-DD-<topic>/design.md`.
+## Avoid
 
+- jumping into implementation before the shape of the solution is clear
+- asking many open questions at once
+- designing beyond current requirements
 
-#### Implementation
-*   To move forward with implementation, ask, "Ready to set up for implementation?"
+## Quick Checklist
 
----
-
-### Core Principles
-
-*   **One Question at a Time:** Avoid asking multiple questions in a single message.
-*   **Prefer Multiple Choice:** Use multiple-choice questions when they can simplify the conversation.
-*   **Build Only What is Needed:** Implement features only when they are explicitly required. This avoids over-engineering and creating complex solutions for problems you don't have yet, which helps keep the code simple and reduce waste.
-*   **Explore Alternatives:** Always consider at least two to three different solutions.
-*   **Validate Incrementally:** Present and confirm the design in small, digestible parts.
-*   **Stay Flexible:** Be ready to adapt and clarify as you go.
+- [ ] intent and constraints understood
+- [ ] multiple options considered
+- [ ] recommendation justified
+- [ ] design validated incrementally

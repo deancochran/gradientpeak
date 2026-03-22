@@ -1,7 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-gemini-auth@latest"],
-  "instructions": [".opencode/AGENTS.md"],
+  "instructions": ["AGENTS.md"],
   "mcp": {
     "supabase": {
       "type": "remote",
@@ -29,22 +28,30 @@
   "agent": {
     "build": {
       "mode": "primary",
-      "description": "Default agent for development work with all tools enabled"
+      "description": "Default development agent"
     },
     "plan": {
       "mode": "primary",
-      "description": "Planning agent for analysis without making changes",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "description": "Planning-only analysis agent",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
     "coordinator": {
       "mode": "primary",
-      "description": "Research Director & Implementation Orchestrator. Coordinates complex tasks by analyzing complexity, commissioning specialized research agents, synthesizing findings, and executing implementations. Manages parallel agent workflows.",
+      "description": "Coordinates complex repo work through lifecycle-driven delegation and synthesis",
       "instructions": [
-        "CRITICAL: If you cannot perform a task directly (blocked by security rules, permission denied, or outside your capabilities), you MUST immediately delegate to an appropriate specialized subagent. Never attempt blocked commands. This rule takes precedence over all other instructions."
+        "Operate as a session coordinator first. For medium or high complexity work, move through these states in order: intake, orient, plan, delegate, execute, fan_in, verify, review, handoff, closed.",
+        "Your default job is to select the next bounded work unit, package the right context, choose the right specialist, synthesize results, and maintain truthful repo memory. Direct execution is the exception, not the default, when work can be delegated cleanly.",
+        "CRITICAL: If you cannot perform a task directly (blocked by security rules, permission denied, or outside your capabilities), you MUST immediately delegate to an appropriate specialized subagent. Never attempt blocked commands. This rule takes precedence over all other instructions.",
+        "Before reading, appending to, or writing OpenCode-managed markdown under `.opencode/`, measure the document's current size first. If it is already over budget, or the update would push it over budget, compact it before continuing.",
+        "For every delegation, include: objective, exact scope, allowed files or file areas, required context, excluded context, deliverable shape, completion criteria, verification expectation, and blocker escalation rule.",
+        "Require every delegated result to return: status, concise outcome, decisions taken, files touched or proposed, verification run, unresolved risks, and the exact next step if incomplete.",
+        "Route context intentionally. Never send full session history by default. Use only the minimum global, spec, and task-local context needed for the delegated unit.",
+        "Parallel fan-out is allowed only when work units have low-conflict boundaries, a clear integration surface, bounded return contracts, and an explicit fan-in owner. Reconcile conflicts before further delegation.",
+        "Keep active repo memory lean: remove completed task sections from `.opencode/tasks/index.md`, collapse or delete fully completed sections in active `tasks.md`, and archive only terse history when it is still useful.",
+        "Before finishing, ensure `tasks.md` and `.opencode/tasks/index.md` reflect truthful done vs pending state, blockers, validation performed, one exact next action when work is incomplete, and no stale completed sections that should have been compacted."
       ],
       "hidden": false,
       "temperature": 0.2,
@@ -58,13 +65,22 @@
           "performance-specialist": "allow",
           "documentation-strategist": "allow",
           "code-improvement-reviewer": "allow",
+          "supabase-expert": "allow",
           "database-migration-assistant": "allow",
           "trpc-router-generator": "allow",
           "web-page-generator": "allow",
           "mobile-component-generator": "allow",
+          "mobile-recording-assistant": "allow",
+          "react-native-reusables-expert": "allow",
+          "react-hook-form-zod-expert": "allow",
+          "trpc-mutation-patterns-expert": "allow",
           "core-logic-assistant": "allow",
           "performance-optimizer": "allow",
-          "accessibility-auditor": "allow"
+          "accessibility-auditor": "allow",
+          "strava-api-expert": "allow",
+          "garmin-fit-sdk-expert": "allow",
+          "agent-creator": "allow",
+          "skill-creator-agent": "allow"
         },
         "edit": {
           "*": "ask",
@@ -85,138 +101,180 @@
         }
       }
     },
-    "code-improvement-reviewer": {
-      "mode": "subagent",
-      "description": "Reviews code for readability, performance, and best-practice issues",
-      "tools": {
-        "write": false,
-        "edit": false
-      },
-      "temperature": 0.1
-    },
     "mobile-component-generator": {
       "mode": "subagent",
-      "description": "Generates React Native components following GradientPeak mobile patterns"
+      "description": "Generates React Native components using repo mobile patterns",
+      "instructions": [
+        "Generate React Native components that follow this repository's mobile UI, styling, and composition patterns."
+      ]
     },
     "mobile-recording-assistant": {
       "mode": "subagent",
-      "description": "Specialized agent for ActivityRecorder service development. Helps with sensor integration, metrics tracking, and recording UI."
+      "description": "Handles ActivityRecorder, sensors, metrics, and recording flow work",
+      "instructions": [
+        "Focus on recorder architecture, sensor integrations, metrics flow, and recording-specific behavior in the mobile app."
+      ]
     },
     "react-native-reusables-expert": {
       "mode": "subagent",
-      "description": "Expert in React Native Reusables UI components. Handles Button, Input, Select, Modal, Card, List, and other Radix-based components with NativeWind styling."
+      "description": "Handles React Native Reusables primitives and NativeWind patterns",
+      "instructions": [
+        "Focus on shared native primitives, component contracts, and NativeWind-based React Native Reusables patterns."
+      ]
     },
     "react-hook-form-zod-expert": {
       "mode": "subagent",
-      "description": "Expert in React Hook Form with Zod validation. Handles form schemas, TypeScript type inference, complex validation patterns, and form performance optimization."
+      "description": "Handles React Hook Form, Zod schemas, and typed validation flows",
+      "instructions": [
+        "Focus on typed form architecture, schema-driven validation, error mapping, and form performance."
+      ]
     },
     "trpc-mutation-patterns-expert": {
       "mode": "subagent",
-      "description": "Expert in tRPC mutation patterns, useReliableMutation, cache invalidation, optimistic updates, and error handling for React Query integration."
-    },
-    "web-page-generator": {
-      "mode": "subagent",
-      "description": "Generates Next.js pages with proper Server/Client component split"
-    },
-    "trpc-router-generator": {
-      "mode": "subagent",
-      "description": "Generates tRPC routers with procedures and input validation"
+      "description": "Handles tRPC mutation flows, cache invalidation, and optimistic updates",
+      "instructions": [
+        "Focus on client mutation behavior, invalidation strategy, optimistic updates, and error handling around tRPC mutations."
+      ]
     },
     "core-logic-assistant": {
       "mode": "subagent",
-      "description": "Helps with calculations, schemas, and business logic in @repo/core"
+      "description": "Handles calculations, schemas, and domain logic in @repo/core",
+      "instructions": [
+        "Focus on pure logic, shared schemas, and database-independent domain behavior in `@repo/core`."
+      ]
     },
-    "strava-api-expert": {
+    "trpc-router-generator": {
       "mode": "subagent",
-      "description": "Expert in Strava API integration for activity data, athlete profiles, and webhook handling. Handles OAuth flows, activity sync, and Strava-specific data mapping."
+      "description": "Generates tRPC routers with typed procedures and validation",
+      "instructions": [
+        "Generate tRPC routers that use explicit validation, predictable procedure structure, and repo-aligned contracts."
+      ]
     },
-    "database-migration-assistant": {
+    "web-page-generator": {
       "mode": "subagent",
-      "description": "Generates and manages Supabase database schema migrations"
+      "description": "Generates Next.js pages with correct server/client boundaries",
+      "instructions": [
+        "Generate Next.js App Router pages that respect server/client boundaries and existing repo patterns."
+      ]
+    },
+    "code-improvement-reviewer": {
+      "mode": "subagent",
+      "description": "Reviews code quality, readability, and best practices",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
+      },
+      "temperature": 0.1
     },
     "performance-optimizer": {
       "mode": "subagent",
-      "description": "Analyzes and optimizes slow components and queries"
+      "description": "Implements performance optimizations in slow components and queries"
     },
     "accessibility-auditor": {
       "mode": "subagent",
       "description": "Reviews components for WCAG compliance and screen reader support",
-      "tools": {
-        "write": false,
-        "edit": false
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
+    },
+    "database-migration-assistant": {
+      "mode": "subagent",
+      "description": "Generates and manages Supabase schema migrations"
+    },
+    "supabase-expert": {
+      "mode": "subagent",
+      "description": "Inspects Supabase schema, data, logs, and advisors",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
+      },
+      "instructions": [
+        "Use Supabase MCP tools for schema inspection, data verification, troubleshooting, and advisor checks. Prefer table/schema inspection over raw SQL, keep SQL queries read-only unless the user explicitly asks for data changes, and never run destructive SQL without explicit confirmation. If schema evolution is needed, hand off migration work to `database-migration-assistant`."
+      ],
+      "temperature": 0.1
     },
     "architecture-research-expert": {
       "mode": "subagent",
-      "description": "Research expert for system design and component placement decisions",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "description": "Researches system design and component placement",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
     "technology-research-expert": {
       "mode": "subagent",
-      "description": "Research expert for library selection, API analysis, and feasibility studies",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "description": "Researches library selection, APIs, and feasibility",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
     "quality-assurance-advisor": {
       "mode": "subagent",
-      "description": "Research advisor for testing strategies, coverage requirements, and quality standards",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "description": "Researches testing strategy, coverage, and quality standards",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
     "integration-analyst": {
       "mode": "subagent",
-      "description": "Research analyst for third-party APIs, OAuth flows, and data synchronization",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "description": "Researches third-party APIs, OAuth flows, and sync patterns",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
     "performance-specialist": {
       "mode": "subagent",
-      "description": "Research specialist for performance bottlenecks and optimization strategies",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "description": "Researches performance bottlenecks and optimization strategies",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
     "documentation-strategist": {
       "mode": "subagent",
-      "description": "Research strategist for documentation planning and JSDoc specifications",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "description": "Researches documentation strategy and JSDoc standards",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     },
-    "agent-creator": {
+    "strava-api-expert": {
       "mode": "subagent",
-      "description": "Creates new specialized agents for any domain. Generates agent files with documentation, references, and patterns.",
-      "temperature": 0.3
+      "description": "Handles Strava OAuth, sync, webhooks, and Strava-specific mappings",
+      "instructions": [
+        "Focus on Strava-specific API behavior, OAuth lifecycle, sync flow, webhook handling, and payload mapping."
+      ]
     },
     "garmin-fit-sdk-expert": {
       "mode": "subagent",
-      "description": "Expert in Garmin FIT SDK for JavaScript. Handles FIT file encoding, decoding, developer data fields, custom profiles with FitGen, and data mapping to activity schemas.",
+      "description": "Handles Garmin FIT SDK encoding, decoding, and activity mapping",
+      "instructions": [
+        "Focus on Garmin FIT SDK usage, FIT encoding and decoding, developer fields, and mapping FIT data into repo activity contracts."
+      ],
+      "temperature": 0.3
+    },
+    "agent-creator": {
+      "mode": "subagent",
+      "description": "Designs new specialized agents and registry entries",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
+      },
+      "instructions": [
+        "Design specialized agents with clear scopes, concise descriptions, and repo-appropriate configuration guidance."
+      ],
       "temperature": 0.3
     },
     "skill-creator-agent": {
       "mode": "subagent",
-      "description": "Agent for pattern extraction and skill file generation",
-      "tools": {
-        "write": false,
-        "edit": false,
-        "bash": false
+      "description": "Extracts patterns and drafts concise skill files",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny"
       }
     }
   },
@@ -238,8 +296,11 @@
       "backend": "allow",
       "testing": "allow",
       "mobile-frontend": "allow",
+      "mobile-recording": "allow",
       "web-frontend": "allow",
+      "ui-package": "allow",
       "core-package": "allow",
+      "provider-integrations": "allow",
       "documentation": "allow",
       "brainstorming": "allow",
       "explaining-code": "allow",

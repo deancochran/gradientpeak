@@ -3,6 +3,7 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
+import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { useRouter } from "expo-router";
@@ -10,7 +11,6 @@ import { Activity, ChevronRight } from "lucide-react-native";
 import React, { useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { ListSkeleton } from "@/components/shared";
 import { trpc } from "@/lib/trpc";
 
 type SortBy = "date" | "distance" | "duration" | "tss";

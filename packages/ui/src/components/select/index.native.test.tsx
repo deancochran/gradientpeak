@@ -1,7 +1,7 @@
 import { renderNative } from "../../test/render-native";
+import { selectFixtures } from "./fixtures";
 import {
   NativeSelectScrollView,
-  type Option,
   Select,
   SelectContent,
   SelectItem,
@@ -11,30 +11,27 @@ import {
 
 describe("Select native", () => {
   it("renders trigger and option content", () => {
-    const tempoOption: Option = {
-      label: "Tempo",
-      value: "tempo",
-    };
+    const selectedOption = selectFixtures.workoutType.options[1]!;
 
     const { getByTestId } = renderNative(
-      <Select onValueChange={() => {}} value={tempoOption as never}>
-        <SelectTrigger testID="workout-type-trigger">
-          <SelectValue placeholder="Choose workout type" />
+      <Select onValueChange={() => {}} value={selectedOption as never}>
+        <SelectTrigger testID={`${selectFixtures.workoutType.testId}-trigger`}>
+          <SelectValue placeholder={selectFixtures.workoutType.placeholder} />
         </SelectTrigger>
-        <SelectContent testID="workout-type-content">
+        <SelectContent testID={`${selectFixtures.workoutType.testId}-content`}>
           <NativeSelectScrollView>
             <SelectItem
-              label={tempoOption.label}
-              testID="tempo-option"
-              value={tempoOption.value as never}
+              label={selectedOption.label}
+              testID={`${selectedOption.value}-option`}
+              value={selectedOption.value as never}
             />
           </NativeSelectScrollView>
         </SelectContent>
       </Select>,
     );
 
-    expect(getByTestId("workout-type-trigger")).toBeTruthy();
-    expect(getByTestId("workout-type-content")).toBeTruthy();
-    expect(getByTestId("tempo-option")).toBeTruthy();
+    expect(getByTestId(`${selectFixtures.workoutType.testId}-trigger`)).toBeTruthy();
+    expect(getByTestId(`${selectFixtures.workoutType.testId}-content`)).toBeTruthy();
+    expect(getByTestId(`${selectedOption.value}-option`)).toBeTruthy();
   });
 });

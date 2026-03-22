@@ -156,35 +156,7 @@ export {
 // ============================================================================
 // Constants Module
 // ============================================================================
-export {
-  ACTIVITY_CATEGORIES,
-  ACTIVITY_CATEGORY_CONFIG,
-  BLE_SERVICE_UUIDS,
-  CONVERSION_FACTORS,
-  EARTH_RADIUS_METERS,
-  FATIGUE_LEVEL_THRESHOLDS,
-  FITNESS_LEVEL_THRESHOLDS,
-  FTMS_CHARACTERISTICS,
-  FTMS_FEATURE_BITS,
-  FTMS_OPCODES,
-  FTMS_RESULT_CODES,
-  FTMS_TARGET_SETTING_BITS,
-  HR_ZONE_MAX_PERCENTAGES,
-  HR_ZONE_NAMES,
-  HR_ZONE_PERCENTAGES,
-  INTENSITY_ZONES,
-  MET_VALUES,
-  NORMALIZED_POWER,
-  PACE_ZONE_PERCENTAGES,
-  PHYSIOLOGICAL_DEFAULTS,
-  POWER_ZONE_NAMES,
-  POWER_ZONE_PERCENTAGES,
-  TIME_CONSTANTS,
-  TRAINING_RECOMMENDATIONS,
-  TSB_THRESHOLDS,
-  TSS_CONSTANTS,
-  VALIDATION_RANGES,
-} from "./constants";
+export * from "./constants";
 
 // ============================================================================
 // Barrel File Exports - Automatically export from subdirectories
@@ -194,14 +166,17 @@ export {
 
 export * from "./bluetooth"; // Canonical BLE parsers
 export * from "./contracts"; // Shared API contracts
+export * from "./duration"; // Canonical duration helpers
 export * from "./estimation"; // TSS estimation system
-export * from "./forms"; // Shared form parsing and normalization helpers
-export * from "./goals"; // Goal drafting and formatting helpers
+export * from "./goals"; // Goal draft/payload helpers
+export * from "./load"; // Canonical load-domain helpers
 export * from "./notifications"; // Shared notification normalization helpers
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
+export * from "./sports"; // Canonical sport registry and heuristics
 export * from "./utils"; // Utility functions
+export * from "./zones"; // Canonical zones and threshold metadata
 
 // ============================================================================
 // FIT File Parsing and Encoding Module
@@ -240,8 +215,13 @@ export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
 export * as CalculationsV2 from "./calculations_v2";
 export * as Constants from "./constants";
+export * as Duration from "./duration";
 export * as Estimation from "./estimation";
+export * as Estimators from "./estimators";
+export * as Load from "./load";
 export * as Plan from "./plan";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
+export * as Sports from "./sports";
 export * as Utils from "./utils";
+export * as Zones from "./zones";

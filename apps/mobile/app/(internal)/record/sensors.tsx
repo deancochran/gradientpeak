@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { useRecorderActions, useSensors } from "@/lib/hooks/useActivityRecorder";
+import { useRecorderActions, useSensors, useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import {
   type AllPermissionsStatus,
@@ -18,7 +18,8 @@ import {
 function SensorsScreen() {
   const service = useSharedActivityRecorder();
   const { sensors: connectedSensors } = useSensors(service);
-  const { startScan, stopScan, subscribeScan, connectDevice, disconnectDevice } =
+  const sessionView = useSessionView(service);
+  const { startScan, stopScan, subscribeScan, connectDevice, disconnectDevice, resetSensors } =
     useRecorderActions(service);
 
   const [permissions, setPermissions] = useState<AllPermissionsStatus | null>(null);
@@ -83,7 +84,7 @@ function SensorsScreen() {
     if (!service) return;
 
     const checkBleState = () => {
-      const state = service.sensorsManager.getBleState();
+      const state = service.getBleState();
       setBleState(state);
     };
 
@@ -205,14 +206,15 @@ function SensorsScreen() {
   };
 
   const handleResetSensors = async () => {
-    if (!service) return;
     try {
-      await service.sensorsManager.resetAllSensors();
+      await resetSensors();
       console.log("All sensors reset successfully");
     } catch (error) {
       console.error("Failed to reset sensors:", error);
     }
   };
+
+  const trainerControlMode = sessionView?.trainer.currentControlMode ?? null;
 
   if (!permissions) {
     return (
@@ -349,17 +351,11 @@ function SensorsScreen() {
                       )}
                     </View>
                     {/* Show current control mode if controllable */}
-                    {sensor.isControllable &&
-                      (() => {
-                        const controller = service?.sensorsManager.getFTMSController(sensor.id);
-                        const mode = controller?.getCurrentMode();
-                        if (mode) {
-                          return (
-                            <Text className="text-xs text-muted-foreground mt-1">Mode: {mode}</Text>
-                          );
-                        }
-                        return null;
-                      })()}
+                    {sensor.isControllable && trainerControlMode && (
+                      <Text className="text-xs text-muted-foreground mt-1">
+                        Mode: {trainerControlMode}
+                      </Text>
+                    )}
                   </View>
                 </View>
                 <Button

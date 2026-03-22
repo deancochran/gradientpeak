@@ -1,35 +1,22 @@
-import { normalizeDurationInput, parseHmsToSeconds } from "@repo/core/forms";
-import * as React from "react";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { normalizeDurationInput, parseHmsToSeconds } from "../../lib/fitness-inputs";
 import { View } from "../../lib/react-native";
 import { Input } from "../input/index.native";
 import { Label } from "../label/index.native";
 import { Text } from "../text/index.native";
+import type { DurationInputProps } from "./shared";
 
-export interface DurationInputProps {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onDurationSecondsChange?: (seconds: number | undefined) => void;
-  helperText?: string;
-  error?: string;
-  placeholder?: string;
-  required?: boolean;
-  accessibilityHint?: string;
-}
-
-export function DurationInput({
+function DurationInput({
+  accessibilityHint,
+  error,
+  helperText = "Use h:mm:ss format",
   id,
   label,
-  value,
   onChange,
   onDurationSecondsChange,
-  helperText = "Use h:mm:ss format",
-  error,
   placeholder = "e.g., 1:35:00",
   required = false,
-  accessibilityHint,
+  value,
 }: DurationInputProps) {
   const [draftValue, setDraftValue] = useState(value);
 
@@ -37,45 +24,43 @@ export function DurationInput({
     setDraftValue(value);
   }, [value]);
 
-  const handleTextChange = (nextValue: string) => {
-    setDraftValue(nextValue);
-    onChange(nextValue);
-    onDurationSecondsChange?.(parseHmsToSeconds(nextValue));
-  };
-
-  const handleBlur = () => {
-    const normalized = normalizeDurationInput(draftValue);
-    if (!normalized) {
-      return;
-    }
-
-    if (normalized !== draftValue) {
-      setDraftValue(normalized);
-      onChange(normalized);
-    }
-    onDurationSecondsChange?.(parseHmsToSeconds(normalized));
-  };
-
   return (
     <View className="gap-2">
       <Label nativeID={id}>
-        <Text className="text-sm font-medium">
+        <Text className="text-sm font-medium text-foreground">
           {label}
           {required ? <Text className="text-destructive"> *</Text> : null}
         </Text>
       </Label>
       <Input
+        accessibilityLabel={label}
+        accessibilityHint={accessibilityHint ?? "Enter a duration in h:mm:ss format"}
         className={error ? "border-destructive bg-destructive/5" : undefined}
-        aria-labelledby={id}
         value={draftValue}
-        onChangeText={handleTextChange}
-        onBlur={handleBlur}
+        onBlur={() => {
+          const normalized = normalizeDurationInput(draftValue);
+          if (!normalized) {
+            return;
+          }
+
+          if (normalized !== draftValue) {
+            setDraftValue(normalized);
+            onChange(normalized);
+          }
+          onDurationSecondsChange?.(parseHmsToSeconds(normalized));
+        }}
+        onChangeText={(nextValue) => {
+          setDraftValue(nextValue);
+          onChange(nextValue);
+          onDurationSecondsChange?.(parseHmsToSeconds(nextValue));
+        }}
         keyboardType="numbers-and-punctuation"
         placeholder={placeholder}
-        accessibilityHint={accessibilityHint ?? "Enter a duration in h:mm:ss format"}
       />
       {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
       {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}
     </View>
   );
 }
+
+export { DurationInput };

@@ -1,19 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { renderWeb, screen } from "../../test/render-web";
+import { fireEvent, renderWeb, screen } from "../../test/render-web";
+import { switchFixtures } from "./fixtures";
 import { Switch } from "./index.web";
 
 describe("Switch web", () => {
-  it("maps normalized test props onto the DOM switch", () => {
+  it("maps normalized test props and toggles checked state", () => {
+    const onCheckedChange = vi.fn();
+
     renderWeb(
-      <Switch accessibilityLabel="Email notifications" checked testId="email-notifications" />,
+      <Switch {...switchFixtures.notifications} checked={true} onCheckedChange={onCheckedChange} />,
     );
 
-    const switchRoot = screen.getByRole("switch", {
-      name: "Email notifications",
+    const control = screen.getByRole("switch", {
+      name: switchFixtures.notifications.accessibilityLabel,
     });
 
-    expect(switchRoot).toHaveAttribute("data-testid", "email-notifications");
-    expect(switchRoot).toHaveAttribute("data-state", "checked");
+    expect(control).toHaveAttribute("data-testid", switchFixtures.notifications.testId);
+    expect(control).toHaveAttribute("id", switchFixtures.notifications.id);
+
+    fireEvent.click(control);
+
+    expect(onCheckedChange).toHaveBeenCalled();
   });
 });

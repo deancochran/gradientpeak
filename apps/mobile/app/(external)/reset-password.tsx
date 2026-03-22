@@ -1,21 +1,12 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertDescription, Alert as UiAlert } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { supabase } from "@/lib/supabase/client";
@@ -42,8 +33,12 @@ export default function ResetPasswordScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [sessionSet, setSessionSet] = useState(false);
 
-  const form = useForm<ResetPasswordFields>({
-    resolver: zodResolver(resetPasswordSchema),
+  const form = useZodForm({
+    schema: resetPasswordSchema,
+    defaultValues: {
+      confirmPassword: "",
+      password: "",
+    },
   });
 
   useEffect(() => {
@@ -146,6 +141,11 @@ export default function ResetPasswordScreen() {
     }
   };
 
+  const submitForm = useZodFormSubmit({
+    form,
+    onSubmit: onUpdatePassword,
+  });
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -174,62 +174,38 @@ export default function ResetPasswordScreen() {
             <Form {...form}>
               <View className="gap-4" testID="reset-password-form">
                 {/* Password Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  label="New Password"
                   name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>New Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter new password"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          secureTextEntry
-                          autoFocus
-                          testID="password-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-
-                      {/* Password Requirements */}
-                      <View className="mt-2 gap-1" testID="password-hints">
-                        <Text variant="muted" className="text-xs">
-                          Password must contain:
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • At least 8 characters
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • One uppercase letter
-                        </Text>
-                        <Text variant="muted" className="text-xs">
-                          • One number
-                        </Text>
-                      </View>
-                    </FormItem>
-                  )}
+                  placeholder="Enter new password"
+                  secureTextEntry
+                  testId="password-input"
                 />
 
+                <View className="mt-2 gap-1" testID="password-hints">
+                  <Text variant="muted" className="text-xs">
+                    Password must contain:
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • At least 8 characters
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • One uppercase letter
+                  </Text>
+                  <Text variant="muted" className="text-xs">
+                    • One number
+                  </Text>
+                </View>
+
                 {/* Confirm Password Input */}
-                <FormField
+                <FormTextField
                   control={form.control}
+                  label="Confirm Password"
                   name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Confirm new password"
-                          value={field.value}
-                          onChangeText={field.onChange}
-                          secureTextEntry
-                          testID="confirm-password-input"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  placeholder="Confirm new password"
+                  secureTextEntry
+                  testId="confirm-password-input"
                 />
 
                 {/* Root Error */}
@@ -247,7 +223,7 @@ export default function ResetPasswordScreen() {
             <Button
               variant="default"
               size="lg"
-              onPress={form.handleSubmit(onUpdatePassword)}
+              onPress={submitForm.handleSubmit}
               disabled={isLoading || !sessionSet}
               testID="update-password-button"
               className="w-full"

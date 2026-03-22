@@ -85,7 +85,7 @@ vi.mock("@repo/ui/components/integer-stepper", () => ({
   IntegerStepper: createHost("IntegerStepper"),
 }));
 
-vi.mock("@/components/training-plan/create/inputs/PercentSliderInput", () => ({
+vi.mock("@repo/ui/components/percent-slider-input", () => ({
   PercentSliderInput: createHost("PercentSliderInput"),
 }));
 

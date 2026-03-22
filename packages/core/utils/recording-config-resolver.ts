@@ -18,6 +18,26 @@ import type {
   RecordingConfigInput,
   RecordingConfiguration,
 } from "../schemas/recording_config";
+import type {
+  MetricSourceType,
+  RecordingLaunchIntent,
+  RecordingSessionSnapshot,
+} from "../schemas/recording-session";
+
+export interface RecordingConfigLaunchContext {
+  plan?: RecordingConfigInput["plan"];
+  devices: RecordingConfigInput["devices"];
+  gpsAvailable: boolean;
+}
+
+export interface RecordingConfigSnapshotContext {
+  plan?: RecordingConfigInput["plan"];
+  gpsAvailable?: boolean;
+}
+
+function hasSourceType(snapshot: RecordingSessionSnapshot, sourceType: MetricSourceType): boolean {
+  return snapshot.devices.connected.some((device) => device.sourceTypes.includes(sourceType));
+}
 
 export class RecordingConfigResolver {
   /**
@@ -33,6 +53,78 @@ export class RecordingConfigResolver {
         ...capabilities,
         ...validation,
       },
+    };
+  }
+
+  /**
+   * Additive entry point for the new start-time session vocabulary.
+   */
+  static resolveFromLaunchIntent(
+    intent: RecordingLaunchIntent,
+    context: RecordingConfigLaunchContext,
+  ): RecordingConfiguration {
+    return this.resolve(this.buildInputFromLaunchIntent(intent, context));
+  }
+
+  /**
+   * Resolves a configuration from an immutable session snapshot.
+   */
+  static resolveFromSessionSnapshot(
+    snapshot: RecordingSessionSnapshot,
+    context: RecordingConfigSnapshotContext = {},
+  ): RecordingConfiguration {
+    return this.resolve(this.buildInputFromSessionSnapshot(snapshot, context));
+  }
+
+  static buildInputFromLaunchIntent(
+    intent: RecordingLaunchIntent,
+    context: RecordingConfigLaunchContext,
+  ): RecordingConfigInput {
+    return {
+      activityCategory: intent.activityCategory,
+      gpsRecordingEnabled: intent.gpsMode === "on",
+      mode: intent.mode === "planned" ? "planned" : "unplanned",
+      plan: context.plan,
+      devices: context.devices,
+      gpsAvailable: context.gpsAvailable,
+    };
+  }
+
+  static buildInputFromSessionSnapshot(
+    snapshot: RecordingSessionSnapshot,
+    context: RecordingConfigSnapshotContext = {},
+  ): RecordingConfigInput {
+    const trainer = snapshot.devices.controllableTrainer;
+
+    return {
+      activityCategory: snapshot.activity.category,
+      gpsRecordingEnabled: snapshot.activity.gpsMode === "on",
+      mode: snapshot.activity.mode === "planned" ? "planned" : "unplanned",
+      plan: context.plan ?? {
+        hasStructure: snapshot.activity.activityPlanId !== null,
+        hasRoute: snapshot.activity.routeId !== null,
+        stepCount: 0,
+        requiresManualAdvance: !snapshot.policies.controlPolicy.autoAdvanceSteps,
+      },
+      devices: {
+        ftmsTrainer: trainer
+          ? {
+              deviceId: trainer.deviceId,
+              autoControlEnabled:
+                snapshot.policies.controlPolicy.trainerMode === "auto" &&
+                trainer.supportsAutoControl,
+            }
+          : undefined,
+        hasPowerMeter: hasSourceType(snapshot, "power_meter"),
+        hasHeartRateMonitor:
+          hasSourceType(snapshot, "chest_strap") || hasSourceType(snapshot, "optical"),
+        hasCadenceSensor: hasSourceType(snapshot, "cadence_sensor"),
+      },
+      gpsAvailable:
+        context.gpsAvailable ??
+        (snapshot.activity.gpsMode === "on"
+          ? snapshot.capabilities.canTrackLocation || hasSourceType(snapshot, "gps")
+          : false),
     };
   }
 
@@ -77,8 +169,7 @@ export class RecordingConfigResolver {
     const shouldShowTrainerControl = hasFtmsTrainer;
 
     // Automation - only enable automatic features when we have data to automate with
-    const canAutoAdvanceSteps =
-      hasStructuredPlan && !(input.plan?.requiresManualAdvance ?? false);
+    const canAutoAdvanceSteps = hasStructuredPlan && !(input.plan?.requiresManualAdvance ?? false);
 
     // Auto-follow: Can automatically adjust trainer IF user enables it AND we have targets to follow
     const shouldAutoFollowTargets =
@@ -128,10 +219,7 @@ export class RecordingConfigResolver {
    */
   private static validate(
     input: RecordingConfigInput,
-    capabilities: Omit<
-      RecordingCapabilities,
-      "isValid" | "errors" | "warnings"
-    >,
+    capabilities: Omit<RecordingCapabilities, "isValid" | "errors" | "warnings">,
   ): Pick<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -160,11 +248,7 @@ export class RecordingConfigResolver {
     }
 
     // Warn if planned but no structure
-    if (
-      input.mode === "planned" &&
-      !input.plan?.hasStructure &&
-      !input.plan?.hasRoute
-    ) {
+    if (input.mode === "planned" && !input.plan?.hasStructure && !input.plan?.hasRoute) {
       warnings.push("Selected plan has no structure. Recording as unplanned.");
     }
 

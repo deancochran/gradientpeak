@@ -72,28 +72,18 @@
  * ```
  */
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { plannedActivityScheduleFormSchema } from "@repo/core";
-import { AlertDescription, AlertTitle, Alert as UiAlert } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import { Form, FormDateInputField, FormTextareaField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { AlertCircle, Calendar, Clock, TrendingUp, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
-import {
-  ActivityIndicator,
-  Modal,
-  Alert as NativeAlert,
-  Pressable,
-  ScrollView,
-  View,
-} from "react-native";
+import { Calendar, ChevronDown, ChevronUp, Clock, TrendingUp, X } from "lucide-react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
@@ -147,7 +137,7 @@ function toPickerDate(value: string | null | undefined): Date {
 }
 
 function alertSuccess(message: string) {
-  NativeAlert.alert("Success", message);
+  Alert.alert("Success", message);
 }
 
 export function ScheduleActivityModal({
@@ -176,15 +166,8 @@ export function ScheduleActivityModal({
     );
   }
 
-  const {
-    control,
-    handleSubmit,
-    setValue,
-    watch,
-    reset,
-    formState: { errors },
-  } = useForm<PlannedActivityScheduleFormInput, unknown, PlannedActivityScheduleFormOutput>({
-    resolver: zodResolver(plannedActivityScheduleFormSchema),
+  const form = useZodForm({
+    schema: plannedActivityScheduleFormSchema,
     defaultValues: {
       scheduled_date: preselectedDate || toDateOnlyString(new Date()),
       notes: null,
@@ -193,12 +176,12 @@ export function ScheduleActivityModal({
     },
   });
 
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showPlanPreviewDetails, setShowPlanPreviewDetails] = useState(false);
+  const [showConstraintDetails, setShowConstraintDetails] = useState(false);
 
-  const scheduledDateString = watch("scheduled_date");
-  const scheduledDate = toPickerDate(scheduledDateString);
-  const currentActivityPlanId = watch("activity_plan_id");
-  const scheduledDateForApi = toDateOnlyString(scheduledDate);
+  const scheduledDateString = form.watch("scheduled_date");
+  const scheduledDateForApi = scheduledDateString || toDateOnlyString(new Date());
+  const currentActivityPlanId = form.watch("activity_plan_id");
 
   // Fetch existing activity if editing
   const { data: existingActivity, isLoading: loadingExistingActivity } =
@@ -232,26 +215,28 @@ export function ScheduleActivityModal({
   // Reset form when modal opens/closes
   useEffect(() => {
     if (!visible) {
-      reset();
+      form.reset();
+      setShowPlanPreviewDetails(false);
+      setShowConstraintDetails(false);
     }
-  }, [visible, reset]);
+  }, [visible, form]);
 
   useEffect(() => {
     if (!isEditMode && resolvedActivityPlanId) {
-      setValue("activity_plan_id", resolvedActivityPlanId, {
+      form.setValue("activity_plan_id", resolvedActivityPlanId, {
         shouldValidate: false,
       });
     }
-  }, [isEditMode, resolvedActivityPlanId, setValue]);
+  }, [isEditMode, resolvedActivityPlanId, form]);
 
   // Load existing activity data (edit mode)
   useEffect(() => {
     if (existingActivity && existingActivity.activity_plan) {
-      setValue("activity_plan_id", existingActivity.activity_plan.id);
-      setValue("scheduled_date", existingActivity.scheduled_date);
-      setValue("notes", existingActivity.notes || null);
+      form.setValue("activity_plan_id", existingActivity.activity_plan.id);
+      form.setValue("scheduled_date", existingActivity.scheduled_date);
+      form.setValue("notes", existingActivity.notes || null);
     }
-  }, [existingActivity, setValue]);
+  }, [existingActivity, form]);
 
   const queryClient = useQueryClient();
 
@@ -296,12 +281,10 @@ export function ScheduleActivityModal({
     }
   };
 
-  const handleDateChange = (event: any, date?: Date) => {
-    setShowDatePicker(false);
-    if (date) {
-      setValue("scheduled_date", toDateOnlyString(date));
-    }
-  };
+  const submitForm = useZodFormSubmit<PlannedActivityScheduleFormOutput>({
+    form,
+    onSubmit,
+  });
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -329,6 +312,49 @@ export function ScheduleActivityModal({
   const isValidationPending = !!trainingPlanId && validationLoading && !validation;
   const canSchedule =
     !isLoading && displayPlan && !!currentActivityPlanId && !isValidationPending && !isSubmitting;
+  const validationSummary = !trainingPlanId
+    ? null
+    : validationError
+      ? {
+          title: "Could not validate schedule fit",
+          detail: "You can still continue, but constraint details are unavailable right now.",
+          tone: "border-destructive/20 bg-destructive/10",
+          textTone: "text-destructive",
+        }
+      : validationLoading && !validation
+        ? {
+            title: "Checking schedule fit",
+            detail: "Reviewing training-plan limits for this date.",
+            tone: "border-border bg-muted/60",
+            textTone: "text-muted-foreground",
+          }
+        : validation
+          ? validation.canSchedule && !validation.hasWarnings
+            ? {
+                title: "Ready to schedule",
+                detail: "This date fits cleanly within current plan limits.",
+                tone: "border-emerald-500/20 bg-emerald-500/10",
+                textTone: "text-emerald-700",
+              }
+            : validation.canSchedule
+              ? {
+                  title: "Close to plan limits",
+                  detail: "You can schedule this, but it pushes one or more constraints.",
+                  tone: "border-amber-500/20 bg-amber-500/10",
+                  textTone: "text-amber-700",
+                }
+              : {
+                  title: "Constraint override required",
+                  detail: "This date violates one or more training-plan limits.",
+                  tone: "border-destructive/20 bg-destructive/10",
+                  textTone: "text-destructive",
+                }
+          : {
+              title: "Schedule fit pending",
+              detail: "Constraint details will appear once validation is ready.",
+              tone: "border-border bg-muted/60",
+              textTone: "text-muted-foreground",
+            };
 
   return (
     <Modal
@@ -371,10 +397,9 @@ export function ScheduleActivityModal({
               </View>
             ) : displayPlan ? (
               <>
-                {/* Activity Plan Preview Card */}
+                {/* Activity Plan Summary */}
                 <Card>
                   <CardContent className="p-4">
-                    {/* Header Row */}
                     <View className="flex-row items-start mb-3">
                       <View className="mr-3 items-center justify-center w-12 h-12 rounded-full bg-muted">
                         <Text className="text-2xl">
@@ -384,15 +409,17 @@ export function ScheduleActivityModal({
                       <View className="flex-1">
                         <Text className="font-semibold text-lg">{displayPlan.name}</Text>
                         {displayPlan.description && (
-                          <Text className="text-sm text-muted-foreground mt-1" numberOfLines={2}>
+                          <Text
+                            className="text-sm text-muted-foreground mt-1"
+                            numberOfLines={showPlanPreviewDetails ? undefined : 2}
+                          >
                             {displayPlan.description}
                           </Text>
                         )}
                       </View>
                     </View>
 
-                    {/* Metrics Row */}
-                    <View className="flex-row gap-4 mb-3">
+                    <View className="flex-row flex-wrap gap-4 mb-3">
                       {displayPlan.estimated_duration && (
                         <View className="flex-row items-center gap-1.5">
                           <Icon as={Clock} size={16} className="text-muted-foreground" />
@@ -411,103 +438,152 @@ export function ScheduleActivityModal({
                       )}
                     </View>
 
-                    {/* Intensity Profile Chart */}
-                    {displayPlan.structure?.intervals &&
-                      displayPlan.structure.intervals.length > 0 && (
-                        <View className="mt-2 rounded-lg overflow-hidden">
-                          <Text className="text-xs text-muted-foreground mb-2">
-                            Intensity Profile
+                    <View className="rounded-xl border border-border bg-background px-3 py-3">
+                      <View className="flex-row items-start justify-between gap-3">
+                        <View className="flex-1 gap-1">
+                          <Text className="text-sm font-medium text-foreground">
+                            Workout preview
                           </Text>
-                          <TimelineChart
-                            structure={displayPlan.structure}
-                            height={80}
-                            compact={true}
+                          <Text className="text-sm text-muted-foreground">
+                            Keep the schedule flow light by reviewing the structure only when
+                            needed.
+                          </Text>
+                        </View>
+                        <Pressable
+                          onPress={() => setShowPlanPreviewDetails((current) => !current)}
+                          className="flex-row items-center gap-1 rounded-full border border-border bg-card px-3 py-2"
+                          disabled={isSubmitting}
+                          testID="schedule-preview-toggle"
+                        >
+                          <Text className="text-xs font-semibold text-foreground">
+                            {showPlanPreviewDetails ? "Hide" : "Show"}
+                          </Text>
+                          <Icon
+                            as={showPlanPreviewDetails ? ChevronUp : ChevronDown}
+                            size={14}
+                            className="text-foreground"
                           />
+                        </Pressable>
+                      </View>
+
+                      {showPlanPreviewDetails && (
+                        <View className="mt-3 gap-3" testID="schedule-preview-details">
+                          {displayPlan.structure?.intervals &&
+                          displayPlan.structure.intervals.length > 0 ? (
+                            <View className="rounded-lg overflow-hidden">
+                              <Text className="text-xs text-muted-foreground mb-2">
+                                Intensity Profile
+                              </Text>
+                              <TimelineChart
+                                structure={displayPlan.structure}
+                                height={80}
+                                compact={true}
+                              />
+                            </View>
+                          ) : null}
+                          {!displayPlan.structure?.intervals?.length ? (
+                            <Text className="text-sm text-muted-foreground">
+                              No detailed structure preview is available for this plan.
+                            </Text>
+                          ) : null}
                         </View>
                       )}
+                    </View>
                   </CardContent>
                 </Card>
 
-                {/* Date Picker */}
-                <View>
-                  <Text className="mb-2 font-semibold text-base">Scheduled Date</Text>
-                  <Pressable onPress={() => setShowDatePicker(true)} disabled={isSubmitting}>
-                    <View className="flex-row items-center gap-3 p-4 rounded-lg bg-muted border border-border">
-                      <Icon as={Calendar} size={20} className="text-foreground" />
-                      <Text className="flex-1 text-base">
-                        {format(scheduledDate, "EEEE, MMMM d, yyyy")}
-                      </Text>
-                    </View>
-                  </Pressable>
-                  {showDatePicker && (
-                    <DateTimePicker
-                      value={scheduledDate}
-                      mode="date"
-                      display="default"
-                      onChange={handleDateChange}
-                      minimumDate={new Date()}
-                    />
-                  )}
-                  {errors.scheduled_date && (
-                    <Text className="text-destructive mt-2 text-sm">
-                      {errors.scheduled_date.message}
-                    </Text>
-                  )}
-                </View>
+                <Form {...form}>
+                  <FormDateInputField
+                    accessibilityHint="Choose when this activity should be scheduled"
+                    control={form.control}
+                    disabled={isSubmitting}
+                    label="Scheduled Date"
+                    minimumDate={new Date()}
+                    name="scheduled_date"
+                    placeholder="Choose a date"
+                    testId="scheduled-date-field"
+                  />
+                </Form>
 
-                {/* Constraint Validation (when training plan provided) */}
-                {trainingPlanId && (
+                {/* Constraint Validation Summary */}
+                {trainingPlanId && validationSummary && (
                   <View>
-                    {validationError && (
-                      <View className="p-4 bg-destructive/10 rounded-lg mb-4">
-                        <Text className="text-destructive">
-                          Failed to validate constraints. Please try again.
-                        </Text>
+                    <View className={`rounded-xl border px-4 py-4 ${validationSummary.tone}`}>
+                      <View className="flex-row items-start justify-between gap-3">
+                        <View className="flex-1 gap-1">
+                          <Text className={`text-sm font-semibold ${validationSummary.textTone}`}>
+                            {validationSummary.title}
+                          </Text>
+                          <Text className="text-sm text-muted-foreground">
+                            {validationSummary.detail}
+                          </Text>
+                        </View>
+                        <Pressable
+                          onPress={() => setShowConstraintDetails((current) => !current)}
+                          className="flex-row items-center gap-1 rounded-full border border-border bg-background px-3 py-2"
+                          disabled={isSubmitting}
+                          testID="schedule-constraints-toggle"
+                        >
+                          <Text className="text-xs font-semibold text-foreground">
+                            {showConstraintDetails ? "Hide" : "Details"}
+                          </Text>
+                          <Icon
+                            as={showConstraintDetails ? ChevronUp : ChevronDown}
+                            size={14}
+                            className="text-foreground"
+                          />
+                        </Pressable>
                       </View>
-                    )}
 
-                    <ConstraintValidator
-                      validation={validation ?? null}
-                      isLoading={validationLoading}
-                    />
+                      {showConstraintDetails && (
+                        <View className="mt-3" testID="schedule-constraints-details">
+                          <ConstraintValidator
+                            validation={validation ?? null}
+                            isLoading={validationLoading}
+                          />
+                        </View>
+                      )}
+                    </View>
                   </View>
                 )}
 
-                {/* Notes */}
-                <View>
-                  <Text className="mb-2 font-semibold text-base">Notes (optional)</Text>
-                  <Controller
-                    control={control}
+                <Form {...form}>
+                  <FormTextareaField
+                    control={form.control}
+                    disabled={isSubmitting}
+                    formatValue={(value) => value ?? ""}
+                    label="Notes"
                     name="notes"
-                    render={({ field: { onChange, value } }) => (
-                      <Textarea
-                        value={value ?? ""}
-                        onChangeText={onChange}
-                        placeholder="Add any notes about this activity..."
-                        className="min-h-[100px]"
-                        editable={!isSubmitting}
-                      />
-                    )}
+                    numberOfLines={5}
+                    parseValue={(value) => value || null}
+                    placeholder="Add any notes about this activity..."
+                    description="Optional details to help you remember context when you review this workout later."
+                    className="min-h-[100px]"
+                    testId="schedule-notes-field"
                   />
-                </View>
+                </Form>
 
                 {/* Error Messages */}
                 {!currentActivityPlanId ? (
-                  <UiAlert icon={AlertCircle} variant="destructive">
-                    <AlertTitle>This activity cannot be scheduled yet</AlertTitle>
-                    <AlertDescription>
+                  <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+                    <Text className="text-destructive font-medium">
+                      This activity cannot be scheduled yet
+                    </Text>
+                    <Text className="text-destructive/80 text-sm mt-1">
                       Duplicate the activity plan first, then schedule it from its detail screen.
-                    </AlertDescription>
-                  </UiAlert>
+                    </Text>
+                  </View>
                 ) : null}
                 {(createMutation.error || updateMutation.error) && (
-                  <UiAlert icon={AlertCircle} variant="destructive">
-                    <AlertTitle>Failed to {isEditMode ? "update" : "schedule"} activity</AlertTitle>
-                    <AlertDescription>
+                  <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+                    <Text className="text-destructive font-medium">
+                      Failed to {isEditMode ? "update" : "schedule"} activity
+                    </Text>
+                    <Text className="text-destructive/80 text-sm mt-1">
                       {(createMutation.error || updateMutation.error)?.message ||
                         "Please try again"}
-                    </AlertDescription>
-                  </UiAlert>
+                    </Text>
+                  </View>
                 )}
               </>
             ) : (
@@ -524,7 +600,11 @@ export function ScheduleActivityModal({
             <Button variant="outline" onPress={onClose} disabled={isSubmitting} className="flex-1">
               <Text>Cancel</Text>
             </Button>
-            <Button onPress={handleSubmit(onSubmit)} disabled={!canSchedule} className="flex-1">
+            <Button
+              onPress={submitForm.handleSubmit}
+              disabled={!canSchedule || submitForm.isSubmitting}
+              className="flex-1"
+            >
               {isSubmitting ? (
                 <ActivityIndicator size="small" color="#fff" className="mr-2" />
               ) : null}
@@ -539,13 +619,9 @@ export function ScheduleActivityModal({
           </View>
 
           {/* Helper text */}
-          {displayPlan && trainingPlanId && validation && (
+          {displayPlan && trainingPlanId && validationSummary && (
             <Text className="text-xs text-muted-foreground text-center mt-2">
-              {!validation.canSchedule
-                ? "⚠️ This will override constraint violations"
-                : validation.hasWarnings
-                  ? "⚠️ Close to constraint limits"
-                  : "✓ Ready to schedule"}
+              {validationSummary.title}
             </Text>
           )}
         </View>

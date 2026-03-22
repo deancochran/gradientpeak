@@ -39,7 +39,7 @@ vi.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
-vi.mock("@/components/shared", () => ({
+vi.mock("@repo/ui/components/loading-skeletons", () => ({
   ListSkeleton: createHost("ListSkeleton"),
 }));
 

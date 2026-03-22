@@ -2,6 +2,13 @@
 
 Detailed, task-relevant project context for lazy loading.
 
+## OpenCode Repository Layout
+
+- `opencode.json` at the repository root is the canonical OpenCode runtime configuration.
+- `.opencode/` stores supporting instruction assets and repo-local content, not a second runtime config file.
+- The root agent registry in `opencode.json` may reference assets under `.opencode/`, including `.opencode/instructions/` and `.opencode/skills/*/SKILL.md`, while repo-wide always-on rules live in the root `AGENTS.md`.
+- Workflow coordination references live in `.opencode/instructions/workflow-lifecycle.md` and `.opencode/instructions/delegation-contract.md`.
+
 ## Project Overview
 
 GradientPeak is a local-first fitness platform with mobile + web clients and shared core logic.
@@ -23,9 +30,9 @@ gradientpeak/
 │   └── web/
 ├── packages/
 │   ├── core/
+│   ├── ui/
 │   ├── trpc/
 │   ├── supabase/
-│   ├── eslint-config/
 │   └── typescript-config/
 ```
 
@@ -115,6 +122,18 @@ Important paths:
 - Use core schemas/calculations for shared domain behavior.
 - Keep auth and error handling explicit per procedure.
 
+## Shared UI Package Notes
+
+- `packages/ui` owns shared cross-platform component contracts and export mapping.
+- Stories are package-owned, while Storybook hosting lives in `apps/web`.
+- Keep app-specific business behavior out of shared UI primitives.
+
+## Provider Integration Notes
+
+- Keep OAuth callbacks, token refresh, webhooks, and provider sync flows isolated behind provider-specific boundaries.
+- Normalize provider payloads into shared event, activity, or plan contracts before reuse.
+- Preserve idempotency and explicit failure handling in sync paths.
+
 ## Data and Sync Notes
 
 Mobile to cloud flow:
@@ -143,7 +162,7 @@ Conflict handling is timestamp-based; JSON remains source of truth.
 
 - Node.js 18+
 - Expo SDK 54
-- React Native 0.81.4
+- React Native 0.81.5
 - Next.js 15
 - React 19
 - TypeScript 5.9.2

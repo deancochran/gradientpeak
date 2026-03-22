@@ -1,9 +1,9 @@
+import { TrendsOverviewSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Progress } from "@repo/ui/components/progress";
 import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import { type ConsistencyData, ConsistencyHeatmap } from "@/components/charts";
-import { TrendsOverviewSkeleton } from "@/components/shared";
 
 interface ConsistencyTabProps {
   consistencyData: ConsistencyData | null;
@@ -70,6 +70,7 @@ export function ConsistencyTab({
                 {restDaysPercentage.toFixed(1)}%
               </Text>
             </View>
+            <Progress value={restDaysPercentage} className="h-3" indicatorClassName="bg-gray-400" />
             <Progress value={restDaysPercentage} className="h-3" indicatorClassName="bg-gray-400" />
             <Text className="text-xs text-muted-foreground mt-1">
               {(consistencyData?.totalDays ?? 0) - (consistencyData?.totalActivities ?? 0)} of{" "}

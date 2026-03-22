@@ -1,11 +1,10 @@
-import { GoalEditorModal } from "@/components/goals";
+import { createEmptyGoalDraft, type WizardGoalInput } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import { createEmptyGoalDraft } from "@/lib/goals/goalDraft";
-import type { WizardGoalInput } from "@repo/core";
 import React, { useMemo, useState } from "react";
 import { View } from "react-native";
+import { GoalEditorModal } from "@/components/goals";
 import { WizardStep } from "../WizardStep";
 
 interface GoalSelectionStepProps {
@@ -33,8 +32,7 @@ export function GoalSelectionStep({
     }
 
     return Math.ceil(
-      (new Date(goal.target_date).getTime() - new Date().getTime()) /
-        (7 * 24 * 60 * 60 * 1000),
+      (new Date(goal.target_date).getTime() - new Date().getTime()) / (7 * 24 * 60 * 60 * 1000),
     );
   }, [goal.target_date]);
 
@@ -54,22 +52,16 @@ export function GoalSelectionStep({
         <Card>
           <CardContent className="p-4 gap-3">
             <View className="gap-1">
-              <Text className="text-xs text-muted-foreground uppercase">
-                Goal
-              </Text>
+              <Text className="text-xs text-muted-foreground uppercase">Goal</Text>
               <Text className="text-base font-semibold text-foreground">
                 {goal.name || "No goal selected"}
               </Text>
             </View>
             <View className="gap-1">
-              <Text className="text-xs text-muted-foreground uppercase">
-                Target date
-              </Text>
+              <Text className="text-xs text-muted-foreground uppercase">Target date</Text>
               <Text className="text-sm text-foreground">
                 {goal.target_date
-                  ? new Date(
-                      `${goal.target_date}T12:00:00.000Z`,
-                    ).toLocaleDateString("en-US", {
+                  ? new Date(`${goal.target_date}T12:00:00.000Z`).toLocaleDateString("en-US", {
                       weekday: "short",
                       year: "numeric",
                       month: "short",
@@ -79,9 +71,7 @@ export function GoalSelectionStep({
               </Text>
             </View>
             {goal.target_date ? (
-              <Text className="text-sm text-muted-foreground">
-                {weeksUntil} weeks until target
-              </Text>
+              <Text className="text-sm text-muted-foreground">{weeksUntil} weeks until target</Text>
             ) : null}
             <Button variant="outline" onPress={() => setShowGoalEditor(true)}>
               <Text>{isValid ? "Edit Goal" : "Add Goal"}</Text>

@@ -2,13 +2,13 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
+import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
 import { ChevronRight, Eye, EyeOff, Plus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { ListSkeleton } from "@/components/shared";
 import { ROUTES } from "@/lib/constants/routes";
 import { trpc } from "@/lib/trpc";
 

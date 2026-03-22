@@ -1,23 +1,19 @@
 import { renderNative } from "../../test/render-native";
+import { textareaFixtures } from "./fixtures";
 import { Textarea } from "./index.native";
 
 describe("Textarea native", () => {
   it("maps normalized test props onto the text input", () => {
     const { getByDisplayValue, getByTestId } = renderNative(
-      <Textarea
-        accessibilityLabel="Bio"
-        id="bio-input"
-        testId="bio-textarea"
-        value="Loves long runs"
-      />,
+      <Textarea {...textareaFixtures.notes} value={textareaFixtures.value} />,
     );
 
-    expect(getByDisplayValue("Loves long runs")).toBeTruthy();
+    expect(getByDisplayValue(textareaFixtures.value)).toBeTruthy();
 
-    const textarea = getByTestId("bio-textarea");
+    const textarea = getByTestId(textareaFixtures.notes.testId);
 
-    expect(textarea.props.testID).toBe("bio-textarea");
-    expect(textarea.props.nativeID).toBe("bio-input");
-    expect(textarea.props.accessibilityLabel).toBe("Bio");
+    expect(textarea.props.testID).toBe(textareaFixtures.notes.testId);
+    expect(textarea.props.nativeID).toBe(textareaFixtures.notes.id);
+    expect(textarea.props.accessibilityLabel).toBe(textareaFixtures.notes.accessibilityLabel);
   });
 });

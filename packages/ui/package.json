@@ -35,38 +35,18 @@
     },
     "./components/checkbox": {
       "react-native": "./src/components/checkbox/index.native.tsx",
-      "default": "./src/components/checkbox/index.native.tsx"
+      "default": "./src/components/checkbox/index.web.tsx"
     },
-    "./components/bounded-number-input": {
-      "react-native": "./src/components/bounded-number-input/index.native.tsx",
-      "default": "./src/components/bounded-number-input/index.native.tsx"
+    "./components/badge": {
+      "react-native": "./src/components/badge/index.native.tsx",
+      "default": "./src/components/badge/index.web.tsx"
     },
     "./components/context-menu": {
       "react-native": "./src/components/context-menu/index.native.tsx",
       "default": "./src/components/context-menu/index.native.tsx"
     },
-    "./components/duration-input": {
-      "react-native": "./src/components/duration-input/index.native.tsx",
-      "default": "./src/components/duration-input/index.native.tsx"
-    },
-    "./components/empty-state-card": {
-      "react-native": "./src/components/empty-state-card/index.native.tsx",
-      "default": "./src/components/empty-state-card/index.native.tsx"
-    },
-    "./components/error-state-card": {
-      "react-native": "./src/components/error-state-card/index.native.tsx",
-      "default": "./src/components/error-state-card/index.native.tsx"
-    },
     "./components/navigation-menu": {
       "default": "./src/components/navigation-menu/index.web.tsx"
-    },
-    "./components/integer-stepper": {
-      "react-native": "./src/components/integer-stepper/index.native.tsx",
-      "default": "./src/components/integer-stepper/index.native.tsx"
-    },
-    "./components/pace-input": {
-      "react-native": "./src/components/pace-input/index.native.tsx",
-      "default": "./src/components/pace-input/index.native.tsx"
     },
     "./components/hover-card": {
       "react-native": "./src/components/hover-card/index.native.tsx",
@@ -90,17 +70,13 @@
     },
     "./components/radio-group": {
       "react-native": "./src/components/radio-group/index.native.tsx",
-      "default": "./src/components/radio-group/index.native.tsx"
+      "default": "./src/components/radio-group/index.web.tsx"
     },
     "./components/resizable": {
       "default": "./src/components/resizable/index.web.tsx"
     },
     "./components/scroll-area": {
       "default": "./src/components/scroll-area/index.web.tsx"
-    },
-    "./components/settings-group": {
-      "react-native": "./src/components/settings-group/index.native.tsx",
-      "default": "./src/components/settings-group/index.native.tsx"
     },
     "./components/sheet": {
       "default": "./src/components/sheet/index.web.tsx"
@@ -111,14 +87,14 @@
     },
     "./components/slider": {
       "react-native": "./src/components/slider/index.native.tsx",
-      "default": "./src/components/slider/index.native.tsx"
+      "default": "./src/components/slider/index.web.tsx"
     },
     "./components/sonner": {
       "default": "./src/components/sonner/index.web.tsx"
     },
     "./components/select": {
       "react-native": "./src/components/select/index.native.tsx",
-      "default": "./src/components/select/index.native.tsx"
+      "default": "./src/components/select/index.web.tsx"
     },
     "./components/table": {
       "default": "./src/components/table/index.web.tsx"
@@ -134,7 +110,7 @@
     "./components/*/fixtures": "./src/components/*/fixtures.ts",
     "./components/textarea": {
       "react-native": "./src/components/textarea/index.native.tsx",
-      "default": "./src/components/textarea/index.native.tsx"
+      "default": "./src/components/textarea/index.web.tsx"
     },
     "./components/*": {
       "react-native": "./src/components/*/index.native.tsx",
@@ -163,26 +139,32 @@
     "test": "pnpm run test:web && pnpm run test:native",
     "test:web": "vitest run",
     "test:native": "jest --config ./jest.config.mjs --runInBand",
+    "sync:shadcn-theme": "node ./scripts/sync-shadcn-theme.mjs",
     "generate:theme": "node ./scripts/generate-theme.mjs",
     "add:shadcn": "pnpm dlx shadcn@latest add",
     "add:reusables": "pnpm dlx shadcn@latest add"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
     "@repo/core": "workspace:*",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.10",
+    "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-navigation-menu": "^1.2.14",
-    "@radix-ui/react-switch": "^1.2.5",
+    "@radix-ui/react-radio-group": "^1.3.8",
+    "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@react-native-community/datetimepicker": "^8.4.4",
     "@react-native-community/slider": "^5.1.1",
     "@rn-primitives/accordion": "^1.2.0",
     "@rn-primitives/alert-dialog": "^1.2.0",
@@ -211,6 +193,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
+    "expo-document-picker": "~14.0.7",
     "lucide-react": "^0.541.0",
     "lucide-react-native": "^0.544.0",
     "nativewind": "5.0.0-preview.3",
@@ -222,7 +205,8 @@
     "react-native-screens": "~4.16.0",
     "react-resizable-panels": "^4.7.1",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "zod": "^4.1.11"
   },
   "devDependencies": {
     "@swc/core": "^1.13.12",

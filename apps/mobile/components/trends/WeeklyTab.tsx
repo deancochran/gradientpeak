@@ -1,9 +1,9 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { ChartSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { Calendar } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { WeeklyProgressChart } from "@/components/charts";
-import { ChartSkeleton } from "@/components/shared";
 
 interface WeeklySummary {
   weekStart: string;

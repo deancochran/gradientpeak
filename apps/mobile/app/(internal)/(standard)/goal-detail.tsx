@@ -1,7 +1,3 @@
-import { GoalEditorModal } from "@/components/goals/GoalEditorModal";
-import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
-import { Text } from "@repo/ui/components/text";
 import {
   buildGoalDraftFromGoal,
   buildGoalUpdatePayload,
@@ -9,16 +5,20 @@ import {
   buildMilestoneEventUpdatePatch,
   createEmptyGoalDraft,
   formatGoalTypeLabel,
+  type GoalEditorDraft,
   getGoalDistanceBadge,
   getGoalMetricSummary,
   getGoalObjectiveSummary,
-  type GoalEditorDraft,
-} from "@/lib/goals/goalDraft";
-import { trpc } from "@/lib/trpc";
-import { parseProfileGoalRecord } from "@repo/core";
+  parseProfileGoalRecord,
+} from "@repo/core";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
+import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
+import { GoalEditorModal } from "@/components/goals/GoalEditorModal";
+import { trpc } from "@/lib/trpc";
 
 export default function GoalDetailScreen() {
   const router = useRouter();
@@ -64,10 +64,7 @@ export default function GoalDetailScreen() {
   const updateMilestoneEventMutation = trpc.events.update.useMutation();
   const deleteMilestoneEventMutation = trpc.events.delete.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        utils.goals.list.invalidate(),
-        utils.events.list.invalidate(),
-      ]);
+      await Promise.all([utils.goals.list.invalidate(), utils.events.list.invalidate()]);
       router.back();
     },
   });
@@ -88,9 +85,7 @@ export default function GoalDetailScreen() {
   }, [goalRecord, targetDate]);
   const metricSummary = goalRecord ? getGoalMetricSummary(goalRecord) : null;
   const distanceBadge = goalRecord ? getGoalDistanceBadge(goalRecord) : null;
-  const objectiveSummary = goalRecord
-    ? getGoalObjectiveSummary(goalRecord)
-    : null;
+  const objectiveSummary = goalRecord ? getGoalObjectiveSummary(goalRecord) : null;
 
   const handleDeleteGoal = () => {
     if (!goalRecord) {
@@ -156,9 +151,7 @@ export default function GoalDetailScreen() {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
-        <Text className="mt-3 text-sm text-muted-foreground">
-          Loading goal...
-        </Text>
+        <Text className="mt-3 text-sm text-muted-foreground">Loading goal...</Text>
       </View>
     );
   }
@@ -166,9 +159,7 @@ export default function GoalDetailScreen() {
   if (!goalRecord) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-lg font-semibold text-foreground">
-          Goal not found
-        </Text>
+        <Text className="text-lg font-semibold text-foreground">Goal not found</Text>
         <Text className="mt-2 text-center text-sm text-muted-foreground">
           This goal may have been removed.
         </Text>
@@ -191,9 +182,7 @@ export default function GoalDetailScreen() {
                 {targetDate ? ` · target ${targetDate}` : ""}
               </Text>
               {objectiveSummary ? (
-                <Text className="text-sm text-foreground">
-                  {objectiveSummary}
-                </Text>
+                <Text className="text-sm text-foreground">{objectiveSummary}</Text>
               ) : null}
             </View>
 
@@ -210,18 +199,14 @@ export default function GoalDetailScreen() {
               </View>
               {distanceBadge ? (
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                  <Text className="text-xs font-medium text-foreground">
-                    {distanceBadge}
-                  </Text>
+                  <Text className="text-xs font-medium text-foreground">{distanceBadge}</Text>
                 </View>
               ) : null}
             </View>
 
             <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
               <View className="flex-row items-center justify-between gap-3">
-                <Text className="text-xs text-muted-foreground">
-                  Target date
-                </Text>
+                <Text className="text-xs text-muted-foreground">Target date</Text>
                 <Text className="text-sm font-medium text-foreground">
                   {targetDate || "Not set"}
                 </Text>
@@ -233,12 +218,8 @@ export default function GoalDetailScreen() {
                 </Text>
               </View>
               <View className="flex-row items-center justify-between gap-3">
-                <Text className="text-xs text-muted-foreground">
-                  {metricSummary?.label}
-                </Text>
-                <Text className="text-sm font-medium text-foreground">
-                  {metricSummary?.value}
-                </Text>
+                <Text className="text-xs text-muted-foreground">{metricSummary?.label}</Text>
+                <Text className="text-sm font-medium text-foreground">{metricSummary?.value}</Text>
               </View>
             </View>
           </CardContent>
@@ -247,25 +228,17 @@ export default function GoalDetailScreen() {
 
       <View className="border-t border-border bg-background px-4 py-4">
         <View className="flex-row gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onPress={() => setShowEditor(true)}
-          >
+          <Button variant="outline" className="flex-1" onPress={() => setShowEditor(true)}>
             <Text>Edit Goal</Text>
           </Button>
           <Button
             variant="outline"
             className="flex-1"
             onPress={handleDeleteGoal}
-            disabled={
-              deleteGoalMutation.isPending ||
-              deleteMilestoneEventMutation.isPending
-            }
+            disabled={deleteGoalMutation.isPending || deleteMilestoneEventMutation.isPending}
           >
             <Text className="text-destructive">
-              {deleteGoalMutation.isPending ||
-              deleteMilestoneEventMutation.isPending
+              {deleteGoalMutation.isPending || deleteMilestoneEventMutation.isPending
                 ? "Deleting..."
                 : "Delete"}
             </Text>

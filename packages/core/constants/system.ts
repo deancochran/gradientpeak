@@ -1,0 +1,54 @@
+export const EARTH_RADIUS_METERS = 6371000;
+
+export const CONVERSION_FACTORS = {
+  MPS_TO_KPH: 3.6,
+  MPS_TO_MPH: 2.237,
+  KPH_TO_MPS: 1 / 3.6,
+  MPH_TO_MPS: 1 / 2.237,
+  KG_TO_LBS: 2.20462,
+  LBS_TO_KG: 1 / 2.20462,
+  METERS_TO_FEET: 3.28084,
+  FEET_TO_METERS: 1 / 3.28084,
+  KM_TO_MILES: 0.621371,
+  MILES_TO_KM: 1 / 0.621371,
+  CELSIUS_TO_FAHRENHEIT_MULTIPLIER: 9 / 5,
+  CELSIUS_TO_FAHRENHEIT_OFFSET: 32,
+  FAHRENHEIT_TO_CELSIUS_MULTIPLIER: 5 / 9,
+  FAHRENHEIT_TO_CELSIUS_OFFSET: 32,
+} as const;
+
+export const PHYSIOLOGICAL_DEFAULTS = {
+  DEFAULT_WEIGHT_KG: 70,
+  DEFAULT_RESTING_HR: 60,
+  MAX_HR_AGE_FORMULA: 220,
+  DEFAULT_FTP_PERCENTAGE: 0.95,
+  DEFAULT_VO2_MAX: 35,
+} as const;
+
+export const MET_VALUES = {
+  RESTING: 1.0,
+  LIGHT_ACTIVITY: 3.0,
+  MODERATE_ACTIVITY: 6.0,
+  VIGOROUS_ACTIVITY: 9.0,
+  VERY_VIGOROUS_ACTIVITY: 12.0,
+} as const;
+
+export const VALIDATION_RANGES = {
+  HEART_RATE: { min: 30, max: 250 },
+  POWER: { min: 0, max: 2000 },
+  CADENCE: { min: 0, max: 200 },
+  SPEED_MPS: { min: 0, max: 30 },
+  ELEVATION: { min: -500, max: 9000 },
+  WEIGHT_KG: { min: 30, max: 300 },
+  HEIGHT_CM: { min: 100, max: 250 },
+  AGE: { min: 10, max: 120 },
+  FTP: { min: 50, max: 600 },
+  TSS: { min: 0, max: 1000 },
+} as const;
+
+export const TIME_CONSTANTS = {
+  SECONDS_PER_MINUTE: 60,
+  SECONDS_PER_HOUR: 3600,
+  SECONDS_PER_DAY: 86400,
+  MILLISECONDS_PER_SECOND: 1000,
+} as const;

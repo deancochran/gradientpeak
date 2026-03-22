@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { RecordingConfigInput } from "../../schemas/recording_config";
+import type {
+  RecordingLaunchIntent,
+  RecordingSessionSnapshot,
+} from "../../schemas/recording-session";
 import { RecordingConfigResolver } from "../recording-config-resolver";
 
-function buildInput(
-  overrides: Partial<RecordingConfigInput> = {},
-): RecordingConfigInput {
+function buildInput(overrides: Partial<RecordingConfigInput> = {}): RecordingConfigInput {
   return {
     activityCategory: "run",
     gpsRecordingEnabled: false,
@@ -126,5 +128,129 @@ describe("RecordingConfigResolver", () => {
     );
 
     expect(config.capabilities.primaryMetric).toBe("reps");
+  });
+
+  it("resolves configuration from a launch intent", () => {
+    const intent: RecordingLaunchIntent = {
+      activityCategory: "bike",
+      mode: "planned",
+      gpsMode: "on",
+      eventId: null,
+      activityPlanId: "550e8400-e29b-41d4-a716-446655440000",
+      routeId: "550e8400-e29b-41d4-a716-446655440001",
+      sourcePreferences: [],
+      controlPolicy: {
+        trainerMode: "auto",
+        autoAdvanceSteps: true,
+      },
+    };
+
+    const config = RecordingConfigResolver.resolveFromLaunchIntent(intent, {
+      plan: {
+        hasStructure: true,
+        hasRoute: true,
+        stepCount: 4,
+        requiresManualAdvance: false,
+      },
+      devices: {
+        ftmsTrainer: {
+          deviceId: "trainer-1",
+          autoControlEnabled: true,
+        },
+        hasPowerMeter: false,
+        hasHeartRateMonitor: true,
+        hasCadenceSensor: true,
+      },
+      gpsAvailable: true,
+    });
+
+    expect(config.input.mode).toBe("planned");
+    expect(config.capabilities.shouldShowTrainerControl).toBe(true);
+    expect(config.capabilities.shouldAutoFollowTargets).toBe(true);
+  });
+
+  it("resolves configuration from a session snapshot", () => {
+    const snapshot: RecordingSessionSnapshot = {
+      identity: {
+        sessionId: "session-1",
+        revision: 1,
+        startedAt: "2026-03-20T10:00:00Z",
+      },
+      activity: {
+        category: "bike",
+        mode: "planned",
+        gpsMode: "off",
+        eventId: null,
+        activityPlanId: "550e8400-e29b-41d4-a716-446655440000",
+        routeId: null,
+      },
+      profileSnapshot: {
+        defaultsApplied: [],
+      },
+      devices: {
+        connected: [
+          {
+            deviceId: "power-meter-1",
+            role: "power_meter",
+            sourceTypes: ["power_meter"],
+            controllable: false,
+          },
+          {
+            deviceId: "trainer-1",
+            role: "trainer",
+            sourceTypes: ["trainer_power", "trainer_cadence"],
+            controllable: true,
+          },
+        ],
+        controllableTrainer: {
+          deviceId: "trainer-1",
+          sourceTypes: ["trainer_power", "trainer_cadence"],
+          supportsAutoControl: true,
+          supportsManualControl: true,
+        },
+        selectedSources: [],
+      },
+      capabilities: {
+        canTrackLocation: false,
+        canTrackPower: true,
+        canTrackHeartRate: false,
+        canTrackCadence: false,
+        shouldShowMap: false,
+        shouldShowSteps: true,
+        shouldShowRouteOverlay: false,
+        shouldShowTurnByTurn: false,
+        shouldShowFollowAlong: false,
+        shouldShowTrainerControl: true,
+        canAutoAdvanceSteps: true,
+        shouldAutoFollowTargets: true,
+        primaryMetric: "power",
+        isValid: true,
+        errors: [],
+        warnings: [],
+      },
+      policies: {
+        sourcePolicy: {
+          preferUserSelection: true,
+          allowDerivedSpeed: true,
+          allowDerivedDistance: true,
+        },
+        controlPolicy: {
+          trainerMode: "auto",
+          autoAdvanceSteps: true,
+        },
+        degradedModePolicy: {
+          allowWithoutGps: true,
+          allowWithoutSensors: true,
+          exposeSourceWarnings: true,
+        },
+      },
+    };
+
+    const config = RecordingConfigResolver.resolveFromSessionSnapshot(snapshot);
+
+    expect(config.input.gpsRecordingEnabled).toBe(false);
+    expect(config.input.devices.ftmsTrainer?.deviceId).toBe("trainer-1");
+    expect(config.input.devices.hasPowerMeter).toBe(true);
+    expect(config.capabilities.primaryMetric).toBe("power");
   });
 });

@@ -1,26 +1,8 @@
-import { ActivitySelectionModal } from "@/components/ActivitySelectionModal";
-import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { RecordingFooter } from "@/components/recording/footer";
-import { RecordingZones, ZoneFocusOverlay } from "@/components/recording/zones";
+import type { ActivityPayload, RecordingState } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import {
-  useActivityStatus,
-  useIntensityScale,
-  usePlan,
-  useRecorderActions,
-  useRecordingState,
-  useSensors,
-} from "@/lib/hooks/useActivityRecorder";
-import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
-import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
-import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import type { ActivityPayload, RecordingState } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -34,6 +16,24 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActivitySelectionModal } from "@/components/ActivitySelectionModal";
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { RecordingFooter } from "@/components/recording/footer";
+import { RecordingZones, ZoneFocusOverlay } from "@/components/recording/zones";
+import {
+  useActivityStatus,
+  useIntensityScale,
+  usePlan,
+  useRecorderActions,
+  useRecordingState,
+  useSensors,
+} from "@/lib/hooks/useActivityRecorder";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
+import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { trpc } from "@/lib/trpc";
 
 // Helper function to resolve power target
 function resolvePowerTarget(target: any, profile: any): number | null {
@@ -50,7 +50,7 @@ function resolvePowerTarget(target: any, profile: any): number | null {
 function mapServiceStateToRecordingState(serviceState: string): RecordingState {
   if (serviceState === "pending") return "not_started";
   if (serviceState === "recording") return "recording";
-  if (serviceState === "paused") return "paused";
+  if (serviceState === "paused" || serviceState === "finishing") return "paused";
   return "not_started"; // fallback
 }
 
@@ -59,6 +59,7 @@ function RecordScreen() {
   const { user } = useAuth();
   const [isInitialized, setIsInitialized] = useState(false);
   const [activityModalVisible, setActivityModalVisible] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
   const insets = useSafeAreaInsets();
 
   // Use shared service from context (provided by _layout.tsx)
@@ -66,7 +67,7 @@ function RecordScreen() {
 
   // State and actions
   const state = useRecordingState(service);
-  const { count: sensorCount } = useSensors(service);
+  const { count: sensorCount, sensors } = useSensors(service);
   const plan = usePlan(service);
   const { gpsRecordingEnabled, activityCategory } = useActivityStatus(service);
   const { start, pause, resume, finish } = useRecorderActions(service);
@@ -123,9 +124,7 @@ function RecordScreen() {
         if (!selection) {
           // No pre-loaded activity - this is a direct tab access
           // Default to run with GPS enabled
-          console.log(
-            "[RecordModal] No selection found - defaulting to run with GPS ON",
-          );
+          console.log("[RecordModal] No selection found - defaulting to run with GPS ON");
 
           const defaultPayload: ActivityPayload = {
             category: "run",
@@ -154,11 +153,9 @@ function RecordScreen() {
         setIsInitialized(true);
       } catch (error) {
         console.error("[RecordModal] Error initializing from store:", error);
-        Alert.alert(
-          "Error",
-          "Failed to initialize activity. Please try again.",
-          [{ text: "OK", onPress: () => router.back() }],
-        );
+        Alert.alert("Error", "Failed to initialize activity. Please try again.", [
+          { text: "OK", onPress: () => router.back() },
+        ]);
       }
     };
 
@@ -224,9 +221,7 @@ function RecordScreen() {
     console.log("[RecordModal] allPermissionsGranted:", allPermissionsGranted);
 
     if (!allPermissionsGranted) {
-      console.log(
-        "[RecordModal] Permissions not granted, requesting permissions",
-      );
+      console.log("[RecordModal] Permissions not granted, requesting permissions");
 
       // Request all permissions inline
       if (!service) {
@@ -239,8 +234,7 @@ function RecordScreen() {
 
         if (!granted) {
           // Still not granted after check, request them
-          const { requestPermission } =
-            await import("@/lib/services/permissions-check");
+          const { requestPermission } = await import("@/lib/services/permissions-check");
 
           // Request in sequence
           await requestPermission("bluetooth");
@@ -261,10 +255,7 @@ function RecordScreen() {
         }
       } catch (error) {
         console.error("[RecordModal] Error requesting permissions:", error);
-        Alert.alert(
-          "Error",
-          "Failed to request permissions. Please try again.",
-        );
+        Alert.alert("Error", "Failed to request permissions. Please try again.");
         return;
       }
     }
@@ -290,28 +281,20 @@ function RecordScreen() {
                 router.push({
                   pathname: "/user/[userId]",
                   params: { userId: user.id },
-                } as any);
+                });
               },
             },
             {
               text: "Continue Anyway",
               style: "destructive",
               onPress: async () => {
-                console.log(
-                  "[RecordModal] User chose to continue without required metrics",
-                );
+                console.log("[RecordModal] User chose to continue without required metrics");
                 try {
                   await start();
                   console.log("[RecordModal] Recording started successfully");
                 } catch (error) {
-                  console.error(
-                    "[RecordModal] Error starting recording:",
-                    error,
-                  );
-                  Alert.alert(
-                    "Error",
-                    "Failed to start recording. Please try again.",
-                  );
+                  console.error("[RecordModal] Error starting recording:", error);
+                  Alert.alert("Error", "Failed to start recording. Please try again.");
                 }
               },
             },
@@ -326,10 +309,7 @@ function RecordScreen() {
 
       // Show warnings if any (non-blocking)
       if (validation && validation.warnings.length > 0) {
-        console.log(
-          "[RecordModal] Plan validation warnings:",
-          validation.warnings,
-        );
+        console.log("[RecordModal] Plan validation warnings:", validation.warnings);
       }
     }
 
@@ -344,18 +324,28 @@ function RecordScreen() {
     }
   }, [allPermissionsGranted, start, service, router, user?.id]);
 
-  // Handle finish action - navigate immediately
+  // Handle finish action after local finalization succeeds
   const handleFinish = useCallback(async () => {
-    console.log(
-      "[RecordModal] Finish clicked, navigating to submit page immediately",
-    );
+    if (isFinishing) {
+      return;
+    }
 
-    // Start the finish process but don't wait for it
-    finish();
+    console.log("[RecordModal] Finish clicked, finalizing local artifacts");
 
-    // Navigate immediately to submit page
-    router.push("/record/submit");
-  }, [finish, router]);
+    try {
+      setIsFinishing(true);
+      await finish();
+      router.push("/record/submit");
+    } catch (error) {
+      console.error("[RecordModal] Error finishing recording:", error);
+      Alert.alert(
+        "Finish Failed",
+        error instanceof Error ? error.message : "Failed to finalize activity. Please try again.",
+      );
+    } finally {
+      setIsFinishing(false);
+    }
+  }, [finish, isFinishing, router]);
 
   // Handle lap action
   const handleLap = useCallback(() => {
@@ -398,10 +388,7 @@ function RecordScreen() {
     <View className="flex-1 bg-background">
       {/* Floating Close Button (only shows before recording starts) */}
       {state === "pending" && (
-        <View
-          className="absolute top-4 left-4 z-50"
-          style={{ top: insets.top + 16 }}
-        >
+        <View className="absolute top-4 left-4 z-50" style={{ top: insets.top + 16 }}>
           <Button
             size="icon"
             variant="outline"
@@ -427,12 +414,9 @@ function RecordScreen() {
 
       {/* Sensor Disconnect Warning */}
       {(() => {
-        const disconnectedSensors = service?.sensorsManager
-          .getConnectedSensors()
-          .filter((s) => s.connectionState === "disconnected");
+        const disconnectedSensors = sensors.filter((s) => s.connectionState === "disconnected");
 
-        if (!disconnectedSensors || disconnectedSensors.length === 0)
-          return null;
+        if (!disconnectedSensors || disconnectedSensors.length === 0) return null;
 
         return (
           <View
@@ -446,8 +430,7 @@ function RecordScreen() {
               </Text>
             </View>
             <Text className="text-xs text-yellow-600 mt-1">
-              {disconnectedSensors.map((s) => s.name).join(", ")} - attempting
-              reconnection
+              {disconnectedSensors.map((s) => s.name).join(", ")} - attempting reconnection
             </Text>
           </View>
         );
@@ -487,6 +470,15 @@ function RecordScreen() {
         onLap={handleLap}
         onFinish={handleFinish}
       />
+
+      {isFinishing ? (
+        <View className="absolute inset-0 items-center justify-center bg-background/80 px-8">
+          <Text className="text-lg font-semibold text-foreground">Finalizing activity...</Text>
+          <Text className="mt-2 text-center text-sm text-muted-foreground">
+            The submit screen will open after local files are saved.
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

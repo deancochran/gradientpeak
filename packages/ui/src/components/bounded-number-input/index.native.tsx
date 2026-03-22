@@ -1,51 +1,28 @@
-import { formatNumberForInput, parseBoundedNumber } from "@repo/core/forms";
-import * as React from "react";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { formatNumberForInput, parseBoundedNumber } from "../../lib/fitness-inputs";
 import { View } from "../../lib/react-native";
 import { Button } from "../button/index.native";
 import { Input } from "../input/index.native";
 import { Label } from "../label/index.native";
 import { Text } from "../text/index.native";
+import type { BoundedNumberInputProps } from "./shared";
 
-interface PresetOption {
-  label: string;
-  value: string;
-}
-
-export interface BoundedNumberInputProps {
-  id: string;
-  label?: string;
-  value: string;
-  onChange: (value: string) => void;
-  onNumberChange?: (value: number | undefined) => void;
-  min?: number;
-  max?: number;
-  decimals?: number;
-  unitLabel?: string;
-  helperText?: string;
-  error?: string;
-  placeholder?: string;
-  required?: boolean;
-  presets?: PresetOption[];
-  accessibilityHint?: string;
-}
-
-export function BoundedNumberInput({
+function BoundedNumberInput({
+  accessibilityHint,
+  decimals = 2,
+  error,
+  helperText,
   id,
   label,
-  value,
+  max = Number.POSITIVE_INFINITY,
+  min = 0,
   onChange,
   onNumberChange,
-  min = 0,
-  max = Number.POSITIVE_INFINITY,
-  decimals = 2,
-  unitLabel,
-  helperText,
-  error,
   placeholder,
-  required = false,
   presets,
-  accessibilityHint,
+  required = false,
+  unitLabel,
+  value,
 }: BoundedNumberInputProps) {
   const [draftValue, setDraftValue] = useState(value);
 
@@ -73,17 +50,11 @@ export function BoundedNumberInput({
     onNumberChange?.(parsed);
   };
 
-  const handleTextChange = (nextValue: string) => {
-    setDraftValue(nextValue);
-    onChange(nextValue);
-    onNumberChange?.(parseBoundedNumber(nextValue, { min, max, decimals }));
-  };
-
   return (
     <View className="gap-2">
       {label ? (
         <Label nativeID={id}>
-          <Text className="text-sm font-medium">
+          <Text className="text-sm font-medium text-foreground">
             {label}
             {required ? <Text className="text-destructive"> *</Text> : null}
           </Text>
@@ -91,14 +62,24 @@ export function BoundedNumberInput({
       ) : null}
       <View className="flex-row items-center gap-2">
         <Input
-          className={`flex-1 ${error ? "border-destructive bg-destructive/5" : ""}`}
-          aria-labelledby={id}
+          accessibilityLabel={label}
+          accessibilityHint={accessibilityHint ?? `Enter a number between ${min} and ${max}`}
+          className={error ? "flex-1 border-destructive bg-destructive/5" : "flex-1"}
           value={draftValue}
-          onChangeText={handleTextChange}
           onBlur={() => commitValue(draftValue)}
+          onChangeText={(nextValue) => {
+            setDraftValue(nextValue);
+            onChange(nextValue);
+            onNumberChange?.(
+              parseBoundedNumber(nextValue, {
+                min,
+                max,
+                decimals,
+              }),
+            );
+          }}
           keyboardType="numbers-and-punctuation"
           placeholder={placeholder}
-          accessibilityHint={accessibilityHint ?? `Enter a number between ${min} and ${max}`}
         />
         {unitLabel ? <Text className="text-xs text-muted-foreground">{unitLabel}</Text> : null}
       </View>
@@ -107,10 +88,9 @@ export function BoundedNumberInput({
           {presets.map((preset) => (
             <Button
               key={`${id}-${preset.label}`}
-              variant={value === preset.value ? "default" : "outline"}
               size="sm"
+              variant={value === preset.value ? "default" : "outline"}
               onPress={() => commitValue(preset.value)}
-              accessibilityLabel={`${label} preset ${preset.label}`}
             >
               <Text>{preset.label}</Text>
             </Button>
@@ -122,3 +102,5 @@ export function BoundedNumberInput({
     </View>
   );
 }
+
+export { BoundedNumberInput };

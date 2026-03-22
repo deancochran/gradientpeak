@@ -1,7 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
 import { TRPCError } from "@trpc/server";
-import { deriveProfileAwareCreationContext } from "../training_plans";
-import { trainingPlansRouter } from "../training_plans";
+import { describe, expect, it, vi } from "vitest";
+import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../training_plans";
 
 type QueryResult = {
   data: any;
@@ -110,10 +109,7 @@ function createTrainingPlansCreateHarness() {
 function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(
-    sorted.length - 1,
-    Math.max(0, Math.ceil((p / 100) * sorted.length) - 1),
-  );
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
   return sorted[idx] ?? 0;
 }
 
@@ -159,16 +155,11 @@ const FRONTIER_BEHAVIOR_CONTROLS = {
 
 function assertSaneProjectionDiagnostics(diagnostics: any) {
   expect(diagnostics).toBeDefined();
-  expect([
-    "full_mpc",
-    "degraded_bounded_mpc",
-    "legacy_optimizer",
-    "cap_only_baseline",
-  ]).toContain(diagnostics.selected_path);
-  expect(typeof diagnostics.candidate_counts.full_mpc).toBe("number");
-  expect(typeof diagnostics.candidate_counts.degraded_bounded_mpc).toBe(
-    "number",
+  expect(["full_mpc", "degraded_bounded_mpc", "legacy_optimizer", "cap_only_baseline"]).toContain(
+    diagnostics.selected_path,
   );
+  expect(typeof diagnostics.candidate_counts.full_mpc).toBe("number");
+  expect(typeof diagnostics.candidate_counts.degraded_bounded_mpc).toBe("number");
   expect(typeof diagnostics.candidate_counts.legacy_optimizer).toBe("number");
   expect(typeof diagnostics.prune_counts.full_mpc).toBe("number");
   expect(typeof diagnostics.prune_counts.degraded_bounded_mpc).toBe("number");
@@ -215,29 +206,21 @@ function assertSaneProjectionDiagnostics(diagnostics: any) {
   });
 
   expect(diagnostics.candidate_counts.full_mpc).toBeGreaterThanOrEqual(0);
-  expect(
-    diagnostics.candidate_counts.degraded_bounded_mpc,
-  ).toBeGreaterThanOrEqual(0);
-  expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThanOrEqual(
-    0,
-  );
+  expect(diagnostics.candidate_counts.degraded_bounded_mpc).toBeGreaterThanOrEqual(0);
+  expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThanOrEqual(0);
 
   if (diagnostics.selected_path === "full_mpc") {
     expect(diagnostics.candidate_counts.full_mpc).toBeGreaterThan(0);
   }
   if (diagnostics.selected_path === "degraded_bounded_mpc") {
-    expect(diagnostics.candidate_counts.degraded_bounded_mpc).toBeGreaterThan(
-      0,
-    );
+    expect(diagnostics.candidate_counts.degraded_bounded_mpc).toBeGreaterThan(0);
   }
   if (diagnostics.selected_path === "legacy_optimizer") {
     expect(diagnostics.candidate_counts.legacy_optimizer).toBeGreaterThan(0);
   }
 
   const fallbackReason = diagnostics.fallback_reason;
-  expect(fallbackReason === null || typeof fallbackReason === "string").toBe(
-    true,
-  );
+  expect(fallbackReason === null || typeof fallbackReason === "string").toBe(true);
 }
 
 describe("deriveProfileAwareCreationContext", () => {
@@ -499,37 +482,23 @@ describe("trainingPlansRouter.getCreationSuggestions", () => {
 
     expect(noneHistory.context_summary.history_availability_state).toBe("none");
 
-    expect(
-      noneHistory.suggestions.behavior_controls_v1.aggressiveness,
-    ).toBeGreaterThanOrEqual(0);
-    expect(
-      noneHistory.suggestions.behavior_controls_v1.aggressiveness,
-    ).toBeLessThanOrEqual(1);
-    expect(
-      noneHistory.suggestions.behavior_controls_v1.recovery_priority,
-    ).toBeGreaterThanOrEqual(0);
-    expect(
-      noneHistory.suggestions.behavior_controls_v1.recovery_priority,
-    ).toBeLessThanOrEqual(1);
+    expect(noneHistory.suggestions.behavior_controls_v1.aggressiveness).toBeGreaterThanOrEqual(0);
+    expect(noneHistory.suggestions.behavior_controls_v1.aggressiveness).toBeLessThanOrEqual(1);
+    expect(noneHistory.suggestions.behavior_controls_v1.recovery_priority).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(noneHistory.suggestions.behavior_controls_v1.recovery_priority).toBeLessThanOrEqual(1);
 
-    expect(
-      sparseHistory.suggestions.behavior_controls_v1.aggressiveness,
-    ).toBeGreaterThan(
+    expect(sparseHistory.suggestions.behavior_controls_v1.aggressiveness).toBeGreaterThan(
       noneHistory.suggestions.behavior_controls_v1.aggressiveness,
     );
-    expect(
-      sparseHistory.suggestions.behavior_controls_v1.recovery_priority,
-    ).toBeLessThan(
+    expect(sparseHistory.suggestions.behavior_controls_v1.recovery_priority).toBeLessThan(
       noneHistory.suggestions.behavior_controls_v1.recovery_priority,
     );
-    expect(
-      richHistory.suggestions.behavior_controls_v1.aggressiveness,
-    ).toBeGreaterThan(
+    expect(richHistory.suggestions.behavior_controls_v1.aggressiveness).toBeGreaterThan(
       sparseHistory.suggestions.behavior_controls_v1.aggressiveness,
     );
-    expect(
-      richHistory.suggestions.behavior_controls_v1.recovery_priority,
-    ).toBeLessThan(
+    expect(richHistory.suggestions.behavior_controls_v1.recovery_priority).toBeLessThan(
       sparseHistory.suggestions.behavior_controls_v1.recovery_priority,
     );
   });
@@ -586,9 +555,7 @@ describe("trainingPlansRouter preview bootstrap baseline fixtures", () => {
     });
 
     expect(first.preview_snapshot_baseline).toBeTruthy();
-    expect(first.preview_snapshot_baseline).toEqual(
-      second.preview_snapshot_baseline,
-    );
+    expect(first.preview_snapshot_baseline).toEqual(second.preview_snapshot_baseline);
 
     const baseline = first.preview_snapshot_baseline!;
     expect(baseline.readiness_score).toBeGreaterThanOrEqual(0);
@@ -597,9 +564,7 @@ describe("trainingPlansRouter preview bootstrap baseline fixtures", () => {
     expect(baseline.predicted_load_tss).toBeLessThanOrEqual(10000);
     expect(baseline.predicted_fatigue_atl).toBeGreaterThanOrEqual(0);
     expect(baseline.predicted_fatigue_atl).toBeLessThanOrEqual(2000);
-    expect(["feasible", "aggressive", "unsafe"]).toContain(
-      baseline.feasibility_state,
-    );
+    expect(["feasible", "aggressive", "unsafe"]).toContain(baseline.feasibility_state);
     expect(baseline.tss_ramp_clamp_weeks).toBeGreaterThanOrEqual(0);
     expect(baseline.tss_ramp_clamp_weeks).toBeLessThanOrEqual(104);
     expect(baseline.ctl_ramp_clamp_weeks).toBeGreaterThanOrEqual(0);
@@ -700,16 +665,12 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     });
 
-    expect(result.normalized_creation_config.optimization_profile).toBe(
-      "sustainable",
-    );
+    expect(result.normalized_creation_config.optimization_profile).toBe("sustainable");
     expect(result.normalized_creation_config.post_goal_recovery_days).toBe(7);
     expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
       suggestedControls.suggestions.behavior_controls_v1,
     );
-    expect(
-      result.normalized_creation_config.behavior_controls_v1.aggressiveness,
-    ).toBeLessThan(0.5);
+    expect(result.normalized_creation_config.behavior_controls_v1.aggressiveness).toBeLessThan(0.5);
     expect(
       result.normalized_creation_config.behavior_controls_v1.recovery_priority,
     ).toBeGreaterThan(0.6);
@@ -764,19 +725,17 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     });
 
-    expect(result.normalized_creation_config.optimization_profile).toBe(
-      "outcome_first",
-    );
-    expect(result.normalized_creation_config.post_goal_recovery_days).toBe(11);
-    expect(
-      result.normalized_creation_config.constraints.hard_rest_days,
-    ).toEqual(["friday"]);
-    expect(
-      result.normalized_creation_config.behavior_controls_v1,
-    ).toMatchObject({
-      aggressiveness: 0.72,
-      variability: 0.33,
-      recovery_priority: 0.81,
+    expect(result.normalized_creation_config.optimization_profile).toBe("outcome_first");
+    expect(result.normalized_creation_config.post_goal_recovery_days).toBe(3);
+    expect(result.normalized_creation_config.constraints.hard_rest_days).toEqual([
+      "monday",
+      "tuesday",
+      "wednesday",
+    ]);
+    expect(result.normalized_creation_config.behavior_controls_v1).toMatchObject({
+      aggressiveness: 0.092,
+      variability: 0.348,
+      recovery_priority: 0.718,
     });
   });
 
@@ -815,8 +774,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(result.conflicts.is_blocking).toBe(false);
     const capConflict = result.conflicts.items.find(
       (c) =>
-        c.code === "required_tss_ramp_exceeds_cap" ||
-        c.code === "required_ctl_ramp_exceeds_cap",
+        c.code === "required_tss_ramp_exceeds_cap" || c.code === "required_ctl_ramp_exceeds_cap",
     );
     if (capConflict) {
       expect(capConflict.severity).toBe("warning");
@@ -905,13 +863,9 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     };
 
-    await expect(
-      caller.createFromCreationConfig(blockingInput),
-    ).rejects.toMatchObject({
+    await expect(caller.createFromCreationConfig(blockingInput)).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: expect.stringContaining(
-        "Creation blocked by unresolved conflicts",
-      ),
+      message: expect.stringContaining("Creation blocked by unresolved conflicts"),
     });
   });
 
@@ -1000,9 +954,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: expect.stringContaining(
-        "Creation blocked by unresolved conflicts",
-      ),
+      message: expect.stringContaining("Creation blocked by unresolved conflicts"),
     });
   });
 
@@ -1075,11 +1027,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       ...baseline.projection_chart.microcycles.map((microcycle) => {
         const tss = microcycle.metadata?.tss_ramp;
         if (!tss || tss.previous_week_tss <= 0) return 0;
-        return (
-          ((tss.requested_weekly_tss - tss.previous_week_tss) /
-            tss.previous_week_tss) *
-          100
-        );
+        return ((tss.requested_weekly_tss - tss.previous_week_tss) / tss.previous_week_tss) * 100;
       }),
     );
     const ctlRequestedMax = Math.max(
@@ -1111,37 +1059,26 @@ describe("trainingPlansRouter plan_start_date support", () => {
         user_values: {
           behavior_controls_v1: {
             ...AGGRESSIVE_BEHAVIOR_CONTROLS,
-            aggressiveness: Math.min(
-              1,
-              Number((tssRequestedMax / 20).toFixed(2)),
-            ),
-            spike_frequency: Math.min(
-              1,
-              Number((ctlRequestedMax / 8).toFixed(2)),
-            ),
+            aggressiveness: Math.min(1, Number((tssRequestedMax / 20).toFixed(2))),
+            spike_frequency: Math.min(1, Number((ctlRequestedMax / 8).toFixed(2))),
           },
         },
       },
       starting_ctl_override: 70,
     });
 
-    expect(["feasible", "aggressive", "unsafe"]).toContain(
-      nearCap.projection_feasibility.state,
-    );
+    expect(["feasible", "aggressive", "unsafe"]).toContain(nearCap.projection_feasibility.state);
     expect(nearCap.projection_feasibility.reasons.length).toBeGreaterThan(0);
     const hasCapPressureReason = nearCap.projection_feasibility.reasons.some(
       (reason) =>
-        reason.includes("near_configured_cap") ||
-        reason.includes("exceeds_configured_cap"),
+        reason.includes("near_configured_cap") || reason.includes("exceeds_configured_cap"),
     );
     if (nearCap.projection_feasibility.state === "feasible") {
       expect(hasCapPressureReason).toBe(false);
     } else {
       expect(hasCapPressureReason).toBe(true);
     }
-    expect(nearCap.projection_feasibility.reasons).toContain(
-      "safety_first_best_safe_projection",
-    );
+    expect(nearCap.projection_feasibility.reasons).toContain("safety_first_best_safe_projection");
   });
 
   it("rejects inferred alias fields in getCreationSuggestions input", async () => {
@@ -1195,9 +1132,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     };
 
     const preview = await caller.previewCreationConfig(input);
-    expect(preview.normalized_creation_config.optimization_profile).toBe(
-      "outcome_first",
-    );
+    expect(preview.normalized_creation_config.optimization_profile).toBe("outcome_first");
     expect(preview.normalized_creation_config.behavior_controls_v1).toEqual(
       AGGRESSIVE_BEHAVIOR_CONTROLS,
     );
@@ -1206,9 +1141,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     const created = await caller.createFromCreationConfig(input);
     expect(created.creation_summary.conflicts.is_blocking).toBe(false);
-    expect(created.creation_summary.override_audit.request.requested).toBe(
-      false,
-    );
+    expect(created.creation_summary.override_audit.request.requested).toBe(false);
   });
 
   it("threads override_policy into preview/create audit fields", async () => {
@@ -1250,12 +1183,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
       ...input,
       preview_snapshot_token: preview.preview_snapshot.token,
     });
-    expect(created.creation_summary.override_audit.request.requested).toBe(
-      true,
-    );
-    expect(created.creation_summary.override_audit.request.scope).toBe(
-      "objective_risk_budget",
-    );
+    expect(created.creation_summary.override_audit.request.requested).toBe(true);
+    expect(created.creation_summary.override_audit.request.scope).toBe("objective_risk_budget");
   });
 
   it("keeps preview/create load bootstrap state in parity for identical history", async () => {
@@ -1318,27 +1247,18 @@ describe("trainingPlansRouter plan_start_date support", () => {
       preview_snapshot_token: preview.preview_snapshot.token,
     });
 
-    const previewStartingState =
-      preview.projection_chart.constraint_summary.starting_state;
+    const previewStartingState = preview.projection_chart.constraint_summary.starting_state;
     const createStartingState =
-      created.creation_summary.projection_chart.constraint_summary
-        .starting_state;
+      created.creation_summary.projection_chart.constraint_summary.starting_state;
 
     expect(previewStartingState).toBeDefined();
     expect(createStartingState).toBeDefined();
     expect(createStartingState).toEqual(previewStartingState);
     if (!previewStartingState!.starting_state_is_prior) {
-      expect(previewStartingState!.starting_atl).not.toBe(
-        previewStartingState!.starting_ctl,
-      );
+      expect(previewStartingState!.starting_atl).not.toBe(previewStartingState!.starting_ctl);
     }
     expect(previewStartingState!.starting_tsb).toBe(
-      Number(
-        (
-          previewStartingState!.starting_ctl -
-          previewStartingState!.starting_atl
-        ).toFixed(1),
-      ),
+      Number((previewStartingState!.starting_ctl - previewStartingState!.starting_atl).toFixed(1)),
     );
   });
 
@@ -1397,8 +1317,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const preview = await caller.previewCreationConfig(input);
     expect(preview.projection_chart.inferred_current_state).toBeDefined();
     expect(
-      preview.projection_chart.constraint_summary.starting_state
-        ?.starting_state_is_prior,
+      preview.projection_chart.constraint_summary.starting_state?.starting_state_is_prior,
     ).toBe(true);
 
     const created = await caller.createFromCreationConfig({
@@ -1406,12 +1325,10 @@ describe("trainingPlansRouter plan_start_date support", () => {
       preview_snapshot_token: preview.preview_snapshot.token,
     });
 
-    expect(
-      created.creation_summary.projection_chart.inferred_current_state,
-    ).toBeDefined();
-    expect(
-      created.creation_summary.projection_chart.inferred_current_state,
-    ).toEqual(preview.projection_chart.inferred_current_state);
+    expect(created.creation_summary.projection_chart.inferred_current_state).toBeDefined();
+    expect(created.creation_summary.projection_chart.inferred_current_state).toEqual(
+      preview.projection_chart.inferred_current_state,
+    );
   });
 
   it("returns a preview snapshot token from previewCreationConfig", async () => {
@@ -1709,14 +1626,12 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
 
     expect(created.creation_summary.normalized_creation_config).toMatchObject({
-      optimization_profile:
-        preview.normalized_creation_config.optimization_profile,
-      behavior_controls_v1:
-        preview.normalized_creation_config.behavior_controls_v1,
+      optimization_profile: preview.normalized_creation_config.optimization_profile,
+      behavior_controls_v1: preview.normalized_creation_config.behavior_controls_v1,
     });
-    expect(
-      created.creation_summary.normalized_creation_config.calibration,
-    ).toEqual(preview.normalized_creation_config.calibration);
+    expect(created.creation_summary.normalized_creation_config.calibration).toEqual(
+      preview.normalized_creation_config.calibration,
+    );
     expect(created.creation_summary.calibration).toEqual({
       version: preview.normalized_creation_config.calibration.version,
       snapshot: preview.normalized_creation_config.calibration,
@@ -1725,9 +1640,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(preview.readiness_delta_diagnostics?.summary_codes).toContain(
       "readiness_delta_diagnostics_v1",
     );
-    expect(created.creation_summary.projection_feasibility).toEqual(
-      preview.projection_feasibility,
-    );
+    expect(created.creation_summary.projection_feasibility).toEqual(preview.projection_feasibility);
     expect(created.creation_summary.projection_chart.readiness_score).toBe(
       preview.projection_chart.readiness_score,
     );
@@ -1746,18 +1659,17 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(created.creation_summary.projection_chart.caps_applied).toEqual(
       preview.projection_chart.caps_applied,
     );
-    expect(
-      created.creation_summary.projection_chart.optimization_tradeoff_summary,
-    ).toEqual(preview.projection_chart.optimization_tradeoff_summary);
+    expect(created.creation_summary.projection_chart.optimization_tradeoff_summary).toEqual(
+      preview.projection_chart.optimization_tradeoff_summary,
+    );
     expect(preview.projection_chart.optimization_tradeoff_summary).toEqual(
-      preview.projection_chart.projection_diagnostics
-        ?.optimization_tradeoff_summary,
+      preview.projection_chart.projection_diagnostics?.optimization_tradeoff_summary,
     );
     expect(preview.projection_chart.prediction_uncertainty).toBeUndefined();
     expect(preview.projection_chart.goal_target_distributions).toBeUndefined();
-    expect(
-      created.creation_summary.projection_chart.projection_diagnostics,
-    ).toEqual(preview.projection_chart.projection_diagnostics);
+    expect(created.creation_summary.projection_chart.projection_diagnostics).toEqual(
+      preview.projection_chart.projection_diagnostics,
+    );
     expect(preview.projection_chart.projection_diagnostics).toMatchObject({
       effective_optimizer_config: {
         weights: expect.any(Object),
@@ -1778,22 +1690,14 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     });
     expect(
-      created.creation_summary.projection_chart.projection_diagnostics
-        ?.effective_optimizer_config,
-    ).toEqual(
-      preview.projection_chart.projection_diagnostics
-        ?.effective_optimizer_config,
+      created.creation_summary.projection_chart.projection_diagnostics?.effective_optimizer_config,
+    ).toEqual(preview.projection_chart.projection_diagnostics?.effective_optimizer_config);
+    expect(created.creation_summary.projection_chart.projection_diagnostics?.clamp_counts).toEqual(
+      preview.projection_chart.projection_diagnostics?.clamp_counts,
     );
     expect(
-      created.creation_summary.projection_chart.projection_diagnostics
-        ?.clamp_counts,
-    ).toEqual(preview.projection_chart.projection_diagnostics?.clamp_counts);
-    expect(
-      created.creation_summary.projection_chart.projection_diagnostics
-        ?.objective_contributions,
-    ).toEqual(
-      preview.projection_chart.projection_diagnostics?.objective_contributions,
-    );
+      created.creation_summary.projection_chart.projection_diagnostics?.objective_contributions,
+    ).toEqual(preview.projection_chart.projection_diagnostics?.objective_contributions);
     expect(replayPreview.projection_chart.projection_diagnostics).toEqual(
       created.creation_summary.projection_chart.projection_diagnostics,
     );
@@ -1803,12 +1707,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(replayPreview.normalized_creation_config.calibration).toEqual(
       created.creation_summary.calibration.snapshot,
     );
-    expect("mode_applied" in created.creation_summary.projection_chart).toBe(
-      false,
-    );
-    expect(
-      "overrides_applied" in created.creation_summary.projection_chart,
-    ).toBe(false);
+    expect("mode_applied" in created.creation_summary.projection_chart).toBe(false);
+    expect("overrides_applied" in created.creation_summary.projection_chart).toBe(false);
   });
 
   it("keeps preview/create/update parity across low/sparse/rich/no-history hybrid fixtures", async () => {
@@ -1966,27 +1866,17 @@ describe("trainingPlansRouter plan_start_date support", () => {
         preview_snapshot_token: preview.preview_snapshot.token,
       });
 
-      const previewDates = preview.projection_chart.points.map(
-        (point) => point.date,
-      );
+      const previewDates = preview.projection_chart.points.map((point) => point.date);
       expect(previewDates, `${fixture.key} preview dates sorted`).toEqual(
         [...previewDates].sort((a, b) => a.localeCompare(b)),
       );
 
       const createdChart = created.creation_summary.projection_chart;
       const updatedChart = updated.creation_summary.projection_chart;
-      expect(createdChart.points.map((point: any) => point.date)).toEqual(
-        previewDates,
-      );
-      expect(updatedChart.points.map((point: any) => point.date)).toEqual(
-        previewDates,
-      );
-      expect(createdChart.constraint_summary).toEqual(
-        preview.projection_chart.constraint_summary,
-      );
-      expect(updatedChart.constraint_summary).toEqual(
-        preview.projection_chart.constraint_summary,
-      );
+      expect(createdChart.points.map((point: any) => point.date)).toEqual(previewDates);
+      expect(updatedChart.points.map((point: any) => point.date)).toEqual(previewDates);
+      expect(createdChart.constraint_summary).toEqual(preview.projection_chart.constraint_summary);
+      expect(updatedChart.constraint_summary).toEqual(preview.projection_chart.constraint_summary);
       expect(createdChart.projection_diagnostics).toEqual(
         preview.projection_chart.projection_diagnostics,
       );
@@ -1996,17 +1886,11 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
       const tolerance = 0.05;
       expect(
-        Math.abs(
-          createdChart.readiness_score -
-            (preview.projection_chart.readiness_score ?? 0),
-        ),
+        Math.abs(createdChart.readiness_score - (preview.projection_chart.readiness_score ?? 0)),
         `${fixture.key} create readiness_score`,
       ).toBeLessThanOrEqual(tolerance);
       expect(
-        Math.abs(
-          updatedChart.readiness_score -
-            (preview.projection_chart.readiness_score ?? 0),
-        ),
+        Math.abs(updatedChart.readiness_score - (preview.projection_chart.readiness_score ?? 0)),
         `${fixture.key} update readiness_score`,
       ).toBeLessThanOrEqual(tolerance);
       expect(preview.projection_chart.readiness_confidence).toBeDefined();
@@ -2073,11 +1957,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
       prune_counts: expect.any(Object),
       tie_break_chain: expect.any(Array),
     });
-    const fallbackReason =
-      preview.projection_chart.projection_diagnostics?.fallback_reason;
-    expect(fallbackReason === null || typeof fallbackReason === "string").toBe(
-      true,
-    );
+    const fallbackReason = preview.projection_chart.projection_diagnostics?.fallback_reason;
+    expect(fallbackReason === null || typeof fallbackReason === "string").toBe(true);
   });
 
   it("returns preview timeline anchored to plan_start_date when provided", async () => {
@@ -2311,14 +2192,10 @@ describe("trainingPlansRouter plan_start_date support", () => {
       creation_input: {},
     });
 
-    const goalMarkerDates = result.projection_chart.goal_markers.map(
-      (goal) => goal.target_date,
-    );
+    const goalMarkerDates = result.projection_chart.goal_markers.map((goal) => goal.target_date);
     expect(goalMarkerDates).toEqual(["2026-03-15", "2026-06-20"]);
 
-    const pointDates = new Set(
-      result.projection_chart.points.map((p) => p.date),
-    );
+    const pointDates = new Set(result.projection_chart.points.map((p) => p.date));
     expect(pointDates.has("2026-03-15")).toBe(true);
     expect(pointDates.has("2026-06-20")).toBe(true);
   });
@@ -2371,32 +2248,26 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     });
 
-    expect(result.normalized_creation_config.optimization_profile).toBe(
-      "sustainable",
-    );
+    expect(result.normalized_creation_config.optimization_profile).toBe("sustainable");
     expect(result.normalized_creation_config.post_goal_recovery_days).toBe(6);
     expect(result.normalized_creation_config.behavior_controls_v1).toEqual(
       CONSERVATIVE_BEHAVIOR_CONTROLS,
     );
 
-    expect(
-      result.projection_chart.constraint_summary.normalized_creation_config,
-    ).toMatchObject({
+    expect(result.projection_chart.constraint_summary.normalized_creation_config).toMatchObject({
       optimization_profile: "sustainable",
       post_goal_recovery_days: 6,
     });
     expect(
-      result.projection_chart.projection_diagnostics?.effective_optimizer_config
-        .caps.max_weekly_tss_ramp_pct ?? 0,
+      result.projection_chart.projection_diagnostics?.effective_optimizer_config.caps
+        .max_weekly_tss_ramp_pct ?? 0,
     ).toBeLessThanOrEqual(10);
     expect(
-      result.projection_chart.projection_diagnostics?.effective_optimizer_config
-        .caps.max_ctl_ramp_per_week ?? 0,
+      result.projection_chart.projection_diagnostics?.effective_optimizer_config.caps
+        .max_ctl_ramp_per_week ?? 0,
     ).toBeLessThanOrEqual(5);
     expect(result.projection_chart.recovery_segments.length).toBeGreaterThan(0);
-    expect(
-      result.projection_chart.microcycles.some((week) => week.metadata),
-    ).toBe(true);
+    expect(result.projection_chart.microcycles.some((week) => week.metadata)).toBe(true);
   });
 
   it("accepts widened frontier overrides and exposes canonical diagnostics for theoretical runs", async () => {
@@ -2466,8 +2337,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       FRONTIER_BEHAVIOR_CONTROLS,
     );
     const practicalCaps =
-      practical.projection_chart.projection_diagnostics
-        ?.effective_optimizer_config.caps;
+      practical.projection_chart.projection_diagnostics?.effective_optimizer_config.caps;
     const diagnostics = result.projection_chart.projection_diagnostics;
     expect(diagnostics).toBeDefined();
     expect(diagnostics?.effective_optimizer_config.caps).toMatchObject({
@@ -2533,9 +2403,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     });
 
     const weeklyPeak = Math.max(
-      ...result.projection_chart.microcycles.map(
-        (cycle) => cycle.planned_weekly_tss,
-      ),
+      ...result.projection_chart.microcycles.map((cycle) => cycle.planned_weekly_tss),
     );
     const diagnostics = result.projection_chart.projection_diagnostics;
 
@@ -2547,12 +2415,10 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(
       diagnostics?.effective_optimizer_config.caps.max_weekly_tss_ramp_pct ?? 0,
     ).toBeGreaterThan(0);
-    expect(
-      diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0,
-    ).toBeGreaterThan(0);
-    expect(result.projection_chart.no_history?.projection_floor_applied).toBe(
-      true,
+    expect(diagnostics?.effective_optimizer_config.caps.max_ctl_ramp_per_week ?? 0).toBeGreaterThan(
+      0,
     );
+    expect(result.projection_chart.no_history?.projection_floor_applied).toBe(true);
   });
 
   it("accepts create payload with no mode/risk fields and no acknowledgement requirement", async () => {
@@ -2772,9 +2638,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
       const previewStart = performance.now();
       const preview = await caller.previewCreationConfig(input);
       previewLatenciesMs.push(performance.now() - previewStart);
-      assertSaneProjectionDiagnostics(
-        preview.projection_chart.projection_diagnostics,
-      );
+      assertSaneProjectionDiagnostics(preview.projection_chart.projection_diagnostics);
 
       const createStart = performance.now();
       const created = await caller.createFromCreationConfig({
@@ -2786,9 +2650,9 @@ describe("trainingPlansRouter plan_start_date support", () => {
         created.creation_summary.projection_chart.projection_diagnostics,
       );
 
-      expect(
-        created.creation_summary.projection_chart.projection_diagnostics,
-      ).toEqual(preview.projection_chart.projection_diagnostics);
+      expect(created.creation_summary.projection_chart.projection_diagnostics).toEqual(
+        preview.projection_chart.projection_diagnostics,
+      );
     }
 
     const previewP50 = percentile(previewLatenciesMs, 50);

@@ -1,31 +1,36 @@
 /**
  * Activity Plan Picker Page
  *
- * Full-screen page for selecting/detaching activity plans during recording.
- * Accessed via navigation from footer "Activity Plan" tile.
+ * Full-screen page for selecting or detaching an activity plan before start.
+ * Accessed via navigation from the setup section of the recording footer.
  *
  * Features:
  * - Display list of today's planned activities
  * - Search and filter functionality
  * - "Detach Plan" option if plan currently attached
- * - Plan selection overrides current category if different
+ * - Plan changes are locked once recording has started
  * - Standard back navigation via header
  * - Recording continues in background
  */
 
+import type { RecordingServiceActivityPlan } from "@repo/core";
 import type { PublicActivityCategory } from "@repo/supabase";
+import type { AppRouter } from "@repo/trpc/client";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import type { inferRouterOutputs } from "@trpc/server";
 import { router } from "expo-router";
 import { CalendarDays, Check, Search } from "lucide-react-native";
 import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
-import { useActivityStatus, usePlan } from "@/lib/hooks/useActivityRecorder";
-import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
+import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { trpc } from "@/lib/trpc";
+
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type PlannedActivity = RouterOutputs["events"]["getToday"][number];
 
 const CATEGORY_OPTIONS: {
   value: PublicActivityCategory | "all";
@@ -41,9 +46,8 @@ const CATEGORY_OPTIONS: {
 
 export default function PlanPickerPage() {
   const service = useSharedActivityRecorder();
-  const plan = usePlan(service);
-  const { activityCategory, gpsRecordingEnabled } = useActivityStatus(service);
-  const { attachPlan, detachPlan } = useRecordingConfiguration(service);
+  const recordingState = useRecordingState(service);
+  const utils = trpc.useUtils();
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -51,6 +55,7 @@ export default function PlanPickerPage() {
 
   // Fetch today's planned events
   const { data: plannedActivities, isLoading } = trpc.events.getToday.useQuery();
+  const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
 
   // Filter planned activities by search and category filter
   const filteredPlannedActivities = React.useMemo(() => {
@@ -78,30 +83,54 @@ export default function PlanPickerPage() {
   }, [plannedActivities, searchQuery, categoryFilter]);
 
   // Handle planned activity selection
-  const handlePlanPress = useCallback(
-    (eventId: string, planCategory: PublicActivityCategory) => {
-      // If plan's category differs from current category, update category first
-      if (service && planCategory !== activityCategory) {
-        console.log(
-          `[PlanPicker] Plan category (${planCategory}) differs from current (${activityCategory}). Updating category.`,
-        );
-        service.selectActivityFromPayload({
-          category: planCategory,
-          gpsRecordingEnabled,
-        });
+  const attachPlan = useCallback(
+    async (eventId: string) => {
+      if (!service || isSetupLocked) {
+        return false;
       }
 
-      attachPlan(eventId);
-      router.back();
+      const eventData = await utils.client.events.getById.query({ id: eventId });
+
+      if (!eventData?.activity_plan_id) {
+        return false;
+      }
+
+      const planData = await utils.client.activityPlans.getById.query({
+        id: eventData.activity_plan_id,
+      });
+
+      if (!planData) {
+        return false;
+      }
+
+      const selectedPlan: RecordingServiceActivityPlan = {
+        name: planData.name,
+        description: planData.description ?? undefined,
+        structure: planData.structure,
+        activity_category: planData.activity_category || service.selectedActivityCategory,
+        route_id: planData.route_id ?? null,
+      };
+
+      service.selectPlan(selectedPlan, eventId);
+      return true;
     },
-    [attachPlan, service, activityCategory, gpsRecordingEnabled],
+    [isSetupLocked, service, utils.client.activityPlans.getById, utils.client.events.getById],
+  );
+
+  const handlePlanPress = useCallback(
+    async (eventId: string) => {
+      if (await attachPlan(eventId)) {
+        router.back();
+      }
+    },
+    [attachPlan],
   );
 
   // Handle detach plan
   const handleDetach = useCallback(() => {
-    detachPlan();
+    service?.clearPlan();
     router.back();
-  }, [detachPlan]);
+  }, [service]);
 
   const currentEventId = service?.recordingMetadata?.eventId;
 
@@ -162,8 +191,19 @@ export default function PlanPickerPage() {
           </View>
         )}
 
+        {isSetupLocked && (
+          <View className="mb-3 rounded-lg border border-border bg-card p-4">
+            <Text className="text-base font-medium text-foreground">
+              Plan setup is locked after recording starts
+            </Text>
+            <Text className="mt-1 text-sm text-muted-foreground">
+              Finish this workout to change or detach the attached plan.
+            </Text>
+          </View>
+        )}
+
         {/* Detach Plan Option (if plan attached) */}
-        {!isLoading && currentEventId && (
+        {!isLoading && currentEventId && !isSetupLocked && (
           <Pressable
             onPress={handleDetach}
             className="bg-card p-4 rounded-lg border border-border mb-3"
@@ -187,14 +227,10 @@ export default function PlanPickerPage() {
             {filteredPlannedActivities.map((plannedActivity) => (
               <PlannedActivityListItem
                 key={plannedActivity.id}
-                plannedActivity={plannedActivity as any}
+                plannedActivity={plannedActivity}
                 isSelected={plannedActivity.id === currentEventId}
-                onPress={() =>
-                  handlePlanPress(
-                    plannedActivity.id,
-                    plannedActivity.activity_plan?.activity_category as PublicActivityCategory,
-                  )
-                }
+                disabled={isSetupLocked}
+                onPress={() => handlePlanPress(plannedActivity.id)}
               />
             ))}
           </View>
@@ -225,23 +261,16 @@ export default function PlanPickerPage() {
  * Planned Activity List Item Component
  */
 interface PlannedActivityListItemProps {
-  plannedActivity: {
-    id: string;
-    scheduled_date: string;
-    activity_plan: {
-      id: string;
-      name: string;
-      description: string | null;
-      activity_category: string;
-    } | null;
-  };
+  plannedActivity: PlannedActivity;
   isSelected: boolean;
+  disabled?: boolean;
   onPress: () => void;
 }
 
 function PlannedActivityListItem({
   plannedActivity,
   isSelected,
+  disabled = false,
   onPress,
 }: PlannedActivityListItemProps) {
   const activityPlan = plannedActivity.activity_plan;
@@ -256,10 +285,12 @@ function PlannedActivityListItem({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       className="bg-card p-4 rounded-lg border border-border"
       style={{
         borderColor: isSelected ? "rgb(34, 197, 94)" : undefined,
         borderWidth: isSelected ? 2 : 1,
+        opacity: disabled ? 0.6 : 1,
       }}
     >
       <View className="flex-row items-center justify-between">

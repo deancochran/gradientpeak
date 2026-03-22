@@ -258,7 +258,7 @@ vi.mock("@repo/ui/components/card", () => ({
 vi.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
-vi.mock("@/components/training-plan/create/inputs/DateField", () => ({
+vi.mock("@repo/ui/components/date-input", () => ({
   DateField: createHost("DateField"),
 }));
 vi.mock("@repo/ui/components/input", () => ({

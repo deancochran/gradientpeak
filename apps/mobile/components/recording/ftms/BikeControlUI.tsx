@@ -8,7 +8,7 @@
  * - Resistance Mode (Mode 4): Manual resistance level
  *
  * Features:
- * - Auto/Manual mode (auto applies plan targets, manual allows user override)
+ * - Auto/Manual mode (manual dispatches high-level trainer intents)
  * - FTP zones display for power reference
  * - Target power slider with +/- buttons (ERG mode)
  * - Grade/wind simulation controls (SIM mode)
@@ -18,15 +18,10 @@
 
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import {
-  useCurrentReadings,
-  usePlan,
-  useRecordingState,
-} from "@/lib/hooks/useActivityRecorder";
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import { PredictiveResistanceCalculator } from "@/lib/services/ActivityRecorder/PredictiveResistanceCalculator";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Alert, View } from "react-native";
+import { usePlan } from "@/lib/hooks/useActivityRecorder";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface BikeControlUIProps {
   service: ActivityRecorderService;
@@ -36,19 +31,8 @@ export interface BikeControlUIProps {
 
 type BikeMode = "erg" | "sim" | "resistance";
 
-export function BikeControlUI({
-  service,
-  controlMode,
-  hasPlan,
-}: BikeControlUIProps) {
+export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIProps) {
   const plan = usePlan(service);
-  const current = useCurrentReadings(service);
-
-  // Initialize predictive resistance calculator
-  const predictiveCalculator = useMemo(
-    () => new PredictiveResistanceCalculator(),
-    [],
-  );
 
   // Current bike control mode (ERG, SIM, Resistance)
   const [bikeMode, setBikeMode] = useState<BikeMode>("erg");
@@ -68,177 +52,12 @@ export function BikeControlUI({
   const [ftp, setFtp] = useState<number>(200);
 
   // Get trainer features
-  const trainer = service.sensorsManager.getControllableTrainer();
-  const features = trainer?.ftmsFeatures;
+  const features = service.getTrainerFeatures();
 
   // Detect supported modes
   const supportsERG = features?.powerTargetSettingSupported ?? false;
   const supportsSIM = features?.indoorBikeSimulationSupported ?? false;
-  const supportsResistance =
-    features?.resistanceTargetSettingSupported ?? false;
-
-  // Apply predictive resistance based on current state
-  const applyPredictiveResistance = useCallback(async () => {
-    if (bikeMode !== "erg" || targetPower <= 0) return;
-    if (!supportsERG && !supportsResistance) return;
-
-    // Use predictive resistance control
-    const currentCadence = current.cadence ?? 85; // Fallback to 85 rpm
-    const resistance = predictiveCalculator.calculateResistance(
-      targetPower,
-      currentCadence,
-      "bike",
-      features,
-    );
-
-    await service.sensorsManager.setResistanceTarget(resistance);
-    console.log(
-      `[BikeControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${targetPower}W, cadence: ${currentCadence.toFixed(0)} rpm)`,
-    );
-  }, [
-    bikeMode,
-    targetPower,
-    current.cadence,
-    features,
-    predictiveCalculator,
-    supportsERG,
-    supportsResistance,
-    service,
-  ]);
-
-  /**
-   * Apply plan targets to trainer automatically using predictive resistance
-   * Converts plan step targets to resistance commands based on cadence
-   */
-  const applyPlanTargets = useCallback(async () => {
-    if (!plan.currentStep || !plan.currentStep.targets) return;
-
-    const targets = plan.currentStep.targets;
-
-    // Find power target
-    const powerTarget = targets.find(
-      (t) => t.type === "watts" || t.type === "%FTP",
-    );
-
-    if (powerTarget && (supportsERG || supportsResistance)) {
-      let powerWatts = 0;
-
-      if (powerTarget.type === "watts" && "value" in powerTarget) {
-        powerWatts = powerTarget.value as number;
-      } else if (
-        powerTarget.type === "%FTP" &&
-        "min" in powerTarget &&
-        "max" in powerTarget
-      ) {
-        // Use midpoint of range
-        const percentFTP =
-          ((powerTarget.min as number) + (powerTarget.max as number)) / 2;
-        powerWatts = Math.round((percentFTP / 100) * ftp);
-      }
-
-      if (powerWatts > 0) {
-        setTargetPower(powerWatts);
-
-        // Use predictive resistance control
-        const currentCadence = current.cadence ?? 85; // Fallback to 85 rpm
-        const resistance = predictiveCalculator.calculateResistance(
-          powerWatts,
-          currentCadence,
-          "bike",
-          features,
-        );
-
-        await service.sensorsManager.setResistanceTarget(resistance);
-        console.log(
-          `[BikeControl] Predictive: Set resistance to ${resistance.toFixed(1)} (target: ${powerWatts}W, cadence: ${currentCadence.toFixed(0)} rpm)`,
-        );
-      }
-    }
-  }, [
-    plan.currentStep,
-    ftp,
-    supportsERG,
-    supportsResistance,
-    current.cadence,
-    features,
-    predictiveCalculator,
-    service,
-  ]);
-
-  // Reset calculator when interval changes to allow quick adaptation to new targets
-  useEffect(() => {
-    if (plan.hasPlan && plan.currentStep) {
-      console.log(
-        "[BikeControl] Interval changed, resetting predictive calculator",
-      );
-      predictiveCalculator.reset();
-    }
-  }, [plan.currentStep, plan.hasPlan, predictiveCalculator]);
-
-  // Auto-apply plan targets in Auto mode
-  useEffect(() => {
-    if (controlMode === "auto" && plan.hasPlan && plan.currentStep) {
-      console.log(
-        "[BikeControl] Auto mode - applying plan targets immediately",
-      );
-      applyPlanTargets();
-    }
-  }, [controlMode, plan.currentStep, plan.hasPlan, applyPlanTargets]);
-
-  // Auto-start: Initialize ERG when recording starts with a plan
-  const recordingState = useRecordingState(service);
-  useEffect(() => {
-    if (
-      recordingState === "recording" &&
-      controlMode === "auto" &&
-      plan.hasPlan &&
-      plan.currentStep &&
-      bikeMode === "erg"
-    ) {
-      console.log(
-        "[BikeControl] Recording started with plan - auto-initializing ERG",
-      );
-      applyPlanTargets();
-    }
-  }, [
-    recordingState,
-    controlMode,
-    plan.hasPlan,
-    plan.currentStep,
-    bikeMode,
-    applyPlanTargets,
-  ]);
-
-  // Periodically update resistance as cadence changes (every 1.5 seconds)
-  // Works even without a plan if targetPower is set
-  useEffect(() => {
-    if (
-      recordingState === "recording" &&
-      controlMode === "auto" &&
-      targetPower > 0 &&
-      bikeMode === "erg"
-    ) {
-      // Periodic updates
-      const interval = setInterval(() => {
-        if (plan.hasPlan && plan.currentStep) {
-          applyPlanTargets();
-        } else {
-          applyPredictiveResistance();
-        }
-      }, 1500);
-
-      return () => clearInterval(interval);
-    }
-  }, [
-    recordingState,
-    controlMode,
-    targetPower,
-    bikeMode,
-    applyPlanTargets,
-    applyPredictiveResistance,
-    plan.hasPlan,
-    plan.currentStep,
-  ]);
+  const supportsResistance = features?.resistanceTargetSettingSupported ?? false;
 
   /**
    * Apply power target in ERG mode
@@ -248,16 +67,13 @@ export function BikeControlUI({
       `[BikeControl] Attempting to set power target: ${targetPower}W (controlMode: ${controlMode})`,
     );
 
-    const success = await service.sensorsManager.setPowerTarget(targetPower);
+    const success = await service.applyManualTrainerPower(targetPower);
     if (success) {
       console.log(`[BikeControl] Manual: Set power target to ${targetPower}W`);
       Alert.alert("Success", `Power target set to ${targetPower}W`);
     } else {
       console.error("[BikeControl] Failed to set power target");
-      Alert.alert(
-        "Error",
-        "Failed to set power target. Check trainer connection.",
-      );
+      Alert.alert("Error", "Failed to set power target. Check trainer connection.");
     }
   }, [targetPower, controlMode, service]);
 
@@ -269,11 +85,11 @@ export function BikeControlUI({
       `[BikeControl] Attempting to set simulation: grade=${grade}%, wind=${windSpeed}m/s (controlMode: ${controlMode})`,
     );
 
-    const success = await service.sensorsManager.setSimulation({
-      grade,
-      windSpeed,
-      crr: 0.005, // Default coefficient of rolling resistance
-      windResistance: 0.51, // Default wind resistance coefficient
+    const success = await service.applyManualTrainerSimulation({
+      gradePercent: grade,
+      windSpeedMps: windSpeed,
+      rollingResistanceCoefficient: 0.005,
+      aerodynamicDragCoefficient: 0.51,
     });
 
     if (success) {
@@ -283,10 +99,7 @@ export function BikeControlUI({
       Alert.alert("Success", `Simulation set: ${grade}% grade`);
     } else {
       console.error("[BikeControl] Failed to set simulation");
-      Alert.alert(
-        "Error",
-        "Failed to set simulation. Check trainer connection.",
-      );
+      Alert.alert("Error", "Failed to set simulation. Check trainer connection.");
     }
   }, [grade, windSpeed, controlMode, service]);
 
@@ -298,20 +111,14 @@ export function BikeControlUI({
       `[BikeControl] Attempting to set resistance: ${resistanceLevel} (controlMode: ${controlMode})`,
     );
 
-    const success =
-      await service.sensorsManager.setResistanceTarget(resistanceLevel);
+    const success = await service.applyManualTrainerResistance(resistanceLevel);
 
     if (success) {
-      console.log(
-        `[BikeControl] Manual: Set resistance level to ${resistanceLevel}`,
-      );
+      console.log(`[BikeControl] Manual: Set resistance level to ${resistanceLevel}`);
       Alert.alert("Success", `Resistance set to level ${resistanceLevel}`);
     } else {
       console.error("[BikeControl] Failed to set resistance");
-      Alert.alert(
-        "Error",
-        "Failed to set resistance. Check trainer connection.",
-      );
+      Alert.alert("Error", "Failed to set resistance. Check trainer connection.");
     }
   }, [resistanceLevel, controlMode, service]);
 
@@ -365,9 +172,7 @@ export function BikeControlUI({
       {/* Mode Selection */}
       {availableModes.length > 1 && (
         <View>
-          <Text className="text-sm font-medium text-muted-foreground mb-2">
-            Control Mode
-          </Text>
+          <Text className="text-sm font-medium text-muted-foreground mb-2">Control Mode</Text>
           <View className="flex-row gap-2">
             {supportsERG && (
               <ModeButton
@@ -406,8 +211,8 @@ export function BikeControlUI({
           {isDisabled && (
             <View className="bg-primary/10 p-3 rounded-lg mb-3 border border-primary/20">
               <Text className="text-xs text-muted-foreground">
-                Controls are disabled in Auto mode. Toggle to Manual mode above
-                to adjust trainer settings.
+                Controls are disabled in Auto mode. Toggle to Manual mode above to adjust trainer
+                settings.
               </Text>
             </View>
           )}
@@ -416,9 +221,7 @@ export function BikeControlUI({
             <Button
               onPress={() => {
                 const newPower = Math.max(0, targetPower - 10);
-                console.log(
-                  `[BikeControl] Decreasing power: ${targetPower}W -> ${newPower}W`,
-                );
+                console.log(`[BikeControl] Decreasing power: ${targetPower}W -> ${newPower}W`);
                 setTargetPower(newPower);
               }}
               disabled={isDisabled}
@@ -426,13 +229,7 @@ export function BikeControlUI({
               size="icon"
               className="w-12 h-12"
             >
-              <Text
-                className={
-                  isDisabled
-                    ? "text-muted-foreground"
-                    : "text-primary-foreground"
-                }
-              >
+              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
                 -10
               </Text>
             </Button>
@@ -447,9 +244,7 @@ export function BikeControlUI({
             <Button
               onPress={() => {
                 const newPower = targetPower + 10;
-                console.log(
-                  `[BikeControl] Increasing power: ${targetPower}W -> ${newPower}W`,
-                );
+                console.log(`[BikeControl] Increasing power: ${targetPower}W -> ${newPower}W`);
                 setTargetPower(newPower);
               }}
               disabled={isDisabled}
@@ -457,13 +252,7 @@ export function BikeControlUI({
               size="icon"
               className="w-12 h-12"
             >
-              <Text
-                className={
-                  isDisabled
-                    ? "text-muted-foreground"
-                    : "text-primary-foreground"
-                }
-              >
+              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
                 +10
               </Text>
             </Button>
@@ -483,9 +272,7 @@ export function BikeControlUI({
                 isDisabled ? "text-muted-foreground" : "text-primary-foreground"
               }`}
             >
-              {isDisabled
-                ? "Auto Mode Active - Switch to Manual"
-                : "Apply Power Target"}
+              {isDisabled ? "Auto Mode Active - Switch to Manual" : "Apply Power Target"}
             </Text>
           </Button>
 
@@ -514,8 +301,8 @@ export function BikeControlUI({
           {isDisabled && (
             <View className="bg-primary/10 p-3 rounded-lg mb-3 border border-primary/20">
               <Text className="text-xs text-muted-foreground">
-                Controls are disabled in Auto mode. Toggle to Manual mode above
-                to adjust trainer settings.
+                Controls are disabled in Auto mode. Toggle to Manual mode above to adjust trainer
+                settings.
               </Text>
             </View>
           )}
@@ -527,9 +314,7 @@ export function BikeControlUI({
               <Button
                 onPress={() => {
                   const newGrade = Math.max(-10, grade - 0.5);
-                  console.log(
-                    `[BikeControl] Decreasing grade: ${grade}% -> ${newGrade}%`,
-                  );
+                  console.log(`[BikeControl] Decreasing grade: ${grade}% -> ${newGrade}%`);
                   setGrade(newGrade);
                 }}
                 disabled={isDisabled}
@@ -537,13 +322,7 @@ export function BikeControlUI({
                 size="icon"
                 className="w-12 h-12"
               >
-                <Text
-                  className={
-                    isDisabled
-                      ? "text-muted-foreground"
-                      : "text-primary-foreground"
-                  }
-                >
+                <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
                   -
                 </Text>
               </Button>
@@ -555,9 +334,7 @@ export function BikeControlUI({
               <Button
                 onPress={() => {
                   const newGrade = Math.min(20, grade + 0.5);
-                  console.log(
-                    `[BikeControl] Increasing grade: ${grade}% -> ${newGrade}%`,
-                  );
+                  console.log(`[BikeControl] Increasing grade: ${grade}% -> ${newGrade}%`);
                   setGrade(newGrade);
                 }}
                 disabled={isDisabled}
@@ -565,13 +342,7 @@ export function BikeControlUI({
                 size="icon"
                 className="w-12 h-12"
               >
-                <Text
-                  className={
-                    isDisabled
-                      ? "text-muted-foreground"
-                      : "text-primary-foreground"
-                  }
-                >
+                <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
                   +
                 </Text>
               </Button>
@@ -580,16 +351,12 @@ export function BikeControlUI({
 
           {/* Wind Speed Control */}
           <View className="mb-4">
-            <Text className="text-xs text-muted-foreground mb-2">
-              Wind Speed
-            </Text>
+            <Text className="text-xs text-muted-foreground mb-2">Wind Speed</Text>
             <View className="flex-row items-center gap-3">
               <Button
                 onPress={() => {
                   const newWind = Math.max(-10, windSpeed - 1);
-                  console.log(
-                    `[BikeControl] Decreasing wind: ${windSpeed}m/s -> ${newWind}m/s`,
-                  );
+                  console.log(`[BikeControl] Decreasing wind: ${windSpeed}m/s -> ${newWind}m/s`);
                   setWindSpeed(newWind);
                 }}
                 disabled={isDisabled}
@@ -597,13 +364,7 @@ export function BikeControlUI({
                 size="icon"
                 className="w-12 h-12"
               >
-                <Text
-                  className={
-                    isDisabled
-                      ? "text-muted-foreground"
-                      : "text-primary-foreground"
-                  }
-                >
+                <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
                   -
                 </Text>
               </Button>
@@ -615,9 +376,7 @@ export function BikeControlUI({
               <Button
                 onPress={() => {
                   const newWind = Math.min(20, windSpeed + 1);
-                  console.log(
-                    `[BikeControl] Increasing wind: ${windSpeed}m/s -> ${newWind}m/s`,
-                  );
+                  console.log(`[BikeControl] Increasing wind: ${windSpeed}m/s -> ${newWind}m/s`);
                   setWindSpeed(newWind);
                 }}
                 disabled={isDisabled}
@@ -625,13 +384,7 @@ export function BikeControlUI({
                 size="icon"
                 className="w-12 h-12"
               >
-                <Text
-                  className={
-                    isDisabled
-                      ? "text-muted-foreground"
-                      : "text-primary-foreground"
-                  }
-                >
+                <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
                   +
                 </Text>
               </Button>
@@ -652,9 +405,7 @@ export function BikeControlUI({
                 isDisabled ? "text-muted-foreground" : "text-primary-foreground"
               }`}
             >
-              {isDisabled
-                ? "Auto Mode Active - Switch to Manual"
-                : "Apply Simulation"}
+              {isDisabled ? "Auto Mode Active - Switch to Manual" : "Apply Simulation"}
             </Text>
           </Button>
         </View>
@@ -669,8 +420,8 @@ export function BikeControlUI({
           {isDisabled && (
             <View className="bg-primary/10 p-3 rounded-lg mb-3 border border-primary/20">
               <Text className="text-xs text-muted-foreground">
-                Controls are disabled in Auto mode. Toggle to Manual mode above
-                to adjust trainer settings.
+                Controls are disabled in Auto mode. Toggle to Manual mode above to adjust trainer
+                settings.
               </Text>
             </View>
           )}
@@ -689,22 +440,14 @@ export function BikeControlUI({
               size="icon"
               className="w-12 h-12"
             >
-              <Text
-                className={
-                  isDisabled
-                    ? "text-muted-foreground"
-                    : "text-primary-foreground"
-                }
-              >
+              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
                 -
               </Text>
             </Button>
 
             <View className="flex-1 items-center">
               <Text className="text-4xl font-bold">{resistanceLevel}</Text>
-              <Text className="text-xs text-muted-foreground mt-1">
-                1-20 range
-              </Text>
+              <Text className="text-xs text-muted-foreground mt-1">1-20 range</Text>
             </View>
 
             <Button
@@ -720,13 +463,7 @@ export function BikeControlUI({
               size="icon"
               className="w-12 h-12"
             >
-              <Text
-                className={
-                  isDisabled
-                    ? "text-muted-foreground"
-                    : "text-primary-foreground"
-                }
-              >
+              <Text className={isDisabled ? "text-muted-foreground" : "text-primary-foreground"}>
                 +
               </Text>
             </Button>
@@ -746,9 +483,7 @@ export function BikeControlUI({
                 isDisabled ? "text-muted-foreground" : "text-primary-foreground"
               }`}
             >
-              {isDisabled
-                ? "Auto Mode Active - Switch to Manual"
-                : "Apply Resistance"}
+              {isDisabled ? "Auto Mode Active - Switch to Manual" : "Apply Resistance"}
             </Text>
           </Button>
         </View>
@@ -767,8 +502,7 @@ export function BikeControlUI({
               {"min" in plan.currentStep.targets[0] &&
                 "max" in plan.currentStep.targets[0] &&
                 `${plan.currentStep.targets[0].min}-${plan.currentStep.targets[0].max}`}
-              {"value" in plan.currentStep.targets[0] &&
-                `${plan.currentStep.targets[0].value}`}
+              {"value" in plan.currentStep.targets[0] && `${plan.currentStep.targets[0].value}`}
             </Text>
           )}
         </View>
