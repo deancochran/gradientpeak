@@ -1,7 +1,7 @@
+import { validateTrainingPlanForm } from "@repo/core";
 import React from "react";
 import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { validateTrainingPlanForm } from "@/lib/training-plan-form/validation";
 import {
   SinglePageForm,
   type TrainingPlanConfigFormData,
@@ -60,8 +60,8 @@ vi.mock("@repo/ui/components/bounded-number-input", () => ({
   BoundedNumberInput: (props: any) => React.createElement("BoundedNumberInput", props),
 }));
 
-vi.mock("../inputs/DateField", () => ({
-  DateField: (props: any) => React.createElement("DateField", props),
+vi.mock("@repo/ui/components/date-input", () => ({
+  DateInput: (props: any) => React.createElement("DateField", props),
 }));
 
 vi.mock("@repo/ui/components/duration-input", () => ({
@@ -76,11 +76,11 @@ vi.mock("@repo/ui/components/pace-input", () => ({
   PaceInput: (props: any) => React.createElement("PaceInput", props),
 }));
 
-vi.mock("../inputs/PercentSliderInput", () => ({
+vi.mock("@repo/ui/components/percent-slider-input", () => ({
   PercentSliderInput: (props: any) => React.createElement("PercentSliderInput", props),
 }));
 
-vi.mock("../inputs/NumberSliderInput", () => ({
+vi.mock("@repo/ui/components/number-slider-input", () => ({
   NumberSliderInput: (props: any) => React.createElement("NumberSliderInput", props),
 }));
 

@@ -4,6 +4,12 @@
 
 Define how GradientPeak should use `@repo/ui` and `@repo/core` so `apps/mobile` and `apps/web` share the same testable logic, keep app layers thin, and avoid feature drift.
 
+## Launch Lens
+
+- This spec is launch-first, not architecture-for-its-own-sake.
+- Centralize only when it reduces immediate ship risk, removes already-repeated UI work, or makes the next few launch surfaces faster to build.
+- Leave unstable, single-screen, or domain-heavy UI in the apps until post-launch usage proves the shared contract.
+
 ## Audit Snapshot
 
 - Branch: `audit/ui-core-shared-app-spec`
@@ -49,6 +55,27 @@ Define how GradientPeak should use `@repo/ui` and `@repo/core` so `apps/mobile` 
 - `apps/mobile/components/shared/EmptyStateCard.tsx`
 - `apps/mobile/components/shared/ErrorStateCard.tsx`
 - `apps/mobile/components/ActivityPlan/MetricCard.tsx`
+
+### 5a. The next `@repo/ui` gap is composed shells, not primitives
+
+- `@repo/ui` already covers most low-level building blocks used by both apps, including form fields, cards, buttons, toggles, alerts, avatars, tabs, and tables.
+- The repeated app-local work now lives one layer higher: page shells, modal shells, segmented wrappers, badge/action triggers, and feature-agnostic list or summary rows.
+- The next centralization wave should expand `@repo/ui` with higher-level composites that stay presentation-only and accept app-owned data, callbacks, and navigation handlers.
+
+### 5b. Mobile repeats native overlay and segmented-control shells
+
+- `apps/mobile/components/ScheduleActivityModal.tsx` and `apps/mobile/components/calendar/CalendarPlannedActivityPickerModal.tsx` both rebuild a page-sheet modal shell with header, dismiss action, scroll body, and footer affordances.
+- `apps/mobile/components/TimeRangeSelector.tsx` and `apps/mobile/components/calendar/CalendarViewSegmentedControl.tsx` both wrap `ToggleGroup` with the same segmented-control styling, equal-width layout, and selected-state presentation.
+- `apps/mobile/components/home/StatCard.tsx` overlaps with `packages/ui/src/components/metric-card/index.native.tsx`, which suggests the shared metric-card API is too narrow for current app needs.
+- `apps/mobile/components/home/EmptyState.tsx` and the fallback views in `apps/mobile/components/ErrorBoundary.tsx` overlap with shared empty/error presentation already living in `packages/ui`.
+
+### 5c. Web repeats auth, header, and utility composites
+
+- `apps/web/src/app/(external)/auth/login/page.tsx`, `apps/web/src/app/(external)/auth/sign-up/page.tsx`, `apps/web/src/app/(external)/auth/forgot-password/page.tsx`, and `apps/web/src/app/(external)/auth/update-password/page.tsx` all repeat the same centered auth shell.
+- `apps/web/src/components/login-form.tsx`, `apps/web/src/components/sign-up-form.tsx`, `apps/web/src/components/forgot-password-form.tsx`, and `apps/web/src/components/update-password-form.tsx` all hand-roll the same card, field, error, and submit layout instead of leaning on the shared form layer.
+- `apps/web/src/components/nav-bar.tsx`, `apps/web/src/components/user-nav.tsx`, and `apps/web/src/components/dashboard-header.tsx` all compose overlapping account-menu and app-header presentation.
+- `apps/web/src/components/notifications-button.tsx` and `apps/web/src/components/messages-button.tsx` share the same icon-button-plus-badge trigger pattern.
+- `apps/web/src/components/ui/data-table.tsx` is a generic TanStack wrapper around already-shared table primitives and belongs in `@repo/ui` once exported as a web-only utility surface.
 
 ### 6. Package boundaries need cleanup before wider reuse
 
@@ -118,6 +145,50 @@ Apps should own only:
 - shared `SettingsGroup`, `EmptyStateCard`, `ErrorStateCard`, and `MetricCard` composites where props can be made app-agnostic
 - a web `Switch` implementation so settings forms do not fall back to ad hoc controls
 - optional reusable web composites such as `data-table` and `avatar-stack` once they are generalized
+
+### Next-wave `@repo/ui` composites for this chore
+
+- `AuthPageShell` and `AuthCardFrame` for repeated centered auth/status pages on web
+- shared auth field-stack composition built on `Form`, `FormTextField`, and package-owned card/footer helpers
+- a native `PageSheetModal` shell with shared header, dismiss affordance, scroll body, and optional sticky footer slots
+- a cross-platform `SegmentedControl` wrapper above `ToggleGroup` for equal-width labeled options
+- a web `IconBadgeButton` trigger for notifications, messages, and similar toolbar actions
+- a web `DataTable` adapter built on `@tanstack/react-table` plus existing shared table primitives
+- expanded summary-state composites, likely by broadening `MetricCard`, `EmptyStateCard`, and `ErrorStateCard` rather than adding app-local variants
+
+## Prioritized Centralization Candidates
+
+### Tier 1 - highest leverage and lowest contract risk
+
+- Web auth shell and auth form composition
+- Mobile native page-sheet modal shell
+- Shared segmented-control wrapper
+
+These are the MVP-safe targets because they are already repeated, mostly presentational, and unlikely to churn product contracts.
+
+### Tier 2 - clear reuse once Tier 1 lands
+
+- Web account-menu and app-header shells
+- Web icon-badge toolbar trigger
+- Web TanStack data-table adapter
+
+These should happen only if Tier 1 lands cleanly and launch work still benefits from further sharing.
+
+### Tier 3 - expand existing shared families instead of forking more locals
+
+- Metric/stat summary cards
+- Empty and error state presentation surfaces
+
+These are useful but easiest to defer if launch pressure is high.
+
+## Migration Rules For This Chore
+
+- Prefer slot-based shells over monolithic feature components.
+- Move presentation scaffolding only; keep app-specific copy, routing, queries, mutations, and domain scoring in the apps.
+- Reuse existing shared primitives and form wrappers instead of introducing parallel composition systems.
+- When a local component overlaps a shared family, expand the shared family before creating another sibling export.
+- Keep platform divergence explicit with `index.web.tsx` and `index.native.tsx` when one export name needs different implementations.
+- Stop a migration if the shared API starts guessing at future product needs instead of capturing proven duplication.
 
 ## Design Rules For Migration
 

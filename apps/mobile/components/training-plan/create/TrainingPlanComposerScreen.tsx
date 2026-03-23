@@ -14,6 +14,7 @@ import {
   getTopBlockingIssues,
   reducePreviewState,
   trainingPlanCalibrationConfigSchema,
+  trainingPlanFormSchema,
 } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -56,7 +57,6 @@ import {
   shouldIgnorePreviewResponse,
 } from "@/lib/training-plan-form/previewRequestState";
 import { mapTrainingPlanSaveError } from "@/lib/training-plan-form/saveErrorMapping";
-import { trainingPlanFormSchema } from "@/lib/training-plan-form/validation";
 import { trpc } from "@/lib/trpc";
 
 export type TrainingPlanComposerModeContract =

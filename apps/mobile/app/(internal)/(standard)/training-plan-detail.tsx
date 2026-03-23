@@ -1,5 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { DateInput as DateField } from "@repo/ui/components/date-input";
 import {
   Dialog,
   DialogClose,
@@ -37,7 +38,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { DateField } from "@/components/training-plan/create/inputs/DateField";
 import { TrainingPlanSummaryHeader } from "@/components/training-plan/TrainingPlanSummaryHeader";
 import { ROUTES } from "@/lib/constants/routes";
 import {

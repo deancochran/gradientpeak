@@ -23,11 +23,15 @@ describe("UI ownership guardrails", () => {
 
   it("rejects previously migrated pure UI app components", () => {
     const forbiddenPaths = [
+      "apps/mobile/components/profile/WeightInputField.tsx",
       "apps/mobile/components/shared/EmptyStateCard.tsx",
       "apps/mobile/components/shared/ErrorStateCard.tsx",
       "apps/mobile/components/shared/LoadingSkeletons.tsx",
+      "apps/mobile/components/training-plan/create/inputs/DateField.tsx",
       "apps/mobile/components/activity/shared/MetricCard.tsx",
       "apps/mobile/components/ActivityPlan/MetricCard.tsx",
+      "apps/mobile/lib/goals/goalDraft.ts",
+      "apps/mobile/lib/training-plan-form/validation.ts",
       "apps/web/src/components/avatar-stack.tsx",
     ];
 

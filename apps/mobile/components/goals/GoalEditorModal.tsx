@@ -1,5 +1,12 @@
+import {
+  createEmptyGoalDraft,
+  type GoalEditorDraft,
+  type GoalEditorGoalType,
+  type GoalEditorRaceTargetMode,
+} from "@repo/core";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
+import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { DurationInput } from "@repo/ui/components/duration-input";
 import { Input } from "@repo/ui/components/input";
 import { IntegerStepper } from "@repo/ui/components/integer-stepper";
@@ -9,13 +16,6 @@ import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
 import React, { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, TouchableOpacity, View } from "react-native";
-import { DateField } from "@/components/training-plan/create/inputs/DateField";
-import {
-  createEmptyGoalDraft,
-  type GoalEditorDraft,
-  type GoalEditorGoalType,
-  type GoalEditorRaceTargetMode,
-} from "@/lib/goals/goalDraft";
 
 interface GoalEditorModalProps {
   visible: boolean;
