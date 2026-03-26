@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { buildDeterministicProjectionPayload } from "../projectionCalculations";
 import {
+  buildPreviewMinimalPlanFromForm,
   buildPreviewReadinessSnapshot,
   buildReadinessDeltaDiagnostics,
-  buildPreviewMinimalPlanFromForm,
   reducePreviewState,
 } from "../trainingPlanPreview";
-import { buildDeterministicProjectionPayload } from "../projectionCalculations";
 
 describe("trainingPlanPreview helpers", () => {
   it("keeps goals with valid dates by falling back to a valid target", () => {
@@ -179,9 +179,7 @@ describe("trainingPlanPreview helpers", () => {
     expect(diagnostics.impacts.load.key).toBe("load");
     expect(diagnostics.impacts.fatigue.key).toBe("fatigue");
     expect(diagnostics.impacts.feasibility.key).toBe("feasibility");
-    expect(diagnostics.summary_codes).toContain(
-      "readiness_delta_diagnostics_v1",
-    );
+    expect(diagnostics.summary_codes).toContain("readiness_delta_diagnostics_v1");
   });
 
   it("builds preview snapshot from latest projection point", () => {
@@ -271,9 +269,7 @@ describe("deterministic projection safety behavior", () => {
     });
 
     expect(projection.no_history.projection_floor_applied).toBe(true);
-    expect(
-      projection.constraint_summary.starting_state.starting_state_is_prior,
-    ).toBe(true);
+    expect(projection.constraint_summary.starting_state.starting_state_is_prior).toBe(true);
     expect(projection.constraint_summary.starting_state.starting_ctl).toBe(
       projection.constraint_summary.starting_state.starting_atl,
     );
@@ -319,9 +315,7 @@ describe("deterministic projection safety behavior", () => {
 
     expect(projection.no_history.projection_floor_applied).toBe(true);
     expect(projection.no_history.evidence_confidence?.state).toBe("sparse");
-    expect(
-      projection.constraint_summary.starting_state.starting_state_is_prior,
-    ).toBe(true);
+    expect(projection.constraint_summary.starting_state.starting_state_is_prior).toBe(true);
     expect(projection.no_history.projection_feasibility).toBeTruthy();
   });
 
@@ -401,12 +395,8 @@ describe("deterministic projection safety behavior", () => {
         return false;
       }
       const requestedRampPct =
-        ((week.metadata.tss_ramp.requested_weekly_tss - previous) / previous) *
-        100;
-      return (
-        requestedRampPct >
-        week.metadata.tss_ramp.max_weekly_tss_ramp_pct + 0.001
-      );
+        ((week.metadata.tss_ramp.requested_weekly_tss - previous) / previous) * 100;
+      return requestedRampPct > week.metadata.tss_ramp.max_weekly_tss_ramp_pct + 0.001;
     });
     const hasSoftCtlCapPressure = projection.microcycles.some(
       (week) =>
@@ -478,18 +468,10 @@ describe("deterministic projection safety behavior", () => {
       },
     ]);
 
-    const recoveryWeeks = projection.microcycles.filter(
-      (week) => week.metadata.recovery.active,
-    );
+    const recoveryWeeks = projection.microcycles.filter((week) => week.metadata.recovery.active);
     expect(recoveryWeeks.length).toBeGreaterThanOrEqual(2);
-    expect(recoveryWeeks.every((week) => week.pattern === "recovery")).toBe(
-      true,
-    );
-    expect(
-      recoveryWeeks.every(
-        (week) => week.metadata.recovery.reduction_factor < 1,
-      ),
-    ).toBe(true);
+    expect(recoveryWeeks.every((week) => week.pattern === "recovery")).toBe(true);
+    expect(recoveryWeeks.every((week) => week.metadata.recovery.reduction_factor < 1)).toBe(true);
   });
 
   it("keeps week coverage contiguous and preserves multi-goal markers", () => {
@@ -532,9 +514,7 @@ describe("deterministic projection safety behavior", () => {
       const current = projection.microcycles[i]!;
       const nextStart = new Date(`${previous.week_end_date}T00:00:00.000Z`);
       nextStart.setUTCDate(nextStart.getUTCDate() + 1);
-      expect(current.week_start_date).toBe(
-        nextStart.toISOString().slice(0, 10),
-      );
+      expect(current.week_start_date).toBe(nextStart.toISOString().slice(0, 10));
     }
 
     expect(projection.goal_markers.map((goal) => goal.target_date)).toEqual([

@@ -1,24 +1,14 @@
+import { getActivityDisplayName } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { getActivityDisplayName } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
-import {
-  Activity,
-  Bike,
-  Dumbbell,
-  Footprints,
-  MapPin,
-  Waves,
-} from "lucide-react-native";
+import { Activity, Bike, Dumbbell, Footprints, MapPin, Waves } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
 interface InlineActivitySelectorProps {
-  onActivitySelect: (
-    category: PublicActivityCategory,
-    gpsRecordingEnabled: boolean,
-  ) => void;
+  onActivitySelect: (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => void;
 }
 
 // Simplified activity configurations for inline selector
@@ -34,14 +24,9 @@ const QUICK_ACTIVITIES: {
   { category: "other", icon: Activity, color: "text-gray-600" },
 ];
 
-export function InlineActivitySelector({
-  onActivitySelect,
-}: InlineActivitySelectorProps) {
-  const [selectedCategory, setSelectedCategory] =
-    useState<PublicActivityCategory | null>(null);
-  const [gpsRecordingEnabled, setGpsRecordingEnabled] = useState<
-    boolean | null
-  >(null);
+export function InlineActivitySelector({ onActivitySelect }: InlineActivitySelectorProps) {
+  const [selectedCategory, setSelectedCategory] = useState<PublicActivityCategory | null>(null);
+  const [gpsRecordingEnabled, setGpsRecordingEnabled] = useState<boolean | null>(null);
 
   const handleGpsSelect = (nextGpsRecordingEnabled: boolean) => {
     setGpsRecordingEnabled(nextGpsRecordingEnabled);
@@ -54,14 +39,8 @@ export function InlineActivitySelector({
     <View className="bg-card border-b border-border px-4 py-6">
       {/* Step 1: Select Activity Type */}
       <View className="mb-4">
-        <Text className="text-sm font-medium text-muted-foreground mb-3">
-          Select Activity
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          className="flex-row gap-3"
-        >
+        <Text className="text-sm font-medium text-muted-foreground mb-3">Select Activity</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row gap-3">
           {QUICK_ACTIVITIES.map((activity) => (
             <Pressable
               key={activity.category}
@@ -78,17 +57,11 @@ export function InlineActivitySelector({
               <Icon
                 as={activity.icon}
                 size={28}
-                className={
-                  selectedCategory === activity.category
-                    ? "text-primary"
-                    : activity.color
-                }
+                className={selectedCategory === activity.category ? "text-primary" : activity.color}
               />
               <Text
                 className={`text-xs font-medium mt-2 ${
-                  selectedCategory === activity.category
-                    ? "text-primary"
-                    : "text-foreground"
+                  selectedCategory === activity.category ? "text-primary" : "text-foreground"
                 }`}
               >
                 {getActivityDisplayName(activity.category, true).split(" ")[0]}
@@ -101,9 +74,7 @@ export function InlineActivitySelector({
       {/* Step 2: Select GPS recording (only shown when activity selected) */}
       {selectedCategory && (
         <View>
-          <Text className="text-sm font-medium text-muted-foreground mb-3">
-            GPS Recording
-          </Text>
+          <Text className="text-sm font-medium text-muted-foreground mb-3">GPS Recording</Text>
           <View className="flex-row gap-3">
             <Button
               variant={gpsRecordingEnabled === true ? "default" : "outline"}
@@ -113,17 +84,11 @@ export function InlineActivitySelector({
               <Icon
                 as={MapPin}
                 size={20}
-                className={
-                  gpsRecordingEnabled === true
-                    ? "color-background"
-                    : "text-foreground"
-                }
+                className={gpsRecordingEnabled === true ? "color-background" : "text-foreground"}
               />
               <Text
                 className={`ml-2 font-semibold ${
-                  gpsRecordingEnabled === true
-                    ? "text-background"
-                    : "text-foreground"
+                  gpsRecordingEnabled === true ? "text-background" : "text-foreground"
                 }`}
               >
                 GPS ON
@@ -137,17 +102,11 @@ export function InlineActivitySelector({
               <Icon
                 as={Activity}
                 size={20}
-                className={
-                  gpsRecordingEnabled === false
-                    ? "color-background"
-                    : "text-foreground"
-                }
+                className={gpsRecordingEnabled === false ? "color-background" : "text-foreground"}
               />
               <Text
                 className={`ml-2 font-semibold ${
-                  gpsRecordingEnabled === false
-                    ? "text-background"
-                    : "text-foreground"
+                  gpsRecordingEnabled === false ? "text-background" : "text-foreground"
                 }`}
               >
                 GPS OFF

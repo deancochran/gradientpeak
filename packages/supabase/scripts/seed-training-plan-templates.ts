@@ -34,9 +34,7 @@ const SUPABASE_SECRET_KEY =
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
-  console.error(
-    "❌ Missing environment variables: SUPABASE_URL or SUPABASE_SECRET_KEY",
-  );
+  console.error("❌ Missing environment variables: SUPABASE_URL or SUPABASE_SECRET_KEY");
   console.error("   Please check your .env.local file.");
   process.exit(1);
 }
@@ -52,12 +50,7 @@ const TEMPLATES = ALL_SAMPLE_PLANS;
 function deepEqual(a: any, b: any): boolean {
   if (a === b) return true;
 
-  if (
-    a === null ||
-    b === null ||
-    typeof a !== "object" ||
-    typeof b !== "object"
-  ) {
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
     return false;
   }
 
@@ -80,10 +73,7 @@ function deepEqual(a: any, b: any): boolean {
  * Check if a local template differs from the remote DB record
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasChanges(
-  local: (typeof ALL_SAMPLE_PLANS)[number],
-  remote: any,
-): boolean {
+function hasChanges(local: (typeof ALL_SAMPLE_PLANS)[number], remote: any): boolean {
   // Normalize fields (DB might return null for undefined)
   const localDescription = local.description ?? null;
   const remoteDescription = remote.description ?? null;
@@ -129,10 +119,7 @@ async function seedTrainingPlanTemplates() {
   console.log(`   Local Templates: ${TEMPLATES.length}\n`);
 
   // 1. Fetch existing system templates from DB
-  let query = supabase
-    .from("training_plans")
-    .select("*")
-    .eq("is_system_template", true);
+  let query = supabase.from("training_plans").select("*").eq("is_system_template", true);
 
   // We always sync the full curated training-plan template set.
 
@@ -151,9 +138,7 @@ async function seedTrainingPlanTemplates() {
 
   for (const [id, count] of idCounts.entries()) {
     if (count > 1) {
-      console.warn(
-        `⚠️  WARNING: Duplicate template ID found in DB: "${id}" (${count} occurrences)`,
-      );
+      console.warn(`⚠️  WARNING: Duplicate template ID found in DB: "${id}" (${count} occurrences)`);
     }
   }
 
@@ -170,9 +155,7 @@ async function seedTrainingPlanTemplates() {
   // 2. Iterate through local templates to Create or Update
   for (const template of TEMPLATES) {
     if (!template.id) {
-      console.error(
-        `❌ Template "${template.name}" is missing a static ID. Skipping.`,
-      );
+      console.error(`❌ Template "${template.name}" is missing a static ID. Skipping.`);
       errorCount++;
       continue;
     }
@@ -211,20 +194,18 @@ async function seedTrainingPlanTemplates() {
         // Template does not exist - Create it
         console.log(`✨ Creating "${template.name}" (${template.id})...`);
         if (!isDryRun) {
-          const { error: insertError } = await supabase
-            .from("training_plans")
-            .insert({
-              id: template.id, // Use the static ID
-              profile_id: null,
-              is_system_template: true,
-              template_visibility: "public", // System templates must be public
-              is_public: true,
-              name: template.name,
-              description: template.description,
-              structure: template.structure,
-              sessions_per_week_target: template.sessions_per_week_target,
-              duration_hours: template.duration_hours,
-            });
+          const { error: insertError } = await supabase.from("training_plans").insert({
+            id: template.id, // Use the static ID
+            profile_id: null,
+            is_system_template: true,
+            template_visibility: "public", // System templates must be public
+            is_public: true,
+            name: template.name,
+            description: template.description,
+            structure: template.structure,
+            sessions_per_week_target: template.sessions_per_week_target,
+            duration_hours: template.duration_hours,
+          });
 
           if (insertError) throw insertError;
         }
@@ -238,9 +219,7 @@ async function seedTrainingPlanTemplates() {
 
   // 3. Handle Deletions
   // Any existing template that was not processed means it's no longer in the local code
-  const staleTemplates = existingTemplates.filter(
-    (t) => !processedIds.has(t.id),
-  );
+  const staleTemplates = existingTemplates.filter((t) => !processedIds.has(t.id));
 
   if (staleTemplates.length > 0) {
     console.log(`\nFound ${staleTemplates.length} stale template(s).`);
@@ -256,10 +235,7 @@ async function seedTrainingPlanTemplates() {
             .eq("id", stale.id);
 
           if (deleteError) {
-            console.error(
-              `❌ Failed to delete "${stale.name}":`,
-              deleteError.message,
-            );
+            console.error(`❌ Failed to delete "${stale.name}":`, deleteError.message);
             errorCount++;
           } else {
             deletedCount++;

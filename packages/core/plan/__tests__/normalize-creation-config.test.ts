@@ -86,9 +86,7 @@ describe("normalizeCreationConfig safety fields", () => {
       },
     });
 
-    expect(normalized.calibration.readiness_timeline.smoothing_iterations).toBe(
-      40,
-    );
+    expect(normalized.calibration.readiness_timeline.smoothing_iterations).toBe(40);
     expect(normalized.calibration.optimizer.preparedness_weight).toBe(20);
     expect(normalized.calibration.optimizer.candidate_steps).toBe(7);
   });

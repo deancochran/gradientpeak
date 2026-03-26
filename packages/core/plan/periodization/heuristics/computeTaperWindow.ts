@@ -1,7 +1,4 @@
-import type {
-  CalculatedParameter,
-  EventDemand,
-} from "../../../schemas/planning";
+import type { CalculatedParameter, EventDemand } from "../../../schemas/planning";
 import type { AthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
 import { TAPER_BASELINE_LOOKUP } from "../constants";
 import { getSportModelConfig } from "../sports";

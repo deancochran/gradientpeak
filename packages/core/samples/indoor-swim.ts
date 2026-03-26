@@ -10,8 +10,7 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
   id: "3f6a7b8c-9d0e-1f2a-3b4c-5d6e7f8a9b0c",
   version: "2.0",
   name: "Easy Swim",
-  description:
-    "Comfortable continuous swim focusing on technique and aerobic base",
+  description: "Comfortable continuous swim focusing on technique and aerobic base",
   activity_category: "swim",
   gps_recording_enabled: false,
   structure: createPlan()
@@ -19,15 +18,13 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
       name: "Easy Warm-up",
       duration: Duration.meters(400),
       targets: [Target.thresholdHR(60)],
-      notes:
-        "Mix of easy freestyle and backstroke, focus on feel for the water",
+      notes: "Mix of easy freestyle and backstroke, focus on feel for the water",
     })
     .step({
       name: "Steady Swim",
       duration: Duration.meters(1400),
       targets: [Target.thresholdHR(70)],
-      notes:
-        "Maintain steady rhythm, focus on stroke technique and breathing pattern",
+      notes: "Maintain steady rhythm, focus on stroke technique and breathing pattern",
     })
     .step({
       name: "Easy Cool-down",
@@ -126,8 +123,7 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
           name: "Threshold Interval",
           duration: Duration.meters(400),
           targets: [Target.thresholdHR(85)],
-          notes:
-            "Steady hard effort - should feel comfortably hard but sustainable",
+          notes: "Steady hard effort - should feel comfortably hard but sustainable",
         },
         {
           name: "Recovery",
@@ -255,11 +251,10 @@ export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
     .build(),
 };
 
-export const SAMPLE_INDOOR_SWIM_ACTIVITIES: Array<RecordingServiceActivityPlan> =
-  [
-    EASY_SWIM,
-    SPRINT_INTERVALS_SWIM,
-    THRESHOLD_SWIM,
-    TECHNIQUE_SWIM,
-    ENDURANCE_SWIM,
-  ];
+export const SAMPLE_INDOOR_SWIM_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
+  EASY_SWIM,
+  SPRINT_INTERVALS_SWIM,
+  THRESHOLD_SWIM,
+  TECHNIQUE_SWIM,
+  ENDURANCE_SWIM,
+];

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRequireAuth } from "@/components/providers/auth-provider";
 import { Loader2 } from "lucide-react";
+import { useRequireAuth } from "@/components/providers/auth-provider";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -13,11 +13,7 @@ interface AuthGuardProps {
  * AuthGuard component that protects routes by requiring authentication
  * Automatically redirects unauthenticated users to the login page
  */
-export const AuthGuard = ({
-  children,
-  redirectTo = "/auth/login",
-  fallback,
-}: AuthGuardProps) => {
+export const AuthGuard = ({ children, redirectTo = "/auth/login", fallback }: AuthGuardProps) => {
   const { isLoading, isAuthenticated } = useRequireAuth(redirectTo);
 
   if (isLoading) {

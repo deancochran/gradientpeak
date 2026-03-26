@@ -19,11 +19,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
 import { resolve } from "path";
-import {
-  SYSTEM_TEMPLATES,
-  getTemplatesByCategory,
-  type SystemTemplate,
-} from "../../core/samples";
+import { getTemplatesByCategory, SYSTEM_TEMPLATES, type SystemTemplate } from "../../core/samples";
 
 // Load environment variables from root .env.local
 config({ path: resolve(__dirname, "../.env.local") });
@@ -33,9 +29,7 @@ const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 const categoryArg = args.find((arg) => arg.startsWith("--category="));
-const category = categoryArg?.split("=")[1] as
-  | SystemTemplate["activity_category"]
-  | undefined;
+const category = categoryArg?.split("=")[1] as SystemTemplate["activity_category"] | undefined;
 
 // Environment variables
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -43,18 +37,14 @@ const SUPABASE_SECRET_KEY =
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
-  console.error(
-    "❌ Missing environment variables: SUPABASE_URL or SUPABASE_SECRET_KEY",
-  );
+  console.error("❌ Missing environment variables: SUPABASE_URL or SUPABASE_SECRET_KEY");
   console.error("   Please check your .env.local file.");
   process.exit(1);
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
-const TEMPLATES = category
-  ? getTemplatesByCategory(category)
-  : SYSTEM_TEMPLATES;
+const TEMPLATES = category ? getTemplatesByCategory(category) : SYSTEM_TEMPLATES;
 
 /**
  * Strip IDs from structure object for comparison
@@ -86,12 +76,7 @@ function stripIds(obj: any): any {
 function deepEqual(a: any, b: any): boolean {
   if (a === b) return true;
 
-  if (
-    a === null ||
-    b === null ||
-    typeof a !== "object" ||
-    typeof b !== "object"
-  ) {
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
     return false;
   }
 
@@ -125,9 +110,7 @@ function hasChanges(local: SystemTemplate, remote: any): boolean {
   // Compare core metadata
   if (local.version !== remote.version) {
     if (local.name === "Sweet Spot Intervals")
-      console.log(
-        `DEBUG: version mismatch: '${local.version}' vs '${remote.version}'`,
-      );
+      console.log(`DEBUG: version mismatch: '${local.version}' vs '${remote.version}'`);
     return true;
   }
   if (local.name !== remote.name) return true; // Should match if we looked it up by name, but safely check
@@ -140,18 +123,15 @@ function hasChanges(local: SystemTemplate, remote: any): boolean {
     return true;
   }
   if (local.activity_category !== remote.activity_category) {
-    if (local.name === "Sweet Spot Intervals")
-      console.log("DEBUG: activity_category mismatch");
+    if (local.name === "Sweet Spot Intervals") console.log("DEBUG: activity_category mismatch");
     return true;
   }
   if (localRouteId !== remoteRouteId) {
-    if (local.name === "Sweet Spot Intervals")
-      console.log("DEBUG: route_id mismatch");
+    if (local.name === "Sweet Spot Intervals") console.log("DEBUG: route_id mismatch");
     return true;
   }
   if (localNotes !== remoteNotes) {
-    if (local.name === "Sweet Spot Intervals")
-      console.log("DEBUG: notes mismatch");
+    if (local.name === "Sweet Spot Intervals") console.log("DEBUG: notes mismatch");
     return true;
   }
 
@@ -184,10 +164,7 @@ async function seedTemplates() {
   console.log(`   Local Templates: ${TEMPLATES.length}\n`);
 
   // 1. Fetch existing system templates from DB
-  let query = supabase
-    .from("activity_plans")
-    .select("*")
-    .eq("is_system_template", true);
+  let query = supabase.from("activity_plans").select("*").eq("is_system_template", true);
 
   // If we are only syncing one category, ideally we'd only fetch that category.
   // However, to detect deletions efficiently, it's safer to fetch based on our sync scope.
@@ -210,9 +187,7 @@ async function seedTemplates() {
 
   for (const [id, count] of idCounts.entries()) {
     if (count > 1) {
-      console.warn(
-        `⚠️  WARNING: Duplicate template ID found in DB: "${id}" (${count} occurrences)`,
-      );
+      console.warn(`⚠️  WARNING: Duplicate template ID found in DB: "${id}" (${count} occurrences)`);
     }
   }
 
@@ -229,9 +204,7 @@ async function seedTemplates() {
   // 2. Iterate through local templates to Create or Update
   for (const template of TEMPLATES) {
     if (!template.id) {
-      console.error(
-        `❌ Template "${template.name}" is missing a static ID. Skipping.`,
-      );
+      console.error(`❌ Template "${template.name}" is missing a static ID. Skipping.`);
       errorCount++;
       continue;
     }
@@ -271,21 +244,19 @@ async function seedTemplates() {
         // Template does not exist - Create it
         console.log(`✨ Creating "${template.name}" (${template.id})...`);
         if (!isDryRun) {
-          const { error: insertError } = await supabase
-            .from("activity_plans")
-            .insert({
-              id: template.id, // Use the static ID
-              profile_id: null,
-              is_system_template: true,
-              template_visibility: "public", // System templates must be public
-              version: template.version,
-              name: template.name,
-              description: template.description,
-              activity_category: template.activity_category,
-              structure: template.structure,
-              route_id: template.route_id,
-              notes: template.notes,
-            });
+          const { error: insertError } = await supabase.from("activity_plans").insert({
+            id: template.id, // Use the static ID
+            profile_id: null,
+            is_system_template: true,
+            template_visibility: "public", // System templates must be public
+            version: template.version,
+            name: template.name,
+            description: template.description,
+            activity_category: template.activity_category,
+            structure: template.structure,
+            route_id: template.route_id,
+            notes: template.notes,
+          });
 
           if (insertError) throw insertError;
         }
@@ -299,9 +270,7 @@ async function seedTemplates() {
 
   // 3. Handle Deletions
   // Any existing template that was not processed means it's no longer in the local code
-  const staleTemplates = existingTemplates.filter(
-    (t) => !processedIds.has(t.id),
-  );
+  const staleTemplates = existingTemplates.filter((t) => !processedIds.has(t.id));
 
   if (staleTemplates.length > 0) {
     console.log(`\nFound ${staleTemplates.length} stale template(s).`);
@@ -317,10 +286,7 @@ async function seedTemplates() {
             .eq("id", stale.id);
 
           if (deleteError) {
-            console.error(
-              `❌ Failed to delete "${stale.name}":`,
-              deleteError.message,
-            );
+            console.error(`❌ Failed to delete "${stale.name}":`, deleteError.message);
             errorCount++;
           } else {
             deletedCount++;

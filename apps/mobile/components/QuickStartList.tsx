@@ -1,23 +1,13 @@
+import { getActivityDisplayName } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { getActivityDisplayName } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
-import {
-  Activity,
-  Bike,
-  ChevronRight,
-  Dumbbell,
-  Footprints,
-  Waves,
-} from "lucide-react-native";
+import { Activity, Bike, ChevronRight, Dumbbell, Footprints, Waves } from "lucide-react-native";
 import { View } from "react-native";
 
 interface QuickStartListProps {
-  onActivitySelect: (
-    category: PublicActivityCategory,
-    gpsRecordingEnabled: boolean,
-  ) => void;
+  onActivitySelect: (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => void;
 }
 
 // Activity configurations
@@ -86,9 +76,7 @@ export function QuickStartList({ onActivitySelect }: QuickStartListProps) {
         <ActivityCard
           key={`${config.category}-${config.gpsRecordingEnabled}-${index}`}
           config={config}
-          onSelect={() =>
-            onActivitySelect(config.category, config.gpsRecordingEnabled)
-          }
+          onSelect={() => onActivitySelect(config.category, config.gpsRecordingEnabled)}
         />
       ))}
     </View>
@@ -117,9 +105,7 @@ function ActivityCard({ config, onSelect }: ActivityCardProps) {
         <Text className="text-lg font-semibold mb-1">
           {getActivityDisplayName(config.category, config.gpsRecordingEnabled)}
         </Text>
-        <Text className="text-sm text-muted-foreground">
-          {config.description}
-        </Text>
+        <Text className="text-sm text-muted-foreground">{config.description}</Text>
       </View>
 
       <View className="ml-2">

@@ -44,12 +44,7 @@ const formConfig = {
   },
 };
 
-export function CurrentStatusCard({
-  ctl,
-  atl,
-  tsb,
-  form,
-}: CurrentStatusCardProps) {
+export function CurrentStatusCard({ ctl, atl, tsb, form }: CurrentStatusCardProps) {
   const formInfo = formConfig[form];
 
   return (
@@ -62,17 +57,13 @@ export function CurrentStatusCard({
           {/* Form Status Banner */}
           <View className={`${formInfo.bgColor} rounded-lg p-4`}>
             <View className="flex-row items-center justify-between mb-2">
-              <Text className={`text-lg font-bold ${formInfo.color}`}>
-                {formInfo.label}
-              </Text>
+              <Text className={`text-lg font-bold ${formInfo.color}`}>{formInfo.label}</Text>
               <Text className={`text-2xl font-bold ${formInfo.color}`}>
                 TSB: {tsb > 0 ? "+" : ""}
                 {tsb}
               </Text>
             </View>
-            <Text className="text-sm text-muted-foreground">
-              {formInfo.description}
-            </Text>
+            <Text className="text-sm text-muted-foreground">{formInfo.description}</Text>
           </View>
 
           {/* Metrics Grid */}
@@ -81,54 +72,43 @@ export function CurrentStatusCard({
             <View className="flex-1 bg-muted/30 rounded-lg p-4">
               <View className="flex-row items-center gap-2 mb-2">
                 <Icon as={TrendingUp} size={18} className="text-blue-500" />
-                <Text className="text-xs text-muted-foreground font-medium">
-                  CTL
-                </Text>
+                <Text className="text-xs text-muted-foreground font-medium">CTL</Text>
               </View>
               <Text className="text-2xl font-bold mb-1">{ctl}</Text>
-              <Text className="text-xs text-muted-foreground">
-                Fitness
-              </Text>
+              <Text className="text-xs text-muted-foreground">Fitness</Text>
             </View>
 
             {/* ATL - Fatigue */}
             <View className="flex-1 bg-muted/30 rounded-lg p-4">
               <View className="flex-row items-center gap-2 mb-2">
                 <Icon as={Heart} size={18} className="text-red-500" />
-                <Text className="text-xs text-muted-foreground font-medium">
-                  ATL
-                </Text>
+                <Text className="text-xs text-muted-foreground font-medium">ATL</Text>
               </View>
               <Text className="text-2xl font-bold mb-1">{atl}</Text>
-              <Text className="text-xs text-muted-foreground">
-                Fatigue
-              </Text>
+              <Text className="text-xs text-muted-foreground">Fatigue</Text>
             </View>
 
             {/* TSB - Form */}
             <View className="flex-1 bg-muted/30 rounded-lg p-4">
               <View className="flex-row items-center gap-2 mb-2">
                 <Icon as={Activity} size={18} className={formInfo.color} />
-                <Text className="text-xs text-muted-foreground font-medium">
-                  TSB
-                </Text>
+                <Text className="text-xs text-muted-foreground font-medium">TSB</Text>
               </View>
               <Text className={`text-2xl font-bold mb-1 ${formInfo.color}`}>
                 {tsb > 0 ? "+" : ""}
                 {tsb}
               </Text>
-              <Text className="text-xs text-muted-foreground">
-                Form
-              </Text>
+              <Text className="text-xs text-muted-foreground">Form</Text>
             </View>
           </View>
 
           {/* Info Text */}
           <View className="bg-muted/20 rounded-lg p-3">
             <Text className="text-xs text-muted-foreground leading-5">
-              <Text className="font-semibold">CTL</Text> (Chronic Training Load) represents your long-term fitness.{" "}
-              <Text className="font-semibold">ATL</Text> (Acute Training Load) represents recent fatigue.{" "}
-              <Text className="font-semibold">TSB</Text> (Training Stress Balance) is the difference, indicating your current form.
+              <Text className="font-semibold">CTL</Text> (Chronic Training Load) represents your
+              long-term fitness. <Text className="font-semibold">ATL</Text> (Acute Training Load)
+              represents recent fatigue. <Text className="font-semibold">TSB</Text> (Training Stress
+              Balance) is the difference, indicating your current form.
             </Text>
           </View>
         </View>

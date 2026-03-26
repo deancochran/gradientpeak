@@ -191,9 +191,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       }),
     );
 
-    expect(result.creation_summary.normalized_creation_config).toEqual(
-      finalConfigFixture,
-    );
+    expect(result.creation_summary.normalized_creation_config).toEqual(finalConfigFixture);
     expect(result.creation_summary.calibration.version).toBe(1);
     expect(result.creation_summary.projection_feasibility).toEqual({
       state: "feasible",
@@ -305,18 +303,13 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     expect(result.creation_summary).not.toHaveProperty("migration_warnings");
     expect(result.creation_summary).not.toHaveProperty("active_overrides");
 
-    const persistedStructure = (repository.createTrainingPlan as any).mock
-      .calls[0]?.[0]?.structure;
+    const persistedStructure = (repository.createTrainingPlan as any).mock.calls[0]?.[0]?.structure;
     expect(persistedStructure).toBeDefined();
     expect(persistedStructure).not.toHaveProperty("mode");
     expect(persistedStructure).not.toHaveProperty("risk_acceptance");
     expect(persistedStructure).not.toHaveProperty("constraint_policy");
-    expect(persistedStructure?.metadata).not.toHaveProperty(
-      "creation_config_mvp",
-    );
-    expect(persistedStructure?.metadata?.creation_config_snapshot).toEqual(
-      finalConfigFixture,
-    );
+    expect(persistedStructure?.metadata).not.toHaveProperty("creation_config_mvp");
+    expect(persistedStructure?.metadata?.creation_config_snapshot).toEqual(finalConfigFixture);
     expect(persistedStructure?.metadata?.creation_form_snapshot).toEqual({
       plan_start_date: "2026-01-05",
       goals: [],
@@ -325,9 +318,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       version: 1,
     });
 
-    expect(result.creation_summary.normalized_creation_config).toEqual(
-      finalConfigFixture,
-    );
+    expect(result.creation_summary.normalized_creation_config).toEqual(finalConfigFixture);
   });
 
   it("keeps write boundary on canonical parsed shapes without inferred aliases", async () => {
@@ -359,8 +350,9 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       deps: deps as any,
     });
 
-    const createArg = (repository.createTrainingPlan as any).mock
-      .calls[0]?.[0] as { structure?: Record<string, unknown> } | undefined;
+    const createArg = (repository.createTrainingPlan as any).mock.calls[0]?.[0] as
+      | { structure?: Record<string, unknown> }
+      | undefined;
     expect(createArg?.structure).toBeDefined();
     expect(createArg?.structure).not.toHaveProperty("recent_influence_score");
     expect(createArg?.structure).not.toHaveProperty("mode");
@@ -498,9 +490,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: expect.stringContaining(
-        "Creation blocked by unresolved conflicts",
-      ),
+      message: expect.stringContaining("Creation blocked by unresolved conflicts"),
       cause: {
         domain: "training_plan_commit",
         code: "TRAINING_PLAN_COMMIT_CONFLICT",
@@ -561,10 +551,9 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
 
     expect(result.creation_summary.conflicts.is_blocking).toBe(false);
     expect(result.creation_summary.override_audit.effective.enabled).toBe(true);
-    expect(
-      result.creation_summary.override_audit.effective
-        .overridden_conflict_codes,
-    ).toContain("post_goal_recovery_compresses_next_goal_prep");
+    expect(result.creation_summary.override_audit.effective.overridden_conflict_codes).toContain(
+      "post_goal_recovery_compresses_next_goal_prep",
+    );
   });
 
   it("keeps invariant blockers non-overridable even when override is requested", async () => {
@@ -613,9 +602,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message: expect.stringContaining(
-        "Creation blocked by unresolved conflicts",
-      ),
+      message: expect.stringContaining("Creation blocked by unresolved conflicts"),
       cause: {
         domain: "training_plan_commit",
         code: "TRAINING_PLAN_COMMIT_CONFLICT",
@@ -682,9 +669,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       deps: deps as any,
     });
 
-    expect(repository.getPriorInferredStateSnapshot).toHaveBeenCalledWith(
-      "profile-123",
-    );
+    expect(repository.getPriorInferredStateSnapshot).toHaveBeenCalledWith("profile-123");
     expect(deps.buildCreationProjectionArtifacts).toHaveBeenCalledWith(
       expect.objectContaining({
         priorInferredSnapshot: expect.objectContaining({

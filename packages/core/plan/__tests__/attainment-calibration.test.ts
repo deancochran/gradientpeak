@@ -98,8 +98,7 @@ describe("target attainment calibration", () => {
     });
 
     const observedRate =
-      predictions.reduce((sum, sample) => sum + sample.observed, 0) /
-      predictions.length;
+      predictions.reduce((sum, sample) => sum + sample.observed, 0) / predictions.length;
 
     const brierScore = mean(
       predictions.map(({ predictedProbability, observed }) =>
@@ -120,9 +119,7 @@ describe("target attainment calibration", () => {
     const lowQuartile = ranked.slice(0, quartileSize);
     const highQuartile = ranked.slice(-quartileSize);
 
-    expect(
-      mean(highQuartile.map((sample) => sample.observed)),
-    ).toBeGreaterThanOrEqual(
+    expect(mean(highQuartile.map((sample) => sample.observed))).toBeGreaterThanOrEqual(
       mean(lowQuartile.map((sample) => sample.observed)),
     );
   });

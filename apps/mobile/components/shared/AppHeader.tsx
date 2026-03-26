@@ -1,13 +1,10 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { useRouter } from "expo-router";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
-import {
-  MessagesHeaderButton,
-  NotificationsHeaderButton,
-} from "./HeaderButtons";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { MessagesHeaderButton, NotificationsHeaderButton } from "./HeaderButtons";
 
 interface AppHeaderProps {
   showGreeting?: boolean;
@@ -46,9 +43,7 @@ export function AppHeader({ showGreeting = true, title }: AppHeaderProps) {
   return (
     <View className="flex-row items-center justify-between px-5 py-4 bg-background border-b border-border">
       <View className="flex-1 mr-3">
-        <Text className="text-2xl font-bold text-foreground">
-          {getDisplayText()}
-        </Text>
+        <Text className="text-2xl font-bold text-foreground">{getDisplayText()}</Text>
       </View>
       <View className="flex-row items-center">
         <MessagesHeaderButton />
@@ -59,9 +54,7 @@ export function AppHeader({ showGreeting = true, title }: AppHeaderProps) {
           activeOpacity={0.7}
         >
           <Avatar alt={profile?.username || "User"} className="w-10 h-10">
-            {avatarUri ? (
-              <AvatarImage source={{ uri: avatarUri }} key={avatarUri} />
-            ) : null}
+            {avatarUri ? <AvatarImage source={{ uri: avatarUri }} key={avatarUri} /> : null}
             <AvatarFallback>
               <Text className="text-base font-semibold">
                 {profile?.username?.charAt(0)?.toUpperCase() ||

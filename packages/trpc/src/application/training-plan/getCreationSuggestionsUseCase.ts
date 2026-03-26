@@ -1,14 +1,12 @@
 import {
+  type CreationContextSummary,
   deriveCreationSuggestions,
   getCreationSuggestionsInputSchema,
-  type CreationContextSummary,
 } from "@repo/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-type GetCreationSuggestionsInput = z.infer<
-  typeof getCreationSuggestionsInputSchema
->;
+type GetCreationSuggestionsInput = z.infer<typeof getCreationSuggestionsInputSchema>;
 
 type DeriveProfileAwareCreationContext = (input: {
   supabase: SupabaseClient;

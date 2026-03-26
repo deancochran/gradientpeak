@@ -9,7 +9,12 @@
  */
 
 // Re-export all form schemas from core
+// Legacy aliases for backwards compatibility
+// These are deprecated and should be updated to use the core names
 export {
+  type ActivityPlanCreateFormData,
+  type ActivityPlanUpdateFormData,
+  type ActivitySubmissionFormData,
   activityCategorySchema,
   // Activity schemas
   activityNameSchema,
@@ -56,6 +61,12 @@ export {
   optionalUsernameSchema,
   optionalWeeklyTssTargetSchema,
   optionalWeightKgSchema,
+  type PlannedActivityRescheduleFormData,
+  type PlannedActivityScheduleFormData,
+  type PlannedActivityUpdateFormData,
+  type ProfileQuickUpdateData,
+  type ProfileSettingsFormData,
+  type ProfileSettingsFormData as ProfileFormValues,
   pastDateSchema,
   phoneSchema,
   plannedActivityRescheduleFormSchema,
@@ -65,12 +76,18 @@ export {
   powerZoneSchema,
   profileQuickUpdateSchema,
   profileSettingsFormSchema,
+  profileSettingsFormSchema as profileFormSchema,
   repetitionCountSchema,
   restingHrSchema,
   rpeSchema,
   speedSchema,
   // Step validation schemas
   stepDurationSecondsSchema,
+  type TrainingPlanBasicInfoFormData,
+  type TrainingPlanCreateFormData,
+  type TrainingPlanPeriodizationFormData,
+  type TrainingPlanRecoveryRulesFormData,
+  type TrainingPlanWeeklyTargetsFormData,
   thresholdHrSchema,
   trainingPlanBasicInfoFormSchema,
   trainingPlanCreateFormSchema,
@@ -84,24 +101,4 @@ export {
   weeklyTssTargetSchema,
   // Profile schemas
   weightKgSchema,
-  type ActivityPlanCreateFormData,
-  type ActivityPlanUpdateFormData,
-  type ActivitySubmissionFormData,
-  type PlannedActivityRescheduleFormData,
-  type PlannedActivityScheduleFormData,
-  type PlannedActivityUpdateFormData,
-  type ProfileQuickUpdateData,
-  type ProfileSettingsFormData,
-  type TrainingPlanBasicInfoFormData,
-  type TrainingPlanCreateFormData,
-  type TrainingPlanPeriodizationFormData,
-  type TrainingPlanRecoveryRulesFormData,
-  type TrainingPlanWeeklyTargetsFormData,
-} from "@repo/core";
-
-// Legacy aliases for backwards compatibility
-// These are deprecated and should be updated to use the core names
-export {
-  profileSettingsFormSchema as profileFormSchema,
-  type ProfileSettingsFormData as ProfileFormValues,
 } from "@repo/core";

@@ -19,18 +19,14 @@ describe("bluetooth parsers", () => {
     });
 
     it("parses 16-bit heart rate", () => {
-      const result = parseHeartRateMeasurement(
-        toArrayBuffer([0x01, 0x01, 0x01]),
-      );
+      const result = parseHeartRateMeasurement(toArrayBuffer([0x01, 0x01, 0x01]));
       expect(result.hrBpm).toBe(257);
     });
   });
 
   describe("parseCyclingPowerMeasurement", () => {
     it("parses instantaneous power from mandatory field", () => {
-      const result = parseCyclingPowerMeasurement(
-        toArrayBuffer([0x00, 0x00, 0xfa, 0x00]),
-      );
+      const result = parseCyclingPowerMeasurement(toArrayBuffer([0x00, 0x00, 0xfa, 0x00]));
 
       expect(result.powerWatts).toBe(250);
       expect(result.cadenceRpm).toBeNull();
@@ -39,9 +35,7 @@ describe("bluetooth parsers", () => {
 
   describe("parseCscMeasurement", () => {
     it("derives cadence from crank deltas and does not emit cumulative as cadence", () => {
-      const first = parseCscMeasurement(
-        toArrayBuffer([0x02, 0xe8, 0x03, 0x00, 0x08]),
-      );
+      const first = parseCscMeasurement(toArrayBuffer([0x02, 0xe8, 0x03, 0x00, 0x08]));
       expect(first.cadenceRpm).toBeNull();
 
       const second = parseCscMeasurement(
@@ -57,10 +51,7 @@ describe("bluetooth parsers", () => {
         lastCrankRevolutions: 65535,
         lastCrankEventTime1024: 65500,
       };
-      const result = parseCscMeasurement(
-        toArrayBuffer([0x02, 0x00, 0x00, 0xdc, 0x01]),
-        prev,
-      );
+      const result = parseCscMeasurement(toArrayBuffer([0x02, 0x00, 0x00, 0xdc, 0x01]), prev);
 
       expect(result.cadenceRpm).toBe(120);
     });

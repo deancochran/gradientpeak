@@ -1,30 +1,26 @@
-import React from "react";
-import { View, FlatList, Alert } from "react-native";
-import { useRouter } from "expo-router";
-import { trpc } from "@/lib/trpc";
-import { Text } from "@repo/ui/components/text";
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@repo/ui/components/card";
-import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
-import { Plus, Trash2, Activity, Zap, Timer } from "lucide-react-native";
-import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
+import { useRouter } from "expo-router";
+import { Activity, Plus, Timer, Trash2, Zap } from "lucide-react-native";
+import React from "react";
+import { Alert, FlatList, View } from "react-native";
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { trpc } from "@/lib/trpc";
 
 function ActivityEffortsList() {
   const router = useRouter();
   const utils = trpc.useUtils();
 
-  const {
-    data: efforts,
-    isLoading,
-    error,
-  } = trpc.activityEfforts.getForProfile.useQuery();
+  const { data: efforts, isLoading, error } = trpc.activityEfforts.getForProfile.useQuery();
 
   const deleteMutation = trpc.activityEfforts.delete.useMutation({
     onSuccess: () => {
@@ -36,26 +32,20 @@ function ActivityEffortsList() {
   });
 
   const handleDelete = (id: string) => {
-    Alert.alert(
-      "Delete Effort",
-      "Are you sure you want to delete this activity effort?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteMutation.mutate({ id }),
-        },
-      ],
-    );
+    Alert.alert("Delete Effort", "Are you sure you want to delete this activity effort?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => deleteMutation.mutate({ id }),
+      },
+    ]);
   };
 
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
-        <Text className="text-sm text-muted-foreground">
-          Loading efforts...
-        </Text>
+        <Text className="text-sm text-muted-foreground">Loading efforts...</Text>
       </View>
     );
   }
@@ -63,12 +53,8 @@ function ActivityEffortsList() {
   if (error) {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
-        <Text className="text-base font-semibold text-foreground">
-          Unable to load efforts
-        </Text>
-        <Text className="mt-2 text-sm text-muted-foreground">
-          {error.message}
-        </Text>
+        <Text className="text-base font-semibold text-foreground">Unable to load efforts</Text>
+        <Text className="mt-2 text-sm text-muted-foreground">{error.message}</Text>
       </View>
     );
   }
@@ -81,17 +67,10 @@ function ActivityEffortsList() {
         contentContainerClassName="p-4 gap-4"
         ListEmptyComponent={
           <View className="items-center justify-center py-10">
-            <Icon
-              as={Activity}
-              size={48}
-              className="text-muted-foreground mb-4"
-            />
-            <Text className="text-lg font-medium text-foreground">
-              No efforts recorded
-            </Text>
+            <Icon as={Activity} size={48} className="text-muted-foreground mb-4" />
+            <Text className="text-lg font-medium text-foreground">No efforts recorded</Text>
             <Text className="text-sm text-muted-foreground text-center mt-2">
-              Record your best efforts for power and speed across different
-              activities.
+              Record your best efforts for power and speed across different activities.
             </Text>
           </View>
         }
@@ -118,14 +97,8 @@ function ActivityEffortsList() {
             <CardContent>
               <View className="flex-row justify-between mt-2">
                 <View className="flex-row items-center gap-2">
-                  <Icon
-                    as={Timer}
-                    size={16}
-                    className="text-muted-foreground"
-                  />
-                  <Text className="text-foreground font-medium">
-                    {item.duration_seconds}s
-                  </Text>
+                  <Icon as={Timer} size={16} className="text-muted-foreground" />
+                  <Text className="text-foreground font-medium">{item.duration_seconds}s</Text>
                 </View>
                 <View className="flex-row items-center gap-2">
                   <Icon as={Zap} size={16} className="text-primary" />
@@ -143,9 +116,7 @@ function ActivityEffortsList() {
         <Button
           size="icon"
           className="h-14 w-14 rounded-full shadow-lg"
-          onPress={() =>
-            router.push("/(internal)/(standard)/activity-effort-create" as any)
-          }
+          onPress={() => router.push("/(internal)/(standard)/activity-effort-create" as any)}
         >
           <Icon as={Plus} size={24} className="text-primary-foreground" />
         </Button>

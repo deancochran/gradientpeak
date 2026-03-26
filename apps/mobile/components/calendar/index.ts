@@ -1,4 +1,4 @@
 export {
-  CalendarViewSegmentedControl,
   type CalendarViewMode,
+  CalendarViewSegmentedControl,
 } from "./CalendarViewSegmentedControl";

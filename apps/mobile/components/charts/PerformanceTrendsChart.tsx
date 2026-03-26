@@ -73,9 +73,7 @@ export function PerformanceTrendsChart({
 
   // Calculate stats
   const values = chartData.map((d) => d.value);
-  const avgValue = isEmpty
-    ? 0
-    : values.reduce((sum, v) => sum + v, 0) / values.length;
+  const avgValue = isEmpty ? 0 : values.reduce((sum, v) => sum + v, 0) / values.length;
   const maxValue = isEmpty ? 0 : Math.max(...values);
 
   // Calculate improvement (first 20% vs last 20%)
@@ -90,32 +88,23 @@ export function PerformanceTrendsChart({
       <View className="flex-row items-center gap-4 mb-2">
         <View className="flex-row items-center gap-1">
           <View className={`w-3 h-3 rounded ${metricInfo.color}`} />
-          <Text className="text-xs text-muted-foreground">
-            {metricInfo.label}
-          </Text>
+          <Text className="text-xs text-muted-foreground">{metricInfo.label}</Text>
         </View>
       </View>
 
       <View style={{ height: height - 100 }}>
         {isEmpty ? (
           <View className="flex-1 items-center justify-center bg-muted/30 rounded">
-            <Text className="text-muted-foreground text-sm mb-1">
-              No {metric} data yet
-            </Text>
+            <Text className="text-muted-foreground text-sm mb-1">No {metric} data yet</Text>
             <Text className="text-muted-foreground text-xs text-center px-4">
-              Record activities with{" "}
-              {metric === "heartrate" ? "heart rate" : metric} data to see your
-              performance trends
+              Record activities with {metric === "heartrate" ? "heart rate" : metric} data to see
+              your performance trends
             </Text>
           </View>
         ) : (
           <CartesianChart data={chartData} xKey="index" yKeys={["value"]}>
             {({ points }) => (
-              <Line
-                points={points.value}
-                color={metricInfo.strokeColor}
-                strokeWidth={2}
-              />
+              <Line points={points.value} color={metricInfo.strokeColor} strokeWidth={2} />
             )}
           </CartesianChart>
         )}
@@ -160,8 +149,7 @@ function calculateImprovement(values: number[]) {
   const firstSample = values.slice(0, sampleSize);
   const lastSample = values.slice(-sampleSize);
 
-  const firstAvg =
-    firstSample.reduce((sum, v) => sum + v, 0) / firstSample.length;
+  const firstAvg = firstSample.reduce((sum, v) => sum + v, 0) / firstSample.length;
   const lastAvg = lastSample.reduce((sum, v) => sum + v, 0) / lastSample.length;
 
   return ((lastAvg - firstAvg) / firstAvg) * 100;

@@ -225,10 +225,7 @@ function parseWaypoint(element: Element): LatLngAlt | null {
  * Main route parser that handles different file types
  * Currently supports GPX, can be extended for TCX, FIT, etc.
  */
-export function parseRoute(
-  routeContent: string,
-  fileType?: string,
-): ParsedRoute {
+export function parseRoute(routeContent: string, fileType?: string): ParsedRoute {
   // Auto-detect file type from content if not provided
   const detectedType = fileType || detectFileType(routeContent);
 

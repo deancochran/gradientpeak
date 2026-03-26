@@ -16,23 +16,19 @@
  * - Bottom sheet uses containerStyle.zIndex to stay on top
  */
 
+import { formatIntensityTarget, getStepIntensityColor, type IntervalStepV2 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
+import { Minimize2 } from "lucide-react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { formatDurationShort } from "@/lib/utils/durationConversion";
-import {
-  formatIntensityTarget,
-  getStepIntensityColor,
-  type IntervalStepV2,
-} from "@repo/core";
-import { Minimize2 } from "lucide-react-native";
-import React, { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, View, useWindowDimensions } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export interface ZoneBProps {
   service: ActivityRecorderService | null;
@@ -57,15 +53,11 @@ function resolveIntensityTarget(
   switch (target.type) {
     case "%FTP":
       const ftp = profile?.ftp || 200;
-      const watts = Math.round(
-        (target.intensity / 100) * ftp * intensityAdjustment,
-      );
+      const watts = Math.round((target.intensity / 100) * ftp * intensityAdjustment);
       return `${watts}W`;
     case "%MaxHR":
       const maxHR = profile?.max_heart_rate || 180;
-      const targetHR = Math.round(
-        (target.intensity / 100) * maxHR * intensityAdjustment,
-      );
+      const targetHR = Math.round((target.intensity / 100) * maxHR * intensityAdjustment);
       return `${targetHR} bpm`;
     case "%ThresholdHR":
       const thresholdHR = profile?.threshold_heart_rate || 160;
@@ -106,9 +98,7 @@ function formatCompactIntervalWithProfile(
   }
 
   const targets = step.targets
-    .map((target) =>
-      resolveIntensityTarget(target, profile, intensityAdjustment),
-    )
+    .map((target) => resolveIntensityTarget(target, profile, intensityAdjustment))
     .join(", "); // "220W" or "220W, 90 rpm"
 
   return `${duration} @ ${targets}`;
@@ -158,10 +148,7 @@ function ActivityIntensityChart({
   const STEP_PADDING = 2;
 
   // Calculate total duration
-  const totalDurationMs = allSteps.reduce(
-    (sum, step) => sum + getDurationMs(step.duration),
-    0,
-  );
+  const totalDurationMs = allSteps.reduce((sum, step) => sum + getDurationMs(step.duration), 0);
 
   // Auto-scroll to current step
   useEffect(() => {
@@ -200,10 +187,7 @@ function ActivityIntensityChart({
       >
         {allSteps.map((step, index) => {
           const durationMs = getDurationMs(step.duration);
-          const width = Math.max(
-            MIN_STEP_WIDTH,
-            (durationMs / totalDurationMs) * 200,
-          );
+          const width = Math.max(MIN_STEP_WIDTH, (durationMs / totalDurationMs) * 200);
 
           // All intervals use their intensity color
           const backgroundColor = getStepIntensityColor(step);
@@ -222,8 +206,7 @@ function ActivityIntensityChart({
           const intensity = step.targets?.[0]?.intensity || 50; // Default to 50% if no target
           const minStepHeight = height * 0.2; // 20% of container height minimum
           const maxStepHeight = height * 0.9; // 90% of container height maximum
-          const stepHeight =
-            minStepHeight + (intensity / 100) * (maxStepHeight - minStepHeight);
+          const stepHeight = minStepHeight + (intensity / 100) * (maxStepHeight - minStepHeight);
 
           return (
             <View
@@ -236,8 +219,7 @@ function ActivityIntensityChart({
                 opacity,
                 borderRadius: 4,
                 borderWidth: index === currentStepIndex ? 2 : 0,
-                borderColor:
-                  index === currentStepIndex ? "#ffffff" : "transparent",
+                borderColor: index === currentStepIndex ? "#ffffff" : "transparent",
               }}
             />
           );
@@ -328,17 +310,13 @@ export function ZoneB({ service, hasPlan, isFocused }: ZoneBProps) {
           {/* Current Step - Consolidated */}
           <View className="mb-3">
             <Text className="text-lg font-semibold">
-              {currentStep.name} •{" "}
-              {formatCompactIntervalWithProfile(currentStep, profile)}
+              {currentStep.name} • {formatCompactIntervalWithProfile(currentStep, profile)}
             </Text>
           </View>
 
           {/* Progress Bar - Larger */}
           <View className="h-3 bg-muted rounded-full overflow-hidden mb-3">
-            <View
-              className="h-full bg-primary"
-              style={{ width: `${progress * 100}%` }}
-            />
+            <View className="h-full bg-primary" style={{ width: `${progress * 100}%` }} />
           </View>
 
           {/* Next Step Preview */}
@@ -358,9 +336,7 @@ export function ZoneB({ service, hasPlan, isFocused }: ZoneBProps) {
             {/* Activity Intensity Chart - Larger in focused view */}
             {allSteps.length > 0 && (
               <View className="mb-6">
-                <Text className="text-xs text-muted-foreground mb-2">
-                  Workout Structure
-                </Text>
+                <Text className="text-xs text-muted-foreground mb-2">Workout Structure</Text>
                 <ActivityIntensityChart
                   allSteps={allSteps}
                   currentStepIndex={plan.stepIndex}
@@ -382,12 +358,8 @@ export function ZoneB({ service, hasPlan, isFocused }: ZoneBProps) {
             {/* Intensity Adjustment Control */}
             <View className="mb-4 bg-muted/30 p-4 rounded-lg">
               <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-xs text-muted-foreground">
-                  INTENSITY ADJUSTMENT
-                </Text>
-                <Text className="text-lg font-bold">
-                  {Math.round(intensityAdjustment * 100)}%
-                </Text>
+                <Text className="text-xs text-muted-foreground">INTENSITY ADJUSTMENT</Text>
+                <Text className="text-lg font-bold">{Math.round(intensityAdjustment * 100)}%</Text>
               </View>
               <Slider
                 value={intensityAdjustment}
@@ -408,16 +380,10 @@ export function ZoneB({ service, hasPlan, isFocused }: ZoneBProps) {
               {/* Target Values */}
               {currentStep.targets && currentStep.targets.length > 0 && (
                 <View className="flex-1 bg-muted/50 p-4 rounded-lg">
-                  <Text className="text-xs text-muted-foreground mb-2">
-                    TARGET
-                  </Text>
+                  <Text className="text-xs text-muted-foreground mb-2">TARGET</Text>
                   {currentStep.targets.map((target, idx) => (
                     <Text key={idx} className="text-2xl font-bold mb-1">
-                      {resolveIntensityTarget(
-                        target,
-                        profile,
-                        intensityAdjustment,
-                      )}
+                      {resolveIntensityTarget(target, profile, intensityAdjustment)}
                     </Text>
                   ))}
                 </View>
@@ -426,15 +392,12 @@ export function ZoneB({ service, hasPlan, isFocused }: ZoneBProps) {
               {/* Timer - Time Remaining in Step */}
               {plan.progress && !plan.progress.requiresManualAdvance && (
                 <View className="flex-1 bg-primary/10 p-4 rounded-lg border-2 border-primary">
-                  <Text className="text-xs text-muted-foreground mb-2">
-                    TIME REMAINING
-                  </Text>
+                  <Text className="text-xs text-muted-foreground mb-2">TIME REMAINING</Text>
                   <Text className="text-3xl font-bold">
                     {formatDurationShort({
                       type: "time",
                       seconds: Math.ceil(
-                        (plan.progress.duration - plan.progress.movingTime) /
-                          1000,
+                        (plan.progress.duration - plan.progress.movingTime) / 1000,
                       ),
                     })}
                   </Text>
@@ -444,25 +407,16 @@ export function ZoneB({ service, hasPlan, isFocused }: ZoneBProps) {
 
             {/* Progress Bar - Larger in focused view */}
             <View className="h-6 bg-muted rounded-full overflow-hidden mb-6">
-              <View
-                className="h-full bg-primary"
-                style={{ width: `${progress * 100}%` }}
-              />
+              <View className="h-full bg-primary" style={{ width: `${progress * 100}%` }} />
             </View>
 
             {/* Next Step Preview - Enlarged */}
             {nextStep && (
               <View className="bg-muted/50 p-4 rounded-lg">
-                <Text className="text-sm text-muted-foreground mb-1">
-                  Up Next
-                </Text>
+                <Text className="text-sm text-muted-foreground mb-1">Up Next</Text>
                 <Text className="text-2xl font-semibold">{nextStep.name}</Text>
                 <Text className="text-lg text-muted-foreground mt-1">
-                  {formatCompactIntervalWithProfile(
-                    nextStep,
-                    profile,
-                    intensityAdjustment,
-                  )}
+                  {formatCompactIntervalWithProfile(nextStep, profile, intensityAdjustment)}
                 </Text>
               </View>
             )}

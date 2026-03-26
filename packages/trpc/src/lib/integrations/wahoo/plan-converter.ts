@@ -54,9 +54,7 @@ export interface ConvertOptions {
 /**
  * Calculate total workout duration in seconds from structure
  */
-export function calculateWorkoutDuration(
-  structure: ActivityPlanStructureV2,
-): number {
+export function calculateWorkoutDuration(structure: ActivityPlanStructureV2): number {
   if (!structure.intervals || structure.intervals.length === 0) {
     return 0;
   }
@@ -338,14 +336,11 @@ function convertTarget(target: IntensityTargetV2): WahooTarget {
 /**
  * Infer Wahoo intensity type from target intensity
  */
-function inferIntensityType(
-  target: IntensityTargetV2,
-): WahooInterval["intensity_type"] {
+function inferIntensityType(target: IntensityTargetV2): WahooInterval["intensity_type"] {
   switch (target.type) {
     case "%FTP":
     case "watts": {
-      const intensity =
-        target.type === "%FTP" ? target.intensity : target.intensity;
+      const intensity = target.type === "%FTP" ? target.intensity : target.intensity;
 
       if (intensity < 60) return "recover";
       if (intensity < 75) return "active";
@@ -370,9 +365,7 @@ function inferIntensityType(
  * Validate that the plan structure is compatible with Wahoo
  * Note: This assumes activity type has already been validated with isActivityTypeSupportedByWahoo
  */
-export function validateWahooCompatibility(
-  structure: ActivityPlanStructureV2,
-): {
+export function validateWahooCompatibility(structure: ActivityPlanStructureV2): {
   compatible: boolean;
   warnings: string[];
 } {
@@ -380,9 +373,7 @@ export function validateWahooCompatibility(
 
   // Check if structure is empty (no intervals)
   if (!structure.intervals || structure.intervals.length === 0) {
-    warnings.push(
-      "Workout has no intervals. Wahoo requires at least one interval.",
-    );
+    warnings.push("Workout has no intervals. Wahoo requires at least one interval.");
     return { compatible: false, warnings };
   }
 

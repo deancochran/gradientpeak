@@ -1,13 +1,9 @@
 "use client";
 
-import { useRedirectIfAuthenticated } from "@/components/providers/auth-provider";
 import { Loader2 } from "lucide-react";
+import { useRedirectIfAuthenticated } from "@/components/providers/auth-provider";
 
-export default function ExternalLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ExternalLayout({ children }: { children: React.ReactNode }) {
   const { isLoading } = useRedirectIfAuthenticated("/");
 
   if (isLoading) {

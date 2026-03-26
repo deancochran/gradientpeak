@@ -29,11 +29,7 @@ function FormHarness() {
           <FormItem>
             <FormLabel>Email</FormLabel>
             <FormControl>
-              <Input
-                {...field}
-                accessibilityLabel="Email"
-                testId="email-input"
-              />
+              <Input {...field} accessibilityLabel="Email" testId="email-input" />
             </FormControl>
             <FormDescription>Used for weekly updates.</FormDescription>
             <FormMessage>Field is required.</FormMessage>

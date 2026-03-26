@@ -49,10 +49,6 @@ export function clampMpcCandidateAction(input: {
   return Math.max(lower, Math.min(upper, input.candidate_value));
 }
 
-function clampInteger(
-  value: number,
-  minValue: number,
-  maxValue: number,
-): number {
+function clampInteger(value: number, minValue: number, maxValue: number): number {
   return Math.max(minValue, Math.min(maxValue, Math.floor(value)));
 }

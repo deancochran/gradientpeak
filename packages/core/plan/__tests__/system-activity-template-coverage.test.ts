@@ -35,9 +35,7 @@ describe("system activity-template coverage", () => {
       },
     ]);
 
-    expect(cellRows.find((row) => row.key === "run_long")?.status).toBe(
-      "under-covered",
-    );
+    expect(cellRows.find((row) => row.key === "run_long")?.status).toBe("under-covered");
   });
 
   it("marks duplicate-risk when near-identical templates occupy the same cell", () => {
@@ -59,14 +57,9 @@ describe("system activity-template coverage", () => {
         primary_work_signature: "same-work",
       },
     ]);
-    const longRideRow = cellRows.find(
-      (row) => row.key === "bike_long_endurance",
-    );
+    const longRideRow = cellRows.find((row) => row.key === "bike_long_endurance");
 
     expect(longRideRow?.status).toBe("duplicate-risk");
-    expect(longRideRow?.duplicate_risk_template_ids).toEqual([
-      "bike-long-a",
-      "bike-long-b",
-    ]);
+    expect(longRideRow?.duplicate_risk_template_ids).toEqual(["bike-long-a", "bike-long-b"]);
   });
 });

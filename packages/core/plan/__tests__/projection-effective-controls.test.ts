@@ -112,16 +112,10 @@ describe("projection effective controls mapping", () => {
       },
     });
 
-    expect(constrained.ramp_caps.max_weekly_tss_ramp_pct).toBeLessThanOrEqual(
-      40,
-    );
-    expect(
-      constrained.ramp_caps.max_weekly_tss_ramp_pct,
-    ).toBeGreaterThanOrEqual(0);
+    expect(constrained.ramp_caps.max_weekly_tss_ramp_pct).toBeLessThanOrEqual(40);
+    expect(constrained.ramp_caps.max_weekly_tss_ramp_pct).toBeGreaterThanOrEqual(0);
     expect(constrained.ramp_caps.max_ctl_ramp_per_week).toBeLessThanOrEqual(12);
-    expect(constrained.ramp_caps.max_ctl_ramp_per_week).toBeGreaterThanOrEqual(
-      0,
-    );
+    expect(constrained.ramp_caps.max_ctl_ramp_per_week).toBeGreaterThanOrEqual(0);
     expect(constrained.optimizer.lookahead_weeks).toBeLessThanOrEqual(
       outcomeBounds.lookahead_weeks.max,
     );

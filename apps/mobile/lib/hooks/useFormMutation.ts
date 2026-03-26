@@ -36,11 +36,11 @@
  * ```
  */
 
-import { showErrorAlert } from "@/lib/utils/formErrors";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { Alert } from "react-native";
 import type { UseFormReturn } from "react-hook-form";
+import { Alert } from "react-native";
+import { showErrorAlert } from "@/lib/utils/formErrors";
 
 // ============================================================================
 // TYPES
@@ -263,12 +263,9 @@ export function useFormMutation<TData = unknown, TVariables = unknown, TError = 
     setError(null);
   }, []);
 
-  const mutate = useCallback(
-    async (variables: TVariables): Promise<void> => {
-      await mutateAsync(variables);
-    },
-    [],
-  );
+  const mutate = useCallback(async (variables: TVariables): Promise<void> => {
+    await mutateAsync(variables);
+  }, []);
 
   const mutateAsync = useCallback(
     async (variables: TVariables): Promise<TData> => {

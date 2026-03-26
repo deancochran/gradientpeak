@@ -13,22 +13,15 @@ const exactAlignmentScenarios = getEnabledSystemPlanContractScenarios().filter(
   (scenario) => scenario.matchType === "exact",
 );
 
-function normalizeExactLaneArtifact(
-  scenario: (typeof exactAlignmentScenarios)[number],
-) {
+function normalizeExactLaneArtifact(scenario: (typeof exactAlignmentScenarios)[number]) {
   const comparison = compareScenarioToReference(scenario);
-  const weeklyLoadTss = comparison.materialized.weeklyActualLoad.map(
-    (week) => week.value,
-  );
-  const missCount = comparison.weeklyComparison.filter(
-    (week) => !week.withinTolerance,
-  ).length;
+  const weeklyLoadTss = comparison.materialized.weeklyActualLoad.map((week) => week.value);
+  const missCount = comparison.weeklyComparison.filter((week) => !week.withinTolerance).length;
   const consecutiveMissPairs = comparison.weeklyComparison
     .slice(1)
     .filter(
       (week, index) =>
-        !week.withinTolerance &&
-        !comparison.weeklyComparison[index]?.withinTolerance,
+        !week.withinTolerance && !comparison.weeklyComparison[index]?.withinTolerance,
     ).length;
 
   return {
@@ -43,11 +36,9 @@ function normalizeExactLaneArtifact(
       feasibilityMode: comparison.reference.feasibility.mode,
       blockGatePass: comparison.blockAbsError <= comparison.blockToleranceTss,
       meanGatePass: comparison.meanAbsError <= comparison.meanToleranceTss,
-      weeklyMissesWithinBudget:
-        missCount <= (EXACT_LANE_MISS_BUDGETS[scenario.key] ?? 0),
+      weeklyMissesWithinBudget: missCount <= (EXACT_LANE_MISS_BUDGETS[scenario.key] ?? 0),
       consecutiveMissPairsWithinBudget:
-        consecutiveMissPairs <=
-        (EXACT_LANE_CONSECUTIVE_MISS_PAIR_BUDGETS[scenario.key] ?? 0),
+        consecutiveMissPairs <= (EXACT_LANE_CONSECUTIVE_MISS_PAIR_BUDGETS[scenario.key] ?? 0),
     },
   };
 }
@@ -55,9 +46,7 @@ function normalizeExactLaneArtifact(
 describe("system training plan exact-lane goldens", () => {
   for (const scenario of exactAlignmentScenarios) {
     it(`${scenario.key} - keeps normalized weekly load and comparison summary stable`, () => {
-      expect(normalizeExactLaneArtifact(scenario)).toEqual(
-        EXACT_LANE_GOLDENS[scenario.key],
-      );
+      expect(normalizeExactLaneArtifact(scenario)).toEqual(EXACT_LANE_GOLDENS[scenario.key]);
     });
   }
 });

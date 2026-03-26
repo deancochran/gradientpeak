@@ -42,13 +42,8 @@ export function ZoneDistributionCard({
         <View className="flex-row items-center justify-between">
           <CardTitle>{title}</CardTitle>
           {showToggle && (
-            <Pressable
-              onPress={toggleDisplayMode}
-              className="px-3 py-1 bg-muted rounded-full"
-            >
-              <Text className="text-xs font-medium">
-                {displayMode === "time" ? "Time" : "%"}
-              </Text>
+            <Pressable onPress={toggleDisplayMode} className="px-3 py-1 bg-muted rounded-full">
+              <Text className="text-xs font-medium">{displayMode === "time" ? "Time" : "%"}</Text>
             </Pressable>
           )}
         </View>

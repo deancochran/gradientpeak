@@ -19,7 +19,7 @@ export interface PowerCurve {
   points: PowerCurvePoint[];
   criticalPower: number; // CP (power sustainable for ~1 hour)
   wPrime: number; // W' (anaerobic work capacity)
-  phenotype: 'sprinter' | 'time-trialist' | 'all-rounder';
+  phenotype: "sprinter" | "time-trialist" | "all-rounder";
 }
 
 /**
@@ -33,7 +33,7 @@ export interface PowerCurve {
  */
 export function calculatePowerCurve(
   powerStream: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): PowerCurvePoint[] {
   const durations = [5, 30, 60, 300, 600, 1200, 1800, 3600]; // seconds
 
@@ -82,13 +82,13 @@ export function analyzePowerCurve(curve: PowerCurvePoint[]): PowerCurve {
   const sprintRatio = p60min > 0 ? p5s / p60min : 0; // High for sprinters
   const enduranceRatio = p5min_val > 0 ? p60min / p5min_val : 0; // High for time-trialists
 
-  let phenotype: 'sprinter' | 'time-trialist' | 'all-rounder';
+  let phenotype: "sprinter" | "time-trialist" | "all-rounder";
   if (sprintRatio > 3.0 && enduranceRatio < 0.85) {
-    phenotype = 'sprinter';
+    phenotype = "sprinter";
   } else if (sprintRatio < 2.5 && enduranceRatio > 0.9) {
-    phenotype = 'time-trialist';
+    phenotype = "time-trialist";
   } else {
-    phenotype = 'all-rounder';
+    phenotype = "all-rounder";
   }
 
   return {
@@ -113,12 +113,12 @@ export interface PaceCurve {
   points: PaceCurvePoint[];
   criticalVelocity: number; // m/s (velocity sustainable for ~1 hour)
   riegelExponent: number; // Performance decay rate
-  runnerType: 'sprinter' | 'middle-distance' | 'endurance';
+  runnerType: "sprinter" | "middle-distance" | "endurance";
   predictedTimes: {
-    '5k': number;
-    '10k': number;
-    'half-marathon': number;
-    'marathon': number;
+    "5k": number;
+    "10k": number;
+    "half-marathon": number;
+    marathon: number;
   };
 }
 
@@ -133,7 +133,7 @@ export interface PaceCurve {
 export function calculatePaceCurve(
   paceStream: number[],
   timestamps: number[],
-  distanceStream: number[]
+  distanceStream: number[],
 ): PaceCurvePoint[] {
   const targetDistances = [400, 800, 1609, 5000, 10000, 21097]; // meters
 
@@ -179,20 +179,20 @@ export function analyzePaceCurve(curve: PaceCurvePoint[]): PaceCurve {
 
   // Predict race times using Riegel formula
   const predictedTimes = {
-    '5k': p5k?.time || predictTime(5000, cv, riegelExponent),
-    '10k': p10k?.time || predictTime(10000, cv, riegelExponent),
-    'half-marathon': predictTime(21097, cv, riegelExponent),
-    'marathon': predictTime(42195, cv, riegelExponent),
+    "5k": p5k?.time || predictTime(5000, cv, riegelExponent),
+    "10k": p10k?.time || predictTime(10000, cv, riegelExponent),
+    "half-marathon": predictTime(21097, cv, riegelExponent),
+    marathon: predictTime(42195, cv, riegelExponent),
   };
 
   // Identify runner type
-  let runnerType: 'sprinter' | 'middle-distance' | 'endurance';
+  let runnerType: "sprinter" | "middle-distance" | "endurance";
   if (riegelExponent > 1.1) {
-    runnerType = 'sprinter';
+    runnerType = "sprinter";
   } else if (riegelExponent < 1.07) {
-    runnerType = 'endurance';
+    runnerType = "endurance";
   } else {
-    runnerType = 'middle-distance';
+    runnerType = "middle-distance";
   }
 
   return {
@@ -212,16 +212,10 @@ export function analyzePaceCurve(curve: PaceCurvePoint[]): PaceCurve {
  * @param riegelExponent - Riegel exponent
  * @returns Predicted time in seconds
  */
-function predictTime(
-  distance: number,
-  criticalVelocity: number,
-  riegelExponent: number
-): number {
+function predictTime(distance: number, criticalVelocity: number, riegelExponent: number): number {
   // Time = Distance / (CV × (Distance/Reference)^(n-1))
   const referenceDistance = 10000;
-  return (
-    distance / (criticalVelocity * Math.pow(distance / referenceDistance, riegelExponent - 1))
-  );
+  return distance / (criticalVelocity * Math.pow(distance / referenceDistance, riegelExponent - 1));
 }
 
 /**
@@ -237,7 +231,7 @@ function findBestPaceForDistance(
   paceStream: number[],
   timestamps: number[],
   distanceStream: number[],
-  targetDistance: number
+  targetDistance: number,
 ): { pace: number; time: number } | null {
   let bestPace = Infinity;
   let bestTime = 0;
@@ -291,7 +285,7 @@ export interface HRCurvePoint {
 export interface HRCurve {
   points: HRCurvePoint[];
   zones: { zone: number; min: number; max: number }[];
-  hrResponse: 'fast' | 'normal' | 'slow';
+  hrResponse: "fast" | "normal" | "slow";
 }
 
 /**
@@ -345,16 +339,16 @@ export function analyzeHRCurve(curve: HRCurvePoint[], maxHR: number): HRCurve {
   const hr1min = sortedCurve.find((p) => p.duration === 60);
   const hr5min = sortedCurve.find((p) => p.duration === 300);
 
-  let hrResponse: 'fast' | 'normal' | 'slow' = 'normal';
+  let hrResponse: "fast" | "normal" | "slow" = "normal";
   if (hr1min && hr5min) {
     const percentOfMax1min = hr1min.hr / maxHR;
     const percentOfMax5min = hr5min.hr / maxHR;
     const diff = percentOfMax5min - percentOfMax1min;
 
     if (diff < 0.05) {
-      hrResponse = 'fast'; // HR reaches near-max quickly
+      hrResponse = "fast"; // HR reaches near-max quickly
     } else if (diff > 0.15) {
-      hrResponse = 'slow'; // Takes time to reach high HR
+      hrResponse = "slow"; // Takes time to reach high HR
     }
   }
 
@@ -380,7 +374,7 @@ export function analyzeHRCurve(curve: HRCurvePoint[], maxHR: number): HRCurve {
 export function findMaxAveragePower(
   powerStream: number[],
   timestamps: number[],
-  durationSeconds: number
+  durationSeconds: number,
 ): { avgPower: number; startIndex: number; endIndex: number } | null {
   if (powerStream.length < 2) return null;
 
@@ -429,7 +423,7 @@ export function findMaxAveragePower(
 function findMaxAverageHR(
   hrStream: number[],
   timestamps: number[],
-  durationSeconds: number
+  durationSeconds: number,
 ): { avgHR: number } | null {
   if (hrStream.length < 2) return null;
 

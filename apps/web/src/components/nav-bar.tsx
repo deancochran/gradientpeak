@@ -1,12 +1,5 @@
 "use client";
 import { Button } from "@repo/ui/components/button";
-import { trpc } from "@/lib/trpc/client";
-import { House, LogOut, Settings } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { CurrentUserAvatar } from "./current-user-avatar";
-import { useAuth } from "./providers/auth-provider";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +8,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@repo/ui/components/dropdown-menu";
+import { House, LogOut, Settings } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { trpc } from "@/lib/trpc/client";
+import { CurrentUserAvatar } from "./current-user-avatar";
+import { useAuth } from "./providers/auth-provider";
+
 const Navbar = () => {
   const router = useRouter();
   const { isAuthenticated, refreshSession } = useAuth();
@@ -41,9 +42,7 @@ const Navbar = () => {
           width={32}
           alt="Logo"
         />
-        <span className="text-lg font-semibold tracking-tighter">
-          GradientPeak
-        </span>
+        <span className="text-lg font-semibold tracking-tighter">GradientPeak</span>
       </div>
 
       <div className="flex gap-2">
@@ -63,11 +62,7 @@ const Navbar = () => {
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuGroup>
                 <DropdownMenuItem asChild>
-                  <Button
-                    asChild
-                    variant="ghost"
-                    className="w-full justify-start  cursor-pointer"
-                  >
+                  <Button asChild variant="ghost" className="w-full justify-start  cursor-pointer">
                     <Link href="/" className="text-popover-foreground">
                       <House />
                       Dashboard
@@ -75,11 +70,7 @@ const Navbar = () => {
                   </Button>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Button
-                    asChild
-                    variant="ghost"
-                    className="w-full justify-start  cursor-pointer"
-                  >
+                  <Button asChild variant="ghost" className="w-full justify-start  cursor-pointer">
                     <Link href="/settings" className="text-popover-foreground">
                       <Settings />
                       Settings

@@ -316,10 +316,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return normalized * normalized * (3 - 2 * normalized);
 }
 
-function interpolateAgeCurve(
-  points: AgeCurvePoint[],
-  age?: number | null,
-): number | undefined {
+function interpolateAgeCurve(points: AgeCurvePoint[], age?: number | null): number | undefined {
   if (age === undefined || age === null || !Number.isFinite(age)) {
     return undefined;
   }
@@ -381,18 +378,13 @@ function interpolateContinuousCurve(
 }
 
 export function isYouthAthlete(age?: number | null): boolean {
-  return (
-    typeof age === "number" && Number.isFinite(age) && age >= 0 && age < 18
-  );
+  return typeof age === "number" && Number.isFinite(age) && age >= 0 && age < 18;
 }
 
 export function resolveNoHistoryStartingPrior(input: {
   age?: number | null;
 }): NoHistoryStartingPrior {
-  const ageKnown =
-    typeof input.age === "number" && Number.isFinite(input.age)
-      ? input.age
-      : null;
+  const ageKnown = typeof input.age === "number" && Number.isFinite(input.age) ? input.age : null;
   const sustainableCtl = getMaxSustainableCTL(ageKnown ?? undefined);
   const startingCtl = Math.round(clamp(sustainableCtl * 0.15, 16, 22));
   const sessionMax = Math.round(
@@ -446,10 +438,7 @@ export function resolveNoHistoryStartingPrior(input: {
       max_single_session_duration_minutes: durationCap,
       is_youth: false,
       age_band: "adult",
-      rationale_codes: [
-        "no_history_shared_prior",
-        "adult_conservative_prior_applied",
-      ],
+      rationale_codes: ["no_history_shared_prior", "adult_conservative_prior_applied"],
     };
   }
 
@@ -460,10 +449,7 @@ export function resolveNoHistoryStartingPrior(input: {
     max_single_session_duration_minutes: 90,
     is_youth: false,
     age_band: "unknown",
-    rationale_codes: [
-      "no_history_shared_prior",
-      "age_unknown_conservative_prior",
-    ],
+    rationale_codes: ["no_history_shared_prior", "age_unknown_conservative_prior"],
   };
 }
 
@@ -502,10 +488,7 @@ export function computeOptimalTsb(durationHours: number | undefined): number {
  * @param distanceKm - Event distance in kilometers
  * @returns Baseline speed in km/h
  */
-export function getPaceBaseline(
-  activityCategory: string,
-  distanceKm: number,
-): number {
+export function getPaceBaseline(activityCategory: string, distanceKm: number): number {
   if (activityCategory === "run") {
     return Number(
       (
@@ -573,10 +556,7 @@ export function computeDynamicFormWeight(daysUntilGoal: number): number {
 
   // Linear interpolation between 14 and 100 days
   const progress = (100 - daysUntilGoal) / (100 - 14);
-  return (
-    FORM_SIGNAL_WEIGHT_MIN +
-    (FORM_SIGNAL_WEIGHT_MAX - FORM_SIGNAL_WEIGHT_MIN) * progress
-  );
+  return FORM_SIGNAL_WEIGHT_MIN + (FORM_SIGNAL_WEIGHT_MAX - FORM_SIGNAL_WEIGHT_MIN) * progress;
 }
 
 /**
@@ -662,16 +642,12 @@ export function getAgeAdjustedRampRateMultiplier(age?: number): number {
  * ATL is a fatigue time constant: higher value means slower fatigue decay
  * (longer recovery window). Female adjustment increases ATL time constant.
  */
-export function getGenderAdjustedFatigueTimeMultiplier(
-  gender?: "male" | "female" | null,
-): number {
+export function getGenderAdjustedFatigueTimeMultiplier(gender?: "male" | "female" | null): number {
   if (gender === "female") return 1.08;
   return 1;
 }
 
-export function getGenderAdjustedRecoveryLoadMultiplier(
-  gender?: "male" | "female" | null,
-): number {
+export function getGenderAdjustedRecoveryLoadMultiplier(gender?: "male" | "female" | null): number {
   if (gender === "female") {
     return 1.04;
   }

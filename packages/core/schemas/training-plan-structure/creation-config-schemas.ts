@@ -16,16 +16,9 @@ export const creationWeekDayEnum = z.enum([
 
 export type CreationWeekDay = z.infer<typeof creationWeekDayEnum>;
 
-export const creationAvailabilityTemplateEnum = z.enum([
-  "low",
-  "moderate",
-  "high",
-  "custom",
-]);
+export const creationAvailabilityTemplateEnum = z.enum(["low", "moderate", "high", "custom"]);
 
-export type CreationAvailabilityTemplate = z.infer<
-  typeof creationAvailabilityTemplateEnum
->;
+export type CreationAvailabilityTemplate = z.infer<typeof creationAvailabilityTemplateEnum>;
 
 export const creationAvailabilityWindowSchema = z
   .object({
@@ -37,9 +30,7 @@ export const creationAvailabilityWindowSchema = z
     path: ["end_minute_of_day"],
   });
 
-export type CreationAvailabilityWindow = z.infer<
-  typeof creationAvailabilityWindowSchema
->;
+export type CreationAvailabilityWindow = z.infer<typeof creationAvailabilityWindowSchema>;
 
 export const creationAvailabilityDaySchema = z.object({
   day: creationWeekDayEnum,
@@ -47,9 +38,7 @@ export const creationAvailabilityDaySchema = z.object({
   max_sessions: z.number().int().min(0).max(3).optional(),
 });
 
-export type CreationAvailabilityDay = z.infer<
-  typeof creationAvailabilityDaySchema
->;
+export type CreationAvailabilityDay = z.infer<typeof creationAvailabilityDaySchema>;
 
 export const creationAvailabilityConfigSchema = z
   .object({
@@ -95,53 +84,30 @@ export const creationAvailabilityConfigSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["days"],
-        message:
-          "Availability config must include exactly one entry per weekday",
+        message: "Availability config must include exactly one entry per weekday",
       });
     }
   });
 
-export type CreationAvailabilityConfig = z.infer<
-  typeof creationAvailabilityConfigSchema
->;
+export type CreationAvailabilityConfig = z.infer<typeof creationAvailabilityConfigSchema>;
 
 export const creationRecentInfluenceSchema = z.object({
   influence_score: z.number().min(-1).max(1),
 });
 
-export type CreationRecentInfluence = z.infer<
-  typeof creationRecentInfluenceSchema
->;
+export type CreationRecentInfluence = z.infer<typeof creationRecentInfluenceSchema>;
 
-export const creationRecentInfluenceActionEnum = z.enum([
-  "accepted",
-  "edited",
-  "disabled",
-]);
+export const creationRecentInfluenceActionEnum = z.enum(["accepted", "edited", "disabled"]);
 
-export type CreationRecentInfluenceAction = z.infer<
-  typeof creationRecentInfluenceActionEnum
->;
+export type CreationRecentInfluenceAction = z.infer<typeof creationRecentInfluenceActionEnum>;
 
-export const creationGoalDifficultyPreferenceEnum = z.enum([
-  "conservative",
-  "balanced",
-  "stretch",
-]);
+export const creationGoalDifficultyPreferenceEnum = z.enum(["conservative", "balanced", "stretch"]);
 
-export type CreationGoalDifficultyPreference = z.infer<
-  typeof creationGoalDifficultyPreferenceEnum
->;
+export type CreationGoalDifficultyPreference = z.infer<typeof creationGoalDifficultyPreferenceEnum>;
 
-export const creationOptimizationProfileEnum = z.enum([
-  "outcome_first",
-  "balanced",
-  "sustainable",
-]);
+export const creationOptimizationProfileEnum = z.enum(["outcome_first", "balanced", "sustainable"]);
 
-export type CreationOptimizationProfile = z.infer<
-  typeof creationOptimizationProfileEnum
->;
+export type CreationOptimizationProfile = z.infer<typeof creationOptimizationProfileEnum>;
 
 export const creationBehaviorControlsV1Schema = z
   .object({
@@ -155,9 +121,7 @@ export const creationBehaviorControlsV1Schema = z
   })
   .strict();
 
-export type CreationBehaviorControlsV1 = z.infer<
-  typeof creationBehaviorControlsV1Schema
->;
+export type CreationBehaviorControlsV1 = z.infer<typeof creationBehaviorControlsV1Schema>;
 
 export const CREATION_MAX_WEEKLY_TSS_RAMP_PCT = 40;
 export const CREATION_MAX_CTL_RAMP_PER_WEEK = 12;
@@ -190,9 +154,7 @@ export const readinessCompositeCalibrationSchema = z
     }
   });
 
-export type ReadinessCompositeCalibration = z.infer<
-  typeof readinessCompositeCalibrationSchema
->;
+export type ReadinessCompositeCalibration = z.infer<typeof readinessCompositeCalibrationSchema>;
 
 export const readinessTimelineCalibrationSchema = z
   .object({
@@ -206,9 +168,7 @@ export const readinessTimelineCalibrationSchema = z
   })
   .strict();
 
-export type ReadinessTimelineCalibration = z.infer<
-  typeof readinessTimelineCalibrationSchema
->;
+export type ReadinessTimelineCalibration = z.infer<typeof readinessTimelineCalibrationSchema>;
 
 export const envelopePenaltyCalibrationSchema = z
   .object({
@@ -218,9 +178,7 @@ export const envelopePenaltyCalibrationSchema = z
   })
   .strict();
 
-export type EnvelopePenaltyCalibration = z.infer<
-  typeof envelopePenaltyCalibrationSchema
->;
+export type EnvelopePenaltyCalibration = z.infer<typeof envelopePenaltyCalibrationSchema>;
 
 export const durabilityPenaltyCalibrationSchema = z
   .object({
@@ -232,9 +190,7 @@ export const durabilityPenaltyCalibrationSchema = z
   })
   .strict();
 
-export type DurabilityPenaltyCalibration = z.infer<
-  typeof durabilityPenaltyCalibrationSchema
->;
+export type DurabilityPenaltyCalibration = z.infer<typeof durabilityPenaltyCalibrationSchema>;
 
 export const noHistoryCalibrationSchema = z
   .object({
@@ -323,9 +279,8 @@ export const trainingPlanCalibrationConfigSchema = z
   })
   .strict();
 
-const partialCalibrationSectionSchema = <TShape extends z.ZodRawShape>(
-  sectionShape: TShape,
-) => z.object(sectionShape).partial().strict();
+const partialCalibrationSectionSchema = <TShape extends z.ZodRawShape>(sectionShape: TShape) =>
+  z.object(sectionShape).partial().strict();
 
 export const trainingPlanCalibrationInputSchema = z
   .object({
@@ -342,36 +297,22 @@ export const trainingPlanCalibrationInputSchema = z
     durability_penalties: partialCalibrationSectionSchema(
       durabilityPenaltyCalibrationSchema.shape,
     ).optional(),
-    no_history: partialCalibrationSectionSchema(
-      noHistoryCalibrationSchema.shape,
-    ).optional(),
-    optimizer: partialCalibrationSectionSchema(
-      optimizerCalibrationSchema.shape,
-    ).optional(),
+    no_history: partialCalibrationSectionSchema(noHistoryCalibrationSchema.shape).optional(),
+    optimizer: partialCalibrationSectionSchema(optimizerCalibrationSchema.shape).optional(),
   })
   .strict();
 
-export type TrainingPlanCalibrationInput = z.infer<
-  typeof trainingPlanCalibrationInputSchema
->;
+export type TrainingPlanCalibrationInput = z.infer<typeof trainingPlanCalibrationInputSchema>;
 
-export type TrainingPlanCalibrationConfig = z.infer<
-  typeof trainingPlanCalibrationConfigSchema
->;
+export type TrainingPlanCalibrationConfig = z.infer<typeof trainingPlanCalibrationConfigSchema>;
 
 export const creationConstraintsSchema = z
   .object({
     hard_rest_days: z.array(creationWeekDayEnum).max(7).default([]),
     min_sessions_per_week: z.number().int().min(0).max(21).optional(),
     max_sessions_per_week: z.number().int().min(0).max(21).optional(),
-    max_single_session_duration_minutes: z
-      .number()
-      .int()
-      .min(20)
-      .max(600)
-      .optional(),
-    goal_difficulty_preference:
-      creationGoalDifficultyPreferenceEnum.default("balanced"),
+    max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
+    goal_difficulty_preference: creationGoalDifficultyPreferenceEnum.default("balanced"),
   })
   .superRefine((data, ctx) => {
     if (
@@ -403,8 +344,7 @@ export const creationConstraintsSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["min_sessions_per_week"],
-        message:
-          "Minimum sessions exceed available training days after hard rest constraints",
+        message: "Minimum sessions exceed available training days after hard rest constraints",
       });
     }
   });
@@ -475,9 +415,7 @@ export const creationProvenanceReferenceTypeEnum = z.enum([
   "user_input",
 ]);
 
-export type CreationProvenanceReferenceType = z.infer<
-  typeof creationProvenanceReferenceTypeEnum
->;
+export type CreationProvenanceReferenceType = z.infer<typeof creationProvenanceReferenceTypeEnum>;
 
 export const creationProvenanceReferenceSchema = z.object({
   type: creationProvenanceReferenceTypeEnum,
@@ -485,9 +423,7 @@ export const creationProvenanceReferenceSchema = z.object({
   label: z.string().min(1).max(140).optional(),
 });
 
-export type CreationProvenanceReference = z.infer<
-  typeof creationProvenanceReferenceSchema
->;
+export type CreationProvenanceReference = z.infer<typeof creationProvenanceReferenceSchema>;
 
 export const creationProvenanceSchema = z.object({
   source: creationValueSourceEnum,
@@ -572,20 +508,16 @@ export const trainingPlanCreationConfigSchema = z
         candidate_steps: 7,
       },
     }),
-    calibration_composite_locks:
-      creationCalibrationCompositeLocksSchema.default({
-        target_attainment_weight: false,
-        envelope_weight: false,
-        durability_weight: false,
-        evidence_weight: false,
-      }),
+    calibration_composite_locks: creationCalibrationCompositeLocksSchema.default({
+      target_attainment_weight: false,
+      envelope_weight: false,
+      durability_weight: false,
+      evidence_weight: false,
+    }),
     locks: creationConfigLocksSchema,
     context_summary: creationContextSummarySchema.optional(),
-    feasibility_safety_summary:
-      creationFeasibilitySafetySummarySchema.optional(),
+    feasibility_safety_summary: creationFeasibilitySafetySummarySchema.optional(),
   })
   .strict();
 
-export type TrainingPlanCreationConfig = z.infer<
-  typeof trainingPlanCreationConfigSchema
->;
+export type TrainingPlanCreationConfig = z.infer<typeof trainingPlanCreationConfigSchema>;

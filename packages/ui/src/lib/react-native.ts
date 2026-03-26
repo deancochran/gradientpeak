@@ -1,3 +1,4 @@
+export type { TextInputProps, ViewProps } from "react-native";
 export {
   Modal,
   Platform,
@@ -7,5 +8,3 @@ export {
   TextInput,
   View,
 } from "react-native";
-
-export type { TextInputProps, ViewProps } from "react-native";

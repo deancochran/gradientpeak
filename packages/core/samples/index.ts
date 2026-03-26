@@ -61,9 +61,7 @@ export const SAMPLE_ACTIVITIES_BY_TYPE = {
 } as const;
 
 // Helper function to get sample activities by type (legacy)
-export function getSampleActivitiesByType(
-  activityType: keyof typeof SAMPLE_ACTIVITIES_BY_TYPE,
-) {
+export function getSampleActivitiesByType(activityType: keyof typeof SAMPLE_ACTIVITIES_BY_TYPE) {
   return SAMPLE_ACTIVITIES_BY_TYPE[activityType] || [];
 }
 

@@ -14,10 +14,7 @@ export function addDaysDateOnlyUtc(value: string, days: number): string {
   return formatDateOnlyUtc(date);
 }
 
-export function diffDateOnlyUtcDays(
-  startDate: string,
-  endDate: string,
-): number {
+export function diffDateOnlyUtcDays(startDate: string, endDate: string): number {
   const start = parseDateOnlyUtc(startDate).getTime();
   const end = parseDateOnlyUtc(endDate).getTime();
   return Math.floor((end - start) / DAY_MS);

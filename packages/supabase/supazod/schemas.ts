@@ -7,21 +7,11 @@
 import { z } from "zod";
 import { type Json } from "./../database.types";
 
-export const publicActivityCategorySchema = z.enum([
-  "run",
-  "bike",
-  "swim",
-  "strength",
-  "other",
-]);
+export const publicActivityCategorySchema = z.enum(["run", "bike", "swim", "strength", "other"]);
 
 export const publicEffortTypeSchema = z.enum(["power", "speed"]);
 
-export const publicEventStatusSchema = z.enum([
-  "scheduled",
-  "completed",
-  "cancelled",
-]);
+export const publicEventStatusSchema = z.enum(["scheduled", "completed", "cancelled"]);
 
 export const publicEventTypeSchema = z.enum([
   "planned_activity",

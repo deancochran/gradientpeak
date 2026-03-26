@@ -27,8 +27,6 @@ export const fireEvent = Object.assign(
 
 export const screen = new Proxy({} as TestingLibraryNative["screen"], {
   get(_target, property) {
-    return getTestingLibraryNative().screen[
-      property as keyof TestingLibraryNative["screen"]
-    ];
+    return getTestingLibraryNative().screen[property as keyof TestingLibraryNative["screen"]];
   },
 });

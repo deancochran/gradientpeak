@@ -7,10 +7,7 @@ import type {
   WizardActivityInput,
   WizardFitnessInput,
 } from "./domain-schemas";
-import {
-  intensityDistributionSchema,
-  trainingPhaseEnum,
-} from "./domain-schemas";
+import { intensityDistributionSchema, trainingPhaseEnum } from "./domain-schemas";
 
 export const INTENSITY_PRESETS: Record<
   "polarized" | "pyramidal" | "threshold",
@@ -90,9 +87,7 @@ export const EXPERIENCE_LEVELS = {
 export function calculateWeeks(startDate: string, endDate: string): number {
   const start = new Date(startDate);
   const end = new Date(endDate);
-  const days = Math.ceil(
-    (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000),
-  );
+  const days = Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
   return Math.ceil(days / 7);
 }
 
@@ -108,16 +103,11 @@ export function addDays(dateString: string, days: number): string {
   return date.toISOString().split("T")[0] || "";
 }
 
-export function calculateWeeksUntil(
-  dateString: string,
-  fromDate?: string,
-): number {
+export function calculateWeeksUntil(dateString: string, fromDate?: string): number {
   const target = new Date(dateString);
   const from = fromDate ? new Date(fromDate) : new Date();
   from.setHours(0, 0, 0, 0);
-  const days = Math.ceil(
-    (target.getTime() - from.getTime()) / (24 * 60 * 60 * 1000),
-  );
+  const days = Math.ceil((target.getTime() - from.getTime()) / (24 * 60 * 60 * 1000));
   return Math.ceil(days / 7);
 }
 
@@ -125,10 +115,7 @@ export function estimateCTLFromWeeklyTSS(weeklyTSS: number): number {
   return Math.round(weeklyTSS / 7);
 }
 
-export function estimateCTLFromWeeklyHours(
-  weeklyHours: number,
-  avgIntensity: number = 60,
-): number {
+export function estimateCTLFromWeeklyHours(weeklyHours: number, avgIntensity: number = 60): number {
   const weeklyTSS = weeklyHours * avgIntensity;
   return estimateCTLFromWeeklyTSS(weeklyTSS);
 }
@@ -205,8 +192,7 @@ export function validatePlanFeasibility(plan: PeriodizedPlan): {
   const warnings: string[] = [];
 
   const sortedBlocks = [...plan.blocks].sort(
-    (a, b) =>
-      new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
+    (a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
   );
 
   for (let i = 0; i < sortedBlocks.length - 1; i++) {
@@ -228,14 +214,11 @@ export function validatePlanFeasibility(plan: PeriodizedPlan): {
   if (plan.fitness_progression.target_ctl_at_peak) {
     const totalWeeks = calculateWeeks(plan.start_date, plan.end_date);
     const ctlIncrease =
-      plan.fitness_progression.target_ctl_at_peak -
-      plan.fitness_progression.starting_ctl;
+      plan.fitness_progression.target_ctl_at_peak - plan.fitness_progression.starting_ctl;
     const weeklyIncrease = ctlIncrease / totalWeeks;
 
     if (weeklyIncrease > 8) {
-      warnings.push(
-        `CTL increase of ${weeklyIncrease.toFixed(1)} per week may be too aggressive`,
-      );
+      warnings.push(`CTL increase of ${weeklyIncrease.toFixed(1)} per week may be too aggressive`);
     }
   }
 

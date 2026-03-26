@@ -1,5 +1,5 @@
 import { Text } from "@repo/ui/components/text";
-import { Dimensions, View, useColorScheme } from "react-native";
+import { Dimensions, useColorScheme, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import type { InsightTimelinePoint } from "@/components/charts/PlanVsActualChart";
 
@@ -26,19 +26,12 @@ function boundaryTint(boundary?: string) {
   };
 }
 
-export function PlanAdherenceMiniChart({
-  timeline,
-}: PlanAdherenceMiniChartProps) {
+export function PlanAdherenceMiniChart({ timeline }: PlanAdherenceMiniChartProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const width = Math.max(
-    130,
-    Math.floor((Dimensions.get("window").width - 52) / 2),
-  );
+  const width = Math.max(130, Math.floor((Dimensions.get("window").width - 52) / 2));
 
-  const adherence = timeline.map((point) =>
-    Math.max(0, Math.min(100, point.adherence_score)),
-  );
+  const adherence = timeline.map((point) => Math.max(0, Math.min(100, point.adherence_score)));
   const start = adherence[0] ?? 0;
   const end = adherence[adherence.length - 1] ?? 0;
   const latestBoundary = timeline[timeline.length - 1]?.boundary_state;
@@ -80,13 +73,9 @@ export function PlanAdherenceMiniChart({
       )}
 
       <View className="flex-row items-center justify-between mt-2">
-        <Text className="text-[11px] text-muted-foreground">
-          {Math.round(start)}%
-        </Text>
+        <Text className="text-[11px] text-muted-foreground">{Math.round(start)}%</Text>
         <View className={`px-2 py-0.5 rounded-full ${latestTint.container}`}>
-          <Text className={`text-[10px] font-medium ${latestTint.text}`}>
-            {Math.round(end)}%
-          </Text>
+          <Text className={`text-[10px] font-medium ${latestTint.text}`}>{Math.round(end)}%</Text>
         </View>
       </View>
     </View>

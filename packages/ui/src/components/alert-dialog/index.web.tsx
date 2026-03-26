@@ -12,26 +12,18 @@ function buttonVariants({
   variant = "default",
 }: {
   className?: string;
-  variant?:
-    | "default"
-    | "destructive"
-    | "outline"
-    | "secondary"
-    | "ghost"
-    | "link";
+  variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
 } = {}) {
   return cn(
     "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 aria-invalid:border-destructive dark:aria-invalid:ring-destructive/40 h-9 px-4 py-2 has-[>svg]:px-3",
-    variant === "default" &&
-      "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
+    variant === "default" && "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
     variant === "destructive" &&
       "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
     variant === "outline" &&
       "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
     variant === "secondary" &&
       "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
-    variant === "ghost" &&
-      "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+    variant === "ghost" && "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
     variant === "link" && "text-primary underline-offset-4 hover:underline",
     className,
   );
@@ -56,10 +48,7 @@ function alertDialogHeaderVariants(className?: string) {
 }
 
 function alertDialogFooterVariants(className?: string) {
-  return cn(
-    "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
-    className,
-  );
+  return cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className);
 }
 
 function alertDialogTitleVariants(className?: string) {
@@ -70,26 +59,16 @@ function alertDialogDescriptionVariants(className?: string) {
   return cn("text-muted-foreground text-sm", className);
 }
 
-function AlertDialog(
-  props: React.ComponentProps<typeof AlertDialogPrimitive.Root>,
-) {
+function AlertDialog(props: React.ComponentProps<typeof AlertDialogPrimitive.Root>) {
   return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
 }
 
-function AlertDialogTrigger(
-  props: React.ComponentProps<typeof AlertDialogPrimitive.Trigger>,
-) {
-  return (
-    <AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props} />
-  );
+function AlertDialogTrigger(props: React.ComponentProps<typeof AlertDialogPrimitive.Trigger>) {
+  return <AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props} />;
 }
 
-function AlertDialogPortal(
-  props: React.ComponentProps<typeof AlertDialogPrimitive.Portal>,
-) {
-  return (
-    <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />
-  );
+function AlertDialogPortal(props: React.ComponentProps<typeof AlertDialogPrimitive.Portal>) {
+  return <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />;
 }
 
 function AlertDialogOverlay({
@@ -112,8 +91,7 @@ function AlertDialogContent({
   role,
   testId,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Content> &
-  AlertDialogContentTestProps) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Content> & AlertDialogContentTestProps) {
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />
@@ -127,10 +105,7 @@ function AlertDialogContent({
   );
 }
 
-function AlertDialogHeader({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
+function AlertDialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-dialog-header"
@@ -140,10 +115,7 @@ function AlertDialogHeader({
   );
 }
 
-function AlertDialogFooter({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
+function AlertDialogFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="alert-dialog-footer"
@@ -183,12 +155,7 @@ function AlertDialogAction({
   className,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
-  return (
-    <AlertDialogPrimitive.Action
-      className={cn(buttonVariants(), className)}
-      {...props}
-    />
-  );
+  return <AlertDialogPrimitive.Action className={cn(buttonVariants(), className)} {...props} />;
 }
 
 function AlertDialogCancel({

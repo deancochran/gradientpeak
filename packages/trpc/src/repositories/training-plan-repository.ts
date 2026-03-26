@@ -12,12 +12,8 @@ export type CreatedTrainingPlanRecord = {
 } & Record<string, unknown>;
 
 export interface TrainingPlanRepository {
-  createTrainingPlan(
-    input: CreateTrainingPlanRecordInput,
-  ): Promise<CreatedTrainingPlanRecord>;
-  getPriorInferredStateSnapshot(
-    profileId: string,
-  ): Promise<InferredStateSnapshot | null>;
+  createTrainingPlan(input: CreateTrainingPlanRecordInput): Promise<CreatedTrainingPlanRecord>;
+  getPriorInferredStateSnapshot(profileId: string): Promise<InferredStateSnapshot | null>;
   persistInferredStateSnapshot(input: {
     profileId: string;
     inferredStateSnapshot: InferredStateSnapshot;

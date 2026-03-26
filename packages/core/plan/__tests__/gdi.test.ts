@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  computeGoalGdi,
-  computePlanGdi,
-  mapGdiToFeasibilityBand,
-} from "../scoring/gdi";
+import { computeGoalGdi, computePlanGdi, mapGdiToFeasibilityBand } from "../scoring/gdi";
 
 describe("gdi", () => {
   it("maps boundary bands correctly", () => {
@@ -105,8 +101,6 @@ describe("gdi", () => {
     ]);
 
     expect(plan.gdi).toBeGreaterThan(0.85);
-    expect(["nearly_impossible", "infeasible"]).toContain(
-      plan.feasibility_band,
-    );
+    expect(["nearly_impossible", "infeasible"]).toContain(plan.feasibility_band);
   });
 });

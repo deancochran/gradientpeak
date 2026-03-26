@@ -2,8 +2,7 @@ import * as React from "react";
 
 jest.mock("@rn-primitives/slot", () => {
   return {
-    Text: (props: any) =>
-      React.createElement("Slot.Text", props, props.children),
+    Text: (props: any) => React.createElement("Slot.Text", props, props.children),
   };
 });
 
@@ -22,12 +21,8 @@ describe("Card native", () => {
       </Card>,
     );
 
-    expect(
-      getByLabelText(cardFixtures.profile.accessibilityLabel),
-    ).toBeTruthy();
-    expect(getByTestId(cardFixtures.profile.testId).props.testID).toBe(
-      cardFixtures.profile.testId,
-    );
+    expect(getByLabelText(cardFixtures.profile.accessibilityLabel)).toBeTruthy();
+    expect(getByTestId(cardFixtures.profile.testId).props.testID).toBe(cardFixtures.profile.testId);
     expect(getByText(cardFixtures.profile.title)).toBeTruthy();
   });
 });

@@ -5,13 +5,13 @@
  * Used for weight-adjusted TSS calculations and recovery tracking.
  */
 
-import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   createProfileMetricInputSchema,
-  updateProfileMetricInputSchema,
   profileMetricTypeSchema,
+  updateProfileMetricInputSchema,
 } from "@repo/core/schemas/profile-metrics";
+import { z } from "zod";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 export const profileMetricsRouter = createTRPCRouter({
   /**
@@ -120,9 +120,7 @@ export const profileMetricsRouter = createTRPCRouter({
       const { supabase, session } = ctx;
 
       if (input.profile_id !== session.user.id) {
-        throw new Error(
-          "Unauthorized: Cannot create metrics for other profiles",
-        );
+        throw new Error("Unauthorized: Cannot create metrics for other profiles");
       }
 
       const { data, error } = await supabase

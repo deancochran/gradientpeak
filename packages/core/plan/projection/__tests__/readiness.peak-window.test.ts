@@ -9,8 +9,8 @@ import { describe, expect, it } from "vitest";
 import { computeProjectionPointReadinessScores } from "../readiness";
 import {
   createMockGoal,
-  createTestScenario,
   createRaceTarget,
+  createTestScenario,
   RACE_PRESETS,
 } from "./readiness.test-utils";
 

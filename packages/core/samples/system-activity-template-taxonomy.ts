@@ -82,17 +82,15 @@ export type SystemActivityTemplateProgressionLevel =
   | "race_specific"
   | "support";
 
-export type SystemActivityTemplateRecoveryCostBand =
-  | "low"
-  | "moderate"
-  | "high";
+export type SystemActivityTemplateRecoveryCostBand = "low" | "moderate" | "high";
 
 export interface SystemActivityTemplateSourceMetadata {
   source_file: string;
   execution_context: SystemActivityTemplateExecutionContext;
 }
 
-export interface SystemActivityTemplateTaxonomyMetadata extends SystemActivityTemplateSourceMetadata {
+export interface SystemActivityTemplateTaxonomyMetadata
+  extends SystemActivityTemplateSourceMetadata {
   session_archetype: SystemActivityTemplateArchetype;
   training_intent: SystemActivityTemplateTrainingIntent;
   intensity_family: SystemActivityTemplateIntensityFamily;
@@ -101,18 +99,12 @@ export interface SystemActivityTemplateTaxonomyMetadata extends SystemActivityTe
 }
 
 export type SystemActivityTemplateTaxonomyOverride = Partial<
-  Omit<
-    SystemActivityTemplateTaxonomyMetadata,
-    "source_file" | "execution_context"
-  >
+  Omit<SystemActivityTemplateTaxonomyMetadata, "source_file" | "execution_context">
 >;
 
-export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_STRATEGY =
-  "hybrid-derived-plus-sidecar" as const;
+export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_STRATEGY = "hybrid-derived-plus-sidecar" as const;
 
-function toNormalizedTemplateId(
-  template: RecordingServiceActivityPlan,
-): string {
+function toNormalizedTemplateId(template: RecordingServiceActivityPlan): string {
   return normalizeSystemActivityTemplateId({
     id: template.id ?? undefined,
     activityCategory: template.activity_category ?? "other",
@@ -120,9 +112,7 @@ function toNormalizedTemplateId(
   });
 }
 
-function estimateTemplateDurationSeconds(
-  template: RecordingServiceActivityPlan,
-): number {
+function estimateTemplateDurationSeconds(template: RecordingServiceActivityPlan): number {
   const paceSecondsPerKm =
     template.activity_category === "bike"
       ? 180
@@ -210,9 +200,7 @@ function deriveOtherArchetype(
     return "strength_support";
   }
   if (template.activity_category === "swim") {
-    return includesAny(name, ["technique", "drill"])
-      ? "swim_technique"
-      : "swim_endurance";
+    return includesAny(name, ["technique", "drill"]) ? "swim_technique" : "swim_endurance";
   }
   if (includesAny(name, ["mobility", "walk", "recovery"])) {
     return "mixed_support";
@@ -339,10 +327,7 @@ function deriveRecoveryCostBand(input: {
   intensityFamily: SystemActivityTemplateIntensityFamily;
   durationSeconds: number;
 }): SystemActivityTemplateRecoveryCostBand {
-  if (
-    input.intensityFamily === "support" ||
-    input.intensityFamily === "recovery"
-  ) {
+  if (input.intensityFamily === "support" || input.intensityFamily === "recovery") {
     return "low";
   }
 
@@ -502,14 +487,10 @@ export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES: Readonly<
 export function getSystemActivityTemplateSourceMetadata(
   template: RecordingServiceActivityPlan,
 ): SystemActivityTemplateSourceMetadata {
-  const metadata = SYSTEM_ACTIVITY_TEMPLATE_SOURCE_INDEX.get(
-    toNormalizedTemplateId(template),
-  );
+  const metadata = SYSTEM_ACTIVITY_TEMPLATE_SOURCE_INDEX.get(toNormalizedTemplateId(template));
 
   if (!metadata) {
-    throw new Error(
-      `Missing system activity-template source metadata for ${template.name}`,
-    );
+    throw new Error(`Missing system activity-template source metadata for ${template.name}`);
   }
 
   return metadata;
@@ -534,8 +515,7 @@ export function classifySystemActivityTemplate(
     intensityFamily,
     durationSeconds,
   });
-  const overrides =
-    SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES[normalizedTemplateId] ?? {};
+  const overrides = SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES[normalizedTemplateId] ?? {};
 
   return {
     ...sourceMetadata,

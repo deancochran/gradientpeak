@@ -26,9 +26,7 @@ export function ScheduleStrip({ schedule, onPressActivity }: ScheduleStripProps)
   return (
     <View className="space-y-3">
       <View className="flex-row items-center justify-between px-1">
-        <Text className="text-lg font-semibold text-foreground">
-          Upcoming Schedule
-        </Text>
+        <Text className="text-lg font-semibold text-foreground">Upcoming Schedule</Text>
         <Text className="text-sm text-blue-500">View Calendar</Text>
       </View>
 
@@ -48,9 +46,7 @@ export function ScheduleStrip({ schedule, onPressActivity }: ScheduleStripProps)
               key={item.id}
               onPress={() => onPressActivity(item.id)}
               className={`w-28 p-3 rounded-xl border ${
-                isItemToday
-                  ? "bg-primary/10 border-primary"
-                  : "bg-card border-border"
+                isItemToday ? "bg-primary/10 border-primary" : "bg-card border-border"
               } space-y-2`}
             >
               {/* Date Header */}
@@ -63,9 +59,7 @@ export function ScheduleStrip({ schedule, onPressActivity }: ScheduleStripProps)
                   >
                     {dayName}
                   </Text>
-                  <Text className="text-lg font-bold text-foreground">
-                    {dayNum}
-                  </Text>
+                  <Text className="text-lg font-bold text-foreground">{dayNum}</Text>
                 </View>
                 {item.isCompleted ? (
                   <View className="bg-green-500/10 p-1 rounded-full">
@@ -75,9 +69,7 @@ export function ScheduleStrip({ schedule, onPressActivity }: ScheduleStripProps)
                   <View className="p-1">
                     <Circle
                       size={12}
-                      className={
-                        isItemToday ? "text-primary" : "text-muted-foreground"
-                      }
+                      className={isItemToday ? "text-primary" : "text-muted-foreground"}
                     />
                   </View>
                 )}
@@ -85,10 +77,7 @@ export function ScheduleStrip({ schedule, onPressActivity }: ScheduleStripProps)
 
               {/* Activity Info */}
               <View>
-                <Text
-                  numberOfLines={1}
-                  className="text-sm font-semibold text-foreground"
-                >
+                <Text numberOfLines={1} className="text-sm font-semibold text-foreground">
                   {item.activityName}
                 </Text>
                 <Text className="text-xs text-muted-foreground capitalize">

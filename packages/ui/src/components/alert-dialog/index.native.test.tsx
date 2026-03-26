@@ -15,17 +15,11 @@ describe("AlertDialog native", () => {
       <AlertDialog open>
         <AlertDialogContent testId="confirm-delete-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle testID="confirm-delete-title">
-              Delete workout
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle testID="confirm-delete-title">Delete workout</AlertDialogTitle>
+            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction testID="confirm-delete-action">
-              Delete
-            </AlertDialogAction>
+            <AlertDialogAction testID="confirm-delete-action">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>,

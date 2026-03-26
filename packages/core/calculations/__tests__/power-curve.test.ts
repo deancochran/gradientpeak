@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   derivePowerCurveFromFTP,
-  estimateWPrime,
   estimatePowerForDuration,
+  estimateWPrime,
   STANDARD_POWER_DURATIONS,
 } from "../power-curve";
 
@@ -69,12 +69,8 @@ describe("derivePowerCurveFromFTP", () => {
   });
 
   it("should throw error for invalid FTP", () => {
-    expect(() => derivePowerCurveFromFTP(0)).toThrow(
-      "FTP must be greater than 0",
-    );
-    expect(() => derivePowerCurveFromFTP(-100)).toThrow(
-      "FTP must be greater than 0",
-    );
+    expect(() => derivePowerCurveFromFTP(0)).toThrow("FTP must be greater than 0");
+    expect(() => derivePowerCurveFromFTP(-100)).toThrow("FTP must be greater than 0");
   });
 
   it("should throw error for negative W'", () => {

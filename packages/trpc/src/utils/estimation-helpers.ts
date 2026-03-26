@@ -2,15 +2,8 @@
  * Helper functions for integrating TSS estimation into tRPC endpoints
  */
 
-import type {
-  PublicActivityPlansRow,
-  PublicActivityRoutesRow,
-} from "@repo/supabase";
-import {
-  buildEstimationContext,
-  estimateActivity,
-  estimateMetrics,
-} from "@repo/core/estimation";
+import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
+import type { PublicActivityPlansRow, PublicActivityRoutesRow } from "@repo/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 async function getEstimationProfileInputs(
@@ -25,15 +18,9 @@ async function getEstimationProfileInputs(
   weight_kg?: number | null;
   threshold_pace_seconds_per_km?: number | null;
 }> {
-  const ninetyDaysAgoIso = new Date(
-    Date.now() - 90 * 24 * 60 * 60 * 1000,
-  ).toISOString();
+  const ninetyDaysAgoIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("dob")
-    .eq("id", userId)
-    .single();
+  const { data: profile } = await supabase.from("profiles").select("dob").eq("id", userId).single();
 
   const { data: efforts } = await supabase
     .from("activity_efforts")
@@ -74,9 +61,7 @@ async function getEstimationProfileInputs(
     )
     .sort((a, b) => b.value - a.value)[0];
 
-  const ftp = bikePower20mEffort
-    ? Math.round(bikePower20mEffort.value * 0.95)
-    : null;
+  const ftp = bikePower20mEffort ? Math.round(bikePower20mEffort.value * 0.95) : null;
 
   let thresholdPaceSecondsPerKm: number | null = null;
   if (runSpeed20mEffort && runSpeed20mEffort.value > 0) {
@@ -271,8 +256,7 @@ export async function addEstimationToPlans(
   userId: string,
 ): Promise<ActivityPlanWithEstimation[]> {
   const normalizedPlans = plans.filter(
-    (plan): plan is PublicActivityPlansRow =>
-      !!plan && typeof plan === "object",
+    (plan): plan is PublicActivityPlansRow => !!plan && typeof plan === "object",
   );
 
   if (normalizedPlans.length === 0) return [];

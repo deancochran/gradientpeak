@@ -27,10 +27,7 @@ function cardDescriptionClasses(className?: string) {
 }
 
 function cardActionClasses(className?: string) {
-  return cn(
-    "col-start-2 row-span-2 row-start-1 self-start justify-self-end",
-    className,
-  );
+  return cn("col-start-2 row-span-2 row-start-1 self-start justify-self-end", className);
 }
 
 function cardContentClasses(className?: string) {
@@ -167,12 +164,4 @@ function CardFooter({
   );
 }
 
-export {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-};
+export { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle };

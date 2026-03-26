@@ -30,9 +30,7 @@ function createSupabaseMock(queryMap: QueryMap) {
     const index = counters.get(table) ?? 0;
     counters.set(table, index + 1);
 
-    return (
-      entry[index] ?? entry[entry.length - 1] ?? { data: null, error: null }
-    );
+    return entry[index] ?? entry[entry.length - 1] ?? { data: null, error: null };
   };
 
   const client = {

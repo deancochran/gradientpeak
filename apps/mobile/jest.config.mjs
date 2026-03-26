@@ -17,6 +17,7 @@ export default {
     customExportConditions: ["react-native"],
   },
   testMatch: ["<rootDir>/**/*.jest.test.ts", "<rootDir>/**/*.jest.test.tsx"],
+  transformIgnorePatterns: ["node_modules/(?!(superjson|copy-anything|is-what)/)"],
   transform: {
     "^.+\\.(t|j)sx?$": [
       "@swc/jest",

@@ -16,9 +16,7 @@ export interface DerivedPlanTimeline {
 /**
  * Derives the effective training plan timeline from goals and optional explicit start date.
  */
-export function derivePlanTimeline(
-  input: DerivePlanTimelineInput,
-): DerivedPlanTimeline {
+export function derivePlanTimeline(input: DerivePlanTimelineInput): DerivedPlanTimeline {
   const endDate = getLatestGoalDate(input.goals);
   const fallbackStartDate = resolveTodayDateOnly(input.today_date);
   const startDate = input.plan_start_date ?? fallbackStartDate;
@@ -35,12 +33,8 @@ export function derivePlanTimeline(
   };
 }
 
-export function getLatestGoalDate(
-  goals: Array<Pick<TrainingGoal, "target_date">>,
-): string {
-  const sorted = [...goals].sort((a, b) =>
-    a.target_date.localeCompare(b.target_date),
-  );
+export function getLatestGoalDate(goals: Array<Pick<TrainingGoal, "target_date">>): string {
+  const sorted = [...goals].sort((a, b) => a.target_date.localeCompare(b.target_date));
   const latest = sorted[sorted.length - 1];
   if (!latest) {
     throw new Error("At least one goal is required");

@@ -63,25 +63,16 @@ function Tabs({
   role,
   testId,
   ...props
-}: TabsPrimitive.RootProps &
-  React.RefAttributes<TabsPrimitive.RootRef> &
-  TabsTestProps) {
+}: TabsPrimitive.RootProps & React.RefAttributes<TabsPrimitive.RootRef> & TabsTestProps) {
   const nativeTestProps = getNativeTestProps({
     accessibilityLabel,
     id,
     role,
     testId,
-  }) as Pick<
-    TabsPrimitive.RootProps,
-    "accessibilityLabel" | "nativeID" | "role" | "testID"
-  >;
+  }) as Pick<TabsPrimitive.RootProps, "accessibilityLabel" | "nativeID" | "role" | "testID">;
 
   return (
-    <TabsPrimitive.Root
-      className={tabsRootVariants(className)}
-      {...nativeTestProps}
-      {...props}
-    />
+    <TabsPrimitive.Root className={tabsRootVariants(className)} {...nativeTestProps} {...props} />
   );
 }
 
@@ -93,18 +84,13 @@ function TabsList({
   testId,
   variant = "default",
   ...props
-}: TabsPrimitive.ListProps &
-  React.RefAttributes<TabsPrimitive.ListRef> &
-  TabsListOptions) {
+}: TabsPrimitive.ListProps & React.RefAttributes<TabsPrimitive.ListRef> & TabsListOptions) {
   const nativeTestProps = getNativeTestProps({
     accessibilityLabel,
     id,
     role,
     testId,
-  }) as Pick<
-    TabsPrimitive.ListProps,
-    "accessibilityLabel" | "nativeID" | "role" | "testID"
-  >;
+  }) as Pick<TabsPrimitive.ListProps, "accessibilityLabel" | "nativeID" | "role" | "testID">;
 
   return (
     <TabsPrimitive.List
@@ -132,10 +118,7 @@ function TabsTrigger({
     id,
     role,
     testId,
-  }) as Pick<
-    TabsPrimitive.TriggerProps,
-    "accessibilityLabel" | "nativeID" | "role" | "testID"
-  >;
+  }) as Pick<TabsPrimitive.TriggerProps, "accessibilityLabel" | "nativeID" | "role" | "testID">;
 
   return (
     <TextClassContext.Provider value={tabsTriggerTextVariants(active)}>
@@ -167,10 +150,7 @@ function TabsContent({
     id,
     role,
     testId,
-  }) as Pick<
-    TabsPrimitive.ContentProps,
-    "accessibilityLabel" | "nativeID" | "role" | "testID"
-  >;
+  }) as Pick<TabsPrimitive.ContentProps, "accessibilityLabel" | "nativeID" | "role" | "testID">;
 
   return (
     <TabsPrimitive.Content

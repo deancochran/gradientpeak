@@ -8,11 +8,7 @@ interface MicroChartProps {
   height?: number;
 }
 
-export function MicroLineChart({
-  data,
-  color = "#3b82f6",
-  height = 60,
-}: MicroChartProps) {
+export function MicroLineChart({ data, color = "#3b82f6", height = 60 }: MicroChartProps) {
   if (data.length === 0) return null;
 
   const width = 200;
@@ -25,8 +21,7 @@ export function MicroLineChart({
 
   const points = data.map((value, index) => {
     const x = (index / (data.length - 1)) * (width - padding * 2) + padding;
-    const y =
-      height - ((value - min) / range) * (height - padding * 2) - padding;
+    const y = height - ((value - min) / range) * (height - padding * 2) - padding;
     return { x, y };
   });
 
@@ -60,11 +55,7 @@ interface MicroBarChartProps {
   height?: number;
 }
 
-export function MicroBarChart({
-  data,
-  color = "#10b981",
-  height = 60,
-}: MicroBarChartProps) {
+export function MicroBarChart({ data, color = "#10b981", height = 60 }: MicroBarChartProps) {
   if (data.length === 0) return null;
 
   const width = 200;

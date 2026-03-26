@@ -17,10 +17,7 @@
  * @param avgHeartRate - Average Heart Rate (bpm).
  * @returns Efficiency Factor (unitless or m/s/bpm).
  */
-export function calculateEfficiencyFactor(
-  normalizedMetric: number,
-  avgHeartRate: number,
-): number {
+export function calculateEfficiencyFactor(normalizedMetric: number, avgHeartRate: number): number {
   if (avgHeartRate <= 0) return 0;
   return normalizedMetric / avgHeartRate;
 }

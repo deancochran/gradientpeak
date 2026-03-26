@@ -1,33 +1,19 @@
 import type {
-  CapacityEnvelopeResult,
-  EvidenceState,
-} from "./capacity-envelope";
-import type {
-  TrainingPlanCalibrationConfig,
   GoalTargetV2,
+  TrainingPlanCalibrationConfig,
 } from "../../schemas/training_plan_structure";
 import {
-  computePostEventFatiguePenalty,
-  computeEventRecoveryProfile,
-} from "./event-recovery";
-import {
-  READINESS_TIMELINE,
-  computeOptimalTsb,
   computeDynamicFormWeight,
+  computeOptimalTsb,
+  READINESS_TIMELINE,
 } from "../calibration-constants";
+import type { CapacityEnvelopeResult, EvidenceState } from "./capacity-envelope";
+import { computeEventRecoveryProfile, computePostEventFatiguePenalty } from "./event-recovery";
 
-type ProjectionMicrocyclePattern =
-  | "ramp"
-  | "deload"
-  | "taper"
-  | "event"
-  | "recovery";
+type ProjectionMicrocyclePattern = "ramp" | "deload" | "taper" | "event" | "recovery";
 
 export type ReadinessBand = "low" | "medium" | "high";
-export type LowReadinessLimiterMode =
-  | "timeline_limited"
-  | "capacity_limited"
-  | "mixed_limiters";
+export type LowReadinessLimiterMode = "timeline_limited" | "capacity_limited" | "mixed_limiters";
 
 export interface ProjectionDemandGap {
   required_weekly_tss_target: number;
@@ -146,8 +132,7 @@ export function computeDurabilityScore(input: {
   }
 
   const mean =
-    input.weekly_tss.reduce((sum, value) => sum + Math.max(0, value), 0) /
-    input.weekly_tss.length;
+    input.weekly_tss.reduce((sum, value) => sum + Math.max(0, value), 0) / input.weekly_tss.length;
   const variance =
     input.weekly_tss.reduce((sum, value) => {
       const delta = Math.max(0, value) - mean;
@@ -168,10 +153,8 @@ export function computeDurabilityScore(input: {
 
   const monotonyPenalty =
     clamp01((monotony - monotonyThreshold) / Math.max(0.1, monotonyScale)) * 34;
-  const strainPenalty =
-    clamp01((strain - strainThreshold) / Math.max(1, strainScale)) * 28;
-  const deloadDebtPenalty =
-    clamp01(deloadDebtWeeks / Math.max(0.5, deloadDebtScale)) * 22;
+  const strainPenalty = clamp01((strain - strainThreshold) / Math.max(1, strainScale)) * 28;
+  const deloadDebtPenalty = clamp01(deloadDebtWeeks / Math.max(0.5, deloadDebtScale)) * 22;
   return clampScore(100 - monotonyPenalty - strainPenalty - deloadDebtPenalty);
 }
 
@@ -191,8 +174,7 @@ export function computeCompositeReadiness(
     evidence_score: evidenceScore,
     evidence_state: input.evidence_state,
   });
-  const effectiveEvidenceContribution =
-    evidenceScore * (0.3 + evidenceSupport * 0.4);
+  const effectiveEvidenceContribution = evidenceScore * (0.3 + evidenceSupport * 0.4);
 
   const readinessRaw =
     targetAttainmentScore * targetWeight +
@@ -201,8 +183,7 @@ export function computeCompositeReadiness(
     effectiveEvidenceContribution * evidenceWeight;
   const readinessScore = clampScore(readinessRaw);
 
-  const baseConfidence =
-    evidenceScore * 0.62 + envelopeScore * 0.24 + durabilityScore * 0.14;
+  const baseConfidence = evidenceScore * 0.62 + envelopeScore * 0.24 + durabilityScore * 0.14;
   const evidenceCap = Math.round(58 + smoothstep01(evidenceSupport) * 34);
   const readinessConfidence = clampScore(Math.min(evidenceCap, baseConfidence));
 
@@ -221,9 +202,7 @@ export function computeCompositeReadiness(
       : evidenceScore >= 80
         ? ["readiness_credit_evidence_high"]
         : []),
-    ...input.envelope.limiting_factors.map(
-      (factor) => `readiness_envelope_limiter_${factor}`,
-    ),
+    ...input.envelope.limiting_factors.map((factor) => `readiness_envelope_limiter_${factor}`),
   ];
 
   return {
@@ -247,16 +226,11 @@ export function computePlanningConfidence(
   });
   const unmetRatio = clamp01(input.unmet_ratio);
   const clampPressure = clamp01(input.clamp_pressure);
-  const adherenceConfidence = clampScore(
-    Math.round((input.adherence_confidence ?? 0.5) * 100),
-  );
+  const adherenceConfidence = clampScore(Math.round((input.adherence_confidence ?? 0.5) * 100));
   const horizonSupport = clampScore(
     Math.round(clamp01(Math.min(1, input.projection_weeks / 20)) * 100),
   );
-  const complexityPenalty = Math.min(
-    18,
-    Math.max(0, (input.goal_count ?? 1) - 1) * 6,
-  );
+  const complexityPenalty = Math.min(18, Math.max(0, (input.goal_count ?? 1) - 1) * 6);
   const evidenceCap = Math.round(52 + smoothstep01(evidenceSupport) * 40);
 
   const rawScore =
@@ -271,13 +245,9 @@ export function computePlanningConfidence(
     ...(evidenceScore < 55
       ? ["planning_confidence_penalty_evidence_low"]
       : ["planning_confidence_credit_evidence_supportive"]),
-    ...(clampPressure > 0.15
-      ? ["planning_confidence_penalty_clamp_pressure"]
-      : []),
+    ...(clampPressure > 0.15 ? ["planning_confidence_penalty_clamp_pressure"] : []),
     ...(unmetRatio > 0.1 ? ["planning_confidence_penalty_demand_gap"] : []),
-    ...((input.goal_count ?? 1) > 1
-      ? ["planning_confidence_penalty_multi_goal_complexity"]
-      : []),
+    ...((input.goal_count ?? 1) > 1 ? ["planning_confidence_penalty_multi_goal_complexity"] : []),
   ];
 
   return {
@@ -297,9 +267,7 @@ export function blendDemandWithConfidence(input: {
 
   const baseline = Math.max(0, input.conservativeBaselineWeeklyTss);
   const confidence = clamp01(input.confidence);
-  return round1(
-    baseline + (input.demandFloorWeeklyTss - baseline) * confidence,
-  );
+  return round1(baseline + (input.demandFloorWeeklyTss - baseline) * confidence);
 }
 
 export function getDemandRhythmMultiplier(input: {
@@ -338,36 +306,29 @@ export function computeProjectionFeasibilityMetadata(input: {
 }): ProjectionFeasibilityMetadata {
   const unmetWeeklyTss = Math.max(
     0,
-    round1(
-      input.requiredPeakWeeklyTssTarget - input.feasiblePeakWeeklyTssApplied,
-    ),
+    round1(input.requiredPeakWeeklyTssTarget - input.feasiblePeakWeeklyTssApplied),
   );
   const unmetRatio =
     input.requiredPeakWeeklyTssTarget <= 0
       ? 0
       : round3(unmetWeeklyTss / input.requiredPeakWeeklyTssTarget);
   const clampPressure = clamp01(
-    (input.tssRampClampWeeks + input.ctlRampClampWeeks) /
-      Math.max(1, input.projectionWeeks),
+    (input.tssRampClampWeeks + input.ctlRampClampWeeks) / Math.max(1, input.projectionWeeks),
   );
   const demandFulfillment =
     input.requiredPeakWeeklyTssTarget <= 0
       ? 1
-      : clamp01(
-          input.feasiblePeakWeeklyTssApplied /
-            input.requiredPeakWeeklyTssTarget,
-        );
+      : clamp01(input.feasiblePeakWeeklyTssApplied / input.requiredPeakWeeklyTssTarget);
   const confidence = clamp01(input.confidence);
   const evidenceSupport = smoothstep01(confidence);
 
   // Classify demand gap type
   const hasDemandGap = unmetWeeklyTss > 0;
-  const demandGapType: "ramp_capped" | "capacity_limited" | "none" =
-    !hasDemandGap
-      ? "none"
-      : clampPressure > 0.05 // If there was any clamping, it's ramp-capped
-        ? "ramp_capped"
-        : "capacity_limited";
+  const demandGapType: "ramp_capped" | "capacity_limited" | "none" = !hasDemandGap
+    ? "none"
+    : clampPressure > 0.05 // If there was any clamping, it's ramp-capped
+      ? "ramp_capped"
+      : "capacity_limited";
 
   // Reduce penalty when ramp-capped (user can override caps to achieve goal)
   const rampCappedPenaltyReduction = demandGapType === "ramp_capped" ? 0.2 : 0;
@@ -379,17 +340,10 @@ export function computeProjectionFeasibilityMetadata(input: {
   const intensityBalance = clamp01(
     1 - clampPressure * 0.7 - Math.min(0.12, input.tssRampClampWeeks * 0.04),
   );
-  const specificity = clamp01(
-    demandFulfillment * 0.85 + (1 - clampPressure) * 0.15,
-  );
-  const executionConfidence = clamp01(
-    evidenceSupport * 0.7 + (1 - clampPressure) * 0.3,
-  );
+  const specificity = clamp01(demandFulfillment * 0.85 + (1 - clampPressure) * 0.15);
+  const executionConfidence = clamp01(evidenceSupport * 0.7 + (1 - clampPressure) * 0.3);
   const readinessScore = Math.round(
-    (loadState * 0.35 +
-      intensityBalance * 0.25 +
-      specificity * 0.25 +
-      executionConfidence * 0.15) *
+    (loadState * 0.35 + intensityBalance * 0.25 + specificity * 0.25 + executionConfidence * 0.15) *
       100,
   );
 
@@ -402,11 +356,9 @@ export function computeProjectionFeasibilityMetadata(input: {
 
   const highTimelinePressure =
     clampPressure >= 0.18 ||
-    (input.tssRampClampWeeks + input.ctlRampClampWeeks >= 3 &&
-      clampPressure >= 0.12);
+    (input.tssRampClampWeeks + input.ctlRampClampWeeks >= 3 && clampPressure >= 0.12);
   const lowTimelinePressure =
-    clampPressure <= 0.08 ||
-    (clampPressure <= 0.1 && input.projectionWeeks >= 16);
+    clampPressure <= 0.08 || (clampPressure <= 0.1 && input.projectionWeeks >= 16);
 
   let lowReadinessLimiterMode: LowReadinessLimiterMode | null = null;
   if (demandGapType !== "none") {
@@ -421,10 +373,8 @@ export function computeProjectionFeasibilityMetadata(input: {
 
   const dominantLimiters: string[] = [];
   if (unmetWeeklyTss > 0) dominantLimiters.push("required_growth_exceeds_caps");
-  if (input.tssRampClampWeeks > 0)
-    dominantLimiters.push("tss_ramp_cap_pressure");
-  if (input.ctlRampClampWeeks > 0)
-    dominantLimiters.push("ctl_ramp_cap_pressure");
+  if (input.tssRampClampWeeks > 0) dominantLimiters.push("tss_ramp_cap_pressure");
+  if (input.ctlRampClampWeeks > 0) dominantLimiters.push("ctl_ramp_cap_pressure");
   if (input.confidence < 0.5) dominantLimiters.push("low_evidence_confidence");
   if (lowReadinessLimiterMode === "timeline_limited") {
     dominantLimiters.push("timeline_limited_goal_too_soon");
@@ -526,19 +476,14 @@ export function computeProjectionPointReadinessScores(input: {
     1,
     ...input.points.map((point) => Math.max(0, point.predicted_fitness_ctl)),
   );
-  const startingProjectedCtl = Math.max(
-    0,
-    input.points[0]?.predicted_fitness_ctl ?? 0,
-  );
+  const startingProjectedCtl = Math.max(0, input.points[0]?.predicted_fitness_ctl ?? 0);
   const feasibilitySignal = clamp01((input.planReadinessScore ?? 50) / 100);
 
   const goals = input.goals ?? [];
   const timelineCalibration = input.timeline_calibration;
 
   const resolveGoalIndex = (targetDate: string): number => {
-    const exactIndex = input.points.findIndex(
-      (point) => point.date === targetDate,
-    );
+    const exactIndex = input.points.findIndex((point) => point.date === targetDate);
     if (exactIndex >= 0) {
       return exactIndex;
     }
@@ -551,9 +496,7 @@ export function computeProjectionPointReadinessScores(input: {
         continue;
       }
 
-      const distance = Math.abs(
-        diffDateOnlyUtcDays(candidatePoint.date, targetDate),
-      );
+      const distance = Math.abs(diffDateOnlyUtcDays(candidatePoint.date, targetDate));
       if (distance < nearestDistance) {
         nearestDistance = distance;
         nearestIndex = i;
@@ -567,8 +510,7 @@ export function computeProjectionPointReadinessScores(input: {
   const primaryGoal = goals[0];
   const primaryTarget = primaryGoal?.targets?.[0];
   const eventDurationHours =
-    primaryTarget?.target_type === "race_performance" &&
-    primaryTarget.target_time_s
+    primaryTarget?.target_type === "race_performance" && primaryTarget.target_time_s
       ? primaryTarget.target_time_s / 3600
       : undefined;
   const targetTsb =
@@ -576,16 +518,13 @@ export function computeProjectionPointReadinessScores(input: {
     computeOptimalTsb(eventDurationHours) ??
     READINESS_TIMELINE.TARGET_TSB_DEFAULT;
 
-  const formTolerance =
-    timelineCalibration?.form_tolerance ?? READINESS_TIMELINE.FORM_TOLERANCE;
+  const formTolerance = timelineCalibration?.form_tolerance ?? READINESS_TIMELINE.FORM_TOLERANCE;
   const fatigueOverflowScale =
-    timelineCalibration?.fatigue_overflow_scale ??
-    READINESS_TIMELINE.FATIGUE_OVERFLOW_SCALE;
+    timelineCalibration?.fatigue_overflow_scale ?? READINESS_TIMELINE.FATIGUE_OVERFLOW_SCALE;
 
   // Feasibility blend weight set to 0 (disabled) - keep readiness and feasibility separate
   const feasibilityBlendWeight =
-    timelineCalibration?.feasibility_blend_weight ??
-    READINESS_TIMELINE.FEASIBILITY_BLEND_WEIGHT;
+    timelineCalibration?.feasibility_blend_weight ?? READINESS_TIMELINE.FEASIBILITY_BLEND_WEIGHT;
 
   const rawScores = input.points.map((point, idx) => {
     const ctl = Math.max(0, point.predicted_fitness_ctl);
@@ -593,8 +532,7 @@ export function computeProjectionPointReadinessScores(input: {
     const tsb = point.predicted_form_tsb;
 
     const ctlProgress = clamp01(
-      (ctl - startingProjectedCtl) /
-        Math.max(1, peakProjectedCtl - startingProjectedCtl),
+      (ctl - startingProjectedCtl) / Math.max(1, peakProjectedCtl - startingProjectedCtl),
     );
     const progressiveFitnessSignal = clamp01(
       Math.pow(ctlProgress, READINESS_TIMELINE.PROGRESSIVE_FITNESS_EXPONENT),
@@ -610,32 +548,26 @@ export function computeProjectionPointReadinessScores(input: {
 
     const fatigueOverflow = Math.max(0, atl - ctl);
     const fatigueSignal = clamp01(
-      1 -
-        fatigueOverflow / Math.max(1, peakProjectedCtl * fatigueOverflowScale),
+      1 - fatigueOverflow / Math.max(1, peakProjectedCtl * fatigueOverflowScale),
     );
 
     // Dynamic form weight: higher near goal, lower early in plan
     let formWeight: number = READINESS_TIMELINE.FORM_SIGNAL_WEIGHT_DEFAULT;
     if (primaryGoal) {
-      const daysUntilGoal = diffDateOnlyUtcDays(
-        point.date,
-        primaryGoal.target_date,
-      );
+      const daysUntilGoal = diffDateOnlyUtcDays(point.date, primaryGoal.target_date);
       if (daysUntilGoal >= 0) {
         formWeight = computeDynamicFormWeight(daysUntilGoal);
       }
     }
 
-    const fitnessWeight: number =
-      1 - formWeight - READINESS_TIMELINE.FATIGUE_SIGNAL_WEIGHT;
+    const fitnessWeight: number = 1 - formWeight - READINESS_TIMELINE.FATIGUE_SIGNAL_WEIGHT;
 
     const readinessSignal =
       formSignal * formWeight +
       fitnessSignal * fitnessWeight +
       fatigueSignal * READINESS_TIMELINE.FATIGUE_SIGNAL_WEIGHT;
     const blendedSignal =
-      readinessSignal * (1 - feasibilityBlendWeight) +
-      feasibilitySignal * feasibilityBlendWeight;
+      readinessSignal * (1 - feasibilityBlendWeight) + feasibilitySignal * feasibilityBlendWeight;
 
     return clampScore(blendedSignal * 100);
   });
@@ -708,23 +640,16 @@ export function computeProjectionPointReadinessScores(input: {
   const goalAnchors = goalProfiles
     .map((profile, idx) => {
       // Dynamic taper days based on intensity (5-8 days)
-      const taperDays = Math.round(
-        5 + (profile.recoveryProfile.fatigue_intensity / 100) * 3,
-      );
+      const taperDays = Math.round(5 + (profile.recoveryProfile.fatigue_intensity / 100) * 3);
 
       // Dynamic peak window = taper + 60% of recovery
-      const peakWindow =
-        taperDays +
-        Math.round(profile.recoveryProfile.recovery_days_full * 0.6);
+      const peakWindow = taperDays + Math.round(profile.recoveryProfile.recovery_days_full * 0.6);
 
       // Conflict if goals are within either event's functional recovery window.
       const hasConflictingGoal = goalProfiles.some((otherProfile, otherIdx) => {
         if (idx === otherIdx) return false;
         const daysBetween = Math.abs(
-          diffDateOnlyUtcDays(
-            profile.goal.target_date,
-            otherProfile.goal.target_date,
-          ),
+          diffDateOnlyUtcDays(profile.goal.target_date, otherProfile.goal.target_date),
         );
         const conflictWindow = Math.max(
           profile.recoveryProfile.recovery_days_functional,
@@ -740,8 +665,7 @@ export function computeProjectionPointReadinessScores(input: {
         peakWindow,
         peakSlope: 1.6,
         allowNaturalFatigue: hasConflictingGoal,
-        recoveryDaysFunctional:
-          profile.recoveryProfile.recovery_days_functional,
+        recoveryDaysFunctional: profile.recoveryProfile.recovery_days_functional,
       };
     })
     .sort((a, b) => a.goalIndex - b.goalIndex);
@@ -761,10 +685,7 @@ export function computeProjectionPointReadinessScores(input: {
         continue;
       }
 
-      const daysBetween = diffDateOnlyUtcDays(
-        previous.targetDate,
-        current.targetDate,
-      );
+      const daysBetween = diffDateOnlyUtcDays(previous.targetDate, current.targetDate);
       if (daysBetween < 0) {
         continue;
       }
@@ -784,11 +705,7 @@ export function computeProjectionPointReadinessScores(input: {
       const previousScore = capped[previous.goalIndex] ?? 0;
       const currentFatigueBound = fatigueAdjustedScores[current.goalIndex] ?? 0;
       capped[current.goalIndex] = clampScore(
-        Math.min(
-          capped[current.goalIndex] ?? 0,
-          previousScore,
-          currentFatigueBound,
-        ),
+        Math.min(capped[current.goalIndex] ?? 0, previousScore, currentFatigueBound),
       );
     }
 
@@ -808,18 +725,14 @@ export function computeProjectionPointReadinessScores(input: {
       const right = optimized[i + 1] ?? optimized[i] ?? 0;
       const prior = fatigueAdjustedScores[i] ?? center;
       const updated =
-        (prior + smoothingLambda * left + smoothingLambda * right) /
-        (1 + 2 * smoothingLambda);
+        (prior + smoothingLambda * left + smoothingLambda * right) / (1 + 2 * smoothingLambda);
       smoothed[i] = clampScore(updated);
     }
     optimized = smoothed;
 
     for (const anchor of goalAnchors) {
       const start = Math.max(0, anchor.goalIndex - anchor.peakWindow);
-      const end = Math.min(
-        optimized.length - 1,
-        anchor.goalIndex + anchor.peakWindow,
-      );
+      const end = Math.min(optimized.length - 1, anchor.goalIndex + anchor.peakWindow);
 
       // Only force local max if no conflicting goals
       if (!anchor.allowNaturalFatigue) {
@@ -852,8 +765,7 @@ export function computeProjectionPointReadinessScores(input: {
           ),
         );
         const cap = clampScore(
-          goalScore -
-            Math.max(0, anchor.peakWindow - dayDistance) * anchor.peakSlope,
+          goalScore - Math.max(0, anchor.peakWindow - dayDistance) * anchor.peakSlope,
         );
         optimized[i] = Math.min(optimized[i] ?? 0, cap);
       }
@@ -862,19 +774,13 @@ export function computeProjectionPointReadinessScores(input: {
     for (let i = 1; i < optimized.length; i += 1) {
       const prev = optimized[i - 1] ?? 0;
       optimized[i] = clampScore(
-        Math.min(
-          prev + maxStepDelta,
-          Math.max(prev - maxStepDelta, optimized[i] ?? prev),
-        ),
+        Math.min(prev + maxStepDelta, Math.max(prev - maxStepDelta, optimized[i] ?? prev)),
       );
     }
     for (let i = optimized.length - 2; i >= 0; i -= 1) {
       const next = optimized[i + 1] ?? 0;
       optimized[i] = clampScore(
-        Math.min(
-          next + maxStepDelta,
-          Math.max(next - maxStepDelta, optimized[i] ?? next),
-        ),
+        Math.min(next + maxStepDelta, Math.max(next - maxStepDelta, optimized[i] ?? next)),
       );
     }
 
@@ -890,18 +796,13 @@ export function computeProjectionPointReadinessScores(input: {
     if (anchor.allowNaturalFatigue) continue;
 
     const start = Math.max(0, anchor.goalIndex - anchor.peakWindow);
-    const end = Math.min(
-      optimized.length - 1,
-      anchor.goalIndex + anchor.peakWindow,
-    );
+    const end = Math.min(optimized.length - 1, anchor.goalIndex + anchor.peakWindow);
     let localMax = 0;
     for (let i = start; i <= end; i += 1) {
       localMax = Math.max(localMax, optimized[i] ?? 0);
     }
 
-    optimized[anchor.goalIndex] = clampScore(
-      Math.max(optimized[anchor.goalIndex] ?? 0, localMax),
-    );
+    optimized[anchor.goalIndex] = clampScore(Math.max(optimized[anchor.goalIndex] ?? 0, localMax));
   }
 
   optimized = applyDirectionalConflictCaps(optimized);
@@ -920,9 +821,7 @@ export function computeProjectionPointReadinessScores(input: {
       const easedProgress = Math.pow(clamp01(progress), 1.35);
       const adjusted = (value ?? 0) + terminalAdjustment * easedProgress;
       const progressCeiling =
-        startingCeiling +
-        (planReadinessCap - startingCeiling) *
-          Math.pow(clamp01(progress), 1.15);
+        startingCeiling + (planReadinessCap - startingCeiling) * Math.pow(clamp01(progress), 1.15);
 
       return clampScore(Math.min(adjusted, progressCeiling, planReadinessCap));
     });
@@ -933,16 +832,11 @@ export function computeProjectionPointReadinessScores(input: {
       const goalProgress = terminalIndex <= 0 ? 1 : goalIndex / terminalIndex;
       const goalCeiling =
         startingCeiling +
-        (planReadinessCap - startingCeiling) *
-          Math.pow(clamp01(goalProgress), 1.15);
+        (planReadinessCap - startingCeiling) * Math.pow(clamp01(goalProgress), 1.15);
 
       if (anchor?.allowNaturalFatigue) {
         anchored[goalIndex] = clampScore(
-          Math.min(
-            goalCeiling,
-            anchored[goalIndex] ?? 0,
-            fatigueAdjustedScores[goalIndex] ?? 0,
-          ),
+          Math.min(goalCeiling, anchored[goalIndex] ?? 0, fatigueAdjustedScores[goalIndex] ?? 0),
         );
         continue;
       }
@@ -950,10 +844,7 @@ export function computeProjectionPointReadinessScores(input: {
       anchored[goalIndex] = clampScore(
         Math.min(
           goalCeiling,
-          Math.max(
-            anchored[goalIndex] ?? 0,
-            fatigueAdjustedScores[goalIndex] ?? 0,
-          ),
+          Math.max(anchored[goalIndex] ?? 0, fatigueAdjustedScores[goalIndex] ?? 0),
         ),
       );
     }

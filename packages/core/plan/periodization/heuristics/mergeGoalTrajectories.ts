@@ -52,16 +52,11 @@ function round(value: number): number {
 
 function diffDays(startDate: string, endDate: string): number {
   return Math.round(
-    (Date.parse(`${endDate}T00:00:00.000Z`) -
-      Date.parse(`${startDate}T00:00:00.000Z`)) /
-      86400000,
+    (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) / 86400000,
   );
 }
 
-function compareCandidates(
-  left: GoalTrajectoryCandidate,
-  right: GoalTrajectoryCandidate,
-) {
+function compareCandidates(left: GoalTrajectoryCandidate, right: GoalTrajectoryCandidate) {
   if (left.goal.target_date !== right.goal.target_date) {
     return left.goal.target_date.localeCompare(right.goal.target_date);
   }
@@ -156,10 +151,7 @@ export function mergeGoalTrajectories(
         strategy: "sustained_peak",
         goalIds: [...current.goalIds, ...next.goalIds],
         targetCtl: round(Math.max(current.targetCtl, next.targetCtl)),
-        rationale_codes: [
-          ...current.rationale_codes,
-          "close_a_goal_sustained_peak_window_applied",
-        ],
+        rationale_codes: [...current.rationale_codes, "close_a_goal_sustained_peak_window_applied"],
         secondaryGoalDate: next.goalDate,
         secondaryGoalIds: next.goalIds,
         secondaryTargetCtl: next.targetCtl,
@@ -180,15 +172,10 @@ export function mergeGoalTrajectories(
         ...current,
         strategy: "micro_taper",
         taperDays: MICRO_TAPER_DAYS,
-        taperParameter: withReplacedTaper(
-          current.taperParameter,
-          MICRO_TAPER_DAYS,
-          ["close_b_or_c_before_a_micro_taper_applied"],
-        ),
-        rationale_codes: [
-          ...current.rationale_codes,
+        taperParameter: withReplacedTaper(current.taperParameter, MICRO_TAPER_DAYS, [
           "close_b_or_c_before_a_micro_taper_applied",
-        ],
+        ]),
+        rationale_codes: [...current.rationale_codes, "close_b_or_c_before_a_micro_taper_applied"],
         localFlattenFraction: MICRO_TAPER_FLATTEN_FRACTION,
       });
       continue;

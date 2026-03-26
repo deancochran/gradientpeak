@@ -12,10 +12,10 @@ import {
   type PostEventFatigueInput,
 } from "../event-recovery";
 import {
-  createRaceTarget,
-  createPaceThresholdTarget,
   createHrThresholdTarget,
   createMockProjectionPoint,
+  createPaceThresholdTarget,
+  createRaceTarget,
   RACE_PRESETS,
 } from "./readiness.test-utils";
 
@@ -150,9 +150,7 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
     const bikeProfile = computeEventRecoveryProfile(bikeInput);
 
     // Bike should have lower intensity (0.9x multiplier)
-    expect(bikeProfile.fatigue_intensity).toBeLessThan(
-      runProfile.fatigue_intensity,
-    );
+    expect(bikeProfile.fatigue_intensity).toBeLessThan(runProfile.fatigue_intensity);
   });
 
   it("ATL spike factor should increase with duration", () => {
@@ -180,9 +178,7 @@ describe("computeEventRecoveryProfile - Race Performance", () => {
     const marathonProfile = computeEventRecoveryProfile(marathonInput);
 
     // Longer events cause bigger ATL spikes
-    expect(marathonProfile.atl_spike_factor).toBeGreaterThan(
-      fiveKProfile.atl_spike_factor,
-    );
+    expect(marathonProfile.atl_spike_factor).toBeGreaterThan(fiveKProfile.atl_spike_factor);
     expect(marathonProfile.atl_spike_factor).toBeLessThanOrEqual(2.5);
   });
 });
@@ -233,12 +229,8 @@ describe("computeEventRecoveryProfile - Threshold Tests", () => {
       athlete_gender: "female",
     });
 
-    expect(female.recovery_days_full).toBeGreaterThanOrEqual(
-      male.recovery_days_full,
-    );
-    expect(
-      female.recovery_days_full - male.recovery_days_full,
-    ).toBeLessThanOrEqual(1);
+    expect(female.recovery_days_full).toBeGreaterThanOrEqual(male.recovery_days_full);
+    expect(female.recovery_days_full - male.recovery_days_full).toBeLessThanOrEqual(1);
   });
 });
 

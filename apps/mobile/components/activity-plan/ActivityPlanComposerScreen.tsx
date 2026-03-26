@@ -1,37 +1,34 @@
-import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
-import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
-import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
-import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  calculateActivityStatsV2,
+  decodePolyline,
+  type IntensityTargetV2,
+  type IntervalStepV2,
+  type IntervalV2,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
+import { randomUUID } from "expo-crypto";
+import * as DocumentPicker from "expo-document-picker";
+import { useNavigation, useRouter } from "expo-router";
+import { MapPin, Upload, X } from "lucide-react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Pressable, View } from "react-native";
+import { NestableScrollContainer } from "react-native-draggable-flatlist";
+import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
+import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
+import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
+import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
 import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 import { trpc } from "@/lib/trpc";
-import {
-  calculateActivityStatsV2,
-  decodePolyline,
-  type IntervalStepV2,
-  type IntervalV2,
-  type IntensityTargetV2,
-} from "@repo/core";
-import * as DocumentPicker from "expo-document-picker";
-import { randomUUID } from "expo-crypto";
-import { useNavigation, useRouter } from "expo-router";
-import BottomSheet, {
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from "@gorhom/bottom-sheet";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { MapPin, Upload, X } from "lucide-react-native";
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, View } from "react-native";
-import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
-import { NestableScrollContainer } from "react-native-draggable-flatlist";
 
 export type ActivityPlanComposerModeContract =
   | {
@@ -63,19 +60,14 @@ const createDefaultStep = (category: ActivityCategory): IntervalStepV2 => ({
   targets: [createDefaultTarget(category)],
 });
 
-const createDefaultInterval = (
-  category: ActivityCategory,
-  index: number,
-): IntervalV2 => ({
+const createDefaultInterval = (category: ActivityCategory, index: number): IntervalV2 => ({
   id: randomUUID(),
   name: `Interval ${index + 1}`,
   repetitions: 1,
   steps: [createDefaultStep(category)],
 });
 
-export function ActivityPlanComposerScreen(
-  props: ActivityPlanComposerModeContract,
-) {
+export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContract) {
   const isEditMode = props.mode === "edit";
   const router = useRouter();
   const navigation = useNavigation();
@@ -83,15 +75,11 @@ export function ActivityPlanComposerScreen(
   const initialSignatureRef = useRef<string | null>(null);
   const structureStepSheetRef = useRef<BottomSheet>(null);
 
-  const [editingIntervalId, setEditingIntervalId] = useState<string | null>(
-    null,
-  );
+  const [editingIntervalId, setEditingIntervalId] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [isUploadingRoute, setIsUploadingRoute] = useState(false);
-  const [selectedIntervalId, setSelectedIntervalId] = useState<string | null>(
-    null,
-  );
+  const [selectedIntervalId, setSelectedIntervalId] = useState<string | null>(null);
   const [showChartCoachmark, setShowChartCoachmark] = useState(false);
   const [undoState, setUndoState] = useState<{
     message: string;
@@ -207,10 +195,7 @@ export function ActivityPlanComposerScreen(
     return interval?.steps.find((item) => item.id === editingStepId);
   }, [editingIntervalId, editingStepId, intervals]);
 
-  const routeQuery = trpc.routes.get.useQuery(
-    { id: form.routeId! },
-    { enabled: !!form.routeId },
-  );
+  const routeQuery = trpc.routes.get.useQuery({ id: form.routeId! }, { enabled: !!form.routeId });
 
   const structureStats = useMemo(() => {
     if (intervals.length === 0) {
@@ -272,8 +257,7 @@ export function ActivityPlanComposerScreen(
   }, [isLoading, formSignature]);
 
   const isDirty =
-    initialSignatureRef.current !== null &&
-    initialSignatureRef.current !== formSignature;
+    initialSignatureRef.current !== null && initialSignatureRef.current !== formSignature;
 
   useEffect(() => {
     AsyncStorage.getItem(STRUCTURE_CHART_HINT_KEY)
@@ -326,9 +310,7 @@ export function ActivityPlanComposerScreen(
           onPress={submit}
           disabled={!canSubmit || isLoading || isSubmitting}
         >
-          <Text className="text-primary font-semibold">
-            {isSubmitting ? "Saving..." : "Save"}
-          </Text>
+          <Text className="text-primary font-semibold">{isSubmitting ? "Saving..." : "Save"}</Text>
         </Button>
       ),
     });
@@ -412,10 +394,7 @@ export function ActivityPlanComposerScreen(
     });
   };
 
-  const handleChangeIntervalRepetitions = (
-    interval: IntervalV2,
-    value: number,
-  ) => {
+  const handleChangeIntervalRepetitions = (interval: IntervalV2, value: number) => {
     updateInterval(interval.id, {
       ...interval,
       repetitions: Number.isFinite(value) ? value : 0,
@@ -465,14 +444,8 @@ export function ActivityPlanComposerScreen(
 
   const firstBlockingError = Object.values(validation.errors)[0];
   const issueMaps = (() => {
-    const intervalIssues: Record<
-      string,
-      { interval: number; step: number; total: number }
-    > = {};
-    const stepIssueCountsByInterval: Record<
-      string,
-      Record<string, number>
-    > = {};
+    const intervalIssues: Record<string, { interval: number; step: number; total: number }> = {};
+    const stepIssueCountsByInterval: Record<string, Record<string, number>> = {};
 
     Object.entries(validation.errors).forEach(([key]) => {
       if (key.startsWith("interval:")) {
@@ -519,10 +492,7 @@ export function ActivityPlanComposerScreen(
 
   return (
     <View className="flex-1 bg-background">
-      <NestableScrollContainer
-        className="flex-1 p-4"
-        showsVerticalScrollIndicator={false}
-      >
+      <NestableScrollContainer className="flex-1 p-4" showsVerticalScrollIndicator={false}>
         <View className="gap-4 pb-10">
           <Card>
             <CardContent className="p-4 gap-3">
@@ -531,9 +501,7 @@ export function ActivityPlanComposerScreen(
               <View className="flex-row gap-3">
                 <ActivityCategorySelector
                   value={form.activityCategory}
-                  onChange={(category) =>
-                    setActivityCategory(category as ActivityCategory)
-                  }
+                  onChange={(category) => setActivityCategory(category as ActivityCategory)}
                   compact
                 />
                 <Input
@@ -544,9 +512,7 @@ export function ActivityPlanComposerScreen(
                 />
               </View>
               {validation.errors.name ? (
-                <Text className="text-xs text-destructive">
-                  {validation.errors.name}
-                </Text>
+                <Text className="text-xs text-destructive">{validation.errors.name}</Text>
               ) : null}
 
               {validation.errors.activity_category ? (
@@ -588,11 +554,7 @@ export function ActivityPlanComposerScreen(
               </View>
 
               {!form.routeId ? (
-                <Button
-                  variant="outline"
-                  onPress={handlePickGpxFile}
-                  disabled={isUploadingRoute}
-                >
+                <Button variant="outline" onPress={handlePickGpxFile} disabled={isUploadingRoute}>
                   <Icon as={Upload} size={16} className="text-foreground" />
                   <Text className="text-foreground ml-2">
                     {isUploadingRoute ? "Uploading..." : "Upload GPX File"}
@@ -611,13 +573,9 @@ export function ActivityPlanComposerScreen(
                         rotateEnabled={false}
                         initialRegion={{
                           latitude:
-                            routeCoordinates[
-                              Math.floor(routeCoordinates.length / 2)
-                            ].latitude,
+                            routeCoordinates[Math.floor(routeCoordinates.length / 2)].latitude,
                           longitude:
-                            routeCoordinates[
-                              Math.floor(routeCoordinates.length / 2)
-                            ].longitude,
+                            routeCoordinates[Math.floor(routeCoordinates.length / 2)].longitude,
                           latitudeDelta: 0.05,
                           longitudeDelta: 0.05,
                         }}
@@ -634,23 +592,16 @@ export function ActivityPlanComposerScreen(
                     <Text className="font-medium">{routeQuery.data.name}</Text>
                     <View className="flex-row items-center gap-3 mt-1">
                       <View className="flex-row items-center gap-1">
-                        <Icon
-                          as={MapPin}
-                          size={12}
-                          className="text-muted-foreground"
-                        />
+                        <Icon as={MapPin} size={12} className="text-muted-foreground" />
                         <Text className="text-xs text-muted-foreground">
-                          {(routeQuery.data.total_distance / 1000).toFixed(1)}{" "}
-                          km
+                          {(routeQuery.data.total_distance / 1000).toFixed(1)} km
                         </Text>
                       </View>
                     </View>
                   </View>
                 </View>
               ) : (
-                <Text className="text-xs text-muted-foreground">
-                  Loading route...
-                </Text>
+                <Text className="text-xs text-muted-foreground">Loading route...</Text>
               )}
             </CardContent>
           </Card>
@@ -668,21 +619,12 @@ export function ActivityPlanComposerScreen(
           />
 
           {firstBlockingError ? (
-            <Text className="text-xs text-destructive">
-              {firstBlockingError}
-            </Text>
+            <Text className="text-xs text-destructive">{firstBlockingError}</Text>
           ) : null}
 
-          <Button
-            onPress={submit}
-            disabled={!canSubmit || isLoading || isSubmitting}
-          >
+          <Button onPress={submit} disabled={!canSubmit || isLoading || isSubmitting}>
             <Text className="text-primary-foreground font-semibold">
-              {isSubmitting
-                ? "Saving..."
-                : isEditMode
-                  ? "Save changes"
-                  : "Create activity plan"}
+              {isSubmitting ? "Saving..." : isEditMode ? "Save changes" : "Create activity plan"}
             </Text>
           </Button>
         </View>
@@ -722,13 +664,9 @@ export function ActivityPlanComposerScreen(
           >
             <StructureIntervalSheet
               interval={selectedInterval}
-              intervalIndex={
-                selectedIntervalIndex >= 0 ? selectedIntervalIndex : 0
-              }
+              intervalIndex={selectedIntervalIndex >= 0 ? selectedIntervalIndex : 0}
               intervalIssue={issueMaps.intervalIssues[selectedInterval.id]}
-              stepIssueCounts={
-                issueMaps.stepIssueCountsByInterval[selectedInterval.id] ?? {}
-              }
+              stepIssueCounts={issueMaps.stepIssueCountsByInterval[selectedInterval.id] ?? {}}
               onAdjustRepetitions={(delta) =>
                 handleChangeIntervalRepetitions(
                   selectedInterval,
@@ -759,9 +697,7 @@ export function ActivityPlanComposerScreen(
       {undoState ? (
         <View className="absolute bottom-4 left-4 right-4 rounded-lg border border-border bg-card px-3 py-2">
           <View className="flex-row items-center justify-between gap-3">
-            <Text className="flex-1 text-sm text-foreground">
-              {undoState.message}
-            </Text>
+            <Text className="flex-1 text-sm text-foreground">{undoState.message}</Text>
             <Pressable
               onPress={undoState.onUndo}
               className="min-h-11 items-center justify-center rounded-md px-3"

@@ -75,13 +75,7 @@ function isValidIcalRRule(value: string): boolean {
  * - "custom": user-authored non-workout event
  * - "imported": read-only external calendar import
  */
-export const eventTypeSchema = z.enum([
-  "planned",
-  "rest_day",
-  "race_target",
-  "custom",
-  "imported",
-]);
+export const eventTypeSchema = z.enum(["planned", "rest_day", "race_target", "custom", "imported"]);
 
 /**
  * Backward-compatible parser for legacy persisted enum values.
@@ -94,12 +88,7 @@ export const eventTypeInputSchema = z
     return eventType;
   });
 
-export const editableEventTypeSchema = z.enum([
-  "planned",
-  "rest_day",
-  "race_target",
-  "custom",
-]);
+export const editableEventTypeSchema = z.enum(["planned", "rest_day", "race_target", "custom"]);
 
 export const eventMutationScopeSchema = z.enum(["single", "future", "series"]);
 
@@ -159,8 +148,7 @@ export const eventRecurrenceSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["exceptions", index, "occurrence_date"],
-          message:
-            "occurrence_date cannot be listed in both exceptions and exdates",
+          message: "occurrence_date cannot be listed in both exceptions and exdates",
         });
       }
     }
@@ -215,8 +203,7 @@ export const eventLifecycleSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["cancelled"],
-        message:
-          'cancelled metadata is only allowed when status is "cancelled"',
+        message: 'cancelled metadata is only allowed when status is "cancelled"',
       });
     }
 
@@ -289,8 +276,7 @@ export const editableEventDomainSchema = editableEventDomainBaseSchema
       ctx.addIssue({
         code: "custom",
         path: ["activity_plan_id"],
-        message:
-          'activity_plan_id must be omitted when event_type is "rest_day"',
+        message: 'activity_plan_id must be omitted when event_type is "rest_day"',
       });
     }
   });
@@ -325,8 +311,7 @@ export const editableEventPatchSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["activity_plan_id"],
-        message:
-          'activity_plan_id must be omitted when event_type is "rest_day"',
+        message: 'activity_plan_id must be omitted when event_type is "rest_day"',
       });
     }
   });
@@ -337,10 +322,7 @@ export const importedEventDomainSchema = eventDomainBaseSchema.extend({
   read_only: z.literal(true).default(true),
 });
 
-export const eventDomainSchema = z.union([
-  editableEventDomainSchema,
-  importedEventDomainSchema,
-]);
+export const eventDomainSchema = z.union([editableEventDomainSchema, importedEventDomainSchema]);
 
 export const eventCreateSchema = eventDomainSchema;
 
@@ -403,9 +385,7 @@ export const eventSoftDeleteSchema = z.object({
  */
 export const plannedActivityCreateSchema = z.object({
   activity_plan_id: z.string().uuid("Invalid activity plan ID"),
-  scheduled_date: z
-    .string()
-    .refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
+  scheduled_date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
   training_plan_id: z.string().uuid("Invalid training plan ID").optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
   event_type: eventTypeInputSchema.default("planned").optional(),
@@ -437,9 +417,7 @@ export const plannedActivityUpdateSchema = z.object({
  */
 export const plannedActivityRescheduleSchema = z.object({
   id: z.string().uuid("Invalid planned activity ID"),
-  new_date: z
-    .string()
-    .refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
+  new_date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
   reason: z.string().max(500, "Reason is too long").optional(),
   scope: eventMutationScopeSchema.default("single"),
 });
@@ -449,18 +427,12 @@ export const plannedActivityRescheduleSchema = z.object({
  */
 export type PlannedActivityCreate = z.infer<typeof plannedActivityCreateSchema>;
 export type PlannedActivityUpdate = z.infer<typeof plannedActivityUpdateSchema>;
-export type PlannedActivityReschedule = z.infer<
-  typeof plannedActivityRescheduleSchema
->;
+export type PlannedActivityReschedule = z.infer<typeof plannedActivityRescheduleSchema>;
 export type EventType = z.infer<typeof eventTypeSchema>;
 export type EventTypeInput = z.infer<typeof eventTypeInputSchema>;
 export type EventMutationScope = z.infer<typeof eventMutationScopeSchema>;
 export type EventRecurrence = z.infer<typeof eventRecurrenceSchema>;
-export type EventRecurrenceException = z.infer<
-  typeof eventRecurrenceExceptionSchema
->;
+export type EventRecurrenceException = z.infer<typeof eventRecurrenceExceptionSchema>;
 export type EventLifecycle = z.infer<typeof eventLifecycleSchema>;
-export type ImportedEventSourceMetadata = z.infer<
-  typeof importedEventSourceMetadataSchema
->;
+export type ImportedEventSourceMetadata = z.infer<typeof importedEventSourceMetadataSchema>;
 export type EventDomain = z.infer<typeof eventDomainSchema>;

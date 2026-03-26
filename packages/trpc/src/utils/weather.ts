@@ -19,8 +19,7 @@ export async function fetchActivityTemperature(
   try {
     const dateStr = timestamp.toISOString().split("T")[0];
     const now = new Date();
-    const isHistorical =
-      now.getTime() - timestamp.getTime() > 7 * 24 * 60 * 60 * 1000; // Older than 7 days
+    const isHistorical = now.getTime() - timestamp.getTime() > 7 * 24 * 60 * 60 * 1000; // Older than 7 days
 
     // Choose API endpoint based on age of activity
     // Archive API for historical data, Forecast API for recent/current data
@@ -33,9 +32,7 @@ export async function fetchActivityTemperature(
     const response = await fetch(url);
 
     if (!response.ok) {
-      console.warn(
-        `Weather API error: ${response.status} ${response.statusText}`,
-      );
+      console.warn(`Weather API error: ${response.status} ${response.statusText}`);
       return null;
     }
 
@@ -68,9 +65,7 @@ export async function fetchActivityTemperature(
 
       // Append 'Z' to treat as UTC if not present, though Open-Meteo usually returns local time if timezone provided
       // Here we didn't provide timezone, so it defaults to GMT (UTC)
-      const time = new Date(
-        timeStr + (timeStr.endsWith("Z") ? "" : "Z"),
-      ).getTime();
+      const time = new Date(timeStr + (timeStr.endsWith("Z") ? "" : "Z")).getTime();
       const diff = Math.abs(time - activityTime);
 
       if (diff < minDiff) {

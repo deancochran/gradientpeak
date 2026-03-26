@@ -1,13 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
 import React, { useState } from "react";
-import {
-  Modal,
-  ScrollView,
-  TouchableOpacity,
-  View,
-  type ModalProps,
-} from "react-native";
+import { Modal, type ModalProps, ScrollView, TouchableOpacity, View } from "react-native";
 
 export type DateRange = "7d" | "30d" | "90d" | "all";
 
@@ -50,9 +44,7 @@ export function DetailChartModal({
         {/* Header */}
         <View className="border-b border-border bg-card">
           <View className="flex-row items-center justify-between px-4 pt-4 pb-3">
-            <Text className="text-lg font-semibold text-foreground">
-              {title}
-            </Text>
+            <Text className="text-lg font-semibold text-foreground">{title}</Text>
             <TouchableOpacity
               onPress={onClose}
               className="p-2 -mr-2"
@@ -71,9 +63,7 @@ export function DetailChartModal({
                     key={range.value}
                     onPress={() => setSelectedRange(range.value)}
                     className={`px-4 py-2 rounded-lg ${
-                      selectedRange === range.value
-                        ? "bg-primary"
-                        : "bg-muted"
+                      selectedRange === range.value ? "bg-primary" : "bg-muted"
                     }`}
                   >
                     <Text

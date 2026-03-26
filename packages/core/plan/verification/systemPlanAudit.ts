@@ -5,18 +5,13 @@ import {
   type SystemTrainingPlanTemplate,
 } from "../../samples";
 import { getDurationSeconds } from "../../schemas/duration_helpers";
-import {
-  materializePlanToEvents,
-  type MaterializedPlanEvent,
-} from "../materializePlanToEvents";
+import { type MaterializedPlanEvent, materializePlanToEvents } from "../materializePlanToEvents";
 
 const PLAN_NAME_WEEK_PATTERN = /\((\d+)\s+weeks?\)/i;
 
 function getPlanStartDate(plan: SystemTrainingPlanTemplate): string {
   const structure = plan.structure as Record<string, unknown>;
-  return typeof structure.start_date === "string"
-    ? structure.start_date
-    : "1970-01-01";
+  return typeof structure.start_date === "string" ? structure.start_date : "1970-01-01";
 }
 
 function dateOnlyToUtcMs(dateOnly: string): number {
@@ -25,14 +20,11 @@ function dateOnlyToUtcMs(dateOnly: string): number {
 
 function diffDays(startDate: string, endDate: string): number {
   return Math.round(
-    (dateOnlyToUtcMs(endDate) - dateOnlyToUtcMs(startDate)) /
-      (24 * 60 * 60 * 1000),
+    (dateOnlyToUtcMs(endDate) - dateOnlyToUtcMs(startDate)) / (24 * 60 * 60 * 1000),
   );
 }
 
-function getPaceSecondsPerKm(
-  activityCategory: SystemTemplate["activity_category"],
-): number {
+function getPaceSecondsPerKm(activityCategory: SystemTemplate["activity_category"]): number {
   switch (activityCategory) {
     case "swim":
       return 1200;
@@ -48,12 +40,8 @@ function getPaceSecondsPerKm(
 /**
  * Calculates a deterministic duration estimate for a system activity template.
  */
-export function calculateSystemTemplateDurationSeconds(
-  template: SystemTemplate,
-): number {
-  const paceSecondsPerKm = getPaceSecondsPerKm(
-    template.activity_category ?? "other",
-  );
+export function calculateSystemTemplateDurationSeconds(template: SystemTemplate): number {
+  const paceSecondsPerKm = getPaceSecondsPerKm(template.activity_category ?? "other");
 
   return template.structure.intervals.reduce((planTotal, interval) => {
     const intervalDuration = interval.steps.reduce((intervalTotal, step) => {
@@ -122,10 +110,7 @@ export interface SystemTrainingPlanAudit {
  */
 export function buildSystemTrainingPlanAudit(
   plan: SystemTrainingPlanTemplate,
-  templateIndex: ReadonlyMap<
-    string,
-    SystemTemplate
-  > = buildSystemTemplateIndex(),
+  templateIndex: ReadonlyMap<string, SystemTemplate> = buildSystemTemplateIndex(),
 ): SystemTrainingPlanAudit {
   const startDate = getPlanStartDate(plan);
   const materializedEvents = materializePlanToEvents(plan.structure, startDate);
@@ -133,9 +118,7 @@ export function buildSystemTrainingPlanAudit(
     new Set(
       materializedEvents
         .map((event) => event.activity_plan_id)
-        .filter(
-          (activityPlanId): activityPlanId is string => activityPlanId !== null,
-        ),
+        .filter((activityPlanId): activityPlanId is string => activityPlanId !== null),
     ),
   );
 
@@ -165,8 +148,7 @@ export function buildSystemTrainingPlanAudit(
 
   const weeklyResolvedDurationHours = Array.from(
     { length: getMaterializedWeekCount(startDate, materializedEvents) },
-    (_, weekIndex) =>
-      roundHours((weeklyResolvedDurationSeconds.get(weekIndex) ?? 0) / 3600),
+    (_, weekIndex) => roundHours((weeklyResolvedDurationSeconds.get(weekIndex) ?? 0) / 3600),
   );
 
   const totalResolvedDurationHours = roundHours(
@@ -184,10 +166,7 @@ export function buildSystemTrainingPlanAudit(
     startDate,
     declaredDurationHours: plan.duration_hours,
     advertisedWeekCount: extractAdvertisedWeekCount(plan.name),
-    materializedWeekCount: getMaterializedWeekCount(
-      startDate,
-      materializedEvents,
-    ),
+    materializedWeekCount: getMaterializedWeekCount(startDate, materializedEvents),
     materializedEvents,
     linkedTemplateIds,
     missingTemplateIds,
@@ -199,10 +178,7 @@ export function buildSystemTrainingPlanAudit(
 
 export function assertSystemTrainingPlanTemplateLinksResolved(
   plan: SystemTrainingPlanTemplate,
-  templateIndex: ReadonlyMap<
-    string,
-    SystemTemplate
-  > = buildSystemTemplateIndex(),
+  templateIndex: ReadonlyMap<string, SystemTemplate> = buildSystemTemplateIndex(),
 ): SystemTrainingPlanAudit {
   const audit = buildSystemTrainingPlanAudit(plan, templateIndex);
 
@@ -220,17 +196,13 @@ export function assertSystemTrainingPlanTemplateLinksResolved(
  */
 export function buildAllSystemTrainingPlanAudits(): SystemTrainingPlanAudit[] {
   const templateIndex = buildSystemTemplateIndex();
-  return ALL_SAMPLE_PLANS.map((plan) =>
-    buildSystemTrainingPlanAudit(plan, templateIndex),
-  );
+  return ALL_SAMPLE_PLANS.map((plan) => buildSystemTrainingPlanAudit(plan, templateIndex));
 }
 
 /**
  * Extracts seeded system training-plan IDs from the curated SQL migration.
  */
-export function extractSeededSystemTrainingPlanIds(
-  migrationSql: string,
-): string[] {
+export function extractSeededSystemTrainingPlanIds(migrationSql: string): string[] {
   return Array.from(
     migrationSql.matchAll(
       /'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'\s*,\s*null\s*,\s*true/gi,
@@ -242,8 +214,6 @@ export function extractSeededSystemTrainingPlanIds(
 /**
  * Indicates whether the curated SQL migration currently seeds session linkage IDs.
  */
-export function migrationSeedsLinkedActivityPlanIds(
-  migrationSql: string,
-): boolean {
+export function migrationSeedsLinkedActivityPlanIds(migrationSql: string): boolean {
   return /activity_plan_id/i.test(migrationSql);
 }

@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  nextPendingPreviewCount,
-  shouldIgnorePreviewResponse,
-} from "./previewRequestState";
+import { nextPendingPreviewCount, shouldIgnorePreviewResponse } from "./previewRequestState";
 
 describe("preview request race handling", () => {
   it("ignores cancelled and stale responses under rapid drags", () => {

@@ -33,17 +33,12 @@ export interface MpcTieBreakCandidate {
   primary_goal_id?: string | null;
 }
 
-function compareOptionalPenalty(
-  left: number | undefined,
-  right: number | undefined,
-): number {
+function compareOptionalPenalty(left: number | undefined, right: number | undefined): number {
   if (left === undefined && right === undefined) {
     return 0;
   }
 
-  return (
-    (left ?? Number.POSITIVE_INFINITY) - (right ?? Number.POSITIVE_INFINITY)
-  );
+  return (left ?? Number.POSITIVE_INFINITY) - (right ?? Number.POSITIVE_INFINITY);
 }
 
 /**
@@ -57,18 +52,12 @@ export function compareMpcTieBreakCandidates(
     return right.objective_score - left.objective_score;
   }
 
-  const safetyPenaltyOrder = compareOptionalPenalty(
-    left.safety_penalty,
-    right.safety_penalty,
-  );
+  const safetyPenaltyOrder = compareOptionalPenalty(left.safety_penalty, right.safety_penalty);
   if (safetyPenaltyOrder !== 0) {
     return safetyPenaltyOrder;
   }
 
-  const trackingErrorOrder = compareOptionalPenalty(
-    left.tracking_error,
-    right.tracking_error,
-  );
+  const trackingErrorOrder = compareOptionalPenalty(left.tracking_error, right.tracking_error);
   if (trackingErrorOrder !== 0) {
     return trackingErrorOrder;
   }
@@ -81,10 +70,7 @@ export function compareMpcTieBreakCandidates(
     return volatilityPenaltyOrder;
   }
 
-  const churnPenaltyOrder = compareOptionalPenalty(
-    left.churn_penalty,
-    right.churn_penalty,
-  );
+  const churnPenaltyOrder = compareOptionalPenalty(left.churn_penalty, right.churn_penalty);
   if (churnPenaltyOrder !== 0) {
     return churnPenaltyOrder;
   }
@@ -111,9 +97,9 @@ export function compareMpcTieBreakCandidates(
 /**
  * Returns candidates ranked with deterministic ordering.
  */
-export function rankMpcCandidatesDeterministically<
-  T extends MpcTieBreakCandidate,
->(candidates: readonly T[]): T[] {
+export function rankMpcCandidatesDeterministically<T extends MpcTieBreakCandidate>(
+  candidates: readonly T[],
+): T[] {
   return [...candidates].sort(compareMpcTieBreakCandidates);
 }
 

@@ -40,6 +40,4 @@ export const weeklyAllocationBudgetSchema = z
   });
 
 export type DailyAllocationTarget = z.infer<typeof dailyAllocationTargetSchema>;
-export type WeeklyAllocationBudget = z.infer<
-  typeof weeklyAllocationBudgetSchema
->;
+export type WeeklyAllocationBudget = z.infer<typeof weeklyAllocationBudgetSchema>;

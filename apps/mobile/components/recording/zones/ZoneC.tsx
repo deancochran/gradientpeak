@@ -19,9 +19,14 @@
  * - Enlarged metrics for better visibility when focused
  */
 
+import type { IntensityTargetV2 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import { Minimize2 } from "lucide-react-native";
+import React from "react";
+import { Pressable, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import {
   useCurrentReadings,
@@ -31,11 +36,6 @@ import {
   useSessionStats,
 } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type { IntensityTargetV2 } from "@repo/core";
-import { Minimize2 } from "lucide-react-native";
-import React from "react";
-import { Pressable, View, useWindowDimensions } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export interface ZoneCProps {
   service: ActivityRecorderService | null;
@@ -265,9 +265,7 @@ export function ZoneC({ service, isFocused }: ZoneCProps) {
             ? `${(sessionStats.distance / 1000).toFixed(2)} km`
             : "0.00 km";
         case "Calories":
-          return sessionStats.calories
-            ? `${Math.round(sessionStats.calories)} cal`
-            : "0 cal";
+          return sessionStats.calories ? `${Math.round(sessionStats.calories)} cal` : "0 cal";
         case "Pace":
           // Show current pace if available, otherwise average
           if (currentReadings.speed && currentReadings.speed > 0) {
@@ -280,13 +278,9 @@ export function ZoneC({ service, isFocused }: ZoneCProps) {
             ? `${Math.round(currentReadings.heartRate)} bpm`
             : "-- bpm";
         case "Power":
-          return currentReadings.power
-            ? `${Math.round(currentReadings.power)} W`
-            : "-- W";
+          return currentReadings.power ? `${Math.round(currentReadings.power)} W` : "-- W";
         case "Cadence":
-          return currentReadings.cadence
-            ? `${Math.round(currentReadings.cadence)} rpm`
-            : "-- rpm";
+          return currentReadings.cadence ? `${Math.round(currentReadings.cadence)} rpm` : "-- rpm";
         default:
           return "--";
       }
@@ -296,9 +290,7 @@ export function ZoneC({ service, isFocused }: ZoneCProps) {
 
   // Helper to get target value and status for a metric
   const getMetricTargetInfo = React.useCallback(
-    (
-      metric: MetricType,
-    ): { target: string | null; status: "low" | "target" | "high" | null } => {
+    (metric: MetricType): { target: string | null; status: "low" | "target" | "high" | null } => {
       const target = getMetricTarget(metric, currentTargets, profile);
       if (!target) return { target: null, status: null };
 
@@ -480,13 +472,13 @@ function MetricItem({ label, value, target, status }: MetricItemProps) {
   // Dynamic font size based on value length
   const getValueFontSize = () => {
     const length = numericValue.length;
-    if (length <= 2) return 'text-3xl'; // Short values (e.g., "12")
-    if (length <= 4) return 'text-2xl'; // Medium values (e.g., "1234")
-    return 'text-xl'; // Long values
+    if (length <= 2) return "text-3xl"; // Short values (e.g., "12")
+    if (length <= 4) return "text-2xl"; // Medium values (e.g., "1234")
+    return "text-xl"; // Long values
   };
 
   return (
-    <View className="w-[47%]" style={{ maxWidth: '50%' }}>
+    <View className="w-[47%]" style={{ maxWidth: "50%" }}>
       {/* Top: Metric Title */}
       <Text
         className="text-xs text-muted-foreground mb-1"
@@ -504,7 +496,7 @@ function MetricItem({ label, value, target, status }: MetricItemProps) {
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.7}
-          style={{ flexShrink: 1, flexBasis: '70%' }}
+          style={{ flexShrink: 1, flexBasis: "70%" }}
         >
           {numericValue}
         </Text>
@@ -546,13 +538,13 @@ function MetricItemFocused({ label, value, target, status }: MetricItemProps) {
   // Dynamic font size based on value length
   const getValueFontSize = () => {
     const length = numericValue.length;
-    if (length <= 2) return 'text-5xl'; // Short values (e.g., "12")
-    if (length <= 4) return 'text-4xl'; // Medium values (e.g., "1234")
-    return 'text-3xl'; // Long values
+    if (length <= 2) return "text-5xl"; // Short values (e.g., "12")
+    if (length <= 4) return "text-4xl"; // Medium values (e.g., "1234")
+    return "text-3xl"; // Long values
   };
 
   return (
-    <View className="w-[47%]" style={{ maxWidth: '50%' }}>
+    <View className="w-[47%]" style={{ maxWidth: "50%" }}>
       {/* Top: Metric Title */}
       <Text
         className="text-sm text-muted-foreground mb-2"
@@ -570,7 +562,7 @@ function MetricItemFocused({ label, value, target, status }: MetricItemProps) {
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.6}
-          style={{ flexShrink: 1, flexBasis: '70%' }}
+          style={{ flexShrink: 1, flexBasis: "70%" }}
         >
           {numericValue}
         </Text>

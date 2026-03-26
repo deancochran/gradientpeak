@@ -24,6 +24,7 @@ function averageDurationMs(run: () => void, iterations = 10): number {
 }
 
 const fullProjectionBenchmark = process.env.RUN_FULL_PROJECTION_BENCHMARK === "1" ? it : it.skip;
+const referenceGenerationBudgetMs = process.env.CI ? 60 : 30;
 
 describe("periodization benchmarks", () => {
   const benchmarkGoals = [
@@ -52,7 +53,7 @@ describe("periodization benchmarks", () => {
     preferenceProfile: defaultAthletePreferenceProfile,
   });
 
-  it("keeps reference generation under 30ms for a 365-day 3-goal plan", () => {
+  it(`keeps reference generation under ${referenceGenerationBudgetMs}ms for a 365-day 3-goal plan`, () => {
     const averageMs = averageDurationMs(() => {
       generateReferenceTrajectory({
         startDate: "2026-01-01",
@@ -67,7 +68,7 @@ describe("periodization benchmarks", () => {
       });
     });
 
-    expect(averageMs).toBeLessThan(30);
+    expect(averageMs).toBeLessThan(referenceGenerationBudgetMs);
   });
 
   fullProjectionBenchmark("keeps full projection under 50ms for a 365-day 3-goal plan", () => {

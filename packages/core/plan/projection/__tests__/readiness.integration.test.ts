@@ -268,10 +268,7 @@ describe("Post-Event Fatigue Integration", () => {
     // 5K should recover faster than marathon
     // Compare the penalty on day 1 - marathon should have higher penalty
     const fiveKDay1Penalty = Math.max(0, fiveKScores[0]! - fiveKScores[1]!);
-    const marathonDay1Penalty = Math.max(
-      0,
-      marathonScores[0]! - marathonScores[1]!,
-    );
+    const marathonDay1Penalty = Math.max(0, marathonScores[0]! - marathonScores[1]!);
 
     // Marathon should have higher penalty (or at least not significantly lower)
     expect(marathonDay1Penalty).toBeGreaterThanOrEqual(fiveKDay1Penalty * 0.8);
@@ -335,9 +332,7 @@ describe("Post-Event Fatigue Integration", () => {
     const dayAfterIndex = 5;
 
     // Overload scenario should have lower readiness due to higher ATL
-    expect(overloadScores[dayAfterIndex]).toBeLessThanOrEqual(
-      normalScores[dayAfterIndex]!,
-    );
+    expect(overloadScores[dayAfterIndex]).toBeLessThanOrEqual(normalScores[dayAfterIndex]!);
 
     console.log("ATL overload effect:", {
       normal: {

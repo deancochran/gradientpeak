@@ -1,10 +1,7 @@
 import type { DeterministicProjectionPayload } from "../projection/engine";
 import type { AggregatedWeeklyPlannedLoad } from "./aggregateWeeklyPlannedLoad";
 
-export type HeuristicComparisonToleranceClass =
-  | "tight"
-  | "moderate"
-  | "flexible";
+export type HeuristicComparisonToleranceClass = "tight" | "moderate" | "flexible";
 
 export interface HeuristicComparisonToleranceConfig {
   weekly_absolute_tss_floor: number;
@@ -108,8 +105,7 @@ function normalizeHeuristicTarget(
       projectionLike.dose_recommendation?.recommended_weekly_load ??
       targetLike.recommended_weekly_load ??
       null,
-    recommended_baseline_tss_range:
-      targetLike.recommended_baseline_tss_range ?? null,
+    recommended_baseline_tss_range: targetLike.recommended_baseline_tss_range ?? null,
     microcycles: heuristic.microcycles?.map((microcycle) => ({
       week_start_date: microcycle.week_start_date,
       planned_weekly_tss: microcycle.planned_weekly_tss,
@@ -131,10 +127,7 @@ function getBlockTolerance(
   heuristicTss: number,
   tolerance: HeuristicComparisonToleranceConfig,
 ): number {
-  return Math.max(
-    tolerance.block_absolute_tss_floor,
-    heuristicTss * tolerance.block_relative_pct,
-  );
+  return Math.max(tolerance.block_absolute_tss_floor, heuristicTss * tolerance.block_relative_pct);
 }
 
 /**
@@ -153,13 +146,9 @@ export function comparePlanLoadToHeuristic(input: {
   toleranceOverrides?: Partial<HeuristicComparisonToleranceConfig>;
 }): ComparePlanLoadToHeuristicResult {
   const normalizedHeuristic = normalizeHeuristicTarget(input.heuristic);
-  const tolerance = resolveTolerance(
-    input.toleranceClass ?? "moderate",
-    input.toleranceOverrides,
-  );
+  const tolerance = resolveTolerance(input.toleranceClass ?? "moderate", input.toleranceOverrides);
   const heuristicWeeks =
-    normalizedHeuristic.microcycles &&
-    normalizedHeuristic.microcycles.length > 0
+    normalizedHeuristic.microcycles && normalizedHeuristic.microcycles.length > 0
       ? normalizedHeuristic.microcycles
       : input.planWeeks.map((week) => ({
           week_start_date: week.week_start_date,
@@ -176,8 +165,7 @@ export function comparePlanLoadToHeuristic(input: {
       if (!planWeek || !heuristicWeek) {
         return {
           week_index: index,
-          week_start_date:
-            planWeek?.week_start_date ?? heuristicWeek?.week_start_date ?? "",
+          week_start_date: planWeek?.week_start_date ?? heuristicWeek?.week_start_date ?? "",
           plan_tss: planWeek?.planned_weekly_tss ?? null,
           heuristic_tss: heuristicWeek?.planned_weekly_tss ?? null,
           absolute_error_tss: null,
@@ -190,10 +178,7 @@ export function comparePlanLoadToHeuristic(input: {
       const absoluteErrorTss = Math.abs(
         planWeek.planned_weekly_tss - heuristicWeek.planned_weekly_tss,
       );
-      const weeklyToleranceTss = getWeeklyTolerance(
-        heuristicWeek.planned_weekly_tss,
-        tolerance,
-      );
+      const weeklyToleranceTss = getWeeklyTolerance(heuristicWeek.planned_weekly_tss, tolerance);
       const relativeErrorPct =
         heuristicWeek.planned_weekly_tss <= 0
           ? 0
@@ -226,20 +211,12 @@ export function comparePlanLoadToHeuristic(input: {
   );
 
   const rollingBlocks: PlanToHeuristicBlockComparison[] = [];
-  for (
-    let startIndex = 0;
-    startIndex + 4 <= pairedWeeks.length;
-    startIndex += 1
-  ) {
+  for (let startIndex = 0; startIndex + 4 <= pairedWeeks.length; startIndex += 1) {
     const window = pairedWeeks.slice(startIndex, startIndex + 4);
     const planTss = window.reduce((sum, week) => sum + week.plan_tss, 0);
-    const heuristicTss = window.reduce(
-      (sum, week) => sum + week.heuristic_tss,
-      0,
-    );
+    const heuristicTss = window.reduce((sum, week) => sum + week.heuristic_tss, 0);
     const absoluteErrorTss = Math.abs(planTss - heuristicTss);
-    const relativeErrorPct =
-      heuristicTss <= 0 ? 0 : (absoluteErrorTss / heuristicTss) * 100;
+    const relativeErrorPct = heuristicTss <= 0 ? 0 : (absoluteErrorTss / heuristicTss) * 100;
     const blockToleranceTss = getBlockTolerance(heuristicTss, tolerance);
 
     rollingBlocks.push({
@@ -259,30 +236,19 @@ export function comparePlanLoadToHeuristic(input: {
   const averagePlanWeeklyTss =
     pairCount === 0
       ? 0
-      : round1(
-          pairedWeeks.reduce((sum, week) => sum + week.plan_tss, 0) / pairCount,
-        );
+      : round1(pairedWeeks.reduce((sum, week) => sum + week.plan_tss, 0) / pairCount);
   const averageHeuristicWeeklyTss =
     pairCount === 0
       ? 0
-      : round1(
-          pairedWeeks.reduce((sum, week) => sum + week.heuristic_tss, 0) /
-            pairCount,
-        );
+      : round1(pairedWeeks.reduce((sum, week) => sum + week.heuristic_tss, 0) / pairCount);
   const averageAbsoluteWeeklyErrorTss =
     pairCount === 0
       ? 0
-      : round1(
-          pairedWeeks.reduce((sum, week) => sum + week.absolute_error_tss, 0) /
-            pairCount,
-        );
+      : round1(pairedWeeks.reduce((sum, week) => sum + week.absolute_error_tss, 0) / pairCount);
   const meanRelativeWeeklyErrorPct =
     pairCount === 0
       ? 0
-      : round1(
-          pairedWeeks.reduce((sum, week) => sum + week.relative_error_pct, 0) /
-            pairCount,
-        );
+      : round1(pairedWeeks.reduce((sum, week) => sum + week.relative_error_pct, 0) / pairCount);
 
   const recommendedWeeklyLoad = normalizedHeuristic.recommended_weekly_load;
   const recommendedWeeklyLoadErrorTss =
@@ -300,8 +266,7 @@ export function comparePlanLoadToHeuristic(input: {
     mean_relative_weekly_error_pct: meanRelativeWeeklyErrorPct,
     recommended_weekly_load_error_tss: recommendedWeeklyLoadErrorTss,
     average_within_baseline_range: baselineRange
-      ? averagePlanWeeklyTss >= baselineRange.min &&
-        averagePlanWeeklyTss <= baselineRange.max
+      ? averagePlanWeeklyTss >= baselineRange.min && averagePlanWeeklyTss <= baselineRange.max
       : null,
     per_week: perWeek,
     rolling_blocks: rollingBlocks,

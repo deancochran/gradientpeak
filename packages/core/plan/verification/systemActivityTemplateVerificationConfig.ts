@@ -30,49 +30,48 @@ export const COVERAGE_STATUS_THRESHOLD = {
   overReuseShareMaximum: 0.5,
 } as const;
 
-export const FIRST_WAVE_COVERAGE_CELLS: readonly FirstWaveCoverageCellDefinition[] =
-  [
-    {
-      key: "run_easy_recovery",
-      sport: "run",
-      label: "Run easy or recovery",
-    },
-    {
-      key: "run_tempo_threshold",
-      sport: "run",
-      label: "Run tempo or threshold",
-    },
-    {
-      key: "run_long",
-      sport: "run",
-      label: "Run long",
-    },
-    {
-      key: "run_high_intensity_race_pace",
-      sport: "run",
-      label: "Run high intensity or race pace",
-    },
-    {
-      key: "bike_easy_recovery",
-      sport: "bike",
-      label: "Bike recovery or easy endurance",
-    },
-    {
-      key: "bike_threshold_sweet_spot",
-      sport: "bike",
-      label: "Bike threshold or sweet spot",
-    },
-    {
-      key: "bike_long_endurance",
-      sport: "bike",
-      label: "Bike long endurance",
-    },
-    {
-      key: "bike_high_intensity_climbing",
-      sport: "bike",
-      label: "Bike high intensity or climbing",
-    },
-  ];
+export const FIRST_WAVE_COVERAGE_CELLS: readonly FirstWaveCoverageCellDefinition[] = [
+  {
+    key: "run_easy_recovery",
+    sport: "run",
+    label: "Run easy or recovery",
+  },
+  {
+    key: "run_tempo_threshold",
+    sport: "run",
+    label: "Run tempo or threshold",
+  },
+  {
+    key: "run_long",
+    sport: "run",
+    label: "Run long",
+  },
+  {
+    key: "run_high_intensity_race_pace",
+    sport: "run",
+    label: "Run high intensity or race pace",
+  },
+  {
+    key: "bike_easy_recovery",
+    sport: "bike",
+    label: "Bike recovery or easy endurance",
+  },
+  {
+    key: "bike_threshold_sweet_spot",
+    sport: "bike",
+    label: "Bike threshold or sweet spot",
+  },
+  {
+    key: "bike_long_endurance",
+    sport: "bike",
+    label: "Bike long endurance",
+  },
+  {
+    key: "bike_high_intensity_climbing",
+    sport: "bike",
+    label: "Bike high intensity or climbing",
+  },
+];
 
 export const FIRST_WAVE_GATED_PLAN_NAMES = [
   "Marathon Foundation (12 weeks)",
@@ -88,8 +87,6 @@ export const AUDIT_ONLY_PLAN_NAMES = [
 
 const auditOnlyPlanNameSet = new Set<string>(AUDIT_ONLY_PLAN_NAMES);
 
-export function getSystemTrainingPlanGateScope(
-  planName: string,
-): SystemTrainingPlanGateScope {
+export function getSystemTrainingPlanGateScope(planName: string): SystemTrainingPlanGateScope {
   return auditOnlyPlanNameSet.has(planName) ? "audit-only" : "first-wave";
 }

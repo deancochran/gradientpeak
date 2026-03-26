@@ -13,9 +13,7 @@ import {
 
 describe("training-plan input parsers", () => {
   it("parses and bounds numeric values", () => {
-    expect(parseBoundedNumber("12.678", { min: 0, max: 20, decimals: 2 })).toBe(
-      12.68,
-    );
+    expect(parseBoundedNumber("12.678", { min: 0, max: 20, decimals: 2 })).toBe(12.68);
     expect(parseBoundedNumber("-2", { min: 0, max: 10 })).toBe(0);
     expect(parseBoundedInteger("14.2", { min: 0, max: 14 })).toBe(14);
   });

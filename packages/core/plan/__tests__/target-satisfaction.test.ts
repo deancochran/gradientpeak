@@ -153,9 +153,7 @@ describe("scoreTargetSatisfaction", () => {
     );
 
     for (let index = 1; index < powerScores.length; index += 1) {
-      expect(powerScores[index] ?? 100).toBeLessThanOrEqual(
-        powerScores[index - 1] ?? 0,
-      );
+      expect(powerScores[index] ?? 100).toBeLessThanOrEqual(powerScores[index - 1] ?? 0);
     }
   });
 
@@ -173,9 +171,7 @@ describe("scoreTargetSatisfaction", () => {
       },
     });
 
-    expect(result.rationale_codes).toContain(
-      "projection_inferred_from_readiness",
-    );
+    expect(result.rationale_codes).toContain("projection_inferred_from_readiness");
     expect(result.score_0_100).toBeGreaterThanOrEqual(0);
     expect(result.score_0_100).toBeLessThanOrEqual(100);
   });
@@ -194,9 +190,7 @@ describe("scoreTargetSatisfaction", () => {
       },
     });
 
-    expect(result.rationale_codes).toContain(
-      "target_demand_above_plausible_cap",
-    );
+    expect(result.rationale_codes).toContain("target_demand_above_plausible_cap");
     expect(result.score_0_100).toBeLessThan(70);
   });
 
@@ -253,8 +247,6 @@ describe("scoreTargetSatisfaction", () => {
 
     expect(result.effective_target.surplus_applied).toBe(false);
     expect(result.effective_target.applied_surplus_pct).toBeLessThan(0.005);
-    expect(result.rationale_codes).toContain(
-      "effective_target_surplus_suppressed_low_support",
-    );
+    expect(result.rationale_codes).toContain("effective_target_surplus_suppressed_low_support");
   });
 });

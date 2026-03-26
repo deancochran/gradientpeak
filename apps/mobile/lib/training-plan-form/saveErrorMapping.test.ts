@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  mapTrainingPlanSaveError,
-  mapTrainingPlanSaveErrorMessage,
-} from "./saveErrorMapping";
+import { mapTrainingPlanSaveError, mapTrainingPlanSaveErrorMessage } from "./saveErrorMapping";
 
 describe("mapTrainingPlanSaveErrorMessage", () => {
   it("maps typed stale commit error causes", () => {
@@ -51,8 +48,6 @@ describe("mapTrainingPlanSaveErrorMessage", () => {
   });
 
   it("uses fallback message for non-error inputs", () => {
-    expect(mapTrainingPlanSaveErrorMessage(null)).toContain(
-      "Failed to save training plan",
-    );
+    expect(mapTrainingPlanSaveErrorMessage(null)).toContain("Failed to save training plan");
   });
 });

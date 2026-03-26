@@ -34,12 +34,8 @@ describe("projection parity fixtures", () => {
       "2026-01-18",
       "2026-01-25",
     ]);
-    expect(
-      result.points.slice(0, 3).every((point) => point.readiness_score >= 0),
-    ).toBe(true);
-    expect(
-      result.points.slice(0, 3).every((point) => point.readiness_score <= 100),
-    ).toBe(true);
+    expect(result.points.slice(0, 3).every((point) => point.readiness_score >= 0)).toBe(true);
+    expect(result.points.slice(0, 3).every((point) => point.readiness_score <= 100)).toBe(true);
 
     expect(result.constraint_summary).toEqual({
       normalized_creation_config: {
@@ -70,54 +66,50 @@ describe("projection parity fixtures", () => {
     expect(result.capacity_envelope?.envelope_score).toBeLessThanOrEqual(100);
     expect(result.readiness_rationale_codes?.length ?? 0).toBeGreaterThan(0);
 
-    const peakReadiness = Math.max(
-      ...result.points.map((point) => point.readiness_score),
-    );
+    const peakReadiness = Math.max(...result.points.map((point) => point.readiness_score));
     const goalDateReadiness =
-      result.points.find((point) => point.date === "2026-01-25")
-        ?.readiness_score ?? 0;
+      result.points.find((point) => point.date === "2026-01-25")?.readiness_score ?? 0;
     expect(goalDateReadiness).toBe(peakReadiness);
   });
 
   it("keeps calibration preset golden fixtures deterministic", () => {
-    const baseInput: Parameters<typeof buildDeterministicProjectionPayload>[0] =
-      {
-        timeline: {
+    const baseInput: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-03-15",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-15",
+          target_weekly_tss_range: { min: 220, max: 280 },
         },
-        blocks: [
-          {
-            name: "Build",
-            phase: "build",
-            start_date: "2026-01-05",
-            end_date: "2026-03-15",
-            target_weekly_tss_range: { min: 220, max: 280 },
-          },
-        ],
-        goals: [
-          {
-            id: "goal-1",
-            name: "Spring Half",
-            target_date: "2026-03-15",
-            priority: 1,
-            targets: [
-              {
-                target_type: "race_performance",
-                distance_m: 21097,
-                target_time_s: 5700,
-                activity_category: "run",
-              },
-            ],
-          },
-        ],
-        starting_ctl: 32,
-        creation_config: {
-          optimization_profile: "balanced",
-          max_weekly_tss_ramp_pct: 7,
-          max_ctl_ramp_per_week: 3,
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "Spring Half",
+          target_date: "2026-03-15",
+          priority: 1,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 21097,
+              target_time_s: 5700,
+              activity_category: "run",
+            },
+          ],
         },
-      };
+      ],
+      starting_ctl: 32,
+      creation_config: {
+        optimization_profile: "balanced",
+        max_weekly_tss_ramp_pct: 7,
+        max_ctl_ramp_per_week: 3,
+      },
+    };
 
     const presets: Array<{
       key: string;
@@ -254,9 +246,7 @@ describe("projection parity fixtures", () => {
         readiness_score: runA.readiness_score,
         readiness_confidence: runA.readiness_confidence,
         envelope_score: runA.capacity_envelope?.envelope_score,
-        first_weeks: runA.microcycles
-          .slice(0, 4)
-          .map((week) => week.planned_weekly_tss),
+        first_weeks: runA.microcycles.slice(0, 4).map((week) => week.planned_weekly_tss),
       };
 
       expect(observed.readiness_score).toBeGreaterThanOrEqual(0);
@@ -280,12 +270,8 @@ describe("projection parity fixtures", () => {
     const conservative = byPreset.get("conservative_durability")!;
     const aggressive = byPreset.get("aggressive_target_attainment")!;
 
-    expect(conservative.readiness_score).toBeLessThanOrEqual(
-      balanced.readiness_score,
-    );
-    expect(aggressive.readiness_score).toBeGreaterThanOrEqual(
-      balanced.readiness_score,
-    );
+    expect(conservative.readiness_score).toBeLessThanOrEqual(balanced.readiness_score);
+    expect(aggressive.readiness_score).toBeGreaterThanOrEqual(balanced.readiness_score);
     expect(conservative.first_weeks).toEqual(balanced.first_weeks);
     expect(aggressive.first_weeks).toEqual(balanced.first_weeks);
   });
@@ -484,63 +470,42 @@ describe("projection parity fixtures", () => {
       const tolerance = 0.05;
 
       const localDates = localPath.points.map((point) => point.date);
-      expect(localDates).toEqual(
-        [...localDates].sort((a, b) => a.localeCompare(b)),
-      );
+      expect(localDates).toEqual([...localDates].sort((a, b) => a.localeCompare(b)));
       expect(serverPath.points.map((point) => point.date)).toEqual(localDates);
 
       for (let i = 0; i < localPath.points.length; i += 1) {
         const localPoint = localPath.points[i]!;
         const serverPoint = serverPath.points[i]!;
 
-        expect(localPoint.date, `${fixture.key} point ${i} date`).toBe(
-          serverPoint.date,
-        );
+        expect(localPoint.date, `${fixture.key} point ${i} date`).toBe(serverPoint.date);
         expect(
           Math.abs(localPoint.readiness_score - serverPoint.readiness_score),
           `${fixture.key} point ${i} readiness_score`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
-          Math.abs(
-            localPoint.predicted_load_tss - serverPoint.predicted_load_tss,
-          ),
+          Math.abs(localPoint.predicted_load_tss - serverPoint.predicted_load_tss),
           `${fixture.key} point ${i} predicted_load_tss`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
-          Math.abs(
-            localPoint.predicted_fatigue_atl -
-              serverPoint.predicted_fatigue_atl,
-          ),
+          Math.abs(localPoint.predicted_fatigue_atl - serverPoint.predicted_fatigue_atl),
           `${fixture.key} point ${i} predicted_fatigue_atl`,
         ).toBeLessThanOrEqual(tolerance);
       }
 
-      expect(localPath.constraint_summary).toEqual(
-        serverPath.constraint_summary,
-      );
+      expect(localPath.constraint_summary).toEqual(serverPath.constraint_summary);
       expect(localPath.goal_markers).toEqual(serverPath.goal_markers);
-      expect(localPath.readiness_score).toBeCloseTo(
-        serverPath.readiness_score,
-        4,
-      );
+      expect(localPath.readiness_score).toBeCloseTo(serverPath.readiness_score, 4);
       expect(serverPath.readiness_confidence).toBeDefined();
-      expect(localPath.readiness_confidence).toBeCloseTo(
-        serverPath.readiness_confidence ?? 0,
-        4,
-      );
+      expect(localPath.readiness_confidence).toBeCloseTo(serverPath.readiness_confidence ?? 0, 4);
     }
   });
 });
 
-function buildLocalPreviewPathLike(
-  input: Parameters<typeof buildProjectionEngineInput>[0],
-) {
+function buildLocalPreviewPathLike(input: Parameters<typeof buildProjectionEngineInput>[0]) {
   return buildDeterministicProjectionPayload(buildProjectionEngineInput(input));
 }
 
-function buildServerRecomputePathLike(
-  input: Parameters<typeof buildProjectionEngineInput>[0],
-) {
+function buildServerRecomputePathLike(input: Parameters<typeof buildProjectionEngineInput>[0]) {
   const deterministicProjection = buildDeterministicProjectionPayload(
     buildProjectionEngineInput(input),
   );
@@ -556,10 +521,8 @@ function buildServerRecomputePathLike(
       name: block.name,
       start_date: block.start_date,
       end_date: block.end_date,
-      target_weekly_tss_min:
-        Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max:
-        Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
+      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
+      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
     })),
     microcycles: deterministicProjection.microcycles.map((microcycle) => ({
       id: deterministicUuidFromSeed(

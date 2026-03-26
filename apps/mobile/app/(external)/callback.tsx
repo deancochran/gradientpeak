@@ -1,13 +1,12 @@
 import { Text } from "@repo/ui/components/text";
-import { supabase } from "@/lib/supabase/client";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { supabase } from "@/lib/supabase/client";
 
 export default function AuthCallbackScreen() {
   const router = useRouter();
-  const { access_token, refresh_token, error, error_description } =
-    useLocalSearchParams();
+  const { access_token, refresh_token, error, error_description } = useLocalSearchParams();
 
   useEffect(() => {
     const handleCallback = async () => {
@@ -37,10 +36,7 @@ export default function AuthCallbackScreen() {
             return;
           }
 
-          console.log(
-            "✅ Session set successfully, user verified:",
-            data.user?.email,
-          );
+          console.log("✅ Session set successfully, user verified:", data.user?.email);
 
           // Success! User is now verified and signed in
           // Give a brief moment for auth state to propagate
@@ -48,9 +44,7 @@ export default function AuthCallbackScreen() {
             router.replace("/");
           }, 500);
         } else {
-          console.warn(
-            "⚠️ No tokens found in callback, redirecting to sign-in",
-          );
+          console.warn("⚠️ No tokens found in callback, redirecting to sign-in");
           router.replace("/(external)/sign-in");
         }
       } catch (err) {

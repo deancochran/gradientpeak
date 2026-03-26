@@ -38,15 +38,11 @@ describe("age-adjusted calibration constants", () => {
 
   it("provides age-adjusted ramp rate multipliers", () => {
     expect(getAgeAdjustedRampRateMultiplier(undefined)).toBe(0.8);
-    expect(getAgeAdjustedRampRateMultiplier(14)).toBeLessThan(
-      getAgeAdjustedRampRateMultiplier(20),
-    );
+    expect(getAgeAdjustedRampRateMultiplier(14)).toBeLessThan(getAgeAdjustedRampRateMultiplier(20));
     expect(getAgeAdjustedRampRateMultiplier(32)).toBeGreaterThan(
       getAgeAdjustedRampRateMultiplier(45),
     );
-    expect(getAgeAdjustedRampRateMultiplier(55)).toBeLessThan(
-      getAgeAdjustedRampRateMultiplier(45),
-    );
+    expect(getAgeAdjustedRampRateMultiplier(55)).toBeLessThan(getAgeAdjustedRampRateMultiplier(45));
   });
 
   it("keeps optimal TSB continuous as event duration changes", () => {
@@ -56,14 +52,8 @@ describe("age-adjusted calibration constants", () => {
   });
 
   it("keeps pace baselines continuous across distance changes", () => {
-    expect(getPaceBaseline("run", 9.9)).toBeGreaterThanOrEqual(
-      getPaceBaseline("run", 10.1),
-    );
-    expect(getPaceBaseline("run", 21.1)).toBeGreaterThan(
-      getPaceBaseline("run", 42.2),
-    );
-    expect(getPaceBaseline("bike", 80)).toBeGreaterThan(
-      getPaceBaseline("bike", 180),
-    );
+    expect(getPaceBaseline("run", 9.9)).toBeGreaterThanOrEqual(getPaceBaseline("run", 10.1));
+    expect(getPaceBaseline("run", 21.1)).toBeGreaterThan(getPaceBaseline("run", 42.2));
+    expect(getPaceBaseline("bike", 80)).toBeGreaterThan(getPaceBaseline("bike", 180));
   });
 });

@@ -1,11 +1,11 @@
-import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
-import { trpc } from "@/lib/trpc";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Loader2 } from "lucide-react-native";
 import React, { useState } from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
+import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { trpc } from "@/lib/trpc";
 
 function FollowersScreen() {
   const router = useRouter();
@@ -55,19 +55,13 @@ function FollowersScreen() {
         className="flex-row items-center p-4 border-b border-border"
       >
         <Avatar alt={item.username || "User"} className="w-12 h-12">
-          {item.avatar_url ? (
-            <AvatarImage source={{ uri: item.avatar_url }} />
-          ) : null}
+          {item.avatar_url ? <AvatarImage source={{ uri: item.avatar_url }} /> : null}
           <AvatarFallback>
-            <Text className="text-lg">
-              {item.username?.charAt(0)?.toUpperCase() || "U"}
-            </Text>
+            <Text className="text-lg">{item.username?.charAt(0)?.toUpperCase() || "U"}</Text>
           </AvatarFallback>
         </Avatar>
         <View className="ml-3 flex-1">
-          <Text className="font-semibold text-foreground">
-            {item.username || "Unknown user"}
-          </Text>
+          <Text className="font-semibold text-foreground">{item.username || "Unknown user"}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -92,9 +86,7 @@ function FollowersScreen() {
 
     return (
       <View className="flex-1 items-center justify-center p-8">
-        <Text className="text-muted-foreground text-center">
-          No followers yet
-        </Text>
+        <Text className="text-muted-foreground text-center">No followers yet</Text>
       </View>
     );
   };
@@ -103,9 +95,7 @@ function FollowersScreen() {
     if (!hasMore) return null;
     return (
       <View className="p-4 items-center">
-        {isFetching && (
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        )}
+        {isFetching && <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
       </View>
     );
   };

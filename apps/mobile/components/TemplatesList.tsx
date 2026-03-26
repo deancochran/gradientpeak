@@ -1,11 +1,7 @@
-import {
-  ActivityPlanCard,
-  ActivityPlanCardData,
-} from "@/components/shared/ActivityPlanCard";
+import { ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import type { PublicActivityCategory } from "@repo/supabase";
-import { ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
 import { useRouter } from "expo-router";
 import {
   Activity,
@@ -20,6 +16,7 @@ import {
 } from "lucide-react-native";
 import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
+import { ActivityPlanCard, ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
 
 // Category configurations
 const CATEGORIES = [
@@ -135,30 +132,19 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
             >
               <View className="mr-4">
                 <View className="w-12 h-12 rounded-full bg-muted items-center justify-center">
-                  <Icon
-                    as={category.icon}
-                    size={24}
-                    className={category.color}
-                  />
+                  <Icon as={category.icon} size={24} className={category.color} />
                 </View>
               </View>
 
               <View className="flex-1">
-                <Text className="text-lg font-semibold mb-1">
-                  {category.name}
-                </Text>
+                <Text className="text-lg font-semibold mb-1">{category.name}</Text>
                 <Text className="text-sm text-muted-foreground">
-                  {templates.length} template{templates.length !== 1 ? "s" : ""}{" "}
-                  available
+                  {templates.length} template{templates.length !== 1 ? "s" : ""} available
                 </Text>
               </View>
 
               <View className="ml-2">
-                <Icon
-                  as={ChevronRight}
-                  size={20}
-                  className="text-muted-foreground"
-                />
+                <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
               </View>
             </TouchableOpacity>
           );
@@ -207,11 +193,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
               handleRecord(template);
             }}
           >
-            <Icon
-              as={Smartphone}
-              size={18}
-              className="text-primary-foreground"
-            />
+            <Icon as={Smartphone} size={18} className="text-primary-foreground" />
           </TouchableOpacity>
         </View>
       ))}

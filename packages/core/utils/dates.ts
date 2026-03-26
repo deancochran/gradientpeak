@@ -20,11 +20,7 @@ export function formatDate(
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
   const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-  const activityDate = new Date(
-    dateObj.getFullYear(),
-    dateObj.getMonth(),
-    dateObj.getDate(),
-  );
+  const activityDate = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
 
   // Relative dates if enabled
   if (options?.relative !== false) {
@@ -42,12 +38,8 @@ export function formatDate(
     }
 
     // Check if it's next week
-    const nextWeekStart = new Date(
-      endOfWeek.getTime() + 1 * 24 * 60 * 60 * 1000,
-    );
-    const nextWeekEnd = new Date(
-      nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000,
-    );
+    const nextWeekStart = new Date(endOfWeek.getTime() + 1 * 24 * 60 * 60 * 1000);
+    const nextWeekEnd = new Date(nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
 
     if (activityDate >= nextWeekStart && activityDate <= nextWeekEnd) {
       return `Next ${dateObj.toLocaleDateString(undefined, { weekday: "long" })}`;

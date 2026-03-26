@@ -8,9 +8,7 @@ const LOCATION_BUFFER_KEY = "location_buffer";
 const MAX_BUFFER_SIZE = 100;
 
 // Static callback registry for background task
-const backgroundLocationCallbacks = new Set<
-  (location: Location.LocationObject) => void
->();
+const backgroundLocationCallbacks = new Set<(location: Location.LocationObject) => void>();
 
 // Define background location task at module level (required for Expo)
 TaskManager.defineTask(
@@ -34,9 +32,7 @@ TaskManager.defineTask(
         return;
       }
 
-      console.log(
-        `[Background Location Task] Processing ${locations.length} location(s)`,
-      );
+      console.log(`[Background Location Task] Processing ${locations.length} location(s)`);
 
       // Process each location through callbacks
       for (const location of locations) {
@@ -44,10 +40,7 @@ TaskManager.defineTask(
         if (isLocationValid(location)) {
           // Update last location time
           try {
-            await AsyncStorage.setItem(
-              "last_location_time",
-              location.timestamp.toString(),
-            );
+            await AsyncStorage.setItem("last_location_time", location.timestamp.toString());
           } catch (storageError) {
             console.warn(
               "[Background Location Task] Failed to update last location time:",
@@ -61,36 +54,25 @@ TaskManager.defineTask(
               try {
                 cb(location);
               } catch (e) {
-                console.error(
-                  "[Background Location Task] Error in callback:",
-                  e,
-                );
+                console.error("[Background Location Task] Error in callback:", e);
               }
             });
           } else {
-            console.warn(
-              "[Background Location Task] No callbacks registered, buffering location",
-            );
+            console.warn("[Background Location Task] No callbacks registered, buffering location");
           }
         } else {
-          console.warn(
-            "[Background Location Task] Invalid location, skipping:",
-            {
-              accuracy: location.coords?.accuracy,
-              lat: location.coords?.latitude,
-              lng: location.coords?.longitude,
-            },
-          );
+          console.warn("[Background Location Task] Invalid location, skipping:", {
+            accuracy: location.coords?.accuracy,
+            lat: location.coords?.latitude,
+            lng: location.coords?.longitude,
+          });
         }
       }
 
       // Buffer management for offline storage
       await bufferLocations(locations);
     } catch (taskError) {
-      console.error(
-        "[Background Location Task] Unexpected error:",
-        taskError,
-      );
+      console.error("[Background Location Task] Unexpected error:", taskError);
     }
   },
 );
@@ -113,15 +95,11 @@ function isLocationValid(location: Location.LocationObject): boolean {
 }
 
 // Helper function for buffering locations
-async function bufferLocations(
-  locations: Location.LocationObject[],
-): Promise<void> {
+async function bufferLocations(locations: Location.LocationObject[]): Promise<void> {
   try {
     // Get current buffer
     const bufferedStr = await AsyncStorage.getItem(LOCATION_BUFFER_KEY);
-    let buffer: Location.LocationObject[] = bufferedStr
-      ? JSON.parse(bufferedStr)
-      : [];
+    let buffer: Location.LocationObject[] = bufferedStr ? JSON.parse(bufferedStr) : [];
 
     // Add new locations
     buffer.push(...locations);
@@ -140,18 +118,14 @@ async function bufferLocations(
 
 export class LocationManager {
   private locationSubscription: Location.LocationSubscription | null = null;
-  private locationCallbacks = new Set<
-    (location: Location.LocationObject) => void
-  >();
+  private locationCallbacks = new Set<(location: Location.LocationObject) => void>();
   private taskName = BACKGROUND_LOCATION_TASK;
   private locationBuffer: Location.LocationObject[] = [];
   private lastLocationTime = 0;
   private healthCheckInterval: number | null = null;
   private readonly HEALTH_CHECK_INTERVAL = 10000; // 10 seconds
   private headingSubscription: Location.LocationSubscription | null = null;
-  private headingCallbacks = new Set<
-    (heading: Location.LocationHeadingObject) => void
-  >();
+  private headingCallbacks = new Set<(heading: Location.LocationHeadingObject) => void>();
 
   constructor() {
     // Load any existing buffered locations on startup
@@ -248,17 +222,15 @@ export class LocationManager {
     }
 
     try {
-      this.headingSubscription = await Location.watchHeadingAsync(
-        (headingObject) => {
-          this.headingCallbacks.forEach((cb) => {
-            try {
-              cb(headingObject);
-            } catch (e) {
-              console.warn("Error in heading callback:", e);
-            }
-          });
-        }
-      );
+      this.headingSubscription = await Location.watchHeadingAsync((headingObject) => {
+        this.headingCallbacks.forEach((cb) => {
+          try {
+            cb(headingObject);
+          } catch (e) {
+            console.warn("Error in heading callback:", e);
+          }
+        });
+      });
       console.log("Magnetometer heading tracking started");
     } catch (error) {
       console.error("Failed to start heading tracking:", error);
@@ -282,9 +254,7 @@ export class LocationManager {
       }
 
       // Check if already running to avoid duplicate starts
-      const isRunning = await Location.hasStartedLocationUpdatesAsync(
-        this.taskName,
-      );
+      const isRunning = await Location.hasStartedLocationUpdatesAsync(this.taskName);
       if (isRunning) {
         console.log("Background location tracking already running");
         return;
@@ -322,9 +292,7 @@ export class LocationManager {
 
   async stopBackgroundTracking(): Promise<void> {
     try {
-      const isStarted = await Location.hasStartedLocationUpdatesAsync(
-        this.taskName,
-      );
+      const isStarted = await Location.hasStartedLocationUpdatesAsync(this.taskName);
       if (isStarted) {
         await Location.stopLocationUpdatesAsync(this.taskName);
       }
@@ -377,9 +345,7 @@ export class LocationManager {
 
     // If no location received in 30 seconds, try to restart
     if (timeSinceLastLocation > 30000) {
-      console.warn(
-        `No location updates for ${timeSinceLastLocation / 1000}s, attempting restart`,
-      );
+      console.warn(`No location updates for ${timeSinceLastLocation / 1000}s, attempting restart`);
 
       try {
         // Try to restart foreground tracking
@@ -395,10 +361,7 @@ export class LocationManager {
           console.warn("Background location tracking may be stalled");
         }
       } catch (error) {
-        console.error(
-          "Failed to restart location tracking during health check:",
-          error,
-        );
+        console.error("Failed to restart location tracking during health check:", error);
       }
     }
   }
@@ -502,15 +465,11 @@ export class LocationManager {
   }
 
   // --- Heading Callback Management ---
-  addHeadingCallback(
-    callback: (heading: Location.LocationHeadingObject) => void
-  ): void {
+  addHeadingCallback(callback: (heading: Location.LocationHeadingObject) => void): void {
     this.headingCallbacks.add(callback);
   }
 
-  removeHeadingCallback(
-    callback: (heading: Location.LocationHeadingObject) => void
-  ): void {
+  removeHeadingCallback(callback: (heading: Location.LocationHeadingObject) => void): void {
     this.headingCallbacks.delete(callback);
   }
 

@@ -19,9 +19,7 @@ describe("computeLoadBootstrapState", () => {
     expect(bootstrap.confidence.window_days).toBe(14);
     expect(bootstrap.confidence.active_days).toBe(3);
     expect(bootstrap.confidence.zero_fill_days).toBe(11);
-    expect(bootstrap.confidence.rationale_codes).toContain(
-      "daily_zero_fill_bootstrap",
-    );
+    expect(bootstrap.confidence.rationale_codes).toContain("daily_zero_fill_bootstrap");
   });
 
   it("returns bounded fallback state for no recent activity", () => {
@@ -36,9 +34,7 @@ describe("computeLoadBootstrapState", () => {
     expect(bootstrap.starting_tsb).toBe(0);
     expect(bootstrap.confidence.confidence).toBe(0);
     expect(bootstrap.confidence.history_state).toBe("none");
-    expect(bootstrap.confidence.rationale_codes).toContain(
-      "age_unknown_conservative_prior",
-    );
+    expect(bootstrap.confidence.rationale_codes).toContain("age_unknown_conservative_prior");
   });
 
   it("applies a stricter no-history prior for youth athletes", () => {
@@ -51,9 +47,7 @@ describe("computeLoadBootstrapState", () => {
 
     expect(bootstrap.starting_ctl).toBeLessThan(18);
     expect(bootstrap.starting_atl).toBe(bootstrap.starting_ctl);
-    expect(bootstrap.confidence.rationale_codes).toContain(
-      "youth_safe_prior_applied",
-    );
+    expect(bootstrap.confidence.rationale_codes).toContain("youth_safe_prior_applied");
   });
 
   it("decays stale load and confidence when activity is old", () => {
@@ -77,11 +71,7 @@ describe("computeLoadBootstrapState", () => {
 
     expect(stale.starting_ctl).toBeLessThan(fresh.starting_ctl);
     expect(stale.starting_atl).toBeLessThan(fresh.starting_atl);
-    expect(stale.confidence.confidence).toBeLessThan(
-      fresh.confidence.confidence,
-    );
-    expect(stale.confidence.rationale_codes).toContain(
-      "stale_history_decay_applied",
-    );
+    expect(stale.confidence.confidence).toBeLessThan(fresh.confidence.confidence);
+    expect(stale.confidence.rationale_codes).toContain("stale_history_decay_applied");
   });
 });

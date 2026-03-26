@@ -1,11 +1,7 @@
 import type { OptimizationProfile } from "../safety-caps";
 import { clampMpcCandidateAction, resolveMpcSolveBounds } from "./constraints";
 import { buildDeterministicCandidateLattice } from "./lattice";
-import {
-  type MpcTieBreakCandidate,
-  type MpcTieBreakField,
-  pickBestMpcCandidate,
-} from "./tiebreak";
+import { type MpcTieBreakCandidate, type MpcTieBreakField, pickBestMpcCandidate } from "./tiebreak";
 
 export interface DeterministicMpcEvaluationResult {
   objective_score: number;
@@ -82,8 +78,8 @@ export function solveDeterministicBoundedMpc(
     precision: input.precision,
   });
 
-  const evaluatedCandidates: DeterministicMpcEvaluatedCandidate[] =
-    generatedCandidates.map((candidateValue) => {
+  const evaluatedCandidates: DeterministicMpcEvaluatedCandidate[] = generatedCandidates.map(
+    (candidateValue) => {
       const evaluation = input.evaluate_candidate({
         candidate_value: candidateValue,
         horizon_weeks: bounds.horizon_weeks,
@@ -104,7 +100,8 @@ export function solveDeterministicBoundedMpc(
         primary_goal_id: evaluation.primary_goal_id,
         diagnostics_payload: evaluation.diagnostics_payload,
       };
-    });
+    },
+  );
 
   const best = pickBestMpcCandidate(evaluatedCandidates);
 
@@ -118,10 +115,7 @@ export function solveDeterministicBoundedMpc(
       candidate_limit: bounds.candidate_count,
       generated_candidates: generatedCandidates,
       evaluated_candidates: evaluatedCandidates.length,
-      pruned_branches: Math.max(
-        0,
-        bounds.candidate_count - generatedCandidates.length,
-      ),
+      pruned_branches: Math.max(0, bounds.candidate_count - generatedCandidates.length),
       active_constraints: [
         "profile_horizon_bound",
         "profile_candidate_bound",

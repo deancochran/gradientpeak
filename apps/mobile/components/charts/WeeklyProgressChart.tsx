@@ -18,21 +18,13 @@ export interface WeeklyProgressChartProps {
   height?: number;
 }
 
-export function WeeklyProgressChart({
-  data,
-  height = 280,
-}: WeeklyProgressChartProps) {
+export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartProps) {
   const screenWidth = Dimensions.get("window").width;
 
   if (!data || data.length === 0) {
     return (
-      <View
-        className="bg-white rounded-lg border border-gray-200 p-4"
-        style={{ height }}
-      >
-        <Text className="text-base font-semibold text-gray-900 mb-2">
-          Weekly Progress Chart
-        </Text>
+      <View className="bg-white rounded-lg border border-gray-200 p-4" style={{ height }}>
+        <Text className="text-base font-semibold text-gray-900 mb-2">Weekly Progress Chart</Text>
         <View className="flex-1 items-center justify-center">
           <Text className="text-gray-500">No weekly data available</Text>
         </View>
@@ -85,9 +77,7 @@ export function WeeklyProgressChart({
 
   return (
     <View className="bg-white rounded-lg border border-gray-200 p-4">
-      <Text className="text-base font-semibold text-gray-900 mb-2">
-        Weekly TSS Progress
-      </Text>
+      <Text className="text-base font-semibold text-gray-900 mb-2">Weekly TSS Progress</Text>
       <Text className="text-xs text-gray-500 mb-4">
         Completed Training Stress Score by week (last {recentData.length} weeks)
       </Text>
@@ -128,16 +118,12 @@ export function WeeklyProgressChart({
       {/* Completion rate comparison */}
       <View className="mt-4 p-3 bg-gray-50 rounded-lg">
         <View className="flex-row justify-between items-center mb-2">
-          <Text className="text-sm font-medium text-gray-900">
-            Weekly Completion Rates
-          </Text>
+          <Text className="text-sm font-medium text-gray-900">Weekly Completion Rates</Text>
         </View>
         <View className="space-y-1">
           {recentData.slice(-3).map((week, index) => (
             <View key={index} className="flex-row items-center justify-between">
-              <Text className="text-xs text-gray-600">
-                Week {recentData.length - index}
-              </Text>
+              <Text className="text-xs text-gray-600">Week {recentData.length - index}</Text>
               <View className="flex-row items-center">
                 <View className="w-16 bg-gray-200 rounded-full h-2 mr-2">
                   <View
@@ -153,9 +139,7 @@ export function WeeklyProgressChart({
                     }}
                   />
                 </View>
-                <Text className="text-xs font-medium text-gray-900 w-8">
-                  {week.tssPercentage}%
-                </Text>
+                <Text className="text-xs font-medium text-gray-900 w-8">{week.tssPercentage}%</Text>
               </View>
             </View>
           ))}
@@ -168,8 +152,7 @@ export function WeeklyProgressChart({
           <Text className="text-xs text-gray-500">Avg Completion</Text>
           <Text className="text-sm font-semibold text-gray-900">
             {Math.round(
-              recentData.reduce((sum, d) => sum + d.tssPercentage, 0) /
-                recentData.length,
+              recentData.reduce((sum, d) => sum + d.tssPercentage, 0) / recentData.length,
             )}
             %
           </Text>

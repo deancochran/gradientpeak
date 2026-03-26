@@ -1,11 +1,7 @@
 import { AuthGuard } from "@/components/auth-guard";
 import { DashboardHeader } from "@/components/dashboard-header";
 
-export default function InternalLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function InternalLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
       <div className="flex min-h-screen flex-col">

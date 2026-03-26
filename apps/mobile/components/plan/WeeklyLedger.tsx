@@ -1,9 +1,9 @@
-import React, { useState } from "react";
-import { View, TouchableOpacity } from "react-native";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Text } from "@repo/ui/components/text";
 import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
+import React, { useState } from "react";
+import { TouchableOpacity, View } from "react-native";
 
 interface WeeklyLedgerProps {
   totalDistance: number; // in km
@@ -18,21 +18,18 @@ export function WeeklyLedger({
   totalTime,
   activityCount,
   unit = "mi",
-  defaultCollapsed = true
+  defaultCollapsed = true,
 }: WeeklyLedgerProps) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
 
   // Convert km to miles if needed
-  const displayDistance = unit === "mi"
-    ? (totalDistance * 0.621371).toFixed(1)
-    : totalDistance.toFixed(1);
+  const displayDistance =
+    unit === "mi" ? (totalDistance * 0.621371).toFixed(1) : totalDistance.toFixed(1);
 
   // Convert minutes to hours and minutes
   const hours = Math.floor(totalTime / 60);
   const minutes = totalTime % 60;
-  const displayTime = hours > 0
-    ? `${hours}h ${minutes}m`
-    : `${minutes}m`;
+  const displayTime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
   // Check if there's any data to show
   const hasData = totalDistance > 0 || totalTime > 0 || activityCount > 0;
@@ -43,10 +40,7 @@ export function WeeklyLedger({
 
   return (
     <Card className="mt-4">
-      <TouchableOpacity
-        onPress={() => setIsCollapsed(!isCollapsed)}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity onPress={() => setIsCollapsed(!isCollapsed)} activeOpacity={0.7}>
         <CardContent className="p-4">
           <View className="flex-row items-center justify-between">
             <Text className="font-semibold text-base">This Week</Text>
@@ -72,9 +66,7 @@ export function WeeklyLedger({
               {/* Time */}
               <View className="flex-row items-center justify-between">
                 <Text className="text-muted-foreground">Time</Text>
-                <Text className="font-semibold text-lg">
-                  {displayTime}
-                </Text>
+                <Text className="font-semibold text-lg">{displayTime}</Text>
               </View>
 
               <View className="h-px bg-border" />
@@ -82,9 +74,7 @@ export function WeeklyLedger({
               {/* Activity Count */}
               <View className="flex-row items-center justify-between">
                 <Text className="text-muted-foreground">Activities</Text>
-                <Text className="font-semibold text-lg">
-                  {activityCount}
-                </Text>
+                <Text className="font-semibold text-lg">{activityCount}</Text>
               </View>
             </View>
           )}

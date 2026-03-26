@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { trpc } from "@/lib/trpc/client";
 import { Button } from "@repo/ui/components/button";
-import { Heart } from "lucide-react";
 import { cn } from "@repo/ui/lib/cn";
+import { Heart } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { trpc } from "@/lib/trpc/client";
 
 interface LikeButtonProps {
   entityId: string;
@@ -45,24 +45,17 @@ export function LikeButton({
       variant="ghost"
       size="sm"
       className="flex items-center gap-1.5 px-2 hover:bg-transparent"
-      onClick={() =>
-        toggleMutation.mutate({ entity_id: entityId, entity_type: entityType })
-      }
+      onClick={() => toggleMutation.mutate({ entity_id: entityId, entity_type: entityType })}
       disabled={toggleMutation.isPending}
     >
       <Heart
         className={cn(
           "h-5 w-5 transition-colors",
-          hasLiked
-            ? "fill-red-500 text-red-500"
-            : "text-muted-foreground hover:text-foreground",
+          hasLiked ? "fill-red-500 text-red-500" : "text-muted-foreground hover:text-foreground",
         )}
       />
       <span
-        className={cn(
-          "text-sm",
-          hasLiked ? "text-red-500 font-medium" : "text-muted-foreground",
-        )}
+        className={cn("text-sm", hasLiked ? "text-red-500 font-medium" : "text-muted-foreground")}
       >
         {likesCount}
       </span>

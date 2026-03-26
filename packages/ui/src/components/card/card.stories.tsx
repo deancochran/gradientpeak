@@ -28,9 +28,7 @@ export const Overview: Story = {
     <Card className="w-[360px]">
       <CardHeader>
         <CardTitle>{cardFixtures.recoveryCheck.title}</CardTitle>
-        <CardDescription>
-          {cardFixtures.recoveryCheck.description}
-        </CardDescription>
+        <CardDescription>{cardFixtures.recoveryCheck.description}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid gap-3 text-sm">
@@ -46,9 +44,7 @@ export const Overview: Story = {
         </div>
       </CardContent>
       <CardFooter>
-        <Button className="w-full">
-          {cardFixtures.recoveryCheck.primaryActionLabel}
-        </Button>
+        <Button className="w-full">{cardFixtures.recoveryCheck.primaryActionLabel}</Button>
       </CardFooter>
     </Card>
   ),
@@ -65,8 +61,7 @@ export const WithAction: Story = {
         </CardAction>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
-        3 x 10 minutes at threshold effort with 2-minute recovery jogs between
-        repeats.
+        3 x 10 minutes at threshold effort with 2-minute recovery jogs between repeats.
       </CardContent>
       <CardFooter className="justify-end gap-2">
         <Button variant="ghost">Skip</Button>

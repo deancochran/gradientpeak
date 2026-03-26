@@ -5,9 +5,7 @@ import { Badge } from "./index.native";
 describe("Badge native", () => {
   it("maps normalized test props and renders its content", () => {
     const { getByTestId } = renderNative(
-      <Badge testId={badgeFixtures.featured.testId}>
-        {badgeFixtures.featured.children}
-      </Badge>,
+      <Badge testId={badgeFixtures.featured.testId}>{badgeFixtures.featured.children}</Badge>,
     );
 
     const badge = getByTestId(badgeFixtures.featured.testId);

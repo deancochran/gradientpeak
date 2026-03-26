@@ -1,9 +1,4 @@
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
@@ -58,27 +53,19 @@ export function TrainingFormCard({ formStatus }: TrainingFormCardProps) {
           className="w-full h-3 mb-3"
           indicatorClassName={getFormStatusColor()}
         />
-        <Text className="text-card-foreground text-sm mb-3">
-          {formStatus.explanation}
-        </Text>
+        <Text className="text-card-foreground text-sm mb-3">{formStatus.explanation}</Text>
         <View className="flex-row justify-between">
           <View>
             <Text className="text-muted-foreground text-xs">Fitness (CTL)</Text>
-            <Text className="text-foreground font-semibold">
-              {formStatus.ctl}
-            </Text>
+            <Text className="text-foreground font-semibold">{formStatus.ctl}</Text>
           </View>
           <View>
             <Text className="text-muted-foreground text-xs">Fatigue (ATL)</Text>
-            <Text className="text-foreground font-semibold">
-              {formStatus.atl}
-            </Text>
+            <Text className="text-foreground font-semibold">{formStatus.atl}</Text>
           </View>
           <View>
             <Text className="text-muted-foreground text-xs">Form (TSB)</Text>
-            <Text className="text-foreground font-semibold">
-              {formStatus.tsb}
-            </Text>
+            <Text className="text-foreground font-semibold">{formStatus.tsb}</Text>
           </View>
         </View>
       </CardContent>

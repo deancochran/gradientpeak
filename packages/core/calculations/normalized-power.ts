@@ -39,8 +39,7 @@ export function calculateNormalizedPower(powerStream: number[]): number {
   const raisedTo4th = rollingAverages.map((avg) => Math.pow(avg, 4));
 
   // Average the 4th power values
-  const avgOf4th =
-    raisedTo4th.reduce((sum, val) => sum + val, 0) / raisedTo4th.length;
+  const avgOf4th = raisedTo4th.reduce((sum, val) => sum + val, 0) / raisedTo4th.length;
 
   // Take the 4th root
   const normalizedPower = Math.pow(avgOf4th, 1 / 4);

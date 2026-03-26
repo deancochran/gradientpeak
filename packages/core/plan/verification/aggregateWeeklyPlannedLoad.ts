@@ -1,8 +1,4 @@
-import {
-  addDaysDateOnlyUtc,
-  diffDateOnlyUtcDays,
-  parseDateOnlyUtc,
-} from "../dateOnlyUtc";
+import { addDaysDateOnlyUtc, diffDateOnlyUtcDays, parseDateOnlyUtc } from "../dateOnlyUtc";
 
 export interface WeeklyLoadAggregationSession {
   scheduled_date: string;
@@ -100,15 +96,10 @@ export function aggregateWeeklyPlannedLoad(
     weeksByStartDate.set(weekStartDate, existing);
   }
 
-  const weekCount =
-    diffDateOnlyUtcDays(firstWeekStartDate ?? "", lastWeekStartDate ?? "") / 7 +
-    1;
+  const weekCount = diffDateOnlyUtcDays(firstWeekStartDate ?? "", lastWeekStartDate ?? "") / 7 + 1;
 
   const weeks = Array.from({ length: weekCount }, (_, index) => {
-    const weekStartDate = addDaysDateOnlyUtc(
-      firstWeekStartDate ?? "",
-      index * 7,
-    );
+    const weekStartDate = addDaysDateOnlyUtc(firstWeekStartDate ?? "", index * 7);
     const existing = weeksByStartDate.get(weekStartDate);
 
     return {
@@ -126,13 +117,7 @@ export function aggregateWeeklyPlannedLoad(
 
   return {
     weeks,
-    total_planned_tss: weeks.reduce(
-      (sum, week) => sum + week.planned_weekly_tss,
-      0,
-    ),
-    total_planned_sessions: weeks.reduce(
-      (sum, week) => sum + week.planned_session_count,
-      0,
-    ),
+    total_planned_tss: weeks.reduce((sum, week) => sum + week.planned_weekly_tss, 0),
+    total_planned_sessions: weeks.reduce((sum, week) => sum + week.planned_session_count, 0),
   };
 }

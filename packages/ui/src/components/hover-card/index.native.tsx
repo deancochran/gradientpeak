@@ -12,22 +12,18 @@ import { DEFAULT_HOVER_CARD_SIDE_OFFSET } from "./shared";
 const HoverCard = HoverCardPrimitive.Root;
 const HoverCardTrigger = HoverCardPrimitive.Trigger;
 
-const FullWindowOverlay =
-  Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
+const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
 
 function HoverCardContent({
   className,
   align = "center",
   sideOffset = DEFAULT_HOVER_CARD_SIDE_OFFSET,
   ...props
-}: HoverCardPrimitive.ContentProps &
-  React.RefAttributes<HoverCardPrimitive.ContentRef>) {
+}: HoverCardPrimitive.ContentProps & React.RefAttributes<HoverCardPrimitive.ContentRef>) {
   return (
     <HoverCardPrimitive.Portal>
       <FullWindowOverlay>
-        <HoverCardPrimitive.Overlay
-          style={Platform.select({ native: StyleSheet.absoluteFill })}
-        >
+        <HoverCardPrimitive.Overlay style={Platform.select({ native: StyleSheet.absoluteFill })}>
           <NativeOnlyAnimatedView entering={FadeIn} exiting={FadeOut}>
             <TextClassContext.Provider value="text-popover-foreground">
               <HoverCardPrimitive.Content

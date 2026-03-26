@@ -145,11 +145,9 @@ describe("MPC tiebreak", () => {
     });
 
     expect(result.selected_candidate).not.toBe(300);
-    expect(
-      result.candidates.every((candidate) =>
-        Number.isFinite(candidate.objective_score),
-      ),
-    ).toBe(false);
+    expect(result.candidates.every((candidate) => Number.isFinite(candidate.objective_score))).toBe(
+      false,
+    );
   });
 
   it("applies tie-break precedence objective -> safety -> tracking -> volatility -> churn -> delta -> date -> id -> value", () => {

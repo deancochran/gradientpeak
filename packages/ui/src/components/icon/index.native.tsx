@@ -11,12 +11,7 @@ const StyledIconImpl = styled(IconImpl, {
   className: "style",
 });
 
-function Icon({
-  as: IconComponent,
-  className,
-  size = 14,
-  ...props
-}: IconProps) {
+function Icon({ as: IconComponent, className, size = 14, ...props }: IconProps) {
   return (
     <StyledIconImpl
       as={IconComponent}
@@ -27,5 +22,5 @@ function Icon({
   );
 }
 
-export { Icon };
 export type { IconProps } from "./shared";
+export { Icon };

@@ -1,14 +1,14 @@
+import { buildPreviewMinimalPlanFromForm } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import type {
   GoalFormData,
   TrainingPlanConfigFormData,
 } from "@/components/training-plan/create/SinglePageForm";
-import { buildPreviewMinimalPlanFromForm } from "@repo/core";
 import {
   buildMinimalTrainingPlanPayload,
+  toCreationNormalizationInput,
   toTrainingPlanConfigFormDataFromStructure,
   toTrainingPlanFormDataFromStructure,
-  toCreationNormalizationInput,
 } from "./index";
 
 function buildConfigFixture(): TrainingPlanConfigFormData {
@@ -170,9 +170,7 @@ describe("toCreationNormalizationInput", () => {
       },
     });
 
-    expect(mapped.user_values?.locks?.min_sessions_per_week?.locked_by).toBe(
-      "user",
-    );
+    expect(mapped.user_values?.locks?.min_sessions_per_week?.locked_by).toBe("user");
   });
 
   it("does not send constraints as user overrides when not user-owned", () => {
@@ -202,13 +200,9 @@ describe("toCreationNormalizationInput", () => {
 
     const mapped = toCreationNormalizationInput(fixture);
 
-    expect(mapped.user_values?.availability_config).toEqual(
-      fixture.availabilityConfig,
-    );
+    expect(mapped.user_values?.availability_config).toEqual(fixture.availabilityConfig);
     expect(mapped.user_values).not.toHaveProperty("risk_acceptance");
-    expect(mapped.provenance_overrides?.availability_provenance?.source).toBe(
-      "user",
-    );
+    expect(mapped.provenance_overrides?.availability_provenance?.source).toBe("user");
   });
 
   it("keeps preview/create calibration replay payload deterministic", () => {

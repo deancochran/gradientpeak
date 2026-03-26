@@ -2,8 +2,7 @@ import * as React from "react";
 
 jest.mock("@rn-primitives/slot", () => {
   return {
-    Text: (props: any) =>
-      React.createElement("Slot.Text", props, props.children),
+    Text: (props: any) => React.createElement("Slot.Text", props, props.children),
   };
 });
 
@@ -55,23 +54,13 @@ describe("Tabs native", () => {
     const fixture = tabsFixtures.settings;
 
     const { getByTestId } = renderNative(
-      <Tabs
-        onValueChange={() => {}}
-        testId={fixture.rootTestId}
-        value={fixture.values.profile}
-      >
+      <Tabs onValueChange={() => {}} testId={fixture.rootTestId} value={fixture.values.profile}>
         <TabsList testId={fixture.listTestId}>
-          <TabsTrigger
-            testId={fixture.triggers.profile.testId}
-            value={fixture.values.profile}
-          >
+          <TabsTrigger testId={fixture.triggers.profile.testId} value={fixture.values.profile}>
             {fixture.triggers.profile.label}
           </TabsTrigger>
         </TabsList>
-        <TabsContent
-          testId={fixture.contentTestIds.profile}
-          value={fixture.values.profile}
-        >
+        <TabsContent testId={fixture.contentTestIds.profile} value={fixture.values.profile}>
           {fixture.content.profile}
         </TabsContent>
       </Tabs>,

@@ -1,9 +1,9 @@
 import { z } from "zod";
 import {
-  profileGoalLegacySchema,
-  profileGoalTargetSchema,
   type ProfileGoalLegacy,
   type ProfileGoalTarget,
+  profileGoalLegacySchema,
+  profileGoalTargetSchema,
 } from "../goals/profile_goals";
 
 export const trainingPhaseEnum = z.enum([
@@ -24,10 +24,9 @@ export const intensityDistributionSchema = z
     moderate: z.number().min(0).max(1),
     hard: z.number().min(0).max(1),
   })
-  .refine(
-    (data) => Math.abs(data.easy + data.moderate + data.hard - 1) < 0.01,
-    { message: "Intensity ratios must sum to 1.0" },
-  );
+  .refine((data) => Math.abs(data.easy + data.moderate + data.hard - 1) < 0.01, {
+    message: "Intensity ratios must sum to 1.0",
+  });
 
 export type IntensityDistribution = z.infer<typeof intensityDistributionSchema>;
 
@@ -45,9 +44,7 @@ export const minimalTrainingGoalCreateSchema = z.object({
   targets: z.array(profileGoalTargetSchema).min(1),
 });
 
-export type MinimalTrainingGoalCreate = z.infer<
-  typeof minimalTrainingGoalCreateSchema
->;
+export type MinimalTrainingGoalCreate = z.infer<typeof minimalTrainingGoalCreateSchema>;
 
 export const minimalTrainingPlanCreateSchema = z
   .object({
@@ -90,14 +87,9 @@ export const minimalTrainingPlanCreateSchema = z
     }
   });
 
-export type MinimalTrainingPlanCreate = z.infer<
-  typeof minimalTrainingPlanCreateSchema
->;
+export type MinimalTrainingPlanCreate = z.infer<typeof minimalTrainingPlanCreateSchema>;
 
-function createMinMaxRangeSchema(
-  minSchema: z.ZodNumber,
-  maxSchema: z.ZodNumber,
-) {
+function createMinMaxRangeSchema(minSchema: z.ZodNumber, maxSchema: z.ZodNumber) {
   return z
     .object({
       min: minSchema,
@@ -106,10 +98,7 @@ function createMinMaxRangeSchema(
     .refine((data) => data.max >= data.min);
 }
 
-const nonNegativeNumberRangeSchema = createMinMaxRangeSchema(
-  z.number().min(0),
-  z.number().min(0),
-);
+const nonNegativeNumberRangeSchema = createMinMaxRangeSchema(z.number().min(0), z.number().min(0));
 
 const weeklySessionsRangeSchema = createMinMaxRangeSchema(
   z.number().int().min(0).max(21),
@@ -148,17 +137,7 @@ export const trainingConstraintsSchema = z.object({
   max_sessions_per_week: z.number().int().min(0).max(21).optional(),
   max_sessions_per_day: z.number().int().min(0).max(5).optional(),
   available_days: z
-    .array(
-      z.enum([
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-      ]),
-    )
+    .array(z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]))
     .optional(),
   blocked_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
   min_rest_days_per_week: z.number().int().min(0).max(7).default(1),
@@ -171,28 +150,12 @@ export const trainingConstraintsSchema = z.object({
         max_sessions_per_week: z.number().int().min(0).optional(),
         required_days: z
           .array(
-            z.enum([
-              "monday",
-              "tuesday",
-              "wednesday",
-              "thursday",
-              "friday",
-              "saturday",
-              "sunday",
-            ]),
+            z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]),
           )
           .optional(),
         blocked_days: z
           .array(
-            z.enum([
-              "monday",
-              "tuesday",
-              "wednesday",
-              "thursday",
-              "friday",
-              "saturday",
-              "sunday",
-            ]),
+            z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]),
           )
           .optional(),
       }),
@@ -222,10 +185,7 @@ export const activityDistributionSchema = z
   )
   .refine(
     (data) => {
-      const totalTarget = Object.values(data).reduce(
-        (sum, v) => sum + v.target_percentage,
-        0,
-      );
+      const totalTarget = Object.values(data).reduce((sum, v) => sum + v.target_percentage, 0);
       return Math.abs(totalTarget - 1) < 0.01;
     },
     { message: "Target percentages must sum to 1.0" },
@@ -257,8 +217,7 @@ type PeriodizedPlanRefinementInput = {
 
 function hasNoOverlappingBlocks(data: PeriodizedPlanRefinementInput): boolean {
   const sortedBlocks = [...data.blocks].sort(
-    (a, b) =>
-      new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
+    (a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime(),
   );
 
   for (let i = 0; i < sortedBlocks.length - 1; i++) {
@@ -274,9 +233,7 @@ function hasNoOverlappingBlocks(data: PeriodizedPlanRefinementInput): boolean {
   return true;
 }
 
-function blocksAreWithinPlanDateBounds(
-  data: PeriodizedPlanRefinementInput,
-): boolean {
+function blocksAreWithinPlanDateBounds(data: PeriodizedPlanRefinementInput): boolean {
   const planStart = new Date(data.start_date);
   const planEnd = new Date(data.end_date);
 
@@ -287,9 +244,9 @@ function blocksAreWithinPlanDateBounds(
   });
 }
 
-function applyPeriodizedBlockRefinements<
-  T extends z.ZodType<PeriodizedPlanRefinementInput>,
->(schema: T) {
+function applyPeriodizedBlockRefinements<T extends z.ZodType<PeriodizedPlanRefinementInput>>(
+  schema: T,
+) {
   return schema
     .refine((data) => hasNoOverlappingBlocks(data), {
       message: "Training blocks cannot overlap",
@@ -324,8 +281,7 @@ const maintenancePlanBaseShape = {
   target_ctl_range: ctlRangeSchema.optional(),
   intensity_distribution: intensityDistributionSchema.optional(),
   target_weekly_tss_range: nonNegativeNumberRangeSchema.optional(),
-  target_sessions_per_week_range:
-    maintenanceWeeklySessionsRangeSchema.optional(),
+  target_sessions_per_week_range: maintenanceWeeklySessionsRangeSchema.optional(),
   constraints: trainingConstraintsSchema.optional(),
   activity_distribution: activityDistributionSchema,
   is_active: z.boolean().default(true),
@@ -373,15 +329,13 @@ export const wizardFitnessInputSchema = z.object({
 
 export type WizardFitnessInput = z.infer<typeof wizardFitnessInputSchema>;
 
-export const wizardActivityInputSchema = z
-  .record(z.string(), z.number().min(0).max(1))
-  .refine(
-    (data) => {
-      const total = Object.values(data).reduce((sum, v) => sum + v, 0);
-      return Math.abs(total - 1) < 0.01;
-    },
-    { message: "Percentages must sum to 100%" },
-  );
+export const wizardActivityInputSchema = z.record(z.string(), z.number().min(0).max(1)).refine(
+  (data) => {
+    const total = Object.values(data).reduce((sum, v) => sum + v, 0);
+    return Math.abs(total - 1) < 0.01;
+  },
+  { message: "Percentages must sum to 100%" },
+);
 
 export type WizardActivityInput = z.infer<typeof wizardActivityInputSchema>;
 
@@ -389,24 +343,12 @@ export const wizardConstraintsInputSchema = z.object({
   max_hours_per_week: z.number().min(0).max(100).optional(),
   max_sessions_per_week: z.number().int().min(0).max(21).optional(),
   available_days: z
-    .array(
-      z.enum([
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-      ]),
-    )
+    .array(z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]))
     .optional(),
   min_rest_days_per_week: z.number().int().min(0).max(7).default(1),
 });
 
-export type WizardConstraintsInput = z.infer<
-  typeof wizardConstraintsInputSchema
->;
+export type WizardConstraintsInput = z.infer<typeof wizardConstraintsInputSchema>;
 
 export const wizardPeriodizedInputSchema = z.object({
   plan_type: z.literal("periodized"),
@@ -450,9 +392,7 @@ export const wizardMaintenanceInputSchema = z.object({
   intensity_preset: z.enum(["polarized", "pyramidal", "threshold"]).optional(),
 });
 
-export type WizardMaintenanceInput = z.infer<
-  typeof wizardMaintenanceInputSchema
->;
+export type WizardMaintenanceInput = z.infer<typeof wizardMaintenanceInputSchema>;
 
 export function isPeriodizedPlan(plan: TrainingPlan): plan is PeriodizedPlan {
   return plan.plan_type === "periodized";

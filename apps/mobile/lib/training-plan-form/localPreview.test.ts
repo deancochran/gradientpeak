@@ -1,18 +1,12 @@
-import { describe, expect, it } from "vitest";
-import type {
-  CreationNormalizationInput,
-  PreviewReadinessSnapshot,
-} from "@repo/core";
+import type { CreationNormalizationInput, PreviewReadinessSnapshot } from "@repo/core";
 import {
   buildDeterministicProjectionPayload,
   buildProjectionEngineInput,
   deterministicUuidFromSeed,
   normalizeCreationConfig,
 } from "@repo/core";
-import {
-  buildExpandedPlanFromMinimalGoal,
-  computeLocalCreationPreview,
-} from "./localPreview";
+import { describe, expect, it } from "vitest";
+import { buildExpandedPlanFromMinimalGoal, computeLocalCreationPreview } from "./localPreview";
 
 const minimalPlan = {
   goals: [
@@ -69,9 +63,7 @@ describe("computeLocalCreationPreview", () => {
     });
 
     expect(preview.projectionChart.points.length).toBeGreaterThan(0);
-    expect(preview.projectionChart.periodization_phases.length).toBeGreaterThan(
-      0,
-    );
+    expect(preview.projectionChart.periodization_phases.length).toBeGreaterThan(0);
     expect(Array.isArray(preview.conflicts)).toBe(true);
     expect(preview.feasibilitySummary).toBeDefined();
   });
@@ -96,9 +88,7 @@ describe("computeLocalCreationPreview", () => {
       },
     });
 
-    expect(earlierGoal.projectionChart.end_date).not.toBe(
-      laterGoal.projectionChart.end_date,
-    );
+    expect(earlierGoal.projectionChart.end_date).not.toBe(laterGoal.projectionChart.end_date);
     expect(earlierGoal.projectionChart.points.length).not.toBe(
       laterGoal.projectionChart.points.length,
     );
@@ -184,19 +174,13 @@ describe("computeLocalCreationPreview", () => {
         startingAtlOverride: fixture.startingAtlOverride,
       });
 
-      const localDates = local.projectionChart.points.map(
-        (point) => point.date,
-      );
+      const localDates = local.projectionChart.points.map((point) => point.date);
       const sortedDates = [...localDates].sort((a, b) => a.localeCompare(b));
 
-      expect(localDates, `${fixture.name} local dates sorted`).toEqual(
-        sortedDates,
-      );
+      expect(localDates, `${fixture.name} local dates sorted`).toEqual(sortedDates);
       expect(server.points.map((point) => point.date)).toEqual(localDates);
       expect(local.projectionChart.goal_markers).toEqual(server.goal_markers);
-      expect(local.projectionChart.constraint_summary).toEqual(
-        server.constraint_summary,
-      );
+      expect(local.projectionChart.constraint_summary).toEqual(server.constraint_summary);
 
       const tolerance = 0.05;
       for (let i = 0; i < local.projectionChart.points.length; i += 1) {
@@ -205,23 +189,15 @@ describe("computeLocalCreationPreview", () => {
 
         expect(localPoint.date).toBe(serverPoint.date);
         expect(
-          Math.abs(
-            localPoint.predicted_load_tss - serverPoint.predicted_load_tss,
-          ),
+          Math.abs(localPoint.predicted_load_tss - serverPoint.predicted_load_tss),
           `${fixture.name} point ${i} predicted_load_tss`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
-          Math.abs(
-            localPoint.predicted_fatigue_atl -
-              serverPoint.predicted_fatigue_atl,
-          ),
+          Math.abs(localPoint.predicted_fatigue_atl - serverPoint.predicted_fatigue_atl),
           `${fixture.name} point ${i} predicted_fatigue_atl`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
-          Math.abs(
-            localPoint.predicted_fitness_ctl -
-              serverPoint.predicted_fitness_ctl,
-          ),
+          Math.abs(localPoint.predicted_fitness_ctl - serverPoint.predicted_fitness_ctl),
           `${fixture.name} point ${i} predicted_fitness_ctl`,
         ).toBeLessThanOrEqual(tolerance);
         expect(
@@ -230,10 +206,7 @@ describe("computeLocalCreationPreview", () => {
         ).toBeLessThanOrEqual(tolerance);
       }
 
-      expect(local.projectionChart.readiness_score).toBeCloseTo(
-        server.readiness_score,
-        4,
-      );
+      expect(local.projectionChart.readiness_score).toBeCloseTo(server.readiness_score, 4);
       expect(server.readiness_confidence).toBeDefined();
       expect(local.projectionChart.readiness_confidence).toBeCloseTo(
         server.readiness_confidence ?? 0,
@@ -272,10 +245,8 @@ function buildServerRecomputeProjectionChartLike(input: {
       name: block.name,
       start_date: block.start_date,
       end_date: block.end_date,
-      target_weekly_tss_min:
-        Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max:
-        Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
+      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
+      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
     })),
     microcycles: deterministicProjection.microcycles.map((microcycle) => ({
       id: deterministicUuidFromSeed(

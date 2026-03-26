@@ -1,10 +1,6 @@
 import type { Database } from "@repo/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  normalizeIcalEvent,
-  parseIcalEvents,
-  type NormalizedIcalEvent,
-} from "./parser";
+import { type NormalizedIcalEvent, normalizeIcalEvent, parseIcalEvents } from "./parser";
 
 type EventIdentity = {
   externalCalendarId: string;
@@ -47,11 +43,7 @@ export type IcalFeedListItem = {
 };
 
 function identityKey(identity: EventIdentity): string {
-  return [
-    identity.externalCalendarId,
-    identity.externalEventId,
-    identity.occurrenceKey,
-  ].join("::");
+  return [identity.externalCalendarId, identity.externalEventId, identity.occurrenceKey].join("::");
 }
 
 function normalizeFeedUrl(url: string): string {
@@ -71,9 +63,7 @@ export class IcalSyncService {
 
     const icsText = await this.fetchFeed(normalizedFeedUrl);
     const parsedEvents = parseIcalEvents(icsText);
-    const normalizedEvents = parsedEvents.map((event) =>
-      normalizeIcalEvent(event),
-    );
+    const normalizedEvents = parsedEvents.map((event) => normalizeIcalEvent(event));
 
     const existingFeedEvents = await this.getExistingFeedEvents({
       profileId: input.profileId,
@@ -82,8 +72,7 @@ export class IcalSyncService {
 
     const existingByIdentity = new Map<string, ExistingFeedEvent>();
     for (const existing of existingFeedEvents) {
-      if (!existing.external_calendar_id || !existing.external_event_id)
-        continue;
+      if (!existing.external_calendar_id || !existing.external_event_id) continue;
       existingByIdentity.set(
         identityKey({
           externalCalendarId: existing.external_calendar_id,
@@ -146,10 +135,7 @@ export class IcalSyncService {
         .in("id", staleEventIds);
 
       if (error) {
-        throw new IcalSyncError(
-          "Failed to remove stale imported events",
-          "INTERNAL_SERVER_ERROR",
-        );
+        throw new IcalSyncError("Failed to remove stale imported events", "INTERNAL_SERVER_ERROR");
       }
     }
 
@@ -173,10 +159,7 @@ export class IcalSyncService {
       .eq("event_type", "imported");
 
     if (error) {
-      throw new IcalSyncError(
-        "Failed to load iCal feeds",
-        "INTERNAL_SERVER_ERROR",
-      );
+      throw new IcalSyncError("Failed to load iCal feeds", "INTERNAL_SERVER_ERROR");
     }
 
     const grouped = new Map<string, IcalFeedListItem>();
@@ -202,8 +185,7 @@ export class IcalSyncService {
       existing.event_count += 1;
       if (
         row.updated_at &&
-        (!existing.last_event_updated_at ||
-          row.updated_at > existing.last_event_updated_at)
+        (!existing.last_event_updated_at || row.updated_at > existing.last_event_updated_at)
       ) {
         existing.last_event_updated_at = row.updated_at;
       }
@@ -256,10 +238,7 @@ export class IcalSyncService {
         .in("id", ids);
 
       if (error) {
-        throw new IcalSyncError(
-          "Failed to remove imported events",
-          "INTERNAL_SERVER_ERROR",
-        );
+        throw new IcalSyncError("Failed to remove imported events", "INTERNAL_SERVER_ERROR");
       }
     }
 
@@ -279,10 +258,7 @@ export class IcalSyncService {
     }
 
     if (!response.ok) {
-      throw new IcalSyncError(
-        `Unable to fetch iCal feed (${response.status})`,
-        "BAD_REQUEST",
-      );
+      throw new IcalSyncError(`Unable to fetch iCal feed (${response.status})`, "BAD_REQUEST");
     }
 
     return response.text();
@@ -301,10 +277,7 @@ export class IcalSyncService {
       .eq("event_type", "imported");
 
     if (error) {
-      throw new IcalSyncError(
-        "Failed to load existing imported events",
-        "INTERNAL_SERVER_ERROR",
-      );
+      throw new IcalSyncError("Failed to load existing imported events", "INTERNAL_SERVER_ERROR");
     }
 
     return data ?? [];
@@ -341,10 +314,7 @@ export class IcalSyncService {
     });
 
     if (error) {
-      throw new IcalSyncError(
-        "Failed to upsert imported event",
-        "INTERNAL_SERVER_ERROR",
-      );
+      throw new IcalSyncError("Failed to upsert imported event", "INTERNAL_SERVER_ERROR");
     }
   }
 }

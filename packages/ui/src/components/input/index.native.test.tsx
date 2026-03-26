@@ -4,9 +4,7 @@ import { Input } from "./index.native";
 
 describe("Input native", () => {
   it("maps normalized test props onto the native input", () => {
-    const { getByLabelText, getByTestId } = renderNative(
-      <Input {...inputFixtures.email} />,
-    );
+    const { getByLabelText, getByTestId } = renderNative(<Input {...inputFixtures.email} />);
 
     expect(getByLabelText(inputFixtures.email.accessibilityLabel)).toBeTruthy();
 

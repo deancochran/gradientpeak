@@ -1,12 +1,12 @@
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ActivityPayload } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { trpc } from "@/lib/trpc";
-import { ActivityPayload } from "@repo/core";
 import { useRouter } from "expo-router";
 import { Calendar, Smartphone } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { trpc } from "@/lib/trpc";
 
 interface PlannedActivitiesListProps {
   onActivitySelect: (plannedActivity: any) => void;
@@ -14,14 +14,11 @@ interface PlannedActivitiesListProps {
 
 // No longer need local transform function - ActivityPlanCard handles it internally
 
-export function PlannedActivitiesList({
-  onActivitySelect,
-}: PlannedActivitiesListProps) {
+export function PlannedActivitiesList({ onActivitySelect }: PlannedActivitiesListProps) {
   const router = useRouter();
 
   // Fetch today's planned activities using tRPC
-  const { data: plannedActivities, isLoading: loading } =
-    trpc.events.getToday.useQuery();
+  const { data: plannedActivities, isLoading: loading } = trpc.events.getToday.useQuery();
 
   // Handle navigation to activity plan detail page
   const handleNavigateToDetail = (activity: any) => {
@@ -47,9 +44,7 @@ export function PlannedActivitiesList({
     return (
       <View className="flex-1 items-center justify-center py-8">
         <ActivityIndicator size="large" />
-        <Text className="mt-2 text-sm text-muted-foreground">
-          Loading planned activities...
-        </Text>
+        <Text className="mt-2 text-sm text-muted-foreground">Loading planned activities...</Text>
       </View>
     );
   }
@@ -58,17 +53,10 @@ export function PlannedActivitiesList({
     return (
       <View className="bg-muted/30 rounded-lg p-8">
         <View className="items-center">
-          <Icon
-            as={Calendar}
-            size={48}
-            className="text-muted-foreground mb-4"
-          />
-          <Text className="text-lg font-semibold mb-2">
-            No Planned Activities Today
-          </Text>
+          <Icon as={Calendar} size={48} className="text-muted-foreground mb-4" />
+          <Text className="text-lg font-semibold mb-2">No Planned Activities Today</Text>
           <Text className="text-muted-foreground text-center">
-            You have no activities scheduled for today. Check the Plan tab to
-            schedule activities.
+            You have no activities scheduled for today. Check the Plan tab to schedule activities.
           </Text>
         </View>
       </View>
@@ -98,11 +86,7 @@ export function PlannedActivitiesList({
               handleRecord(activity);
             }}
           >
-            <Icon
-              as={Smartphone}
-              size={18}
-              className="text-primary-foreground"
-            />
+            <Icon as={Smartphone} size={18} className="text-primary-foreground" />
           </TouchableOpacity>
         </View>
       ))}

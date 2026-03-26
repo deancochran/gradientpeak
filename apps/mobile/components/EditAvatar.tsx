@@ -1,7 +1,7 @@
-import { trpc } from "@/lib/trpc";
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
 import { Alert, Button, Image, StyleSheet, View } from "react-native";
+import { trpc } from "@/lib/trpc";
 
 interface Props {
   size: number;
@@ -62,16 +62,13 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
       const fileType = image.mimeType ?? "image/jpeg";
 
       // Get signed upload URL
-      const { signedUrl, path } =
-        await utils.client.storage.createSignedUploadUrl.mutate({
-          fileName,
-          fileType,
-        });
+      const { signedUrl, path } = await utils.client.storage.createSignedUploadUrl.mutate({
+        fileName,
+        fileType,
+      });
 
       // Upload to the signed URL
-      const arraybuffer = await fetch(image.uri).then((res) =>
-        res.arrayBuffer(),
-      );
+      const arraybuffer = await fetch(image.uri).then((res) => res.arrayBuffer());
 
       const uploadResponse = await fetch(signedUrl, {
         method: "PUT",

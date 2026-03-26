@@ -4,7 +4,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@repo/ui/components/card'
+} from "@repo/ui/components/card";
 
 export default function Page() {
   return (
@@ -26,5 +26,5 @@ export default function Page() {
         </div>
       </div>
     </div>
-  )
+  );
 }

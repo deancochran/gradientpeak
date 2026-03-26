@@ -33,9 +33,7 @@ function isDateOnlyString(value: unknown): value is string {
 function isUuidString(value: unknown): value is string {
   return (
     typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      value,
-    )
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
   );
 }
 
@@ -65,10 +63,7 @@ function getOffsetDays(source: Record<string, unknown>): number | null {
   return null;
 }
 
-function getSessionDate(
-  session: SessionSource,
-  baseDate: string,
-): string | null {
+function getSessionDate(session: SessionSource, baseDate: string): string | null {
   if (isDateOnlyString(session.scheduled_date)) {
     return session.scheduled_date;
   }
@@ -95,17 +90,11 @@ function getNodeBaseDate(node: PlanNode, parentBaseDate: string): string {
   return addDaysDateOnlyUtc(parentBaseDate, offsetDays);
 }
 
-function getSessionEventType(
-  session: SessionSource,
-): MaterializedPlanEventType {
+function getSessionEventType(session: SessionSource): MaterializedPlanEventType {
   const sessionType =
-    typeof session.session_type === "string"
-      ? session.session_type.toLowerCase()
-      : "";
+    typeof session.session_type === "string" ? session.session_type.toLowerCase() : "";
 
-  return sessionType === "rest" || sessionType === "rest_day"
-    ? "rest_day"
-    : "planned";
+  return sessionType === "rest" || sessionType === "rest_day" ? "rest_day" : "planned";
 }
 
 /**
@@ -130,18 +119,12 @@ export function materializePlanToEvents(
   }
 
   const root = planStructure as Record<string, unknown>;
-  const rootStartDate = isDateOnlyString(root.start_date)
-    ? root.start_date
-    : startDate;
+  const rootStartDate = isDateOnlyString(root.start_date) ? root.start_date : startDate;
 
   const dedupe = new Set<string>();
   const materialized: MaterializedPlanEvent[] = [];
 
-  const pushSession = (
-    session: SessionSource,
-    baseDate: string,
-    fallbackTitle: string,
-  ) => {
+  const pushSession = (session: SessionSource, baseDate: string, fallbackTitle: string) => {
     const scheduledDate = getSessionDate(session, baseDate);
     if (!scheduledDate) {
       return;
@@ -175,28 +158,20 @@ export function materializePlanToEvents(
     });
   };
 
-  const traverse = (
-    node: PlanNode,
-    baseDate: string,
-    fallbackTitle: string,
-  ) => {
+  const traverse = (node: PlanNode, baseDate: string, fallbackTitle: string) => {
     const nodeBaseDate = getNodeBaseDate(node, baseDate);
     const nodeTitle =
       typeof node.name === "string" && node.name.trim().length > 0
         ? node.name.trim()
         : fallbackTitle;
 
-    const sessions = Array.isArray(node.sessions)
-      ? (node.sessions as SessionSource[])
-      : [];
+    const sessions = Array.isArray(node.sessions) ? (node.sessions as SessionSource[]) : [];
     for (const session of sessions) {
       pushSession(session, nodeBaseDate, nodeTitle);
     }
 
     for (const key of nestedCollectionKeys) {
-      const children = Array.isArray(node[key])
-        ? (node[key] as PlanNode[])
-        : [];
+      const children = Array.isArray(node[key]) ? (node[key] as PlanNode[]) : [];
       for (const child of children) {
         traverse(child, nodeBaseDate, nodeTitle);
       }

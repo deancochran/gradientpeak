@@ -39,12 +39,8 @@ describe("computeProjectionFeasibilityMetadata", () => {
     expect(result.dominant_limiters).toContain("tss_ramp_cap_pressure");
     expect(result.dominant_limiters).toContain("ctl_ramp_cap_pressure");
     expect(result.low_readiness_limiter_mode).toBe("timeline_limited");
-    expect(result.dominant_limiters).toContain(
-      "timeline_limited_goal_too_soon",
-    );
-    expect(result.readiness_rationale_codes).toContain(
-      "readiness_limiter_timeline_limited",
-    );
+    expect(result.dominant_limiters).toContain("timeline_limited_goal_too_soon");
+    expect(result.readiness_rationale_codes).toContain("readiness_limiter_timeline_limited");
   });
 
   it("flags low readiness as capacity-limited when demand stays unmet without timeline pressure", () => {
@@ -59,12 +55,8 @@ describe("computeProjectionFeasibilityMetadata", () => {
 
     expect(result.readiness_band).toBe("low");
     expect(result.low_readiness_limiter_mode).toBe("capacity_limited");
-    expect(result.dominant_limiters).toContain(
-      "capacity_limited_sustainable_capacity",
-    );
-    expect(result.readiness_rationale_codes).toContain(
-      "readiness_limiter_capacity_limited",
-    );
+    expect(result.dominant_limiters).toContain("capacity_limited_sustainable_capacity");
+    expect(result.readiness_rationale_codes).toContain("readiness_limiter_capacity_limited");
   });
 });
 
@@ -89,9 +81,7 @@ describe("computeCapacityEnvelope", () => {
       evidence_state: "rich",
     });
 
-    expect(realistic.envelope_score).toBeGreaterThan(
-      unrealistic.envelope_score,
-    );
+    expect(realistic.envelope_score).toBeGreaterThan(unrealistic.envelope_score);
     expect(unrealistic.envelope_score).toBeLessThan(70);
     expect(unrealistic.limiting_factors).toContain("over_high");
     expect(unrealistic.limiting_factors).toContain("over_ramp");
@@ -181,12 +171,8 @@ describe("computeCompositeReadiness", () => {
       evidence_state: "sparse",
     });
 
-    expect(higher.readiness_confidence).toBeGreaterThan(
-      lower.readiness_confidence,
-    );
-    expect(
-      higher.readiness_confidence - lower.readiness_confidence,
-    ).toBeLessThanOrEqual(6);
+    expect(higher.readiness_confidence).toBeGreaterThan(lower.readiness_confidence);
+    expect(higher.readiness_confidence - lower.readiness_confidence).toBeLessThanOrEqual(6);
   });
 });
 
@@ -212,9 +198,7 @@ describe("computePlanningConfidence", () => {
     });
 
     expect(strong.score).toBeGreaterThan(constrained.score);
-    expect(constrained.rationale_codes).toContain(
-      "planning_confidence_penalty_clamp_pressure",
-    );
+    expect(constrained.rationale_codes).toContain("planning_confidence_penalty_clamp_pressure");
   });
 });
 

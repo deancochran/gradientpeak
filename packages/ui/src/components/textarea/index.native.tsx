@@ -1,16 +1,8 @@
 import type * as React from "react";
-import {
-  Platform,
-  TextInput,
-  type TextInputProps,
-} from "../../lib/react-native";
-
 import { cn } from "../../lib/cn";
+import { Platform, TextInput, type TextInputProps } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";
-import {
-  TEXTAREA_DEFAULT_NUMBER_OF_LINES,
-  type TextareaTestProps,
-} from "./shared";
+import { TEXTAREA_DEFAULT_NUMBER_OF_LINES, type TextareaTestProps } from "./shared";
 
 function Textarea({
   accessibilityLabel,

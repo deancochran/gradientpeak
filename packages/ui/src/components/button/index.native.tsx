@@ -1,14 +1,9 @@
 import * as React from "react";
-import { Pressable } from "../../lib/react-native";
-
 import { cn } from "../../lib/cn";
+import { Pressable } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";
 import { TextClassContext } from "../text/context";
-import {
-  type ButtonSize,
-  type ButtonTestProps,
-  type ButtonVariant,
-} from "./shared";
+import { type ButtonSize, type ButtonTestProps, type ButtonVariant } from "./shared";
 
 const buttonBaseClasses =
   "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium";
@@ -17,8 +12,7 @@ const buttonNativeBaseClasses = "group flex-row shadow-none shadow-black/5";
 
 const buttonVariantClasses = {
   default: "bg-primary shadow-sm active:bg-primary/90",
-  destructive:
-    "bg-destructive shadow-sm active:bg-destructive/90 dark:bg-destructive/60",
+  destructive: "bg-destructive shadow-sm active:bg-destructive/90 dark:bg-destructive/60",
   outline:
     "border border-border bg-background shadow-sm active:bg-accent dark:border-input dark:bg-input/30 dark:active:bg-input/50",
   secondary: "bg-secondary shadow-sm active:bg-secondary/80",
@@ -69,11 +63,7 @@ function buttonTextVariants({
   size?: ButtonSize;
   variant?: ButtonVariant;
 } = {}) {
-  return cn(
-    "text-foreground text-sm font-medium",
-    buttonTextVariantClasses[variant],
-    className,
-  );
+  return cn("text-foreground text-sm font-medium", buttonTextVariantClasses[variant], className);
 }
 
 export type ButtonProps = React.ComponentProps<typeof Pressable> &
@@ -106,9 +96,7 @@ function Button({
     <TextClassContext.Provider value={buttonTextVariants({ size, variant })}>
       <Pressable
         className={buttonVariants({
-          className: props.disabled
-            ? `opacity-50 ${className ?? ""}`
-            : className,
+          className: props.disabled ? `opacity-50 ${className ?? ""}` : className,
           size,
           variant,
         })}

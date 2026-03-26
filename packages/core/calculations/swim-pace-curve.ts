@@ -65,9 +65,7 @@ export const SWIM_PACE_MULTIPLIERS = {
  * //   { duration_seconds: 1800, value: 1.03, ... }, // 1500m distance (1:37/100m)
  * // ]
  */
-export function deriveSwimPaceCurveFromCSS(
-  cssSecondsPerHundredMeters: number,
-): DerivedEffort[] {
+export function deriveSwimPaceCurveFromCSS(cssSecondsPerHundredMeters: number): DerivedEffort[] {
   // Validate input
   if (cssSecondsPerHundredMeters <= 0) {
     throw new Error("CSS must be greater than 0");
@@ -120,9 +118,7 @@ export function deriveSwimPaceCurveFromCSS(
  * const speed = pacePerHundredMetersToSpeed(pace);
  * // Returns: 1.11 m/s
  */
-export function pacePerHundredMetersToSpeed(
-  secondsPerHundredMeters: number,
-): number {
+export function pacePerHundredMetersToSpeed(secondsPerHundredMeters: number): number {
   if (secondsPerHundredMeters <= 0) {
     throw new Error("Pace must be greater than 0");
   }
@@ -253,10 +249,7 @@ export function estimateSwimSpeedForDuration(
  * const css = estimateCSSFromSwimTests(360, 168); // 6:00 for 400m, 2:48 for 200m
  * // Returns: ~90 seconds/100m (1:30/100m)
  */
-export function estimateCSSFromSwimTests(
-  time400m: number,
-  time200m: number,
-): number {
+export function estimateCSSFromSwimTests(time400m: number, time200m: number): number {
   if (time400m <= 0 || time200m <= 0) {
     throw new Error("Times must be greater than 0");
   }

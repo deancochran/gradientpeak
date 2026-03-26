@@ -11,10 +11,7 @@ describe("Avatar web", () => {
         accessibilityLabel={avatarFixtures.profile.alt}
         testId={avatarFixtures.profile.testId}
       >
-        <AvatarImage
-          alt={avatarFixtures.profile.alt}
-          src={avatarFixtures.profile.imageSrc}
-        />
+        <AvatarImage alt={avatarFixtures.profile.alt} src={avatarFixtures.profile.imageSrc} />
         <AvatarFallback>{avatarFixtures.profile.fallback}</AvatarFallback>
       </Avatar>,
     );
@@ -23,8 +20,6 @@ describe("Avatar web", () => {
       "aria-label",
       avatarFixtures.profile.alt,
     );
-    expect(
-      screen.getByText(avatarFixtures.profile.fallback),
-    ).toBeInTheDocument();
+    expect(screen.getByText(avatarFixtures.profile.fallback)).toBeInTheDocument();
   });
 });

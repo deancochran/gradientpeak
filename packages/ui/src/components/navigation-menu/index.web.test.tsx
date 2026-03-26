@@ -18,21 +18,14 @@ describe("NavigationMenu web", () => {
           <NavigationMenuItem>
             <NavigationMenuTrigger>Workouts</NavigationMenuTrigger>
             <NavigationMenuContent forceMount>
-              <NavigationMenuLink href="/plans">
-                Plan library
-              </NavigationMenuLink>
+              <NavigationMenuLink href="/plans">Plan library</NavigationMenuLink>
             </NavigationMenuContent>
           </NavigationMenuItem>
         </NavigationMenuList>
       </NavigationMenu>,
     );
 
-    expect(
-      screen.getByRole("button", { name: "Workouts" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Plan library" })).toHaveAttribute(
-      "href",
-      "/plans",
-    );
+    expect(screen.getByRole("button", { name: "Workouts" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Plan library" })).toHaveAttribute("href", "/plans");
   });
 });

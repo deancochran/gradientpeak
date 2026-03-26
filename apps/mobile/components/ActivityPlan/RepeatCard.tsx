@@ -1,6 +1,6 @@
+import { type PlanStepV2 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { type PlanStepV2 } from "@repo/core";
 import * as Haptics from "expo-haptics";
 import { Edit3, GripVertical, RefreshCw, Trash2 } from "lucide-react-native";
 import { memo } from "react";
@@ -57,10 +57,7 @@ const RepeatCard = memo(function RepeatCard({
   const repeatCount = segment.steps[0]?.originalRepetitionCount || 1;
 
   // Calculate duration from V2 steps
-  const totalDuration = segment.steps.reduce(
-    (sum, step) => sum + getStepDurationMs(step),
-    0,
-  );
+  const totalDuration = segment.steps.reduce((sum, step) => sum + getStepDurationMs(step), 0);
   const stepDuration = repeatCount > 0 ? totalDuration / repeatCount : 0;
 
   const formatDuration = (ms: number): string => {
@@ -102,16 +99,10 @@ const RepeatCard = memo(function RepeatCard({
   };
 
   return (
-    <TouchableOpacity
-      onPress={handlePress}
-      onLongPress={handleLongPress}
-      activeOpacity={0.7}
-    >
+    <TouchableOpacity onPress={handlePress} onLongPress={handleLongPress} activeOpacity={0.7}>
       <View
         className={`border rounded-lg mb-3 bg-card ${
-          isActive
-            ? "border-primary shadow-md scale-105"
-            : "border-border shadow-sm"
+          isActive ? "border-primary shadow-md scale-105" : "border-border shadow-sm"
         }`}
       >
         {/* Header */}
@@ -124,26 +115,14 @@ const RepeatCard = memo(function RepeatCard({
 
           <View className="flex-1 flex-row items-center">
             <RefreshCw size={16} className="text-primary mr-2" />
-            <Text className="font-medium text-foreground">
-              Repeat {repeatCount}x
-            </Text>
+            <Text className="font-medium text-foreground">Repeat {repeatCount}x</Text>
           </View>
 
           <View className="flex-row gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onPress={handleEdit}
-              className="h-8 w-8 p-0"
-            >
+            <Button variant="ghost" size="sm" onPress={handleEdit} className="h-8 w-8 p-0">
               <Edit3 size={14} className="text-muted-foreground" />
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onPress={handleDelete}
-              className="h-8 w-8 p-0"
-            >
+            <Button variant="ghost" size="sm" onPress={handleDelete} className="h-8 w-8 p-0">
               <Trash2 size={14} className="text-destructive" />
             </Button>
           </View>
@@ -164,9 +143,7 @@ const RepeatCard = memo(function RepeatCard({
             <Text className="text-xs text-muted-foreground">
               {formatDuration(stepDuration)} per repeat
             </Text>
-            <Text className="text-xs text-muted-foreground">
-              Position {index + 1}
-            </Text>
+            <Text className="text-xs text-muted-foreground">Position {index + 1}</Text>
           </View>
 
           {/* Steps Preview */}
@@ -175,10 +152,7 @@ const RepeatCard = memo(function RepeatCard({
               <Text className="text-xs text-muted-foreground mb-2">Steps:</Text>
               <View className="flex-row flex-wrap gap-1">
                 {segment.steps.slice(0, repeatCount).map((step, stepIndex) => (
-                  <View
-                    key={stepIndex}
-                    className="bg-muted px-2 py-1 rounded-md"
-                  >
+                  <View key={stepIndex} className="bg-muted px-2 py-1 rounded-md">
                     <Text className="text-xs text-muted-foreground">
                       {step.name || `Step ${stepIndex + 1}`}
                     </Text>

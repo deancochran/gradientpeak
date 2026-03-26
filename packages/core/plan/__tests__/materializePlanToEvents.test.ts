@@ -119,10 +119,7 @@ describe("materializePlanToEvents", () => {
     );
 
     expect(events).toHaveLength(2);
-    expect(events.map((event) => event.scheduled_date)).toEqual([
-      "2026-04-07",
-      "2026-04-14",
-    ]);
+    expect(events.map((event) => event.scheduled_date)).toEqual(["2026-04-07", "2026-04-14"]);
   });
 
   it("preserves same-day multi-session output when dates match", () => {
@@ -149,13 +146,7 @@ describe("materializePlanToEvents", () => {
     );
 
     expect(events).toHaveLength(2);
-    expect(events.map((event) => event.scheduled_date)).toEqual([
-      "2026-04-09",
-      "2026-04-09",
-    ]);
-    expect(events.map((event) => event.title)).toEqual([
-      "AM Easy Run",
-      "PM Strength",
-    ]);
+    expect(events.map((event) => event.scheduled_date)).toEqual(["2026-04-09", "2026-04-09"]);
+    expect(events.map((event) => event.title)).toEqual(["AM Easy Run", "PM Strength"]);
   });
 });

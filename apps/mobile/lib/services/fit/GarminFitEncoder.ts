@@ -142,11 +142,7 @@ export class GarminFitEncoder {
   private isInitialized: boolean = false;
   private isFinalized: boolean = false;
 
-  constructor(
-    recordingId: string,
-    userId: string,
-    config?: Partial<EncoderConfig>,
-  ) {
+  constructor(recordingId: string, userId: string, config?: Partial<EncoderConfig>) {
     this.recordingId = recordingId;
     this.userId = userId;
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -170,9 +166,7 @@ export class GarminFitEncoder {
       await this.initializeEncoder(connectedSensors);
       this.startTime = Date.now();
       this.isInitialized = true;
-      console.log(
-        `[GarminFitEncoder] Initialized for recording ${this.recordingId}`,
-      );
+      console.log(`[GarminFitEncoder] Initialized for recording ${this.recordingId}`);
     } catch (error) {
       console.error(`[GarminFitEncoder] Failed to initialize:`, error);
       throw error;
@@ -182,9 +176,7 @@ export class GarminFitEncoder {
   /**
    * Initialize the Garmin FIT encoder with required messages
    */
-  private async initializeEncoder(
-    connectedSensors: ConnectedSensor[] = [],
-  ): Promise<void> {
+  private async initializeEncoder(connectedSensors: ConnectedSensor[] = []): Promise<void> {
     // Reset encoder
     this.encoder = new Encoder();
 
@@ -222,8 +214,7 @@ export class GarminFitEncoder {
           deviceType = 120; // Heart Rate
         else if (sensor.services?.some((s: string) => s.includes("1818")))
           deviceType = 122; // Cycling Power
-        else if (sensor.services?.some((s: string) => s.includes("1816")))
-          deviceType = 121; // Bike Speed/Cadence
+        else if (sensor.services?.some((s: string) => s.includes("1816"))) deviceType = 121; // Bike Speed/Cadence
 
         this.encoder.writeMesg({
           mesgNum: Profile.MesgNum.DEVICE_INFO,
@@ -352,8 +343,7 @@ export class GarminFitEncoder {
       messageIndex: lengthData.lengthIndex,
       timestamp: fitLengthEndTime,
       startTime: Utils.convertDateToDateTime(lengthData.startTime),
-      totalElapsedTime:
-        (lengthEndTime.getTime() - lengthData.startTime.getTime()) / 1000,
+      totalElapsedTime: (lengthEndTime.getTime() - lengthData.startTime.getTime()) / 1000,
       totalTimerTime: lengthData.movingTime,
       lengthType: 1, // active
       swimStroke: this.mapSwimStroke(lengthData.strokeType),
@@ -382,8 +372,7 @@ export class GarminFitEncoder {
       messageIndex: lapData.lapIndex,
       timestamp: fitLapEndTime,
       startTime: Utils.convertDateToDateTime(lapData.startTime),
-      totalElapsedTime:
-        (lapEndTime.getTime() - lapData.startTime.getTime()) / 1000,
+      totalElapsedTime: (lapEndTime.getTime() - lapData.startTime.getTime()) / 1000,
       totalTimerTime: lapData.movingTime,
       firstLengthIndex: lapData.firstLengthIndex,
       numLengths: lapData.numberOfLengths,
@@ -408,10 +397,8 @@ export class GarminFitEncoder {
       messageIndex: drillData.lengthIndex,
       timestamp: fitDrillEndTime,
       startTime: Utils.convertDateToDateTime(drillData.startTime),
-      totalElapsedTime:
-        (drillEndTime.getTime() - drillData.startTime.getTime()) / 1000,
-      totalTimerTime:
-        (drillEndTime.getTime() - drillData.startTime.getTime()) / 1000,
+      totalElapsedTime: (drillEndTime.getTime() - drillData.startTime.getTime()) / 1000,
+      totalTimerTime: (drillEndTime.getTime() - drillData.startTime.getTime()) / 1000,
       lengthType: 0, // idle (drills are non-stroke lengths)
       swimStroke: 4, // drill
     });
@@ -519,10 +506,7 @@ export class GarminFitEncoder {
   /**
    * Finalize the FIT file with session, activity, and lap data
    */
-  async finalize(
-    sessionData: FitSessionData,
-    laps: FitLapData[] = [],
-  ): Promise<void> {
+  async finalize(sessionData: FitSessionData, laps: FitLapData[] = []): Promise<void> {
     if (this.isFinalized) {
       return;
     }
@@ -544,9 +528,7 @@ export class GarminFitEncoder {
           eventType: 4, // stopAll
         });
       } catch (e) {
-        console.warn(
-          "[GarminFitEncoder] Failed to write stopAll event, trying stop...",
-        );
+        console.warn("[GarminFitEncoder] Failed to write stopAll event, trying stop...");
         this.encoder.writeMesg({
           mesgNum: Profile.MesgNum.EVENT,
           timestamp: fitEndTime,
@@ -558,9 +540,7 @@ export class GarminFitEncoder {
       // 2. LAP Messages (at least one required if numLaps > 0)
       if (laps.length === 0) {
         // Create a default lap for the entire activity
-        const fitStartTime = Utils.convertDateToDateTime(
-          new Date(sessionData.startTime),
-        );
+        const fitStartTime = Utils.convertDateToDateTime(new Date(sessionData.startTime));
 
         // LAP message - only include standard FIT Profile fields
         // Note: avgSpeed/maxSpeed are NOT standard LAP fields per Garmin FIT SDK
@@ -574,10 +554,7 @@ export class GarminFitEncoder {
           totalDistance: Math.round(sessionData.distance * 100) / 100, // Round to 2 decimals
         };
 
-        console.log(
-          `[GarminFitEncoder] Writing default LAP message:`,
-          lapFields,
-        );
+        console.log(`[GarminFitEncoder] Writing default LAP message:`, lapFields);
 
         this.encoder.writeMesg({
           mesgNum: Profile.MesgNum.LAP,
@@ -586,12 +563,8 @@ export class GarminFitEncoder {
       } else {
         // Encode provided laps
         for (const lap of laps) {
-          const lapStartTime = Utils.convertDateToDateTime(
-            new Date(lap.startTime),
-          );
-          const lapEndTime = Utils.convertDateToDateTime(
-            new Date(lap.startTime + lap.totalTime),
-          );
+          const lapStartTime = Utils.convertDateToDateTime(new Date(lap.startTime));
+          const lapEndTime = Utils.convertDateToDateTime(new Date(lap.startTime + lap.totalTime));
 
           // LAP message - only include standard FIT Profile fields
           // Note: avgSpeed/maxSpeed are NOT standard LAP fields per Garmin FIT SDK
@@ -619,9 +592,7 @@ export class GarminFitEncoder {
       }
 
       // 3. SESSION Message (REQUIRED - must have messageIndex!)
-      const fitStartTime = Utils.convertDateToDateTime(
-        new Date(sessionData.startTime),
-      );
+      const fitStartTime = Utils.convertDateToDateTime(new Date(sessionData.startTime));
 
       const sessionFields: Record<string, any> = {
         messageIndex: 0, // CRITICAL: Required field for SESSION messages
@@ -647,31 +618,19 @@ export class GarminFitEncoder {
       if (sessionData.maxPower !== undefined && sessionData.maxPower > 0) {
         sessionFields.maxPower = Math.round(sessionData.maxPower);
       }
-      if (
-        sessionData.avgHeartRate !== undefined &&
-        sessionData.avgHeartRate > 0
-      ) {
+      if (sessionData.avgHeartRate !== undefined && sessionData.avgHeartRate > 0) {
         sessionFields.avgHeartRate = Math.round(sessionData.avgHeartRate);
       }
-      if (
-        sessionData.maxHeartRate !== undefined &&
-        sessionData.maxHeartRate > 0
-      ) {
+      if (sessionData.maxHeartRate !== undefined && sessionData.maxHeartRate > 0) {
         sessionFields.maxHeartRate = Math.round(sessionData.maxHeartRate);
       }
       if (sessionData.avgCadence !== undefined && sessionData.avgCadence > 0) {
         sessionFields.avgCadence = Math.round(sessionData.avgCadence);
       }
-      if (
-        sessionData.totalAscent !== undefined &&
-        sessionData.totalAscent > 0
-      ) {
+      if (sessionData.totalAscent !== undefined && sessionData.totalAscent > 0) {
         sessionFields.totalAscent = sessionData.totalAscent;
       }
-      if (
-        sessionData.totalDescent !== undefined &&
-        sessionData.totalDescent > 0
-      ) {
+      if (sessionData.totalDescent !== undefined && sessionData.totalDescent > 0) {
         sessionFields.totalDescent = sessionData.totalDescent;
       }
       if (sessionData.calories !== undefined && sessionData.calories > 0) {
@@ -687,10 +646,7 @@ export class GarminFitEncoder {
         });
         console.log(`[GarminFitEncoder] SESSION message written successfully`);
       } catch (error) {
-        console.error(
-          `[GarminFitEncoder] Failed to write SESSION message:`,
-          error,
-        );
+        console.error(`[GarminFitEncoder] Failed to write SESSION message:`, error);
         console.error(
           `[GarminFitEncoder] SESSION fields that caused error:`,
           JSON.stringify(sessionFields, null, 2),
@@ -718,17 +674,13 @@ export class GarminFitEncoder {
 
       // Close encoder and get final data
       const uint8Array = this.encoder.close();
-      console.log(
-        `[GarminFitEncoder] Encoder closed, buffer size: ${uint8Array.length} bytes`,
-      );
+      console.log(`[GarminFitEncoder] Encoder closed, buffer size: ${uint8Array.length} bytes`);
 
       const file = new File(this.fitFilePath);
       // Ensure write completes before proceeding
       await file.write(uint8Array);
 
-      console.log(
-        `[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.fitFilePath}`,
-      );
+      console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.fitFilePath}`);
 
       // CRITICAL: iOS needs time to sync file to disk before reads
       if (Platform.OS === "ios") {
@@ -738,9 +690,7 @@ export class GarminFitEncoder {
       }
 
       this.isFinalized = true;
-      console.log(
-        `[GarminFitEncoder] Finalized, ${this.recordCount} records written`,
-      );
+      console.log(`[GarminFitEncoder] Finalized, ${this.recordCount} records written`);
     } catch (error) {
       console.error(`[GarminFitEncoder] Finalize failed:`, error);
       throw error;
@@ -804,8 +754,7 @@ export class GarminFitEncoder {
       const directory = new Directory(baseDir);
       const contents = directory.list();
       const orphanedDirs = contents.filter(
-        (item) =>
-          item instanceof Directory && item.uri.includes("fit_encoding_"),
+        (item) => item instanceof Directory && item.uri.includes("fit_encoding_"),
       );
 
       for (const dir of orphanedDirs) {
@@ -814,21 +763,13 @@ export class GarminFitEncoder {
             dir.delete();
           }
         } catch (error) {
-          console.warn(
-            `[GarminFitEncoder] Failed to delete orphaned directory:`,
-            error,
-          );
+          console.warn(`[GarminFitEncoder] Failed to delete orphaned directory:`, error);
         }
       }
 
-      console.log(
-        `[GarminFitEncoder] Cleaned up ${orphanedDirs.length} orphaned recordings`,
-      );
+      console.log(`[GarminFitEncoder] Cleaned up ${orphanedDirs.length} orphaned recordings`);
     } catch (error) {
-      console.error(
-        `[GarminFitEncoder] Failed to cleanup orphaned recordings:`,
-        error,
-      );
+      console.error(`[GarminFitEncoder] Failed to cleanup orphaned recordings:`, error);
     }
   }
 

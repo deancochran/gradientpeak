@@ -11,8 +11,8 @@
  * Resistance = Torque / DeviceSpecificConstant
  */
 
-import { RollingBuffer } from "./RollingBuffer";
 import type { FTMSFeatures } from "@repo/core/ftms-types";
+import { RollingBuffer } from "./RollingBuffer";
 
 export type FTMSDeviceType = "bike" | "rower" | "elliptical" | "treadmill";
 
@@ -81,8 +81,7 @@ export class PredictiveResistanceCalculator {
     // Step 3: Calculate required torque from power equation
     // Power = (2π / 60) × Cadence × Torque
     // Torque = (Power × 60) / (2π × Cadence)
-    const requiredTorque =
-      (targetPower * 60) / (2 * Math.PI * smoothedCadence);
+    const requiredTorque = (targetPower * 60) / (2 * Math.PI * smoothedCadence);
 
     // Step 4: Map torque to resistance level using device-specific curve
     let resistance = this.torqueToResistance(requiredTorque, deviceType);
@@ -124,23 +123,18 @@ export class PredictiveResistanceCalculator {
   /**
    * Rate limit resistance changes to prevent abrupt trainer responses
    */
-  private rateLimitResistance(
-    newResistance: number,
-    timestamp: number,
-  ): number {
+  private rateLimitResistance(newResistance: number, timestamp: number): number {
     if (this.resistanceHistory.length === 0) {
       this.resistanceHistory.push({ value: newResistance, timestamp });
       this.lastUpdateTime = timestamp;
       return newResistance;
     }
 
-    const lastResistance =
-      this.resistanceHistory[this.resistanceHistory.length - 1].value;
+    const lastResistance = this.resistanceHistory[this.resistanceHistory.length - 1].value;
     const timeSinceLastChange = (timestamp - this.lastUpdateTime) / 1000; // Convert to seconds
 
     // Calculate max allowed change based on time elapsed
-    const maxChange =
-      this.MAX_RESISTANCE_CHANGE_RATE * Math.max(timeSinceLastChange, 0.1);
+    const maxChange = this.MAX_RESISTANCE_CHANGE_RATE * Math.max(timeSinceLastChange, 0.1);
 
     // Clamp new resistance to max change
     const clampedResistance = this.clamp(
@@ -178,8 +172,7 @@ export class PredictiveResistanceCalculator {
     const constants = DEVICE_CONSTANTS[deviceType];
     const standardCadence = constants.standardCadence;
 
-    const requiredTorque =
-      (targetPower * 60) / (2 * Math.PI * standardCadence);
+    const requiredTorque = (targetPower * 60) / (2 * Math.PI * standardCadence);
     let resistance = this.torqueToResistance(requiredTorque, deviceType);
 
     return this.applyDeviceLimits(resistance, deviceFeatures);
@@ -189,10 +182,7 @@ export class PredictiveResistanceCalculator {
    * Device-specific torque-to-resistance mapping
    * This is where device differences are handled
    */
-  private torqueToResistance(
-    torque: number,
-    deviceType: FTMSDeviceType,
-  ): number {
+  private torqueToResistance(torque: number, deviceType: FTMSDeviceType): number {
     const constants = DEVICE_CONSTANTS[deviceType];
     return torque / constants.torquePerResistanceLevel;
   }
@@ -200,10 +190,7 @@ export class PredictiveResistanceCalculator {
   /**
    * Apply device-specific resistance limits
    */
-  private applyDeviceLimits(
-    resistance: number,
-    features?: FTMSFeatures,
-  ): number {
+  private applyDeviceLimits(resistance: number, features?: FTMSFeatures): number {
     const range = features?.resistanceRange;
 
     if (range) {

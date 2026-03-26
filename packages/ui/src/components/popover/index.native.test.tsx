@@ -5,9 +5,7 @@ describe("Popover native", () => {
   it("renders trigger text and popover content", () => {
     const { getByTestId } = renderNative(
       <Popover>
-        <PopoverTrigger testID="session-details-trigger">
-          Session details
-        </PopoverTrigger>
+        <PopoverTrigger testID="session-details-trigger">Session details</PopoverTrigger>
         <PopoverContent testID="session-details-content">
           Threshold pace updated for race week.
         </PopoverContent>

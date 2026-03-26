@@ -24,9 +24,7 @@ export const Playground: Story = {
 export const WithInput: Story = {
   render: () => (
     <div className="grid w-80 gap-2">
-      <Label htmlFor={labelFixtures.workEmail.htmlFor}>
-        {labelFixtures.workEmail.children}
-      </Label>
+      <Label htmlFor={labelFixtures.workEmail.htmlFor}>{labelFixtures.workEmail.children}</Label>
       <Input
         id={labelFixtures.workEmail.htmlFor}
         placeholder="coach@gradientpeak.com"

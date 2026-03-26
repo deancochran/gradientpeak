@@ -1,3 +1,3 @@
-export { WeeklyTargetsForm } from "./WeeklyTargetsForm";
-export { RecoveryRulesForm } from "./RecoveryRulesForm";
 export { PeriodizationForm } from "./PeriodizationForm";
+export { RecoveryRulesForm } from "./RecoveryRulesForm";
+export { WeeklyTargetsForm } from "./WeeklyTargetsForm";

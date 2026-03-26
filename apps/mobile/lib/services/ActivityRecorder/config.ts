@@ -50,7 +50,6 @@ export const ZONE_CONFIG = {
 
 // === Utility Functions ===
 export function roundToPrecision(value: number, metric: string): number {
-  const precision =
-    METRIC_PRECISION[metric as keyof typeof METRIC_PRECISION] || 0;
+  const precision = METRIC_PRECISION[metric as keyof typeof METRIC_PRECISION] || 0;
   return Number(value.toFixed(precision));
 }

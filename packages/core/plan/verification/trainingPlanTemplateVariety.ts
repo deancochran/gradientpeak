@@ -1,7 +1,4 @@
-import {
-  ALL_SAMPLE_PLANS,
-  type SystemTrainingPlanTemplate,
-} from "../../samples";
+import { ALL_SAMPLE_PLANS, type SystemTrainingPlanTemplate } from "../../samples";
 import { materializePlanToEvents } from "../materializePlanToEvents";
 import { buildSystemActivityTemplateCatalog } from "./activityTemplateCatalog";
 import {
@@ -41,19 +38,13 @@ export interface TrainingPlanTemplateVarietyAnalysis {
 
 function getPlanStartDate(plan: SystemTrainingPlanTemplate): string {
   const structure = plan.structure as Record<string, unknown>;
-  return typeof structure.start_date === "string"
-    ? structure.start_date
-    : "1970-01-01";
+  return typeof structure.start_date === "string" ? structure.start_date : "1970-01-01";
 }
 
-function collectResolvedTemplateIds(
-  plan: SystemTrainingPlanTemplate,
-): string[] {
+function collectResolvedTemplateIds(plan: SystemTrainingPlanTemplate): string[] {
   return materializePlanToEvents(plan.structure, getPlanStartDate(plan))
     .filter((event) => event.event_type === "planned")
-    .flatMap((event) =>
-      event.activity_plan_id ? [event.activity_plan_id] : [],
-    );
+    .flatMap((event) => (event.activity_plan_id ? [event.activity_plan_id] : []));
 }
 
 export function buildTrainingPlanTemplateDependencyMap(
@@ -146,13 +137,9 @@ export function analyzeTrainingPlanTemplateVariety(
         dominant_template_share:
           linkedTemplateIds.length === 0
             ? 0
-            : Number(
-                ((dominant?.[1] ?? 0) / linkedTemplateIds.length).toFixed(4),
-              ),
+            : Number(((dominant?.[1] ?? 0) / linkedTemplateIds.length).toFixed(4)),
         unresolved_template_ids: unresolvedTemplateIds,
-        weak_variety:
-          reuseCounts.size <
-          COVERAGE_STATUS_THRESHOLD.weakVarietyUniqueTemplateMinimum,
+        weak_variety: reuseCounts.size < COVERAGE_STATUS_THRESHOLD.weakVarietyUniqueTemplateMinimum,
         over_reuse:
           linkedTemplateIds.length > 0 &&
           (dominant?.[1] ?? 0) / linkedTemplateIds.length >

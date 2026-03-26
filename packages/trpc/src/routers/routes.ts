@@ -13,9 +13,7 @@ const ROUTES_BUCKET = "gpx-routes";
 
 // Input schemas
 const listRoutesSchema = z.object({
-  activityCategory: z
-    .enum(["run", "bike", "swim", "strength", "other", "all"])
-    .optional(),
+  activityCategory: z.enum(["run", "bike", "swim", "strength", "other", "all"]).optional(),
   search: z.string().optional(),
   limit: z.number().min(1).max(100).default(20),
   cursor: z.string().optional(),
@@ -34,79 +32,77 @@ export const routesRouter = createTRPCRouter({
   // ------------------------------
   // List routes with encoded polylines for preview
   // ------------------------------
-  list: protectedProcedure
-    .input(listRoutesSchema)
-    .query(async ({ ctx, input }) => {
-      const limit = input.limit;
+  list: protectedProcedure.input(listRoutesSchema).query(async ({ ctx, input }) => {
+    const limit = input.limit;
 
-      let query = ctx.supabase
-        .from("activity_routes")
-        .select("*")
+    let query = ctx.supabase
+      .from("activity_routes")
+      .select("*")
+      .eq("profile_id", ctx.session.user.id)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
+      .limit(limit + 1);
+
+    // Apply activity category filter
+    if (input.activityCategory && input.activityCategory !== "all") {
+      query = query.eq("activity_category", input.activityCategory);
+    }
+
+    // Apply search filter
+    if (input.search) {
+      query = query.ilike("name", `%${input.search}%`);
+    }
+
+    // Apply cursor
+    if (input.cursor) {
+      const [cursorDate, cursorId] = input.cursor.split("_");
+      query = query.or(
+        `created_at.lt.${cursorDate},and(created_at.eq.${cursorDate},id.gt.${cursorId})`,
+      );
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    }
+
+    const hasMore = data.length > limit;
+    const items = hasMore ? data.slice(0, limit) : data;
+
+    let nextCursor: string | undefined;
+    if (hasMore && items.length > 0) {
+      const lastItem = items[items.length - 1];
+      if (!lastItem) throw new Error("Unexpected error");
+      nextCursor = `${lastItem.created_at}_${lastItem.id}`;
+    }
+
+    // Get user likes for these routes
+    const routeIds = items.map((r: any) => r.id) || [];
+    let userLikes: string[] = [];
+
+    if (routeIds.length > 0) {
+      const { data: likesData } = await (ctx.supabase as any)
+        .from("likes")
+        .select("entity_id")
         .eq("profile_id", ctx.session.user.id)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: true })
-        .limit(limit + 1);
+        .eq("entity_type", "route")
+        .in("entity_id", routeIds);
 
-      // Apply activity category filter
-      if (input.activityCategory && input.activityCategory !== "all") {
-        query = query.eq("activity_category", input.activityCategory);
-      }
+      userLikes = likesData?.map((l: any) => l.entity_id) || [];
+    }
 
-      // Apply search filter
-      if (input.search) {
-        query = query.ilike("name", `%${input.search}%`);
-      }
-
-      // Apply cursor
-      if (input.cursor) {
-        const [cursorDate, cursorId] = input.cursor.split("_");
-        query = query.or(
-          `created_at.lt.${cursorDate},and(created_at.eq.${cursorDate},id.gt.${cursorId})`,
-        );
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
-
-      const hasMore = data.length > limit;
-      const items = hasMore ? data.slice(0, limit) : data;
-
-      let nextCursor: string | undefined;
-      if (hasMore && items.length > 0) {
-        const lastItem = items[items.length - 1];
-        if (!lastItem) throw new Error("Unexpected error");
-        nextCursor = `${lastItem.created_at}_${lastItem.id}`;
-      }
-
-      // Get user likes for these routes
-      const routeIds = items.map((r: any) => r.id) || [];
-      let userLikes: string[] = [];
-
-      if (routeIds.length > 0) {
-        const { data: likesData } = await (ctx.supabase as any)
-          .from("likes")
-          .select("entity_id")
-          .eq("profile_id", ctx.session.user.id)
-          .eq("entity_type", "route")
-          .in("entity_id", routeIds);
-
-        userLikes = likesData?.map((l: any) => l.entity_id) || [];
-      }
-
-      return {
-        items: items.map((route: any) => ({
-          ...route,
-          has_liked: userLikes.includes(route.id),
-        })),
-        nextCursor,
-      };
-    }),
+    return {
+      items: items.map((route: any) => ({
+        ...route,
+        has_liked: userLikes.includes(route.id),
+      })),
+      nextCursor,
+    };
+  }),
 
   // ------------------------------
   // Get single route details (without full coordinates)
@@ -194,105 +190,98 @@ export const routesRouter = createTRPCRouter({
   // ------------------------------
   // Upload and process new route
   // ------------------------------
-  upload: protectedProcedure
-    .input(uploadRouteSchema)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        // Parse the route file
-        const parsed = parseRoute(input.fileContent, "gpx");
+  upload: protectedProcedure.input(uploadRouteSchema).mutation(async ({ ctx, input }) => {
+    try {
+      // Parse the route file
+      const parsed = parseRoute(input.fileContent, "gpx");
 
-        // Validate parsed route
-        const validation = validateRoute(parsed);
-        if (!validation.valid) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid route: ${validation.errors.join(", ")}`,
-          });
-        }
-
-        // Calculate route statistics
-        const stats = calculateRouteStats(parsed.coordinates);
-
-        // Simplify coordinates for preview (target ~150-200 points)
-        const tolerance = calculateSimplificationTolerance(
-          parsed.coordinates.length,
-        );
-        const simplified = simplifyCoordinates(parsed.coordinates, tolerance);
-
-        // Encode polyline for storage
-        const polyline = encodePolyline(simplified);
-
-        // Encode elevation if available
-        let elevationPolyline: string | null = null;
-        if (simplified.some((coord) => coord.altitude !== undefined)) {
-          const elevations = simplified.map((coord) => coord.altitude || 0);
-          elevationPolyline = encodeElevationPolyline(elevations);
-        }
-
-        // Generate unique file path
-        const fileExtension = input.fileName.split(".").pop() || "gpx";
-        const timestamp = Date.now();
-        const filePath = `${ctx.session.user.id}/${timestamp}.${fileExtension}`;
-
-        // Upload original file to storage
-        const { error: uploadError } = await ctx.supabase.storage
-          .from(ROUTES_BUCKET)
-          .upload(filePath, input.fileContent, {
-            contentType: "application/gpx+xml",
-            upsert: false,
-          });
-
-        if (uploadError) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to upload route file: ${uploadError.message}`,
-          });
-        }
-
-        // Save route metadata to database
-        const { data: routeData, error: dbError } = await ctx.supabase
-          .from("activity_routes")
-          .insert({
-            profile_id: ctx.session.user.id,
-            name: input.name,
-            description: input.description,
-            activity_category: input.activityCategory,
-            file_path: filePath,
-            total_distance: stats.totalDistance,
-            total_ascent: stats.totalAscent,
-            total_descent: stats.totalDescent,
-            polyline: polyline,
-            elevation_polyline: elevationPolyline,
-            source: input.source,
-          })
-          .select("*")
-          .single();
-
-        if (dbError) {
-          // Cleanup: delete uploaded file if database insert fails
-          await ctx.supabase.storage.from(ROUTES_BUCKET).remove([filePath]);
-
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to save route: ${dbError.message}`,
-          });
-        }
-
-        return routeData;
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
+      // Validate parsed route
+      const validation = validateRoute(parsed);
+      if (!validation.valid) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Failed to process route file",
+          message: `Invalid route: ${validation.errors.join(", ")}`,
         });
       }
-    }),
+
+      // Calculate route statistics
+      const stats = calculateRouteStats(parsed.coordinates);
+
+      // Simplify coordinates for preview (target ~150-200 points)
+      const tolerance = calculateSimplificationTolerance(parsed.coordinates.length);
+      const simplified = simplifyCoordinates(parsed.coordinates, tolerance);
+
+      // Encode polyline for storage
+      const polyline = encodePolyline(simplified);
+
+      // Encode elevation if available
+      let elevationPolyline: string | null = null;
+      if (simplified.some((coord) => coord.altitude !== undefined)) {
+        const elevations = simplified.map((coord) => coord.altitude || 0);
+        elevationPolyline = encodeElevationPolyline(elevations);
+      }
+
+      // Generate unique file path
+      const fileExtension = input.fileName.split(".").pop() || "gpx";
+      const timestamp = Date.now();
+      const filePath = `${ctx.session.user.id}/${timestamp}.${fileExtension}`;
+
+      // Upload original file to storage
+      const { error: uploadError } = await ctx.supabase.storage
+        .from(ROUTES_BUCKET)
+        .upload(filePath, input.fileContent, {
+          contentType: "application/gpx+xml",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Failed to upload route file: ${uploadError.message}`,
+        });
+      }
+
+      // Save route metadata to database
+      const { data: routeData, error: dbError } = await ctx.supabase
+        .from("activity_routes")
+        .insert({
+          profile_id: ctx.session.user.id,
+          name: input.name,
+          description: input.description,
+          activity_category: input.activityCategory,
+          file_path: filePath,
+          total_distance: stats.totalDistance,
+          total_ascent: stats.totalAscent,
+          total_descent: stats.totalDescent,
+          polyline: polyline,
+          elevation_polyline: elevationPolyline,
+          source: input.source,
+        })
+        .select("*")
+        .single();
+
+      if (dbError) {
+        // Cleanup: delete uploaded file if database insert fails
+        await ctx.supabase.storage.from(ROUTES_BUCKET).remove([filePath]);
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Failed to save route: ${dbError.message}`,
+        });
+      }
+
+      return routeData;
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: error instanceof Error ? error.message : "Failed to process route file",
+      });
+    }
+  }),
 
   // ------------------------------
   // Delete route

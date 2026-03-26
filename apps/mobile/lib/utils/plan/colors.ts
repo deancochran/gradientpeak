@@ -90,9 +90,7 @@ export const INTENSITY_COLORS: Record<string, IntensityColorConfig> = {
 /**
  * Get color configuration for an activity type
  */
-export function getActivityColor(
-  type: string | undefined,
-): ActivityColorConfig {
+export function getActivityColor(type: string | undefined): ActivityColorConfig {
   if (!type) return ACTIVITY_COLORS.other;
   return ACTIVITY_COLORS[type] || ACTIVITY_COLORS.other;
 }
@@ -100,9 +98,7 @@ export function getActivityColor(
 /**
  * Get color configuration for an intensity level
  */
-export function getIntensityColor(
-  intensity: string | undefined,
-): IntensityColorConfig {
+export function getIntensityColor(intensity: string | undefined): IntensityColorConfig {
   if (!intensity) {
     return {
       text: "text-gray-600",

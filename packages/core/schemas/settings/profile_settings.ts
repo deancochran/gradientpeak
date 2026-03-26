@@ -69,10 +69,7 @@ export const athletePreferenceAvailabilityDaySchema = z
 
 export const athletePreferenceAvailabilitySchema = z
   .object({
-    weekly_windows: z
-      .array(athletePreferenceAvailabilityDaySchema)
-      .max(7)
-      .default([]),
+    weekly_windows: z.array(athletePreferenceAvailabilityDaySchema).max(7).default([]),
     hard_rest_days: z.array(creationWeekDayEnum).max(7).default([]),
   })
   .strict()
@@ -97,12 +94,7 @@ const athletePreferenceSportDoseLimitOverrideSchema = z
   .object({
     min_sessions_per_week: z.number().int().min(0).max(21).optional(),
     max_sessions_per_week: z.number().int().min(0).max(21).optional(),
-    max_single_session_duration_minutes: z
-      .number()
-      .int()
-      .min(20)
-      .max(600)
-      .optional(),
+    max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
     max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
   })
   .strict()
@@ -124,18 +116,10 @@ export const athletePreferenceDoseLimitsSchema = z
   .object({
     min_sessions_per_week: z.number().int().min(0).max(21).optional(),
     max_sessions_per_week: z.number().int().min(0).max(21).optional(),
-    max_single_session_duration_minutes: z
-      .number()
-      .int()
-      .min(20)
-      .max(600)
-      .optional(),
+    max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
     max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
     sport_overrides: z
-      .partialRecord(
-        canonicalSportSchema,
-        athletePreferenceSportDoseLimitOverrideSchema,
-      )
+      .partialRecord(canonicalSportSchema, athletePreferenceSportDoseLimitOverrideSchema)
       .optional(),
   })
   .strict()
@@ -220,10 +204,7 @@ export const athletePreferenceProfileSchema = z
 
 export const athletePreferenceAvailabilityPatchSchema = z
   .object({
-    weekly_windows: z
-      .array(athletePreferenceAvailabilityDaySchema)
-      .max(7)
-      .optional(),
+    weekly_windows: z.array(athletePreferenceAvailabilityDaySchema).max(7).optional(),
     hard_rest_days: z.array(creationWeekDayEnum).max(7).optional(),
   })
   .strict()
@@ -254,65 +235,59 @@ export const athletePreferenceProfilePatchSchema = z
     dose_limits: athletePreferenceDoseLimitsSchema.partial().optional(),
     training_style: athletePreferenceTrainingStyleSchema.partial().optional(),
     recovery_preferences: athletePreferenceRecoverySchema.partial().optional(),
-    adaptation_preferences: athletePreferenceAdaptationSchema
-      .partial()
-      .optional(),
-    goal_strategy_preferences: athletePreferenceGoalStrategySchema
-      .partial()
-      .optional(),
+    adaptation_preferences: athletePreferenceAdaptationSchema.partial().optional(),
+    goal_strategy_preferences: athletePreferenceGoalStrategySchema.partial().optional(),
     baseline_fitness: athletePreferenceBaselineSchema.partial().optional(),
   })
   .strict();
 
-export const defaultAthletePreferenceProfile =
-  athletePreferenceProfileSchema.parse({
-    availability: {
-      weekly_windows: [],
-      hard_rest_days: [],
-    },
-    dose_limits: {
-      min_sessions_per_week: 3,
-      max_sessions_per_week: 4,
-      max_single_session_duration_minutes: 90,
-      max_weekly_duration_minutes: 360,
-      sport_overrides: {},
-    },
-    training_style: {
-      progression_pace: 0.5,
-      week_pattern_preference: 0.5,
-      key_session_density_preference: 0.5,
-      strength_integration_priority: 0.5,
-    },
-    recovery_preferences: {
-      recovery_priority: 0.6,
-      post_goal_recovery_days: 5,
-      systemic_fatigue_tolerance: 0.5,
-      double_day_tolerance: 0.25,
-      long_session_fatigue_tolerance: 0.5,
-    },
-    adaptation_preferences: {
-      recency_adaptation_preference: 0.5,
-      plan_churn_tolerance: 0.4,
-    },
-    goal_strategy_preferences: {
-      target_surplus_preference: 0,
-      priority_tradeoff_preference: 0.5,
-      taper_style_preference: 0.5,
-    },
-    baseline_fitness: {
-      is_enabled: false,
-      max_weekly_tss_ramp_pct: 10, // Default: outcome_first profile
-      max_ctl_ramp_per_week: 5,
-    },
-  });
+export const defaultAthletePreferenceProfile = athletePreferenceProfileSchema.parse({
+  availability: {
+    weekly_windows: [],
+    hard_rest_days: [],
+  },
+  dose_limits: {
+    min_sessions_per_week: 3,
+    max_sessions_per_week: 4,
+    max_single_session_duration_minutes: 90,
+    max_weekly_duration_minutes: 360,
+    sport_overrides: {},
+  },
+  training_style: {
+    progression_pace: 0.5,
+    week_pattern_preference: 0.5,
+    key_session_density_preference: 0.5,
+    strength_integration_priority: 0.5,
+  },
+  recovery_preferences: {
+    recovery_priority: 0.6,
+    post_goal_recovery_days: 5,
+    systemic_fatigue_tolerance: 0.5,
+    double_day_tolerance: 0.25,
+    long_session_fatigue_tolerance: 0.5,
+  },
+  adaptation_preferences: {
+    recency_adaptation_preference: 0.5,
+    plan_churn_tolerance: 0.4,
+  },
+  goal_strategy_preferences: {
+    target_surplus_preference: 0,
+    priority_tradeoff_preference: 0.5,
+    taper_style_preference: 0.5,
+  },
+  baseline_fitness: {
+    is_enabled: false,
+    max_weekly_tss_ramp_pct: 10, // Default: outcome_first profile
+    max_ctl_ramp_per_week: 5,
+  },
+});
 
 export const profilePreferenceDefaultsSchema = athletePreferenceProfileSchema;
 
 /**
  * Plan-scoped preference overrides layered on top of profile defaults.
  */
-export const planPreferenceOverridesSchema =
-  athletePreferenceProfilePatchSchema;
+export const planPreferenceOverridesSchema = athletePreferenceProfilePatchSchema;
 
 export const plannerPolicyConfigSchema = z
   .object({
@@ -366,20 +341,14 @@ export const capabilitySnapshotInvalidationReasonEnum = z.enum([
   "manual_refresh",
 ]);
 
-export const capabilitySnapshotFreshnessStateEnum = z.enum([
-  "fresh",
-  "stale",
-  "invalidated",
-]);
+export const capabilitySnapshotFreshnessStateEnum = z.enum(["fresh", "stale", "invalidated"]);
 
 export const athleteCapabilityFreshnessMetadataSchema = z
   .object({
     generated_at: z.string().datetime(),
     expires_at: z.string().datetime(),
     invalidated_at: z.string().datetime().optional(),
-    invalidation_reasons: z
-      .array(capabilitySnapshotInvalidationReasonEnum)
-      .default([]),
+    invalidation_reasons: z.array(capabilitySnapshotInvalidationReasonEnum).default([]),
     last_activity_at: z.string().datetime().optional(),
     last_threshold_update_at: z.string().datetime().optional(),
     last_profile_preference_change_at: z.string().datetime().optional(),
@@ -440,42 +409,23 @@ export const profileTrainingSettingsRecordSchema = z
   })
   .strict();
 
-export type AthletePreferenceAvailability = z.infer<
-  typeof athletePreferenceAvailabilitySchema
->;
-export type AthletePreferenceProfile = z.infer<
-  typeof athletePreferenceProfileSchema
->;
+export type AthletePreferenceAvailability = z.infer<typeof athletePreferenceAvailabilitySchema>;
+export type AthletePreferenceProfile = z.infer<typeof athletePreferenceProfileSchema>;
 export type ProfilePreferenceDefaults = AthletePreferenceProfile;
-export type AthletePreferenceProfilePatch = z.infer<
-  typeof athletePreferenceProfilePatchSchema
->;
-export type PlanPreferenceOverrides = z.infer<
-  typeof planPreferenceOverridesSchema
->;
+export type AthletePreferenceProfilePatch = z.infer<typeof athletePreferenceProfilePatchSchema>;
+export type PlanPreferenceOverrides = z.infer<typeof planPreferenceOverridesSchema>;
 export type PlannerPolicyConfig = z.infer<typeof plannerPolicyConfigSchema>;
-export type PlannerDerivedDiagnostics = z.infer<
-  typeof plannerDerivedDiagnosticsSchema
->;
-export type AthleteCapabilitySlice = z.infer<
-  typeof athleteCapabilitySliceSchema
->;
+export type PlannerDerivedDiagnostics = z.infer<typeof plannerDerivedDiagnosticsSchema>;
+export type AthleteCapabilitySlice = z.infer<typeof athleteCapabilitySliceSchema>;
 export type CapabilitySnapshotInvalidationReason = z.infer<
   typeof capabilitySnapshotInvalidationReasonEnum
 >;
-export type CapabilitySnapshotFreshnessState = z.infer<
-  typeof capabilitySnapshotFreshnessStateEnum
->;
-export type AthleteCapabilitySnapshot = z.infer<
-  typeof athleteCapabilitySnapshotSchema
->;
-export type ProfileTrainingSettingsRecord = z.infer<
-  typeof profileTrainingSettingsRecordSchema
->;
+export type CapabilitySnapshotFreshnessState = z.infer<typeof capabilitySnapshotFreshnessStateEnum>;
+export type AthleteCapabilitySnapshot = z.infer<typeof athleteCapabilitySnapshotSchema>;
+export type ProfileTrainingSettingsRecord = z.infer<typeof profileTrainingSettingsRecordSchema>;
 
 export const athleteTrainingSettingsSchema = athletePreferenceProfileSchema;
-export const athleteTrainingSettingsPatchSchema =
-  athletePreferenceProfilePatchSchema;
+export const athleteTrainingSettingsPatchSchema = athletePreferenceProfilePatchSchema;
 
 export type AthleteTrainingSettings = AthletePreferenceProfile;
 export type AthleteTrainingSettingsPatch = AthletePreferenceProfilePatch;
@@ -504,18 +454,15 @@ export function resolveEffectivePreferences(
       ...parsedDefaults.availability,
       ...parsedOverrides.availability,
       weekly_windows:
-        parsedOverrides.availability?.weekly_windows ??
-        parsedDefaults.availability.weekly_windows,
+        parsedOverrides.availability?.weekly_windows ?? parsedDefaults.availability.weekly_windows,
       hard_rest_days:
-        parsedOverrides.availability?.hard_rest_days ??
-        parsedDefaults.availability.hard_rest_days,
+        parsedOverrides.availability?.hard_rest_days ?? parsedDefaults.availability.hard_rest_days,
     },
     dose_limits: {
       ...parsedDefaults.dose_limits,
       ...parsedOverrides.dose_limits,
       sport_overrides:
-        parsedDefaults.dose_limits.sport_overrides ||
-        parsedOverrides.dose_limits?.sport_overrides
+        parsedDefaults.dose_limits.sport_overrides || parsedOverrides.dose_limits?.sport_overrides
           ? {
               ...(parsedDefaults.dose_limits.sport_overrides ?? {}),
               ...(parsedOverrides.dose_limits?.sport_overrides ?? {}),
@@ -568,9 +515,7 @@ export function resolveCapabilitySnapshotFreshness(
   input: ResolveCapabilityFreshnessInput,
 ): CapabilitySnapshotFreshnessState {
   const snapshot = athleteCapabilitySnapshotSchema.parse(input.snapshot);
-  const asOfTimestamp = Date.parse(
-    input.asOf ?? snapshot.freshness.generated_at,
-  );
+  const asOfTimestamp = Date.parse(input.asOf ?? snapshot.freshness.generated_at);
   const invalidatedAtTimestamp = snapshot.freshness.invalidated_at
     ? Date.parse(snapshot.freshness.invalidated_at)
     : Number.NaN;
@@ -600,9 +545,7 @@ export function shouldInvalidateCapabilitySnapshot(
 ): boolean {
   const parsedSnapshot = athleteCapabilitySnapshotSchema.parse(snapshot);
   const occurredAtTimestamp = Date.parse(event.occurred_at);
-  const generatedAtTimestamp = Date.parse(
-    parsedSnapshot.freshness.generated_at,
-  );
+  const generatedAtTimestamp = Date.parse(parsedSnapshot.freshness.generated_at);
 
   if (Number.isNaN(occurredAtTimestamp) || Number.isNaN(generatedAtTimestamp)) {
     return false;

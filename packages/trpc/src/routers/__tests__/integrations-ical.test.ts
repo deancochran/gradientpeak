@@ -73,13 +73,9 @@ function createSupabaseMock(initialEvents: EventRow[] = []) {
             return Promise.resolve({ data: null, error: null });
           }
 
-          const conflictFields = options.onConflict
-            .split(",")
-            .map((field) => field.trim());
+          const conflictFields = options.onConflict.split(",").map((field) => field.trim());
           const current = state.events.find((row) =>
-            conflictFields.every(
-              (field) => row[field as keyof EventRow] === payload[field],
-            ),
+            conflictFields.every((field) => row[field as keyof EventRow] === payload[field]),
           );
           const updatedAt = new Date().toISOString();
 
@@ -101,9 +97,7 @@ function createSupabaseMock(initialEvents: EventRow[] = []) {
           mode = "delete";
           return builder;
         },
-        then: (
-          onFulfilled: (result: { data: any; error: null }) => unknown,
-        ) => {
+        then: (onFulfilled: (result: { data: any; error: null }) => unknown) => {
           if (table !== "events") {
             return Promise.resolve({ data: [], error: null }).then(onFulfilled);
           }
@@ -114,17 +108,11 @@ function createSupabaseMock(initialEvents: EventRow[] = []) {
 
           if (mode === "delete") {
             const idsToDelete = new Set(filtered.map((row) => row.id));
-            state.events = state.events.filter(
-              (row) => !idsToDelete.has(row.id),
-            );
-            return Promise.resolve({ data: null, error: null }).then(
-              onFulfilled,
-            );
+            state.events = state.events.filter((row) => !idsToDelete.has(row.id));
+            return Promise.resolve({ data: null, error: null }).then(onFulfilled);
           }
 
-          return Promise.resolve({ data: filtered, error: null }).then(
-            onFulfilled,
-          );
+          return Promise.resolve({ data: filtered, error: null }).then(onFulfilled);
         },
       };
 
@@ -166,9 +154,7 @@ describe("integrationsRouter iCal", () => {
   });
 
   it("addFeed imports rows", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(ICS_BASE, { status: 200 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(ICS_BASE, { status: 200 }));
 
     const { caller, state } = createCaller();
 
@@ -225,9 +211,7 @@ END:VCALENDAR`;
   });
 
   it("removeFeed purges rows", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(ICS_BASE, { status: 200 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(ICS_BASE, { status: 200 }));
 
     const { caller, state } = createCaller();
     const synced = await caller.ical.addFeed({

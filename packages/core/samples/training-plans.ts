@@ -15,9 +15,7 @@ type SamplePlanSession = {
   activity_plan_id: string;
 };
 
-function buildWeeklySessions(
-  weeks: ReadonlyArray<ReadonlyArray<SamplePlanSession>>,
-) {
+function buildWeeklySessions(weeks: ReadonlyArray<ReadonlyArray<SamplePlanSession>>) {
   return weeks.flatMap((week, weekIndex) =>
     week.map((session) => ({
       offset_days: weekIndex * 7 + session.day,
@@ -591,8 +589,7 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
   {
     id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913005",
     name: "Sprint Triathlon Base (10 weeks)",
-    description:
-      "Triathlon starter cycle balancing swim, bike, run, and weekly brick practice.",
+    description: "Triathlon starter cycle balancing swim, bike, run, and weekly brick practice.",
     sessions_per_week_target: 5,
     duration_hours: 8,
     structure: {
@@ -742,9 +739,7 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
   },
 ];
 
-function normalizeStructureActivityPlanIds(
-  value: unknown,
-): Record<string, unknown> {
+function normalizeStructureActivityPlanIds(value: unknown): Record<string, unknown> {
   const rewrite = (node: unknown): unknown => {
     if (Array.isArray(node)) {
       return node.map((item) => rewrite(item));
@@ -772,8 +767,7 @@ function normalizeStructureActivityPlanIds(
   return rewrite(value) as Record<string, unknown>;
 }
 
-export const ALL_SAMPLE_PLANS: SystemTrainingPlanTemplate[] =
-  RAW_SAMPLE_PLANS.map((plan) => ({
-    ...plan,
-    structure: normalizeStructureActivityPlanIds(plan.structure),
-  }));
+export const ALL_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = RAW_SAMPLE_PLANS.map((plan) => ({
+  ...plan,
+  structure: normalizeStructureActivityPlanIds(plan.structure),
+}));

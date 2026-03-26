@@ -2,7 +2,6 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import {
   Select,
   SelectContent,
@@ -13,12 +12,13 @@ import {
 } from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
-import { trpc } from "@/lib/trpc";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
 import { CheckCircle, FileText, Upload } from "lucide-react-native";
 import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { trpc } from "@/lib/trpc";
 
 const ACTIVITY_CATEGORIES = [
   { value: "run", label: "Run" },
@@ -154,9 +154,7 @@ export default function UploadRouteScreen() {
                 <Label className="mb-2">Activity Category *</Label>
                 <Select
                   value={createOption(activityCategory)}
-                  onValueChange={(
-                    option: { value: string; label: string } | undefined,
-                  ) => {
+                  onValueChange={(option: { value: string; label: string } | undefined) => {
                     if (option) setActivityCategory(option.value);
                   }}
                 >
@@ -195,9 +193,8 @@ export default function UploadRouteScreen() {
           <Card className="bg-muted/50">
             <CardContent className="p-4">
               <Text className="text-sm text-muted-foreground">
-                💡 The route will be analyzed to calculate distance, elevation
-                gain, and create a preview map. You can attach this route to
-                activity plans later.
+                💡 The route will be analyzed to calculate distance, elevation gain, and create a
+                preview map. You can attach this route to activity plans later.
               </Text>
             </CardContent>
           </Card>

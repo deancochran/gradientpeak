@@ -40,9 +40,7 @@ export const ActivityListItem = memo(
     };
     onPress?: () => void;
   }) => {
-    const distanceKm = activity.distance_meters
-      ? activity.distance_meters / 1000
-      : null;
+    const distanceKm = activity.distance_meters ? activity.distance_meters / 1000 : null;
     const durationMinutes = activity.duration_seconds
       ? Math.floor(activity.duration_seconds / 60)
       : null;
@@ -55,27 +53,21 @@ export const ActivityListItem = memo(
               <Text className="text-base font-semibold flex-1">
                 {activity.name || "Untitled Activity"}
               </Text>
-              <Text className="text-xs text-muted-foreground">
-                {activity.type || "Activity"}
-              </Text>
+              <Text className="text-xs text-muted-foreground">{activity.type || "Activity"}</Text>
             </View>
 
             <View className="flex-row items-center gap-4">
               {distanceKm != null && (
                 <View className="flex-row items-center gap-1">
                   <MapPin size={14} className="text-muted-foreground" />
-                  <Text className="text-sm text-muted-foreground">
-                    {distanceKm.toFixed(1)} km
-                  </Text>
+                  <Text className="text-sm text-muted-foreground">{distanceKm.toFixed(1)} km</Text>
                 </View>
               )}
 
               {durationMinutes != null && (
                 <View className="flex-row items-center gap-1">
                   <Clock size={14} className="text-muted-foreground" />
-                  <Text className="text-sm text-muted-foreground">
-                    {durationMinutes} min
-                  </Text>
+                  <Text className="text-sm text-muted-foreground">{durationMinutes} min</Text>
                 </View>
               )}
 
@@ -168,9 +160,7 @@ export const PlannedActivityListItem = memo(
             <View className="flex-row items-start justify-between mb-2">
               <View className="flex-1">
                 <Text className="text-base font-semibold mb-1">
-                  {activity.activity_plan?.title ||
-                    activity.title ||
-                    "Planned Activity"}
+                  {activity.activity_plan?.title || activity.title || "Planned Activity"}
                 </Text>
                 {showDate && (
                   <Text className="text-xs text-muted-foreground">
@@ -181,9 +171,7 @@ export const PlannedActivityListItem = memo(
 
               {isCompleted && (
                 <View className="bg-green-100 px-2 py-1 rounded">
-                  <Text className="text-xs text-green-700 font-medium">
-                    ✓ Done
-                  </Text>
+                  <Text className="text-xs text-green-700 font-medium">✓ Done</Text>
                 </View>
               )}
             </View>
@@ -199,13 +187,8 @@ export const PlannedActivityListItem = memo(
               )}
 
               <View className="flex-row items-center gap-1">
-                <TrendingUp
-                  size={14}
-                  className={getIntensityColor(intensity)}
-                />
-                <Text className={`text-sm ${getIntensityColor(intensity)}`}>
-                  {intensity}
-                </Text>
+                <TrendingUp size={14} className={getIntensityColor(intensity)} />
+                <Text className={`text-sm ${getIntensityColor(intensity)}`}>{intensity}</Text>
               </View>
             </View>
           </CardContent>
@@ -222,8 +205,7 @@ export const PlannedActivityListItem = memo(
       prev.activity.intensity === next.activity.intensity &&
       prev.activity.completed_at === next.activity.completed_at &&
       prev.activity.activity_plan?.id === next.activity.activity_plan?.id &&
-      prev.activity.activity_plan?.title ===
-        next.activity.activity_plan?.title &&
+      prev.activity.activity_plan?.title === next.activity.activity_plan?.title &&
       prev.showDate === next.showDate
     );
   },
@@ -272,9 +254,7 @@ export const WeeklySummaryCard = memo(
           <CardContent className="p-4">
             <View className="flex-row items-center justify-between mb-3">
               <View>
-                <Text className="text-lg font-semibold">
-                  Week {week.weekNumber}
-                </Text>
+                <Text className="text-lg font-semibold">Week {week.weekNumber}</Text>
                 <Text className="text-xs text-muted-foreground">
                   {format(new Date(week.weekStart), "MMM d")} -{" "}
                   {format(new Date(week.weekEnd), "MMM d")}
@@ -282,17 +262,13 @@ export const WeeklySummaryCard = memo(
               </View>
 
               <View className="bg-primary/10 px-3 py-2 rounded-lg">
-                <Text className="text-sm font-semibold text-primary">
-                  {completionRate}%
-                </Text>
+                <Text className="text-sm font-semibold text-primary">{completionRate}%</Text>
               </View>
             </View>
 
             <View className="flex-row items-center justify-between">
               <View className="flex-1">
-                <Text className="text-2xl font-bold">
-                  {week.totalDistance.toFixed(1)}
-                </Text>
+                <Text className="text-2xl font-bold">{week.totalDistance.toFixed(1)}</Text>
                 <Text className="text-xs text-muted-foreground">km</Text>
               </View>
 
@@ -305,9 +281,7 @@ export const WeeklySummaryCard = memo(
                 <Text className="text-2xl font-bold">
                   {week.activitiesCompleted}/{week.activitiesPlanned}
                 </Text>
-                <Text className="text-xs text-muted-foreground">
-                  activities
-                </Text>
+                <Text className="text-xs text-muted-foreground">activities</Text>
               </View>
             </View>
           </CardContent>
@@ -362,20 +336,14 @@ export const MetricCard = memo(
           {icon && <View className="mb-2">{icon}</View>}
           <Text className="text-2xl font-bold mb-1">{value}</Text>
           <Text className="text-xs text-muted-foreground">{label}</Text>
-          {subtitle && (
-            <Text className="text-xs text-muted-foreground mt-1">
-              {subtitle}
-            </Text>
-          )}
+          {subtitle && <Text className="text-xs text-muted-foreground mt-1">{subtitle}</Text>}
         </CardContent>
       </Card>
     );
   },
   (prev, next) => {
     return (
-      prev.label === next.label &&
-      prev.value === next.value &&
-      prev.subtitle === next.subtitle
+      prev.label === next.label && prev.value === next.value && prev.subtitle === next.subtitle
     );
   },
 );

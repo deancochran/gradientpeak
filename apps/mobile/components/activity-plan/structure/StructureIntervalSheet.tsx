@@ -1,16 +1,16 @@
-import { Button } from "@repo/ui/components/button";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
-import { Icon } from "@repo/ui/components/icon";
-import { Text } from "@repo/ui/components/text";
-import { getDurationMs } from "@/lib/utils/durationConversion";
 import {
   formatDurationV2,
   formatTargetValue,
   type IntensityTargetV2,
   type IntervalV2,
 } from "@repo/core";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { CircleAlert, Minus, Plus, Trash2 } from "lucide-react-native";
 import { Pressable, View } from "react-native";
+import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { getDurationMs } from "@/lib/utils/durationConversion";
 
 interface IntervalIssueSummary {
   interval: number;
@@ -44,10 +44,7 @@ export function StructureIntervalSheet({
   onEditStep,
 }: StructureIntervalSheetProps) {
   const totalMinutes = Math.round(
-    interval.steps.reduce(
-      (sum, step) => sum + getDurationMs(step.duration),
-      0,
-    ) / 60000,
+    interval.steps.reduce((sum, step) => sum + getDurationMs(step.duration), 0) / 60000,
   );
 
   const primaryTargets = interval.steps
@@ -60,17 +57,14 @@ export function StructureIntervalSheet({
     }
 
     const [firstTarget] = primaryTargets;
-    const usesSingleType = primaryTargets.every(
-      (target) => target.type === firstTarget.type,
-    );
+    const usesSingleType = primaryTargets.every((target) => target.type === firstTarget.type);
 
     if (!usesSingleType) {
       return formatTargetValue(firstTarget);
     }
 
     const averageIntensity =
-      primaryTargets.reduce((sum, target) => sum + target.intensity, 0) /
-      primaryTargets.length;
+      primaryTargets.reduce((sum, target) => sum + target.intensity, 0) / primaryTargets.length;
 
     return formatTargetValue({
       type: firstTarget.type,
@@ -86,15 +80,12 @@ export function StructureIntervalSheet({
         <Text className="text-sm font-medium text-primary">
           Interval {intervalIndex + 1}: {interval.name || "Untitled interval"}
         </Text>
-        <Text className="mt-1 text-[11px] text-muted-foreground">
-          {intervalSummary}
-        </Text>
+        <Text className="mt-1 text-[11px] text-muted-foreground">{intervalSummary}</Text>
         {intervalIssue && intervalIssue.total > 0 ? (
           <View className="mt-1 flex-row items-center gap-1">
             <CircleAlert size={12} color="#DC2626" />
             <Text className="text-[11px] text-destructive">
-              {intervalIssue.total} issue{intervalIssue.total === 1 ? "" : "s"}{" "}
-              in this interval
+              {intervalIssue.total} issue{intervalIssue.total === 1 ? "" : "s"} in this interval
             </Text>
           </View>
         ) : null}
@@ -119,19 +110,11 @@ export function StructureIntervalSheet({
 
       <View className="flex-row items-center gap-2">
         <Text className="text-xs text-muted-foreground">Repeats</Text>
-        <Button
-          variant="ghost"
-          size="sm"
-          onPress={() => onAdjustRepetitions(-1)}
-        >
+        <Button variant="ghost" size="sm" onPress={() => onAdjustRepetitions(-1)}>
           <Icon as={Minus} size={14} className="text-foreground" />
         </Button>
         <Text className="text-sm font-medium">{interval.repetitions}</Text>
-        <Button
-          variant="ghost"
-          size="sm"
-          onPress={() => onAdjustRepetitions(1)}
-        >
+        <Button variant="ghost" size="sm" onPress={() => onAdjustRepetitions(1)}>
           <Icon as={Plus} size={14} className="text-foreground" />
         </Button>
       </View>
@@ -180,9 +163,7 @@ export function StructureIntervalSheet({
                   ) : (
                     <Text className="text-[11px] text-muted-foreground">
                       {formatDurationV2(step.duration)}
-                      {step.targets?.[0]
-                        ? ` at ${formatTargetValue(step.targets[0])}`
-                        : ""}
+                      {step.targets?.[0] ? ` at ${formatTargetValue(step.targets[0])}` : ""}
                     </Text>
                   )}
                 </View>

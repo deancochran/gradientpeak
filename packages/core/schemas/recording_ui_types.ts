@@ -50,12 +50,7 @@ export interface ZoneRenderingStates {
  * - When a zone focuses, footer collapses first (if expanded)
  * - When footer expands, any focused zone minimizes first
  */
-export type FocusMode =
-  | "none"
-  | "zone-a"
-  | "zone-b"
-  | "zone-c"
-  | "footer";
+export type FocusMode = "none" | "zone-a" | "zone-b" | "zone-c" | "footer";
 
 // ============================================================================
 // Footer Snap State

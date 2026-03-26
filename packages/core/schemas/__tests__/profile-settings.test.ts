@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   athleteCapabilitySnapshotSchema,
-  defaultAthletePreferenceProfile,
   athletePreferenceProfileSchema,
+  defaultAthletePreferenceProfile,
   invalidateCapabilitySnapshot,
-  planPreferenceOverridesSchema,
   plannerDerivedDiagnosticsSchema,
   plannerPolicyConfigSchema,
+  planPreferenceOverridesSchema,
   resolveCapabilitySnapshotFreshness,
   resolveEffectivePreferences,
   shouldInvalidateCapabilitySnapshot,
@@ -113,9 +113,7 @@ describe("athletePreferenceProfileSchema", () => {
   it("accepts canonical persisted preference sections only", () => {
     const parsed = athletePreferenceProfileSchema.parse(canonicalProfile);
 
-    expect(parsed.goal_strategy_preferences.target_surplus_preference).toBe(
-      0.25,
-    );
+    expect(parsed.goal_strategy_preferences.target_surplus_preference).toBe(0.25);
     expect(parsed.training_style.strength_integration_priority).toBe(0.45);
     expect(parsed.recovery_preferences.systemic_fatigue_tolerance).toBe(0.65);
     expect(Object.keys(parsed)).toEqual([
@@ -126,9 +124,7 @@ describe("athletePreferenceProfileSchema", () => {
       "adaptation_preferences",
       "goal_strategy_preferences",
     ]);
-    expect(defaultAthletePreferenceProfile.dose_limits.sport_overrides).toEqual(
-      {},
-    );
+    expect(defaultAthletePreferenceProfile.dose_limits.sport_overrides).toEqual({});
   });
 
   it("rejects planner-only and internal fields from canonical persistence", () => {
@@ -227,15 +223,11 @@ describe("resolveEffectivePreferences", () => {
     expect(resolved.dose_limits.max_sessions_per_week).toBe(6);
     expect(resolved.training_style.week_pattern_preference).toBe(0.4);
     expect(resolved.training_style.progression_pace).toBe(0.85);
-    expect(resolved.goal_strategy_preferences.target_surplus_preference).toBe(
-      0.9,
-    );
+    expect(resolved.goal_strategy_preferences.target_surplus_preference).toBe(0.9);
   });
 
   it("returns profile defaults unchanged when no overrides are provided", () => {
-    expect(resolveEffectivePreferences(canonicalProfile)).toEqual(
-      canonicalProfile,
-    );
+    expect(resolveEffectivePreferences(canonicalProfile)).toEqual(canonicalProfile);
   });
 
   it("preserves array fields when an override only changes sibling availability fields", () => {
@@ -301,9 +293,7 @@ describe("athleteCapabilitySnapshot helpers", () => {
         asOf: "2026-03-12T00:00:00.000Z",
       }),
     ).toBe("invalidated");
-    expect(invalidated.freshness.invalidation_reasons).toEqual([
-      "new_activity",
-    ]);
+    expect(invalidated.freshness.invalidation_reasons).toEqual(["new_activity"]);
   });
 
   it("invalidates snapshots only for changes at or after generation time", () => {

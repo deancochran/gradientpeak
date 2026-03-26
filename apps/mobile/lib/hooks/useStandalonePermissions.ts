@@ -6,15 +6,15 @@
  * and monitored from anywhere in the app.
  */
 
-import {
-  AllPermissionsStatus,
-  PermissionType,
-  areAllPermissionsGranted,
-  checkAllPermissions,
-  requestPermission,
-} from "@/lib/services/permissions-check";
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
+import {
+  AllPermissionsStatus,
+  areAllPermissionsGranted,
+  checkAllPermissions,
+  PermissionType,
+  requestPermission,
+} from "@/lib/services/permissions-check";
 
 export function useStandalonePermissions() {
   const [permissions, setPermissions] = useState<AllPermissionsStatus>({
@@ -51,9 +51,7 @@ export function useStandalonePermissions() {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active") {
         // Force refresh permissions when app becomes active (user may have changed them in settings)
-        console.log(
-          "[useStandalonePermissions] App became active, force refreshing permissions",
-        );
+        console.log("[useStandalonePermissions] App became active, force refreshing permissions");
         checkPermissions(true);
       }
     });
@@ -138,22 +136,14 @@ export function useAllPermissionsGranted() {
 
         if (mounted) {
           setAllGranted(granted);
-          console.log(
-            "[useAllPermissionsGranted] Permissions check result:",
-            granted,
-          );
+          console.log("[useAllPermissionsGranted] Permissions check result:", granted);
         }
       } catch (error) {
-        console.error(
-          "[useAllPermissionsGranted] Error checking permissions:",
-          error,
-        );
+        console.error("[useAllPermissionsGranted] Error checking permissions:", error);
 
         // Retry logic for transient errors
         if (mounted && retryCount < 3) {
-          console.log(
-            `[useAllPermissionsGranted] Retrying... (${retryCount + 1}/3)`,
-          );
+          console.log(`[useAllPermissionsGranted] Retrying... (${retryCount + 1}/3)`);
           setTimeout(() => {
             if (mounted) {
               setRetryCount((prev) => prev + 1);
@@ -172,9 +162,7 @@ export function useAllPermissionsGranted() {
     // Re-check when app becomes active (force refresh to bypass cache)
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       if (nextAppState === "active" && mounted) {
-        console.log(
-          "[useAllPermissionsGranted] App became active, force refreshing",
-        );
+        console.log("[useAllPermissionsGranted] App became active, force refreshing");
         check(true);
       }
     });

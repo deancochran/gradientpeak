@@ -1,27 +1,15 @@
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { trpc } from "@/lib/trpc";
-import { normalizeDate } from "@/lib/utils/plan/dateGrouping";
 import { format } from "date-fns";
 import { useRouter } from "expo-router";
-import {
-  AlertCircle,
-  ArrowLeft,
-  Calendar,
-  GripVertical,
-  Save,
-} from "lucide-react-native";
+import { AlertCircle, ArrowLeft, Calendar, GripVertical, Save } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { trpc } from "@/lib/trpc";
+import { normalizeDate } from "@/lib/utils/plan/dateGrouping";
 
 export default function WorkoutsReorder() {
   const router = useRouter();
@@ -64,9 +52,7 @@ export default function WorkoutsReorder() {
     const groups: Record<string, any[]> = {};
 
     activities.forEach((activity) => {
-      const dateKey = normalizeDate(
-        new Date(activity.scheduled_date),
-      ).toISOString();
+      const dateKey = normalizeDate(new Date(activity.scheduled_date)).toISOString();
       if (!groups[dateKey]) {
         groups[dateKey] = [];
       }
@@ -75,8 +61,7 @@ export default function WorkoutsReorder() {
 
     // Sort groups by date
     return Object.entries(groups).sort(
-      ([dateA], [dateB]) =>
-        new Date(dateA).getTime() - new Date(dateB).getTime(),
+      ([dateA], [dateB]) => new Date(dateA).getTime() - new Date(dateB).getTime(),
     );
   }, [activities]);
 
@@ -86,8 +71,7 @@ export default function WorkoutsReorder() {
     if (currentIndex === -1) return;
 
     const newActivities = [...activities];
-    const targetIndex =
-      direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
 
     if (targetIndex < 0 || targetIndex >= newActivities.length) return;
 
@@ -102,10 +86,7 @@ export default function WorkoutsReorder() {
   };
 
   // Handle date change
-  const handleChangeDateForActivity = (
-    activityId: string,
-    daysToAdd: number,
-  ) => {
+  const handleChangeDateForActivity = (activityId: string, daysToAdd: number) => {
     const activity = activities.find((a) => a.id === activityId);
     if (!activity) return;
 
@@ -114,9 +95,7 @@ export default function WorkoutsReorder() {
     newDate.setDate(currentDate.getDate() + daysToAdd);
 
     const newActivities = activities.map((a) =>
-      a.id === activityId
-        ? { ...a, scheduled_date: newDate.toISOString().split("T")[0] }
-        : a,
+      a.id === activityId ? { ...a, scheduled_date: newDate.toISOString().split("T")[0] } : a,
     );
 
     setActivities(newActivities);
@@ -134,12 +113,8 @@ export default function WorkoutsReorder() {
       const originalActivities = plannedActivitiesData?.items || [];
       const updatePromises = activities
         .filter((activity) => {
-          const original = originalActivities.find(
-            (orig: any) => orig.id === activity.id,
-          );
-          return (
-            original && original.scheduled_date !== activity.scheduled_date
-          );
+          const original = originalActivities.find((orig: any) => orig.id === activity.id);
+          return original && original.scheduled_date !== activity.scheduled_date;
         })
         .map((activity) =>
           updateMutation.mutateAsync({
@@ -199,9 +174,7 @@ export default function WorkoutsReorder() {
         </View>
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
-          <Text className="text-muted-foreground mt-4">
-            Loading workouts...
-          </Text>
+          <Text className="text-muted-foreground mt-4">Loading workouts...</Text>
         </View>
       </View>
     );
@@ -222,9 +195,7 @@ export default function WorkoutsReorder() {
           <View className="bg-muted rounded-full p-6 mb-4">
             <Icon as={Calendar} size={48} className="text-muted-foreground" />
           </View>
-          <Text className="text-xl font-semibold mb-2">
-            No Scheduled Workouts
-          </Text>
+          <Text className="text-xl font-semibold mb-2">No Scheduled Workouts</Text>
           <Text className="text-sm text-muted-foreground text-center">
             Schedule some activities from your training plan to reorder them.
           </Text>
@@ -248,14 +219,10 @@ export default function WorkoutsReorder() {
         <Card className="border-primary/30 bg-primary/5">
           <CardContent className="p-3">
             <View className="flex-row items-start gap-2">
-              <Icon
-                as={AlertCircle}
-                size={16}
-                className="text-primary mt-0.5"
-              />
+              <Icon as={AlertCircle} size={16} className="text-primary mt-0.5" />
               <Text className="text-xs text-muted-foreground flex-1">
-                Drag activities or use the buttons to change scheduled dates.
-                Tap Save when finished.
+                Drag activities or use the buttons to change scheduled dates. Tap Save when
+                finished.
               </Text>
             </View>
           </CardContent>
@@ -269,9 +236,7 @@ export default function WorkoutsReorder() {
             return (
               <View key={dateKey}>
                 {/* Date Header */}
-                <Text className="text-base font-semibold mb-2">
-                  {format(date, "EEEE, MMM d")}
-                </Text>
+                <Text className="text-base font-semibold mb-2">{format(date, "EEEE, MMM d")}</Text>
 
                 {/* Activities for this date */}
                 <View className="gap-2 mb-4">
@@ -283,11 +248,7 @@ export default function WorkoutsReorder() {
                       {/* Activity Card */}
                       <View className="flex-row items-center">
                         <View className="p-3 border-r border-border">
-                          <Icon
-                            as={GripVertical}
-                            size={20}
-                            className="text-muted-foreground"
-                          />
+                          <Icon as={GripVertical} size={20} className="text-muted-foreground" />
                         </View>
                         <View className="flex-1">
                           <ActivityPlanCard
@@ -302,26 +263,18 @@ export default function WorkoutsReorder() {
                       {/* Action Buttons */}
                       <View className="flex-row border-t border-border">
                         <TouchableOpacity
-                          onPress={() =>
-                            handleChangeDateForActivity(activity.id, -1)
-                          }
+                          onPress={() => handleChangeDateForActivity(activity.id, -1)}
                           className="flex-1 py-2 items-center border-r border-border"
                           activeOpacity={0.7}
                         >
-                          <Text className="text-xs font-medium text-primary">
-                            ← Previous Day
-                          </Text>
+                          <Text className="text-xs font-medium text-primary">← Previous Day</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          onPress={() =>
-                            handleChangeDateForActivity(activity.id, 1)
-                          }
+                          onPress={() => handleChangeDateForActivity(activity.id, 1)}
                           className="flex-1 py-2 items-center"
                           activeOpacity={0.7}
                         >
-                          <Text className="text-xs font-medium text-primary">
-                            Next Day →
-                          </Text>
+                          <Text className="text-xs font-medium text-primary">Next Day →</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -337,12 +290,7 @@ export default function WorkoutsReorder() {
       {hasChanges && (
         <View className="border-t border-border bg-card p-4">
           <View className="flex-row gap-3">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onPress={handleCancel}
-              disabled={saving}
-            >
+            <Button variant="outline" className="flex-1" onPress={handleCancel} disabled={saving}>
               <Text className="text-foreground">Cancel</Text>
             </Button>
             <Button
@@ -354,14 +302,8 @@ export default function WorkoutsReorder() {
                 <ActivityIndicator size="small" color="white" />
               ) : (
                 <>
-                  <Icon
-                    as={Save}
-                    size={18}
-                    className="text-primary-foreground"
-                  />
-                  <Text className="text-primary-foreground font-semibold">
-                    Save Changes
-                  </Text>
+                  <Icon as={Save} size={18} className="text-primary-foreground" />
+                  <Text className="text-primary-foreground font-semibold">Save Changes</Text>
                 </>
               )}
             </Button>

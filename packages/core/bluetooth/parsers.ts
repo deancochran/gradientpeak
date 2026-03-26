@@ -40,9 +40,7 @@ function safeRound(value: number, digits: number = 2): number {
 /**
  * Parses BLE Heart Rate Measurement characteristic (0x2A37).
  */
-export function parseHeartRateMeasurement(
-  data: ArrayBuffer | Uint8Array,
-): BleParserMetrics {
+export function parseHeartRateMeasurement(data: ArrayBuffer | Uint8Array): BleParserMetrics {
   const metrics = createEmptyMetrics();
   const view = toDataView(data);
 
@@ -68,9 +66,7 @@ export function parseHeartRateMeasurement(
 /**
  * Parses BLE Cycling Power Measurement characteristic (0x2A63).
  */
-export function parseCyclingPowerMeasurement(
-  data: ArrayBuffer | Uint8Array,
-): BleParserMetrics {
+export function parseCyclingPowerMeasurement(data: ArrayBuffer | Uint8Array): BleParserMetrics {
   const metrics = createEmptyMetrics();
   const view = toDataView(data);
 
@@ -132,8 +128,7 @@ export function parseCscMeasurement(
 
       if (deltaRevolutions > 0 && deltaTimeTicks > 0) {
         const deltaSeconds = deltaTimeTicks / 1024;
-        const distanceMeters =
-          deltaRevolutions * prevState.wheelCircumferenceMeters;
+        const distanceMeters = deltaRevolutions * prevState.wheelCircumferenceMeters;
         base.speedMps = safeRound(distanceMeters / deltaSeconds, 3);
       }
     }
@@ -185,9 +180,7 @@ export function parseCscMeasurement(
 /**
  * Parses FTMS Indoor Bike Data characteristic (0x2AD2) with dynamic offsets.
  */
-export function parseFtmsIndoorBikeData(
-  data: ArrayBuffer | Uint8Array,
-): ParsedFtmsIndoorBikeData {
+export function parseFtmsIndoorBikeData(data: ArrayBuffer | Uint8Array): ParsedFtmsIndoorBikeData {
   const metrics = createEmptyMetrics();
   const view = toDataView(data);
 
@@ -235,9 +228,7 @@ export function parseFtmsIndoorBikeData(
       return null;
     }
     const value =
-      view.getUint8(offset) |
-      (view.getUint8(offset + 1) << 8) |
-      (view.getUint8(offset + 2) << 16);
+      view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getUint8(offset + 2) << 16);
     offset += 3;
     return value;
   };

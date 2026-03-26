@@ -18,12 +18,10 @@ describe("periodization heuristics", () => {
     });
 
     expect(profile.effective_max_ctl_ramp_per_week).toBe(3);
-    expect(
-      profile.calculated_parameters.systemic_fatigue_tolerance,
-    ).toBeDefined();
-    expect(
-      profile.calculated_parameters.systemic_fatigue_tolerance?.rationale_codes,
-    ).toContain("systemic_fatigue_tolerance_preference_applied");
+    expect(profile.calculated_parameters.systemic_fatigue_tolerance).toBeDefined();
+    expect(profile.calculated_parameters.systemic_fatigue_tolerance?.rationale_codes).toContain(
+      "systemic_fatigue_tolerance_preference_applied",
+    );
   });
 
   it("normalizes legacy goals and resolves max-biased event demand", () => {
@@ -107,9 +105,7 @@ describe("periodization heuristics", () => {
       const taper = computeTaperWindow(demandResult.demand, preferenceProfile);
 
       expect(taper.days).toBe(22);
-      expect(taper.parameter.rationale_codes).toContain(
-        "taper_style_preference_applied",
-      );
+      expect(taper.parameter.rationale_codes).toContain("taper_style_preference_applied");
     }
   });
 
@@ -126,8 +122,7 @@ describe("periodization heuristics", () => {
         weeksToPeak: periodizationScenarioFixtures.boundaryFeasible.weeksToPeak,
         goals: normalizedGoals,
         resolvedDemands: [demandResult.demand],
-        preferenceProfile:
-          periodizationScenarioFixtures.boundaryFeasible.preferenceProfile,
+        preferenceProfile: periodizationScenarioFixtures.boundaryFeasible.preferenceProfile,
       });
 
       expect(result.feasibility.status).toBe("feasible");
@@ -144,15 +139,12 @@ describe("periodization heuristics", () => {
     expect(stretchDemand.status).toBe("supported");
     if (stretchDemand.status === "supported") {
       const infeasible = assessFeasibility({
-        currentCtl:
-          periodizationScenarioFixtures.infeasibleBeginnerStretch.currentCtl,
-        weeksToPeak:
-          periodizationScenarioFixtures.infeasibleBeginnerStretch.weeksToPeak,
+        currentCtl: periodizationScenarioFixtures.infeasibleBeginnerStretch.currentCtl,
+        weeksToPeak: periodizationScenarioFixtures.infeasibleBeginnerStretch.weeksToPeak,
         goals: stretchGoals,
         resolvedDemands: [stretchDemand.demand],
         preferenceProfile:
-          periodizationScenarioFixtures.infeasibleBeginnerStretch
-            .preferenceProfile,
+          periodizationScenarioFixtures.infeasibleBeginnerStretch.preferenceProfile,
       });
 
       expect(infeasible.feasibility.status).toBe("infeasible_ramp");
@@ -165,14 +157,11 @@ describe("periodization heuristics", () => {
       weeksToPeak: periodizationScenarioFixtures.noGoals.weeksToPeak,
       goals: [],
       resolvedDemands: [],
-      preferenceProfile:
-        periodizationScenarioFixtures.noGoals.preferenceProfile,
+      preferenceProfile: periodizationScenarioFixtures.noGoals.preferenceProfile,
     });
 
     expect(noGoals.mode).toBe("capacity_bounded");
-    expect(noGoals.feasibility.rationale_codes).toContain(
-      "no_goals_capacity_bounded_baseline",
-    );
+    expect(noGoals.feasibility.rationale_codes).toContain("no_goals_capacity_bounded_baseline");
   });
 
   it("returns structured unsupported mapping feasibility diagnostics", () => {

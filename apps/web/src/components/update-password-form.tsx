@@ -10,15 +10,12 @@ import {
 } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import { trpc } from "@/lib/trpc/client";
 import { cn } from "@repo/ui/lib/cn";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { trpc } from "@/lib/trpc/client";
 
-export function UpdatePasswordForm({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
+export function UpdatePasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -50,9 +47,7 @@ export function UpdatePasswordForm({
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">Reset Your Password</CardTitle>
-          <CardDescription>
-            Please enter your new password below.
-          </CardDescription>
+          <CardDescription>Please enter your new password below.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleForgotPassword}>
@@ -70,9 +65,7 @@ export function UpdatePasswordForm({
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
               <Button type="submit" disabled={updatePasswordMutation.isPending}>
-                {updatePasswordMutation.isPending
-                  ? "Saving..."
-                  : "Save new password"}
+                {updatePasswordMutation.isPending ? "Saving..." : "Save new password"}
               </Button>
             </div>
           </form>

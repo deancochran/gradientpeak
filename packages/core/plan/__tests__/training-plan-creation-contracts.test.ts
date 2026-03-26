@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  createFromCreationConfigResponseCompatSchema,
   createFromCreationConfigInputSchema,
+  createFromCreationConfigResponseCompatSchema,
   getCreationSuggestionsInputSchema,
   previewCreationConfigInputSchema,
   previewCreationConfigResponseCompatSchema,
@@ -301,16 +301,14 @@ describe("training plan creation contracts", () => {
       },
     });
 
-    const createResult = createFromCreationConfigResponseCompatSchema.safeParse(
-      {
-        creation_summary: {
-          projection_chart: {
-            start_date: "2026-01-01",
-            end_date: "2026-03-01",
-          },
+    const createResult = createFromCreationConfigResponseCompatSchema.safeParse({
+      creation_summary: {
+        projection_chart: {
+          start_date: "2026-01-01",
+          end_date: "2026-03-01",
         },
       },
-    );
+    });
 
     expect(previewResult.success).toBe(true);
     expect(createResult.success).toBe(true);
@@ -362,13 +360,12 @@ describe("training plan creation contracts", () => {
     expect(previewParsed.projection_chart.prediction_uncertainty).toEqual(
       additiveDiagnostics.prediction_uncertainty,
     );
-    expect(
-      createParsed.creation_summary.projection_chart.goal_target_distributions,
-    ).toEqual(additiveDiagnostics.goal_target_distributions);
-    expect(
-      createParsed.creation_summary.projection_chart
-        .optimization_tradeoff_summary,
-    ).toEqual(additiveDiagnostics.optimization_tradeoff_summary);
+    expect(createParsed.creation_summary.projection_chart.goal_target_distributions).toEqual(
+      additiveDiagnostics.goal_target_distributions,
+    );
+    expect(createParsed.creation_summary.projection_chart.optimization_tradeoff_summary).toEqual(
+      additiveDiagnostics.optimization_tradeoff_summary,
+    );
   });
 
   it("rejects invalid calibration composite weight sums during normalization", () => {

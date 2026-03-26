@@ -1,14 +1,8 @@
 import { z } from "zod";
 
-export const creationHistoryAvailabilityStateEnum = z.enum([
-  "none",
-  "sparse",
-  "rich",
-]);
+export const creationHistoryAvailabilityStateEnum = z.enum(["none", "sparse", "rich"]);
 
-export type CreationHistoryAvailabilityState = z.infer<
-  typeof creationHistoryAvailabilityStateEnum
->;
+export type CreationHistoryAvailabilityState = z.infer<typeof creationHistoryAvailabilityStateEnum>;
 
 export const creationSignalMarkerEnum = z.enum(["low", "moderate", "high"]);
 
@@ -39,12 +33,8 @@ export const creationContextSummarySchema = z.object({
   user_age: z.number().int().min(0).max(120).optional(),
   user_gender: z.enum(["male", "female"]).nullable().optional(),
   max_sustainable_ctl: z.number().min(0).max(300).optional(),
-  missing_required_onboarding_fields: z
-    .array(z.string().min(1).max(120))
-    .optional(),
-  missing_optional_calibration_fields: z
-    .array(z.string().min(1).max(120))
-    .optional(),
+  missing_required_onboarding_fields: z.array(z.string().min(1).max(120)).optional(),
+  missing_optional_calibration_fields: z.array(z.string().min(1).max(120)).optional(),
   learned_ramp_rate: z
     .object({
       max_safe_ramp_rate: z.number().min(30).max(70),
@@ -64,19 +54,11 @@ export const creationContextSummarySchema = z.object({
   rationale_codes: z.array(z.string().min(1).max(120)).default([]),
 });
 
-export type CreationContextSummary = z.infer<
-  typeof creationContextSummarySchema
->;
+export type CreationContextSummary = z.infer<typeof creationContextSummarySchema>;
 
-export const creationFeasibilityBandEnum = z.enum([
-  "under-reaching",
-  "on-track",
-  "over-reaching",
-]);
+export const creationFeasibilityBandEnum = z.enum(["under-reaching", "on-track", "over-reaching"]);
 
-export type CreationFeasibilityBand = z.infer<
-  typeof creationFeasibilityBandEnum
->;
+export type CreationFeasibilityBand = z.infer<typeof creationFeasibilityBandEnum>;
 
 export const creationSafetyBandEnum = z.enum(["safe", "caution", "high-risk"]);
 
@@ -104,9 +86,7 @@ export const creationSummaryBlockerSchema = z.object({
   field_paths: z.array(z.string().min(1).max(200)).default([]),
 });
 
-export type CreationSummaryBlocker = z.infer<
-  typeof creationSummaryBlockerSchema
->;
+export type CreationSummaryBlocker = z.infer<typeof creationSummaryBlockerSchema>;
 
 export const creationFeasibilitySafetySummarySchema = z.object({
   feasibility_band: creationFeasibilityBandEnum,
@@ -133,18 +113,14 @@ export const inferredCurrentStateMeanSchema = z.object({
   readiness: z.number().min(0).max(100).finite(),
 });
 
-export type InferredCurrentStateMean = z.infer<
-  typeof inferredCurrentStateMeanSchema
->;
+export type InferredCurrentStateMean = z.infer<typeof inferredCurrentStateMeanSchema>;
 
 export const inferredCurrentStateUncertaintySchema = z.object({
   state_variance: z.number().min(0).max(1).finite(),
   confidence: z.number().min(0).max(1).finite(),
 });
 
-export type InferredCurrentStateUncertainty = z.infer<
-  typeof inferredCurrentStateUncertaintySchema
->;
+export type InferredCurrentStateUncertainty = z.infer<typeof inferredCurrentStateUncertaintySchema>;
 
 export const inferredCurrentStateEvidenceQualitySchema = z.object({
   score: z.number().min(0).max(1).finite(),
@@ -161,9 +137,7 @@ export const inferredStateSnapshotMetadataSchema = z.object({
   evidence_counter: z.number().int().min(0),
 });
 
-export type InferredStateSnapshotMetadata = z.infer<
-  typeof inferredStateSnapshotMetadataSchema
->;
+export type InferredStateSnapshotMetadata = z.infer<typeof inferredStateSnapshotMetadataSchema>;
 
 export const inferredCurrentStateSchema = z.object({
   mean: inferredCurrentStateMeanSchema,

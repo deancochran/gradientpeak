@@ -78,12 +78,8 @@ export function TrainingReadinessCard({
           <View className="flex-row items-center justify-between">
             {/* CTL - Fitness */}
             <View className="items-center flex-1">
-              <Text className="text-2xl font-semibold text-foreground">
-                {ctl}
-              </Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">
-                Fitness
-              </Text>
+              <Text className="text-2xl font-semibold text-foreground">{ctl}</Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">Fitness</Text>
               <Text className="text-[10px] text-muted-foreground">CTL</Text>
             </View>
 
@@ -92,12 +88,8 @@ export function TrainingReadinessCard({
 
             {/* ATL - Fatigue */}
             <View className="items-center flex-1">
-              <Text className="text-2xl font-semibold text-foreground">
-                {atl}
-              </Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">
-                Fatigue
-              </Text>
+              <Text className="text-2xl font-semibold text-foreground">{atl}</Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">Fatigue</Text>
               <Text className="text-[10px] text-muted-foreground">ATL</Text>
             </View>
 
@@ -118,9 +110,7 @@ export function TrainingReadinessCard({
           {/* Status Line - Minimalist */}
           <View className="pt-2 border-t border-border">
             <Text className="text-xs text-center text-muted-foreground">
-              <Text className={getFormStatusColor(form)}>
-                {getFormStatusText(form)}
-              </Text>
+              <Text className={getFormStatusColor(form)}>{getFormStatusText(form)}</Text>
               {" · "}
               {getReadinessText(form)}
             </Text>

@@ -1,10 +1,10 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { isSameDay } from "@/lib/utils/plan/dateGrouping";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
+import { isSameDay } from "@/lib/utils/plan/dateGrouping";
 
 interface DayStatus {
   completed: boolean;
@@ -58,9 +58,7 @@ export function WeekStrip({
                 {/* Day Letter */}
                 <Text
                   className={`text-xs mb-1.5 ${
-                    isSelected
-                      ? "text-primary font-bold"
-                      : "text-muted-foreground"
+                    isSelected ? "text-primary font-bold" : "text-muted-foreground"
                   }`}
                 >
                   {format(date, "EEEEE")}
@@ -69,11 +67,7 @@ export function WeekStrip({
                 {/* Date Number */}
                 <View
                   className={`w-10 h-10 rounded-full items-center justify-center mb-2 ${
-                    isSelected
-                      ? "bg-primary"
-                      : isToday
-                        ? "border-2 border-primary"
-                        : ""
+                    isSelected ? "bg-primary" : isToday ? "border-2 border-primary" : ""
                   }`}
                 >
                   <Text

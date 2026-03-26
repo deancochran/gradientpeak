@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/core", async () => {
-  const actual =
-    await vi.importActual<typeof import("@repo/core")>("@repo/core");
+  const actual = await vi.importActual<typeof import("@repo/core")>("@repo/core");
 
   return {
     ...actual,

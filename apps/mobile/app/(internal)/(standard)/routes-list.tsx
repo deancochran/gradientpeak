@@ -1,19 +1,13 @@
+import { decodePolyline } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
-import { decodePolyline } from "@repo/core";
 import { useRouter } from "expo-router";
-import {
-  MapPin,
-  Plus,
-  Trash2,
-  TrendingDown,
-  TrendingUp,
-} from "lucide-react-native";
+import { MapPin, Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react-native";
 import { Alert, FlatList, Pressable, View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { trpc } from "@/lib/trpc";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Run",
@@ -26,13 +20,12 @@ export default function RoutesLibraryScreen() {
   const router = useRouter();
   const utils = trpc.useUtils();
 
-  const { data, isLoading, fetchNextPage, hasNextPage } =
-    trpc.routes.list.useInfiniteQuery(
-      { limit: 20 },
-      {
-        getNextPageParam: (lastPage) => lastPage.nextCursor,
-      },
-    );
+  const { data, isLoading, fetchNextPage, hasNextPage } = trpc.routes.list.useInfiniteQuery(
+    { limit: 20 },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
 
   const deleteMutation = useReliableMutation(trpc.routes.delete, {
     invalidate: [utils.routes],
@@ -65,10 +58,7 @@ export default function RoutesLibraryScreen() {
     const coordinates = decodePolyline(item.polyline);
 
     return (
-      <Pressable
-        onPress={() => router.push(`/route-detail?id=${item.id}` as any)}
-        className="mb-3"
-      >
+      <Pressable onPress={() => router.push(`/route-detail?id=${item.id}` as any)} className="mb-3">
         <Card>
           <CardContent className="p-0">
             {/* Map Preview */}
@@ -87,11 +77,7 @@ export default function RoutesLibraryScreen() {
                     longitudeDelta: 0.05,
                   }}
                 >
-                  <Polyline
-                    coordinates={coordinates}
-                    strokeColor="#f97316"
-                    strokeWidth={3}
-                  />
+                  <Polyline coordinates={coordinates} strokeColor="#f97316" strokeWidth={3} />
                 </MapView>
               )}
             </View>
@@ -99,10 +85,7 @@ export default function RoutesLibraryScreen() {
             {/* Route Info */}
             <View className="p-4">
               <View className="flex-row items-center justify-between mb-2">
-                <Text
-                  className="text-lg font-semibold flex-1"
-                  numberOfLines={1}
-                >
+                <Text className="text-lg font-semibold flex-1" numberOfLines={1}>
                   {item.name}
                 </Text>
                 <Button
@@ -116,17 +99,14 @@ export default function RoutesLibraryScreen() {
               </View>
 
               <Text className="text-sm text-muted-foreground mb-3">
-                {ACTIVITY_CATEGORY_LABELS[item.activity_category] ||
-                  item.activity_category}
+                {ACTIVITY_CATEGORY_LABELS[item.activity_category] || item.activity_category}
               </Text>
 
               {/* Stats */}
               <View className="flex-row gap-4">
                 <View className="flex-row items-center gap-1">
                   <MapPin size={16} className="text-muted-foreground" />
-                  <Text className="text-sm">
-                    {formatDistance(item.total_distance)}
-                  </Text>
+                  <Text className="text-sm">{formatDistance(item.total_distance)}</Text>
                 </View>
 
                 {item.total_ascent > 0 && (
@@ -145,10 +125,7 @@ export default function RoutesLibraryScreen() {
               </View>
 
               {item.description && (
-                <Text
-                  className="text-sm text-muted-foreground mt-2"
-                  numberOfLines={2}
-                >
+                <Text className="text-sm text-muted-foreground mt-2" numberOfLines={2}>
                   {item.description}
                 </Text>
               )}

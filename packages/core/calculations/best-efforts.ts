@@ -130,10 +130,7 @@ export function calculateBestEffort(
  * @param timestamps - Array of timestamps.
  * @returns Array of BestEffort objects.
  */
-export function calculateBestEfforts(
-  stream: number[],
-  timestamps: number[],
-): BestEffort[] {
+export function calculateBestEfforts(stream: number[], timestamps: number[]): BestEffort[] {
   const efforts: BestEffort[] = [];
 
   for (const duration of STANDARD_DURATIONS) {

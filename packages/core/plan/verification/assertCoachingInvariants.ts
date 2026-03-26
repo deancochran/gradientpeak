@@ -118,8 +118,7 @@ export function assertCoachingInvariants(input: {
       : {
           id: "ramp_rate",
           status: "pass",
-          message:
-            "Weekly load progression stays inside the configured ramp limits.",
+          message: "Weekly load progression stays inside the configured ramp limits.",
           details: {
             max_increase_pct: maxIncreasePct,
             max_increase_tss: maxIncreaseTss,
@@ -138,10 +137,8 @@ export function assertCoachingInvariants(input: {
     const allowedDeviation = cadenceExpectation.allowed_deviation ?? 1;
     const cadenceViolation = input.weeklyLoads.find(
       (week) =>
-        Math.abs(
-          week.planned_session_count -
-            cadenceExpectation.target_sessions_per_week,
-        ) > allowedDeviation,
+        Math.abs(week.planned_session_count - cadenceExpectation.target_sessions_per_week) >
+        allowedDeviation,
     );
     checks.push(
       cadenceViolation
@@ -150,8 +147,7 @@ export function assertCoachingInvariants(input: {
             status: "fail",
             message: `Session cadence drifts outside tolerance in ${cadenceViolation.week_start_date}.`,
             details: {
-              target_sessions_per_week:
-                cadenceExpectation.target_sessions_per_week,
+              target_sessions_per_week: cadenceExpectation.target_sessions_per_week,
               allowed_deviation: allowedDeviation,
               actual_sessions: cadenceViolation.planned_session_count,
             },
@@ -161,8 +157,7 @@ export function assertCoachingInvariants(input: {
             status: "pass",
             message: "Weekly session cadence stays inside the configured band.",
             details: {
-              target_sessions_per_week:
-                cadenceExpectation.target_sessions_per_week,
+              target_sessions_per_week: cadenceExpectation.target_sessions_per_week,
               allowed_deviation: allowedDeviation,
             },
           },
@@ -177,14 +172,8 @@ export function assertCoachingInvariants(input: {
       message: "No taper expectation was provided.",
     });
   } else {
-    const buildWeek = getWeek(
-      input.weeklyLoads,
-      taperExpectation.build_week_index,
-    );
-    const taperWeek = getWeek(
-      input.weeklyLoads,
-      taperExpectation.taper_week_index,
-    );
+    const buildWeek = getWeek(input.weeklyLoads, taperExpectation.build_week_index);
+    const taperWeek = getWeek(input.weeklyLoads, taperExpectation.taper_week_index);
     const minimumDropPct = taperExpectation.minimum_drop_pct ?? 0.08;
     if (!buildWeek || !taperWeek) {
       checks.push({
@@ -220,21 +209,14 @@ export function assertCoachingInvariants(input: {
       message: "No recovery expectation was provided.",
     });
   } else {
-    const goalWeek = getWeek(
-      input.weeklyLoads,
-      recoveryExpectation.goal_week_index,
-    );
-    const recoveryWeek = getWeek(
-      input.weeklyLoads,
-      recoveryExpectation.recovery_week_index,
-    );
+    const goalWeek = getWeek(input.weeklyLoads, recoveryExpectation.goal_week_index);
+    const recoveryWeek = getWeek(input.weeklyLoads, recoveryExpectation.recovery_week_index);
     const minimumDropPct = recoveryExpectation.minimum_drop_pct ?? 0.1;
     if (!goalWeek || !recoveryWeek) {
       checks.push({
         id: "recovery",
         status: "not_applicable",
-        message:
-          "Recovery indices fall outside the available weekly load series.",
+        message: "Recovery indices fall outside the available weekly load series.",
       });
     } else {
       const requiredTss = goalWeek.planned_weekly_tss * (1 - minimumDropPct);

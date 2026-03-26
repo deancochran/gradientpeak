@@ -389,20 +389,14 @@ describe("eventsRouter generalization", () => {
       (call) => call.table === "events" && call.operation === "update",
     );
 
-    expect((updateCall?.payload as any).starts_at).toBe(
-      "2026-05-03T00:00:00.000Z",
-    );
-    expect((updateCall?.payload as any).ends_at).toBe(
-      "2026-05-04T00:00:00.000Z",
-    );
+    expect((updateCall?.payload as any).starts_at).toBe("2026-05-03T00:00:00.000Z");
+    expect((updateCall?.payload as any).ends_at).toBe("2026-05-04T00:00:00.000Z");
     expect((updateCall?.payload as any).linked_activity_id).toBeNull();
     expect((updateCall?.payload as any).status).toBe("scheduled");
     expect((updateCall?.payload as any).activity_plan_id).toBeUndefined();
     expect(result.linked_activity_id).toBeNull();
     expect(result.status).toBe("scheduled");
-    expect(result.activity_plan_id).toBe(
-      "22222222-2222-4222-8222-222222222222",
-    );
+    expect(result.activity_plan_id).toBe("22222222-2222-4222-8222-222222222222");
   });
 
   it("non-move updates keep completion linkage and status unchanged", async () => {
@@ -509,12 +503,8 @@ describe("eventsRouter generalization", () => {
       (call) => call.table === "events" && call.operation === "update",
     );
 
-    expect((updateCall?.payload as any).starts_at).toBe(
-      "2026-05-03T00:00:00.000Z",
-    );
-    expect((updateCall?.payload as any).ends_at).toBe(
-      "2026-05-04T00:00:00.000Z",
-    );
+    expect((updateCall?.payload as any).starts_at).toBe("2026-05-03T00:00:00.000Z");
+    expect((updateCall?.payload as any).ends_at).toBe("2026-05-04T00:00:00.000Z");
   });
 
   it("delete supports scoped series mutations", async () => {
@@ -756,10 +746,7 @@ describe("eventsRouter generalization", () => {
 
     const rangeFilters = callLog
       .filter((call) => call.table === "events" && call.operation === "filter")
-      .map(
-        (call) =>
-          call.payload as { type?: string; column?: string; value?: unknown },
-      );
+      .map((call) => call.payload as { type?: string; column?: string; value?: unknown });
 
     expect(rangeFilters).toContainEqual({
       type: "gte",

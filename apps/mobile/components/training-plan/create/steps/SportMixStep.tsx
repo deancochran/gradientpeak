@@ -9,9 +9,9 @@ import {
 import { Label } from "@repo/ui/components/label";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
-import { WizardStep } from "../WizardStep";
 import React, { useState } from "react";
-import { View, Pressable } from "react-native";
+import { Pressable, View } from "react-native";
+import { WizardStep } from "../WizardStep";
 
 interface SportMixStepProps {
   activities: Record<string, number>;
@@ -113,9 +113,7 @@ export function SportMixStep({
                 className="bg-card border border-border rounded-lg p-4 active:bg-accent"
               >
                 <View className="flex-row items-center justify-between">
-                  <Text className="text-foreground font-medium">
-                    {preset.name}
-                  </Text>
+                  <Text className="text-foreground font-medium">{preset.name}</Text>
                   <View className="flex-row gap-1">
                     {Object.entries(preset.values).map(([key, value]) => {
                       const activity = ACTIVITIES.find((a) => a.key === key);
@@ -142,11 +140,7 @@ export function SportMixStep({
             ))}
           </View>
 
-          <Button
-            variant="outline"
-            onPress={() => setShowCustom(true)}
-            className="mt-2"
-          >
+          <Button variant="outline" onPress={() => setShowCustom(true)} className="mt-2">
             <Text>Customize Distribution</Text>
           </Button>
         </View>
@@ -157,11 +151,7 @@ export function SportMixStep({
         <View className="gap-4">
           <View className="flex-row items-center justify-between">
             <Label>Custom Distribution</Label>
-            <Button
-              variant="ghost"
-              onPress={() => setShowCustom(false)}
-              size="sm"
-            >
+            <Button variant="ghost" onPress={() => setShowCustom(false)} size="sm">
               <Text>Use Presets</Text>
             </Button>
           </View>
@@ -169,8 +159,7 @@ export function SportMixStep({
           {/* Activity Toggles and Sliders */}
           {ACTIVITIES.map((activity) => {
             const isEnabled =
-              activities[activity.key] !== undefined &&
-              activities[activity.key]! > 0;
+              activities[activity.key] !== undefined && activities[activity.key]! > 0;
             const value = activities[activity.key] || 0;
 
             return (
@@ -179,24 +168,16 @@ export function SportMixStep({
                   <View className="flex-row items-center justify-between mb-2">
                     <View className="flex-row items-center gap-2">
                       <Text className="text-2xl">{activity.emoji}</Text>
-                      <Text className="text-foreground font-medium">
-                        {activity.label}
-                      </Text>
+                      <Text className="text-foreground font-medium">{activity.label}</Text>
                     </View>
 
                     <Pressable
-                      onPress={() =>
-                        handleToggleActivity(activity.key, !isEnabled)
-                      }
-                      className={`px-3 py-1 rounded-full ${
-                        isEnabled ? "bg-primary" : "bg-muted"
-                      }`}
+                      onPress={() => handleToggleActivity(activity.key, !isEnabled)}
+                      className={`px-3 py-1 rounded-full ${isEnabled ? "bg-primary" : "bg-muted"}`}
                     >
                       <Text
                         className={`text-sm ${
-                          isEnabled
-                            ? "text-primary-foreground"
-                            : "text-muted-foreground"
+                          isEnabled ? "text-primary-foreground" : "text-muted-foreground"
                         }`}
                       >
                         {isEnabled ? "Enabled" : "Disabled"}
@@ -214,9 +195,7 @@ export function SportMixStep({
 
                       <Slider
                         value={value}
-                        onValueChange={(newValue) =>
-                          handleActivityChange(activity.key, newValue)
-                        }
+                        onValueChange={(newValue) => handleActivityChange(activity.key, newValue)}
                         minimumValue={0}
                         maximumValue={1}
                         step={0.05}
@@ -240,17 +219,11 @@ export function SportMixStep({
           >
             <CardContent className="p-4">
               <View className="flex-row items-center justify-between">
-                <Text
-                  className={`font-medium ${
-                    isValid ? "text-primary" : "text-destructive"
-                  }`}
-                >
+                <Text className={`font-medium ${isValid ? "text-primary" : "text-destructive"}`}>
                   Total Percentage:
                 </Text>
                 <Text
-                  className={`text-2xl font-bold ${
-                    isValid ? "text-primary" : "text-destructive"
-                  }`}
+                  className={`text-2xl font-bold ${isValid ? "text-primary" : "text-destructive"}`}
                 >
                   {Math.round(total * 100)}%
                 </Text>
@@ -279,10 +252,7 @@ export function SportMixStep({
           <CardContent>
             <View className="gap-2">
               {enabledActivities.map((activity) => (
-                <View
-                  key={activity.key}
-                  className="flex-row items-center justify-between"
-                >
+                <View key={activity.key} className="flex-row items-center justify-between">
                   <View className="flex-row items-center gap-2">
                     <Text className="text-lg">{activity.emoji}</Text>
                     <Text className="text-foreground">{activity.label}</Text>

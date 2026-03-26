@@ -1,9 +1,9 @@
-import type { GoalTargetV2 } from "../../../schemas/training_plan_structure";
 import {
-  normalizedPlanningGoalSchema,
   type NormalizedPlanningGoal,
+  normalizedPlanningGoalSchema,
   type PlanningGoalPriorityClass,
 } from "../../../schemas/planning";
+import type { GoalTargetV2 } from "../../../schemas/training_plan_structure";
 
 export interface ProfileGoalLike {
   id: string;
@@ -35,9 +35,7 @@ function resolvePrimaryActivityCategory(targets: GoalTargetV2[]) {
   return "other" as const;
 }
 
-export function fromProfileGoals(
-  goals: ProfileGoalLike[],
-): NormalizedPlanningGoal[] {
+export function fromProfileGoals(goals: ProfileGoalLike[]): NormalizedPlanningGoal[] {
   return goals
     .map((goal) => {
       const priority = goal.priority ?? 5;

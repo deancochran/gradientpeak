@@ -1,10 +1,5 @@
 import { renderNative } from "../../test/render-native";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "./index.native";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./index.native";
 
 describe("Accordion native", () => {
   it("maps normalized test props onto accordion items", () => {
@@ -12,9 +7,7 @@ describe("Accordion native", () => {
       <Accordion type="single" value="profile">
         <AccordionItem testId="settings-section" value="profile">
           <AccordionTrigger testID="settings-trigger">Profile</AccordionTrigger>
-          <AccordionContent testID="settings-content">
-            Profile content
-          </AccordionContent>
+          <AccordionContent testID="settings-content">Profile content</AccordionContent>
         </AccordionItem>
       </Accordion>,
     );

@@ -1,9 +1,9 @@
-import { supabase } from "@/lib/supabase/client";
-import { initializeServerConfig } from "@/lib/server-config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Session, User } from "@supabase/supabase-js";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { initializeServerConfig } from "@/lib/server-config";
+import { supabase } from "@/lib/supabase/client";
 
 export interface AuthState {
   session: Session | null;
@@ -106,9 +106,7 @@ export const useAuthStore = create<AuthState>()(
                 error.message.includes("refresh_token_not_found"));
 
             if (isRefreshTokenError) {
-              console.warn(
-                "⚠️ Invalid refresh token, clearing session to force re-login",
-              );
+              console.warn("⚠️ Invalid refresh token, clearing session to force re-login");
               // Clear session and return ready state without error
               set({
                 session: null,
@@ -152,9 +150,7 @@ export const useAuthStore = create<AuthState>()(
             console.log("✅ Auth listener already set up, skipping");
           }
 
-          console.log(
-            "✅ Auth store session loaded, finishing initialization...",
-          );
+          console.log("✅ Auth store session loaded, finishing initialization...");
         } catch (err) {
           console.error("❌ Auth Store unexpected init error:", err);
           // Mark as ready even on error so the app doesn't hang waiting for auth

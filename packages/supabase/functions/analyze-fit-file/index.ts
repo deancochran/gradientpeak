@@ -4,8 +4,8 @@
 
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:supabase-js@2";
 import { polyline } from "npm:@mapbox/polyline@^1.2.1";
+import { createClient } from "npm:supabase-js@2";
 
 console.log("FIT file analysis edge function initialized");
 
@@ -155,13 +155,8 @@ function semicirclesToDegrees(semicircles: number): number {
 // Generate polyline from GPS coordinates
 function generatePolyline(records: FitRecord[]): string | null {
   const gpsPoints = records
-    .filter(
-      (r) => r.position_lat !== undefined && r.position_long !== undefined,
-    )
-    .map((r) => [
-      semicirclesToDegrees(r.position_lat!),
-      semicirclesToDegrees(r.position_long!),
-    ]);
+    .filter((r) => r.position_lat !== undefined && r.position_long !== undefined)
+    .map((r) => [semicirclesToDegrees(r.position_lat!), semicirclesToDegrees(r.position_long!)]);
 
   if (gpsPoints.length === 0) return null;
 
@@ -180,12 +175,7 @@ function calculateTSS(params: {
   duration: number; // seconds
   ftp?: number;
 }): number {
-  const {
-    avgPower = 0,
-    normalizedPower = avgPower,
-    duration,
-    ftp = 200,
-  } = params;
+  const { avgPower = 0, normalizedPower = avgPower, duration, ftp = 200 } = params;
 
   if (!ftp || ftp === 0 || !duration || duration === 0) return 0;
 
@@ -200,20 +190,14 @@ function calculateNormalizedPower(powerReadings: number[]): number {
   if (powerReadings.length === 0) return 0;
 
   // 4th power average (simplified NP calculation)
-  const fourthPowerSum = powerReadings.reduce(
-    (sum, power) => sum + Math.pow(power, 4),
-    0,
-  );
+  const fourthPowerSum = powerReadings.reduce((sum, power) => sum + Math.pow(power, 4), 0);
   const fourthPowerAvg = fourthPowerSum / powerReadings.length;
 
   return Math.round(Math.pow(fourthPowerAvg, 0.25));
 }
 
 // Calculate intensity factor
-function calculateIntensityFactor(
-  normalizedPower: number,
-  ftp: number,
-): number {
+function calculateIntensityFactor(normalizedPower: number, ftp: number): number {
   if (!ftp || ftp === 0) return 0;
   return Math.round((normalizedPower / ftp) * 100) / 100;
 }
@@ -261,9 +245,7 @@ function calculatePowerZones(records: FitRecord[], ftp?: number) {
     zone6: 0,
   };
 
-  const powers = records
-    .map((r) => r.power)
-    .filter((p): p is number => p !== undefined && p > 0);
+  const powers = records.map((r) => r.power).filter((p): p is number => p !== undefined && p > 0);
 
   if (powers.length === 0) return zones;
 
@@ -300,14 +282,10 @@ function parseFitFile(data: ArrayBuffer): {
   const startTime = new Date(now.getTime() - estimatedDuration * 1000);
 
   // Generate sample records based on file size
-  const recordCount = Math.min(
-    Math.floor(fileSize / 50),
-    Math.floor(estimatedDuration),
-  );
+  const recordCount = Math.min(Math.floor(fileSize / 50), Math.floor(estimatedDuration));
 
   for (let i = 0; i < recordCount; i++) {
-    const timestamp =
-      Math.floor(startTime.getTime() / 1000) + i - FIT_EPOCH_OFFSET;
+    const timestamp = Math.floor(startTime.getTime() / 1000) + i - FIT_EPOCH_OFFSET;
 
     records.push({
       timestamp,
@@ -340,15 +318,11 @@ function parseFitFile(data: ArrayBuffer): {
 }
 
 // Main handler function
-async function analyzeFitFile(
-  requestBody: any,
-): Promise<ActivityAnalysisResult> {
+async function analyzeFitFile(requestBody: any): Promise<ActivityAnalysisResult> {
   const { activityId, filePath, bucketName } = requestBody;
 
   if (!activityId || !filePath || !bucketName) {
-    throw new Error(
-      "Missing required fields: activityId, filePath, bucketName",
-    );
+    throw new Error("Missing required fields: activityId, filePath, bucketName");
   }
 
   const supabase = createClient(
@@ -391,34 +365,17 @@ async function analyzeFitFile(
     .filter((r) => r.timestamp !== undefined)
     .map((r) => (r.timestamp! + FIT_EPOCH_OFFSET) * 1000); // Convert to Unix timestamp
 
-  const distanceStream = records
-    .map((r) => r.distance)
-    .filter((d) => d !== undefined);
-  const altitudeStream = records
-    .map((r) => r.altitude)
-    .filter((a) => a !== undefined);
-  const speedStream = records
-    .map((r) => r.speed)
-    .filter((s) => s !== undefined);
-  const heartRateStream = records
-    .map((r) => r.heart_rate)
-    .filter((h) => h !== undefined);
-  const cadenceStream = records
-    .map((r) => r.cadence)
-    .filter((c) => c !== undefined);
-  const powerStream = records
-    .map((r) => r.power)
-    .filter((p) => p !== undefined);
+  const distanceStream = records.map((r) => r.distance).filter((d) => d !== undefined);
+  const altitudeStream = records.map((r) => r.altitude).filter((a) => a !== undefined);
+  const speedStream = records.map((r) => r.speed).filter((s) => s !== undefined);
+  const heartRateStream = records.map((r) => r.heart_rate).filter((h) => h !== undefined);
+  const cadenceStream = records.map((r) => r.cadence).filter((c) => c !== undefined);
+  const powerStream = records.map((r) => r.power).filter((p) => p !== undefined);
 
   // GPS coordinates
   const latlngStream = records
-    .filter(
-      (r) => r.position_lat !== undefined && r.position_long !== undefined,
-    )
-    .map((r) => [
-      semicirclesToDegrees(r.position_lat!),
-      semicirclesToDegrees(r.position_long!),
-    ]);
+    .filter((r) => r.position_lat !== undefined && r.position_long !== undefined)
+    .map((r) => [semicirclesToDegrees(r.position_lat!), semicirclesToDegrees(r.position_long!)]);
 
   // Generate polyline
   const activityPolyline = generatePolyline(records);
@@ -427,10 +384,7 @@ async function analyzeFitFile(
   const normalizedPowerValue =
     powerStream.length > 0 ? calculateNormalizedPower(powerStream) : undefined;
   const intensityFactorValue = normalizedPowerValue
-    ? calculateIntensityFactor(
-        normalizedPowerValue,
-        profile?.functional_threshold_power,
-      )
+    ? calculateIntensityFactor(normalizedPowerValue, profile?.functional_threshold_power)
     : undefined;
   const tssValue = calculateTSS({
     avgPower: session.avg_power,
@@ -440,14 +394,8 @@ async function analyzeFitFile(
   });
 
   // Calculate zones
-  const heartRateZones = calculateHeartRateZones(
-    records,
-    profile?.max_heart_rate,
-  );
-  const powerZones = calculatePowerZones(
-    records,
-    profile?.functional_threshold_power,
-  );
+  const heartRateZones = calculateHeartRateZones(records, profile?.max_heart_rate);
+  const powerZones = calculatePowerZones(records, profile?.functional_threshold_power);
 
   // Prepare activity data
   const startTimeIso = session.start_time

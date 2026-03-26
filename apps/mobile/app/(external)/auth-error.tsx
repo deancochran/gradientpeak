@@ -42,10 +42,7 @@ export default function AuthErrorScreen() {
                   <Text variant="muted" className="text-center">
                     Error details:
                   </Text>
-                  <View
-                    className="bg-muted p-4 rounded-md border border-border"
-                    testID="error-box"
-                  >
+                  <View className="bg-muted p-4 rounded-md border border-border" testID="error-box">
                     <Text
                       variant="small"
                       className="text-destructive text-center"

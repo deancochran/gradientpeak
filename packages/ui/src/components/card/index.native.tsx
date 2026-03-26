@@ -1,10 +1,9 @@
 import * as React from "react";
-import { View, type ViewProps } from "../../lib/react-native";
-
 import { cn } from "../../lib/cn";
+import { View, type ViewProps } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";
-import { Text } from "../text/index.native";
 import { TextClassContext } from "../text/context";
+import { Text } from "../text/index.native";
 import type { CardClassNameOptions } from "./shared";
 
 function cardRootClasses(className?: string) {
@@ -51,19 +50,12 @@ function Card({
 
   return (
     <TextClassContext.Provider value="text-card-foreground">
-      <View
-        className={cardRootClasses(className)}
-        {...nativeTestProps}
-        {...props}
-      />
+      <View className={cardRootClasses(className)} {...nativeTestProps} {...props} />
     </TextClassContext.Provider>
   );
 }
 
-function CardHeader({
-  className,
-  ...props
-}: ViewProps & React.RefAttributes<View>) {
+function CardHeader({ className, ...props }: ViewProps & React.RefAttributes<View>) {
   return <View className={cardHeaderClasses(className)} {...props} />;
 }
 
@@ -71,14 +63,7 @@ function CardTitle({
   className,
   ...props
 }: React.ComponentProps<typeof Text> & React.RefAttributes<Text>) {
-  return (
-    <Text
-      aria-level={3}
-      className={cardTitleClasses(className)}
-      role="heading"
-      {...props}
-    />
-  );
+  return <Text aria-level={3} className={cardTitleClasses(className)} role="heading" {...props} />;
 }
 
 function CardDescription({
@@ -88,25 +73,12 @@ function CardDescription({
   return <Text className={cardDescriptionClasses(className)} {...props} />;
 }
 
-function CardContent({
-  className,
-  ...props
-}: ViewProps & React.RefAttributes<View>) {
+function CardContent({ className, ...props }: ViewProps & React.RefAttributes<View>) {
   return <View className={cardContentClasses(className)} {...props} />;
 }
 
-function CardFooter({
-  className,
-  ...props
-}: ViewProps & React.RefAttributes<View>) {
+function CardFooter({ className, ...props }: ViewProps & React.RefAttributes<View>) {
   return <View className={cardFooterClasses(className)} {...props} />;
 }
 
-export {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-};
+export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle };

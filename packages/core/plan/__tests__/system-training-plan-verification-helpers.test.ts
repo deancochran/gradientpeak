@@ -7,9 +7,7 @@ import { comparePlanLoadToHeuristic } from "../verification/comparePlanLoadToHeu
 import { deriveFixtureBackedSystemPlanContracts } from "../verification/deriveFixtureBackedSystemPlanContracts";
 import { materializeSystemPlanLoad } from "../verification/materializeSystemPlanLoad";
 
-const speedBlockPlan = ALL_SAMPLE_PLANS.find(
-  (plan) => plan.name === "5K Speed Block (8 weeks)",
-);
+const speedBlockPlan = ALL_SAMPLE_PLANS.find((plan) => plan.name === "5K Speed Block (8 weeks)");
 
 describe("system training plan verification helpers", () => {
   it("derives contract scenarios from verification fixtures without duplicating plan truth", () => {
@@ -72,14 +70,8 @@ describe("system training plan verification helpers", () => {
     expect(first.unresolved_activity_plan_ids).toEqual([]);
     expect(first.total_planned_sessions).toBe(30);
     expect(first.total_estimated_tss).toBeGreaterThan(0);
-    expect(
-      first.sessions.every((session) => Number.isFinite(session.estimated_tss)),
-    ).toBe(true);
-    expect(
-      first.sessions.some(
-        (session) => session.estimation_source === "structure",
-      ),
-    ).toBe(true);
+    expect(first.sessions.every((session) => Number.isFinite(session.estimated_tss))).toBe(true);
+    expect(first.sessions.some((session) => session.estimation_source === "structure")).toBe(true);
   });
 
   it("aggregates weekly load into monday-based normalized buckets with gaps", () => {
@@ -113,9 +105,7 @@ describe("system training plan verification helpers", () => {
       "2026-03-09",
       "2026-03-16",
     ]);
-    expect(aggregated.weeks.map((week) => week.planned_weekly_tss)).toEqual([
-      60, 0, 55,
-    ]);
+    expect(aggregated.weeks.map((week) => week.planned_weekly_tss)).toEqual([60, 0, 55]);
     expect(aggregated.weeks[2]?.unresolved_session_count).toBe(1);
     expect(aggregated.total_planned_tss).toBe(115);
   });
@@ -185,9 +175,7 @@ describe("system training plan verification helpers", () => {
     expect(comparison.average_plan_weekly_tss).toBe(105);
     expect(comparison.recommended_weekly_load_error_tss).toBe(0);
     expect(comparison.average_within_baseline_range).toBe(true);
-    expect(
-      comparison.per_week.every((week) => week.within_tolerance !== false),
-    ).toBe(true);
+    expect(comparison.per_week.every((week) => week.within_tolerance !== false)).toBe(true);
     expect(comparison.rolling_blocks).toHaveLength(1);
     expect(comparison.rolling_blocks[0]?.within_tolerance).toBe(true);
   });
@@ -292,21 +280,11 @@ describe("system training plan verification helpers", () => {
     });
 
     expect(passing.passed).toBe(true);
-    expect(passing.checks.find((check) => check.id === "taper")?.status).toBe(
-      "pass",
-    );
-    expect(
-      passing.checks.find((check) => check.id === "recovery")?.status,
-    ).toBe("pass");
+    expect(passing.checks.find((check) => check.id === "taper")?.status).toBe("pass");
+    expect(passing.checks.find((check) => check.id === "recovery")?.status).toBe("pass");
     expect(failing.passed).toBe(false);
-    expect(
-      failing.checks.find((check) => check.id === "ramp_rate")?.status,
-    ).toBe("fail");
-    expect(failing.checks.find((check) => check.id === "cadence")?.status).toBe(
-      "fail",
-    );
-    expect(failing.checks.find((check) => check.id === "taper")?.status).toBe(
-      "not_applicable",
-    );
+    expect(failing.checks.find((check) => check.id === "ramp_rate")?.status).toBe("fail");
+    expect(failing.checks.find((check) => check.id === "cadence")?.status).toBe("fail");
+    expect(failing.checks.find((check) => check.id === "taper")?.status).toBe("not_applicable");
   });
 });

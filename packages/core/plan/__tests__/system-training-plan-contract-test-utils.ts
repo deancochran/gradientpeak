@@ -1,15 +1,11 @@
+import { addDaysDateOnlyUtc, materializePlanToEvents } from "../..";
 import { estimateActivity } from "../../estimation";
-import {
-  defaultAthletePreferenceProfile,
-  type AthletePreferenceProfile,
-} from "../../schemas/settings/profile_settings";
 import { ALL_SAMPLE_PLANS, SYSTEM_TEMPLATES } from "../../samples";
 import type { SystemTrainingPlanTemplate } from "../../samples/training-plans";
-import { addDaysDateOnlyUtc, materializePlanToEvents } from "../..";
 import {
-  deriveFixtureBackedSystemPlanContracts,
-  type FixtureBackedContractGoal,
-} from "../verification/deriveFixtureBackedSystemPlanContracts";
+  type AthletePreferenceProfile,
+  defaultAthletePreferenceProfile,
+} from "../../schemas/settings/profile_settings";
 import {
   assessFeasibility,
   fromProfileGoals,
@@ -17,6 +13,10 @@ import {
   resolveConstraintProfile,
   resolveEventDemand,
 } from "../periodization";
+import {
+  deriveFixtureBackedSystemPlanContracts,
+  type FixtureBackedContractGoal,
+} from "../verification/deriveFixtureBackedSystemPlanContracts";
 
 export type ToleranceClass = "tight" | "moderate" | "flexible";
 
@@ -66,9 +66,7 @@ export interface SystemPlanContractScenario {
 }
 
 const planByName = new Map(ALL_SAMPLE_PLANS.map((plan) => [plan.name, plan]));
-const templateById = new Map(
-  SYSTEM_TEMPLATES.map((template) => [template.id, template]),
-);
+const templateById = new Map(SYSTEM_TEMPLATES.map((template) => [template.id, template]));
 
 const estimationProfile = {
   ftp: 255,
@@ -102,8 +100,7 @@ const CONTRACT_SCENARIO_OVERRIDES = [
     match_type: "exact",
     expected_weekly_load: 140,
     expected_mode: "target_seeking",
-    notes:
-      "Primary exact-lane 5K contract using the only true 5K-specific system plan.",
+    notes: "Primary exact-lane 5K contract using the only true 5K-specific system plan.",
   },
   {
     scenario_id: "intermediate_rich_half",
@@ -111,8 +108,7 @@ const CONTRACT_SCENARIO_OVERRIDES = [
     match_type: "exact",
     expected_weekly_load: 160,
     expected_mode: "capacity_bounded",
-    notes:
-      "Primary tight-band alignment case for a feasible single A-goal run build.",
+    notes: "Primary tight-band alignment case for a feasible single A-goal run build.",
   },
   {
     scenario_id: "advanced_marathon_build",
@@ -120,8 +116,7 @@ const CONTRACT_SCENARIO_OVERRIDES = [
     match_type: "exact",
     expected_weekly_load: 145,
     expected_mode: "capacity_bounded",
-    notes:
-      "Primary long-event contract with long-run emphasis and tight block tolerance.",
+    notes: "Primary long-event contract with long-run emphasis and tight block tolerance.",
   },
   {
     scenario_id: "boundary_feasible_bike",
@@ -129,8 +124,7 @@ const CONTRACT_SCENARIO_OVERRIDES = [
     match_type: "exact",
     expected_weekly_load: 220,
     expected_mode: "target_seeking",
-    notes:
-      "Primary exact-lane bike contract for the only true cycling system plan.",
+    notes: "Primary exact-lane bike contract for the only true cycling system plan.",
   },
   {
     scenario_id: "low_availability_high_ambition",
@@ -138,8 +132,7 @@ const CONTRACT_SCENARIO_OVERRIDES = [
     match_type: "crosswalk",
     expected_weekly_load: 215,
     expected_mode: "capacity_bounded",
-    notes:
-      "Constraint-stress case proving controlled deviation under limited capacity.",
+    notes: "Constraint-stress case proving controlled deviation under limited capacity.",
   },
   {
     scenario_id: "infeasible_stretch_goal",
@@ -147,8 +140,7 @@ const CONTRACT_SCENARIO_OVERRIDES = [
     match_type: "crosswalk",
     expected_weekly_load: 195,
     expected_mode: "capacity_bounded",
-    notes:
-      "Feasibility gate: acceptable variance is wider but safety alignment stays strict.",
+    notes: "Feasibility gate: acceptable variance is wider but safety alignment stays strict.",
   },
   {
     scenario_id: "masters_conservative_profile",
@@ -172,8 +164,7 @@ const CONTRACT_SCENARIO_OVERRIDES = [
     match_type: "crosswalk",
     expected_weekly_load: 170,
     expected_mode: "target_seeking",
-    notes:
-      "Coaching-behavior slot for sustained peak handling between close A races.",
+    notes: "Coaching-behavior slot for sustained peak handling between close A races.",
   },
   {
     scenario_id: "same_day_a_b_priority",
@@ -193,35 +184,32 @@ const currentAtlByScenarioKey: Partial<Record<string, number>> = {
 };
 
 export const SYSTEM_PLAN_CONTRACT_MATRIX: SystemPlanContractScenario[] =
-  deriveFixtureBackedSystemPlanContracts(CONTRACT_SCENARIO_OVERRIDES).map(
-    (contract) => {
-      const scenarioKey = contract.key;
+  deriveFixtureBackedSystemPlanContracts(CONTRACT_SCENARIO_OVERRIDES).map((contract) => {
+    const scenarioKey = contract.key;
 
-      return {
-        key: scenarioKey,
-        enabled: contract.enabled,
-        planId: contract.plan_id,
-        planName: contract.plan_name,
-        mappingId: contract.mapping_id,
-        matchType: contract.match_type,
-        toleranceClass: contract.tolerance_class,
-        expectedWeeklyLoad: contract.expected_weekly_load,
-        currentCtl: contract.current_ctl,
-        currentAtl: currentAtlByScenarioKey[scenarioKey],
-        preferenceProfile: contract.preference_profile,
-        goals: contract.goals,
-        expectedMode: contract.expected_mode,
-        notes: contract.notes,
-      };
-    },
-  );
+    return {
+      key: scenarioKey,
+      enabled: contract.enabled,
+      planId: contract.plan_id,
+      planName: contract.plan_name,
+      mappingId: contract.mapping_id,
+      matchType: contract.match_type,
+      toleranceClass: contract.tolerance_class,
+      expectedWeeklyLoad: contract.expected_weekly_load,
+      currentCtl: contract.current_ctl,
+      currentAtl: currentAtlByScenarioKey[scenarioKey],
+      preferenceProfile: contract.preference_profile,
+      goals: contract.goals,
+      expectedMode: contract.expected_mode,
+      notes: contract.notes,
+    };
+  });
 
 function diffDays(startDate: string, endDate: string): number {
   return Math.max(
     0,
     Math.round(
-      (Date.parse(`${endDate}T00:00:00.000Z`) -
-        Date.parse(`${startDate}T00:00:00.000Z`)) /
+      (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) /
         86400000,
     ),
   );
@@ -252,19 +240,14 @@ export function getEnabledSystemPlanContractScenarios() {
   return SYSTEM_PLAN_CONTRACT_MATRIX.filter((scenario) => scenario.enabled);
 }
 
-export function materializeSystemPlanScenario(
-  scenario: SystemPlanContractScenario,
-) {
+export function materializeSystemPlanScenario(scenario: SystemPlanContractScenario) {
   const plan = getPlanOrThrow(scenario.planName);
   const startDate =
     typeof (plan.structure as { start_date?: unknown }).start_date === "string"
       ? ((plan.structure as { start_date: string }).start_date ?? "")
       : "";
 
-  const materializedSessions = materializePlanToEvents(
-    plan.structure,
-    startDate,
-  )
+  const materializedSessions = materializePlanToEvents(plan.structure, startDate)
     .filter((event) => event.event_type === "planned")
     .map((event) => {
       const template = event.activity_plan_id
@@ -281,8 +264,7 @@ export function materializeSystemPlanScenario(
         profile: estimationProfile as never,
         ftp: estimationProfile.ftp,
         thresholdHr: estimationProfile.threshold_hr,
-        thresholdPaceSecondsPerKm:
-          estimationProfile.threshold_pace_seconds_per_km,
+        thresholdPaceSecondsPerKm: estimationProfile.threshold_pace_seconds_per_km,
         activityCategory: template.activity_category as never,
         structure: template.structure,
       });
@@ -297,8 +279,7 @@ export function materializeSystemPlanScenario(
     });
 
   const endDate =
-    materializedSessions[materializedSessions.length - 1]?.scheduled_date ??
-    startDate;
+    materializedSessions[materializedSessions.length - 1]?.scheduled_date ?? startDate;
   const weeklyActualLoad = aggregateWeeklyValues(
     materializedSessions.map((session) => ({
       date: session.scheduled_date,
@@ -323,10 +304,7 @@ function aggregateWeeklyValues(
   startDate: string,
   endDate: string,
 ) {
-  const totalWeeks = Math.max(
-    1,
-    Math.floor(diffDays(startDate, endDate) / 7) + 1,
-  );
+  const totalWeeks = Math.max(1, Math.floor(diffDays(startDate, endDate) / 7) + 1);
   const weeks = Array.from({ length: totalWeeks }, (_, index) => ({
     weekIndex: index,
     weekStart: addDaysDateOnlyUtc(startDate, index * 7),
@@ -352,26 +330,19 @@ export function buildReferenceTrajectoryForScenario(
   startDate: string,
   endDate: string,
 ) {
-  const preferenceProfile =
-    scenario.preferenceProfile ?? defaultAthletePreferenceProfile;
+  const preferenceProfile = scenario.preferenceProfile ?? defaultAthletePreferenceProfile;
   const normalizedGoals = fromProfileGoals(scenario.goals as never);
   const resolvedDemands = normalizedGoals
     .map((goal) => resolveEventDemand(goal))
-    .flatMap((result) =>
-      result.status === "supported" ? [result.demand] : [],
-    );
+    .flatMap((result) => (result.status === "supported" ? [result.demand] : []));
   const primarySport = resolvedDemands[0]?.sport ?? "run";
   const constraintProfile = resolveConstraintProfile({
     optimizationProfile: "balanced",
     preferenceProfile,
     sport: primarySport,
   });
-  const endGoalDate =
-    normalizedGoals[normalizedGoals.length - 1]?.target_date ?? endDate;
-  const weeksToPeak = Math.max(
-    1,
-    Math.ceil(diffDays(startDate, endGoalDate) / 7),
-  );
+  const endGoalDate = normalizedGoals[normalizedGoals.length - 1]?.target_date ?? endDate;
+  const weeksToPeak = Math.max(1, Math.ceil(diffDays(startDate, endGoalDate) / 7));
   const feasibility = assessFeasibility({
     currentCtl: scenario.currentCtl,
     weeksToPeak,
@@ -409,9 +380,7 @@ export function buildReferenceTrajectoryForScenario(
   };
 }
 
-export function compareScenarioToReference(
-  scenario: SystemPlanContractScenario,
-) {
+export function compareScenarioToReference(scenario: SystemPlanContractScenario) {
   const materialized = materializeSystemPlanScenario(scenario);
   const reference = buildReferenceTrajectoryForScenario(
     scenario,
@@ -422,16 +391,12 @@ export function compareScenarioToReference(
   const rawTargetMean =
     sum(reference.weeklyTargetLoad.map((week) => week.value)) /
     Math.max(1, reference.weeklyTargetLoad.length);
-  const targetScale =
-    rawTargetMean > 0 ? scenario.expectedWeeklyLoad / rawTargetMean : 1;
+  const targetScale = rawTargetMean > 0 ? scenario.expectedWeeklyLoad / rawTargetMean : 1;
   const weeklyComparison = materialized.weeklyActualLoad.map((week, index) => {
-    const target =
-      (reference.weeklyTargetLoad[index]?.value ?? 0) * targetScale;
+    const target = (reference.weeklyTargetLoad[index]?.value ?? 0) * targetScale;
     const actual = week.value;
     const absError = round1(Math.abs(actual - target));
-    const toleranceTss = round1(
-      Math.max(tolerance.weeklyFloorTss, target * tolerance.weeklyPct),
-    );
+    const toleranceTss = round1(Math.max(tolerance.weeklyFloorTss, target * tolerance.weeklyPct));
 
     return {
       weekIndex: index,
@@ -448,10 +413,7 @@ export function compareScenarioToReference(
   const blockTarget = round1(sum(weeklyComparison.map((week) => week.target)));
   const blockAbsError = round1(Math.abs(blockActual - blockTarget));
   const blockToleranceTss = round1(
-    Math.max(
-      tolerance.weeklyFloorTss * comparedWeeks,
-      blockTarget * tolerance.blockPct,
-    ),
+    Math.max(tolerance.weeklyFloorTss * comparedWeeks, blockTarget * tolerance.blockPct),
   );
   const actualMean = round1(blockActual / comparedWeeks);
   const targetMean = round1(blockTarget / comparedWeeks);

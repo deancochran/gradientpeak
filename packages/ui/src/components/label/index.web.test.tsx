@@ -8,10 +8,7 @@ describe("Label web", () => {
   it("maps normalized test props and links to the target field", () => {
     renderWeb(
       <div>
-        <Label
-          htmlFor={labelFixtures.email.htmlFor}
-          testId={labelFixtures.email.testId}
-        >
+        <Label htmlFor={labelFixtures.email.htmlFor} testId={labelFixtures.email.testId}>
           {labelFixtures.email.children}
         </Label>
         <input id={labelFixtures.email.htmlFor} />

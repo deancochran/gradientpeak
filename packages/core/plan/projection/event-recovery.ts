@@ -12,8 +12,8 @@
  */
 
 import type { GoalTargetV2 } from "../../schemas/training_plan_structure";
-import type { ProjectionPointReadinessInput } from "./readiness";
 import { getGenderAdjustedRecoveryLoadMultiplier } from "../calibration-constants";
+import type { ProjectionPointReadinessInput } from "./readiness";
 
 /**
  * Utility: Round to 1 decimal place
@@ -108,11 +108,7 @@ function estimateRaceIntensity(input: {
   activity: "run" | "bike" | "swim" | "other";
 }): number {
   const durationHours = input.duration_s / 3600;
-  const baseIntensity = clamp(
-    96 - Math.log1p(Math.max(0.1, durationHours)) * 7.5,
-    70,
-    96,
-  );
+  const baseIntensity = clamp(96 - Math.log1p(Math.max(0.1, durationHours)) * 7.5, 70, 96);
 
   // Adjust for activity type
   const activityFactor =
@@ -139,13 +135,9 @@ function computeThresholdRecoveryProfile(input: {
     (0.7 + input.intensityScore / 100) *
     input.genderMultiplier;
   const recoveryDaysFull = Math.round(clamp(1.5 + 4.5 * recoveryLoad, 2, 14));
-  const recoveryDaysFunctional = Math.round(
-    clamp(recoveryDaysFull * 0.42, 1, 7),
-  );
+  const recoveryDaysFunctional = Math.round(clamp(recoveryDaysFull * 0.42, 1, 7));
   const fatigueIntensity = Math.round(clamp(50 + 22 * recoveryLoad, 55, 85));
-  const atlSpikeFactor = Number(
-    clamp(1 + recoveryLoad * 0.28, 1.05, 1.8).toFixed(2),
-  );
+  const atlSpikeFactor = Number(clamp(1 + recoveryLoad * 0.28, 1.05, 1.8).toFixed(2));
 
   return {
     recovery_days_full: recoveryDaysFull,
@@ -173,13 +165,9 @@ function computeThresholdRecoveryProfile(input: {
  * @param input - Event characteristics and projected fitness state
  * @returns Recovery profile with full/functional recovery days and intensity
  */
-export function computeEventRecoveryProfile(
-  input: EventRecoveryInput,
-): EventRecoveryProfile {
+export function computeEventRecoveryProfile(input: EventRecoveryInput): EventRecoveryProfile {
   const { target } = input;
-  const genderRecoveryMultiplier = getGenderAdjustedRecoveryLoadMultiplier(
-    input.athlete_gender,
-  );
+  const genderRecoveryMultiplier = getGenderAdjustedRecoveryLoadMultiplier(input.athlete_gender);
 
   // Handle race_performance targets
   if (target.target_type === "race_performance") {
@@ -208,9 +196,7 @@ export function computeEventRecoveryProfile(
     );
 
     // Functional recovery is ~40% of full recovery
-    const recoveryDaysFunctional = Math.round(
-      baseDays * 0.4 * Math.sqrt(genderRecoveryMultiplier),
-    );
+    const recoveryDaysFunctional = Math.round(baseDays * 0.4 * Math.sqrt(genderRecoveryMultiplier));
 
     // ATL spike factor: longer events cause bigger spikes
     const atlSpikeFactor = Math.min(
@@ -289,13 +275,8 @@ export function computeEventRecoveryProfile(
  * @param input - Current date, point, and event goal information
  * @returns Fatigue penalty percentage (0-60)
  */
-export function computePostEventFatiguePenalty(
-  input: PostEventFatigueInput,
-): number {
-  const daysAfterEvent = diffDateOnlyUtcDays(
-    input.eventGoal.target_date,
-    input.currentDate,
-  );
+export function computePostEventFatiguePenalty(input: PostEventFatigueInput): number {
+  const daysAfterEvent = diffDateOnlyUtcDays(input.eventGoal.target_date, input.currentDate);
 
   // Only penalize after event, not before
   if (daysAfterEvent <= 0) {

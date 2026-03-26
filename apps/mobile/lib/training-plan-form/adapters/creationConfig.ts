@@ -1,9 +1,7 @@
 import type { CreationNormalizationInput } from "@repo/core";
 import type { TrainingPlanConfigFormData } from "@/components/training-plan/create/SinglePageForm";
 
-type CreationConfigUserValues = NonNullable<
-  CreationNormalizationInput["user_values"]
->;
+type CreationConfigUserValues = NonNullable<CreationNormalizationInput["user_values"]>;
 
 export type CreationConfigAdapterInput = Pick<
   TrainingPlanConfigFormData,
@@ -36,10 +34,7 @@ export function toCreationNormalizationInput(
     locks: state.locks,
   };
 
-  if (
-    state.availabilityProvenance.source === "user" ||
-    state.locks.availability_config.locked
-  ) {
+  if (state.availabilityProvenance.source === "user" || state.locks.availability_config.locked) {
     userValues.availability_config = state.availabilityConfig;
   }
 

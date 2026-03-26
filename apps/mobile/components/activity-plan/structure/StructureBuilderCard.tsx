@@ -1,11 +1,11 @@
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import type { IntervalV2 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import type { IntervalV2 } from "@repo/core";
 import { Info, Plus, X } from "lucide-react-native";
 import { Pressable, View } from "react-native";
+import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 
 interface StructureStats {
   durationMs: number;
@@ -55,20 +55,12 @@ export function StructureBuilderCard({
         </View>
 
         <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
-          <Text className="text-sm text-muted-foreground">
-            Duration: {durationMinutes} min
-          </Text>
-          <Text className="text-sm text-muted-foreground">
-            TSS: {roundedTSS}
-          </Text>
+          <Text className="text-sm text-muted-foreground">Duration: {durationMinutes} min</Text>
+          <Text className="text-sm text-muted-foreground">TSS: {roundedTSS}</Text>
           {structureStats.distanceMeters > 0 ? (
-            <Text className="text-sm text-muted-foreground">
-              Distance: {formattedDistance} km
-            </Text>
+            <Text className="text-sm text-muted-foreground">Distance: {formattedDistance} km</Text>
           ) : null}
-          <Text className="text-sm text-muted-foreground">
-            Steps: {structureStats.stepCount}
-          </Text>
+          <Text className="text-sm text-muted-foreground">Steps: {structureStats.stepCount}</Text>
         </View>
 
         {intervals.length > 0 ? (
@@ -101,9 +93,7 @@ export function StructureBuilderCard({
         ) : null}
 
         {validationErrors.intervals ? (
-          <Text className="text-xs text-destructive">
-            {validationErrors.intervals}
-          </Text>
+          <Text className="text-xs text-destructive">{validationErrors.intervals}</Text>
         ) : null}
 
         {intervals.length === 0 ? (

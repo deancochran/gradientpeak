@@ -2,15 +2,12 @@
 // Active Activity Mode
 // ================================
 
+import { type ActivityPlanStructureV2, extractActivityProfileV2 } from "@repo/core";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
+import { Activity } from "lucide-react-native";
 import { memo } from "react";
 import { ScrollView, View } from "react-native";
-import { Activity } from "lucide-react-native";
-import {
-  type ActivityPlanStructureV2,
-  extractActivityProfileV2,
-} from "@repo/core";
-import { Text } from "@repo/ui/components/text";
-import { Icon } from "@repo/ui/components/icon";
 
 type CurrentMetrics = {
   power?: number;
@@ -41,9 +38,7 @@ const ActiveActivityMode = memo<{
           <View className="w-16 h-16 bg-muted/20 rounded-full items-center justify-center mb-4">
             <Icon as={Activity} size={32} className="text-muted-foreground" />
           </View>
-          <Text className="text-lg font-medium text-center mb-2">
-            Start recording to begin
-          </Text>
+          <Text className="text-lg font-medium text-center mb-2">Start recording to begin</Text>
           <Text className="text-center text-sm text-muted-foreground">
             Press Start Activity to activate your plan
           </Text>
@@ -58,12 +53,7 @@ const ActiveActivityMode = memo<{
     planProgress.currentStepIndex + 4,
   );
 
-  return (
-    <ScrollView
-      className="flex-1"
-      showsVerticalScrollIndicator={false}
-    ></ScrollView>
-  );
+  return <ScrollView className="flex-1" showsVerticalScrollIndicator={false}></ScrollView>;
 });
 
 ActiveActivityMode.displayName = "ActiveActivityMode";

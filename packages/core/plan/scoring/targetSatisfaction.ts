@@ -56,25 +56,17 @@ function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-function estimateRaceTimeFromReadiness(
-  targetSeconds: number,
-  readiness: number,
-): number {
+function estimateRaceTimeFromReadiness(targetSeconds: number, readiness: number): number {
   const readinessFactor = clamp(1 + (68 - readiness) / 140, 0.7, 1.75);
   return round3(targetSeconds * readinessFactor);
 }
 
-function estimateHigherIsBetterProjection(
-  targetValue: number,
-  readiness: number,
-): number {
+function estimateHigherIsBetterProjection(targetValue: number, readiness: number): number {
   const readinessFactor = clamp(0.82 + (readiness / 100) * 0.36, 0.6, 1.35);
   return round3(targetValue * readinessFactor);
 }
 
-function resolveActivitySpeedCapMps(
-  activity: "run" | "bike" | "swim" | "other",
-): number {
+function resolveActivitySpeedCapMps(activity: "run" | "bike" | "swim" | "other"): number {
   if (activity === "run") return 7.5;
   if (activity === "bike") return 20;
   if (activity === "swim") return 2.8;
@@ -97,8 +89,7 @@ function normalCdf(value: number): number {
   const a3 = 1.421413741;
   const a4 = -1.453152027;
   const a5 = 1.061405429;
-  const erf =
-    1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  const erf = 1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
   return 0.5 * (1 + sign * erf);
 }
 
@@ -109,10 +100,7 @@ function resolveDistributionScale(input: {
 }): number {
   const confidencePenalty = 1 + (1 - input.readiness_confidence) * 1.15;
   const inferredPenalty = input.projection_inferred ? 1.15 : 1;
-  return Math.max(
-    1e-6,
-    input.baseline_sigma * confidencePenalty * inferredPenalty,
-  );
+  return Math.max(1e-6, input.baseline_sigma * confidencePenalty * inferredPenalty);
 }
 
 function resolveDemandPenalty(demandRatio: number): number {
@@ -127,20 +115,12 @@ function toUnmetGap(value: number): number | undefined {
   return value > 0 ? round3(value) : undefined;
 }
 
-function scoreLowerIsBetter(input: {
-  target: number;
-  projected: number;
-  sigma: number;
-}): number {
+function scoreLowerIsBetter(input: { target: number; projected: number; sigma: number }): number {
   const z = (input.target - input.projected) / input.sigma;
   return clamp01(normalCdf(z));
 }
 
-function scoreHigherIsBetter(input: {
-  target: number;
-  projected: number;
-  sigma: number;
-}): number {
+function scoreHigherIsBetter(input: { target: number; projected: number; sigma: number }): number {
   const z = (input.target - input.projected) / input.sigma;
   return clamp01(1 - normalCdf(z));
 }
@@ -150,9 +130,7 @@ function smoothstep01(value: number): number {
   return clamped * clamped * (3 - 2 * clamped);
 }
 
-function getMaxSurplusPctByTargetType(
-  targetType: GoalTargetV2["target_type"],
-): number {
+function getMaxSurplusPctByTargetType(targetType: GoalTargetV2["target_type"]): number {
   switch (targetType) {
     case "race_performance":
       return 0.04;
@@ -183,9 +161,7 @@ export function resolveEffectiveScoringTarget(
       0.15 * (1 - clamp01(input.limiterShare ?? 0.35)),
   );
   const resolvedSurplusPct = round3(
-    getMaxSurplusPctByTargetType(input.targetType) *
-      surplusSignal *
-      supportFactor,
+    getMaxSurplusPctByTargetType(input.targetType) * surplusSignal * supportFactor,
   );
   const surplusApplied = resolvedSurplusPct >= MIN_EFFECTIVE_SURPLUS_PCT;
   const appliedSurplusPct = surplusApplied ? resolvedSurplusPct : 0;
@@ -216,11 +192,7 @@ export function scoreTargetSatisfaction(input: {
   projection: TargetProjectionSignals;
 }): TargetSatisfactionResult {
   const readiness = clamp(input.projection.readiness_score ?? 60, 0, 100);
-  const readinessConfidence = clamp(
-    input.projection.readiness_confidence ?? 0.6,
-    0,
-    1,
-  );
+  const readinessConfidence = clamp(input.projection.readiness_confidence ?? 0.6, 0, 1);
   const planFeasibilityConfidence = clamp(
     input.projection.plan_feasibility_confidence ?? readinessConfidence,
     0,
@@ -239,19 +211,12 @@ export function scoreTargetSatisfaction(input: {
         weeksToGoal: input.projection.weeks_to_goal,
         limiterShare: input.projection.limiter_share,
       });
-      const projectionInferred =
-        input.projection.projected_race_time_s === undefined;
+      const projectionInferred = input.projection.projected_race_time_s === undefined;
       const projected =
         input.projection.projected_race_time_s ??
-        estimateRaceTimeFromReadiness(
-          effectiveTarget.effective_scoring_target,
-          readiness,
-        );
-      const targetSpeed =
-        input.target.distance_m / Math.max(1, input.target.target_time_s);
-      const speedCap = resolveActivitySpeedCapMps(
-        input.target.activity_category,
-      );
+        estimateRaceTimeFromReadiness(effectiveTarget.effective_scoring_target, readiness);
+      const targetSpeed = input.target.distance_m / Math.max(1, input.target.target_time_s);
+      const speedCap = resolveActivitySpeedCapMps(input.target.activity_category);
       const demandRatio = targetSpeed / Math.max(0.1, speedCap);
       const sigma = resolveDistributionScale({
         baseline_sigma: Math.max(45, projected * 0.04),
@@ -263,13 +228,8 @@ export function scoreTargetSatisfaction(input: {
         projected,
         sigma,
       });
-      const utility = clamp01(
-        attainmentProbability * resolveDemandPenalty(demandRatio),
-      );
-      const gap = Math.max(
-        0,
-        projected - effectiveTarget.effective_scoring_target,
-      );
+      const utility = clamp01(attainmentProbability * resolveDemandPenalty(demandRatio));
+      const gap = Math.max(0, projected - effectiveTarget.effective_scoring_target);
 
       return {
         kind: "race_performance",
@@ -296,19 +256,12 @@ export function scoreTargetSatisfaction(input: {
         weeksToGoal: input.projection.weeks_to_goal,
         limiterShare: input.projection.limiter_share,
       });
-      const projectionInferred =
-        input.projection.projected_speed_mps === undefined;
+      const projectionInferred = input.projection.projected_speed_mps === undefined;
       const projected =
         input.projection.projected_speed_mps ??
-        estimateHigherIsBetterProjection(
-          effectiveTarget.effective_scoring_target,
-          readiness,
-        );
-      const speedCap = resolveActivitySpeedCapMps(
-        input.target.activity_category,
-      );
-      const demandRatio =
-        input.target.target_speed_mps / Math.max(0.1, speedCap);
+        estimateHigherIsBetterProjection(effectiveTarget.effective_scoring_target, readiness);
+      const speedCap = resolveActivitySpeedCapMps(input.target.activity_category);
+      const demandRatio = input.target.target_speed_mps / Math.max(0.1, speedCap);
       const sigma = resolveDistributionScale({
         baseline_sigma: Math.max(0.05, projected * 0.04),
         readiness_confidence: readinessConfidence,
@@ -319,13 +272,8 @@ export function scoreTargetSatisfaction(input: {
         projected,
         sigma,
       });
-      const utility = clamp01(
-        attainmentProbability * resolveDemandPenalty(demandRatio),
-      );
-      const gap = Math.max(
-        0,
-        effectiveTarget.effective_scoring_target - projected,
-      );
+      const utility = clamp01(attainmentProbability * resolveDemandPenalty(demandRatio));
+      const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
 
       return {
         kind: "pace_threshold",
@@ -352,14 +300,10 @@ export function scoreTargetSatisfaction(input: {
         weeksToGoal: input.projection.weeks_to_goal,
         limiterShare: input.projection.limiter_share,
       });
-      const projectionInferred =
-        input.projection.projected_power_watts === undefined;
+      const projectionInferred = input.projection.projected_power_watts === undefined;
       const projected =
         input.projection.projected_power_watts ??
-        estimateHigherIsBetterProjection(
-          effectiveTarget.effective_scoring_target,
-          readiness,
-        );
+        estimateHigherIsBetterProjection(effectiveTarget.effective_scoring_target, readiness);
       const powerCap = resolvePowerCapWatts(input.target.activity_category);
       const demandRatio = input.target.target_watts / Math.max(1, powerCap);
       const sigma = resolveDistributionScale({
@@ -372,13 +316,8 @@ export function scoreTargetSatisfaction(input: {
         projected,
         sigma,
       });
-      const utility = clamp01(
-        attainmentProbability * resolveDemandPenalty(demandRatio),
-      );
-      const gap = Math.max(
-        0,
-        effectiveTarget.effective_scoring_target - projected,
-      );
+      const utility = clamp01(attainmentProbability * resolveDemandPenalty(demandRatio));
+      const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
 
       return {
         kind: "power_threshold",
@@ -405,14 +344,10 @@ export function scoreTargetSatisfaction(input: {
         weeksToGoal: input.projection.weeks_to_goal,
         limiterShare: input.projection.limiter_share,
       });
-      const projectionInferred =
-        input.projection.projected_lthr_bpm === undefined;
+      const projectionInferred = input.projection.projected_lthr_bpm === undefined;
       const projected =
         input.projection.projected_lthr_bpm ??
-        estimateHigherIsBetterProjection(
-          effectiveTarget.effective_scoring_target,
-          readiness,
-        );
+        estimateHigherIsBetterProjection(effectiveTarget.effective_scoring_target, readiness);
       const demandRatio = input.target.target_lthr_bpm / 210;
       const sigma = resolveDistributionScale({
         baseline_sigma: Math.max(1.5, projected * 0.025),
@@ -424,13 +359,8 @@ export function scoreTargetSatisfaction(input: {
         projected,
         sigma,
       });
-      const utility = clamp01(
-        attainmentProbability * resolveDemandPenalty(demandRatio),
-      );
-      const gap = Math.max(
-        0,
-        effectiveTarget.effective_scoring_target - projected,
-      );
+      const utility = clamp01(attainmentProbability * resolveDemandPenalty(demandRatio));
+      const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
 
       return {
         kind: "hr_threshold",

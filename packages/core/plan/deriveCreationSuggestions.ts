@@ -1,14 +1,14 @@
 import {
-  creationAvailabilityConfigSchema,
-  creationBehaviorControlsV1Schema,
-  creationConstraintsSchema,
-  creationProvenanceSchema,
-  creationRecentInfluenceActionEnum,
   type CreationBehaviorControlsV1,
   type CreationConfigLocks,
   type CreationContextSummary,
   type CreationProvenance,
   type CreationRecentInfluence,
+  creationAvailabilityConfigSchema,
+  creationBehaviorControlsV1Schema,
+  creationConstraintsSchema,
+  creationProvenanceSchema,
+  creationRecentInfluenceActionEnum,
 } from "../schemas/training_plan_structure";
 import { countAvailableTrainingDays } from "./availabilityUtils";
 
@@ -41,9 +41,7 @@ export interface DeriveCreationSuggestionsInput {
 }
 
 export interface CreationSuggestions {
-  availability_config: ReturnType<
-    typeof creationAvailabilityConfigSchema.parse
-  >;
+  availability_config: ReturnType<typeof creationAvailabilityConfigSchema.parse>;
   availability_provenance: CreationProvenance;
   recent_influence: { influence_score: number };
   recent_influence_action: "accepted" | "edited" | "disabled";
@@ -95,10 +93,8 @@ function buildAvailabilityForSessionRange(
       windows: isTrainingDay
         ? [
             {
-              start_minute_of_day:
-                day === "saturday" || day === "sunday" ? 450 : 360,
-              end_minute_of_day:
-                day === "saturday" || day === "sunday" ? 570 : 450,
+              start_minute_of_day: day === "saturday" || day === "sunday" ? 450 : 360,
+              end_minute_of_day: day === "saturday" || day === "sunday" ? 570 : 450,
             },
           ]
         : [],
@@ -107,12 +103,7 @@ function buildAvailabilityForSessionRange(
   });
 
   return creationAvailabilityConfigSchema.parse({
-    template:
-      profile === "no_data"
-        ? "low"
-        : profile === "rich_data"
-          ? "high"
-          : "moderate",
+    template: profile === "no_data" ? "low" : profile === "rich_data" ? "high" : "moderate",
     days,
   });
 }
@@ -160,20 +151,13 @@ function deriveBehaviorControlSuggestions(input: {
     0,
     1,
   );
-  const profileMultiplier =
-    profileMode === "no_data" ? 0.9 : profileMode === "rich_data" ? 1.1 : 1;
+  const profileMultiplier = profileMode === "no_data" ? 0.9 : profileMode === "rich_data" ? 1.1 : 1;
   const certaintyMultiplier = 0.9 + rangeCertaintyScore * 0.18;
   const safetySuppression =
-    context.is_youth ||
-    (context.missing_required_onboarding_fields?.length ?? 0) > 0
-      ? 0.72
-      : 1;
+    context.is_youth || (context.missing_required_onboarding_fields?.length ?? 0) > 0 ? 0.72 : 1;
 
   const aggressiveSignal = clamp(
-    aggressivenessScore *
-      profileMultiplier *
-      certaintyMultiplier *
-      safetySuppression,
+    aggressivenessScore * profileMultiplier * certaintyMultiplier * safetySuppression,
     0,
     1,
   );
@@ -184,22 +168,13 @@ function deriveBehaviorControlSuggestions(input: {
     variability: Number((1 - stabilitySignal * 0.7).toFixed(3)),
     spike_frequency: Number((0.15 + aggressiveSignal * 0.7).toFixed(3)),
     shape_target: Number(
-      (profileMode === "rich_data"
-        ? 0.2
-        : profileMode === "no_data"
-          ? -0.1
-          : 0
-      ).toFixed(3),
+      (profileMode === "rich_data" ? 0.2 : profileMode === "no_data" ? -0.1 : 0).toFixed(3),
     ),
     shape_strength: Number((0.25 + aggressiveSignal * 0.5).toFixed(3)),
     recovery_priority: Number((0.75 - aggressiveSignal * 0.35).toFixed(3)),
     starting_fitness_confidence: Number(
       clamp(
-        profileMode === "rich_data"
-          ? 0.78
-          : profileMode === "mixed"
-            ? 0.62
-            : 0.45,
+        profileMode === "rich_data" ? 0.78 : profileMode === "mixed" ? 0.62 : 0.45,
         0,
         context.is_youth ? 0.6 : 1,
       ).toFixed(3),
@@ -207,9 +182,7 @@ function deriveBehaviorControlSuggestions(input: {
   });
 }
 
-function resolveProfileMode(
-  context: CreationContextSummary,
-): "no_data" | "rich_data" | "mixed" {
+function resolveProfileMode(context: CreationContextSummary): "no_data" | "rich_data" | "mixed" {
   if (
     context.history_availability_state === "none" ||
     context.is_youth ||
@@ -218,8 +191,7 @@ function resolveProfileMode(
     return "no_data";
   }
 
-  return context.history_availability_state === "rich" &&
-    context.signal_quality >= 0.7
+  return context.history_availability_state === "rich" && context.signal_quality >= 0.7
     ? "rich_data"
     : "mixed";
 }
@@ -291,9 +263,7 @@ export function deriveCreationSuggestions(
   const sessionsMax = context.recommended_sessions_per_week_range.max;
   const sessionsMidpoint = Math.max(1, (sessionsMin + sessionsMax) / 2);
   const baselineMidpoint =
-    (context.recommended_baseline_tss_range.min +
-      context.recommended_baseline_tss_range.max) /
-    2;
+    (context.recommended_baseline_tss_range.min + context.recommended_baseline_tss_range.max) / 2;
 
   const preferredDaysFromContext = context.rationale_codes
     .filter((code) => code.startsWith("preferred_day_"))
@@ -302,9 +272,10 @@ export function deriveCreationSuggestions(
       WEEKDAY_ORDER.includes(day as (typeof WEEKDAY_ORDER)[number]),
     );
 
-  const hardRestDays = WEEKDAY_ORDER.filter(
-    (day) => !preferredDaysFromContext.includes(day),
-  ).slice(0, Math.max(1, 7 - sessionsMax));
+  const hardRestDays = WEEKDAY_ORDER.filter((day) => !preferredDaysFromContext.includes(day)).slice(
+    0,
+    Math.max(1, 7 - sessionsMax),
+  );
 
   const suggestedMaxSingleDuration = deriveSuggestedMaxSingleDuration({
     baselineMidpoint,
@@ -325,8 +296,7 @@ export function deriveCreationSuggestions(
     max_sessions_per_week: sessionsMax,
     max_single_session_duration_minutes: suggestedMaxSingleDuration,
     goal_difficulty_preference:
-      context.is_youth ||
-      (context.missing_required_onboarding_fields?.length ?? 0) > 0
+      context.is_youth || (context.missing_required_onboarding_fields?.length ?? 0) > 0
         ? "conservative"
         : profileMode === "rich_data" && baselineMidpoint > 450
           ? "stretch"
@@ -351,14 +321,8 @@ export function deriveCreationSuggestions(
 
   const normalizedConstraintsSuggestion = creationConstraintsSchema.parse({
     ...constraintsSuggestion,
-    min_sessions_per_week: Math.min(
-      normalizedMinSessions,
-      normalizedMaxSessions,
-    ),
-    max_sessions_per_week: Math.max(
-      normalizedMinSessions,
-      normalizedMaxSessions,
-    ),
+    min_sessions_per_week: Math.min(normalizedMinSessions, normalizedMaxSessions),
+    max_sessions_per_week: Math.max(normalizedMinSessions, normalizedMaxSessions),
   });
 
   const locks = input.locks;
@@ -369,8 +333,7 @@ export function deriveCreationSuggestions(
     input.existing_values?.recent_influence?.influence_score !== undefined
   ) {
     if (
-      input.existing_values.recent_influence.influence_score !==
-      influenceSuggestion.influence_score
+      input.existing_values.recent_influence.influence_score !== influenceSuggestion.influence_score
     ) {
       conflicts.push("recent_influence_locked_differs_from_suggestion");
     }
@@ -380,8 +343,7 @@ export function deriveCreationSuggestions(
     const existingBehavior = input.existing_values?.behavior_controls_v1;
     if (
       existingBehavior !== undefined &&
-      JSON.stringify(existingBehavior) !==
-        JSON.stringify(behaviorControlSuggestions)
+      JSON.stringify(existingBehavior) !== JSON.stringify(behaviorControlSuggestions)
     ) {
       conflicts.push("behavior_controls_v1_locked_differs_from_suggestion");
     }

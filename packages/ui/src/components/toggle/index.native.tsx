@@ -5,16 +5,11 @@ import { cn } from "../../lib/cn";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Icon } from "../icon/index.native";
 import { TextClassContext } from "../text/context";
-import {
-  type ToggleSize,
-  type ToggleTestProps,
-  type ToggleVariant,
-} from "./shared";
+import { type ToggleSize, type ToggleTestProps, type ToggleVariant } from "./shared";
 
 const toggleVariantClasses = {
   default: "bg-transparent",
-  outline:
-    "border-input active:bg-accent border bg-transparent shadow-sm shadow-black/5",
+  outline: "border-input active:bg-accent border bg-transparent shadow-sm shadow-black/5",
 } satisfies Record<ToggleVariant, string>;
 
 const toggleSizeClasses = {
@@ -70,9 +65,7 @@ function Toggle({
     variant?: ToggleVariant;
   }) {
   return (
-    <TextClassContext.Provider
-      value={toggleTextVariants({ className, pressed: props.pressed })}
-    >
+    <TextClassContext.Provider value={toggleTextVariants({ className, pressed: props.pressed })}>
       <TogglePrimitive.Root
         className={cn(
           toggleVariants({ size, variant }),
@@ -95,15 +88,10 @@ function Toggle({
   );
 }
 
-function ToggleIcon({
-  className,
-  ...props
-}: React.ComponentProps<typeof Icon>) {
+function ToggleIcon({ className, ...props }: React.ComponentProps<typeof Icon>) {
   const textClass = React.useContext(TextClassContext);
-  return (
-    <Icon className={cn("size-4 shrink-0", textClass, className)} {...props} />
-  );
+  return <Icon className={cn("size-4 shrink-0", textClass, className)} {...props} />;
 }
 
-export { Toggle, ToggleIcon, toggleTextVariants, toggleVariants };
 export type { ToggleSize, ToggleVariant } from "./shared";
+export { Toggle, ToggleIcon, toggleTextVariants, toggleVariants };

@@ -1,9 +1,9 @@
+import { Skeleton } from "@repo/ui/components/skeleton";
+import { useCallback, useState } from "react";
+import { FlatList, RefreshControl, Text, View } from "react-native";
+import { trpc } from "@/lib/trpc";
 import { ActivityFeedItem, FeedActivityItem } from "./ActivityFeedItem";
 import { FeedEmptyState } from "./FeedEmptyState";
-import { trpc } from "@/lib/trpc";
-import { RefreshControl, FlatList, View, Text } from "react-native";
-import { useCallback, useState } from "react";
-import { Skeleton } from "@repo/ui/components/skeleton";
 
 interface FeedListProps {
   onCommentPress?: (activityId: string) => void;
@@ -80,9 +80,7 @@ export function FeedList({ onCommentPress }: FeedListProps) {
     if (isLoadingError) {
       return (
         <View className="p-8 items-center justify-center">
-          <Text className="text-lg text-red-500 text-center">
-            Failed to load feed
-          </Text>
+          <Text className="text-lg text-red-500 text-center">Failed to load feed</Text>
           <Text className="text-sm text-muted-foreground text-center mt-2">
             Please try again later
           </Text>
@@ -102,9 +100,7 @@ export function FeedList({ onCommentPress }: FeedListProps) {
       keyExtractor={keyExtractor}
       contentContainerClassName="flex-grow"
       showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-      }
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       onEndReached={handleLoadMore}
       onEndReachedThreshold={0.5}
       ListFooterComponent={renderFooter}

@@ -22,8 +22,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function parseActivityDate(activity: RampLearningActivityInput): Date | null {
-  const candidate =
-    activity.occurred_at ?? activity.start_time ?? activity.date;
+  const candidate = activity.occurred_at ?? activity.start_time ?? activity.date;
   if (!candidate) return null;
 
   const parsed = new Date(candidate);
@@ -32,9 +31,7 @@ function parseActivityDate(activity: RampLearningActivityInput): Date | null {
 }
 
 function getIsoWeekStart(date: Date): string {
-  const utc = new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
+  const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = utc.getUTCDay();
   const deltaToMonday = day === 0 ? -6 : 1 - day;
   utc.setUTCDate(utc.getUTCDate() + deltaToMonday);
@@ -71,9 +68,7 @@ export function learnIndividualRampRate(
     weeklyTss.set(weekKey, (weeklyTss.get(weekKey) ?? 0) + tss);
   }
 
-  const orderedWeeks = [...weeklyTss.entries()].sort((a, b) =>
-    a[0].localeCompare(b[0]),
-  );
+  const orderedWeeks = [...weeklyTss.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   if (orderedWeeks.length < MIN_WEEKS_FOR_LEARNING) {
     return { maxSafeRampRate: DEFAULT_RAMP_CAP, confidence: "low" };

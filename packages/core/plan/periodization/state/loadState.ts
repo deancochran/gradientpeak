@@ -1,11 +1,8 @@
-import {
-  canonicalSportSchema,
-  type CanonicalSport,
-} from "../../../schemas/sport";
+import { type CanonicalSport, canonicalSportSchema } from "../../../schemas/sport";
 import type { SportLoadState } from "../sports";
 import {
-  applyLoadDecay,
   advanceSportLoadState,
+  applyLoadDecay,
   calculateMechanicalFatigueScore,
 } from "./peripheralLoad";
 import {
@@ -31,9 +28,7 @@ export interface DailyLoadState {
 export interface BuildDailyLoadStateInput {
   dailySportLoads: DailySportLoadInput[];
   history?: HistoricalDailySportLoad[];
-  previousState?: Partial<
-    Pick<DailyLoadState, "ctl" | "atl" | "sport_load_states">
-  >;
+  previousState?: Partial<Pick<DailyLoadState, "ctl" | "atl" | "sport_load_states">>;
   sportLoadHistory?: Partial<Record<CanonicalSport, number[]>>;
 }
 
@@ -54,9 +49,7 @@ function getDailyLoadForSport(
     .reduce((sum, entry) => sum + entry.load, 0);
 }
 
-export function buildDailyLoadState(
-  input: BuildDailyLoadStateInput,
-): DailyLoadState {
+export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadState {
   const systemic = calculateSystemicLoadMetrics({
     dailySportLoads: input.dailySportLoads,
     history: input.history,
@@ -91,11 +84,7 @@ export function buildDailyLoadState(
     dailySportLoads: input.dailySportLoads,
     history: input.history,
   });
-  const readinessScore = clamp(
-    0.5 + tsb / 50 - mechanicalFatigueScore / 250,
-    0,
-    1,
-  );
+  const readinessScore = clamp(0.5 + tsb / 50 - mechanicalFatigueScore / 250, 0, 1);
 
   return {
     ctl: round(nextCtl),

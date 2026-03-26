@@ -4,10 +4,7 @@ import { canonicalSportSchema, planningSportSchema } from "../sport";
 
 const nonNegativeFiniteNumberSchema = z.number().finite().min(0);
 
-export const trajectoryModeSchema = z.enum([
-  "target_seeking",
-  "capacity_bounded",
-]);
+export const trajectoryModeSchema = z.enum(["target_seeking", "capacity_bounded"]);
 
 export const trajectoryPhaseSchema = z.enum([
   "build",
@@ -129,12 +126,7 @@ export const eventDemandFamilySchema = z.enum([
 
 export const eventDemandTargetContributionSchema = z
   .object({
-    target_type: z.enum([
-      "race_performance",
-      "pace_threshold",
-      "power_threshold",
-      "hr_threshold",
-    ]),
+    target_type: z.enum(["race_performance", "pace_threshold", "power_threshold", "hr_threshold"]),
     weight: z.number().positive().finite(),
     weight_share: z.number().min(0).max(1),
     required_peak_ctl: nonNegativeFiniteNumberSchema,
@@ -159,18 +151,10 @@ export type TrajectoryMode = z.infer<typeof trajectoryModeSchema>;
 export type TrajectoryPhase = z.infer<typeof trajectoryPhaseSchema>;
 export type CalculatedParameter = z.infer<typeof calculatedParameterSchema>;
 export type FeasibilityAssessment = z.infer<typeof feasibilityAssessmentSchema>;
-export type FeasibilityAssessmentStatus = z.infer<
-  typeof feasibilityAssessmentStatusSchema
->;
-export type ReferenceTrajectoryPoint = z.infer<
-  typeof referenceTrajectoryPointSchema
->;
+export type FeasibilityAssessmentStatus = z.infer<typeof feasibilityAssessmentStatusSchema>;
+export type ReferenceTrajectoryPoint = z.infer<typeof referenceTrajectoryPointSchema>;
 export type ReferenceTrajectory = z.infer<typeof referenceTrajectorySchema>;
-export type PlanningGoalPriorityClass = z.infer<
-  typeof planningGoalPriorityClassSchema
->;
-export type NormalizedPlanningGoal = z.infer<
-  typeof normalizedPlanningGoalSchema
->;
+export type PlanningGoalPriorityClass = z.infer<typeof planningGoalPriorityClassSchema>;
+export type NormalizedPlanningGoal = z.infer<typeof normalizedPlanningGoalSchema>;
 export type EventDemandFamily = z.infer<typeof eventDemandFamilySchema>;
 export type EventDemand = z.infer<typeof eventDemandSchema>;

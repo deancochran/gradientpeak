@@ -9,10 +9,7 @@
  * @param movingTime - Moving time in seconds.
  * @returns Normalized Speed in meters per second.
  */
-export function calculateNormalizedSpeed(
-  distance: number,
-  movingTime: number,
-): number {
+export function calculateNormalizedSpeed(distance: number, movingTime: number): number {
   if (movingTime <= 0) return 0;
   return distance / movingTime;
 }
@@ -43,11 +40,7 @@ export function calculateMovingTime(
     const prevTimestamp = timestamps[i - 1];
     const currentTimestamp = timestamps[i];
 
-    if (
-      speed === undefined ||
-      prevTimestamp === undefined ||
-      currentTimestamp === undefined
-    ) {
+    if (speed === undefined || prevTimestamp === undefined || currentTimestamp === undefined) {
       continue;
     }
 

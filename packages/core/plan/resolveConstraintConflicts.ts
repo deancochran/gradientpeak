@@ -1,7 +1,7 @@
 import {
-  creationConstraintsSchema,
   type CreationConfigLocks,
   type CreationConstraints,
+  creationConstraintsSchema,
 } from "../schemas/training_plan_structure";
 
 export type ConstraintFieldPath =
@@ -33,10 +33,7 @@ export interface ConstraintResolutionResult {
   resolved_constraints: CreationConstraints;
   conflicts: ConstraintConflict[];
   is_blocking: boolean;
-  precedence: Record<
-    keyof CreationConstraints,
-    "user" | "suggested" | "default"
-  >;
+  precedence: Record<keyof CreationConstraints, "user" | "suggested" | "default">;
 }
 
 function resolveValue<T>(
@@ -87,8 +84,7 @@ export function resolveConstraintConflicts(
     max_sessions_per_week: input.locks?.max_sessions_per_week?.locked ?? false,
     max_single_session_duration_minutes:
       input.locks?.max_single_session_duration_minutes?.locked ?? false,
-    goal_difficulty_preference:
-      input.locks?.goal_difficulty_preference?.locked ?? false,
+    goal_difficulty_preference: input.locks?.goal_difficulty_preference?.locked ?? false,
   };
 
   const hardRestDays = resolveValue(
@@ -135,17 +131,13 @@ export function resolveConstraintConflicts(
   if (
     resolvedConstraints.min_sessions_per_week !== undefined &&
     resolvedConstraints.max_sessions_per_week !== undefined &&
-    resolvedConstraints.min_sessions_per_week >
-      resolvedConstraints.max_sessions_per_week
+    resolvedConstraints.min_sessions_per_week > resolvedConstraints.max_sessions_per_week
   ) {
     conflicts.push({
       code: "min_sessions_exceeds_max",
       severity: "blocking",
       message: "Minimum sessions exceed maximum sessions",
-      field_paths: [
-        "constraints.min_sessions_per_week",
-        "constraints.max_sessions_per_week",
-      ],
+      field_paths: ["constraints.min_sessions_per_week", "constraints.max_sessions_per_week"],
       suggestions: ["Lower minimum sessions", "Raise maximum sessions"],
     });
   }
@@ -157,8 +149,7 @@ export function resolveConstraintConflicts(
     conflicts.push({
       code: "min_sessions_exceeds_available_days",
       severity: "blocking",
-      message:
-        "Minimum sessions exceed available training days from availability/rest constraints",
+      message: "Minimum sessions exceed available training days from availability/rest constraints",
       field_paths: [
         "constraints.min_sessions_per_week",
         "availability_config.days",
@@ -179,8 +170,7 @@ export function resolveConstraintConflicts(
     conflicts.push({
       code: "max_sessions_exceeds_available_days",
       severity: "blocking",
-      message:
-        "Maximum sessions exceed available training days from availability/rest constraints",
+      message: "Maximum sessions exceed available training days from availability/rest constraints",
       field_paths: [
         "constraints.max_sessions_per_week",
         "availability_config.days",

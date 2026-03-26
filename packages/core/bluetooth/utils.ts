@@ -12,10 +12,8 @@ export function unsignedDeltaWithWrap(
   bits: 8 | 16 | 32,
 ): number {
   const modulus = 2 ** bits;
-  const normalizedCurrent =
-    ((Math.trunc(current) % modulus) + modulus) % modulus;
-  const normalizedPrevious =
-    ((Math.trunc(previous) % modulus) + modulus) % modulus;
+  const normalizedCurrent = ((Math.trunc(current) % modulus) + modulus) % modulus;
+  const normalizedPrevious = ((Math.trunc(previous) % modulus) + modulus) % modulus;
 
   if (normalizedCurrent >= normalizedPrevious) {
     return normalizedCurrent - normalizedPrevious;

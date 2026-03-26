@@ -21,31 +21,21 @@ export function buildPeriodizedObjectiveComponents(input: {
   reference_tracking?: ReferenceTrackingEvaluation | null;
 }): MpcObjectiveComponents {
   const tracking = input.reference_tracking;
-  const trackingReward = tracking
-    ? clamp01(1 - tracking.tracking_error / 8) * 0.35
-    : 0;
+  const trackingReward = tracking ? clamp01(1 - tracking.tracking_error / 8) * 0.35 : 0;
   const trackingReadinessReward = tracking
     ? clamp01(1 - tracking.ctl_mean_absolute_error / 6) * 0.2
     : 0;
   const trackingRiskPenalty = tracking
     ? tracking.safety_penalty + tracking.taper_pressure * 0.75
     : 0;
-  const trackingVolatilityPenalty = tracking
-    ? tracking.tracking_error * 0.04
-    : 0;
-  const trackingChurnPenalty = tracking
-    ? tracking.tss_mean_absolute_error / 140
-    : 0;
+  const trackingVolatilityPenalty = tracking ? tracking.tracking_error * 0.04 : 0;
+  const trackingChurnPenalty = tracking ? tracking.tss_mean_absolute_error / 140 : 0;
 
   return {
     goal_attainment: round(input.preparedness_primary + trackingReward),
-    projected_readiness: round(
-      input.preparedness_secondary + trackingReadinessReward,
-    ),
+    projected_readiness: round(input.preparedness_secondary + trackingReadinessReward),
     overload_penalty: round(input.overload_penalty + trackingRiskPenalty),
-    load_volatility_penalty: round(
-      input.volatility_penalty + trackingVolatilityPenalty,
-    ),
+    load_volatility_penalty: round(input.volatility_penalty + trackingVolatilityPenalty),
     plan_change_penalty: round(input.churn_penalty + trackingChurnPenalty),
     monotony_penalty: round(input.monotony_penalty),
     strain_penalty: round(input.strain_penalty),

@@ -19,10 +19,10 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { getActivityConfig } from "@/lib/constants/activities";
-import { formatDuration } from "@/lib/utils/dates";
 import { Clock } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
+import { getActivityConfig } from "@/lib/constants/activities";
+import { formatDuration } from "@/lib/utils/dates";
 
 /**
  * @deprecated Use ActivityPlanCard instead
@@ -64,11 +64,7 @@ export function PlanCard({
   const isUserPlan = plan.isOwned ?? !!plan.profileId;
 
   return (
-    <TouchableOpacity
-      onPress={() => onPress?.(plan.id)}
-      activeOpacity={0.7}
-      disabled={!onPress}
-    >
+    <TouchableOpacity onPress={() => onPress?.(plan.id)} activeOpacity={0.7} disabled={!onPress}>
       <Card>
         <CardContent className={`p-4 ${compact ? "py-3" : ""}`}>
           <View className="flex-row items-start gap-3">
@@ -76,11 +72,7 @@ export function PlanCard({
             <View
               className={`w-11 h-11 rounded-full ${config.bgColor} items-center justify-center shrink-0 ${compact ? "w-9 h-9" : ""}`}
             >
-              <Icon
-                as={config.icon}
-                size={compact ? 18 : 20}
-                className={config.color}
-              />
+              <Icon as={config.icon} size={compact ? 18 : 20} className={config.color} />
             </View>
 
             {/* Content */}
@@ -95,26 +87,19 @@ export function PlanCard({
                 </Text>
                 {isUserPlan && (
                   <View className="bg-primary/10 px-2 py-0.5 rounded-full">
-                    <Text className="text-xs text-primary font-medium">
-                      Yours
-                    </Text>
+                    <Text className="text-xs text-primary font-medium">Yours</Text>
                   </View>
                 )}
               </View>
 
               {/* Activity Type */}
-              <Text
-                className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"} mb-2`}
-              >
+              <Text className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"} mb-2`}>
                 {config.name}
               </Text>
 
               {/* Description */}
               {plan.description && !compact && (
-                <Text
-                  className="text-sm text-muted-foreground mb-3"
-                  numberOfLines={2}
-                >
+                <Text className="text-sm text-muted-foreground mb-3" numberOfLines={2}>
                   {plan.description}
                 </Text>
               )}
@@ -123,31 +108,21 @@ export function PlanCard({
               <View className="flex-row items-center gap-3 flex-wrap">
                 {plan.estimatedDuration && (
                   <View className="flex-row items-center">
-                    <Icon
-                      as={Clock}
-                      size={14}
-                      className="text-muted-foreground mr-1"
-                    />
-                    <Text
-                      className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"}`}
-                    >
+                    <Icon as={Clock} size={14} className="text-muted-foreground mr-1" />
+                    <Text className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"}`}>
                       {formatDuration(plan.estimatedDuration)}
                     </Text>
                   </View>
                 )}
 
                 {plan.estimatedTss && (
-                  <Text
-                    className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"}`}
-                  >
+                  <Text className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"}`}>
                     TSS {Math.round(plan.estimatedTss)}
                   </Text>
                 )}
 
                 {plan.stepCount !== undefined && plan.stepCount > 0 && (
-                  <Text
-                    className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"}`}
-                  >
+                  <Text className={`text-muted-foreground ${compact ? "text-xs" : "text-sm"}`}>
                     {plan.stepCount} {plan.stepCount === 1 ? "step" : "steps"}
                   </Text>
                 )}
@@ -163,9 +138,7 @@ export function PlanCard({
                   className="mt-3 bg-primary px-4 py-2 rounded-lg self-start"
                   activeOpacity={0.7}
                 >
-                  <Text className="text-primary-foreground font-medium text-sm">
-                    Schedule
-                  </Text>
+                  <Text className="text-primary-foreground font-medium text-sm">Schedule</Text>
                 </TouchableOpacity>
               )}
             </View>

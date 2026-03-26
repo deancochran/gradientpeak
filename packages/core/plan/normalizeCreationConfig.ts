@@ -1,14 +1,4 @@
 import {
-  creationAvailabilityConfigSchema,
-  creationBehaviorControlsV1Schema,
-  creationCalibrationCompositeLocksSchema,
-  creationConfigLocksSchema,
-  creationConstraintsSchema,
-  creationOptimizationProfileEnum,
-  creationProvenanceSchema,
-  creationRecentInfluenceActionEnum,
-  creationValueSourceEnum,
-  trainingPlanCreationConfigSchema,
   type CreationAvailabilityConfig,
   type CreationBehaviorControlsV1,
   type CreationCalibrationCompositeLocks,
@@ -18,9 +8,19 @@ import {
   type CreationRecentInfluence,
   type CreationRecentInfluenceAction,
   type CreationValueSource,
+  creationAvailabilityConfigSchema,
+  creationBehaviorControlsV1Schema,
+  creationCalibrationCompositeLocksSchema,
+  creationConfigLocksSchema,
+  creationConstraintsSchema,
+  creationOptimizationProfileEnum,
+  creationProvenanceSchema,
+  creationRecentInfluenceActionEnum,
+  creationValueSourceEnum,
   type TrainingPlanCalibrationConfig,
   type TrainingPlanCreationConfig,
   trainingPlanCalibrationConfigSchema,
+  trainingPlanCreationConfigSchema,
 } from "../schemas/training_plan_structure";
 
 const WEEK_DAYS = [
@@ -47,18 +47,10 @@ type CreationConfigValues = {
 
 type PartialCalibrationInput = {
   version?: 1;
-  readiness_composite?: Partial<
-    TrainingPlanCalibrationConfig["readiness_composite"]
-  >;
-  readiness_timeline?: Partial<
-    TrainingPlanCalibrationConfig["readiness_timeline"]
-  >;
-  envelope_penalties?: Partial<
-    TrainingPlanCalibrationConfig["envelope_penalties"]
-  >;
-  durability_penalties?: Partial<
-    TrainingPlanCalibrationConfig["durability_penalties"]
-  >;
+  readiness_composite?: Partial<TrainingPlanCalibrationConfig["readiness_composite"]>;
+  readiness_timeline?: Partial<TrainingPlanCalibrationConfig["readiness_timeline"]>;
+  envelope_penalties?: Partial<TrainingPlanCalibrationConfig["envelope_penalties"]>;
+  durability_penalties?: Partial<TrainingPlanCalibrationConfig["durability_penalties"]>;
   no_history?: Partial<TrainingPlanCalibrationConfig["no_history"]>;
   optimizer?: Partial<TrainingPlanCalibrationConfig["optimizer"]>;
 };
@@ -110,14 +102,13 @@ const CONSERVATIVE_DEFAULT_AVAILABILITY: CreationAvailabilityConfig =
     ],
   });
 
-const CONSERVATIVE_DEFAULT_CONSTRAINTS: CreationConstraints =
-  creationConstraintsSchema.parse({
-    hard_rest_days: ["wednesday", "friday", "sunday"],
-    min_sessions_per_week: 3,
-    max_sessions_per_week: 4,
-    max_single_session_duration_minutes: 90,
-    goal_difficulty_preference: "conservative",
-  });
+const CONSERVATIVE_DEFAULT_CONSTRAINTS: CreationConstraints = creationConstraintsSchema.parse({
+  hard_rest_days: ["wednesday", "friday", "sunday"],
+  min_sessions_per_week: 3,
+  max_sessions_per_week: 4,
+  max_single_session_duration_minutes: 90,
+  goal_difficulty_preference: "conservative",
+});
 
 const DEFAULT_VALUES: CreationConfigValues = {
   availability_config: CONSERVATIVE_DEFAULT_AVAILABILITY,
@@ -312,24 +303,17 @@ export function normalizeCreationConfig(
   const defaultValues: CreationConfigValues = {
     ...DEFAULT_VALUES,
     ...input.defaults,
-    availability_config: normalizeAvailabilityOrFallback(
-      input.defaults?.availability_config,
-    ),
+    availability_config: normalizeAvailabilityOrFallback(input.defaults?.availability_config),
     constraints: creationConstraintsSchema.parse({
       ...CONSERVATIVE_DEFAULT_CONSTRAINTS,
       ...input.defaults?.constraints,
     }),
-    calibration: mergeCalibration(
-      DEFAULT_VALUES.calibration,
-      input.defaults?.calibration,
-    ),
+    calibration: mergeCalibration(DEFAULT_VALUES.calibration, input.defaults?.calibration),
     behavior_controls_v1: creationBehaviorControlsV1Schema.parse(
-      input.defaults?.behavior_controls_v1 ??
-        DEFAULT_VALUES.behavior_controls_v1,
+      input.defaults?.behavior_controls_v1 ?? DEFAULT_VALUES.behavior_controls_v1,
     ),
     calibration_composite_locks: creationCalibrationCompositeLocksSchema.parse(
-      input.defaults?.calibration_composite_locks ??
-        DEFAULT_VALUES.calibration_composite_locks,
+      input.defaults?.calibration_composite_locks ?? DEFAULT_VALUES.calibration_composite_locks,
     ),
   };
 
@@ -419,29 +403,20 @@ export function normalizeCreationConfig(
       input.provenance_overrides?.availability_provenance,
     ),
     recent_influence: influencePick.value,
-    recent_influence_action: creationRecentInfluenceActionEnum.parse(
-      actionPick.value,
-    ),
+    recent_influence_action: creationRecentInfluenceActionEnum.parse(actionPick.value),
     recent_influence_provenance: toCreationProvenance(
       influencePick.source,
       nowIso,
       input.provenance_overrides?.recent_influence_provenance,
     ),
     constraints,
-    optimization_profile: creationOptimizationProfileEnum.parse(
-      optimizationProfilePick.value,
-    ),
+    optimization_profile: creationOptimizationProfileEnum.parse(optimizationProfilePick.value),
     post_goal_recovery_days: postGoalRecoveryDaysPick.value,
-    behavior_controls_v1: creationBehaviorControlsV1Schema.parse(
-      behaviorControlsPick.value,
-    ),
+    behavior_controls_v1: creationBehaviorControlsV1Schema.parse(behaviorControlsPick.value),
     calibration_composite_locks: creationCalibrationCompositeLocksSchema.parse(
       calibrationCompositeLocksPick.value,
     ),
-    calibration: mergeCalibration(
-      DEFAULT_VALUES.calibration,
-      calibrationPick.value,
-    ),
+    calibration: mergeCalibration(DEFAULT_VALUES.calibration, calibrationPick.value),
     locks,
   });
 }

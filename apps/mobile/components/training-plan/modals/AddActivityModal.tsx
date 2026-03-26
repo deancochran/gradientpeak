@@ -2,21 +2,12 @@
 
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
 import { X } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  ScrollView,
-  View,
-} from "react-native";
-import {
-  ActivitySelector,
-  type ActivityOption,
-} from "./components/ActivitySelector";
+import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { trpc } from "@/lib/trpc";
+import { type ActivityOption, ActivitySelector } from "./components/ActivitySelector";
 import { ConstraintValidator } from "./components/ConstraintValidator";
 
 interface AddActivityModalProps {
@@ -64,8 +55,7 @@ export function AddActivityModal({
   trainingPlanId,
   onSuccess,
 }: AddActivityModalProps) {
-  const [selectedActivity, setSelectedActivity] =
-    useState<ActivityOption | null>(null);
+  const [selectedActivity, setSelectedActivity] = useState<ActivityOption | null>(null);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -133,9 +123,7 @@ export function AddActivityModal({
   };
 
   const canSchedule =
-    selectedActivity &&
-    (validation?.canSchedule ?? false) &&
-    !scheduleMutation.isPending;
+    selectedActivity && (validation?.canSchedule ?? false) && !scheduleMutation.isPending;
 
   const activities = activitiesData?.items || [];
 
@@ -150,12 +138,8 @@ export function AddActivityModal({
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
           <View className="flex-1">
-            <Text className="text-xl font-bold text-gray-900">
-              Schedule Activity
-            </Text>
-            <Text className="text-sm text-gray-600 mt-0.5">
-              {formatDate(selectedDate)}
-            </Text>
+            <Text className="text-xl font-bold text-gray-900">Schedule Activity</Text>
+            <Text className="text-sm text-gray-600 mt-0.5">{formatDate(selectedDate)}</Text>
           </View>
           <Pressable
             onPress={onClose}
@@ -177,17 +161,13 @@ export function AddActivityModal({
             {activitiesLoading && (
               <View className="py-8 items-center">
                 <ActivityIndicator size="large" />
-                <Text className="text-gray-600 mt-2">
-                  Loading activities...
-                </Text>
+                <Text className="text-gray-600 mt-2">Loading activities...</Text>
               </View>
             )}
 
             {activitiesError && (
               <View className="p-4 bg-red-50 rounded-lg">
-                <Text className="text-red-700">
-                  Failed to load activities. Please try again.
-                </Text>
+                <Text className="text-red-700">Failed to load activities. Please try again.</Text>
               </View>
             )}
 
@@ -214,19 +194,14 @@ export function AddActivityModal({
                 </View>
               )}
 
-              <ConstraintValidator
-                validation={validation ?? null}
-                isLoading={validationLoading}
-              />
+              <ConstraintValidator validation={validation ?? null} isLoading={validationLoading} />
             </View>
           )}
 
           {/* Error Message */}
           {scheduleMutation.error && (
             <View className="p-4 bg-red-50 border border-red-200 rounded-lg mb-4">
-              <Text className="text-red-700 font-medium">
-                Failed to schedule activity
-              </Text>
+              <Text className="text-red-700 font-medium">Failed to schedule activity</Text>
               <Text className="text-red-600 text-sm mt-1">
                 {scheduleMutation.error.message || "Please try again"}
               </Text>
@@ -254,9 +229,7 @@ export function AddActivityModal({
                 <ActivityIndicator color="white" />
               ) : (
                 <Text className="text-white">
-                  {validation && !validation.canSchedule
-                    ? "Schedule Anyway"
-                    : "Schedule Activity"}
+                  {validation && !validation.canSchedule ? "Schedule Anyway" : "Schedule Activity"}
                 </Text>
               )}
             </Button>

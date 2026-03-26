@@ -122,9 +122,7 @@ describe("training plan schema simplification guardrails", () => {
               {
                 name: "A",
                 target_date: "2026-06-01",
-                targets: [
-                  { target_type: "hr_threshold", target_lthr_bpm: 170 },
-                ],
+                targets: [{ target_type: "hr_threshold", target_lthr_bpm: 170 }],
               },
             ],
           },
@@ -193,8 +191,6 @@ describe("training plan schema simplification guardrails", () => {
     });
 
     expect(partialAccepted.success).toBe(true);
-    expect(() =>
-      normalizeCreationConfig(invalidParsed.creation_input),
-    ).toThrow();
+    expect(() => normalizeCreationConfig(invalidParsed.creation_input)).toThrow();
   });
 });

@@ -1,20 +1,14 @@
+import { decodePolyline } from "@repo/core";
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
+import { Heart } from "lucide-react-native";
+import React, { useMemo, useState } from "react";
+import { ActivityIndicator, Dimensions, Pressable, ScrollView, View } from "react-native";
+import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ActivityHeader } from "@/components/activity/shared/ActivityHeader";
-import { Heart } from "lucide-react-native";
-import { Icon } from "@repo/ui/components/icon";
-import { Card, CardContent } from "@repo/ui/components/card";
-import { Text } from "@repo/ui/components/text";
 import { trpc } from "@/lib/trpc";
-import { decodePolyline } from "@repo/core";
-import React, { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Dimensions,
-  Pressable,
-  View,
-  ScrollView,
-} from "react-native";
-import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 
 interface PastActivityCardProps {
   activity: {
@@ -156,10 +150,8 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
       return calculatePace(activity.distance_meters, activity.moving_seconds);
     } else if (activity.type === "swim") {
       // Swim pace: min/100m
-      if (activity.distance_meters === 0 || activity.moving_seconds === 0)
-        return "--";
-      const secondsPer100m =
-        activity.moving_seconds / (activity.distance_meters / 100);
+      if (activity.distance_meters === 0 || activity.moving_seconds === 0) return "--";
+      const secondsPer100m = activity.moving_seconds / (activity.distance_meters / 100);
       const mins = Math.floor(secondsPer100m / 60);
       const secs = Math.round(secondsPer100m % 60);
       return `${mins}:${secs.toString().padStart(2, "0")} /100m`;
@@ -191,9 +183,7 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
             {/* Distance */}
             {activity.distance_meters > 0 && (
               <View>
-                <Text className="text-xs text-muted-foreground uppercase mb-0.5">
-                  Distance
-                </Text>
+                <Text className="text-xs text-muted-foreground uppercase mb-0.5">Distance</Text>
                 <Text className="text-base font-bold">
                   {formatDistance(activity.distance_meters)}
                 </Text>
@@ -203,9 +193,7 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
             {/* Duration */}
             {activity.duration_seconds > 0 && (
               <View>
-                <Text className="text-xs text-muted-foreground uppercase mb-0.5">
-                  Time
-                </Text>
+                <Text className="text-xs text-muted-foreground uppercase mb-0.5">Time</Text>
                 <Text className="text-base font-bold">
                   {formatDuration(activity.duration_seconds)}
                 </Text>
@@ -215,9 +203,7 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
             {/* Avg Pace */}
             {pace && activity.distance_meters > 0 && (
               <View>
-                <Text className="text-xs text-muted-foreground uppercase mb-0.5">
-                  Avg Pace
-                </Text>
+                <Text className="text-xs text-muted-foreground uppercase mb-0.5">Avg Pace</Text>
                 <Text className="text-base font-bold">{pace}</Text>
               </View>
             )}
@@ -225,12 +211,8 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
             {/* TSS */}
             {activity.metrics?.tss && activity.metrics.tss > 0 && (
               <View>
-                <Text className="text-xs text-muted-foreground uppercase mb-0.5">
-                  TSS
-                </Text>
-                <Text className="text-base font-bold">
-                  {Math.round(activity.metrics.tss)}
-                </Text>
+                <Text className="text-xs text-muted-foreground uppercase mb-0.5">TSS</Text>
+                <Text className="text-base font-bold">{Math.round(activity.metrics.tss)}</Text>
               </View>
             )}
 
@@ -239,22 +221,14 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
               <>
                 {activity.avg_swolf && (
                   <View>
-                    <Text className="text-xs text-muted-foreground uppercase mb-0.5">
-                      SWOLF
-                    </Text>
-                    <Text className="text-base font-bold">
-                      {activity.avg_swolf}
-                    </Text>
+                    <Text className="text-xs text-muted-foreground uppercase mb-0.5">SWOLF</Text>
+                    <Text className="text-base font-bold">{activity.avg_swolf}</Text>
                   </View>
                 )}
                 {activity.total_strokes && (
                   <View>
-                    <Text className="text-xs text-muted-foreground uppercase mb-0.5">
-                      Strokes
-                    </Text>
-                    <Text className="text-base font-bold">
-                      {activity.total_strokes}
-                    </Text>
+                    <Text className="text-xs text-muted-foreground uppercase mb-0.5">Strokes</Text>
+                    <Text className="text-base font-bold">{activity.total_strokes}</Text>
                   </View>
                 )}
               </>
@@ -328,11 +302,7 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
               <Icon
                 as={Heart}
                 size={20}
-                className={
-                  isLiked
-                    ? "text-red-500 fill-red-500"
-                    : "text-muted-foreground"
-                }
+                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
               />
               <Text className="ml-1.5 text-sm text-muted-foreground">
                 {likesCount > 0 ? likesCount : ""}
@@ -410,20 +380,14 @@ function PlanPreview({ activityPlan }: PlanPreviewProps) {
         style={{ height: MAP_HEIGHT }}
         className="items-center justify-center bg-muted rounded-lg"
       >
-        <Text className="text-xs text-muted-foreground">
-          No plan data available
-        </Text>
+        <Text className="text-xs text-muted-foreground">No plan data available</Text>
       </View>
     );
   }
 
   return (
     <View className="rounded-lg overflow-hidden bg-muted p-2">
-      <TimelineChart
-        structure={activityPlan.structure}
-        height={MAP_HEIGHT - 16}
-        compact={true}
-      />
+      <TimelineChart structure={activityPlan.structure} height={MAP_HEIGHT - 16} compact={true} />
     </View>
   );
 }

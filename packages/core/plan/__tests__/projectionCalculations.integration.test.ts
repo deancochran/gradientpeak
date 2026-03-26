@@ -52,9 +52,7 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
       starting_tsb: 2,
     });
 
-    const goalAssessment = projection.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
+    const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
 
     const readiness = goalAssessment?.goal_readiness_score ?? 0;
 
@@ -123,12 +121,8 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
       starting_tsb: 5,
     });
 
-    const marathon1 = projection.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
-    const marathon2 = projection.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-2",
-    );
+    const marathon1 = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
+    const marathon2 = projection.goal_assessments?.find((g) => g.goal_id === "marathon-2");
 
     const readiness1 = marathon1?.goal_readiness_score ?? 0;
     const readiness2 = marathon2?.goal_readiness_score ?? 0;
@@ -197,12 +191,8 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
       starting_tsb: 5,
     });
 
-    const marathon = projection.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
-    const fiveK = projection.goal_assessments?.find(
-      (g) => g.goal_id === "5k-1",
-    );
+    const marathon = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
+    const fiveK = projection.goal_assessments?.find((g) => g.goal_id === "5k-1");
 
     const marathonReadiness = marathon?.goal_readiness_score ?? 0;
     const fiveKReadiness = fiveK?.goal_readiness_score ?? 0;
@@ -291,9 +281,7 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
       starting_tsb: 2,
     });
 
-    const fiveKGoal = fiveKProjection.goal_assessments?.find(
-      (g) => g.goal_id === "5k-1",
-    );
+    const fiveKGoal = fiveKProjection.goal_assessments?.find((g) => g.goal_id === "5k-1");
     const marathonGoal = marathonProjection.goal_assessments?.find(
       (g) => g.goal_id === "marathon-1",
     );
@@ -353,9 +341,7 @@ describe("Readiness Score Bug Fix - End-to-End Integration", () => {
       starting_tsb: 2,
     });
 
-    const goalAssessment = projection.goal_assessments?.find(
-      (g) => g.goal_id === "easy-goal",
-    );
+    const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "easy-goal");
 
     const readiness = goalAssessment?.goal_readiness_score ?? 0;
     const stateReadiness = goalAssessment?.state_readiness_score ?? 0;
@@ -510,12 +496,8 @@ describe("Readiness Score Bug Fix - Determinism", () => {
     const projection1 = buildDeterministicProjectionPayload(input);
     const projection2 = buildDeterministicProjectionPayload(input);
 
-    const goal1 = projection1.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
-    const goal2 = projection2.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
+    const goal1 = projection1.goal_assessments?.find((g) => g.goal_id === "marathon-1");
+    const goal2 = projection2.goal_assessments?.find((g) => g.goal_id === "marathon-1");
 
     expect(goal1?.goal_readiness_score).toBe(goal2?.goal_readiness_score);
     expect(goal1?.state_readiness_score).toBe(goal2?.state_readiness_score);

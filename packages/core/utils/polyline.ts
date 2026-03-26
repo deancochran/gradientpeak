@@ -19,10 +19,7 @@ export interface RouteStats {
  * Encode coordinates to polyline string using Mapbox polyline encoding
  */
 export function encodePolyline(coordinates: LatLng[]): string {
-  const coords: [number, number][] = coordinates.map((coord) => [
-    coord.latitude,
-    coord.longitude,
-  ]);
+  const coords: [number, number][] = coordinates.map((coord) => [coord.latitude, coord.longitude]);
   return polyline.encode(coords);
 }
 
@@ -43,10 +40,7 @@ export function decodePolyline(encoded: string): LatLng[] {
  * @param tolerance - Tolerance in degrees (default 0.0001 ≈ 11 meters)
  * @returns Simplified array of coordinates
  */
-export function simplifyCoordinates(
-  coords: LatLngAlt[],
-  tolerance: number = 0.0001,
-): LatLngAlt[] {
+export function simplifyCoordinates(coords: LatLngAlt[], tolerance: number = 0.0001): LatLngAlt[] {
   if (coords.length <= 2) return coords;
 
   const simplified = douglasPeucker(coords, tolerance);
@@ -97,11 +91,7 @@ function douglasPeucker(points: LatLngAlt[], tolerance: number): LatLngAlt[] {
 /**
  * Calculate perpendicular distance from point to line
  */
-function perpendicularDistance(
-  point: LatLng,
-  lineStart: LatLng,
-  lineEnd: LatLng,
-): number {
+function perpendicularDistance(point: LatLng, lineStart: LatLng, lineEnd: LatLng): number {
   const { latitude: x, longitude: y } = point;
   const { latitude: x1, longitude: y1 } = lineStart;
   const { latitude: x2, longitude: y2 } = lineEnd;

@@ -1,31 +1,24 @@
-import { TRPCError } from "@trpc/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  inferredStateSnapshotSchema,
-  type InferredStateSnapshot,
-} from "@repo/core";
+import { type InferredStateSnapshot, inferredStateSnapshotSchema } from "@repo/core";
 import type { Database, Json } from "@repo/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { TRPCError } from "@trpc/server";
 import type {
-  CreateTrainingPlanRecordInput,
   CreatedTrainingPlanRecord,
+  CreateTrainingPlanRecordInput,
   TrainingPlanRepository,
 } from "../../repositories";
 
 export function createSupabaseTrainingPlanRepository(
   supabase: SupabaseClient<Database>,
 ): TrainingPlanRepository {
-  const parseTrainingPlanStructure = (
-    value: unknown,
-  ): Record<string, unknown> | null => {
+  const parseTrainingPlanStructure = (value: unknown): Record<string, unknown> | null => {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
     }
     return value as Record<string, unknown>;
   };
 
-  const parsePriorSnapshotFromStructure = (
-    structure: unknown,
-  ): InferredStateSnapshot | null => {
+  const parsePriorSnapshotFromStructure = (structure: unknown): InferredStateSnapshot | null => {
     const parsedStructure = parseTrainingPlanStructure(structure);
     if (!parsedStructure) {
       return null;
@@ -36,8 +29,7 @@ export function createSupabaseTrainingPlanRepository(
       return null;
     }
 
-    const candidate = (metadata as Record<string, unknown>)
-      .inferred_state_snapshot;
+    const candidate = (metadata as Record<string, unknown>).inferred_state_snapshot;
     const parsedSnapshot = inferredStateSnapshotSchema.safeParse(candidate);
     if (!parsedSnapshot.success) {
       return null;
@@ -107,9 +99,7 @@ export function createSupabaseTrainingPlanRepository(
       });
     }
 
-    return activePlan
-      ? { id: activePlan.id, structure: activePlan.structure }
-      : null;
+    return activePlan ? { id: activePlan.id, structure: activePlan.structure } : null;
   };
 
   return {
@@ -168,9 +158,7 @@ export function createSupabaseTrainingPlanRepository(
         ...parsedStructure,
         metadata: {
           ...existingMetadata,
-          inferred_state_snapshot: inferredStateSnapshotSchema.parse(
-            input.inferredStateSnapshot,
-          ),
+          inferred_state_snapshot: inferredStateSnapshotSchema.parse(input.inferredStateSnapshot),
         },
       };
 

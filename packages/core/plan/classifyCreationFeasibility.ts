@@ -1,7 +1,7 @@
 import {
-  creationFeasibilitySafetySummarySchema,
   type CreationContextSummary,
   type CreationFeasibilitySafetySummary,
+  creationFeasibilitySafetySummarySchema,
   type TrainingPlanCreationConfig,
 } from "../schemas/training_plan_structure";
 import type { ConstraintConflict } from "./resolveConstraintConflicts";
@@ -33,8 +33,7 @@ export function classifyCreationFeasibility(
     2;
   const configuredSessionMidpoint =
     ((config.constraints.min_sessions_per_week ?? recommendedSessionMidpoint) +
-      (config.constraints.max_sessions_per_week ??
-        recommendedSessionMidpoint)) /
+      (config.constraints.max_sessions_per_week ?? recommendedSessionMidpoint)) /
     2;
   const sessionHalfRange =
     Math.max(
@@ -44,18 +43,13 @@ export function classifyCreationFeasibility(
         2,
     ) || 1;
   const normalizedDistance =
-    Math.abs(configuredSessionMidpoint - recommendedSessionMidpoint) /
-    sessionHalfRange;
-  const feasibilityScore = Number(
-    clamp(1 - normalizedDistance, 0, 1).toFixed(3),
-  );
+    Math.abs(configuredSessionMidpoint - recommendedSessionMidpoint) / sessionHalfRange;
+  const feasibilityScore = Number(clamp(1 - normalizedDistance, 0, 1).toFixed(3));
 
   const feasibilityBand =
-    configuredSessionMidpoint <
-    context.recommended_sessions_per_week_range.min * 0.9
+    configuredSessionMidpoint < context.recommended_sessions_per_week_range.min * 0.9
       ? "under-reaching"
-      : configuredSessionMidpoint >
-          context.recommended_sessions_per_week_range.max * 1.1
+      : configuredSessionMidpoint > context.recommended_sessions_per_week_range.max * 1.1
         ? "over-reaching"
         : "on-track";
 
@@ -65,8 +59,7 @@ export function classifyCreationFeasibility(
   let safetyScore = 1;
   if (feasibilityBand === "over-reaching") safetyScore -= 0.35;
   if (hardRestDays === 0 && maxSessions >= 6) safetyScore -= 0.2;
-  if (config.constraints.goal_difficulty_preference === "stretch")
-    safetyScore -= 0.12;
+  if (config.constraints.goal_difficulty_preference === "stretch") safetyScore -= 0.12;
   if (context.history_availability_state === "none" && maxSessions >= 6) {
     safetyScore -= 0.2;
   }
@@ -77,13 +70,10 @@ export function classifyCreationFeasibility(
   safetyScore -= blockingConflictCount * 0.2;
   safetyScore = Number(clamp(safetyScore, 0, 1).toFixed(3));
 
-  const safetyBand =
-    safetyScore >= 0.7 ? "safe" : safetyScore >= 0.4 ? "caution" : "high-risk";
+  const safetyBand = safetyScore >= 0.7 ? "safe" : safetyScore >= 0.4 ? "caution" : "high-risk";
 
   const confidencePenalty = blockingConflictCount > 0 ? 0.2 : 0;
-  const confidence = Number(
-    clamp(context.signal_quality - confidencePenalty, 0.1, 1).toFixed(3),
-  );
+  const confidence = Number(clamp(context.signal_quality - confidencePenalty, 0.1, 1).toFixed(3));
 
   const topDrivers = [
     {
@@ -143,10 +133,7 @@ export function classifyCreationFeasibility(
     });
   }
 
-  if (
-    config.constraints.goal_difficulty_preference === "stretch" &&
-    safetyBand !== "safe"
-  ) {
+  if (config.constraints.goal_difficulty_preference === "stretch" && safetyBand !== "safe") {
     recommendedActions.push({
       code: "reduce_goal_difficulty",
       message: "Switch goal difficulty from stretch to balanced",

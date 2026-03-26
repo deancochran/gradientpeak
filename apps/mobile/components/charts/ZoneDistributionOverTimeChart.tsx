@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { View } from "react-native";
-import { CartesianChart, Bar } from "victory-native";
+import { Bar, CartesianChart } from "victory-native";
 
 export interface ZoneDistributionWeekData {
   weekStart: string;
@@ -76,18 +76,13 @@ export function ZoneDistributionOverTimeChart({
         neuromuscular: 0,
       }
     : {
-        recovery:
-          data.reduce((sum, w) => sum + w.zones.recovery, 0) / data.length,
-        endurance:
-          data.reduce((sum, w) => sum + w.zones.endurance, 0) / data.length,
+        recovery: data.reduce((sum, w) => sum + w.zones.recovery, 0) / data.length,
+        endurance: data.reduce((sum, w) => sum + w.zones.endurance, 0) / data.length,
         tempo: data.reduce((sum, w) => sum + w.zones.tempo, 0) / data.length,
-        threshold:
-          data.reduce((sum, w) => sum + w.zones.threshold, 0) / data.length,
+        threshold: data.reduce((sum, w) => sum + w.zones.threshold, 0) / data.length,
         vo2max: data.reduce((sum, w) => sum + w.zones.vo2max, 0) / data.length,
-        anaerobic:
-          data.reduce((sum, w) => sum + w.zones.anaerobic, 0) / data.length,
-        neuromuscular:
-          data.reduce((sum, w) => sum + w.zones.neuromuscular, 0) / data.length,
+        anaerobic: data.reduce((sum, w) => sum + w.zones.anaerobic, 0) / data.length,
+        neuromuscular: data.reduce((sum, w) => sum + w.zones.neuromuscular, 0) / data.length,
       };
 
   const easyPercentage = avgDistribution.recovery + avgDistribution.endurance;
@@ -125,8 +120,8 @@ export function ZoneDistributionOverTimeChart({
               No zone distribution data yet
             </Text>
             <Text className="text-muted-foreground text-xs text-center px-4">
-              Record activities with power or heart rate zones to see your
-              training intensity distribution
+              Record activities with power or heart rate zones to see your training intensity
+              distribution
             </Text>
           </View>
         ) : (
@@ -156,21 +151,13 @@ export function ZoneDistributionOverTimeChart({
                   chartBounds={chartBounds}
                   color={zoneColors.endurance}
                 />
-                <Bar
-                  points={points.tempo}
-                  chartBounds={chartBounds}
-                  color={zoneColors.tempo}
-                />
+                <Bar points={points.tempo} chartBounds={chartBounds} color={zoneColors.tempo} />
                 <Bar
                   points={points.threshold}
                   chartBounds={chartBounds}
                   color={zoneColors.threshold}
                 />
-                <Bar
-                  points={points.vo2max}
-                  chartBounds={chartBounds}
-                  color={zoneColors.vo2max}
-                />
+                <Bar points={points.vo2max} chartBounds={chartBounds} color={zoneColors.vo2max} />
                 <Bar
                   points={points.anaerobic}
                   chartBounds={chartBounds}
@@ -190,40 +177,28 @@ export function ZoneDistributionOverTimeChart({
       {/* Summary stats */}
       {!isEmpty && (
         <View className="mt-2 pt-2 border-t border-border">
-          <Text className="text-sm font-medium text-foreground mb-2">
-            Average Distribution
-          </Text>
+          <Text className="text-sm font-medium text-foreground mb-2">Average Distribution</Text>
           <View className="flex-row justify-around">
             <View className="items-center">
-              <Text className="text-xs text-muted-foreground">
-                Easy Training
-              </Text>
+              <Text className="text-xs text-muted-foreground">Easy Training</Text>
               <Text className="text-sm font-semibold text-green-600">
                 {easyPercentage.toFixed(1)}%
               </Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">
-                (Recovery + Endurance)
-              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">(Recovery + Endurance)</Text>
             </View>
             <View className="items-center">
               <Text className="text-xs text-muted-foreground">Moderate</Text>
               <Text className="text-sm font-semibold text-yellow-600">
                 {avgDistribution.tempo.toFixed(1)}%
               </Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">
-                (Tempo)
-              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">(Tempo)</Text>
             </View>
             <View className="items-center">
-              <Text className="text-xs text-muted-foreground">
-                Hard Training
-              </Text>
+              <Text className="text-xs text-muted-foreground">Hard Training</Text>
               <Text className="text-sm font-semibold text-red-600">
                 {hardPercentage.toFixed(1)}%
               </Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">
-                (Threshold+)
-              </Text>
+              <Text className="text-xs text-muted-foreground mt-0.5">(Threshold+)</Text>
             </View>
           </View>
 

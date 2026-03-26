@@ -1,11 +1,6 @@
 import type { TestProps } from "../../lib/test-props";
 
-export const BADGE_VARIANTS = [
-  "default",
-  "secondary",
-  "destructive",
-  "outline",
-] as const;
+export const BADGE_VARIANTS = ["default", "secondary", "destructive", "outline"] as const;
 
 export type BadgeVariant = (typeof BADGE_VARIANTS)[number];
 

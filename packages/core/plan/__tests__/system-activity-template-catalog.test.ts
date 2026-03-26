@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  SYSTEM_TEMPLATES,
-  type SystemTrainingPlanTemplate,
-} from "../../samples";
+import { SYSTEM_TEMPLATES, type SystemTrainingPlanTemplate } from "../../samples";
 import {
   buildSystemActivityTemplateCatalog,
   normalizeActivityTemplateStructureForAudit,
@@ -18,9 +15,7 @@ describe("system activity-template catalog", () => {
     const catalog = buildSystemActivityTemplateCatalog();
 
     expect(catalog).toHaveLength(SYSTEM_TEMPLATES.length);
-    expect(new Set(catalog.map((entry) => entry.template_id)).size).toBe(
-      SYSTEM_TEMPLATES.length,
-    );
+    expect(new Set(catalog.map((entry) => entry.template_id)).size).toBe(SYSTEM_TEMPLATES.length);
     expect(
       catalog.every(
         (entry) =>
@@ -48,11 +43,8 @@ describe("system activity-template catalog", () => {
     expect(
       duplicateNameGroups.every(
         ([, entries]) =>
-          new Set(entries.map((entry) => entry.template_id)).size ===
-            entries.length &&
-          entries.every(
-            (entry) => entry.duplicate_name_count === entries.length,
-          ),
+          new Set(entries.map((entry) => entry.template_id)).size === entries.length &&
+          entries.every((entry) => entry.duplicate_name_count === entries.length),
       ),
     ).toBe(true);
   });
@@ -62,12 +54,11 @@ describe("system activity-template catalog", () => {
     const modifiedStructure = structuredClone(template.structure);
 
     modifiedStructure.intervals[0]!.id = "11111111-1111-4111-8111-111111111111";
-    modifiedStructure.intervals[0]!.steps[0]!.id =
-      "22222222-2222-4222-8222-222222222222";
+    modifiedStructure.intervals[0]!.steps[0]!.id = "22222222-2222-4222-8222-222222222222";
 
-    expect(
-      normalizeActivityTemplateStructureForAudit(modifiedStructure),
-    ).toEqual(normalizeActivityTemplateStructureForAudit(template.structure));
+    expect(normalizeActivityTemplateStructureForAudit(modifiedStructure)).toEqual(
+      normalizeActivityTemplateStructureForAudit(template.structure),
+    );
   });
 
   it("throws explicitly when a shipped system plan has unresolved linked templates", () => {
@@ -122,16 +113,11 @@ describe("system activity-template catalog", () => {
       },
     };
 
-    expect(() =>
-      assertSystemTrainingPlanTemplateLinksResolved(partialPlan, templateIndex),
-    ).toThrow(/00000000-0000-4000-8000-000000000099/);
-    expect(() =>
-      assertSystemTrainingPlanTemplateLinksResolved(
-        fullMissingPlan,
-        templateIndex,
-      ),
-    ).toThrow(
-      /00000000-0000-4000-8000-000000000100, 00000000-0000-4000-8000-000000000101/,
+    expect(() => assertSystemTrainingPlanTemplateLinksResolved(partialPlan, templateIndex)).toThrow(
+      /00000000-0000-4000-8000-000000000099/,
     );
+    expect(() =>
+      assertSystemTrainingPlanTemplateLinksResolved(fullMissingPlan, templateIndex),
+    ).toThrow(/00000000-0000-4000-8000-000000000100, 00000000-0000-4000-8000-000000000101/);
   });
 });

@@ -1,10 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const packageRoot = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  "..",
-);
+const packageRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const srcRoot = path.join(packageRoot, "src");
 
 const LAYERS = ["application", "infrastructure", "repositories", "routers"];
@@ -44,8 +41,7 @@ function getLayer(filePath) {
 
 function parseImportSpecifiers(source) {
   const specifiers = [];
-  const importExportRegex =
-    /(?:import|export)\s+[\s\S]*?from\s+["']([^"']+)["']/g;
+  const importExportRegex = /(?:import|export)\s+[\s\S]*?from\s+["']([^"']+)["']/g;
   const sideEffectRegex = /import\s+["']([^"']+)["']/g;
 
   for (const regex of [importExportRegex, sideEffectRegex]) {

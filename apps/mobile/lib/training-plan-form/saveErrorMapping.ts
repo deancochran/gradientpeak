@@ -1,6 +1,5 @@
 const STALE_PREVIEW_MESSAGE_FRAGMENT = "Creation preview is stale or invalid";
-const BLOCKING_CONFLICT_MESSAGE_FRAGMENT =
-  "Creation blocked by unresolved conflicts";
+const BLOCKING_CONFLICT_MESSAGE_FRAGMENT = "Creation blocked by unresolved conflicts";
 
 type TrainingPlanCommitErrorCode =
   | "TRAINING_PLAN_COMMIT_STALE_PREVIEW"
@@ -41,9 +40,7 @@ export type TrainingPlanSaveErrorHandling = {
   action: "none" | "refresh_preview";
 };
 
-export function mapTrainingPlanSaveError(
-  error: unknown,
-): TrainingPlanSaveErrorHandling {
+export function mapTrainingPlanSaveError(error: unknown): TrainingPlanSaveErrorHandling {
   if (error && typeof error === "object") {
     const typedError = error as ErrorWithCauseCode;
     const mappedByCause = mapFromCauseCode(typedError.data?.cause?.code);
@@ -67,8 +64,7 @@ export function mapTrainingPlanSaveError(
 
   if (rawMessage.includes(STALE_PREVIEW_MESSAGE_FRAGMENT)) {
     return {
-      message:
-        "Preview is out of date. Refresh and review the latest projection before saving.",
+      message: "Preview is out of date. Refresh and review the latest projection before saving.",
       action: "refresh_preview",
     };
   }

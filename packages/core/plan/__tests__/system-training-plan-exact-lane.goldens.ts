@@ -5,13 +5,12 @@ export const EXACT_LANE_MISS_BUDGETS: Record<string, number> = {
   boundary_feasible_bike: 4,
 };
 
-export const EXACT_LANE_CONSECUTIVE_MISS_PAIR_BUDGETS: Record<string, number> =
-  {
-    exact_5k_speed_block: 0,
-    intermediate_rich_half: 4,
-    advanced_marathon_build: 3,
-    boundary_feasible_bike: 0,
-  };
+export const EXACT_LANE_CONSECUTIVE_MISS_PAIR_BUDGETS: Record<string, number> = {
+  exact_5k_speed_block: 0,
+  intermediate_rich_half: 4,
+  advanced_marathon_build: 3,
+  boundary_feasible_bike: 0,
+};
 
 export interface ExactLaneGoldenArtifact {
   weeklyLoadTss: number[];

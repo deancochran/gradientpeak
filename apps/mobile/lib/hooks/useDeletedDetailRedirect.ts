@@ -13,9 +13,7 @@ type UseDeletedDetailRedirectOptions = {
   onRedirect: () => void;
 };
 
-export function useDeletedDetailRedirect({
-  onRedirect,
-}: UseDeletedDetailRedirectOptions) {
+export function useDeletedDetailRedirect({ onRedirect }: UseDeletedDetailRedirectOptions) {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const hasRedirectedRef = useRef(false);
 

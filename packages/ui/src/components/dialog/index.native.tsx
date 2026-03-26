@@ -6,8 +6,8 @@ import { FadeIn, FadeOut } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 
 import { cn } from "../../lib/cn";
-import { Icon } from "../icon/index.native";
 import { NativeOnlyAnimatedView } from "../../lib/native-only-animated-view";
+import { Icon } from "../icon/index.native";
 
 function dialogOverlayVariants(className?: string) {
   return cn(
@@ -32,10 +32,7 @@ function dialogHeaderVariants(className?: string) {
 }
 
 function dialogFooterVariants(className?: string) {
-  return cn(
-    "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
-    className,
-  );
+  return cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className);
 }
 
 function dialogTitleVariants(className?: string) {
@@ -50,8 +47,7 @@ const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 const DialogClose = DialogPrimitive.Close;
-const FullWindowOverlay =
-  Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
+const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
 
 function DialogOverlay({
   children,
@@ -68,14 +64,8 @@ function DialogOverlay({
         {...props}
         asChild={Platform.OS !== "web"}
       >
-        <NativeOnlyAnimatedView
-          entering={FadeIn.duration(200)}
-          exiting={FadeOut.duration(150)}
-        >
-          <NativeOnlyAnimatedView
-            entering={FadeIn.delay(50)}
-            exiting={FadeOut.duration(150)}
-          >
+        <NativeOnlyAnimatedView entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+          <NativeOnlyAnimatedView entering={FadeIn.delay(50)} exiting={FadeOut.duration(150)}>
             <>{children}</>
           </NativeOnlyAnimatedView>
         </NativeOnlyAnimatedView>
@@ -96,15 +86,9 @@ function DialogContent({
   return (
     <DialogPortal hostName={portalHost}>
       <DialogOverlay>
-        <DialogPrimitive.Content
-          className={dialogContentVariants(className)}
-          {...props}
-        >
+        <DialogPrimitive.Content className={dialogContentVariants(className)} {...props}>
           <>{children}</>
-          <DialogPrimitive.Close
-            className={dialogCloseButtonVariants()}
-            hitSlop={12}
-          >
+          <DialogPrimitive.Close className={dialogCloseButtonVariants()} hitSlop={12}>
             <Icon
               as={X}
               className="text-accent-foreground web:pointer-events-none size-4 shrink-0"
@@ -129,24 +113,15 @@ function DialogTitle({
   className,
   ...props
 }: DialogPrimitive.TitleProps & React.RefAttributes<DialogPrimitive.TitleRef>) {
-  return (
-    <DialogPrimitive.Title
-      className={dialogTitleVariants(className)}
-      {...props}
-    />
-  );
+  return <DialogPrimitive.Title className={dialogTitleVariants(className)} {...props} />;
 }
 
 function DialogDescription({
   className,
   ...props
-}: DialogPrimitive.DescriptionProps &
-  React.RefAttributes<DialogPrimitive.DescriptionRef>) {
+}: DialogPrimitive.DescriptionProps & React.RefAttributes<DialogPrimitive.DescriptionRef>) {
   return (
-    <DialogPrimitive.Description
-      className={dialogDescriptionVariants(className)}
-      {...props}
-    />
+    <DialogPrimitive.Description className={dialogDescriptionVariants(className)} {...props} />
   );
 }
 

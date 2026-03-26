@@ -22,9 +22,7 @@ describe("resolveConstraintConflicts", () => {
       "availability_config.days",
       "constraints.hard_rest_days",
     ]);
-    expect(result.conflicts[1]?.suggestions).toContain(
-      "Reduce maximum sessions",
-    );
+    expect(result.conflicts[1]?.suggestions).toContain("Reduce maximum sessions");
   });
 
   it("keeps precedence deterministic between user, suggested, and default values", () => {

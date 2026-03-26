@@ -5,11 +5,7 @@ import * as React from "react";
 
 import { cn } from "../../lib/cn";
 import { getWebTestProps } from "../../lib/test-props";
-import {
-  type ToggleSize,
-  type ToggleTestProps,
-  type ToggleVariant,
-} from "./shared";
+import { type ToggleSize, type ToggleTestProps, type ToggleVariant } from "./shared";
 
 const toggleVariantClasses = {
   default: "bg-transparent",
@@ -64,5 +60,5 @@ function Toggle({
   );
 }
 
-export { Toggle, toggleVariants };
 export type { ToggleSize, ToggleVariant } from "./shared";
+export { Toggle, toggleVariants };

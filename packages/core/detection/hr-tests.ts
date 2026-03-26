@@ -5,11 +5,11 @@
  */
 
 export interface HRTestSuggestion {
-  type: 'lthr' | 'max_hr';
+  type: "lthr" | "max_hr";
   value: number; // bpm
   duration: number; // seconds
   detectionMethod: string;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
 }
 
 /**
@@ -24,10 +24,7 @@ export interface HRTestSuggestion {
  * @param timestamps - Array of timestamps
  * @returns Array of suggested HR metrics
  */
-export function detectHRTestEfforts(
-  hrStream: number[],
-  timestamps: number[]
-): HRTestSuggestion[] {
+export function detectHRTestEfforts(hrStream: number[], timestamps: number[]): HRTestSuggestion[] {
   if (hrStream.length === 0 || timestamps.length === 0) {
     return [];
   }
@@ -40,21 +37,21 @@ export function detectHRTestEfforts(
 
   if (maxHR1min && maxHR1min.avgHR > 160) {
     suggestions.push({
-      type: 'max_hr',
+      type: "max_hr",
       value: Math.round(maxHR1min.avgHR),
       duration: 60,
-      detectionMethod: '1min max effort',
-      confidence: 'high',
+      detectionMethod: "1min max effort",
+      confidence: "high",
     });
   }
 
   if (maxHR2min && maxHR2min.avgHR > 160) {
     suggestions.push({
-      type: 'max_hr',
+      type: "max_hr",
       value: Math.round(maxHR2min.avgHR),
       duration: 120,
-      detectionMethod: '2min max effort',
-      confidence: 'high',
+      detectionMethod: "2min max effort",
+      confidence: "high",
     });
   }
 
@@ -64,21 +61,21 @@ export function detectHRTestEfforts(
 
   if (lthr20min && lthr20min.avgHR > 140) {
     suggestions.push({
-      type: 'lthr',
+      type: "lthr",
       value: Math.round(lthr20min.avgHR),
       duration: 1200,
-      detectionMethod: '20min threshold test',
-      confidence: 'high',
+      detectionMethod: "20min threshold test",
+      confidence: "high",
     });
   }
 
   if (lthr30min && lthr30min.avgHR > 140) {
     suggestions.push({
-      type: 'lthr',
+      type: "lthr",
       value: Math.round(lthr30min.avgHR),
       duration: 1800,
-      detectionMethod: '30min threshold test',
-      confidence: 'high',
+      detectionMethod: "30min threshold test",
+      confidence: "high",
     });
   }
 
@@ -86,19 +83,19 @@ export function detectHRTestEfforts(
   const rampTest = detectHRRampTest(hrStream, timestamps);
   if (rampTest) {
     suggestions.push({
-      type: 'lthr',
+      type: "lthr",
       value: rampTest.lthr,
       duration: rampTest.duration,
-      detectionMethod: 'Ramp test (deflection point)',
-      confidence: 'medium',
+      detectionMethod: "Ramp test (deflection point)",
+      confidence: "medium",
     });
 
     suggestions.push({
-      type: 'max_hr',
+      type: "max_hr",
       value: rampTest.maxHR,
       duration: rampTest.duration,
-      detectionMethod: 'Ramp test (peak HR)',
-      confidence: 'medium',
+      detectionMethod: "Ramp test (peak HR)",
+      confidence: "medium",
     });
   }
 
@@ -117,7 +114,7 @@ export function detectHRTestEfforts(
  */
 export function detectHRRampTest(
   hrStream: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): { lthr: number; maxHR: number; duration: number } | null {
   if (hrStream.length < 100) return null; // Need sufficient data
 
@@ -239,7 +236,7 @@ function findDeflectionPoint(hrWindow: number[]): number {
 export function detectThresholdEfforts(
   hrStream: number[],
   timestamps: number[],
-  maxHR: number
+  maxHR: number,
 ): Array<{ avgHR: number; duration: number; startIndex: number; endIndex: number }> {
   const thresholdMin = maxHR * 0.85;
   const thresholdMax = maxHR * 0.95;
@@ -299,7 +296,7 @@ export function detectThresholdEfforts(
 export function detectHRIntervals(
   hrStream: number[],
   timestamps: number[],
-  maxHR: number
+  maxHR: number,
 ): {
   intervals: Array<{ avgHR: number; duration: number; startIndex: number; endIndex: number }>;
   avgIntervalHR: number;
@@ -385,7 +382,7 @@ export function detectHRIntervals(
 function findMaxAverageHR(
   hrStream: number[],
   timestamps: number[],
-  durationSeconds: number
+  durationSeconds: number,
 ): { avgHR: number } | null {
   if (hrStream.length < 2) return null;
 

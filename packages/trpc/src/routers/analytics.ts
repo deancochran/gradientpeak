@@ -1,11 +1,8 @@
-import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
-import {
-  calculateSeasonBestCurve,
-  calculateCriticalPower,
-} from "@repo/core/calculations";
+import { calculateCriticalPower, calculateSeasonBestCurve } from "@repo/core/calculations";
 import { BestEffortSchema } from "@repo/core/schemas/activity_efforts";
 import { publicActivityCategorySchema } from "@repo/supabase";
+import { z } from "zod";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 export const analyticsRouter = createTRPCRouter({
   getSeasonBestCurve: protectedProcedure

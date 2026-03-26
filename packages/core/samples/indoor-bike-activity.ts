@@ -57,8 +57,7 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
           name: "VO2 Max Interval",
           duration: Duration.minutes(5),
           targets: [Target.ftp(110)],
-          notes:
-            "Sustained effort at VO2 max power. Focus on smooth breathing.",
+          notes: "Sustained effort at VO2 max power. Focus on smooth breathing.",
         },
         {
           name: "Recovery",
@@ -100,8 +99,7 @@ export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
       name: "Steady Recovery Effort",
       duration: Duration.minutes(35),
       targets: [Target.maxHR(65)],
-      notes:
-        "Comfortable conversational effort. Should feel refreshing, not tiring.",
+      notes: "Comfortable conversational effort. Should feel refreshing, not tiring.",
     })
     .step({
       name: "Easy Cool-down",
@@ -121,8 +119,7 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
   id: "0c3d4e5f-6a7b-8c9d-0e1f-2a3b4c5d6e7f",
   version: "2.0",
   name: "Sprint Power Development",
-  description:
-    "Short activity focusing on neuromuscular power and sprint development",
+  description: "Short activity focusing on neuromuscular power and sprint development",
   activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
@@ -203,8 +200,7 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
           name: "Threshold Interval",
           duration: Duration.minutes(5),
           targets: [Target.thresholdHR(100)],
-          notes:
-            "Maintain steady cadence, focus on consistent threshold effort",
+          notes: "Maintain steady cadence, focus on consistent threshold effort",
         },
         {
           name: "Recovery",
@@ -369,8 +365,7 @@ export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   id: "f4e0b3c2-7d1a-6a5c-0b9f-1e8d6c4a3b2f",
   version: "2.0",
   name: "FTP Intervals",
-  description:
-    "4x8min at 95% FTP (threshold) - Build sustainable power at threshold",
+  description: "4x8min at 95% FTP (threshold) - Build sustainable power at threshold",
   activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()
@@ -402,14 +397,13 @@ export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
     .build(),
 };
 
-export const SAMPLE_INDOOR_TRAINER_ACTIVITIES: Array<RecordingServiceActivityPlan> =
-  [
-    SAMPLE_VO2_MAX_WORKOUT,
-    SAMPLE_RECOVERY_WORKOUT,
-    SAMPLE_SPRINT_WORKOUT,
-    SAMPLE_THRESHOLD_HR_WORKOUT,
-    SAMPLE_TESTING_WORKOUT,
-    SYSTEM_SWEET_SPOT_WORKOUT,
-    SYSTEM_VO2_MAX_WORKOUT,
-    SYSTEM_FTP_INTERVALS_WORKOUT,
-  ];
+export const SAMPLE_INDOOR_TRAINER_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
+  SAMPLE_VO2_MAX_WORKOUT,
+  SAMPLE_RECOVERY_WORKOUT,
+  SAMPLE_SPRINT_WORKOUT,
+  SAMPLE_THRESHOLD_HR_WORKOUT,
+  SAMPLE_TESTING_WORKOUT,
+  SYSTEM_SWEET_SPOT_WORKOUT,
+  SYSTEM_VO2_MAX_WORKOUT,
+  SYSTEM_FTP_INTERVALS_WORKOUT,
+];

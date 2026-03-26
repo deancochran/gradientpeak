@@ -46,9 +46,7 @@ export function RecordingValidationSheet({
           <View className="mb-6">
             <View className="flex-row items-center gap-2 mb-3">
               <Icon as={XCircle} size={20} className="text-destructive" />
-              <Text className="text-lg font-semibold text-destructive">
-                Errors
-              </Text>
+              <Text className="text-lg font-semibold text-destructive">Errors</Text>
             </View>
             {errors.map((error, index) => (
               <View
@@ -66,9 +64,7 @@ export function RecordingValidationSheet({
           <View className="mb-6">
             <View className="flex-row items-center gap-2 mb-3">
               <Icon as={AlertTriangle} size={20} className="text-yellow-600" />
-              <Text className="text-lg font-semibold text-yellow-600">
-                Warnings
-              </Text>
+              <Text className="text-lg font-semibold text-yellow-600">Warnings</Text>
             </View>
             {warnings.map((warning, index) => (
               <View
@@ -92,15 +88,11 @@ export function RecordingValidationSheet({
       <View className="p-4 border-t border-border gap-3">
         {isValid && onProceed && (
           <Button onPress={onProceed}>
-            <Text className="text-primary-foreground font-semibold">
-              Start Recording
-            </Text>
+            <Text className="text-primary-foreground font-semibold">Start Recording</Text>
           </Button>
         )}
         <Button variant="outline" onPress={onDismiss}>
-          <Text className="font-semibold">
-            {isValid ? "Cancel" : "Go Back"}
-          </Text>
+          <Text className="font-semibold">{isValid ? "Cancel" : "Go Back"}</Text>
         </Button>
       </View>
     </View>

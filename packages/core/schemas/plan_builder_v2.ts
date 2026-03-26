@@ -2,8 +2,8 @@ import type {
   ActivityPlanStructureV2,
   DurationV2,
   IntensityTargetV2,
-  IntervalV2,
   IntervalStepV2,
+  IntervalV2,
 } from "./activity_plan_v2";
 import { Duration } from "./duration_helpers";
 import { Target } from "./target_helpers";

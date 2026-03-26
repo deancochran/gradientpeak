@@ -1,10 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { CheckCircle, XCircle } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
+import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 
 interface ActivityPlanData {
   id: string;
@@ -74,11 +74,8 @@ export function ActivityPlanComparison({
 
   // Calculate variances
   const durationVariance =
-    estimatedDuration > 0
-      ? ((actualDuration - estimatedDuration) / estimatedDuration) * 100
-      : 0;
-  const tssVariance =
-    estimatedTSS > 0 ? ((actualTSS - estimatedTSS) / estimatedTSS) * 100 : 0;
+    estimatedDuration > 0 ? ((actualDuration - estimatedDuration) / estimatedDuration) * 100 : 0;
+  const tssVariance = estimatedTSS > 0 ? ((actualTSS - estimatedTSS) / estimatedTSS) * 100 : 0;
 
   // Determine if adherence is good (>= 85%)
   const goodAdherence = adherence >= 85;
@@ -101,22 +98,16 @@ export function ActivityPlanComparison({
             </Text>
           </View>
         </View>
-        <Text className="text-sm text-muted-foreground mt-1">
-          {activityPlan.name}
-        </Text>
+        <Text className="text-sm text-muted-foreground mt-1">{activityPlan.name}</Text>
       </CardHeader>
       <CardContent className="gap-4">
         {/* Metrics Comparison */}
         <View className="flex-row gap-2">
           {/* Duration */}
           <View className="flex-1 p-3 bg-muted rounded-lg">
-            <Text className="text-xs text-muted-foreground uppercase mb-1">
-              Duration
-            </Text>
+            <Text className="text-xs text-muted-foreground uppercase mb-1">Duration</Text>
             <View className="flex-row items-baseline gap-1">
-              <Text className="text-lg font-bold">
-                {formatDuration(actualDuration)}
-              </Text>
+              <Text className="text-lg font-bold">{formatDuration(actualDuration)}</Text>
               {estimatedDuration > 0 && (
                 <Text
                   className={`text-xs ${durationVariance > 10 ? "text-yellow-600" : durationVariance < -10 ? "text-blue-600" : "text-green-600"}`}
@@ -136,13 +127,9 @@ export function ActivityPlanComparison({
           {/* TSS */}
           {actualTSS > 0 && (
             <View className="flex-1 p-3 bg-muted rounded-lg">
-              <Text className="text-xs text-muted-foreground uppercase mb-1">
-                TSS
-              </Text>
+              <Text className="text-xs text-muted-foreground uppercase mb-1">TSS</Text>
               <View className="flex-row items-baseline gap-1">
-                <Text className="text-lg font-bold">
-                  {actualTSS.toFixed(0)}
-                </Text>
+                <Text className="text-lg font-bold">{actualTSS.toFixed(0)}</Text>
                 {estimatedTSS > 0 && (
                   <Text
                     className={`text-xs ${tssVariance > 10 ? "text-yellow-600" : tssVariance < -10 ? "text-blue-600" : "text-green-600"}`}
@@ -163,12 +150,8 @@ export function ActivityPlanComparison({
           {/* Intensity Factor */}
           {actualIF > 0 && (
             <View className="flex-1 p-3 bg-muted rounded-lg">
-              <Text className="text-xs text-muted-foreground uppercase mb-1">
-                IF
-              </Text>
-              <Text className="text-lg font-bold">
-                {(actualIF / 100).toFixed(2)}
-              </Text>
+              <Text className="text-xs text-muted-foreground uppercase mb-1">IF</Text>
+              <Text className="text-lg font-bold">{(actualIF / 100).toFixed(2)}</Text>
             </View>
           )}
         </View>
@@ -177,11 +160,7 @@ export function ActivityPlanComparison({
         {!compact && activityPlan.structure && (
           <View>
             <Text className="text-sm font-medium mb-2">Planned Intensity</Text>
-            <TimelineChart
-              structure={activityPlan.structure}
-              height={100}
-              compact={true}
-            />
+            <TimelineChart structure={activityPlan.structure} height={100} compact={true} />
           </View>
         )}
       </CardContent>

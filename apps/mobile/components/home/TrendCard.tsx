@@ -29,10 +29,7 @@ export function TrendCard({
   const cardWidth = (screenWidth - 48) / 2; // Account for padding and gap
 
   // Icon selection
-  const IconComponent =
-    icon === "fitness" ? Activity :
-    icon === "consistency" ? Flame :
-    TrendingUp;
+  const IconComponent = icon === "fitness" ? Activity : icon === "consistency" ? Flame : TrendingUp;
 
   // Color scheme based on variant
   const getColorScheme = () => {
@@ -87,9 +84,11 @@ export function TrendCard({
                   size={12}
                   className={getTrendColor()}
                   style={{
-                    transform: [{
-                      rotate: trend === "down" ? "180deg" : "0deg"
-                    }]
+                    transform: [
+                      {
+                        rotate: trend === "down" ? "180deg" : "0deg",
+                      },
+                    ],
                   }}
                 />
               </View>
@@ -98,12 +97,8 @@ export function TrendCard({
 
           {/* Value */}
           <View>
-            <Text className={`text-2xl font-bold ${colors.text}`}>
-              {value}
-            </Text>
-            <Text className="text-xs text-muted-foreground mt-0.5">
-              {title}
-            </Text>
+            <Text className={`text-2xl font-bold ${colors.text}`}>{value}</Text>
+            <Text className="text-xs text-muted-foreground mt-0.5">{title}</Text>
           </View>
 
           {/* Subtitle or Chart */}
@@ -141,9 +136,7 @@ export function TrendCard({
               />
             </View>
           ) : subtitle ? (
-            <Text className="text-xs text-muted-foreground">
-              {subtitle}
-            </Text>
+            <Text className="text-xs text-muted-foreground">{subtitle}</Text>
           ) : null}
         </CardContent>
       </Card>

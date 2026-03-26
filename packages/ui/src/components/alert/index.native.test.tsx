@@ -6,15 +6,9 @@ import { Alert, AlertDescription, AlertTitle } from "./index.native";
 describe("Alert native", () => {
   it("renders alert content with title and description", () => {
     const { getByText } = renderNative(
-      <Alert
-        accessibilityLabel="Training alert"
-        icon={CircleAlert}
-        testID="training-alert"
-      >
+      <Alert accessibilityLabel="Training alert" icon={CircleAlert} testID="training-alert">
         <AlertTitle>Fuel before your session</AlertTitle>
-        <AlertDescription>
-          Bring 40g of carbs for the long run.
-        </AlertDescription>
+        <AlertDescription>Bring 40g of carbs for the long run.</AlertDescription>
       </Alert>,
     );
 

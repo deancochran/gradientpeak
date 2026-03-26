@@ -17,9 +17,7 @@ export interface CountAvailableTrainingDaysInput {
  * When `requirePositiveMaxSessions` is true, a day only counts when
  * `max_sessions` is greater than zero.
  */
-export function countAvailableTrainingDays(
-  input: CountAvailableTrainingDaysInput,
-): number {
+export function countAvailableTrainingDays(input: CountAvailableTrainingDaysInput): number {
   const requirePositiveMaxSessions = input.requirePositiveMaxSessions ?? false;
 
   const availableDays = new Set(

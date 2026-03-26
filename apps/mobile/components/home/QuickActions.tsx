@@ -9,11 +9,7 @@ interface QuickActionsProps {
   onRecordPress: () => void;
 }
 
-export function QuickActions({
-  onPlanPress,
-  onTrendsPress,
-  onRecordPress,
-}: QuickActionsProps) {
+export function QuickActions({ onPlanPress, onTrendsPress, onRecordPress }: QuickActionsProps) {
   return (
     <View className="flex-row gap-3 mb-4">
       <TouchableOpacity
@@ -27,23 +23,15 @@ export function QuickActions({
         onPress={onTrendsPress}
         className="flex-1 bg-card border border-border rounded-lg p-4 items-center"
       >
-        <Icon
-          as={TrendingUp}
-          size={24}
-          className="text-muted-foreground mb-2"
-        />
-        <Text className="text-card-foreground text-sm font-medium">
-          Trends
-        </Text>
+        <Icon as={TrendingUp} size={24} className="text-muted-foreground mb-2" />
+        <Text className="text-card-foreground text-sm font-medium">Trends</Text>
       </TouchableOpacity>
       <TouchableOpacity
         onPress={onRecordPress}
         className="flex-1 bg-card border border-border rounded-lg p-4 items-center"
       >
         <Icon as={Heart} size={24} className="text-muted-foreground mb-2" />
-        <Text className="text-card-foreground text-sm font-medium">
-          Record
-        </Text>
+        <Text className="text-card-foreground text-sm font-medium">Record</Text>
       </TouchableOpacity>
     </View>
   );

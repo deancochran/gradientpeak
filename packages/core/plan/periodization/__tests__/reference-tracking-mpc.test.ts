@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { referenceTrajectorySchema } from "../../../schemas/planning";
 import { evaluateMpcObjective } from "../../projection/mpc/objective";
-import {
-  buildPeriodizedObjectiveComponents,
-  evaluateReferenceTrackingWindow,
-} from "../index";
+import { buildPeriodizedObjectiveComponents, evaluateReferenceTrackingWindow } from "../index";
 
 const taperReference = referenceTrajectorySchema.parse({
   mode: "target_seeking",
@@ -66,15 +63,9 @@ describe("reference tracking MPC helpers", () => {
       })),
     });
 
-    expect(aggressive.taper_pressure).toBeGreaterThan(
-      conservative.taper_pressure,
-    );
-    expect(aggressive.safety_penalty).toBeGreaterThan(
-      conservative.safety_penalty,
-    );
-    expect(aggressive.tracking_error).toBeGreaterThan(
-      conservative.tracking_error,
-    );
+    expect(aggressive.taper_pressure).toBeGreaterThan(conservative.taper_pressure);
+    expect(aggressive.safety_penalty).toBeGreaterThan(conservative.safety_penalty);
+    expect(aggressive.tracking_error).toBeGreaterThan(conservative.tracking_error);
   });
 
   it("reduces objective utility when safety and tracking penalties outweigh readiness", () => {
@@ -126,8 +117,6 @@ describe("reference tracking MPC helpers", () => {
       }),
     });
 
-    expect(overshootObjective.objective_score).toBeLessThan(
-      alignedObjective.objective_score,
-    );
+    expect(overshootObjective.objective_score).toBeLessThan(alignedObjective.objective_score);
   });
 });
