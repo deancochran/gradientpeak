@@ -71,7 +71,9 @@ function AppContent() {
   } = useAuth();
   const { theme, resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
   const segments = useSegments();
-  const [rootSegment, childSegment, grandchildSegment] = segments;
+  const rootSegment = segments[0];
+  const childSegment = segments.at(1);
+  const grandchildSegment = segments.at(2);
   const clearSession = useAuthStore((state) => state.clearSession);
 
   const inInternalGroup = rootSegment === "(internal)";
