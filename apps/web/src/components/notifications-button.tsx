@@ -1,6 +1,7 @@
 "use client";
 
 import { getNotificationViewModel, normalizeNotificationListItem } from "@repo/core";
+import { invalidateNotificationQueries } from "@repo/trpc/react";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -32,10 +33,7 @@ export function NotificationsButton() {
   const utils = trpc.useUtils();
 
   const markReadMutation = trpc.notifications.markRead.useMutation({
-    onSuccess: () => {
-      utils.notifications.getUnreadCount.invalidate();
-      utils.notifications.getRecent.invalidate();
-    },
+    onSuccess: async () => invalidateNotificationQueries(utils),
   });
 
   const handleNotificationClick = (notification: (typeof normalizedNotifications)[number]) => {

@@ -45,6 +45,21 @@ describe("server-config", () => {
     });
   });
 
+  it("keeps the hosted Supabase URL for non-local API overrides", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+    const result = await module.setServerUrlOverride("https://api.custom.example.com");
+
+    expect(result.changed).toBe(true);
+
+    expect(module.getServerConfig()).toMatchObject({
+      apiUrl: "https://api.custom.example.com",
+      supabaseUrl: "https://db.gradientpeak.app",
+      overrideUrl: "https://api.custom.example.com",
+    });
+  });
+
   it("rejects malformed URLs", async () => {
     const { module } = await loadServerConfigModule();
 

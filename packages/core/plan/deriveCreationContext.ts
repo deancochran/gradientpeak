@@ -1,31 +1,19 @@
-import {
-  creationContextSummarySchema,
-  type CreationContextSummary,
-} from "../schemas/training_plan_structure";
-import {
-  getMaxSustainableCTL,
-  resolveNoHistoryStartingPrior,
-} from "./calibration-constants";
-import { learnIndividualRampRate } from "./ramp-learning";
+import type { ActivityDerivedZones } from "../activity-analysis/contracts";
 import { calculateRollingTrainingQuality } from "../calculations/training-quality";
+import {
+  type CreationContextSummary,
+  creationContextSummarySchema,
+} from "../schemas/training_plan_structure";
+import { getMaxSustainableCTL, resolveNoHistoryStartingPrior } from "./calibration-constants";
+import { learnIndividualRampRate } from "./ramp-learning";
 
 export interface CreationCompletedActivitySignal {
   occurred_at: string;
   activity_category?: string | null;
   duration_seconds?: number | null;
   tss?: number | null;
-  power_zone_1_seconds?: number | null;
-  power_zone_2_seconds?: number | null;
-  power_zone_3_seconds?: number | null;
-  power_zone_4_seconds?: number | null;
-  power_zone_5_seconds?: number | null;
-  power_zone_6_seconds?: number | null;
-  power_zone_7_seconds?: number | null;
-  hr_zone_1_seconds?: number | null;
-  hr_zone_2_seconds?: number | null;
-  hr_zone_3_seconds?: number | null;
-  hr_zone_4_seconds?: number | null;
-  hr_zone_5_seconds?: number | null;
+  intensity_factor?: number | null;
+  zones?: Partial<ActivityDerivedZones> | null;
 }
 
 export interface CreationProfileSignal {
@@ -84,19 +72,13 @@ function daysBetween(a: Date, b: Date): number {
   return Math.floor((a.getTime() - b.getTime()) / dayMs);
 }
 
-function calculateAgeAtDate(
-  dob: string | null | undefined,
-  asOf: Date,
-): number | undefined {
+function calculateAgeAtDate(dob: string | null | undefined, asOf: Date): number | undefined {
   if (!dob) return undefined;
   const birthDate = toDate(dob);
   if (!birthDate) return undefined;
   let age = asOf.getUTCFullYear() - birthDate.getUTCFullYear();
   const monthDelta = asOf.getUTCMonth() - birthDate.getUTCMonth();
-  if (
-    monthDelta < 0 ||
-    (monthDelta === 0 && asOf.getUTCDate() < birthDate.getUTCDate())
-  ) {
+  if (monthDelta < 0 || (monthDelta === 0 && asOf.getUTCDate() < birthDate.getUTCDate())) {
     age -= 1;
   }
   return age >= 0 ? age : undefined;
@@ -108,10 +90,7 @@ function percentile(values: number[], q: number): number {
   }
 
   const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.min(
-    sorted.length - 1,
-    Math.max(0, Math.ceil((q / 100) * sorted.length) - 1),
-  );
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((q / 100) * sorted.length) - 1));
   return sorted[index] ?? 0;
 }
 
@@ -122,9 +101,7 @@ function percentile(values: number[], q: number): number {
  * - no data -> conservative ranges and low confidence
  * - rich data -> tighter ranges and higher confidence
  */
-export function deriveCreationContext(
-  input: DeriveCreationContextInput,
-): CreationContextSummary {
+export function deriveCreationContext(input: DeriveCreationContextInput): CreationContextSummary {
   const asOf = input.as_of ? toDate(input.as_of) : new Date();
   const safeAsOf = asOf ?? new Date();
   const recentWindowDays = 42;
@@ -183,9 +160,7 @@ export function deriveCreationContext(
   const missingRequiredOnboardingFields = input.profile?.dob ? [] : ["dob"];
   const missingOptionalCalibrationFields = [
     metrics?.weight_kg == null ? "weight_kg" : null,
-    metrics?.threshold_hr == null && metrics?.lthr == null
-      ? "threshold_hr"
-      : null,
+    metrics?.threshold_hr == null && metrics?.lthr == null ? "threshold_hr" : null,
     metrics?.ftp == null ? "ftp" : null,
   ].filter((field): field is string => field !== null);
   const presentMetricCount = [
@@ -211,11 +186,7 @@ export function deriveCreationContext(
         ? "moderate"
         : "low";
   const profileMarker =
-    metricCompleteness >= 0.75
-      ? "high"
-      : metricCompleteness >= 0.4
-        ? "moderate"
-        : "low";
+    metricCompleteness >= 0.75 ? "high" : metricCompleteness >= 0.4 ? "moderate" : "low";
 
   // Calculate baseline override bonus for signal quality
   const baselineOverrideBonus = hasBaselineOverride
@@ -250,10 +221,8 @@ export function deriveCreationContext(
         ? activity.tss
         : ((activity.duration_seconds ?? 0) / 3600) * 45;
 
-    weeklyTssBuckets[weekBucket] =
-      (weeklyTssBuckets[weekBucket] ?? 0) + Math.max(0, normalizedTss);
-    weeklySessionBuckets[weekBucket] =
-      (weeklySessionBuckets[weekBucket] ?? 0) + 1;
+    weeklyTssBuckets[weekBucket] = (weeklyTssBuckets[weekBucket] ?? 0) + Math.max(0, normalizedTss);
+    weeklySessionBuckets[weekBucket] = (weeklySessionBuckets[weekBucket] ?? 0) + 1;
     const weekday = date.getUTCDay();
     weekdayCounts[weekday] = (weekdayCounts[weekday] ?? 0) + 1;
   }
@@ -263,19 +232,13 @@ export function deriveCreationContext(
   const weeklyTssP75 = percentile(weeklyTssBuckets, 75);
   const estimatedWeeklyTss =
     activityCount > 0
-      ? Math.max(
-          weeklyTssMedian,
-          weeklyTssBuckets.reduce((a, b) => a + b, 0) / 6,
-        )
+      ? Math.max(weeklyTssMedian, weeklyTssBuckets.reduce((a, b) => a + b, 0) / 6)
       : starterPrior.starting_weekly_tss;
 
   const baselineBounds =
     historyState === "none"
       ? {
-          minFloor: Math.max(
-            20,
-            Math.round(starterPrior.starting_weekly_tss * 0.7),
-          ),
+          minFloor: Math.max(20, Math.round(starterPrior.starting_weekly_tss * 0.7)),
           maxFloor: Math.round(starterPrior.starting_weekly_tss * 0.95),
           maxCeil: starterPrior.is_youth ? 260 : 400,
         }
@@ -288,8 +251,7 @@ export function deriveCreationContext(
   const confidenceWidthMultiplier =
     historyState === "rich" ? 0.85 : historyState === "sparse" ? 1 : 1.25;
   const lowSignalExpansion = clamp((0.7 - qualityScore) * 0.4, 0, 0.25);
-  const baselineWidthMultiplier =
-    confidenceWidthMultiplier + lowSignalExpansion;
+  const baselineWidthMultiplier = confidenceWidthMultiplier + lowSignalExpansion;
   const baselineMin = Math.round(
     clamp(
       estimatedWeeklyTss - baselineSpreadFromHistory * baselineWidthMultiplier,
@@ -305,14 +267,10 @@ export function deriveCreationContext(
     ),
   );
 
-  const influenceWidth =
-    historyState === "rich" ? 0.15 : historyState === "sparse" ? 0.3 : 0.5;
-  const influenceBias =
-    consistencyRatio >= 0.65 ? 0.1 : consistencyRatio <= 0.2 ? -0.1 : 0;
+  const influenceWidth = historyState === "rich" ? 0.15 : historyState === "sparse" ? 0.3 : 0.5;
+  const influenceBias = consistencyRatio >= 0.65 ? 0.1 : consistencyRatio <= 0.2 ? -0.1 : 0;
 
-  const sessionMinFromHistory = Math.floor(
-    percentile(weeklySessionBuckets, 25),
-  );
+  const sessionMinFromHistory = Math.floor(percentile(weeklySessionBuckets, 25));
   const sessionMaxFromHistory = Math.ceil(percentile(weeklySessionBuckets, 75));
   const sessionMin = clamp(
     historyState === "none"
@@ -324,10 +282,7 @@ export function deriveCreationContext(
   const sessionMax = clamp(
     historyState === "none"
       ? starterPrior.recommended_sessions_per_week_range.max
-      : Math.max(
-          sessionMin + 1,
-          sessionMaxFromHistory || (historyState === "rich" ? 7 : 6),
-        ),
+      : Math.max(sessionMin + 1, sessionMaxFromHistory || (historyState === "rich" ? 7 : 6)),
     3,
     7,
   );
@@ -359,18 +314,8 @@ export function deriveCreationContext(
     (input.completed_activities ?? []).map((activity) => ({
       occurred_at: activity.occurred_at,
       tss: activity.tss,
-      power_zone_1_seconds: activity.power_zone_1_seconds,
-      power_zone_2_seconds: activity.power_zone_2_seconds,
-      power_zone_3_seconds: activity.power_zone_3_seconds,
-      power_zone_4_seconds: activity.power_zone_4_seconds,
-      power_zone_5_seconds: activity.power_zone_5_seconds,
-      power_zone_6_seconds: activity.power_zone_6_seconds,
-      power_zone_7_seconds: activity.power_zone_7_seconds,
-      hr_zone_1_seconds: activity.hr_zone_1_seconds,
-      hr_zone_2_seconds: activity.hr_zone_2_seconds,
-      hr_zone_3_seconds: activity.hr_zone_3_seconds,
-      hr_zone_4_seconds: activity.hr_zone_4_seconds,
-      hr_zone_5_seconds: activity.hr_zone_5_seconds,
+      intensity_factor: activity.intensity_factor,
+      zones: activity.zones,
     })),
     28,
     safeAsOf,

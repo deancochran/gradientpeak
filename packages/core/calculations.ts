@@ -5,7 +5,6 @@
  * `zones/`, `duration/`, and `estimators/`. Keep this file stable while
  * callers migrate to narrower imports.
  */
-import type { PublicProfilesRow } from "@repo/supabase";
 import { calculateNormalizedPower as calculateNormalizedPowerFromStream } from "./calculations/normalized-power";
 import { type TrainingQualityProfile } from "./calculations/training-quality";
 import {
@@ -31,6 +30,7 @@ import {
   estimateTSS as estimateTSSFromLoad,
   getTrainingIntensityZone as getTrainingIntensityZoneFromLoad,
 } from "./load/tss";
+import type { ProfileWithDob } from "./profile";
 import { calculateHRZoneDistribution } from "./zones/hr";
 import { calculatePowerZoneDistribution } from "./zones/power";
 
@@ -260,7 +260,7 @@ export function calculateElevationGainPerKm(
 export function calculateCalories(
   startedAt: Date | string,
   endedAt: Date | string,
-  profile: PublicProfilesRow,
+  profile: ProfileWithDob,
   weightKg?: number | null,
   powerStream?: AggregatedStream,
   hrStream?: AggregatedStream,

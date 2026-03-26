@@ -1,3 +1,4 @@
+import { invalidateRelationshipQueries } from "@repo/trpc/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
@@ -8,7 +9,7 @@ import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Clock, Edit3, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -129,32 +130,12 @@ function UserDetailScreen() {
   });
 
   const followMutation = trpc.social.followUser.useMutation({
-    onSuccess: () => {
-      utils.profiles.getPublicById.invalidate({ id: targetUserId });
-      // Invalidate followers/following lists for both users
-      utils.social.getFollowers.invalidate({ user_id: targetUserId });
-      utils.social.getFollowing.invalidate({ user_id: targetUserId });
-      // Also invalidate current user's lists if viewing someone else's profile
-      if (user?.id) {
-        utils.social.getFollowers.invalidate({ user_id: user.id });
-        utils.social.getFollowing.invalidate({ user_id: user.id });
-      }
-    },
+    onSuccess: async () => invalidateRelationshipQueries(utils, [targetUserId, user?.id]),
     onError: (err) => Alert.alert("Error", err.message || "Failed to follow"),
   });
 
   const unfollowMutation = trpc.social.unfollowUser.useMutation({
-    onSuccess: () => {
-      utils.profiles.getPublicById.invalidate({ id: targetUserId });
-      // Invalidate followers/following lists for both users
-      utils.social.getFollowers.invalidate({ user_id: targetUserId });
-      utils.social.getFollowing.invalidate({ user_id: targetUserId });
-      // Also invalidate current user's lists if viewing someone else's profile
-      if (user?.id) {
-        utils.social.getFollowers.invalidate({ user_id: user.id });
-        utils.social.getFollowing.invalidate({ user_id: user.id });
-      }
-    },
+    onSuccess: async () => invalidateRelationshipQueries(utils, [targetUserId, user?.id]),
     onError: (err) => Alert.alert("Error", err.message || "Failed to unfollow"),
   });
 
@@ -328,20 +309,39 @@ function UserDetailScreen() {
               <Text className="text-sm text-muted-foreground mb-4">{user.email}</Text>
             ) : null}
 
+            <View className="mb-4 flex-row flex-wrap items-center justify-center gap-2">
+              <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                <Text className="text-xs font-medium text-foreground">
+                  {renderedProfile?.is_public ? "Public profile" : "Private profile"}
+                </Text>
+              </View>
+              {isOwnProfile ? (
+                <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                  <Text className="text-xs font-medium text-foreground">Your account</Text>
+                </View>
+              ) : null}
+            </View>
+
+            <Text className="text-sm text-center text-muted-foreground mb-4">
+              {isOwnProfile
+                ? "Your public profile summary lives here. Account tools stay below so profile details remain easy to scan."
+                : renderedProfile?.is_public
+                  ? "Open profile details, then follow or message if this looks like the right connection."
+                  : "This profile stays private until your follow request is accepted."}
+            </Text>
+
             {/* Followers/Following Counts - show for ALL profiles */}
-            <View className="flex-row gap-4 mb-4">
-              <Text
-                className="text-sm text-primary underline"
+            <View className="flex-row gap-3 mb-4">
+              <TouchableProfileStat
+                label="Followers"
+                value={renderedProfile?.followers_count ?? 0}
                 onPress={() => router.push(`/followers?userId=${targetUserId}` as any)}
-              >
-                {renderedProfile?.followers_count ?? 0} followers
-              </Text>
-              <Text
-                className="text-sm text-primary underline"
+              />
+              <TouchableProfileStat
+                label="Following"
+                value={renderedProfile?.following_count ?? 0}
                 onPress={() => router.push(`/following?userId=${targetUserId}` as any)}
-              >
-                {renderedProfile?.following_count ?? 0} following
-              </Text>
+              />
             </View>
 
             {!isOwnProfile && renderedProfile?.follow_status === "pending" && (
@@ -373,6 +373,7 @@ function UserDetailScreen() {
                     onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
                     className="flex-row gap-2"
                     disabled={unfollowMutation.isPending}
+                    testID="user-detail-unfollow-button"
                   >
                     <Icon as={UserMinus} size={16} />
                     <Text>Unfollow</Text>
@@ -384,6 +385,7 @@ function UserDetailScreen() {
                     onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
                     className="flex-row gap-2"
                     disabled={unfollowMutation.isPending}
+                    testID="user-detail-requested-button"
                   >
                     <Icon as={Clock} size={16} />
                     <Text>Requested</Text>
@@ -395,6 +397,7 @@ function UserDetailScreen() {
                     onPress={() => followMutation.mutate({ target_user_id: targetUserId })}
                     className="flex-row gap-2"
                     disabled={followMutation.isPending}
+                    testID="user-detail-follow-button"
                   >
                     <Icon as={UserPlus} size={16} />
                     <Text>Follow</Text>
@@ -407,6 +410,7 @@ function UserDetailScreen() {
                   onPress={() => messageMutation.mutate({ target_user_id: targetUserId })}
                   className="flex-row gap-2"
                   disabled={messageMutation.isPending}
+                  testID="user-detail-message-button"
                 >
                   <Icon as={MessageCircle} size={16} />
                   <Text>Message</Text>
@@ -477,6 +481,14 @@ function UserDetailScreen() {
 
       {isOwnProfile ? (
         <>
+          <View className="gap-1 px-1">
+            <Text className="text-lg font-semibold text-foreground">Manage your account</Text>
+            <Text className="text-sm text-muted-foreground">
+              Keep profile viewing simple above and use these tools when you need to manage data,
+              settings, or security.
+            </Text>
+          </View>
+
           <SettingsGroup
             title="My Records"
             description="Private views for your training data"
@@ -717,5 +729,26 @@ export default function UserDetailScreenWithErrorBoundary() {
     <ErrorBoundary fallback={ScreenErrorFallback}>
       <UserDetailScreen />
     </ErrorBoundary>
+  );
+}
+
+function TouchableProfileStat({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: number;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      className="rounded-xl border border-border bg-muted/20 px-4 py-3"
+    >
+      <Text className="text-base font-semibold text-foreground">{value}</Text>
+      <Text className="text-xs font-medium text-primary">{label}</Text>
+    </TouchableOpacity>
   );
 }

@@ -1,0 +1,11 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  SIGNUP_PASSWORD: "Password123"
+---
+- runFlow:
+    file: ../reusable/sign_up_to_verify.yaml
+    env:
+      email: "${SIGNUP_EMAIL}"
+      password: "${SIGNUP_PASSWORD}"
+- assertVisible:
+    id: "verify-screen"

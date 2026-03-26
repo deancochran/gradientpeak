@@ -11,6 +11,7 @@ import {
   getGoalObjectiveSummary,
   parseProfileGoalRecord,
 } from "@repo/core";
+import { invalidateGoalQueries } from "@repo/trpc/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
@@ -51,10 +52,7 @@ export default function GoalDetailScreen() {
   const updateGoalMutation = trpc.goals.update.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        utils.goals.list.invalidate(),
-        utils.goals.getById.invalidate({ id: goalId }),
-        utils.events.list.invalidate(),
-        utils.events.getById.invalidate(),
+        invalidateGoalQueries(utils, { goalId, includeEventDetail: true }),
         refetch(),
       ]);
       setShowEditor(false);
@@ -64,13 +62,13 @@ export default function GoalDetailScreen() {
   const updateMilestoneEventMutation = trpc.events.update.useMutation();
   const deleteMilestoneEventMutation = trpc.events.delete.useMutation({
     onSuccess: async () => {
-      await Promise.all([utils.goals.list.invalidate(), utils.events.list.invalidate()]);
+      await invalidateGoalQueries(utils, { includeGoalDetail: false });
       router.back();
     },
   });
   const deleteGoalMutation = trpc.goals.delete.useMutation({
     onSuccess: async () => {
-      await Promise.all([utils.goals.list.invalidate()]);
+      await invalidateGoalQueries(utils, { includeGoalDetail: false });
       router.back();
     },
   });
@@ -228,7 +226,12 @@ export default function GoalDetailScreen() {
 
       <View className="border-t border-border bg-background px-4 py-4">
         <View className="flex-row gap-2">
-          <Button variant="outline" className="flex-1" onPress={() => setShowEditor(true)}>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onPress={() => setShowEditor(true)}
+            testID="goal-detail-edit-button"
+          >
             <Text>Edit Goal</Text>
           </Button>
           <Button
@@ -236,6 +239,7 @@ export default function GoalDetailScreen() {
             className="flex-1"
             onPress={handleDeleteGoal}
             disabled={deleteGoalMutation.isPending || deleteMilestoneEventMutation.isPending}
+            testID="goal-detail-delete-button"
           >
             <Text className="text-destructive">
               {deleteGoalMutation.isPending || deleteMilestoneEventMutation.isPending

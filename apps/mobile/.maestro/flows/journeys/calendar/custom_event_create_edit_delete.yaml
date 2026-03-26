@@ -1,0 +1,52 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  STANDARD_USER_EMAIL: "test@example.com"
+  STANDARD_USER_PASS: "password123"
+  EVENT_TITLE: "Maestro Custom Session"
+  EVENT_TITLE_UPDATED: "Maestro Custom Session Updated"
+---
+- runFlow:
+    file: ../../reusable/authenticated_home.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+- runFlow:
+    file: ../../reusable/open_calendar_tab.yaml
+- tapOn:
+    id: "create-event-entry"
+- tapOn:
+    id: "create-type-custom"
+- extendedWaitUntil:
+    visible:
+      id: "manual-create-modal"
+    timeout: 10000
+- tapOn:
+    id: "manual-create-title-input"
+- eraseText
+- inputText: "${EVENT_TITLE}"
+- tapOn:
+    id: "manual-create-submit"
+- extendedWaitUntil:
+    visible: "${EVENT_TITLE}"
+    timeout: 10000
+- tapOn: "${EVENT_TITLE}"
+- extendedWaitUntil:
+    visible:
+      id: "event-detail-edit-button"
+    timeout: 10000
+- tapOn:
+    id: "event-detail-edit-button"
+- tapOn:
+    id: "event-detail-title-input"
+- eraseText
+- inputText: "${EVENT_TITLE_UPDATED}"
+- tapOn:
+    id: "event-detail-save-button"
+- extendedWaitUntil:
+    visible: "${EVENT_TITLE_UPDATED}"
+    timeout: 10000
+- tapOn:
+    id: "event-detail-delete-button"
+- tapOn:
+    text: "Delete"
+    optional: true

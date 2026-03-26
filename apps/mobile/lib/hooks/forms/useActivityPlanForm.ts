@@ -1,13 +1,11 @@
-import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
-import { trpc } from "@/lib/trpc";
-import { getErrorMessage, showErrorAlert } from "@/lib/utils/formErrors";
-import {
-  activityPlanCreateFormSchema,
-  type ActivityPlanCreateFormData,
-} from "@repo/core";
+import { type ActivityPlanCreateFormData, activityPlanCreateFormSchema } from "@repo/core";
+import { invalidateActivityPlanQueries } from "@repo/trpc/react";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
 import { Alert } from "react-native";
+import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
+import { trpc } from "@/lib/trpc";
+import { getErrorMessage, showErrorAlert } from "@/lib/utils/formErrors";
 
 export type ActivityPlanFormData = ActivityPlanCreateFormData;
 
@@ -46,18 +44,15 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const isEditMode = !!options.planId;
 
   // Load existing plan for editing
-  const { data: existingPlan, isLoading: isLoadingPlan } =
-    trpc.activityPlans.getById.useQuery(
-      { id: options.planId! },
-      { enabled: isEditMode },
-    );
+  const { data: existingPlan, isLoading: isLoadingPlan } = trpc.activityPlans.getById.useQuery(
+    { id: options.planId! },
+    { enabled: isEditMode },
+  );
 
   // Create mutation
   const createMutation = trpc.activityPlans.create.useMutation({
     onSuccess: async (data) => {
-      // Invalidate queries to refresh lists
-      await utils.activityPlans.list.invalidate();
-      await utils.activityPlans.getUserPlansCount.invalidate();
+      await invalidateActivityPlanQueries(utils);
 
       // Call success callback if provided
       options.onSuccess?.(data.id);
@@ -80,9 +75,11 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   // Update mutation
   const updateMutation = trpc.activityPlans.update.useMutation({
     onSuccess: async (data) => {
-      // Invalidate queries
-      await utils.activityPlans.list.invalidate();
-      await utils.activityPlans.getById.invalidate({ id: options.planId! });
+      await invalidateActivityPlanQueries(utils, {
+        planId: options.planId,
+        includeCount: false,
+        includeDetail: true,
+      });
 
       // Call success callback if provided
       options.onSuccess?.(data.id);
@@ -183,17 +180,12 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       }
 
       intervals.forEach((interval, intervalIndex) => {
-        if (
-          !Number.isFinite(interval.repetitions) ||
-          interval.repetitions < 1
-        ) {
-          errors[`interval:${interval.id}:repetitions`] =
-            "Repeat count must be at least 1.";
+        if (!Number.isFinite(interval.repetitions) || interval.repetitions < 1) {
+          errors[`interval:${interval.id}:repetitions`] = "Repeat count must be at least 1.";
         }
 
         if (!interval.steps || interval.steps.length < 1) {
-          errors[`interval:${interval.id}:steps`] =
-            "Each interval must include at least one step.";
+          errors[`interval:${interval.id}:steps`] = "Each interval must include at least one step.";
         }
 
         interval.steps.forEach((step, stepIndex) => {
@@ -219,19 +211,16 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
             primaryTarget.intensity > 0;
 
           if (!hasValidTarget) {
-            errors[targetErrorKey] =
-              "Set an intensity zone/type target for this step.";
+            errors[targetErrorKey] = "Set an intensity zone/type target for this step.";
           }
 
           if (!step.name?.trim()) {
-            errors[`step:${interval.id}:${step.id}:name`] =
-              `Step ${stepIndex + 1} needs a name.`;
+            errors[`step:${interval.id}:${step.id}:name`] = `Step ${stepIndex + 1} needs a name.`;
           }
         });
 
         if (!interval.name?.trim()) {
-          errors[`interval:${interval.id}:name`] =
-            `Interval ${intervalIndex + 1} needs a name.`;
+          errors[`interval:${interval.id}:name`] = `Interval ${intervalIndex + 1} needs a name.`;
         }
       });
 
@@ -279,15 +268,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         };
       }
     },
-    [
-      validateStrictStructure,
-      name,
-      description,
-      activityCategory,
-      structure,
-      routeId,
-      notes,
-    ],
+    [validateStrictStructure, name, description, activityCategory, structure, routeId, notes],
   );
 
   const validation = useMemo(() => validate(), [validate]);
@@ -306,8 +287,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     try {
       const payload = {
         name,
-        description:
-          description && description.trim() !== "" ? description : null,
+        description: description && description.trim() !== "" ? description : null,
         activity_category: activityCategory as any,
         structure: structureToSubmit,
         route_id: routeId || null,
@@ -348,26 +328,20 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   // Cancel handler
   const cancel = useCallback(() => {
     const hasChanges =
-      name !== "" ||
-      description !== "" ||
-      (structure.intervals && structure.intervals.length > 0);
+      name !== "" || description !== "" || (structure.intervals && structure.intervals.length > 0);
 
     if (hasChanges) {
-      Alert.alert(
-        "Discard Changes",
-        "Are you sure you want to discard your changes?",
-        [
-          { text: "Keep Editing", style: "cancel" },
-          {
-            text: "Discard",
-            style: "destructive",
-            onPress: () => {
-              reset();
-              router.back();
-            },
+      Alert.alert("Discard Changes", "Are you sure you want to discard your changes?", [
+        { text: "Keep Editing", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            reset();
+            router.back();
           },
-        ],
-      );
+        },
+      ]);
     } else {
       reset();
       router.back();
@@ -410,10 +384,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     isSubmitting: createMutation.isPending || updateMutation.isPending,
     isLoading: isLoadingPlan,
     isEditMode,
-    canSubmit:
-      validation.isValid &&
-      !createMutation.isPending &&
-      !updateMutation.isPending,
+    canSubmit: validation.isValid && !createMutation.isPending && !updateMutation.isPending,
     error: createMutation.error || updateMutation.error,
   };
 }

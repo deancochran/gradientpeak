@@ -6,6 +6,7 @@ import {
   getStepIntensityColor,
   IntervalStepV2,
 } from "@repo/core";
+import { invalidateActivityPlanQueries, invalidateTrainingPlanQueries } from "@repo/trpc/react";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Switch } from "@repo/ui/components/switch";
@@ -25,7 +26,6 @@ import {
   Heart,
   MessageCircle,
   Send,
-  Share2,
   Smartphone,
   Trash2,
 } from "lucide-react-native";
@@ -240,10 +240,7 @@ export default function ActivityPlanDetailPage() {
     onSuccess: async (duplicatedPlan) => {
       const duplicateAction = duplicateActionRef.current;
       duplicateActionRef.current = null;
-      await Promise.all([
-        utils.activityPlans.list.invalidate(),
-        utils.activityPlans.getUserPlansCount.invalidate(),
-      ]);
+      await invalidateActivityPlanQueries(utils);
       if (duplicateAction === "schedule") {
         router.replace(buildPlanRoute(duplicatedPlan.id, "schedule") as any);
         return;
@@ -278,11 +275,6 @@ export default function ActivityPlanDetailPage() {
     });
   };
 
-  const handleShare = () => {
-    // TODO: Implement share functionality
-    console.log("Share activity");
-  };
-
   const handleEdit = () => {
     if (!activityPlan) return;
     // Navigate to edit screen (using create flow with existing data)
@@ -295,9 +287,7 @@ export default function ActivityPlanDetailPage() {
   // Delete mutation
   const deleteMutation = trpc.activityPlans.delete.useMutation({
     onSuccess: async () => {
-      // Invalidate queries
-      await utils.activityPlans.list.invalidate();
-      await utils.activityPlans.getUserPlansCount.invalidate();
+      await invalidateActivityPlanQueries(utils);
 
       Alert.alert("Success", "Activity plan deleted successfully");
       router.back();
@@ -318,8 +308,11 @@ export default function ActivityPlanDetailPage() {
   // Privacy update mutation
   const updatePrivacyMutation = trpc.activityPlans.update.useMutation({
     onSuccess: async () => {
-      await utils.activityPlans.getById.invalidate({ id: planId });
-      await utils.activityPlans.list.invalidate();
+      await invalidateActivityPlanQueries(utils, {
+        planId,
+        includeCount: false,
+        includeDetail: true,
+      });
     },
     onError: (error) => {
       console.error("Privacy update error:", error);
@@ -517,6 +510,7 @@ export default function ActivityPlanDetailPage() {
   // Check if user owns this plan for edit permission
   // Database uses profile_id field, not user_id
   const isOwnedByUser = activityPlan.profile_id === profile?.id;
+  const visibilityLabel = isOwnedByUser ? (isPublic ? "Public" : "Private") : "Read only";
   const primaryScheduleLabel = isScheduled
     ? "Reschedule"
     : isOwnedByUser
@@ -524,6 +518,11 @@ export default function ActivityPlanDetailPage() {
       : duplicatePlanMutation.isPending
         ? "Duplicating..."
         : "Duplicate and Schedule";
+  const detailBadges = [
+    activityPlan.activity_category,
+    isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
+    visibilityLabel,
+  ];
 
   // Decode route coordinates if available
   const routeCoordinates = route?.polyline ? decodePolyline(route.polyline) : null;
@@ -533,22 +532,73 @@ export default function ActivityPlanDetailPage() {
       {/* Scrollable Content */}
       <ScrollView className="flex-1">
         <View className="p-4">
-          {/* Title */}
           <Text className="text-3xl font-bold mb-2">{activityPlan.name}</Text>
-          <View className="flex-row items-center gap-2 mb-3">
-            <Text className="text-sm text-muted-foreground capitalize">
-              {activityPlan.activity_category}
-            </Text>
+          <View className="flex-row flex-wrap gap-2 mb-4">
+            {detailBadges.map((badge) => (
+              <View
+                key={badge}
+                className="rounded-full border border-border bg-muted/30 px-3 py-1.5"
+              >
+                <Text className="text-xs font-medium capitalize text-muted-foreground">
+                  {badge}
+                </Text>
+              </View>
+            ))}
           </View>
 
-          {/* Action Buttons - Two Rows */}
+          {isScheduled && scheduledDate && (
+            <View className="bg-primary/10 border border-primary/20 rounded-xl p-4 mb-4 flex-row items-center">
+              <Icon as={CalendarCheck} size={20} className="text-primary mr-3" />
+              <View className="flex-1">
+                <Text className="text-sm font-semibold text-primary mb-0.5">
+                  Scheduled Activity
+                </Text>
+                <Text className="text-xs text-primary/80">
+                  {format(new Date(scheduledDate), "EEEE, MMMM d, yyyy 'at' h:mm a")}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <View className="bg-card border border-border rounded-xl p-4 mb-4 gap-3">
+            <View className="flex-row justify-between gap-3">
+              <OverviewMetric label="Duration" value={formatDuration(durationMinutes * 60)} />
+              <OverviewMetric label="TSS" value={tss ? `${tss}` : "--"} />
+              <OverviewMetric
+                label="Intensity"
+                value={intensityFactor ? intensityFactor.toFixed(2) : "--"}
+              />
+              <OverviewMetric label="Steps" value={`${steps.length}`} />
+            </View>
+            {(activityPlan.description || activityPlan.notes) && (
+              <View className="gap-2 border-t border-border pt-3">
+                {activityPlan.description ? (
+                  <View className="gap-1">
+                    <Text className="text-sm font-semibold text-foreground">Overview</Text>
+                    <Text className="text-sm leading-5 text-muted-foreground">
+                      {activityPlan.description}
+                    </Text>
+                  </View>
+                ) : null}
+                {activityPlan.notes ? (
+                  <View className="gap-1">
+                    <Text className="text-sm font-semibold text-foreground">Notes</Text>
+                    <Text className="text-sm leading-5 text-muted-foreground">
+                      {activityPlan.notes}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+          </View>
+
           <View className="gap-2 mb-6">
-            {/* Primary Actions Row */}
             <View className="flex-row gap-2">
               <Button
                 onPress={handleRecordNow}
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
+                testID="activity-plan-record-now-button"
               >
                 <Icon as={Smartphone} size={16} className="text-primary-foreground" />
                 <Text className="text-primary-foreground text-sm font-semibold">Record Now</Text>
@@ -560,6 +610,9 @@ export default function ActivityPlanDetailPage() {
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
                 disabled={!isScheduled && duplicatePlanMutation.isPending}
+                testID={
+                  isScheduled ? "activity-plan-reschedule-button" : "activity-plan-schedule-button"
+                }
               >
                 <Icon as={Calendar} size={16} className="text-foreground" />
                 <Text className="text-foreground text-sm">{primaryScheduleLabel}</Text>
@@ -574,6 +627,7 @@ export default function ActivityPlanDetailPage() {
                   size="sm"
                   className="flex-1 flex-row items-center justify-center gap-1.5"
                   disabled={removeScheduleMutation.isPending}
+                  testID="activity-plan-remove-schedule-button"
                 >
                   <Icon as={CalendarX} size={16} className="text-destructive" />
                   <Text className="text-destructive text-sm">
@@ -583,7 +637,6 @@ export default function ActivityPlanDetailPage() {
               </View>
             )}
 
-            {/* Secondary Actions Row */}
             <View className="flex-row gap-2">
               <Pressable
                 onPress={handleToggleLike}
@@ -616,21 +669,12 @@ export default function ActivityPlanDetailPage() {
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
                 disabled={duplicatePlanMutation.isPending}
+                testID="activity-plan-duplicate-button"
               >
                 <Icon as={Copy} size={16} className="text-foreground" />
                 <Text className="text-foreground text-sm">
                   {duplicatePlanMutation.isPending ? "Duplicating..." : "Duplicate"}
                 </Text>
-              </Button>
-
-              <Button
-                onPress={handleShare}
-                variant="outline"
-                size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5"
-              >
-                <Icon as={Share2} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">Share</Text>
               </Button>
             </View>
 
@@ -659,6 +703,7 @@ export default function ActivityPlanDetailPage() {
                   variant="outline"
                   size="sm"
                   className="flex-1 flex-row items-center justify-center gap-1.5"
+                  testID="activity-plan-edit-button"
                 >
                   <Icon as={Edit} size={16} className="text-foreground" />
                   <Text className="text-foreground text-sm">Edit</Text>
@@ -670,6 +715,7 @@ export default function ActivityPlanDetailPage() {
                   size="sm"
                   className="flex-1 flex-row items-center justify-center gap-1.5"
                   disabled={deleteMutation.isPending}
+                  testID="activity-plan-delete-button"
                 >
                   <Icon as={Trash2} size={16} className="text-destructive" />
                   <Text className="text-destructive text-sm">
@@ -679,60 +725,6 @@ export default function ActivityPlanDetailPage() {
               </View>
             )}
           </View>
-
-          {/* Comments Section */}
-          {commentsData && commentsData.comments.length > 0 && (
-            <View className="mb-4 border-t border-border pt-4">
-              <Text className="font-semibold text-foreground mb-3">
-                Comments ({commentsData.total})
-              </Text>
-              {commentsData.comments.map((comment: any) => (
-                <View key={comment.id} className="mb-3">
-                  <View className="flex-row items-center gap-2 mb-1">
-                    <Text className="font-medium text-sm text-foreground">
-                      {comment.profile?.username || "Unknown User"}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {new Date(comment.created_at).toLocaleDateString()}
-                    </Text>
-                  </View>
-                  <Text className="text-sm text-foreground">{comment.content}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Add Comment Input */}
-          <View className="flex-row items-center gap-2 mb-6">
-            <Textarea
-              className="min-h-11 flex-1"
-              placeholder="Add a comment..."
-              value={newComment}
-              onChangeText={setNewComment}
-            />
-            <Button
-              onPress={handleAddComment}
-              disabled={!newComment.trim() || addCommentMutation.isPending}
-              size="icon"
-            >
-              <Icon as={Send} size={18} className="text-primary-foreground" />
-            </Button>
-          </View>
-
-          {/* Scheduled Date Banner */}
-          {isScheduled && scheduledDate && (
-            <View className="bg-primary/10 border border-primary/20 rounded-xl p-4 mb-6 flex-row items-center">
-              <Icon as={CalendarCheck} size={20} className="text-primary mr-3" />
-              <View className="flex-1">
-                <Text className="text-sm font-semibold text-primary mb-0.5">
-                  Scheduled Activity
-                </Text>
-                <Text className="text-xs text-primary/80">
-                  {format(new Date(scheduledDate), "EEEE, MMMM d, yyyy 'at' h:mm a")}
-                </Text>
-              </View>
-            </View>
-          )}
 
           {/* GPX Route Map Preview */}
           {routeCoordinates && routeCoordinates.length > 0 && (
@@ -785,7 +777,6 @@ export default function ActivityPlanDetailPage() {
           {/* Intensity Timeline Chart with Stats */}
           {activityPlan.structure && steps.length > 0 && (
             <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              {/* Stats Row Above Chart */}
               <View className="flex-row justify-around mb-4 pb-3 border-b border-border">
                 {durationMinutes && (
                   <View className="items-center">
@@ -816,24 +807,6 @@ export default function ActivityPlanDetailPage() {
               {/* Intensity Chart */}
               <Text className="text-sm font-semibold mb-3">Intensity Profile</Text>
               <TimelineChart structure={activityPlan.structure} height={140} />
-            </View>
-          )}
-
-          {/* Description */}
-          {activityPlan.description && (
-            <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              <Text className="text-sm font-semibold mb-2">Description</Text>
-              <Text className="text-sm text-muted-foreground leading-5">
-                {activityPlan.description}
-              </Text>
-            </View>
-          )}
-
-          {/* Notes */}
-          {activityPlan.notes && (
-            <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              <Text className="text-sm font-semibold mb-2">Notes</Text>
-              <Text className="text-sm text-muted-foreground leading-5">{activityPlan.notes}</Text>
             </View>
           )}
 
@@ -877,6 +850,56 @@ export default function ActivityPlanDetailPage() {
               </View>
             </View>
           )}
+
+          <View className="bg-card border border-border rounded-xl p-4 mb-6 gap-4">
+            <View>
+              <Text className="font-semibold text-foreground mb-1">
+                Comments ({commentsData?.total ?? 0})
+              </Text>
+              <Text className="text-sm text-muted-foreground">
+                Ask questions or leave context for anyone reusing this session.
+              </Text>
+            </View>
+
+            <View className="flex-row items-center gap-2">
+              <Textarea
+                className="min-h-11 flex-1"
+                placeholder="Add a comment..."
+                value={newComment}
+                onChangeText={setNewComment}
+              />
+              <Button
+                onPress={handleAddComment}
+                disabled={!newComment.trim() || addCommentMutation.isPending}
+                size="icon"
+              >
+                <Icon as={Send} size={18} className="text-primary-foreground" />
+              </Button>
+            </View>
+
+            {commentsData && commentsData.comments.length > 0 ? (
+              <View className="gap-3 border-t border-border pt-4">
+                {commentsData.comments.map((comment: any) => (
+                  <View
+                    key={comment.id}
+                    className="rounded-lg border border-border/60 bg-background p-3"
+                  >
+                    <View className="flex-row items-center gap-2 mb-1">
+                      <Text className="font-medium text-sm text-foreground">
+                        {comment.profile?.username || "Unknown User"}
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {new Date(comment.created_at).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <Text className="text-sm text-foreground">{comment.content}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text className="text-sm text-muted-foreground">No comments yet.</Text>
+            )}
+          </View>
         </View>
       </ScrollView>
 
@@ -891,11 +914,20 @@ export default function ActivityPlanDetailPage() {
           onSuccess={() => {
             setShowScheduleModal(false);
             utils.events.invalidate();
-            utils.trainingPlans.invalidate();
+            void invalidateTrainingPlanQueries(utils);
             router.back();
           }}
         />
       )}
+    </View>
+  );
+}
+
+function OverviewMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-1 items-center gap-1">
+      <Text className="text-xs text-muted-foreground">{label}</Text>
+      <Text className="text-base font-semibold text-foreground">{value}</Text>
     </View>
   );
 }

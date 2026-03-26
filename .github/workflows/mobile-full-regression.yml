@@ -1,0 +1,110 @@
+name: Mobile Full Regression
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 * * *"
+
+concurrency:
+  group: mobile-full-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  maestro-lanes:
+    name: Maestro Full Regression (${{ matrix.lane }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          - bootstrap
+          - cold-start
+          - smoke
+          - discover
+          - messaging
+          - notifications
+          - social
+          - calendar
+          - plans
+          - resilience
+          - perf-sentinel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start local Supabase
+        run: pnpm run self-host:up
+
+      - name: Wait for Supabase
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
+
+      - name: Export local test environment
+        run: bash ./scripts/ci-export-local-env.sh >> "$GITHUB_ENV"
+
+      - name: Seed E2E users
+        run: node ./apps/mobile/scripts/seed-e2e-users.mjs
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Start E2E web server
+        run: nohup pnpm run dev:e2e:web > /tmp/gradientpeak-web-e2e.log 2>&1 &
+
+      - name: Start E2E Metro server
+        run: nohup pnpm run dev:e2e:mobile > /tmp/gradientpeak-mobile-e2e.log 2>&1 &
+
+      - name: Wait for E2E web server
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 3100 web-e2e 180
+
+      - name: Wait for E2E Metro server
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 8082 metro-e2e 180
+
+      - name: Run Maestro lane
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_8
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            pnpm --filter mobile android:install
+            pnpm --filter mobile test:e2e:lane ${{ matrix.lane }} -- --device emulator-5554
+
+      - name: Upload Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-full-${{ matrix.lane }}
+          path: |
+            apps/mobile/.maestro/artifacts
+            apps/mobile/.maestro/emulator.log
+            /tmp/gradientpeak-web-e2e.log
+            /tmp/gradientpeak-mobile-e2e.log
+          if-no-files-found: ignore

@@ -1,0 +1,76 @@
+{
+  "bootstrap": {
+    "description": "Expo dev-client bootstrap and auth entry confidence",
+    "targets": [".maestro/flows/main/auth_navigation.yaml"]
+  },
+  "cold-start": {
+    "description": "Auth, verify-first signup, and onboarding entry flows",
+    "targets": [
+      ".maestro/flows/main/auth_navigation.yaml",
+      ".maestro/flows/main/sign_up_to_verify.yaml",
+      ".maestro/flows/main/verify_resend.yaml",
+      ".maestro/flows/main/onboarding_happy_path.yaml",
+      ".maestro/flows/journeys/auth/onboarding_skip_path.yaml"
+    ]
+  },
+  "smoke": {
+    "description": "Fast default regression lane for core runtime confidence",
+    "targets": [
+      ".maestro/flows/main/auth_navigation.yaml",
+      ".maestro/flows/main/tabs_smoke.yaml",
+      ".maestro/flows/main/plan_screen.yaml",
+      ".maestro/flows/main/profile_screen.yaml"
+    ]
+  },
+  "discover": {
+    "description": "Discover browse and profile-open journeys",
+    "targets": [
+      ".maestro/flows/main/discover_user_profile.yaml",
+      ".maestro/flows/journeys/discover/profile_detail_open.yaml"
+    ]
+  },
+  "messaging": {
+    "description": "Message inbox access and direct-message creation flows",
+    "targets": [
+      ".maestro/flows/journeys/messaging/inbox_open.yaml",
+      ".maestro/flows/journeys/messaging/direct_message_from_profile.yaml"
+    ]
+  },
+  "notifications": {
+    "description": "Notification inbox access and future actor-driven expectations",
+    "targets": [".maestro/flows/journeys/notifications/inbox_open.yaml"]
+  },
+  "social": {
+    "description": "Profile-driven follow and future multi-actor social interactions",
+    "targets": [".maestro/flows/journeys/social/follow_target_from_profile.yaml"]
+  },
+  "calendar": {
+    "description": "Calendar create-edit-delete and plan sync journeys",
+    "targets": [
+      ".maestro/flows/main/calendar_custom_event.yaml",
+      ".maestro/flows/journeys/calendar/custom_event_create_edit_delete.yaml"
+    ]
+  },
+  "plans": {
+    "description": "Training plan and activity plan mutation journeys",
+    "targets": [
+      ".maestro/flows/journeys/activity-plans/shared_duplicate_schedule_remove.yaml",
+      ".maestro/flows/journeys/training-plans/shared_duplicate_schedule_plan_sync.yaml",
+      ".maestro/flows/main/plan_projection_settings.yaml"
+    ]
+  },
+  "resilience": {
+    "description": "Interaction resilience probes and repeated input handling",
+    "targets": [
+      ".maestro/flows/journeys/resilience/sign_in_invalid_spam_guard.yaml",
+      ".maestro/flows/journeys/resilience/warm_relaunch_authenticated.yaml"
+    ]
+  },
+  "perf-sentinel": {
+    "description": "Timeout-based readiness checks for user-perceived responsiveness",
+    "targets": [
+      ".maestro/flows/journeys/resilience/warm_relaunch_authenticated.yaml",
+      ".maestro/flows/main/auth_navigation.yaml"
+    ]
+  }
+}

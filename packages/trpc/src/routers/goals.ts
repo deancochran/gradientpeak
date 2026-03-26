@@ -6,8 +6,8 @@ import {
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { assertProfileAccess } from "./profile-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { assertProfileAccess } from "./account/profile-access";
 
 function toSafeDbErrorMessage(
   error: {
@@ -56,39 +56,37 @@ const profileGoalUpdateDataSchema = z
   .partial();
 
 export const goalsRouter = createTRPCRouter({
-  list: protectedProcedure
-    .input(goalsListInputSchema)
-    .query(async ({ ctx, input }) => {
-      await assertProfileAccess({
-        ctx,
-        profileId: input.profile_id,
+  list: protectedProcedure.input(goalsListInputSchema).query(async ({ ctx, input }) => {
+    await assertProfileAccess({
+      ctx,
+      profileId: input.profile_id,
+    });
+
+    const { data, error } = await ctx.supabase
+      .from("profile_goals")
+      .select(profileGoalSelectFields)
+      .eq("profile_id", input.profile_id)
+      .order("created_at", { ascending: false })
+      .range(input.offset, input.offset + input.limit - 1);
+
+    if (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to list profile goals",
       });
+    }
 
-      const { data, error } = await ctx.supabase
-        .from("profile_goals")
-        .select(profileGoalSelectFields)
-        .eq("profile_id", input.profile_id)
-        .order("created_at", { ascending: false })
-        .range(input.offset, input.offset + input.limit - 1);
+    const parsedGoals = profileGoalRecordSchema.array().safeParse(data ?? []);
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to list profile goals",
-        });
-      }
+    if (!parsedGoals.success) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Profile goals data is invalid",
+      });
+    }
 
-      const parsedGoals = profileGoalRecordSchema.array().safeParse(data ?? []);
-
-      if (!parsedGoals.success) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Profile goals data is invalid",
-        });
-      }
-
-      return parsedGoals.data;
-    }),
+    return parsedGoals.data;
+  }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
@@ -123,53 +121,47 @@ export const goalsRouter = createTRPCRouter({
       return parsedGoal.data;
     }),
 
-  create: protectedProcedure
-    .input(profileGoalWriteSchema)
-    .mutation(async ({ ctx, input }) => {
-      await assertProfileAccess({
-        ctx,
+  create: protectedProcedure.input(profileGoalWriteSchema).mutation(async ({ ctx, input }) => {
+    await assertProfileAccess({
+      ctx,
+      profileId: input.profile_id,
+    });
+
+    const { data, error } = await ctx.supabase
+      .from("profile_goals")
+      .insert(input as any)
+      .select(profileGoalSelectFields)
+      .single();
+
+    if (error || !data) {
+      console.error("goals.create failed", {
         profileId: input.profile_id,
+        errorCode: error?.code ?? null,
+        errorMessage: error?.message ?? null,
+        errorDetails: error?.details ?? null,
+        errorHint: error?.hint ?? null,
       });
 
-      const { data, error } = await ctx.supabase
-        .from("profile_goals")
-        .insert(input as any)
-        .select(profileGoalSelectFields)
-        .single();
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `Failed to create goal: ${toSafeDbErrorMessage(error)}`,
+      });
+    }
 
-      if (error || !data) {
-        console.error("goals.create failed", {
-          profileId: input.profile_id,
-          errorCode: error?.code ?? null,
-          errorMessage: error?.message ?? null,
-          errorDetails: error?.details ?? null,
-          errorHint: error?.hint ?? null,
-        });
+    const parsedGoal = profileGoalRecordSchema.safeParse(data);
 
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to create goal: ${toSafeDbErrorMessage(error)}`,
-        });
-      }
+    if (!parsedGoal.success) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Goal data is invalid",
+      });
+    }
 
-      const parsedGoal = profileGoalRecordSchema.safeParse(data);
-
-      if (!parsedGoal.success) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Goal data is invalid",
-        });
-      }
-
-      return {
-        ...parsedGoal.data,
-        cache_tags: [
-          "goals.list",
-          "goals.getById",
-          "profileSettings.getForProfile",
-        ],
-      };
-    }),
+    return {
+      ...parsedGoal.data,
+      cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+    };
+  }),
 
   update: protectedProcedure
     .input(
@@ -194,8 +186,7 @@ export const goalsRouter = createTRPCRouter({
 
       await assertProfileAccess({
         ctx,
-        profileId: (existingGoal as unknown as { profile_id: string })
-          .profile_id,
+        profileId: (existingGoal as unknown as { profile_id: string }).profile_id,
       });
 
       const mergedGoal = profileGoalRecordSchema.safeParse({
@@ -242,11 +233,7 @@ export const goalsRouter = createTRPCRouter({
 
       return {
         ...parsedGoal.data,
-        cache_tags: [
-          "goals.list",
-          "goals.getById",
-          "profileSettings.getForProfile",
-        ],
+        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
       };
     }),
 
@@ -271,10 +258,7 @@ export const goalsRouter = createTRPCRouter({
         profileId: existingGoal.profile_id,
       });
 
-      const { error } = await ctx.supabase
-        .from("profile_goals")
-        .delete()
-        .eq("id", input.id);
+      const { error } = await ctx.supabase.from("profile_goals").delete().eq("id", input.id);
 
       if (error) {
         throw new TRPCError({
@@ -285,11 +269,7 @@ export const goalsRouter = createTRPCRouter({
 
       return {
         success: true,
-        cache_tags: [
-          "goals.list",
-          "goals.getById",
-          "profileSettings.getForProfile",
-        ],
+        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
       };
     }),
 });

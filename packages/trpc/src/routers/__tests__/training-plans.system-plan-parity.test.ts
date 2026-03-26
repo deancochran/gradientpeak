@@ -1,7 +1,6 @@
 import { ALL_SAMPLE_PLANS } from "@repo/core";
 import { describe, expect, it } from "vitest";
-import { trainingPlansCrudRouter } from "../training-plans.crud";
-import { trainingPlansRouter } from "../training_plans";
+import { trainingPlansCrudRouter, trainingPlansRouter } from "../planning/training-plans";
 
 type SystemTrainingPlanRow = {
   id: string;
@@ -58,8 +57,7 @@ function createSupabaseMock(rows: SystemTrainingPlanRow[]) {
       const applyFilters = () =>
         rows.filter((row) =>
           filters.every(
-            ({ column, value }) =>
-              row[column as keyof SystemTrainingPlanRow] === value,
+            ({ column, value }) => row[column as keyof SystemTrainingPlanRow] === value,
           ),
         );
 
@@ -73,15 +71,8 @@ function createSupabaseMock(rows: SystemTrainingPlanRow[]) {
           const data = applyFilters()[0] ?? null;
           return { data, error: null };
         },
-        then: (
-          onFulfilled: (value: {
-            data: SystemTrainingPlanRow[];
-            error: null;
-          }) => unknown,
-        ) =>
-          Promise.resolve({ data: applyFilters(), error: null }).then(
-            onFulfilled,
-          ),
+        then: (onFulfilled: (value: { data: SystemTrainingPlanRow[]; error: null }) => unknown) =>
+          Promise.resolve({ data: applyFilters(), error: null }).then(onFulfilled),
       };
 
       return builder;

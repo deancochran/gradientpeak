@@ -1,3 +1,4 @@
+export * from "./adjustments";
 export * from "./availabilityUtils";
 export * from "./buildProjectionEngineInput";
 export * from "./canonicalization";
@@ -35,6 +36,7 @@ export * from "./projection/safety-caps";
 export * from "./projectionCalculations";
 export * from "./projectionTypes";
 export * from "./ramp-learning";
+export * from "./recordingValidation";
 export * from "./resolveConstraintConflicts";
 export * from "./scoring/gdi";
 export * from "./scoring/goalScore";

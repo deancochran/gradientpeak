@@ -9,10 +9,10 @@
  * - GPS intent + availability
  */
 
-import type { PublicActivityCategory } from "@repo/supabase";
 import { z } from "zod";
 
 import type { FTMSFeatures } from "../ftms-types";
+import type { CanonicalSport } from "./sport";
 
 export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);
 
@@ -43,7 +43,7 @@ export const recordingCapabilitiesSchema = z
 
 export interface RecordingConfigInput {
   // Core activity details
-  activityCategory: PublicActivityCategory;
+  activityCategory: CanonicalSport;
   gpsRecordingEnabled: boolean;
   mode: "planned" | "unplanned";
 

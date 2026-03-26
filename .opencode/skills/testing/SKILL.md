@@ -33,6 +33,8 @@ This skill is for test strategy and test shape.
 - `@repo/ui`: component tests with `vitest` for web and `jest` for native
 - `apps/web`: Playwright for web runtime and route-level E2E confidence
 - `apps/mobile`: Maestro for mobile runtime and end-to-end flows
+- For shared UI, default to `fixtures.ts` + Storybook `play` coverage first; use Playwright/Maestro only when proving app/runtime boundaries rather than component internals.
+- Prefer generated selector and preview manifests over hand-authored runtime selector lists.
 
 ## Default Test Shape
 

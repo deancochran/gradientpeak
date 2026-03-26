@@ -104,6 +104,8 @@ Compaction rules:
 - Prefer small, focused diffs that match existing patterns.
 - Never duplicate business logic that belongs in `@repo/core`.
 - Keep `@repo/core` database-independent.
+- For shared UI work in `packages/ui`, prefer a TDD flow of `fixtures.ts` -> story -> `play` interaction -> package test as needed -> preview scenario/manifests -> runtime E2E only for app integration boundaries.
+- Treat generated selector and preview manifests as the source of truth for cross-runtime preview smoke assertions; avoid hand-maintained app-local selector copies.
 - Use the smallest relevant skill set instead of expanding always-on instructions.
 - Load `brainstorming` before creative feature design or behavior changes.
 - For medium or high complexity work, delegate research first when it materially reduces risk.

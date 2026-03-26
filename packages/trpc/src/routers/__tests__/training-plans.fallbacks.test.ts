@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/core/estimation", async () => {
-  const actual = await vi.importActual<typeof import("@repo/core/estimation")>(
-    "@repo/core/estimation",
-  );
+  const actual =
+    await vi.importActual<typeof import("@repo/core/estimation")>("@repo/core/estimation");
 
   return {
     ...actual,
@@ -23,8 +22,8 @@ vi.mock("@repo/core/estimation", async () => {
   };
 });
 
-import { getPlanTabProjectionService } from "../training-plans.base";
-import { trainingPlansRouter } from "../training_plans";
+import { trainingPlansRouter } from "../planning/training-plans";
+import { getPlanTabProjectionService } from "../planning/training-plans/base";
 
 type QueryResult = {
   data: any;
@@ -61,13 +60,8 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
               return candidate === filter.value;
             }
 
-            if (
-              typeof candidate === "string" &&
-              typeof filter.value === "string"
-            ) {
-              return filter.type === "gte"
-                ? candidate >= filter.value
-                : candidate < filter.value;
+            if (typeof candidate === "string" && typeof filter.value === "string") {
+              return filter.type === "gte" ? candidate >= filter.value : candidate < filter.value;
             }
 
             return true;
@@ -168,9 +162,7 @@ describe("training plan projection fallbacks", () => {
       },
     });
 
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([
-      20, 20, 20,
-    ]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
     expect(result.load_guidance).toMatchObject({
       mode: "baseline",
       goal_count: 0,
@@ -212,12 +204,8 @@ describe("training plan projection fallbacks", () => {
       },
     });
 
-    expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([
-      0, 55, 0,
-    ]);
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([
-      20, 20, 20,
-    ]);
+    expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([0, 55, 0]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
   });
 
   it("logs and skips invalid canonical profile goals before returning a safe fallback response", async () => {
@@ -279,9 +267,7 @@ describe("training plan projection fallbacks", () => {
       "Skipping invalid canonical profile goal for insight timeline projection.",
       expect.anything(),
     );
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([
-      20, 20, 20,
-    ]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
     expect(result.load_guidance).toMatchObject({
       mode: "baseline",
       goal_count: 0,
@@ -348,12 +334,8 @@ describe("training plan projection fallbacks", () => {
       },
     });
 
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([
-      20, 20, 20,
-    ]);
-    expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([
-      0, 84, 0,
-    ]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
+    expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([0, 84, 0]);
     expect(result.load_guidance).toMatchObject({
       mode: "baseline",
       weekly_cap_tss: 140,
@@ -443,18 +425,12 @@ describe("training plan projection fallbacks", () => {
       },
     });
 
-    expect(lowScheduled.timeline.map((point) => point.ideal_tss)).toEqual([
-      20, 20, 20,
-    ]);
+    expect(lowScheduled.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
     expect(highScheduled.timeline.map((point) => point.ideal_tss)).toEqual(
       lowScheduled.timeline.map((point) => point.ideal_tss),
     );
-    expect(lowScheduled.timeline.map((point) => point.scheduled_tss)).toEqual([
-      0, 36, 0,
-    ]);
-    expect(highScheduled.timeline.map((point) => point.scheduled_tss)).toEqual([
-      0, 96, 0,
-    ]);
+    expect(lowScheduled.timeline.map((point) => point.scheduled_tss)).toEqual([0, 36, 0]);
+    expect(highScheduled.timeline.map((point) => point.scheduled_tss)).toEqual([0, 96, 0]);
   });
 
   it("scopes scheduled load to the requested training plan when a training_plan_id is provided", async () => {
@@ -519,9 +495,7 @@ describe("training plan projection fallbacks", () => {
       },
     });
 
-    expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([
-      0, 42, 0,
-    ]);
+    expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([0, 42, 0]);
   });
 
   it("marks the load guidance as goal-driven when dated profile goals exist", async () => {

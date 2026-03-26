@@ -4,7 +4,8 @@
   "mcp": {
     "supabase": {
       "type": "remote",
-      "url": "http://localhost:54321/mcp?features=docs%2Cdatabase%2Cdebugging%2Cdevelopment",
+      "url": "{env:SUPABASE_MCP_URL}",
+      "oauth": false,
       "enabled": true
     },
     "context7": {

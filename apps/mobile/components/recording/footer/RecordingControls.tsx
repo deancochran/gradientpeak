@@ -12,10 +12,10 @@
  * Note: Discard is only available on the submit page, not during recording
  */
 
-import React from "react";
-import { View, Pressable } from "react-native";
-import { Text } from "@repo/ui/components/text";
 import type { RecordingState } from "@repo/core";
+import { Text } from "@repo/ui/components/text";
+import React from "react";
+import { Pressable, View } from "react-native";
 
 export interface RecordingControlsProps {
   recordingState: RecordingState;
@@ -41,6 +41,7 @@ export function RecordingControls({
     return (
       <Pressable
         onPress={onStart}
+        testID="recording-start-button"
         className="h-14 bg-green-600 rounded-lg items-center justify-center active:opacity-80"
       >
         <Text className="text-white text-lg font-semibold">Start</Text>
@@ -54,6 +55,7 @@ export function RecordingControls({
       <View className="flex-row gap-3">
         <Pressable
           onPress={onPause}
+          testID="recording-pause-button"
           className="flex-1 h-12 bg-yellow-600 rounded-lg items-center justify-center active:opacity-80"
         >
           <Text className="text-white text-base font-semibold">Pause</Text>
@@ -61,6 +63,7 @@ export function RecordingControls({
 
         <Pressable
           onPress={onLap}
+          testID="recording-lap-button"
           className="flex-1 h-12 bg-blue-600 rounded-lg items-center justify-center active:opacity-80"
         >
           <Text className="text-white text-base font-semibold">Lap</Text>
@@ -75,6 +78,7 @@ export function RecordingControls({
       <View className="flex-row gap-3">
         <Pressable
           onPress={onResume}
+          testID="recording-resume-button"
           className="flex-1 h-12 bg-green-600 rounded-lg items-center justify-center active:opacity-80"
         >
           <Text className="text-white text-base font-semibold">Resume</Text>
@@ -82,6 +86,7 @@ export function RecordingControls({
 
         <Pressable
           onPress={onFinish}
+          testID="recording-finish-button"
           className="flex-1 h-12 bg-red-600 rounded-lg items-center justify-center active:opacity-80"
         >
           <Text className="text-white text-base font-semibold">Finish</Text>

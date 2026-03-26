@@ -9,11 +9,6 @@
  * @package @repo/core
  */
 
-import {
-  publicActivitiesInsertSchema,
-  publicActivityCategorySchema,
-  publicActivityPlansInsertSchema,
-} from "@repo/supabase";
 import { z } from "zod";
 import { profileGoalTargetSchema } from "./goals/profile_goals";
 import {
@@ -23,6 +18,7 @@ import {
   eventTypeInputSchema,
   importedEventSourceMetadataSchema,
 } from "./planned_activity";
+import { canonicalSportSchema } from "./sport";
 import {
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
@@ -88,6 +84,21 @@ export const distanceKmSchema = z.preprocess(
 );
 
 export const distanceKmToMetersSchema = distanceKmSchema.transform((km) => Math.round(km * 1000));
+
+const activityInsertShapeSchema = z.object({
+  is_private: z.boolean().optional(),
+  name: z.string(),
+  notes: z.string().nullable().optional(),
+});
+
+const activityPlanInsertShapeSchema = z.object({
+  activity_category: canonicalSportSchema,
+  description: z.string(),
+  name: z.string(),
+  notes: z.string().nullable().optional(),
+  route_id: z.string().uuid().nullable().optional(),
+  structure: z.unknown().nullable().optional(),
+});
 
 /**
  * Strict completion time input in h:mm:ss format.
@@ -540,7 +551,7 @@ export const optionalActivityNotesSchema = z
  * - notes: optional, max 5000 characters (from supazod: optional nullable string)
  * - is_private: optional boolean, defaults to false (from supazod: optional boolean)
  */
-export const activitySubmissionFormSchema = publicActivitiesInsertSchema
+export const activitySubmissionFormSchema = activityInsertShapeSchema
   .pick({
     name: true,
     notes: true,
@@ -672,7 +683,7 @@ export const gpsRecordingEnabledSchema = z.boolean();
 /**
  * Activity category validation
  */
-export const activityCategorySchema = publicActivityCategorySchema;
+export const activityCategorySchema = canonicalSportSchema;
 
 /**
  * Activity Plan Create Form Schema
@@ -693,7 +704,7 @@ export const activityCategorySchema = publicActivityCategorySchema;
  * - Description-only: Casual activity with no structure
  * - Combinations supported
  */
-export const activityPlanCreateFormSchema = publicActivityPlansInsertSchema
+export const activityPlanCreateFormSchema = activityPlanInsertShapeSchema
   .pick({
     name: true,
     description: true,

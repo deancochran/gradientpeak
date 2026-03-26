@@ -3,10 +3,7 @@ import { useSyncExternalStore } from "react";
 
 const SERVER_URL_OVERRIDE_KEY = "server_url_override";
 
-const hostedApiUrl = requireUrl(
-  process.env.EXPO_PUBLIC_API_URL,
-  "EXPO_PUBLIC_API_URL",
-);
+const hostedApiUrl = requireUrl(process.env.EXPO_PUBLIC_API_URL, "EXPO_PUBLIC_API_URL");
 const hostedSupabaseUrl = requireUrl(
   process.env.EXPO_PUBLIC_SUPABASE_URL,
   "EXPO_PUBLIC_SUPABASE_URL",
@@ -77,7 +74,7 @@ function deriveSupabaseUrl(apiUrl: string): string {
       return parsed.origin;
     }
 
-    return parsed.origin;
+    return hostedSupabaseUrl;
   } catch {
     return hostedSupabaseUrl;
   }
@@ -85,9 +82,7 @@ function deriveSupabaseUrl(apiUrl: string): string {
 
 function updateState(overrideUrl: string | null) {
   const nextApiUrl = overrideUrl ?? hostedApiUrl;
-  const nextSupabaseUrl = overrideUrl
-    ? deriveSupabaseUrl(nextApiUrl)
-    : hostedSupabaseUrl;
+  const nextSupabaseUrl = overrideUrl ? deriveSupabaseUrl(nextApiUrl) : hostedSupabaseUrl;
 
   state = {
     initialized: true,

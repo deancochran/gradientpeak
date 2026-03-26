@@ -1,20 +1,16 @@
+import { ADJUSTMENT_PRESETS, type AdjustmentType, getAdjustmentSummary } from "@repo/core/plan";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
 import { Settings2, Sparkles, X } from "lucide-react-native";
-import React, { useState } from "react";
+import React from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import { ROUTES } from "@/lib/constants/routes";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
 import { trpc } from "@/lib/trpc";
-import {
-  ADJUSTMENT_PRESETS,
-  AdjustmentType,
-  getAdjustmentSummary,
-} from "@/lib/utils/training-adjustments";
 
 interface QuickAdjustSheetProps {
   visible: boolean;
@@ -31,14 +27,12 @@ export function QuickAdjustSheet({
 }: QuickAdjustSheetProps) {
   const router = useRouter();
   const utils = trpc.useUtils();
-  const [selectedAdjustment, setSelectedAdjustment] = useState<AdjustmentType | null>(null);
 
   const applyAdjustmentMutation = useReliableMutation(trpc.trainingPlans.applyQuickAdjustment, {
     invalidate: [utils.trainingPlans],
     onSuccess: () => {
       Alert.alert("Success", "Training plan adjusted successfully");
       onClose();
-      setSelectedAdjustment(null);
     },
     onError: (error) => {
       Alert.alert("Adjustment Failed", error.message || "Failed to adjust plan");

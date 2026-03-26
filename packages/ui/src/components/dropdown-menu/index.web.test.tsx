@@ -10,7 +10,7 @@ import {
 } from "./index.web";
 
 describe("DropdownMenu web", () => {
-  it("renders trigger text and menu items when open", () => {
+  it("renders trigger text and menu items when open", async () => {
     renderWeb(
       <DropdownMenu modal={false} open>
         <DropdownMenuTrigger>Open menu</DropdownMenuTrigger>
@@ -21,8 +21,8 @@ describe("DropdownMenu web", () => {
       </DropdownMenu>,
     );
 
-    expect(screen.getByRole("menu")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Pin workout" })).toBeVisible();
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+    expect(await screen.findByRole("menuitem", { name: "Pin workout" })).toBeVisible();
     expect(screen.getByText("Shift+P")).toBeInTheDocument();
   });
 });

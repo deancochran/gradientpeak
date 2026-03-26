@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { useState } from "react";
 
 import { switchFixtures } from "./fixtures";
 import { Switch } from "./index.web";
+import { exerciseSwitchStory } from "./interactions";
 
 const meta = {
   title: "Components/Switch",
@@ -17,7 +19,18 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Playground: Story = {};
+export const Playground: Story = {
+  render: (args) => {
+    const [checked, setChecked] = useState(true);
+    return <Switch {...args} checked={checked} onCheckedChange={setChecked} />;
+  },
+  play: async ({ canvasElement }) => {
+    await exerciseSwitchStory({
+      canvasElement,
+      expectedLabel: switchFixtures.notifications.accessibilityLabel,
+    });
+  },
+};
 
 export const States: Story = {
   render: () => (

@@ -32,6 +32,8 @@ This skill owns `@repo/ui` as a cross-platform package.
 - `packages/ui` owns shared component APIs, theme assets, and platform-specific export mapping.
 - Web preview lives through `apps/web` Storybook while stories are largely package-owned.
 - Use package-level tests to prove shared component behavior before relying on E2E coverage.
+- Default shared UI TDD flow: add or update `fixtures.ts`, write the story and `play` interaction, add `interactions.ts` when steps repeat, then extend preview scenarios/manifests only if the component should be reachable in shared runtime smoke surfaces.
+- Keep selector-bearing fixture fields stable; generated selector and preview manifests are the approved cross-runtime contract for Playwright and Maestro.
 - `packages/ui` also owns the shared form interaction layer: `Form`, `useZodForm`, `useZodFormSubmit`, and the thin controlled wrappers under `components/form` and `components/form-fields`.
 - Keep domain parsing, schemas, and calculations in `@repo/core`; `@repo/ui` should only own UI behavior, field composition, and RHF wiring.
 

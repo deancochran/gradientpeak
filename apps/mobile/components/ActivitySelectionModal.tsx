@@ -143,7 +143,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
         <Pressable className="flex-1" onPress={onClose} />
 
         {/* Modal Content */}
-        <View className="bg-background rounded-t-3xl pb-8">
+        <View className="bg-background rounded-t-3xl pb-8" testID="activity-selection-modal">
           {/* Header */}
           <View className="flex-row items-center justify-between px-6 pt-6 pb-4 border-b border-border">
             <Text className="text-2xl font-bold">Select Activity</Text>
@@ -171,6 +171,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
                   >
                     <ToggleGroupItem
                       value="gps-on"
+                      testID="gps-on-option"
                       isFirst
                       className={`flex-1 py-3 ${
                         currentGpsRecordingEnabled ? "bg-background shadow-sm" : ""
@@ -196,6 +197,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
 
                     <ToggleGroupItem
                       value="gps-off"
+                      testID="gps-off-option"
                       isLast
                       className={`flex-1 py-3 ${
                         !currentGpsRecordingEnabled ? "bg-background shadow-sm" : ""
@@ -231,6 +233,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
                     <Pressable
                       key={activity.category}
                       onPress={() => handleCategorySelect(activity.category)}
+                      testID={`activity-select-${activity.category}`}
                       className={`flex-row items-center p-4 rounded-xl border-2 ${
                         isSelected ? "border-primary bg-primary/10" : "border-border bg-card"
                       }`}

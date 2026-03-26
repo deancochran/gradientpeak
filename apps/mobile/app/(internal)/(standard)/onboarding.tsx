@@ -100,6 +100,7 @@ type StepId =
   | "summary";
 
 interface StepConfig {
+  canSkip: boolean;
   id: StepId;
   component: React.FC<StepProps>;
   shouldShow: (data: OnboardingData) => boolean;
@@ -139,6 +140,7 @@ const ExperienceStep = ({ data, updateData }: StepProps) => (
       <TouchableOpacity
         key={level}
         onPress={() => updateData({ experience_level: level })}
+        testID={`onboarding-experience-${level}`}
         className={`p-4 border rounded-xl flex-row items-center justify-between ${
           data.experience_level === level ? "border-primary bg-primary/5" : "border-border bg-card"
         }`}
@@ -166,6 +168,7 @@ const GenderStep = ({ data, updateData }: StepProps) => (
       <TouchableOpacity
         key={gender}
         onPress={() => updateData({ gender })}
+        testID={`onboarding-gender-${gender}`}
         className={`p-4 border rounded-xl flex-row items-center justify-between ${
           data.gender === gender ? "border-primary bg-primary/5" : "border-border bg-card"
         }`}
@@ -219,6 +222,7 @@ const SportStep = ({ data, updateData }: StepProps) => (
       <TouchableOpacity
         key={sport}
         onPress={() => updateData({ primary_sport: sport as any })}
+        testID={`onboarding-sport-${sport}`}
         className={`p-4 border rounded-xl flex-row items-center justify-between ${
           data.primary_sport === sport ? "border-primary bg-primary/5" : "border-border bg-card"
         }`}
@@ -580,42 +584,49 @@ export default function OnboardingScreen() {
     () => [
       {
         id: "intro",
+        canSkip: false,
         component: IntroStep,
         shouldShow: () => true,
         isValid: () => true,
       },
       {
         id: "experience",
+        canSkip: false,
         component: ExperienceStep,
         shouldShow: () => true,
         isValid: (d) => !!d.experience_level,
       },
       {
         id: "gender",
+        canSkip: false,
         component: GenderStep,
         shouldShow: () => true,
         isValid: (d) => !!d.gender,
       },
       {
         id: "dob",
+        canSkip: false,
         component: DobStep,
         shouldShow: () => true,
         isValid: (d) => !!d.dob && new Date(d.dob).toString() !== "Invalid Date",
       },
       {
         id: "weight",
+        canSkip: false,
         component: WeightStep,
         shouldShow: () => true,
         isValid: (d) => !!d.weight_kg && d.weight_kg >= 30 && d.weight_kg <= 300,
       },
       {
         id: "sport",
+        canSkip: false,
         component: SportStep,
         shouldShow: () => true,
         isValid: (d) => !!d.primary_sport,
       },
       {
         id: "max_hr",
+        canSkip: true,
         component: MaxHrStep,
         shouldShow: () => true,
         // Optional but must be valid if present
@@ -623,6 +634,7 @@ export default function OnboardingScreen() {
       },
       {
         id: "resting_hr",
+        canSkip: true,
         component: RestingHrStep,
         shouldShow: () => true,
         // Optional but must be valid if present
@@ -630,30 +642,35 @@ export default function OnboardingScreen() {
       },
       {
         id: "ftp",
+        canSkip: true,
         component: FtpStep,
         shouldShow: (d) => d.primary_sport === "cycling" || d.primary_sport === "triathlon",
         isValid: (d) => !d.ftp || (d.ftp >= 50 && d.ftp <= 500),
       },
       {
         id: "threshold_pace",
+        canSkip: true,
         component: ThresholdPaceStep,
         shouldShow: (d) => d.primary_sport === "running" || d.primary_sport === "triathlon",
         isValid: (d) => !d.threshold_pace || (d.threshold_pace >= 120 && d.threshold_pace <= 600), // 2:00 to 10:00 min/km
       },
       {
         id: "css",
+        canSkip: true,
         component: CssStep,
         shouldShow: (d) => d.primary_sport === "swimming" || d.primary_sport === "triathlon",
         isValid: (d) => !d.css || (d.css >= 60 && d.css <= 300), // 1:00 to 5:00 min/100m
       },
       {
         id: "integrations",
+        canSkip: true,
         component: IntegrationsStep,
         shouldShow: () => true,
         isValid: () => true,
       },
       {
         id: "summary",
+        canSkip: false,
         component: SummaryStep,
         shouldShow: () => true,
         isValid: () => true,
@@ -668,6 +685,7 @@ export default function OnboardingScreen() {
   const isLastStep = currentStepIndex === activeSteps.length - 1;
 
   const isStepValid = currentStep?.isValid(data) ?? true;
+  const canSkipStep = !isLastStep && (currentStep?.canSkip ?? false);
 
   const handleNext = async () => {
     if (isLastStep) {
@@ -736,7 +754,7 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-      <View className="flex-1 bg-background">
+      <View className="flex-1 bg-background" testID="onboarding-screen">
         {/* Header - Fixed */}
         <View className="px-6 py-4 border-b border-border/50 flex-row items-center justify-between bg-background z-10">
           <Text className="text-sm font-medium text-muted-foreground">
@@ -762,8 +780,9 @@ export default function OnboardingScreen() {
           <Button
             variant="ghost"
             onPress={handleSkip}
-            className={`flex-1 ${isStepValid ? "opacity-50" : ""}`}
-            disabled={isSubmitting || isStepValid}
+            className={`flex-1 ${!canSkipStep ? "opacity-50" : ""}`}
+            disabled={isSubmitting || !canSkipStep}
+            testID="onboarding-skip-button"
           >
             <Text className="text-muted-foreground">Skip</Text>
           </Button>
@@ -771,6 +790,7 @@ export default function OnboardingScreen() {
             onPress={handleNext}
             className={`flex-[2] ${!isStepValid ? "opacity-50" : ""}`}
             disabled={isSubmitting || !isStepValid}
+            testID={isLastStep ? "onboarding-finish-button" : "onboarding-next-button"}
           >
             <Text className="font-semibold text-primary-foreground">
               {isLastStep ? "Finish" : "Next"}

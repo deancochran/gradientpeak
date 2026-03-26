@@ -11,7 +11,7 @@ describe("workload utils", () => {
         {
           started_at: "2026-02-01T12:00:00.000Z",
           trimp: 100,
-          training_stress_score: 50,
+          tss: 50,
         },
       ],
       start,
@@ -30,7 +30,7 @@ describe("workload utils", () => {
       [
         {
           started_at: "2026-02-03T08:00:00.000Z",
-          training_stress_score: 40,
+          tss: 40,
         },
       ],
       start,
@@ -39,7 +39,7 @@ describe("workload utils", () => {
 
     expect(result.dailyLoads).toEqual([0, 0, 40, 0, 0]);
     expect(result.coverageDays).toBe(2);
-    expect(result.source).toBe("training_stress_score");
+    expect(result.source).toBe("tss");
   });
 
   it("builds ACWR and Monotony envelopes with shared source", () => {

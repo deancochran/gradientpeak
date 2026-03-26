@@ -248,15 +248,14 @@ function ActivitiesScreen() {
                           {formatDuration(activity.duration_seconds)}
                         </Text>
                       </View>
-                      {activity.training_stress_score !== null &&
-                        activity.training_stress_score !== undefined && (
-                          <View>
-                            <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
-                            <Text className="text-sm font-semibold text-primary">
-                              {Math.round(activity.training_stress_score)}
-                            </Text>
-                          </View>
-                        )}
+                      {activity.derived?.tss !== null && activity.derived?.tss !== undefined && (
+                        <View>
+                          <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
+                          <Text className="text-sm font-semibold text-primary">
+                            {Math.round(activity.derived.tss)}
+                          </Text>
+                        </View>
+                      )}
                       {activity.avg_power && (
                         <View>
                           <Text className="text-xs text-muted-foreground uppercase">Avg Power</Text>

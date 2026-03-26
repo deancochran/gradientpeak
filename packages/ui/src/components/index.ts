@@ -43,4 +43,5 @@ export * from "./textarea/index.web";
 export * from "./toggle/index.web";
 export * from "./toggle-group/index.web";
 export * from "./tooltip/index.web";
+export * from "./training-preferences-summary-card/index.web";
 export * from "./weight-input-field/index.web";

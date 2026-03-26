@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityPlansRouter } from "../activity_plans";
+import { activityPlansRouter } from "../activity-plans";
 
 type QueryResult = {
   data: any;
@@ -183,9 +183,7 @@ describe("activityPlansRouter.duplicate", () => {
       (call) => call.table === "activity_plans" && call.operation === "insert",
     );
 
-    expect((sourceFilter?.payload as any)?.value).toContain(
-      "template_visibility.eq.public",
-    );
+    expect((sourceFilter?.payload as any)?.value).toContain("template_visibility.eq.public");
     expect(insertCall?.payload).toMatchObject({
       name: "Shared Workout (Copy)",
       profile_id: "profile-123",

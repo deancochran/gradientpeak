@@ -1,0 +1,1003 @@
+import { validateTrainingPlanForm } from "@repo/core/plan/formValidation";
+import React from "react";
+import { fireEvent, renderNative } from "../../../../test/render-native";
+import {
+  SinglePageForm,
+  type TrainingPlanConfigFormData,
+  type TrainingPlanFormData,
+} from "../SinglePageForm";
+
+jest.mock("react-native", () => ({
+  __esModule: true,
+  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  Modal: (props: any) => React.createElement("Modal", props, props.children),
+  Pressable: (props: any) => React.createElement("Pressable", props, props.children),
+  ScrollView: (props: any) => React.createElement("ScrollView", props, props.children),
+  View: (props: any) => React.createElement("View", props, props.children),
+}));
+
+jest.mock("@repo/core", () => ({
+  __esModule: true,
+  createEmptyGoalDraft: () => ({ targets: [] }),
+  parseNumberOrUndefined: (value: unknown) => {
+    if (value === "" || value === null || value === undefined) {
+      return undefined;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  },
+}));
+
+jest.mock("@repo/ui/components/button", () => ({
+  __esModule: true,
+  Button: (props: any) => React.createElement("Button", props, props.children),
+}));
+
+jest.mock("@repo/ui/components/badge", () => ({
+  __esModule: true,
+  Badge: (props: any) => React.createElement("Badge", props, props.children),
+}));
+
+jest.mock("@repo/ui/components/input", () => ({
+  __esModule: true,
+  Input: (props: any) => React.createElement("Input", props),
+}));
+
+jest.mock("@repo/ui/components/textarea", () => ({
+  __esModule: true,
+  Textarea: (props: any) => React.createElement("Textarea", props),
+}));
+
+jest.mock("@repo/ui/components/label", () => ({
+  __esModule: true,
+  Label: (props: any) => React.createElement("Label", props, props.children),
+}));
+
+jest.mock("@repo/ui/components/text", () => ({
+  __esModule: true,
+  Text: (props: any) => React.createElement("Text", props, props.children),
+}));
+
+jest.mock("@repo/ui/components/switch", () => ({
+  __esModule: true,
+  Switch: (props: any) => React.createElement("Switch", props),
+}));
+
+jest.mock("@repo/ui/components/select", () => ({
+  __esModule: true,
+  Select: (props: any) => React.createElement("Select", props, props.children),
+  SelectContent: (props: any) => React.createElement("SelectContent", props, props.children),
+  SelectItem: (props: any) => React.createElement("SelectItem", props, props.children),
+  SelectTrigger: (props: any) => React.createElement("SelectTrigger", props, props.children),
+  SelectValue: (props: any) => React.createElement("SelectValue", props),
+}));
+
+jest.mock("../CreationProjectionChart", () => ({
+  __esModule: true,
+  CreationProjectionChart: (props: any) => React.createElement("CreationProjectionChart", props),
+}));
+
+jest.mock("@repo/ui/components/bounded-number-input", () => ({
+  __esModule: true,
+  BoundedNumberInput: (props: any) => React.createElement("BoundedNumberInput", props),
+}));
+
+jest.mock("@repo/ui/components/date-input", () => ({
+  __esModule: true,
+  DateInput: (props: any) => React.createElement("DateField", props),
+}));
+
+jest.mock("@repo/ui/components/duration-input", () => ({
+  __esModule: true,
+  DurationInput: (props: any) => React.createElement("DurationInput", props),
+}));
+
+jest.mock("@repo/ui/components/integer-stepper", () => ({
+  __esModule: true,
+  IntegerStepper: (props: any) => React.createElement("IntegerStepper", props),
+}));
+
+jest.mock("@repo/ui/components/pace-input", () => ({
+  __esModule: true,
+  PaceInput: (props: any) => React.createElement("PaceInput", props),
+}));
+
+jest.mock("@repo/ui/components/percent-slider-input", () => ({
+  __esModule: true,
+  PercentSliderInput: (props: any) => React.createElement("PercentSliderInput", props),
+}));
+
+jest.mock("@repo/ui/components/number-slider-input", () => ({
+  __esModule: true,
+  NumberSliderInput: (props: any) => React.createElement("NumberSliderInput", props),
+}));
+
+jest.mock("lucide-react-native", () => {
+  const icon = (props: any) => React.createElement("Icon", props);
+  return {
+    __esModule: true,
+    Flag: icon,
+    Gauge: icon,
+    Heart: icon,
+    Trophy: icon,
+    Zap: icon,
+    ChevronDown: icon,
+    ChevronUp: icon,
+    Lock: icon,
+    LockOpen: icon,
+    Pencil: icon,
+    Plus: icon,
+    ShieldAlert: icon,
+    Trash2: icon,
+  };
+});
+
+const getNodeText = (children: any): string => {
+  if (typeof children === "string") {
+    return children;
+  }
+
+  if (typeof children === "number") {
+    return String(children);
+  }
+
+  if (Array.isArray(children)) {
+    return children.map((child) => getNodeText(child)).join("");
+  }
+
+  if (children?.props?.children !== undefined) {
+    return getNodeText(children.props.children);
+  }
+
+  return "";
+};
+
+type RenderResult = ReturnType<typeof renderNative>;
+
+const findMockNodes = (rendered: RenderResult, type: string) =>
+  (() => {
+    try {
+      return (rendered as any).UNSAFE_getAllByType(type);
+    } catch {
+      return [];
+    }
+  })();
+
+const baseFormData: TrainingPlanFormData = {
+  planStartDate: "2026-02-14",
+  goals: [
+    {
+      id: "goal-1",
+      name: "Spring race",
+      targetDate: "2026-06-01",
+      priority: 1,
+      targets: [
+        {
+          id: "target-1",
+          targetType: "race_performance",
+          activityCategory: "run",
+        },
+      ],
+    },
+  ],
+};
+
+const baseConfigData = {
+  availabilityConfig: {
+    template: "moderate",
+    days: [
+      { day: "monday", windows: [], max_sessions: 0 },
+      { day: "tuesday", windows: [], max_sessions: 0 },
+      { day: "wednesday", windows: [], max_sessions: 0 },
+      { day: "thursday", windows: [], max_sessions: 0 },
+      { day: "friday", windows: [], max_sessions: 0 },
+      { day: "saturday", windows: [], max_sessions: 0 },
+      { day: "sunday", windows: [], max_sessions: 0 },
+    ],
+  },
+  availabilityProvenance: {
+    source: "default",
+    updated_at: "2026-02-13T00:00:00.000Z",
+  },
+  recentInfluenceScore: 0,
+  recentInfluenceAction: "accepted",
+  recentInfluenceProvenance: {
+    source: "default",
+    updated_at: "2026-02-13T00:00:00.000Z",
+  },
+  constraints: {
+    hard_rest_days: [],
+    min_sessions_per_week: 3,
+    max_sessions_per_week: 5,
+  },
+  optimizationProfile: "balanced",
+  postGoalRecoveryDays: 5,
+  behaviorControlsV1: {
+    aggressiveness: 0.5,
+    variability: 0.5,
+    spike_frequency: 0.35,
+    shape_target: 0,
+    shape_strength: 0.35,
+    recovery_priority: 0.6,
+    starting_fitness_confidence: 0.6,
+  },
+  calibration: {
+    version: 1,
+    readiness_composite: {
+      target_attainment_weight: 0.45,
+      envelope_weight: 0.3,
+      durability_weight: 0.15,
+      evidence_weight: 0.1,
+    },
+    readiness_timeline: {
+      target_tsb: 8,
+      form_tolerance: 20,
+      fatigue_overflow_scale: 0.4,
+      feasibility_blend_weight: 0.15,
+      smoothing_iterations: 24,
+      smoothing_lambda: 0.28,
+      max_step_delta: 9,
+    },
+    envelope_penalties: {
+      over_high_weight: 0.55,
+      under_low_weight: 0.2,
+      over_ramp_weight: 0.25,
+    },
+    durability_penalties: {
+      monotony_threshold: 2,
+      monotony_scale: 2,
+      strain_threshold: 900,
+      strain_scale: 900,
+      deload_debt_scale: 6,
+    },
+    no_history: {
+      reliability_horizon_days: 42,
+      confidence_floor_high: 0.75,
+      confidence_floor_mid: 0.6,
+      confidence_floor_low: 0.45,
+      demand_tier_time_pressure_scale: 1,
+    },
+    optimizer: {
+      preparedness_weight: 14,
+      risk_penalty_weight: 0.35,
+      volatility_penalty_weight: 0.22,
+      churn_penalty_weight: 0.2,
+      lookahead_weeks: 5,
+      candidate_steps: 7,
+    },
+  },
+  calibrationCompositeLocks: {
+    target_attainment_weight: false,
+    envelope_weight: false,
+    durability_weight: false,
+    evidence_weight: false,
+  },
+  constraintsSource: "default",
+  locks: {
+    availability_config: { locked: false },
+    recent_influence: { locked: false },
+    hard_rest_days: { locked: false },
+    min_sessions_per_week: { locked: false },
+    max_sessions_per_week: { locked: false },
+    max_single_session_duration_minutes: { locked: false },
+    goal_difficulty_preference: { locked: false },
+    optimization_profile: { locked: false },
+    post_goal_recovery_days: { locked: false },
+    behavior_controls_v1: { locked: false },
+  },
+} as unknown as TrainingPlanConfigFormData;
+
+describe("SinglePageForm blocker surfacing", () => {
+  it("shows tab-level issue hints before submit", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        errors={validateTrainingPlanForm(baseFormData)}
+      />,
+    );
+
+    const textNodes = findMockNodes(rendered, "Text");
+    const allText = textNodes.map((node: any) => getNodeText(node.props.children)).join("\n");
+
+    expect(allText).toContain("Needs attention: Plan");
+  });
+
+  it("hides config-heavy tabs when creation config is disabled", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        showCreationConfig={false}
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+      />,
+    );
+
+    const tabs = findMockNodes(rendered, "Pressable")
+      .map((node: any) => node.props.accessibilityLabel)
+      .filter((label: unknown): label is string => typeof label === "string");
+
+    expect(tabs).toContain("Plan tab");
+    expect(tabs).not.toContain("Goals tab");
+    expect(tabs).not.toContain("Availability tab");
+    expect(tabs).not.toContain("Limits tab");
+    expect(tabs).not.toContain("Tuning tab");
+    expect(tabs).not.toContain("Review tab");
+    expect(findMockNodes(rendered, "CreationProjectionChart")).toHaveLength(0);
+  });
+
+  it("wires plan tab metadata fields", () => {
+    const onPlanMetadataChange = jest.fn();
+
+    const rendered = renderNative(
+      <SinglePageForm
+        planMetadata={{
+          name: "Build Phase",
+          description: "Progressive block",
+        }}
+        onPlanMetadataChange={onPlanMetadataChange}
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Plan tab"));
+
+    const planNameInput = findMockNodes(rendered, "Input").find(
+      (node: any) => node.props["aria-label"] === "Plan name",
+    );
+    fireEvent(planNameInput!, "changeText", "Peak Block");
+
+    expect(onPlanMetadataChange).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Peak Block" }),
+    );
+  });
+
+  it("applies invalid field styling when RHF errors are present", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        errors={{ plan: "Plan metadata required" }}
+      />,
+    );
+
+    const planNameInput = findMockNodes(rendered, "Input").find(
+      (node: any) => node.props["aria-label"] === "Plan name",
+    );
+
+    expect(planNameInput?.props.className).toContain("border-destructive");
+  });
+
+  it("shows behavior controls inline without mode switching", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Tuning tab"));
+
+    const sliderNodes = findMockNodes(rendered, "PercentSliderInput");
+    expect(sliderNodes.some((node: any) => node.props.id === "behavior-aggressiveness")).toBe(true);
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+    expect(textNodes.some((text: string) => text.includes("Switch mode to Advanced"))).toBe(false);
+  });
+
+  it("wires single projection reset action to tuning header", () => {
+    const onResetProjectionAll = jest.fn();
+
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        onResetProjectionAll={onResetProjectionAll}
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Tuning tab"));
+
+    const buttons = findMockNodes(rendered, "Button");
+    const resetButtons = buttons.filter(
+      (node: any) => getNodeText(node.props.children) === "Reset",
+    );
+    expect(resetButtons).toHaveLength(1);
+    const reset = resetButtons[0];
+
+    fireEvent.press(reset);
+
+    expect(onResetProjectionAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes cap sliders from limits tab", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Limits tab"));
+
+    const numberSliders = findMockNodes(rendered, "NumberSliderInput");
+    const percentSliders = findMockNodes(rendered, "PercentSliderInput");
+
+    expect(percentSliders.some((node: any) => node.props.id === "max-weekly-load-ramp")).toBe(
+      false,
+    );
+    expect(numberSliders.some((node: any) => node.props.id === "max-weekly-ctl-ramp")).toBe(false);
+  });
+
+  it("uses behavior control sliders for default tuning", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Tuning tab"));
+
+    const sliderNodes = findMockNodes(rendered, "NumberSliderInput");
+    const byId = (id: string) => sliderNodes.find((node: any) => node.props.id === id)?.props;
+
+    expect(byId("behavior-shape-target")).toMatchObject({
+      min: -1,
+      max: 1,
+      step: 0.05,
+      decimals: 2,
+      label: "Load shape target",
+    });
+    expect(byId("behavior-recovery-priority")).toMatchObject({
+      min: 0,
+      max: 100,
+      step: 1,
+      decimals: 0,
+      label: "Recovery priority",
+    });
+    const percentSliderIds = findMockNodes(rendered, "PercentSliderInput").map(
+      (node: any) => node.props.id,
+    );
+    expect(percentSliderIds).toContain("behavior-aggressiveness");
+    expect(percentSliderIds).toContain("behavior-variability");
+    expect(percentSliderIds).toContain("behavior-spike-frequency");
+    expect(percentSliderIds).toContain("behavior-shape-strength");
+  });
+
+  it("shows review observations without fix CTAs on review tab", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        blockingIssues={[
+          {
+            code: "required_tss_ramp_exceeds_cap",
+            message: "Required weekly load exceeds cap",
+            suggestions: ["Lower target ramp"],
+          },
+          {
+            code: "min_sessions_exceeds_max",
+            message: "Min sessions exceeds max sessions",
+            suggestions: ["Raise max sessions"],
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(textNodes).toContain(
+      "Review plan fit, risk, and trend changes before create. Unresolved blocking issues prevent create unless you explicitly acknowledge an override.",
+    );
+    expect(textNodes).toContain("Blocking issues");
+    expect(textNodes).toContain("Allow create despite blockers");
+    expect(textNodes).toContain("Required weekly load exceeds cap");
+    expect(textNodes).toContain("Min sessions exceeds max sessions");
+
+    const buttonText = findMockNodes(rendered, "Button").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+    expect(buttonText.some((text: string) => text.includes("Apply suggested fix"))).toBe(false);
+    expect(buttonText.some((text: string) => text.includes("Apply quick fix"))).toBe(false);
+  });
+
+  it("renders goal assessment metadata on review tab when present", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        projectionChart={
+          {
+            start_date: "2026-02-14",
+            end_date: "2026-06-01",
+            points: [],
+            goal_markers: [
+              {
+                id: "goal-1",
+                name: "Spring race",
+                target_date: "2026-06-01",
+                priority: 1,
+              },
+            ],
+            periodization_phases: [],
+            microcycles: [],
+            goal_assessments: [
+              {
+                goal_id: "goal-1",
+                priority: 1,
+                feasibility_band: "aggressive",
+                target_scores: [
+                  {
+                    kind: "finish_time",
+                    score_0_100: 67,
+                    unmet_gap: 210,
+                    rationale_codes: ["gap_high"],
+                  },
+                ],
+                conflict_notes: ["priority_precedence"],
+              },
+            ],
+          } as any
+        }
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(textNodes).toContain("Goal-by-goal check");
+    expect(textNodes).toContain("Plan note: priority precedence");
+    expect(textNodes).toContain("Finish time confidence: 67 / 100 | shortfall 210");
+  });
+
+  it("keeps goal readiness primary and adds uncertainty hint when available", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        projectionChart={
+          {
+            start_date: "2026-02-14",
+            end_date: "2026-06-01",
+            points: [],
+            goal_markers: [
+              {
+                id: "goal-1",
+                name: "Spring race",
+                target_date: "2026-06-01",
+                priority: 1,
+              },
+            ],
+            periodization_phases: [],
+            microcycles: [],
+            goal_assessments: [
+              {
+                goal_id: "goal-1",
+                priority: 1,
+                goal_readiness_score: 88,
+                prediction_uncertainty: 0.24,
+                feasibility_band: "feasible",
+                target_scores: [
+                  {
+                    kind: "finish_time",
+                    score_0_100: 67,
+                    unmet_gap: 210,
+                    rationale_codes: ["gap_high"],
+                  },
+                ],
+                conflict_notes: [],
+              },
+            ],
+          } as any
+        }
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const readinessRing = rendered.getByLabelText(
+      "Projected readiness 88 out of 100 for Spring race",
+    );
+    expect(readinessRing).toBeDefined();
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+    expect(textNodes).toContain(
+      "Uncertainty hint: forecast spread 24%. Readiness remains the primary signal.",
+    );
+  });
+
+  it("shows non-blocking confidence hint when readiness confidence is available", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        projectionChart={
+          {
+            start_date: "2026-02-14",
+            end_date: "2026-06-01",
+            readiness_confidence: 72,
+            points: [],
+            goal_markers: [
+              {
+                id: "goal-1",
+                name: "Spring race",
+                target_date: "2026-06-01",
+                priority: 1,
+              },
+            ],
+            periodization_phases: [],
+            microcycles: [],
+            goal_assessments: [
+              {
+                goal_id: "goal-1",
+                priority: 1,
+                goal_readiness_score: 81,
+                feasibility_band: "stretch",
+                target_scores: [
+                  {
+                    kind: "finish_time",
+                    score_0_100: 74,
+                    rationale_codes: [],
+                  },
+                ],
+                conflict_notes: [],
+              },
+            ],
+          } as any
+        }
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+    expect(textNodes).toContain(
+      "Confidence hint: model confidence 72%. Readiness remains the primary signal.",
+    );
+  });
+
+  it("shows safety-first default planning policy in review diagnostics", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        feasibilitySafetySummary={
+          {
+            feasibility_band: "on-track",
+            safety_band: "safe",
+            blockers: [],
+            top_drivers: [],
+          } as any
+        }
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(textNodes).toContain(
+      "The planner always prefers a safer progression that still moves you toward your goals.",
+    );
+  });
+
+  it("wires blocking override acknowledgement control on review tab", () => {
+    const onAllowBlockingIssueOverrideChange = jest.fn();
+
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        blockingIssues={[
+          {
+            code: "required_tss_ramp_exceeds_cap",
+            message: "Required weekly load exceeds cap",
+            suggestions: ["Lower target ramp"],
+          },
+        ]}
+        allowBlockingIssueOverride={false}
+        onAllowBlockingIssueOverrideChange={onAllowBlockingIssueOverrideChange}
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const overrideSwitch = findMockNodes(rendered, "Switch").find(
+      (node: any) => node.props.accessibilityLabel === "Allow create despite blockers",
+    );
+
+    expect(overrideSwitch).toBeDefined();
+
+    fireEvent(overrideSwitch!, "checkedChange", true);
+
+    expect(onAllowBlockingIssueOverrideChange).toHaveBeenCalledWith(true);
+  });
+
+  it("renders readiness-delta diagnostics panel for latest movement", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        readinessDeltaDiagnostics={
+          {
+            readiness: {
+              direction: "down",
+              delta: -3.25,
+              previous_score: 71.4,
+              current_score: 68.15,
+            },
+            impacts: {
+              load: {
+                key: "load",
+                direction: "up",
+                delta: 12,
+                effect: "supports_readiness",
+                previous_value: 405,
+                current_value: 417,
+                reason_codes: ["impact_load_tss_delta"],
+              },
+              fatigue: {
+                key: "fatigue",
+                direction: "up",
+                delta: 5.5,
+                effect: "suppresses_readiness",
+                previous_value: 61,
+                current_value: 66.5,
+                reason_codes: ["impact_fatigue_atl_delta"],
+              },
+              feasibility: {
+                key: "feasibility",
+                direction: "up",
+                delta: 1,
+                effect: "suppresses_readiness",
+                previous_value: 0,
+                current_value: 1,
+                reason_codes: ["impact_feasibility_pressure_delta"],
+              },
+            },
+            dominant_driver: "fatigue",
+            summary_codes: ["readiness_delta_diagnostics_v1"],
+          } as any
+        }
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(textNodes).toContain("What changed most recently");
+    expect(
+      textNodes.some((text: string) => text.includes("Readiness decreased by 3.25 points")),
+    ).toBe(true);
+    expect(textNodes).toContain("Main reason: fatigue.");
+    expect(
+      textNodes.some((text: string) => text.includes("Timeline pressure increased by 1.00")),
+    ).toBe(true);
+  });
+
+  it("surfaces continuous projection diagnostics in review panel when available", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        feasibilitySafetySummary={
+          {
+            feasibility_band: "on-track",
+            safety_band: "safe",
+            blockers: [],
+            top_drivers: [],
+          } as any
+        }
+        projectionChart={
+          {
+            start_date: "2026-02-14",
+            end_date: "2026-06-01",
+            points: [],
+            goal_markers: [],
+            periodization_phases: [],
+            microcycles: [],
+            projection_diagnostics: {
+              continuous_projection_diagnostics: {
+                effective_optimizer: {
+                  preparedness_weight: 17.2,
+                  risk_penalty_weight: 0.31,
+                },
+                active_constraints: ["tss_ramp_cap_pressure"],
+                binding_constraints: ["availability_cap"],
+                clamp_pressure: 0.38,
+                objective_composition: {
+                  preparedness: 2.41,
+                  risk_penalty: -0.52,
+                },
+                curvature_contribution: 0.18,
+              },
+            },
+          } as any
+        }
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(
+      textNodes.some((text: string) =>
+        text.includes("Effective optimizer: preparedness weight 17.2"),
+      ),
+    ).toBe(true);
+    expect(textNodes).toContain("Active constraints: tss ramp cap pressure.");
+    expect(
+      textNodes.some((text: string) =>
+        text.includes("Binding constraints: availability cap | clamp pressure 38%"),
+      ),
+    ).toBe(true);
+    expect(
+      textNodes.some((text: string) =>
+        text.includes("Objective mix: preparedness 2.41, risk penalty -0.52 | curvature 0.18."),
+      ),
+    ).toBe(true);
+  });
+
+  it("shows canonical projection diagnostics for theoretical frontier review", () => {
+    const rendered = renderNative(
+      <SinglePageForm
+        formData={baseFormData}
+        onFormDataChange={jest.fn()}
+        configData={baseConfigData}
+        onConfigChange={jest.fn()}
+        feasibilitySafetySummary={
+          {
+            feasibility_band: "on-track",
+            safety_band: "safe",
+            blockers: [],
+            top_drivers: [],
+          } as any
+        }
+        projectionChart={
+          {
+            start_date: "2026-02-14",
+            end_date: "2026-06-01",
+            points: [],
+            goal_markers: [],
+            periodization_phases: [],
+            microcycles: [],
+            projection_diagnostics: {
+              selected_path: "full_mpc",
+              fallback_reason: null,
+              candidate_counts: {
+                full_mpc: 50,
+                degraded_bounded_mpc: 0,
+                legacy_optimizer: 0,
+              },
+              prune_counts: {
+                full_mpc: 4,
+                degraded_bounded_mpc: 0,
+              },
+              active_constraints: ["single_mode_safety_caps_enforced", "feasibility_caps_enforced"],
+              tie_break_chain: ["objective", "readiness"],
+              effective_optimizer_config: {
+                weights: {
+                  preparedness_weight: 19.1,
+                  risk_penalty_weight: 0.16,
+                  volatility_penalty_weight: 0.2,
+                  churn_penalty_weight: 0.18,
+                },
+                caps: {
+                  max_weekly_tss_ramp_pct: 40,
+                  max_ctl_ramp_per_week: 12,
+                },
+                search: {
+                  lookahead_weeks: 8,
+                  candidate_steps: 15,
+                },
+                curvature: {
+                  target: 0,
+                  strength: 0,
+                  weight: 0,
+                },
+              },
+              clamp_counts: {
+                tss: 4,
+                ctl: 2,
+              },
+              objective_contributions: {
+                sampled_weeks: 6,
+                objective_score: 2.3,
+                weighted_terms: {
+                  goal: 2.2,
+                  readiness: 1.5,
+                  risk: -0.7,
+                  volatility: -0.2,
+                  churn: -0.1,
+                  monotony: -0.03,
+                  strain: -0.02,
+                  curve: 0.21,
+                },
+              },
+            },
+          } as any
+        }
+      />,
+    );
+
+    fireEvent.press(rendered.getByLabelText("Review tab"));
+
+    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
+      getNodeText(node.props.children),
+    );
+
+    expect(
+      textNodes.some((text: string) =>
+        text.includes("Effective optimizer: preparedness weight 19.1"),
+      ),
+    ).toBe(true);
+    expect(textNodes).toContain(
+      "Active constraints: single mode safety caps enforced, feasibility caps enforced.",
+    );
+    expect(
+      textNodes.some((text: string) =>
+        text.includes("Binding constraints: none | clamp pressure 100%"),
+      ),
+    ).toBe(true);
+    expect(
+      textNodes.some((text: string) =>
+        text.includes("Objective mix: goal 2.20, readiness 1.50, risk -0.70"),
+      ),
+    ).toBe(true);
+  });
+});

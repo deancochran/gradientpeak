@@ -54,7 +54,7 @@ export function ActivityListModal({
   // Filter by intensity zone if specified
   const filteredActivities = intensityZone
     ? activities.filter((activity) => {
-        const if_value = activity.intensity_factor || 0;
+        const if_value = activity.derived?.intensity_factor || 0;
         // Map intensity factor to zones
         switch (intensityZone) {
           case "recovery":
@@ -202,10 +202,7 @@ export function ActivityListModal({
                   <View className="items-center">
                     <Text className="text-2xl font-bold text-blue-900">
                       {Math.round(
-                        filteredActivities.reduce(
-                          (sum, a) => sum + (a.training_stress_score || 0),
-                          0,
-                        ),
+                        filteredActivities.reduce((sum, a) => sum + (a.derived?.tss || 0), 0),
                       )}
                     </Text>
                     <Text className="text-xs text-blue-600 mt-1">Total TSS</Text>
@@ -272,22 +269,22 @@ export function ActivityListModal({
                       <Text className="text-gray-400">•</Text>
 
                       <Text className="text-sm text-gray-700">
-                        {Math.round(activity.training_stress_score || 0)} TSS
+                        {Math.round(activity.derived?.tss || 0)} TSS
                       </Text>
 
-                      {activity.intensity_factor && (
+                      {activity.derived?.intensity_factor && (
                         <>
                           <Text className="text-gray-400">•</Text>
                           <View className="flex-row items-center gap-1">
                             <Icon
                               as={Zap}
                               size={14}
-                              className={getIntensityColor(activity.intensity_factor)}
+                              className={getIntensityColor(activity.derived.intensity_factor)}
                             />
                             <Text
-                              className={`text-sm font-medium ${getIntensityColor(activity.intensity_factor)}`}
+                              className={`text-sm font-medium ${getIntensityColor(activity.derived.intensity_factor)}`}
                             >
-                              IF {(activity.intensity_factor || 0).toFixed(2)}
+                              IF {(activity.derived.intensity_factor || 0).toFixed(2)}
                             </Text>
                           </View>
                         </>

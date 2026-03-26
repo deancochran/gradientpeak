@@ -123,6 +123,7 @@ export default function VerifyScreen() {
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       className="flex-1 bg-background"
+      testID="verify-screen"
     >
       <ScrollView
         contentContainerClassName="flex-grow justify-center p-6"
@@ -150,7 +151,7 @@ export default function VerifyScreen() {
                   label="Verification Code"
                   name="token"
                   placeholder="123456"
-                  className="text-center text-lg tracking-widest"
+                  testId="verification-code-input"
                 />
 
                 {form.formState.errors.root && (
@@ -166,6 +167,7 @@ export default function VerifyScreen() {
                   disabled={isVerifying}
                   className="w-full"
                   size="lg"
+                  testID="verify-button"
                 >
                   <Text>{isVerifying ? "Verifying..." : "Verify"}</Text>
                 </Button>
@@ -173,7 +175,13 @@ export default function VerifyScreen() {
             </Form>
 
             <View className="gap-2 pt-2">
-              <Button variant="ghost" onPress={onResend} disabled={isResending} className="w-full">
+              <Button
+                variant="ghost"
+                onPress={onResend}
+                disabled={isResending}
+                className="w-full"
+                testID="resend-code-button"
+              >
                 <Text>{isResending ? "Sending..." : "Resend Code"}</Text>
               </Button>
               {resendMessage && (
@@ -181,6 +189,7 @@ export default function VerifyScreen() {
                   className={`text-center text-xs ${
                     resendMessage.includes("sent") ? "text-success" : "text-destructive"
                   }`}
+                  testID="resend-message"
                 >
                   {resendMessage}
                 </Text>

@@ -1,5 +1,10 @@
 "use client";
 
+import { getConversationDisplayName, getConversationPreviewText } from "@repo/core";
+import { invalidateConversationQueries } from "@repo/trpc/react";
+import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -7,21 +12,16 @@ import {
 } from "@repo/ui/components/resizable";
 import { ScrollArea } from "@repo/ui/components/scroll-area";
 import { Separator } from "@repo/ui/components/separator";
-import { Input } from "@repo/ui/components/input";
-import { Button } from "@repo/ui/components/button";
+import { cn } from "@repo/ui/lib/cn";
 import { Send } from "lucide-react";
 import { useState } from "react";
-import { trpc } from "@/lib/trpc/client";
-import { cn } from "@repo/ui/lib/cn";
-import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { useAuth } from "@/components/providers/auth-provider";
+import { trpc } from "@/lib/trpc/client";
 
 export default function MessagesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { user } = useAuth();
-  const { data: conversations = [] } =
-    trpc.messaging.getConversations.useQuery();
-  type Conversation = (typeof conversations)[number];
+  const { data: conversations = [] } = trpc.messaging.getConversations.useQuery();
 
   const { data: messages = [] } = trpc.messaging.getMessages.useQuery(
     { conversation_id: selectedId! },
@@ -32,9 +32,9 @@ export default function MessagesPage() {
   const utils = trpc.useUtils();
 
   const sendMessageMutation = trpc.messaging.sendMessage.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
       setInputText("");
-      utils.messaging.getMessages.invalidate({ conversation_id: selectedId! });
+      await invalidateConversationQueries(utils, selectedId!);
     },
   });
 
@@ -55,7 +55,7 @@ export default function MessagesPage() {
             <Separator />
             <ScrollArea className="flex-1">
               <div className="flex flex-col gap-2 p-4">
-                {conversations.map((conv: Conversation) => (
+                {conversations.map((conv) => (
                   <button
                     key={conv.id}
                     className={cn(
@@ -67,17 +67,17 @@ export default function MessagesPage() {
                     <div className="flex w-full flex-col gap-1">
                       <div className="flex items-center">
                         <div className="flex items-center gap-2">
-                          <div className="font-semibold">
-                            {conv.group_name || "Conversation"}
-                          </div>
+                          <div className="font-semibold">{getConversationDisplayName(conv)}</div>
                         </div>
                         <div className="ml-auto text-xs text-muted-foreground">
-                          {new Date(conv.last_message_at).toLocaleDateString()}
+                          {conv.last_message_at
+                            ? new Date(conv.last_message_at).toLocaleDateString()
+                            : ""}
                         </div>
                       </div>
                     </div>
                     <div className="line-clamp-2 text-xs text-muted-foreground">
-                      {conv.messages?.[0]?.content || "No messages"}
+                      {getConversationPreviewText(conv)}
                     </div>
                   </button>
                 ))}
@@ -106,9 +106,7 @@ export default function MessagesPage() {
                         key={msg.id}
                         className={cn(
                           "flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm",
-                          isMe
-                            ? "ml-auto bg-primary text-primary-foreground"
-                            : "bg-muted",
+                          isMe ? "ml-auto bg-primary text-primary-foreground" : "bg-muted",
                         )}
                       >
                         {msg.content}
@@ -130,11 +128,7 @@ export default function MessagesPage() {
                       }
                     }}
                   />
-                  <Button
-                    size="icon"
-                    onClick={handleSend}
-                    disabled={!inputText.trim()}
-                  >
+                  <Button size="icon" onClick={handleSend} disabled={!inputText.trim()}>
                     <Send className="h-4 w-4" />
                   </Button>
                 </div>

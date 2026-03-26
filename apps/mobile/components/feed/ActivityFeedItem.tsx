@@ -27,7 +27,6 @@ export interface FeedActivityItem {
   avg_heart_rate: number | null;
   avg_power: number | null;
   avg_cadence: number | null;
-  training_stress_score: number | null;
   elevation_gain_meters: number | null;
   calories: number | null;
   polyline: string | null;
@@ -42,6 +41,11 @@ export interface FeedActivityItem {
   };
 
   has_liked: boolean;
+  derived?: {
+    tss: number | null;
+    intensity_factor: number | null;
+    computed_as_of: string;
+  } | null;
 }
 
 interface ActivityFeedItemProps {
@@ -184,10 +188,10 @@ export function ActivityFeedItem({
               </View>
             )}
 
-            {activity.training_stress_score !== null && (
+            {activity.derived?.tss !== null && activity.derived?.tss !== undefined && (
               <View className="flex-row items-center">
                 <Icon as={TrendingUp} size={12} className="text-muted-foreground mr-1" />
-                <Text className="text-sm text-foreground">{activity.training_stress_score}</Text>
+                <Text className="text-sm text-foreground">{activity.derived.tss}</Text>
               </View>
             )}
           </View>

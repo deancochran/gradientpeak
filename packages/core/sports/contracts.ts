@@ -1,5 +1,4 @@
-import type { PublicActivityCategory } from "@repo/supabase";
-import type { DurationV2, IntensityTargetV2 } from "../schemas";
+import type { CanonicalSport, DurationV2, IntensityTargetV2 } from "../schemas";
 
 export type SportEffortLevel = "easy" | "moderate" | "hard";
 
@@ -46,7 +45,7 @@ export interface SportLoadHeuristics {
 }
 
 export interface SportRegistryEntry {
-  category: PublicActivityCategory;
+  category: CanonicalSport;
   displayName: string;
   stepDefaults: SportStepDefaults;
   load: SportLoadHeuristics;

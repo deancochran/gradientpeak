@@ -17,7 +17,10 @@ import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "re
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { ROUTES } from "@/lib/constants/routes";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
-import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import {
+  refreshScheduleViews,
+  refreshScheduleWithCallbacks,
+} from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
 import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
@@ -103,7 +106,7 @@ export default function EventDetailScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
-  const [rescheduleScope, setRescheduleScope] = useState<EventMutationScope>("single");
+  const [rescheduleScope, setRescheduleScope] = useState<EventMutationScope | undefined>();
 
   useEffect(() => {
     redirectOnNotFound(error);
@@ -125,7 +128,10 @@ export default function EventDetailScreen() {
 
   const updateMutation = trpc.events.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([refreshScheduleViews(queryClient), refetch()]);
+      await refreshScheduleWithCallbacks({
+        queryClient,
+        callbacks: [refetch],
+      });
       setIsEditing(false);
     },
   });
@@ -270,7 +276,7 @@ export default function EventDetailScreen() {
     });
   };
 
-  const openRescheduleModal = (scope: EventMutationScope) => {
+  const openRescheduleModal = (scope?: EventMutationScope) => {
     setRescheduleScope(scope);
     setShowRescheduleModal(true);
   };
@@ -278,12 +284,7 @@ export default function EventDetailScreen() {
   const handleReschedule = () => {
     if (!event) return;
 
-    if (recurring) {
-      promptForScope("reschedule", openRescheduleModal);
-      return;
-    }
-
-    openRescheduleModal("single");
+    openRescheduleModal(recurring ? undefined : "single");
   };
 
   if (isLoading || isRedirecting) {
@@ -372,6 +373,7 @@ export default function EventDetailScreen() {
                     editable={!isReadOnlyImported}
                     onChangeText={setTitle}
                     placeholder="Event title"
+                    testID="event-detail-title-input"
                   />
                 </View>
 
@@ -382,6 +384,7 @@ export default function EventDetailScreen() {
                     activeOpacity={0.8}
                     disabled={isReadOnlyImported}
                     onPress={() => setShowDatePicker(true)}
+                    testID="event-detail-date-button"
                   >
                     <Text className="text-sm text-foreground">
                       {format(startsAt, "EEEE, MMM d, yyyy")}
@@ -398,6 +401,7 @@ export default function EventDetailScreen() {
                     checked={allDay}
                     onCheckedChange={setAllDay}
                     disabled={isReadOnlyImported}
+                    testId="event-detail-all-day-switch"
                   />
                 </View>
 
@@ -407,6 +411,7 @@ export default function EventDetailScreen() {
                     activeOpacity={0.8}
                     disabled={isReadOnlyImported}
                     onPress={() => setShowTimePicker(true)}
+                    testID="event-detail-time-button"
                   >
                     <Text className="text-sm text-foreground">{format(startsAt, "h:mm a")}</Text>
                   </TouchableOpacity>
@@ -419,6 +424,7 @@ export default function EventDetailScreen() {
                     onChangeText={setNotes}
                     editable={!isReadOnlyImported}
                     placeholder="Optional notes"
+                    testID="event-detail-notes-input"
                   />
                 </View>
               </View>
@@ -557,7 +563,11 @@ export default function EventDetailScreen() {
                 </View>
               ) : null}
 
-              <Button variant="outline" onPress={handleOpenPlanDetail}>
+              <Button
+                variant="outline"
+                onPress={handleOpenPlanDetail}
+                testID="event-detail-open-plan-button"
+              >
                 <Text>Open Activity Plan Detail</Text>
               </Button>
             </CardContent>
@@ -573,24 +583,39 @@ export default function EventDetailScreen() {
         ) : isPlannedEvent ? (
           <View className="gap-2">
             {canStartPlanned ? (
-              <Button onPress={handleStartActivity}>
+              <Button onPress={handleStartActivity} testID="event-detail-start-activity-button">
                 <Icon as={Play} size={18} className="mr-2 text-primary-foreground" />
                 <Text className="text-primary-foreground">Start Activity</Text>
               </Button>
             ) : null}
 
             <View className="flex-row gap-2">
-              <Button variant="outline" className="flex-1" onPress={handleReschedule}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onPress={handleReschedule}
+                testID="event-detail-reschedule-button"
+              >
                 <Icon as={Edit} size={16} className="mr-2 text-foreground" />
                 <Text>Reschedule</Text>
               </Button>
-              <Button variant="outline" className="flex-1" onPress={handleOpenPlanDetail}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onPress={handleOpenPlanDetail}
+                testID="event-detail-open-linked-plan-button"
+              >
                 <Icon as={Zap} size={16} className="mr-2 text-foreground" />
                 <Text>Open Plan</Text>
               </Button>
             </View>
 
-            <Button variant="outline" onPress={handleDelete} disabled={deleteMutation.isPending}>
+            <Button
+              variant="outline"
+              onPress={handleDelete}
+              disabled={deleteMutation.isPending}
+              testID="event-detail-delete-button"
+            >
               <Icon as={Trash2} size={16} className="mr-2 text-destructive" />
               <Text className="text-destructive">
                 {deleteMutation.isPending ? "Deleting..." : "Delete"}
@@ -610,10 +635,16 @@ export default function EventDetailScreen() {
                 setStartsAt(parseEventDateForEditor(event));
               }}
               disabled={updateMutation.isPending}
+              testID="event-detail-cancel-edit-button"
             >
               <Text>Cancel</Text>
             </Button>
-            <Button className="flex-1" onPress={handleSave} disabled={updateMutation.isPending}>
+            <Button
+              className="flex-1"
+              onPress={handleSave}
+              disabled={updateMutation.isPending}
+              testID="event-detail-save-button"
+            >
               <Text className="text-primary-foreground">
                 {updateMutation.isPending ? "Saving..." : "Save Changes"}
               </Text>
@@ -621,7 +652,12 @@ export default function EventDetailScreen() {
           </View>
         ) : (
           <View className="flex-row gap-2">
-            <Button variant="outline" className="flex-1" onPress={() => setIsEditing(true)}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onPress={() => setIsEditing(true)}
+              testID="event-detail-edit-button"
+            >
               <Text>Edit Event</Text>
             </Button>
             <Button
@@ -629,6 +665,7 @@ export default function EventDetailScreen() {
               className="flex-1"
               onPress={handleDelete}
               disabled={deleteMutation.isPending}
+              testID="event-detail-delete-button"
             >
               <Text className="text-destructive">
                 {deleteMutation.isPending ? "Deleting..." : "Delete"}
@@ -677,14 +714,14 @@ export default function EventDetailScreen() {
           visible={showRescheduleModal}
           onClose={() => {
             setShowRescheduleModal(false);
-            setRescheduleScope("single");
+            setRescheduleScope(undefined);
           }}
           eventId={event.id}
           editScope={rescheduleScope}
           onSuccess={async () => {
             await refetch();
             setShowRescheduleModal(false);
-            setRescheduleScope("single");
+            setRescheduleScope(undefined);
           }}
         />
       ) : null}

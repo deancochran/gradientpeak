@@ -1,6 +1,6 @@
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
-
+import type { ProfileWithDob } from "../profile";
 import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
+import type { CanonicalSport } from "../schemas/sport";
 
 // ==============================
 // User Profile & Context Types
@@ -26,7 +26,7 @@ export interface Route {
 
 export interface EstimationContext {
   // User profile data
-  profile: PublicProfilesRow;
+  profile: ProfileWithDob;
 
   // Performance metrics (from profile_performance_metric_logs)
   ftp?: number | null; // Functional Threshold Power (watts)
@@ -42,7 +42,7 @@ export interface EstimationContext {
   fitnessState?: FitnessState;
 
   // Activity details
-  activityCategory: PublicActivityCategory;
+  activityCategory: CanonicalSport;
 
   // Optional route data
   route?: Route;
@@ -98,12 +98,7 @@ export interface FatigueImpact {
 // Fatigue Prediction
 // ==============================
 
-export type FormStatus =
-  | "fresh"
-  | "optimal"
-  | "neutral"
-  | "tired"
-  | "overreaching";
+export type FormStatus = "fresh" | "optimal" | "neutral" | "tired" | "overreaching";
 
 export interface FatiguePrediction {
   afterActivity: {

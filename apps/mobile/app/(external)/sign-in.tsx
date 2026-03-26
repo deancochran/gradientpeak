@@ -10,6 +10,11 @@ import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import {
+  AuthRequestTimeoutError,
+  getAuthRequestTimeoutMessage,
+  withAuthRequestTimeout,
+} from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -71,10 +76,12 @@ export default function SignInScreen() {
         }
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
-      });
+      const { error } = await withAuthRequestTimeout(
+        supabase.auth.signInWithPassword({
+          email: data.email,
+          password: data.password,
+        }),
+      );
 
       if (error) {
         console.log("Sign in error:", error.message);
@@ -97,7 +104,12 @@ export default function SignInScreen() {
       // will handle the session and trigger a redirect automatically.
     } catch (err) {
       console.log("Unexpected sign in error:", err);
-      form.setError("root", { message: "An unexpected error occurred" });
+      form.setError("root", {
+        message:
+          err instanceof AuthRequestTimeoutError
+            ? getAuthRequestTimeoutMessage()
+            : "An unexpected error occurred",
+      });
     } finally {
       setIsSubmitting(false);
     }

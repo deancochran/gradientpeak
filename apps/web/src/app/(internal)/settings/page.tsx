@@ -1,7 +1,11 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { profileQuickUpdateSchema } from "@repo/core";
+import {
+  getProfileQuickUpdateDefaults,
+  normalizeProfileSettingsView,
+  profileQuickUpdateSchema,
+} from "@repo/core";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -111,10 +115,10 @@ export default function SettingsPage() {
   // Update form when profile data loads
   useEffect(() => {
     if (profile) {
-      const isPublicField = (profile as unknown as { is_public?: unknown }).is_public;
+      const defaults = getProfileQuickUpdateDefaults(normalizeProfileSettingsView(profile));
       form.reset({
-        username: profile.username || "",
-        is_public: typeof isPublicField === "boolean" ? isPublicField : false,
+        username: defaults.username,
+        is_public: defaults.is_public,
       });
     }
   }, [profile, form]);

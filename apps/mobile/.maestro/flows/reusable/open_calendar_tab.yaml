@@ -1,0 +1,7 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- tapOn: "Calendar"
+- extendedWaitUntil:
+    visible:
+      id: "create-event-entry"
+    timeout: 10000

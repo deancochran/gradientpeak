@@ -1,0 +1,26 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ../reusable/bootstrap.yaml
+- assertVisible:
+    id: "sign-in-screen"
+- assertVisible:
+    id: "sign-in-screen"
+- tapOn:
+    id: "sign-up-link-button"
+- assertVisible:
+    id: "sign-up-screen"
+- swipe:
+    direction: UP
+- tapOn:
+    id: "sign-in-link-button"
+- assertVisible:
+    id: "sign-in-screen"
+- tapOn:
+    id: "forgot-password-button"
+- assertVisible:
+    id: "forgot-password-screen"
+- tapOn:
+    id: "back-to-signin-link-button"
+- assertVisible:
+    id: "sign-in-screen"

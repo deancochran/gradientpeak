@@ -45,7 +45,10 @@ import { AppHeader } from "@/components/shared";
 import { buildEditEventRoute, buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import { ROUTES } from "@/lib/constants/routes";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
-import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import {
+  refreshScheduleViews,
+  refreshScheduleWithCallbacks,
+} from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { trpc } from "@/lib/trpc";
 import { getActivityColor } from "@/lib/utils/plan/colors";
@@ -89,7 +92,7 @@ type DaySection = {
 
 const FUTURE_DAYS_WINDOW = 365;
 const PAST_DAYS_WINDOW = 14;
-const EXTEND_DAYS_WINDOW = 60;
+const EXTEND_DAYS_WINDOW = 56;
 const CALENDAR_EVENT_QUERY_LIMIT = 500;
 
 function toDateKey(date: Date): string {
@@ -97,7 +100,8 @@ function toDateKey(date: Date): string {
 }
 
 function parseDateKey(dateKey: string): Date {
-  return new Date(`${dateKey}T00:00:00.000Z`);
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
 }
 
 function addDaysToDateKey(dateKey: string, days: number): string {
@@ -108,6 +112,34 @@ function addDaysToDateKey(dateKey: string, days: number): string {
 function getWeekDateKeys(dateKey: string): string[] {
   const weekStart = startOfWeek(parseDateKey(dateKey), { weekStartsOn: 1 });
   return Array.from({ length: 7 }, (_, index) => toDateKey(addDays(weekStart, index)));
+}
+
+function getWeekStartKey(dateKey: string): string {
+  return getWeekDateKeys(dateKey)[0] ?? dateKey;
+}
+
+function getWeekEndKey(dateKey: string): string {
+  return getWeekDateKeys(dateKey)[6] ?? dateKey;
+}
+
+function getWeekdayOffset(dateKey: string): number {
+  const weekStartKey = getWeekStartKey(dateKey);
+  const startMs = Date.parse(`${weekStartKey}T00:00:00.000Z`);
+  const dateMs = Date.parse(`${dateKey}T00:00:00.000Z`);
+  return Math.max(0, Math.floor((dateMs - startMs) / (24 * 60 * 60 * 1000)));
+}
+
+function buildWeekStartKeys(rangeStart: string, rangeEnd: string): string[] {
+  const weekStartKeys: string[] = [];
+  let cursor = getWeekStartKey(rangeStart);
+  const cappedRangeEnd = getWeekEndKey(rangeEnd);
+
+  while (cursor <= cappedRangeEnd) {
+    weekStartKeys.push(cursor);
+    cursor = addDaysToDateKey(cursor, 7);
+  }
+
+  return weekStartKeys;
 }
 
 function readMetric(value: unknown): number | null {
@@ -149,16 +181,24 @@ function CalendarScreen() {
   const sectionListRef = useRef<SectionList<DayRow, DaySection>>(null);
   const isMountedRef = useRef(true);
   const pendingScrollDateRef = useRef<string | null>(null);
+  const firstVisibleSectionDateRef = useRef<string | null>(null);
+  const isAutoScrollingRef = useRef(false);
+  const requestedPastExtensionRef = useRef(false);
+  const requestedFutureExtensionRef = useRef(false);
 
   const todayKey = useMemo(() => toDateKey(new Date()), []);
   const [selectedDate, setSelectedDate] = useState<string>(todayKey);
+  const [visibleDate, setVisibleDate] = useState<string>(todayKey);
+  const [weekAnchorDate, setWeekAnchorDate] = useState<string>(getWeekStartKey(todayKey));
   const [rangeStart, setRangeStart] = useState<string>(
-    addDaysToDateKey(todayKey, -PAST_DAYS_WINDOW),
+    getWeekStartKey(addDaysToDateKey(todayKey, -PAST_DAYS_WINDOW)),
   );
-  const [rangeEnd, setRangeEnd] = useState<string>(addDaysToDateKey(todayKey, FUTURE_DAYS_WINDOW));
+  const [rangeEnd, setRangeEnd] = useState<string>(
+    getWeekEndKey(addDaysToDateKey(todayKey, FUTURE_DAYS_WINDOW)),
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  const [editingEventScope, setEditingEventScope] = useState<EventMutationScope>("single");
+  const [editingEventScope, setEditingEventScope] = useState<EventMutationScope | undefined>();
   const [showCreateTypeModal, setShowCreateTypeModal] = useState(false);
   const [showPlannedActivityPicker, setShowPlannedActivityPicker] = useState(false);
   const [schedulingActivityPlanId, setSchedulingActivityPlanId] = useState<string | null>(null);
@@ -180,6 +220,14 @@ function CalendarScreen() {
       isMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    requestedPastExtensionRef.current = false;
+  }, [rangeStart]);
+
+  useEffect(() => {
+    requestedFutureExtensionRef.current = false;
+  }, [rangeEnd]);
 
   const resetManualCreateState = useCallback(() => {
     setShowManualCreateModal(false);
@@ -222,10 +270,11 @@ function CalendarScreen() {
   const deleteEventMutation = trpc.events.delete.useMutation({
     onSuccess: async () => {
       if (!isMountedRef.current) return;
-      await Promise.all([
-        refreshScheduleViews(queryClient, "eventDeletionMutation"),
-        refetchActivities(),
-      ]);
+      await refreshScheduleWithCallbacks({
+        queryClient,
+        scope: "eventDeletionMutation",
+        callbacks: [refetchActivities],
+      });
     },
   });
 
@@ -233,7 +282,7 @@ function CalendarScreen() {
     onSuccess: async () => {
       if (!isMountedRef.current) return;
       resetManualCreateState();
-      await Promise.all([refreshScheduleViews(queryClient), refetchActivities()]);
+      await refreshScheduleWithCallbacks({ queryClient, callbacks: [refetchActivities] });
     },
   });
 
@@ -243,7 +292,7 @@ function CalendarScreen() {
       setMovingEvent(null);
       setMoveEventScope(undefined);
       setShowMoveDatePicker(false);
-      await Promise.all([refreshScheduleViews(queryClient), refetchActivities()]);
+      await refreshScheduleWithCallbacks({ queryClient, callbacks: [refetchActivities] });
     },
   });
 
@@ -279,9 +328,10 @@ function CalendarScreen() {
     const eventDateKeys = Array.from(eventsByDate.keys())
       .filter((dateKey) => dateKey >= rangeStart && dateKey <= rangeEnd)
       .sort();
+    const weekStartKeys = buildWeekStartKeys(rangeStart, rangeEnd);
     const anchorDateKeys = Array.from(
       new Set(
-        [selectedDate, todayKey, ...eventDateKeys].filter(
+        [selectedDate, todayKey, ...weekStartKeys, ...eventDateKeys].filter(
           (dateKey) => dateKey >= rangeStart && dateKey <= rangeEnd,
         ),
       ),
@@ -369,19 +419,29 @@ function CalendarScreen() {
     return sections;
   }, [eventsByDate, rangeEnd, rangeStart, selectedDate, todayKey]);
 
+  const selectedMonthLabel = useMemo(
+    () => format(parseDateKey(weekAnchorDate), "MMMM yyyy"),
+    [weekAnchorDate],
+  );
+
+  const weekDateKeys = useMemo(() => getWeekDateKeys(weekAnchorDate), [weekAnchorDate]);
+
+  const displayedDate = useMemo(
+    () => (weekDateKeys.includes(selectedDate) ? selectedDate : visibleDate),
+    [selectedDate, visibleDate, weekDateKeys],
+  );
+
   const selectedDateLabel = useMemo(
+    () => format(parseDateKey(displayedDate), "EEEE, MMM d"),
+    [displayedDate],
+  );
+
+  const explicitSelectionLabel = useMemo(
     () => format(parseDateKey(selectedDate), "EEEE, MMM d"),
     [selectedDate],
   );
 
-  const selectedMonthLabel = useMemo(
-    () => format(parseDateKey(selectedDate), "MMMM yyyy"),
-    [selectedDate],
-  );
-
-  const weekDateKeys = useMemo(() => getWeekDateKeys(selectedDate), [selectedDate]);
-
-  const selectedEventCount = eventsByDate.get(selectedDate)?.length ?? 0;
+  const selectedEventCount = eventsByDate.get(displayedDate)?.length ?? 0;
 
   const weekStripDays = useMemo(
     () =>
@@ -391,12 +451,13 @@ function CalendarScreen() {
         eventCount: eventsByDate.get(dateKey)?.length ?? 0,
         isToday: dateKey === todayKey,
         isSelected: dateKey === selectedDate,
+        isVisible: dateKey === displayedDate,
       })),
-    [eventsByDate, selectedDate, todayKey, weekDateKeys],
+    [displayedDate, eventsByDate, selectedDate, todayKey, weekDateKeys],
   );
 
   const scrollToDate = useCallback(
-    (dateKey: string) => {
+    (dateKey: string, animated = true) => {
       const sectionIndex = daySections.findIndex((section) => {
         if (section.kind === "day") {
           return section.dateKey === dateKey;
@@ -409,7 +470,7 @@ function CalendarScreen() {
       sectionListRef.current?.scrollToLocation({
         sectionIndex,
         itemIndex: 0,
-        animated: true,
+        animated,
         viewOffset: 8,
       });
       return true;
@@ -421,6 +482,7 @@ function CalendarScreen() {
     const pendingDateKey = pendingScrollDateRef.current;
     if (!pendingDateKey) return;
 
+    isAutoScrollingRef.current = true;
     if (scrollToDate(pendingDateKey)) {
       pendingScrollDateRef.current = null;
     }
@@ -428,33 +490,43 @@ function CalendarScreen() {
 
   const selectDate = useCallback(
     (dateKey: string) => {
-      if (dateKey < rangeStart) {
-        setRangeStart(dateKey);
+      const nextWeekStart = getWeekStartKey(dateKey);
+      const nextWeekEnd = getWeekEndKey(dateKey);
+
+      if (nextWeekStart < rangeStart) {
+        setRangeStart(nextWeekStart);
       }
 
-      if (dateKey > rangeEnd) {
-        setRangeEnd(dateKey);
+      if (nextWeekEnd > rangeEnd) {
+        setRangeEnd(nextWeekEnd);
       }
 
       setSelectedDate(dateKey);
-      pendingScrollDateRef.current = dateKey;
+      setVisibleDate(dateKey);
+      setWeekAnchorDate(nextWeekStart);
+      pendingScrollDateRef.current = nextWeekStart;
     },
     [rangeEnd, rangeStart],
   );
 
   const shiftSelectedWeek = useCallback(
     (direction: -1 | 1) => {
-      selectDate(addDaysToDateKey(selectedDate, direction * 7));
+      const nextWeekStart = addDaysToDateKey(weekAnchorDate, direction * 7);
+      selectDate(addDaysToDateKey(nextWeekStart, getWeekdayOffset(selectedDate)));
     },
-    [selectDate, selectedDate],
+    [selectDate, selectedDate, weekAnchorDate],
   );
 
   const extendFutureWindow = useCallback(() => {
-    setRangeEnd((current) => addDaysToDateKey(current, EXTEND_DAYS_WINDOW));
+    if (requestedFutureExtensionRef.current) return;
+    requestedFutureExtensionRef.current = true;
+    setRangeEnd((current) => getWeekEndKey(addDaysToDateKey(current, EXTEND_DAYS_WINDOW)));
   }, []);
 
   const extendPastWindow = useCallback(() => {
-    setRangeStart((current) => addDaysToDateKey(current, -EXTEND_DAYS_WINDOW));
+    if (requestedPastExtensionRef.current) return;
+    requestedPastExtensionRef.current = true;
+    setRangeStart((current) => getWeekStartKey(addDaysToDateKey(current, -EXTEND_DAYS_WINDOW)));
   }, []);
 
   const openEventDetail = (event: PlanEvent) => {
@@ -583,13 +655,13 @@ function CalendarScreen() {
 
   const handleEditEvent = (event: PlanEvent) => {
     if (event.event_type === "planned") {
-      const openEditorWithScope = (scope: EventMutationScope) => {
+      const openEditorWithScope = (scope?: EventMutationScope) => {
         setEditingEventScope(scope);
         setEditingEventId(event.id);
       };
 
       if (isRecurringEvent(event)) {
-        getRecurringScopeOptions("edit", openEditorWithScope);
+        openEditorWithScope();
         return;
       }
 
@@ -787,6 +859,41 @@ function CalendarScreen() {
     setRefreshing(false);
   };
 
+  const handleViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: Array<{ section?: DaySection }> }) => {
+      const firstVisible = viewableItems.find((item) => !!item.section);
+      const sectionDateKey = firstVisible?.section?.dateKey;
+      if (!sectionDateKey) return;
+
+      firstVisibleSectionDateRef.current = sectionDateKey;
+    },
+    [],
+  );
+
+  const snapToNearestWeekStart = useCallback(() => {
+    const visibleDateKey = firstVisibleSectionDateRef.current;
+    if (!visibleDateKey) {
+      isAutoScrollingRef.current = false;
+      return;
+    }
+
+    const targetWeekStart = getWeekStartKey(visibleDateKey);
+    setWeekAnchorDate(targetWeekStart);
+
+    if (isAutoScrollingRef.current) {
+      isAutoScrollingRef.current = false;
+      return;
+    }
+
+    if (visibleDateKey !== targetWeekStart) {
+      isAutoScrollingRef.current = true;
+      void scrollToDate(targetWeekStart);
+      return;
+    }
+
+    setVisibleDate(targetWeekStart);
+  }, [scrollToDate]);
+
   useFocusEffect(
     useCallback(() => {
       void refetchActivities();
@@ -836,6 +943,11 @@ function CalendarScreen() {
               {selectedDateLabel} · {selectedEventCount}{" "}
               {selectedEventCount === 1 ? "event" : "events"}
             </Text>
+            {displayedDate !== selectedDate ? (
+              <Text className="text-xs text-muted-foreground/80">
+                Selected {explicitSelectionLabel}
+              </Text>
+            ) : null}
           </View>
           <View className="flex-row gap-2">
             <TouchableOpacity
@@ -893,7 +1005,9 @@ function CalendarScreen() {
               >
                 <Text
                   className={`text-[11px] uppercase ${
-                    day.isSelected ? "font-semibold text-primary" : "text-muted-foreground"
+                    day.isSelected || day.isVisible
+                      ? "font-semibold text-primary"
+                      : "text-muted-foreground"
                   }`}
                 >
                   {format(day.date, "EEEEE")}
@@ -902,16 +1016,18 @@ function CalendarScreen() {
                   className={`mt-1 h-10 w-10 items-center justify-center rounded-full ${
                     day.isSelected
                       ? "bg-primary"
-                      : day.isToday
+                      : day.isVisible
                         ? "border border-primary bg-primary/5"
-                        : "bg-background"
+                        : day.isToday
+                          ? "border border-primary bg-primary/5"
+                          : "bg-background"
                   }`}
                 >
                   <Text
                     className={`text-sm font-semibold ${
                       day.isSelected
                         ? "text-primary-foreground"
-                        : day.isToday
+                        : day.isVisible || day.isToday
                           ? "text-primary"
                           : "text-foreground"
                     }`}
@@ -944,13 +1060,15 @@ function CalendarScreen() {
         onEndReached={extendFutureWindow}
         onEndReachedThreshold={0.4}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        onViewableItemsChanged={({ viewableItems }) => {
-          const firstVisible = viewableItems.find((item) => !!item.section);
-          const sectionDateKey = firstVisible?.section?.dateKey;
-          if (sectionDateKey) {
-            setSelectedDate(sectionDateKey);
+        onViewableItemsChanged={handleViewableItemsChanged}
+        onScroll={({ nativeEvent }) => {
+          if (nativeEvent.contentOffset.y <= 120) {
+            extendPastWindow();
           }
         }}
+        onMomentumScrollEnd={snapToNearestWeekStart}
+        onScrollEndDrag={snapToNearestWeekStart}
+        scrollEventThrottle={16}
         renderSectionHeader={({ section }) =>
           section.kind === "day" ? (
             <TouchableOpacity
@@ -1281,17 +1399,6 @@ function CalendarScreen() {
             </View>
           );
         }}
-        ListHeaderComponent={
-          <View className="px-4 py-2 bg-background">
-            <TouchableOpacity
-              onPress={extendPastWindow}
-              className="rounded-md border border-border bg-card px-3 py-2 items-center"
-              activeOpacity={0.8}
-            >
-              <Text className="text-xs text-muted-foreground">Load earlier days</Text>
-            </TouchableOpacity>
-          </View>
-        }
       />
 
       {editingEventId && (
@@ -1299,14 +1406,14 @@ function CalendarScreen() {
           visible
           onClose={() => {
             setEditingEventId(null);
-            setEditingEventScope("single");
+            setEditingEventScope(undefined);
           }}
           eventId={editingEventId}
           editScope={editingEventScope}
           onSuccess={() => {
             if (!isMountedRef.current) return;
             setEditingEventId(null);
-            setEditingEventScope("single");
+            setEditingEventScope(undefined);
             void handleRefresh();
           }}
         />

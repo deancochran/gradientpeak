@@ -27,7 +27,7 @@
  * ```
  */
 
-import { queryKeys } from "@repo/trpc/client";
+import { invalidatePostActivityIngestionQueries, queryKeys } from "@repo/trpc/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { getServerConfig } from "@/lib/server-config";
@@ -287,20 +287,6 @@ function buildActivityFromArtifact(args: {
       (calculatedMetrics?.metrics.calories as number | undefined) ?? artifact.finalStats.calories,
     elevation_gain_meters: calculatedMetrics?.metrics.total_ascent as number | undefined,
     elevation_loss_meters: calculatedMetrics?.metrics.total_descent as number | undefined,
-    training_stress_score: calculatedMetrics?.metrics.tss as number | undefined,
-    intensity_factor: calculatedMetrics?.metrics.if as number | undefined,
-    hr_zone_1_seconds: calculatedMetrics?.hrZoneSeconds?.[0] ?? undefined,
-    hr_zone_2_seconds: calculatedMetrics?.hrZoneSeconds?.[1] ?? undefined,
-    hr_zone_3_seconds: calculatedMetrics?.hrZoneSeconds?.[2] ?? undefined,
-    hr_zone_4_seconds: calculatedMetrics?.hrZoneSeconds?.[3] ?? undefined,
-    hr_zone_5_seconds: calculatedMetrics?.hrZoneSeconds?.[4] ?? undefined,
-    power_zone_1_seconds: calculatedMetrics?.powerZoneSeconds?.[0] ?? undefined,
-    power_zone_2_seconds: calculatedMetrics?.powerZoneSeconds?.[1] ?? undefined,
-    power_zone_3_seconds: calculatedMetrics?.powerZoneSeconds?.[2] ?? undefined,
-    power_zone_4_seconds: calculatedMetrics?.powerZoneSeconds?.[3] ?? undefined,
-    power_zone_5_seconds: calculatedMetrics?.powerZoneSeconds?.[4] ?? undefined,
-    power_zone_6_seconds: calculatedMetrics?.powerZoneSeconds?.[5] ?? undefined,
-    power_zone_7_seconds: calculatedMetrics?.powerZoneSeconds?.[6] ?? undefined,
     activity_plan_id: artifact.snapshot.activity.activityPlanId,
   };
 }
@@ -418,24 +404,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
   const processFitFileMutation = trpc.fitFiles.processFitFile.useMutation({
     onSuccess: async (data) => {
-      // Invalidate relevant queries after successful processing
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.activities.lists(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.trainingPlans.status(),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.events.all,
-      });
-      queryClient.invalidateQueries({
-        predicate: (query) =>
-          query.queryKey[0] === "home" ||
-          (Array.isArray(query.queryKey) && query.queryKey[0]?.[0] === "home"),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.trends.all(),
-      });
+      await invalidatePostActivityIngestionQueries(queryClient);
 
       // Set the new activity in cache
       if (data.activity?.id) {

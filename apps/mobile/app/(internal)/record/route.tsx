@@ -22,6 +22,7 @@ import { router } from "expo-router";
 import { Check, Route, Search } from "lucide-react-native";
 import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { trpc } from "@/lib/trpc";
@@ -40,7 +41,9 @@ const CATEGORY_OPTIONS: {
 
 export default function RoutePickerPage() {
   const service = useSharedActivityRecorder();
-  const { attachRoute, detachRoute } = useRecordingConfiguration(service);
+  const recordingState = useRecordingState(service);
+  const { attachedRouteId, detachRoute } = useRecordingConfiguration(service);
+  const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -58,8 +61,10 @@ export default function RoutePickerPage() {
 
   // Handle route selection - Navigate to preview/confirmation screen
   const handleRoutePress = useCallback((routeId: string) => {
-    // Navigate to route preview screen with route ID
-    router.push(`/record/route-preview?routeId=${routeId}`);
+    router.push({
+      pathname: "/record/route-preview",
+      params: { routeId },
+    });
   }, []);
 
   // Handle detach route
@@ -68,9 +73,7 @@ export default function RoutePickerPage() {
     router.back();
   }, [detachRoute]);
 
-  // TODO: Get current route ID from service
-  // Routes are currently only loaded via plans
-  const currentRouteId = null;
+  const currentRouteId = attachedRouteId;
 
   // Extract routes from paginated response
   const routesList = routes?.pages.flatMap((page: any) => page.items) || [];
@@ -155,8 +158,19 @@ export default function RoutePickerPage() {
           </View>
         )}
 
+        {isSetupLocked && (
+          <View className="mb-3 rounded-lg border border-border bg-card p-4">
+            <Text className="text-base font-medium text-foreground">
+              Route setup is locked after recording starts
+            </Text>
+            <Text className="mt-1 text-sm text-muted-foreground">
+              Finish this workout to attach a different route or detach the current one.
+            </Text>
+          </View>
+        )}
+
         {/* Detach Route Option (if route attached) */}
-        {!isLoading && currentRouteId && (
+        {!isLoading && currentRouteId && !isSetupLocked && (
           <Pressable
             onPress={handleDetach}
             className="bg-card p-4 rounded-lg border border-border mb-3"
@@ -179,6 +193,7 @@ export default function RoutePickerPage() {
               <RouteListItem
                 key={route.id}
                 route={route}
+                disabled={isSetupLocked}
                 isSelected={route.id === currentRouteId}
                 onPress={() => handleRoutePress(route.id)}
               />
@@ -219,20 +234,23 @@ interface RouteListItemProps {
     activity_category: string;
   };
   isSelected: boolean;
+  disabled?: boolean;
   onPress: () => void;
 }
 
-function RouteListItem({ route, isSelected, onPress }: RouteListItemProps) {
+function RouteListItem({ route, isSelected, disabled = false, onPress }: RouteListItemProps) {
   // Format distance (meters to km)
   const distanceKm = (route.total_distance / 1000).toFixed(2);
 
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       className="bg-card p-4 rounded-lg border border-border"
       style={{
         borderColor: isSelected ? "rgb(34, 197, 94)" : undefined,
         borderWidth: isSelected ? 2 : 1,
+        opacity: disabled ? 0.6 : 1,
       }}
     >
       <View className="flex-row items-center justify-between">

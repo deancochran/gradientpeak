@@ -1,13 +1,12 @@
 export const cardFixtures = {
   profile: {
     accessibilityLabel: "Profile summary",
-    role: "article",
+    role: "summary",
     testId: "profile-card",
     title: "Profile",
   },
   recoveryCheck: {
-    description:
-      "Track energy, sleep quality, and workout confidence before your next block.",
+    description: "Track energy, sleep quality, and workout confidence before your next block.",
     primaryActionLabel: "Save check-in",
     stats: [
       { label: "Sleep score", value: "8.4 / 10" },

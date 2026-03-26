@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
-import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../training_plans";
+import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../planning/training-plans";
 
 type QueryResult = {
   data: any;

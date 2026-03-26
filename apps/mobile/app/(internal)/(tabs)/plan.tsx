@@ -8,6 +8,7 @@ import {
   formatGoalTypeLabel,
   getGoalObjectiveSummary,
 } from "@repo/core";
+import { invalidateGoalQueries } from "@repo/trpc/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
@@ -23,6 +24,7 @@ import { AppHeader } from "@/components/shared";
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
+import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { trpc } from "@/lib/trpc";
 import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 
@@ -171,11 +173,7 @@ function PlanDashboardScreen() {
 
   const createGoalMutation = trpc.goals.create.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        goals.refetch(),
-        utils.goals.list.invalidate(),
-        utils.events.list.invalidate(),
-      ]);
+      await Promise.all([invalidateGoalQueries(utils), goals.refetch()]);
       setShowGoalModal(false);
       setEditingGoalId(null);
     },
@@ -184,10 +182,8 @@ function PlanDashboardScreen() {
   const updateGoalMutation = trpc.goals.update.useMutation({
     onSuccess: async () => {
       await Promise.all([
+        invalidateGoalQueries(utils, { includeEventDetail: true }),
         goals.refetch(),
-        utils.goals.list.invalidate(),
-        utils.events.list.invalidate(),
-        utils.events.getById.invalidate(),
       ]);
       setShowGoalModal(false);
       setEditingGoalId(null);
@@ -663,13 +659,13 @@ function PlanDashboardScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      refetchActivePlan(),
-      snapshot.refetchAll(),
-      goals.refetch(),
-      upcomingPlannedEventsQuery.refetch(),
-      recentPlannedEventsQuery.refetch(),
-    ]);
+    await refreshPlanTabData({
+      refetchActivePlan,
+      refetchSnapshot: snapshot.refetchAll,
+      refetchGoals: goals.refetch,
+      refetchUpcomingEvents: upcomingPlannedEventsQuery.refetch,
+      refetchRecentEvents: recentPlannedEventsQuery.refetch,
+    });
     setRefreshing(false);
   };
 
@@ -739,7 +735,7 @@ function PlanDashboardScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         <View className="px-4 py-4 gap-4">
-          <Card>
+          <Card testID="plan-projection-card">
             <CardHeader className="flex-row items-center justify-between">
               <CardTitle>Forecasted Projection</CardTitle>
               <TouchableOpacity
@@ -804,20 +800,22 @@ function PlanDashboardScreen() {
                 );
               })()}
 
-              <PlanVsActualChart
-                timeline={insightTimelinePoints}
-                actualData={fitnessHistory}
-                projectedData={projectedFitness}
-                idealData={idealFitnessCurve}
-                goalMarkers={goalMarkers}
-                goalMetrics={goalMetrics}
-                height={360}
-                showLegend
-              />
+              <View testID="plan-projection-chart">
+                <PlanVsActualChart
+                  timeline={insightTimelinePoints}
+                  actualData={fitnessHistory}
+                  projectedData={projectedFitness}
+                  idealData={idealFitnessCurve}
+                  goalMarkers={goalMarkers}
+                  goalMetrics={goalMetrics}
+                  height={360}
+                  showLegend
+                />
+              </View>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card testID="plan-goals-card">
             <CardHeader>
               <CardTitle>Goals</CardTitle>
             </CardHeader>
@@ -838,6 +836,7 @@ function PlanDashboardScreen() {
                     onPress={() => router.push(ROUTES.PLAN.GOAL_DETAIL(goal.id) as any)}
                     className="rounded-md border border-border bg-card px-3 py-3"
                     activeOpacity={0.8}
+                    testID={`plan-goal-row-${goal.id}`}
                   >
                     {(() => {
                       const explainability = goalExplainabilityById.get(goal.id);
@@ -899,26 +898,38 @@ function PlanDashboardScreen() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card testID="plan-current-plan-card">
             <CardHeader>
               <CardTitle>Current Plan</CardTitle>
             </CardHeader>
             <CardContent className="gap-3">
               {activePlansInProgress.length === 0 ? (
-                <Text className="text-sm text-muted-foreground">
+                <Text className="text-sm text-muted-foreground" testID="plan-current-plan-empty">
                   No training plans are currently scheduled or in progress.
                 </Text>
               ) : (
-                <View className="rounded-md border border-border bg-card px-3 py-3 gap-1">
+                <View
+                  className="rounded-md border border-border bg-card px-3 py-3 gap-1"
+                  testID="plan-current-plan-summary"
+                >
                   <View className="flex-row items-center justify-between gap-2">
-                    <Text className="text-sm font-semibold text-foreground flex-1">
+                    <Text
+                      className="text-sm font-semibold text-foreground flex-1"
+                      testID="plan-current-plan-name"
+                    >
                       {activePlansInProgress[0]?.name}
                     </Text>
-                    <Text className="text-xs font-medium text-primary">
+                    <Text
+                      className="text-xs font-medium text-primary"
+                      testID="plan-current-plan-status"
+                    >
                       {activePlansInProgress[0]?.statusLabel}
                     </Text>
                   </View>
-                  <Text className="text-xs text-muted-foreground">
+                  <Text
+                    className="text-xs text-muted-foreground"
+                    testID="plan-current-plan-next-event"
+                  >
                     Next session{" "}
                     {new Date(
                       activePlansInProgress[0]?.nextEventAt ?? today.toISOString(),
@@ -928,7 +939,10 @@ function PlanDashboardScreen() {
                       : ""}
                   </Text>
                   {activePlansInProgress.length > 1 ? (
-                    <Text className="text-xs text-muted-foreground">
+                    <Text
+                      className="text-xs text-muted-foreground"
+                      testID="plan-current-plan-overflow-count"
+                    >
                       +{activePlansInProgress.length - 1} more scheduled plans
                     </Text>
                   ) : null}

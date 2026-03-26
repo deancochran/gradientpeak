@@ -4,7 +4,7 @@ import { renderWeb, screen } from "../../test/render-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./index.web";
 
 describe("Tooltip web", () => {
-  it("renders trigger text and open tooltip content", () => {
+  it("renders trigger text and open tooltip content", async () => {
     vi.stubGlobal(
       "ResizeObserver",
       class ResizeObserver {
@@ -21,10 +21,8 @@ describe("Tooltip web", () => {
       </Tooltip>,
     );
 
-    expect(
-      screen.getByRole("button", { name: "Why this matters" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("tooltip")).toHaveTextContent(
+    expect(await screen.findByRole("button", { name: "Why this matters" })).toBeInTheDocument();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
       "Workout stress updates after sync.",
     );
   });

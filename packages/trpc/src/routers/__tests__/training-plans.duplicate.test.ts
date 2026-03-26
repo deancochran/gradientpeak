@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trainingPlansRouter } from "../training_plans";
+import { trainingPlansRouter } from "../planning/training-plans";
 
 type QueryResult = {
   data: any;
@@ -162,9 +162,7 @@ describe("trainingPlansRouter.duplicate", () => {
     );
     const insertedPayload = (insertCall?.payload ?? {}) as Record<string, any>;
 
-    expect((sourceFilter?.payload as any)?.value).toContain(
-      "template_visibility.eq.public",
-    );
+    expect((sourceFilter?.payload as any)?.value).toContain("template_visibility.eq.public");
     expect(insertedPayload).toMatchObject({
       name: "Shared Build (Copy)",
       profile_id: "profile-123",

@@ -1,6 +1,6 @@
-import type { PublicActivityCategory } from "@repo/supabase";
 import { getDurationSeconds as getCanonicalDurationSeconds } from "../duration";
 import type { IntervalStepV2 } from "../schemas/activity_plan_v2";
+import type { CanonicalSport } from "../schemas/sport";
 import {
   getSportRouteBaseSpeed,
   getSportTemplateDefaults,
@@ -297,7 +297,7 @@ export function estimateFromRoute(context: EstimationContext): EstimationResult 
  * Estimate base speed for activity type
  */
 function estimateBaseSpeed(
-  activityCategory: PublicActivityCategory,
+  activityCategory: CanonicalSport,
   fitnessState?: { ctl: number },
 ): number {
   // Base speeds in m/s for moderate effort
@@ -320,10 +320,7 @@ function estimateBaseSpeed(
 /**
  * Calculate terrain adjustment factor for speed
  */
-function calculateTerrainAdjustment(
-  route: Route,
-  activityCategory: PublicActivityCategory,
-): number {
+function calculateTerrainAdjustment(route: Route, activityCategory: CanonicalSport): number {
   if (activityCategory === "strength" || activityCategory === "swim") {
     return 1.0; // No terrain adjustment
   }
@@ -364,7 +361,7 @@ function estimatePowerFromElevation(
   distanceMeters: number,
   weightKg: number,
   ftp?: number | null,
-  activityCategory?: PublicActivityCategory,
+  activityCategory?: CanonicalSport,
 ): number | undefined {
   if (activityCategory !== "bike") return undefined;
 

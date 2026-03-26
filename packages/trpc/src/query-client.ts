@@ -1,8 +1,4 @@
-import {
-  defaultShouldDehydrateQuery,
-  QueryClient,
-  type QueryKey,
-} from "@tanstack/react-query";
+import { defaultShouldDehydrateQuery, QueryClient, type QueryKey } from "@tanstack/react-query";
 import superjson from "superjson";
 
 const DEFAULT_QUERY_STALE_TIME = 5 * 60 * 1000;
@@ -58,20 +54,13 @@ function getQueryPathSegments(queryKey: QueryKey): readonly string[] {
   const [head] = queryKey;
 
   if (Array.isArray(head)) {
-    return head.filter(
-      (segment): segment is string => typeof segment === "string",
-    );
+    return head.filter((segment): segment is string => typeof segment === "string");
   }
 
-  return queryKey.filter(
-    (segment): segment is string => typeof segment === "string",
-  );
+  return queryKey.filter((segment): segment is string => typeof segment === "string");
 }
 
-function matchesQueryPath(
-  queryKey: QueryKey,
-  path: readonly string[],
-): boolean {
+function matchesQueryPath(queryKey: QueryKey, path: readonly string[]): boolean {
   const segments = getQueryPathSegments(queryKey);
 
   return path.every((segment, index) => segments[index] === segment);
@@ -87,13 +76,9 @@ export async function invalidateSchedulingQueries(
   queryClient: QueryClient,
   scope: SchedulingRefreshScope | readonly SchedulingRefreshScope[],
 ) {
-  const scopes = (
-    Array.isArray(scope) ? scope : [scope]
-  ) as readonly SchedulingRefreshScope[];
+  const scopes = (Array.isArray(scope) ? scope : [scope]) as readonly SchedulingRefreshScope[];
   const seen = new Set<string>();
-  const paths = scopes.flatMap(
-    (scopeName) => SCHEDULING_REFRESH_CONTRACT[scopeName],
-  );
+  const paths = scopes.flatMap((scopeName) => SCHEDULING_REFRESH_CONTRACT[scopeName]);
 
   await Promise.all(
     paths
@@ -112,6 +97,20 @@ export async function invalidateSchedulingQueries(
         }),
       ),
   );
+}
+
+export async function invalidatePostActivityIngestionQueries(queryClient: QueryClient) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.activities.lists() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.trainingPlans.status() }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.events.all }),
+    queryClient.invalidateQueries({
+      predicate: (query) =>
+        query.queryKey[0] === "home" ||
+        (Array.isArray(query.queryKey) && query.queryKey[0]?.[0] === "home"),
+    }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.trends.all() }),
+  ]);
 }
 
 /**
@@ -198,8 +197,7 @@ export function createQueryClient() {
         // Include pending queries in dehydration
         // Useful for server-side rendering and prefetching
         shouldDehydrateQuery: (query) =>
-          defaultShouldDehydrateQuery(query) ||
-          query.state.status === "pending",
+          defaultShouldDehydrateQuery(query) || query.state.status === "pending",
 
         // Don't redact errors in production
         // Next.js handles error redaction automatically
@@ -229,8 +227,7 @@ export const queryKeys = {
   activities: {
     all: ["activities"] as const,
     lists: () => [...queryKeys.activities.all, "list"] as const,
-    list: (filters: Record<string, unknown>) =>
-      [...queryKeys.activities.lists(), filters] as const,
+    list: (filters: Record<string, unknown>) => [...queryKeys.activities.lists(), filters] as const,
     details: () => [...queryKeys.activities.all, "detail"] as const,
     detail: (id: string) => [...queryKeys.activities.details(), id] as const,
   },
@@ -254,8 +251,7 @@ export const queryKeys = {
   events: {
     all: ["events"] as const,
     lists: () => [...queryKeys.events.all, "list"] as const,
-    list: (filters: Record<string, unknown>) =>
-      [...queryKeys.events.lists(), filters] as const,
+    list: (filters: Record<string, unknown>) => [...queryKeys.events.lists(), filters] as const,
     details: () => [...queryKeys.events.all, "detail"] as const,
     detail: (id: string) => [...queryKeys.events.details(), id] as const,
     today: () => [...queryKeys.events.all, "today"] as const,
@@ -296,10 +292,7 @@ export const queryKeys = {
  *   }
  * });
  */
-export function invalidateQueries(
-  queryClient: QueryClient,
-  queryKey: readonly unknown[],
-) {
+export function invalidateQueries(queryClient: QueryClient, queryKey: readonly unknown[]) {
   return queryClient.invalidateQueries({ queryKey });
 }
 

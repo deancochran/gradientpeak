@@ -1,15 +1,11 @@
 "use client";
 
+import { createQueryClient, createTRPCBatchLink, createTRPCUrl, trpc } from "@repo/trpc/react";
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
-import { createTRPCReact } from "@trpc/react-query";
 import { useState } from "react";
-import SuperJSON from "superjson";
 
-import { createQueryClient, type AppRouter } from "@repo/trpc/client";
-
-export const trpc = createTRPCReact<AppRouter>();
+export { trpc };
 
 let clientQueryClientSingleton: QueryClient | undefined = undefined;
 const getQueryClient = () => {
@@ -27,21 +23,22 @@ function getBaseUrl() {
   return `http://localhost:${process.env.PORT ?? 3000}`;
 }
 
+function createWebHeaders() {
+  const headers = new Headers();
+  headers.set("x-trpc-source", "nextjs");
+  headers.set("x-client-type", "web");
+  return headers;
+}
+
 export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const queryClient = getQueryClient();
 
   const [trpcClient] = useState(() =>
     trpc.createClient({
       links: [
-        httpBatchLink({
-          transformer: SuperJSON,
-          url: `${getBaseUrl()}/api/trpc`,
-          headers() {
-            const headers = new Headers();
-            headers.set("x-trpc-source", "nextjs");
-            headers.set("x-client-type", "web");
-            return headers;
-          },
+        createTRPCBatchLink({
+          url: createTRPCUrl(getBaseUrl()),
+          headers: createWebHeaders,
         }),
       ],
     }),

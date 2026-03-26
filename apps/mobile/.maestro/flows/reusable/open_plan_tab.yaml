@@ -1,0 +1,7 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- tapOn: "Plan"
+- extendedWaitUntil:
+    visible:
+      id: "plan-projection-card"
+    timeout: 10000

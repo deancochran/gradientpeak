@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { within } from "@storybook/test";
 
 import { inputFixtures } from "./fixtures";
 import { Input } from "./index.web";
+import { exerciseInputStory } from "./interactions";
 
 const meta = {
   title: "Components/Input",
@@ -22,6 +24,22 @@ export const Playground: Story = {
       <Input {...args} />
     </div>
   ),
+  play: async ({ canvasElement }) => {
+    const nextValue = "builder@gradientpeak.app";
+
+    await exerciseInputStory({
+      canvasElement,
+      expectedLabel: inputFixtures.email.accessibilityLabel,
+      nextValue,
+    });
+
+    const canvas = within(canvasElement);
+    const input = canvas.getByRole("textbox", {
+      name: inputFixtures.email.accessibilityLabel,
+    });
+
+    input.blur();
+  },
 };
 
 export const States: Story = {

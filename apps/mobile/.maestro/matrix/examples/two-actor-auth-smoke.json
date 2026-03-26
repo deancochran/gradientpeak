@@ -1,0 +1,46 @@
+{
+  "description": "Run two actor-specific Maestro steps against separate devices or accounts.",
+  "actors": {
+    "actorA": {
+      "device": "REPLACE_WITH_DEVICE_A",
+      "env": {
+        "MAESTRO_SIGNUP_EMAIL_PREFIX": "gradientpeak.maestro.actor-a"
+      }
+    },
+    "actorB": {
+      "device": "REPLACE_WITH_DEVICE_B",
+      "env": {
+        "MAESTRO_SIGNUP_EMAIL_PREFIX": "gradientpeak.maestro.actor-b"
+      }
+    }
+  },
+  "steps": [
+    {
+      "name": "parallel-bootstrap",
+      "mode": "parallel",
+      "actors": [
+        {
+          "actor": "actorA",
+          "lane": "bootstrap"
+        },
+        {
+          "actor": "actorB",
+          "lane": "bootstrap"
+        }
+      ]
+    },
+    {
+      "name": "serial-signup-probes",
+      "actors": [
+        {
+          "actor": "actorA",
+          "flows": [".maestro/flows/main/sign_up_to_verify.yaml"]
+        },
+        {
+          "actor": "actorB",
+          "flows": [".maestro/flows/main/verify_resend.yaml"]
+        }
+      ]
+    }
+  ]
+}

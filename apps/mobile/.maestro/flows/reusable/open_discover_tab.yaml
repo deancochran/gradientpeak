@@ -1,0 +1,6 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- tapOn: "Discover"
+- extendedWaitUntil:
+    visible: "Activity Plans"
+    timeout: 10000

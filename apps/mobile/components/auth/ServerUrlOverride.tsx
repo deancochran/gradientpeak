@@ -29,7 +29,7 @@ export function ServerUrlOverride({
         testID="server-url-toggle"
       >
         <Text className="text-xs text-muted-foreground">
-          Server URL ({usingHostedDefault ? "Hosted" : "Custom"})
+          Server API URL ({usingHostedDefault ? "Hosted" : "Custom"})
         </Text>
         {expanded ? (
           <ChevronUp size={14} className="text-muted-foreground" />
@@ -47,10 +47,12 @@ export function ServerUrlOverride({
             autoCorrect={false}
             keyboardType="url"
             placeholder="https://api.example.com"
+            selectTextOnFocus
             testID="server-url-input"
           />
           <Text className="text-xs text-muted-foreground">
-            Leave as hosted URL for default app connectivity.
+            Override the API host only. Auth keeps the hosted Supabase project unless you are using
+            the local `:3000`/`:54321` setup.
           </Text>
         </View>
       ) : null}

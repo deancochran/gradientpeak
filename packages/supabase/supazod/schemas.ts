@@ -15,12 +15,6 @@ export const publicActivityCategorySchema = z.enum([
   "other",
 ]);
 
-export const publicCoachingInvitationStatusSchema = z.enum([
-  "pending",
-  "accepted",
-  "declined",
-]);
-
 export const publicEffortTypeSchema = z.enum(["power", "speed"]);
 
 export const publicEventStatusSchema = z.enum([
@@ -45,15 +39,6 @@ export const publicIntegrationProviderSchema = z.enum([
   "trainingpeaks",
   "garmin",
   "zwift",
-]);
-
-export const publicNotificationTypeSchema = z.enum([
-  "new_message",
-  "coaching_invitation",
-  "coaching_invitation_accepted",
-  "coaching_invitation_declined",
-  "new_follower",
-  "follow_request",
 ]);
 
 export const publicProfileMetricTypeSchema = z.enum([
@@ -101,7 +86,6 @@ export const publicActivitiesRowSchema = z.object({
   avg_swolf: z.number().nullable(),
   avg_temperature: z.number().nullable(),
   calories: z.number().nullable(),
-  comments_count: z.number().nullable(),
   created_at: z.string(),
   device_manufacturer: z.string().nullable(),
   device_product: z.string().nullable(),
@@ -114,14 +98,11 @@ export const publicActivitiesRowSchema = z.object({
   finished_at: z.string(),
   fit_file_path: z.string().nullable(),
   fit_file_size: z.number().nullable(),
-  hr_zone_1_seconds: z.number().nullable(),
-  hr_zone_2_seconds: z.number().nullable(),
-  hr_zone_3_seconds: z.number().nullable(),
-  hr_zone_4_seconds: z.number().nullable(),
-  hr_zone_5_seconds: z.number().nullable(),
   id: z.string(),
   idx: z.number(),
-  intensity_factor: z.number().nullable(),
+  import_file_type: z.string().nullable(),
+  import_original_file_name: z.string().nullable(),
+  import_source: z.string().nullable(),
   is_private: z.boolean(),
   laps: jsonSchema.nullable(),
   likes_count: z.number().nullable(),
@@ -138,21 +119,10 @@ export const publicActivitiesRowSchema = z.object({
   notes: z.string().nullable(),
   polyline: z.string().nullable(),
   pool_length: z.number().nullable(),
-  power_zone_1_seconds: z.number().nullable(),
-  power_zone_2_seconds: z.number().nullable(),
-  power_zone_3_seconds: z.number().nullable(),
-  power_zone_4_seconds: z.number().nullable(),
-  power_zone_5_seconds: z.number().nullable(),
-  power_zone_6_seconds: z.number().nullable(),
-  power_zone_7_seconds: z.number().nullable(),
   profile_id: z.string(),
   provider: publicIntegrationProviderSchema.nullable(),
   started_at: z.string(),
   total_strokes: z.number().nullable(),
-  training_effect: publicTrainingEffectLabelSchema.nullable(),
-  training_stress_score: z.number().nullable(),
-  trimp: z.number().nullable(),
-  trimp_source: z.string().nullable(),
   type: z.string(),
   updated_at: z.string(),
 });
@@ -167,7 +137,6 @@ export const publicActivitiesInsertSchema = z.object({
   avg_swolf: z.number().optional().nullable(),
   avg_temperature: z.number().optional().nullable(),
   calories: z.number().optional().nullable(),
-  comments_count: z.number().optional().nullable(),
   created_at: z.string().optional(),
   device_manufacturer: z.string().optional().nullable(),
   device_product: z.string().optional().nullable(),
@@ -180,14 +149,11 @@ export const publicActivitiesInsertSchema = z.object({
   finished_at: z.string(),
   fit_file_path: z.string().optional().nullable(),
   fit_file_size: z.number().optional().nullable(),
-  hr_zone_1_seconds: z.number().optional().nullable(),
-  hr_zone_2_seconds: z.number().optional().nullable(),
-  hr_zone_3_seconds: z.number().optional().nullable(),
-  hr_zone_4_seconds: z.number().optional().nullable(),
-  hr_zone_5_seconds: z.number().optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  intensity_factor: z.number().optional().nullable(),
+  import_file_type: z.string().optional().nullable(),
+  import_original_file_name: z.string().optional().nullable(),
+  import_source: z.string().optional().nullable(),
   is_private: z.boolean().optional(),
   laps: jsonSchema.optional().nullable(),
   likes_count: z.number().optional().nullable(),
@@ -204,21 +170,10 @@ export const publicActivitiesInsertSchema = z.object({
   notes: z.string().optional().nullable(),
   polyline: z.string().optional().nullable(),
   pool_length: z.number().optional().nullable(),
-  power_zone_1_seconds: z.number().optional().nullable(),
-  power_zone_2_seconds: z.number().optional().nullable(),
-  power_zone_3_seconds: z.number().optional().nullable(),
-  power_zone_4_seconds: z.number().optional().nullable(),
-  power_zone_5_seconds: z.number().optional().nullable(),
-  power_zone_6_seconds: z.number().optional().nullable(),
-  power_zone_7_seconds: z.number().optional().nullable(),
   profile_id: z.string(),
   provider: publicIntegrationProviderSchema.optional().nullable(),
   started_at: z.string(),
   total_strokes: z.number().optional().nullable(),
-  training_effect: publicTrainingEffectLabelSchema.optional().nullable(),
-  training_stress_score: z.number().optional().nullable(),
-  trimp: z.number().optional().nullable(),
-  trimp_source: z.string().optional().nullable(),
   type: z.string(),
   updated_at: z.string().optional(),
 });
@@ -233,7 +188,6 @@ export const publicActivitiesUpdateSchema = z.object({
   avg_swolf: z.number().optional().nullable(),
   avg_temperature: z.number().optional().nullable(),
   calories: z.number().optional().nullable(),
-  comments_count: z.number().optional().nullable(),
   created_at: z.string().optional(),
   device_manufacturer: z.string().optional().nullable(),
   device_product: z.string().optional().nullable(),
@@ -246,14 +200,11 @@ export const publicActivitiesUpdateSchema = z.object({
   finished_at: z.string().optional(),
   fit_file_path: z.string().optional().nullable(),
   fit_file_size: z.number().optional().nullable(),
-  hr_zone_1_seconds: z.number().optional().nullable(),
-  hr_zone_2_seconds: z.number().optional().nullable(),
-  hr_zone_3_seconds: z.number().optional().nullable(),
-  hr_zone_4_seconds: z.number().optional().nullable(),
-  hr_zone_5_seconds: z.number().optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  intensity_factor: z.number().optional().nullable(),
+  import_file_type: z.string().optional().nullable(),
+  import_original_file_name: z.string().optional().nullable(),
+  import_source: z.string().optional().nullable(),
   is_private: z.boolean().optional(),
   laps: jsonSchema.optional().nullable(),
   likes_count: z.number().optional().nullable(),
@@ -270,21 +221,10 @@ export const publicActivitiesUpdateSchema = z.object({
   notes: z.string().optional().nullable(),
   polyline: z.string().optional().nullable(),
   pool_length: z.number().optional().nullable(),
-  power_zone_1_seconds: z.number().optional().nullable(),
-  power_zone_2_seconds: z.number().optional().nullable(),
-  power_zone_3_seconds: z.number().optional().nullable(),
-  power_zone_4_seconds: z.number().optional().nullable(),
-  power_zone_5_seconds: z.number().optional().nullable(),
-  power_zone_6_seconds: z.number().optional().nullable(),
-  power_zone_7_seconds: z.number().optional().nullable(),
   profile_id: z.string().optional(),
   provider: publicIntegrationProviderSchema.optional().nullable(),
   started_at: z.string().optional(),
   total_strokes: z.number().optional().nullable(),
-  training_effect: publicTrainingEffectLabelSchema.optional().nullable(),
-  training_stress_score: z.number().optional().nullable(),
-  trimp: z.number().optional().nullable(),
-  trimp_source: z.string().optional().nullable(),
   type: z.string().optional(),
   updated_at: z.string().optional(),
 });
@@ -367,7 +307,6 @@ export const publicActivityEffortsRelationshipsSchema = z.tuple([
 
 export const publicActivityPlansRowSchema = z.object({
   activity_category: publicActivityCategorySchema,
-  comments_count: z.number().nullable(),
   created_at: z.string(),
   description: z.string(),
   id: z.string(),
@@ -388,7 +327,6 @@ export const publicActivityPlansRowSchema = z.object({
 
 export const publicActivityPlansInsertSchema = z.object({
   activity_category: publicActivityCategorySchema.optional(),
-  comments_count: z.number().optional().nullable(),
   created_at: z.string().optional(),
   description: z.string(),
   id: z.string().optional(),
@@ -409,7 +347,6 @@ export const publicActivityPlansInsertSchema = z.object({
 
 export const publicActivityPlansUpdateSchema = z.object({
   activity_category: publicActivityCategorySchema.optional(),
-  comments_count: z.number().optional().nullable(),
   created_at: z.string().optional(),
   description: z.string().optional(),
   id: z.string().optional(),
@@ -447,7 +384,6 @@ export const publicActivityPlansRelationshipsSchema = z.tuple([
 
 export const publicActivityRoutesRowSchema = z.object({
   activity_category: publicActivityCategorySchema,
-  comments_count: z.number().nullable(),
   created_at: z.string(),
   description: z.string().nullable(),
   elevation_polyline: z.string().nullable(),
@@ -467,7 +403,6 @@ export const publicActivityRoutesRowSchema = z.object({
 
 export const publicActivityRoutesInsertSchema = z.object({
   activity_category: publicActivityCategorySchema.optional(),
-  comments_count: z.number().optional().nullable(),
   created_at: z.string().optional(),
   description: z.string().optional().nullable(),
   elevation_polyline: z.string().optional().nullable(),
@@ -487,7 +422,6 @@ export const publicActivityRoutesInsertSchema = z.object({
 
 export const publicActivityRoutesUpdateSchema = z.object({
   activity_category: publicActivityCategorySchema.optional(),
-  comments_count: z.number().optional().nullable(),
   created_at: z.string().optional(),
   description: z.string().optional().nullable(),
   elevation_polyline: z.string().optional().nullable(),
@@ -514,84 +448,6 @@ export const publicActivityRoutesRelationshipsSchema = z.tuple([
     referencedColumns: z.tuple([z.literal("id")]),
   }),
 ]);
-
-export const publicAuditLogRowSchema = z.object({
-  action: z.string(),
-  actor_id: z.string(),
-  created_at: z.string(),
-  details: jsonSchema.nullable(),
-  id: z.string(),
-  target_record_id: z.string().nullable(),
-  target_table: z.string().nullable(),
-  target_user_id: z.string().nullable(),
-});
-
-export const publicAuditLogInsertSchema = z.object({
-  action: z.string(),
-  actor_id: z.string(),
-  created_at: z.string().optional(),
-  details: jsonSchema.optional().nullable(),
-  id: z.string().optional(),
-  target_record_id: z.string().optional().nullable(),
-  target_table: z.string().optional().nullable(),
-  target_user_id: z.string().optional().nullable(),
-});
-
-export const publicAuditLogUpdateSchema = z.object({
-  action: z.string().optional(),
-  actor_id: z.string().optional(),
-  created_at: z.string().optional(),
-  details: jsonSchema.optional().nullable(),
-  id: z.string().optional(),
-  target_record_id: z.string().optional().nullable(),
-  target_table: z.string().optional().nullable(),
-  target_user_id: z.string().optional().nullable(),
-});
-
-export const publicCoachesAthletesRowSchema = z.object({
-  athlete_id: z.string(),
-  coach_id: z.string(),
-  created_at: z.string(),
-});
-
-export const publicCoachesAthletesInsertSchema = z.object({
-  athlete_id: z.string(),
-  coach_id: z.string(),
-  created_at: z.string().optional(),
-});
-
-export const publicCoachesAthletesUpdateSchema = z.object({
-  athlete_id: z.string().optional(),
-  coach_id: z.string().optional(),
-  created_at: z.string().optional(),
-});
-
-export const publicCoachingInvitationsRowSchema = z.object({
-  athlete_id: z.string(),
-  coach_id: z.string(),
-  created_at: z.string(),
-  id: z.string(),
-  status: publicCoachingInvitationStatusSchema,
-  updated_at: z.string(),
-});
-
-export const publicCoachingInvitationsInsertSchema = z.object({
-  athlete_id: z.string(),
-  coach_id: z.string(),
-  created_at: z.string().optional(),
-  id: z.string().optional(),
-  status: publicCoachingInvitationStatusSchema.optional(),
-  updated_at: z.string().optional(),
-});
-
-export const publicCoachingInvitationsUpdateSchema = z.object({
-  athlete_id: z.string().optional(),
-  coach_id: z.string().optional(),
-  created_at: z.string().optional(),
-  id: z.string().optional(),
-  status: publicCoachingInvitationStatusSchema.optional(),
-  updated_at: z.string().optional(),
-});
 
 export const publicCommentsRowSchema = z.object({
   content: z.string(),
@@ -633,58 +489,6 @@ export const publicCommentsRelationshipsSchema = z.tuple([
   }),
 ]);
 
-export const publicConversationParticipantsRowSchema = z.object({
-  conversation_id: z.string(),
-  created_at: z.string(),
-  user_id: z.string(),
-});
-
-export const publicConversationParticipantsInsertSchema = z.object({
-  conversation_id: z.string(),
-  created_at: z.string().optional(),
-  user_id: z.string(),
-});
-
-export const publicConversationParticipantsUpdateSchema = z.object({
-  conversation_id: z.string().optional(),
-  created_at: z.string().optional(),
-  user_id: z.string().optional(),
-});
-
-export const publicConversationParticipantsRelationshipsSchema = z.tuple([
-  z.object({
-    foreignKeyName: z.literal("conversation_participants_conversation_id_fkey"),
-    columns: z.tuple([z.literal("conversation_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("conversations"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-]);
-
-export const publicConversationsRowSchema = z.object({
-  created_at: z.string(),
-  group_name: z.string().nullable(),
-  id: z.string(),
-  is_group: z.boolean(),
-  last_message_at: z.string(),
-});
-
-export const publicConversationsInsertSchema = z.object({
-  created_at: z.string().optional(),
-  group_name: z.string().optional().nullable(),
-  id: z.string().optional(),
-  is_group: z.boolean().optional(),
-  last_message_at: z.string().optional(),
-});
-
-export const publicConversationsUpdateSchema = z.object({
-  created_at: z.string().optional(),
-  group_name: z.string().optional().nullable(),
-  id: z.string().optional(),
-  is_group: z.boolean().optional(),
-  last_message_at: z.string().optional(),
-});
-
 export const publicEventsRowSchema = z.object({
   activity_plan_id: z.string().nullable(),
   all_day: z.boolean(),
@@ -713,6 +517,7 @@ export const publicEventsRowSchema = z.object({
   title: z.string(),
   training_plan_id: z.string().nullable(),
   updated_at: z.string(),
+  user_training_plan_id: z.string().nullable(),
 });
 
 export const publicEventsInsertSchema = z.object({
@@ -743,6 +548,7 @@ export const publicEventsInsertSchema = z.object({
   title: z.string(),
   training_plan_id: z.string().optional().nullable(),
   updated_at: z.string().optional(),
+  user_training_plan_id: z.string().optional().nullable(),
 });
 
 export const publicEventsUpdateSchema = z.object({
@@ -773,6 +579,7 @@ export const publicEventsUpdateSchema = z.object({
   title: z.string().optional(),
   training_plan_id: z.string().optional().nullable(),
   updated_at: z.string().optional(),
+  user_training_plan_id: z.string().optional().nullable(),
 });
 
 export const publicEventsRelationshipsSchema = z.tuple([
@@ -804,30 +611,37 @@ export const publicEventsRelationshipsSchema = z.tuple([
     referencedRelation: z.literal("training_plans"),
     referencedColumns: z.tuple([z.literal("id")]),
   }),
+  z.object({
+    foreignKeyName: z.literal("events_user_training_plan_id_fkey"),
+    columns: z.tuple([z.literal("user_training_plan_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("user_training_plans"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
 ]);
 
 export const publicFollowsRowSchema = z.object({
-  created_at: z.string(),
+  created_at: z.string().nullable(),
   follower_id: z.string(),
   following_id: z.string(),
-  status: z.string(),
-  updated_at: z.string(),
+  status: z.string().nullable(),
+  updated_at: z.string().nullable(),
 });
 
 export const publicFollowsInsertSchema = z.object({
-  created_at: z.string().optional(),
+  created_at: z.string().optional().nullable(),
   follower_id: z.string(),
   following_id: z.string(),
-  status: z.string(),
-  updated_at: z.string().optional(),
+  status: z.string().optional().nullable(),
+  updated_at: z.string().optional().nullable(),
 });
 
 export const publicFollowsUpdateSchema = z.object({
-  created_at: z.string().optional(),
+  created_at: z.string().optional().nullable(),
   follower_id: z.string().optional(),
   following_id: z.string().optional(),
-  status: z.string().optional(),
-  updated_at: z.string().optional(),
+  status: z.string().optional().nullable(),
+  updated_at: z.string().optional().nullable(),
 });
 
 export const publicFollowsRelationshipsSchema = z.tuple([
@@ -900,27 +714,27 @@ export const publicIntegrationsRelationshipsSchema = z.tuple([
 ]);
 
 export const publicLikesRowSchema = z.object({
-  created_at: z.string(),
+  created_at: z.string().nullable(),
   entity_id: z.string(),
-  entity_type: z.string(),
+  entity_type: z.string().nullable(),
   id: z.string(),
-  profile_id: z.string(),
+  profile_id: z.string().nullable(),
 });
 
 export const publicLikesInsertSchema = z.object({
-  created_at: z.string().optional(),
+  created_at: z.string().optional().nullable(),
   entity_id: z.string(),
-  entity_type: z.string(),
+  entity_type: z.string().optional().nullable(),
   id: z.string().optional(),
-  profile_id: z.string(),
+  profile_id: z.string().optional().nullable(),
 });
 
 export const publicLikesUpdateSchema = z.object({
-  created_at: z.string().optional(),
+  created_at: z.string().optional().nullable(),
   entity_id: z.string().optional(),
-  entity_type: z.string().optional(),
+  entity_type: z.string().optional().nullable(),
   id: z.string().optional(),
-  profile_id: z.string().optional(),
+  profile_id: z.string().optional().nullable(),
 });
 
 export const publicLikesRelationshipsSchema = z.tuple([
@@ -929,43 +743,6 @@ export const publicLikesRelationshipsSchema = z.tuple([
     columns: z.tuple([z.literal("profile_id")]),
     isOneToOne: z.literal(false),
     referencedRelation: z.literal("profiles"),
-    referencedColumns: z.tuple([z.literal("id")]),
-  }),
-]);
-
-export const publicMessagesRowSchema = z.object({
-  content: z.string(),
-  conversation_id: z.string(),
-  created_at: z.string(),
-  deleted_at: z.string().nullable(),
-  id: z.string(),
-  sender_id: z.string(),
-});
-
-export const publicMessagesInsertSchema = z.object({
-  content: z.string(),
-  conversation_id: z.string(),
-  created_at: z.string().optional(),
-  deleted_at: z.string().optional().nullable(),
-  id: z.string().optional(),
-  sender_id: z.string(),
-});
-
-export const publicMessagesUpdateSchema = z.object({
-  content: z.string().optional(),
-  conversation_id: z.string().optional(),
-  created_at: z.string().optional(),
-  deleted_at: z.string().optional().nullable(),
-  id: z.string().optional(),
-  sender_id: z.string().optional(),
-});
-
-export const publicMessagesRelationshipsSchema = z.tuple([
-  z.object({
-    foreignKeyName: z.literal("messages_conversation_id_fkey"),
-    columns: z.tuple([z.literal("conversation_id")]),
-    isOneToOne: z.literal(false),
-    referencedRelation: z.literal("conversations"),
     referencedColumns: z.tuple([z.literal("id")]),
   }),
 ]);
@@ -1198,7 +975,7 @@ export const publicProfilesRowSchema = z.object({
   gender: z.string().nullable(),
   id: z.string(),
   idx: z.number(),
-  is_public: z.boolean(),
+  is_public: z.boolean().nullable(),
   language: z.string().nullable(),
   onboarded: z.boolean().nullable(),
   preferred_units: z.string().nullable(),
@@ -1214,7 +991,7 @@ export const publicProfilesInsertSchema = z.object({
   gender: z.string().optional().nullable(),
   id: z.string(),
   idx: z.number().optional(),
-  is_public: z.boolean().optional(),
+  is_public: z.boolean().optional().nullable(),
   language: z.string().optional().nullable(),
   onboarded: z.boolean().optional().nullable(),
   preferred_units: z.string().optional().nullable(),
@@ -1230,7 +1007,7 @@ export const publicProfilesUpdateSchema = z.object({
   gender: z.string().optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  is_public: z.boolean().optional(),
+  is_public: z.boolean().optional().nullable(),
   language: z.string().optional().nullable(),
   onboarded: z.boolean().optional().nullable(),
   preferred_units: z.string().optional().nullable(),
@@ -1292,13 +1069,11 @@ export const publicSyncedEventsRelationshipsSchema = z.tuple([
 ]);
 
 export const publicTrainingPlansRowSchema = z.object({
-  comments_count: z.number().nullable(),
   created_at: z.string(),
   description: z.string().nullable(),
   duration_hours: z.number().nullable(),
   id: z.string(),
   idx: z.number(),
-  is_active: z.boolean(),
   is_public: z.boolean(),
   is_system_template: z.boolean(),
   likes_count: z.number().nullable(),
@@ -1311,13 +1086,11 @@ export const publicTrainingPlansRowSchema = z.object({
 });
 
 export const publicTrainingPlansInsertSchema = z.object({
-  comments_count: z.number().optional().nullable(),
   created_at: z.string().optional(),
   description: z.string().optional().nullable(),
   duration_hours: z.number().optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  is_active: z.boolean().optional(),
   is_public: z.boolean().optional(),
   is_system_template: z.boolean().optional(),
   likes_count: z.number().optional().nullable(),
@@ -1330,13 +1103,11 @@ export const publicTrainingPlansInsertSchema = z.object({
 });
 
 export const publicTrainingPlansUpdateSchema = z.object({
-  comments_count: z.number().optional().nullable(),
   created_at: z.string().optional(),
   description: z.string().optional().nullable(),
   duration_hours: z.number().optional().nullable(),
   id: z.string().optional(),
   idx: z.number().optional(),
-  is_active: z.boolean().optional(),
   is_public: z.boolean().optional(),
   is_system_template: z.boolean().optional(),
   likes_count: z.number().optional().nullable(),
@@ -1354,6 +1125,59 @@ export const publicTrainingPlansRelationshipsSchema = z.tuple([
     columns: z.tuple([z.literal("profile_id")]),
     isOneToOne: z.literal(false),
     referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+]);
+
+export const publicUserTrainingPlansRowSchema = z.object({
+  created_at: z.string(),
+  id: z.string(),
+  profile_id: z.string(),
+  snapshot_structure: jsonSchema.nullable(),
+  start_date: z.string(),
+  status: z.string(),
+  target_date: z.string().nullable(),
+  training_plan_id: z.string(),
+  updated_at: z.string(),
+});
+
+export const publicUserTrainingPlansInsertSchema = z.object({
+  created_at: z.string().optional(),
+  id: z.string().optional(),
+  profile_id: z.string(),
+  snapshot_structure: jsonSchema.optional().nullable(),
+  start_date: z.string(),
+  status: z.string().optional(),
+  target_date: z.string().optional().nullable(),
+  training_plan_id: z.string(),
+  updated_at: z.string().optional(),
+});
+
+export const publicUserTrainingPlansUpdateSchema = z.object({
+  created_at: z.string().optional(),
+  id: z.string().optional(),
+  profile_id: z.string().optional(),
+  snapshot_structure: jsonSchema.optional().nullable(),
+  start_date: z.string().optional(),
+  status: z.string().optional(),
+  target_date: z.string().optional().nullable(),
+  training_plan_id: z.string().optional(),
+  updated_at: z.string().optional(),
+});
+
+export const publicUserTrainingPlansRelationshipsSchema = z.tuple([
+  z.object({
+    foreignKeyName: z.literal("user_training_plans_profile_id_fkey"),
+    columns: z.tuple([z.literal("profile_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("profiles"),
+    referencedColumns: z.tuple([z.literal("id")]),
+  }),
+  z.object({
+    foreignKeyName: z.literal("user_training_plans_training_plan_id_fkey"),
+    columns: z.tuple([z.literal("training_plan_id")]),
+    isOneToOne: z.literal(false),
+    referencedRelation: z.literal("training_plans"),
     referencedColumns: z.tuple([z.literal("id")]),
   }),
 ]);

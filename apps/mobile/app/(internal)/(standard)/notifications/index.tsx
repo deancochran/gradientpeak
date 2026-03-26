@@ -3,6 +3,7 @@ import {
   getUnreadNotificationIds,
   normalizeNotificationListItem,
 } from "@repo/core";
+import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/trpc/react";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
@@ -40,6 +41,7 @@ function NotificationItem({
   return (
     <Pressable
       onPress={onPress}
+      testID={`notification-item-${notification.id}`}
       className={cn(
         "flex-row items-center p-4 border-b border-border bg-background active:bg-accent",
         item.isUnread && "bg-muted/10",
@@ -74,6 +76,7 @@ function NotificationItem({
               variant="default"
               size="sm"
               className="flex-1"
+              testID={`notification-accept-${notification.id}`}
               onPress={(e) => {
                 e.stopPropagation();
                 if (item.actorId) {
@@ -87,6 +90,7 @@ function NotificationItem({
               variant="outline"
               size="sm"
               className="flex-1"
+              testID={`notification-reject-${notification.id}`}
               onPress={(e) => {
                 e.stopPropagation();
                 if (item.actorId) {
@@ -119,10 +123,7 @@ export default function NotificationsScreen() {
     );
 
   const markReadMutation = trpc.notifications.markRead.useMutation({
-    onSuccess: () => {
-      utils.notifications.getRecent.invalidate();
-      utils.notifications.getUnreadCount.invalidate();
-    },
+    onSuccess: async () => invalidateNotificationQueries(utils),
   });
 
   const acceptFollowMutation = trpc.social.acceptFollowRequest.useMutation({
@@ -146,11 +147,11 @@ export default function NotificationsScreen() {
         utils.notifications.getRecent.setData({ limit: 20 }, context.previousNotifications);
       }
     },
-    onSettled: () => {
-      utils.notifications.getRecent.invalidate();
-      utils.notifications.getUnreadCount.invalidate();
-      utils.social.getFollowers.invalidate();
-      utils.social.getFollowing.invalidate();
+    onSettled: async (_data, _error, variables) => {
+      await Promise.all([
+        invalidateNotificationQueries(utils),
+        invalidateRelationshipQueries(utils, [variables.follower_id]),
+      ]);
     },
   });
 
@@ -175,12 +176,11 @@ export default function NotificationsScreen() {
         utils.notifications.getRecent.setData({ limit: 20 }, context.previousNotifications);
       }
     },
-    onSettled: () => {
-      utils.notifications.getRecent.invalidate();
-      utils.notifications.getUnreadCount.invalidate();
-      // Invalidate followers/following lists in case they were viewing
-      utils.social.getFollowers.invalidate();
-      utils.social.getFollowing.invalidate();
+    onSettled: async (_data, _error, variables) => {
+      await Promise.all([
+        invalidateNotificationQueries(utils),
+        invalidateRelationshipQueries(utils, [variables.follower_id]),
+      ]);
     },
   });
 
@@ -213,18 +213,19 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="notifications-screen">
       <Stack.Screen
         options={{
           title: "Notifications",
           headerRight: () => (
-            <Button variant="ghost" onPress={handleReadAll}>
+            <Button variant="ghost" onPress={handleReadAll} testID="notifications-read-all-button">
               <Text className="text-primary">Read All</Text>
             </Button>
           ),
         }}
       />
       <FlatList
+        testID="notifications-list"
         data={normalizedNotifications}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
@@ -236,7 +237,10 @@ export default function NotificationsScreen() {
           />
         )}
         ListEmptyComponent={
-          <View className="flex-1 items-center justify-center p-8">
+          <View
+            className="flex-1 items-center justify-center p-8"
+            testID="notifications-empty-state"
+          >
             <Text className="text-muted-foreground">No notifications</Text>
           </View>
         }

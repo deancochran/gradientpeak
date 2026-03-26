@@ -1,8 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { expect, fn } from "@storybook/test";
 import { useState } from "react";
 
 import { weightInputFieldFixtures } from "./fixtures";
 import { WeightInputField } from "./index.web";
+import { exerciseWeightInputFieldStory } from "./interactions";
 
 const meta = {
   title: "Components/WeightInputField",
@@ -10,7 +12,8 @@ const meta = {
   tags: ["autodocs"],
   args: {
     ...weightInputFieldFixtures.athlete,
-    onChangeKg: () => {},
+    onChangeKg: fn(),
+    onUnitChange: fn(),
   },
 } satisfies Meta<typeof WeightInputField>;
 
@@ -25,11 +28,27 @@ export const Playground: Story = {
     return (
       <WeightInputField
         {...args}
-        onChangeKg={setValueKg}
-        onUnitChange={setUnit}
+        onChangeKg={(nextValue) => {
+          setValueKg(nextValue);
+          args.onChangeKg(nextValue);
+        }}
+        onUnitChange={(nextUnit) => {
+          setUnit(nextUnit);
+          args.onUnitChange?.(nextUnit);
+        }}
         unit={unit}
         valueKg={valueKg}
       />
     );
+  },
+  play: async ({ args, canvasElement }) => {
+    await exerciseWeightInputFieldStory({
+      canvasElement,
+      expectedLabel: weightInputFieldFixtures.athlete.label,
+      nextValue: "71.5",
+    });
+
+    await expect(args.onChangeKg).toHaveBeenCalled();
+    await expect(args.onUnitChange).toHaveBeenCalledWith("lbs");
   },
 };

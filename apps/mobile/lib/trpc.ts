@@ -1,9 +1,14 @@
-import type { AppRouter } from "@repo/trpc/client";
-import { createTRPCProxyClient, httpBatchLink, loggerLink } from "@trpc/client";
-import { createTRPCReact } from "@trpc/react-query";
-import superjson from "superjson";
+import {
+  createTRPCBatchLink,
+  createTRPCUrl,
+  createVanillaTRPCClient,
+  trpc,
+} from "@repo/trpc/react";
+import { loggerLink } from "@trpc/client";
 import { getServerConfig } from "@/lib/server-config";
 import { getAuthHeaders } from "@/lib/supabase/auth-headers";
+
+export { trpc };
 
 const TRPC_REQUEST_TIMEOUT_MS = 10000;
 
@@ -35,37 +40,28 @@ const fetchWithTimeout: typeof fetch = async (input, init) => {
 
 export const getApiUrl = () => {
   const baseUrl = getServerConfig().apiUrl;
-  const url = `${baseUrl}/api/trpc`;
+  const url = createTRPCUrl(baseUrl);
   console.log("🔗 tRPC URL:", url);
   return url;
 };
 
-export const trpc = createTRPCReact<AppRouter>();
+function createMobileHeaders() {
+  const authHeaders = getAuthHeaders();
+  authHeaders.set("x-client-type", "mobile");
+  authHeaders.set("x-trpc-source", "react-native");
+  return authHeaders;
+}
 
-let vanillaTrpcClient: ReturnType<typeof createTRPCProxyClient<AppRouter>> | null = null;
+let vanillaTrpcClient: ReturnType<typeof createVanillaTRPCClient> | null = null;
 let vanillaTrpcUrl = "";
 
 export function getVanillaTrpcClient() {
   const currentUrl = getApiUrl();
   if (!vanillaTrpcClient || vanillaTrpcUrl !== currentUrl) {
-    vanillaTrpcClient = createTRPCProxyClient<AppRouter>({
-      links: [
-        loggerLink({
-          enabled: (opts) => __DEV__ || (opts.direction === "down" && opts.result instanceof Error),
-          colorMode: "none",
-        }),
-        httpBatchLink({
-          transformer: superjson,
-          url: currentUrl,
-          fetch: fetchWithTimeout,
-          headers: () => {
-            const authHeaders = getAuthHeaders();
-            authHeaders.set("x-client-type", "mobile");
-            authHeaders.set("x-trpc-source", "react-native");
-            return authHeaders;
-          },
-        }),
-      ],
+    vanillaTrpcClient = createVanillaTRPCClient({
+      url: currentUrl,
+      fetch: fetchWithTimeout,
+      headers: createMobileHeaders,
     });
     vanillaTrpcUrl = currentUrl;
   }
@@ -80,16 +76,10 @@ export function createTRPCClient() {
         enabled: (opts) => __DEV__ || (opts.direction === "down" && opts.result instanceof Error),
         colorMode: "none",
       }),
-      httpBatchLink({
-        transformer: superjson,
+      createTRPCBatchLink({
         url: getApiUrl(),
         fetch: fetchWithTimeout,
-        headers: () => {
-          const authHeaders = getAuthHeaders();
-          authHeaders.set("x-client-type", "mobile");
-          authHeaders.set("x-trpc-source", "react-native");
-          return authHeaders;
-        },
+        headers: createMobileHeaders,
       }),
     ],
   });

@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run dev:next\" \"npm run ngrok\"",
-    "dev:next": "next dev --turbopack",
+    "dev:e2e": "bash ./scripts/run-e2e-web.sh",
+    "dev:next": "next dev --turbopack --hostname 0.0.0.0",
     "ngrok": "ngrok http 3000 --domain=outgoing-ape-repeatedly.ngrok-free.app",
     "build": "next build --turbopack",
     "start": "next start",
@@ -12,11 +13,12 @@
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "check-types": "tsc --noEmit",
-    "watch": "concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"chokidar 'src/**/*.{ts,tsx,js,jsx,json,css}' -c 'biome lint .'\"",
+    "watch": "bash ./scripts/watch.sh",
     "test:serve": "next dev",
     "test:e2e": "playwright test",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "test:storybook": "test-storybook --url http://127.0.0.1:6006"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -63,7 +65,10 @@
     "@repo/typescript-config": "workspace:*",
     "@storybook/addon-a11y": "^8.6.14",
     "@storybook/addon-essentials": "^8.6.14",
+    "@storybook/addon-interactions": "^8.6.14",
     "@storybook/react-vite": "^8.6.14",
+    "@storybook/test": "^8.6.14",
+    "@storybook/test-runner": "^0.22.1",
     "@tailwindcss/vite": "^4",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

@@ -1,7 +1,7 @@
-import type { PublicActivityPlansInsert } from "@repo/supabase";
 import { z } from "zod";
 import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
 import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
+import { canonicalSportSchema } from "./sport";
 import {
   minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
@@ -124,14 +124,20 @@ export const activityPlanUpdateSchema = activityPlanCreateSchema.partial();
 // Note: plannedActivityCreateSchema and plannedActivityUpdateSchema are now exported from ./planned_activity
 
 // Type for ActivityRecorder service (V2 only)
-export type RecordingServiceActivityPlan = Omit<
-  PublicActivityPlansInsert,
-  "idx" | "profile_id" | "created_at" | "gps_recording_enabled"
-> & {
-  structure: ActivityPlanStructureV2;
+export interface RecordingServiceActivityPlan {
+  activity_category: z.infer<typeof canonicalSportSchema>;
+  description: string;
   gps_recording_enabled?: boolean;
-  route_id?: string | null; // Optional route ID when following a route
-};
+  id?: string;
+  import_external_id?: string | null;
+  import_provider?: string | null;
+  is_system_template?: boolean;
+  name: string;
+  notes?: string | null;
+  route_id?: string | null;
+  structure: ActivityPlanStructureV2;
+  version?: string;
+}
 
 // tRPC-specific Training Plans Schemas
 export const trainingPlanCreateInputSchema = z.object({

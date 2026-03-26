@@ -1,0 +1,10 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ./bootstrap.yaml
+- runFlow:
+    file: ./login.yaml
+    env:
+      email: "${STANDARD_USER_EMAIL}"
+      password: "${STANDARD_USER_PASS}"
+- assertVisible: "Plan"

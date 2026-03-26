@@ -3,14 +3,25 @@ appId: com.deancochran.gradientpeak.dev
 env:
   USER_EMAIL: "test@example.com"
   USER_PASS: "password123"
+  TARGET_USERNAME: "coachcasey"
 ---
-- launchApp:
-    clearState: true
+- runFlow:
+    file: ../reusable/bootstrap.yaml
 - runFlow:
     file: ../reusable/login.yaml
     env:
       email: "${USER_EMAIL}"
       password: "${USER_PASS}"
-- tapOn: "Profile" # Navigate to the profile tab
-- assertVisible: "Goals" # An element on the Profile screen
+- tapOn: "Discover"
+- tapOn: "Users"
+- tapOn: "Search users, activities, plans..."
+- inputText: "${TARGET_USERNAME}"
+- extendedWaitUntil:
+    visible: "${TARGET_USERNAME}"
+    timeout: 10000
+- tapOn: "${TARGET_USERNAME}"
+- extendedWaitUntil:
+    visible:
+      id: "user-detail-screen"
+    timeout: 10000
 - takeScreenshot: reports/profile_screen_after_login.png

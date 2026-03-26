@@ -10,9 +10,7 @@ describe("deriveCreationContext", () => {
     });
 
     expect(context.history_availability_state).toBe("none");
-    expect(context.recommended_baseline_tss_range.min).toBeGreaterThanOrEqual(
-      80,
-    );
+    expect(context.recommended_baseline_tss_range.min).toBeGreaterThanOrEqual(80);
     expect(context.recommended_baseline_tss_range.max).toBeGreaterThan(
       context.recommended_baseline_tss_range.min,
     );
@@ -23,9 +21,7 @@ describe("deriveCreationContext", () => {
 
   it("widens baseline recommendations upward with rich recent activity", () => {
     const completedActivities = Array.from({ length: 12 }, (_, index) => ({
-      occurred_at: new Date(
-        Date.now() - index * 2 * 24 * 60 * 60 * 1000,
-      ).toISOString(),
+      occurred_at: new Date(Date.now() - index * 2 * 24 * 60 * 60 * 1000).toISOString(),
       activity_category: "run",
       duration_seconds: 3600,
       tss: 80,
@@ -101,18 +97,14 @@ describe("deriveCreationContext", () => {
       as_of: "2026-02-16T00:00:00.000Z",
     });
 
-    expect(
-      context.recommended_sessions_per_week_range.min,
-    ).toBeGreaterThanOrEqual(2);
+    expect(context.recommended_sessions_per_week_range.min).toBeGreaterThanOrEqual(2);
     expect(context.recommended_sessions_per_week_range.max).toBeGreaterThan(
       context.recommended_sessions_per_week_range.min,
     );
     expect(context.recommended_baseline_tss_range.max).toBeGreaterThan(
       context.recommended_baseline_tss_range.min,
     );
-    expect(
-      context.rationale_codes.some((code) => code.startsWith("preferred_day_")),
-    ).toBe(true);
+    expect(context.rationale_codes.some((code) => code.startsWith("preferred_day_"))).toBe(true);
   });
 
   it("adds personalization outputs while keeping backward-compatible core fields", () => {
@@ -121,13 +113,7 @@ describe("deriveCreationContext", () => {
         {
           occurred_at: "2026-02-10T08:00:00.000Z",
           tss: 90,
-          power_zone_1_seconds: 200,
-          power_zone_2_seconds: 200,
-          power_zone_3_seconds: 100,
-          power_zone_4_seconds: 100,
-          power_zone_5_seconds: 50,
-          power_zone_6_seconds: 25,
-          power_zone_7_seconds: 25,
+          intensity_factor: 0.91,
         },
       ],
       profile: {
@@ -140,7 +126,7 @@ describe("deriveCreationContext", () => {
     expect(context.user_age).toBeDefined();
     expect(context.user_gender).toBe("female");
     expect(context.max_sustainable_ctl).toBeDefined();
-    expect(context.training_quality?.source).toBe("power");
+    expect(context.training_quality?.high_intensity_ratio).toBeGreaterThan(0.5);
     expect(context.history_availability_state).toBeDefined();
     expect(context.recommended_baseline_tss_range.min).toBeDefined();
   });
@@ -157,9 +143,7 @@ describe("deriveCreationContext", () => {
     expect(context.is_youth).toBe(true);
     expect(context.user_age).toBe(14);
     expect(context.max_sustainable_ctl).toBeLessThan(100);
-    expect(context.recommended_sessions_per_week_range.max).toBeLessThanOrEqual(
-      4,
-    );
+    expect(context.recommended_sessions_per_week_range.max).toBeLessThanOrEqual(4);
     expect(context.missing_required_onboarding_fields ?? []).toHaveLength(0);
   });
 });

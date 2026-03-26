@@ -1,5 +1,5 @@
+import { addRestDays, extendTimeline, reduceIntensity } from "@repo/core/plan";
 import { useMemo } from "react";
-import { reduceIntensity, addRestDays, extendTimeline } from "../utils/training-adjustments";
 
 export type SuggestionReason = "low_adherence" | "dangerous_tsb" | "timeline_risk";
 
@@ -67,10 +67,10 @@ export function useSmartSuggestions({
       const today = new Date();
 
       const totalDays = Math.floor(
-        (targetDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        (targetDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
       );
       const elapsedDays = Math.floor(
-        (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+        (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
       );
 
       const timeProgress = totalDays > 0 ? (elapsedDays / totalDays) * 100 : 0;

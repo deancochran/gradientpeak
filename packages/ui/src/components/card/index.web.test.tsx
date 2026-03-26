@@ -15,7 +15,7 @@ describe("Card web", () => {
       </Card>,
     );
 
-    const card = screen.getByRole("article", {
+    const card = screen.getByRole(cardFixtures.profile.role, {
       name: cardFixtures.profile.accessibilityLabel,
     });
 

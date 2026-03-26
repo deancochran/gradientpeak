@@ -8,32 +8,79 @@ import { useRouter } from "expo-router";
 import {
   Activity,
   Bike,
+  ChevronRight,
   Dumbbell,
   Footprints,
-  Loader2,
   MapPin,
   Search,
-  UserPlus,
   Users,
   Waves,
   X,
 } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
-import { Dimensions, FlatList, Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { FlatList, ScrollView, TouchableOpacity, View } from "react-native";
 import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { ROUTES } from "@/lib/constants/routes";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 
 const TABS = [
   { id: "activityPlans", label: "Activity Plans", icon: Activity },
   { id: "trainingPlans", label: "Training Plans", icon: Dumbbell },
   { id: "routes", label: "Routes", icon: MapPin },
-  { id: "users", label: "Users", icon: Users },
+  { id: "users", label: "Profiles", icon: Users },
 ] as const;
 
 export type TabType = (typeof TABS)[number]["id"];
+
+const TAB_COPY: Record<
+  TabType,
+  {
+    placeholder: string;
+    browseTitle: string;
+    browseDescription: string;
+    resultsLabel: string;
+    emptyTitle: string;
+    emptyDescription: string;
+  }
+> = {
+  activityPlans: {
+    placeholder: "Search activity plans",
+    browseTitle: "Find your next workout",
+    browseDescription:
+      "Browse simple, structured activity plans by sport or search for a specific session.",
+    resultsLabel: "activity plans",
+    emptyTitle: "No activity plans found",
+    emptyDescription: "Try another keyword or switch categories.",
+  },
+  trainingPlans: {
+    placeholder: "Search training plans",
+    browseTitle: "Browse ready-to-use training plans",
+    browseDescription:
+      "See template plans with just enough detail to know the time commitment before you open one.",
+    resultsLabel: "training plans",
+    emptyTitle: "No training plans found",
+    emptyDescription: "Try a broader search term like 10k, cycling, or beginner.",
+  },
+  routes: {
+    placeholder: "Search your routes",
+    browseTitle: "Revisit saved routes",
+    browseDescription:
+      "Scan your route library by distance, climbing, and activity type before opening the map.",
+    resultsLabel: "routes",
+    emptyTitle: "No routes found",
+    emptyDescription: "Try another route name or clear your search.",
+  },
+  users: {
+    placeholder: "Search profiles",
+    browseTitle: "Find people to follow",
+    browseDescription:
+      "Discover athletes and coaches by username, then open their profile for the full context.",
+    resultsLabel: "profiles",
+    emptyTitle: "No profiles found",
+    emptyDescription: "Try a username or a shorter search term.",
+  },
+};
 
 const CATEGORIES = [
   {
@@ -42,7 +89,7 @@ const CATEGORIES = [
     icon: Footprints,
     color: "text-emerald-600",
     bgColor: "bg-emerald-50",
-    subcategories: [{ category: "run", label: "Running" }],
+    description: "Easy runs, workouts, and long efforts.",
   },
   {
     id: "bike",
@@ -50,7 +97,7 @@ const CATEGORIES = [
     icon: Bike,
     color: "text-blue-600",
     bgColor: "bg-blue-50",
-    subcategories: [{ category: "bike", label: "Cycling" }],
+    description: "Endurance rides, intervals, and trainer sessions.",
   },
   {
     id: "swim",
@@ -58,7 +105,7 @@ const CATEGORIES = [
     icon: Waves,
     color: "text-cyan-600",
     bgColor: "bg-cyan-50",
-    subcategories: [{ category: "swim", label: "Swimming" }],
+    description: "Pool sets and swim-focused sessions.",
   },
   {
     id: "strength",
@@ -66,7 +113,7 @@ const CATEGORIES = [
     icon: Dumbbell,
     color: "text-red-600",
     bgColor: "bg-red-50",
-    subcategories: [{ category: "strength", label: "Strength Training" }],
+    description: "Strength and supporting gym work.",
   },
   {
     id: "other",
@@ -74,9 +121,21 @@ const CATEGORIES = [
     icon: Activity,
     color: "text-gray-600",
     bgColor: "bg-gray-50",
-    subcategories: [{ category: "other", label: "Other Activities" }],
+    description: "Mixed or non-standard activity types.",
   },
 ] as const;
+
+const ROUTE_CATEGORY_LABELS: Record<string, string> = {
+  run: "Run",
+  bike: "Ride",
+  swim: "Swim",
+  strength: "Strength",
+  other: "Other",
+  outdoor_run: "Run",
+  outdoor_bike: "Ride",
+  indoor_treadmill: "Treadmill",
+  indoor_bike_trainer: "Trainer",
+};
 
 function useDebounce(value: string, delay: number): string {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -96,14 +155,15 @@ function useDebounce(value: string, delay: number): string {
 
 export default function DiscoverPage() {
   const router = useRouter();
-  const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>("activityPlans");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
-  const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   const isSearchMode = debouncedSearch.trim() !== "";
+  const selectedCategoryId = selectedCategories[0] ?? null;
+  const selectedCategory =
+    CATEGORIES.find((category) => category.id === selectedCategoryId) ?? null;
 
   const activityPlansInfiniteQuery = trpc.activityPlans.list.useInfiniteQuery(
     {
@@ -147,7 +207,6 @@ export default function DiscoverPage() {
   }, [routesInfiniteQuery.data]);
 
   const trainingPlans = trainingPlansQuery.data || [];
-
   const users = usersQuery.data?.users || [];
 
   const filteredActivities = useMemo(() => {
@@ -161,6 +220,16 @@ export default function DiscoverPage() {
 
     return activities;
   }, [activityPlans, selectedCategories]);
+
+  const tabCounts = useMemo(
+    () => ({
+      activityPlans: filteredActivities.length,
+      trainingPlans: trainingPlans.length,
+      routes: routes.length,
+      users: users.length,
+    }),
+    [filteredActivities.length, trainingPlans.length, routes.length, users.length],
+  );
 
   const handleTemplatePress = (template: any) => {
     router.push({
@@ -195,8 +264,18 @@ export default function DiscoverPage() {
   };
 
   const handleViewAll = (categoryId: string) => {
+    setActiveTab("activityPlans");
     setSearchQuery("");
     setSelectedCategories([categoryId]);
+  };
+
+  const handleCategoryToggle = (categoryId: string | null) => {
+    if (!categoryId) {
+      setSelectedCategories([]);
+      return;
+    }
+
+    setSelectedCategories((current) => (current[0] === categoryId ? [] : [categoryId]));
   };
 
   const handleClearFilters = () => {
@@ -205,120 +284,227 @@ export default function DiscoverPage() {
   };
 
   const renderTabBar = () => (
-    <View className="flex-row bg-background px-2 pt-2 pb-3 border-b border-border">
-      {TABS.map((tab) => {
-        const isActive = activeTab === tab.id;
-        return (
-          <TouchableOpacity
-            key={tab.id}
-            onPress={() => setActiveTab(tab.id)}
-            className={`flex-1 flex-row items-center justify-center gap-1.5 py-2.5 px-1 rounded-lg ${
-              isActive ? "bg-primary" : "bg-transparent"
-            }`}
-          >
-            <Icon
-              as={tab.icon}
-              size={16}
-              className={isActive ? "text-primary-foreground" : "text-muted-foreground"}
-            />
-            <Text
-              className={`text-xs font-medium ${
-                isActive ? "text-primary-foreground" : "text-muted-foreground"
+    <View className="border-b border-border bg-background px-4 pt-3 pb-3">
+      <Text className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Browse by type
+      </Text>
+      <View className="flex-row rounded-2xl border border-border bg-muted/20 p-1.5">
+        {TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          const count = tabCounts[tab.id];
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              onPress={() => setActiveTab(tab.id)}
+              className={`flex-1 items-center justify-center gap-1.5 rounded-xl px-1 py-2.5 ${
+                isActive ? "bg-background shadow-sm" : "bg-transparent"
               }`}
-              numberOfLines={1}
+              activeOpacity={0.8}
             >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+              <View className="flex-row items-center justify-center gap-1.5">
+                <Icon
+                  as={tab.icon}
+                  size={16}
+                  className={isActive ? "text-foreground" : "text-muted-foreground"}
+                />
+                <Text
+                  className={`text-xs font-medium ${
+                    isActive ? "text-foreground" : "text-muted-foreground"
+                  }`}
+                  numberOfLines={1}
+                >
+                  {tab.label}
+                </Text>
+              </View>
+              <Text
+                className={`text-[11px] ${
+                  isActive ? "text-foreground/70" : "text-muted-foreground"
+                }`}
+              >
+                {count} {count === 1 ? "item" : "items"}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 
-  const renderSearchInput = () => (
-    <View className="px-4 pt-4 pb-3 border-b border-border bg-background">
-      <View className="flex-row gap-2">
-        <View className="flex-1">
+  const renderCategoryChips = () => {
+    if (activeTab !== "activityPlans") {
+      return null;
+    }
+
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8, paddingRight: 16 }}
+      >
+        <FilterChip
+          label="All"
+          isActive={!selectedCategoryId}
+          onPress={() => handleCategoryToggle(null)}
+        />
+        {CATEGORIES.map((category) => (
+          <FilterChip
+            key={category.id}
+            label={category.name}
+            isActive={selectedCategoryId === category.id}
+            onPress={() => handleCategoryToggle(category.id)}
+          />
+        ))}
+      </ScrollView>
+    );
+  };
+
+  const renderSearchInput = () => {
+    const activeCopy = TAB_COPY[activeTab];
+
+    return (
+      <View className="px-4 pt-4 pb-3 border-b border-border bg-background gap-3">
+        <View className="relative">
+          <View className="absolute left-3 top-1/2 z-10 -translate-y-1/2">
+            <Icon as={Search} size={18} className="text-muted-foreground" />
+          </View>
           <Input
-            placeholder="Search users, activities, plans..."
+            placeholder={activeCopy.placeholder}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            className="h-12 pr-10"
+            className="h-12 pl-10 pr-10"
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity
               className="absolute right-3 top-1/2 -translate-y-1/2"
               onPress={() => setSearchQuery("")}
+              activeOpacity={0.8}
             >
               <Icon as={X} size={20} className="text-muted-foreground" />
             </TouchableOpacity>
           )}
         </View>
-      </View>
 
-      {isSearchMode && (
-        <View className="flex-row items-center gap-2 mt-2">
-          <Icon as={Search} size={14} className="text-muted-foreground" />
-          <Text className="text-sm text-muted-foreground">Searching: {`"${debouncedSearch}"`}</Text>
-          <TouchableOpacity onPress={() => setSearchQuery("")}>
-            <Text className="text-sm text-primary font-medium">Clear</Text>
-          </TouchableOpacity>
+        <View className="gap-2">
+          <Text className="text-sm font-medium text-foreground">{activeCopy.browseTitle}</Text>
+          <Text className="text-xs text-muted-foreground">{activeCopy.browseDescription}</Text>
+          {isSearchMode ? (
+            <View className="flex-row items-center gap-2">
+              <Text className="text-xs text-muted-foreground">
+                Searching {activeCopy.resultsLabel} for {`"${debouncedSearch}"`}
+              </Text>
+              <TouchableOpacity onPress={handleClearFilters} activeOpacity={0.8}>
+                <Text className="text-xs font-medium text-primary">Clear</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          {renderCategoryChips()}
         </View>
-      )}
-    </View>
-  );
+      </View>
+    );
+  };
 
   const renderLoadingSkeleton = () => (
     <View className="p-4 gap-4">
       {[1, 2, 3].map((i) => (
-        <View key={i} className="h-24 bg-muted rounded-xl animate-pulse" />
+        <View key={i} className="h-28 bg-muted rounded-2xl animate-pulse" />
       ))}
     </View>
   );
 
-  const renderEmptyState = (message: string) => (
+  const renderEmptyState = (tab: TabType) => (
     <View className="px-4 py-12">
-      <EmptyStateCard icon={Search} title={message} description="Try adjusting your search" />
+      <EmptyStateCard
+        icon={Search}
+        title={TAB_COPY[tab].emptyTitle}
+        description={TAB_COPY[tab].emptyDescription}
+        actionLabel={selectedCategoryId || isSearchMode ? "Clear filters" : undefined}
+        onAction={selectedCategoryId || isSearchMode ? handleClearFilters : undefined}
+      />
+    </View>
+  );
+
+  const renderResultsHeader = (title: string, description: string, count: number, noun: string) => (
+    <View className="mb-3 gap-1">
+      <Text className="text-lg font-semibold text-foreground">{title}</Text>
+      <Text className="text-sm text-muted-foreground">{description}</Text>
+      <Text className="text-xs text-muted-foreground mt-1">
+        {count} {noun}
+        {count === 1 ? "" : "s"}
+      </Text>
+    </View>
+  );
+
+  const renderBrowseIntro = () => (
+    <View className="mx-4 mb-5 rounded-2xl border border-border bg-card p-4 gap-3">
+      <Text className="text-lg font-semibold text-foreground">Discover your next session</Text>
+      <Text className="text-sm leading-5 text-muted-foreground">
+        Keep search simple, browse by sport when you want inspiration, and open any detail page for
+        a deeper look before you commit.
+      </Text>
+      <View className="flex-row flex-wrap gap-2">
+        <BrowsePill label={`${activityPlans.length} activity plans`} />
+        <BrowsePill label={`${trainingPlans.length} training plans`} />
+        <BrowsePill label={`${routes.length} routes`} />
+        <BrowsePill label={`${users.length} profiles`} />
+      </View>
     </View>
   );
 
   const renderActivityPlansContent = () => {
-    if (!isSearchMode) {
+    if (activityPlansInfiniteQuery.isLoading) {
+      return renderLoadingSkeleton();
+    }
+
+    if (!isSearchMode && !selectedCategoryId) {
       return (
-        <ScrollView className="flex-1 py-4">
-          {CATEGORIES.map((category) => (
-            <CategoryRow
-              key={category.id}
-              category={category}
-              activities={activityPlans.filter((p) => p.activity_category === category.id)}
-              onViewAll={() => handleViewAll(category.id)}
-              onTemplatePress={handleTemplatePress}
-            />
-          ))}
+        <ScrollView className="flex-1 py-4" showsVerticalScrollIndicator={false}>
+          {renderBrowseIntro()}
+          {CATEGORIES.map((category) => {
+            const categoryActivities = activityPlans.filter(
+              (plan) => plan.activity_category === category.id,
+            );
+
+            return (
+              <CategoryRow
+                key={category.id}
+                category={category}
+                activities={categoryActivities}
+                onViewAll={() => handleViewAll(category.id)}
+                onTemplatePress={handleTemplatePress}
+              />
+            );
+          })}
           <View className="h-8" />
         </ScrollView>
       );
     }
 
-    if (activityPlansInfiniteQuery.isLoading) {
-      return renderLoadingSkeleton();
+    if (filteredActivities.length === 0) {
+      return renderEmptyState("activityPlans");
     }
 
-    if (filteredActivities.length === 0) {
-      return renderEmptyState("No activity plans found");
-    }
+    const headerTitle = selectedCategory
+      ? `${selectedCategory.name} activity plans`
+      : isSearchMode
+        ? "Search results"
+        : "All activity plans";
+    const headerDescription = selectedCategory
+      ? selectedCategory.description
+      : isSearchMode
+        ? "Open any session to inspect the structure, route, and scheduling options."
+        : "Browse every available activity plan in one place.";
 
     return (
       <FlatList
         data={filteredActivities}
-        contentContainerStyle={{ padding: 16, gap: 16 }}
+        contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={
-          <Text className="text-sm text-muted-foreground mb-2">
-            {filteredActivities.length} result
-            {filteredActivities.length !== 1 ? "s" : ""}
-          </Text>
-        }
+        ListHeaderComponent={renderResultsHeader(
+          headerTitle,
+          headerDescription,
+          filteredActivities.length,
+          "plan",
+        )}
         renderItem={({ item }) => (
           <ActivityPlanCard
             activityPlan={item as any}
@@ -326,9 +512,33 @@ export default function DiscoverPage() {
             variant="default"
           />
         )}
-        ListEmptyComponent={renderEmptyState("No activity plans found")}
+        ListEmptyComponent={renderEmptyState("activityPlans")}
         onRefresh={() => activityPlansInfiniteQuery.refetch()}
         refreshing={activityPlansInfiniteQuery.isRefetching}
+        onEndReached={() => {
+          if (
+            activityPlansInfiniteQuery.hasNextPage &&
+            !activityPlansInfiniteQuery.isFetchingNextPage
+          ) {
+            activityPlansInfiniteQuery.fetchNextPage();
+          }
+        }}
+        ListFooterComponent={
+          activityPlansInfiniteQuery.hasNextPage ? (
+            <View className="pt-2">
+              <Button
+                variant="outline"
+                className="w-full"
+                onPress={() => activityPlansInfiniteQuery.fetchNextPage()}
+                disabled={activityPlansInfiniteQuery.isFetchingNextPage}
+              >
+                <Text className="text-foreground">
+                  {activityPlansInfiniteQuery.isFetchingNextPage ? "Loading more..." : "Load More"}
+                </Text>
+              </Button>
+            </View>
+          ) : null
+        }
       />
     );
   };
@@ -339,18 +549,24 @@ export default function DiscoverPage() {
     }
 
     if (trainingPlans.length === 0) {
-      return renderEmptyState("No training plans found");
+      return renderEmptyState("trainingPlans");
     }
 
     return (
       <FlatList
         data={trainingPlans}
-        contentContainerStyle={{ padding: 16, gap: 12 }}
+        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={renderResultsHeader(
+          isSearchMode ? "Training plan matches" : "Training plan templates",
+          "Compare commitment, cadence, and focus before you open a plan.",
+          trainingPlans.length,
+          "template",
+        )}
         renderItem={({ item }) => (
           <TrainingPlanCard template={item} onPress={() => handleTrainingPlanPress(item)} />
         )}
-        ListEmptyComponent={renderEmptyState("No training plans found")}
+        ListEmptyComponent={renderEmptyState("trainingPlans")}
         onRefresh={() => trainingPlansQuery.refetch()}
         refreshing={trainingPlansQuery.isRefetching}
       />
@@ -363,29 +579,39 @@ export default function DiscoverPage() {
     }
 
     if (routes.length === 0) {
-      return renderEmptyState("No routes found");
+      return renderEmptyState("routes");
     }
 
     return (
       <FlatList
         data={routes}
-        contentContainerStyle={{ padding: 16, gap: 12 }}
+        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={renderResultsHeader(
+          isSearchMode ? "Route matches" : "Saved routes",
+          "Open a route when the distance and climbing feel like the right fit.",
+          routes.length,
+          "route",
+        )}
         renderItem={({ item }) => <RouteCard route={item} onPress={() => handleRoutePress(item)} />}
-        ListEmptyComponent={renderEmptyState("No routes found")}
+        ListEmptyComponent={renderEmptyState("routes")}
         onRefresh={() => routesInfiniteQuery.refetch()}
         refreshing={routesInfiniteQuery.isRefetching}
-        onEndReached={() => routesInfiniteQuery.fetchNextPage()}
+        onEndReached={() => {
+          if (routesInfiniteQuery.hasNextPage && !routesInfiniteQuery.isFetchingNextPage) {
+            routesInfiniteQuery.fetchNextPage();
+          }
+        }}
         ListFooterComponent={
           routesInfiniteQuery.hasNextPage ? (
-            <View className="py-4">
+            <View className="pt-2">
               <Button
                 variant="outline"
                 className="w-full"
                 onPress={() => routesInfiniteQuery.fetchNextPage()}
                 disabled={routesInfiniteQuery.isFetchingNextPage}
               >
-                <Text className="text-primary">
+                <Text className="text-foreground">
                   {routesInfiniteQuery.isFetchingNextPage ? "Loading more..." : "Load More"}
                 </Text>
               </Button>
@@ -402,16 +628,22 @@ export default function DiscoverPage() {
     }
 
     if (users.length === 0) {
-      return renderEmptyState("No users found");
+      return renderEmptyState("users");
     }
 
     return (
       <FlatList
         data={users}
-        contentContainerStyle={{ padding: 16, gap: 12 }}
+        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={renderResultsHeader(
+          isSearchMode ? "Profiles found" : "People to follow",
+          "Profiles stay simple here: open one to decide whether you want to follow or message.",
+          users.length,
+          "profile",
+        )}
         renderItem={({ item }) => <UserCard user={item} onPress={() => handleUserPress(item)} />}
-        ListEmptyComponent={renderEmptyState("No users found")}
+        ListEmptyComponent={renderEmptyState("users")}
         onRefresh={() => usersQuery.refetch()}
         refreshing={usersQuery.isRefetching}
       />
@@ -443,6 +675,40 @@ export default function DiscoverPage() {
   );
 }
 
+function BrowsePill({ label }: { label: string }) {
+  return (
+    <View className="rounded-full border border-border bg-background px-3 py-1.5">
+      <Text className="text-xs font-medium text-muted-foreground">{label}</Text>
+    </View>
+  );
+}
+
+function FilterChip({
+  label,
+  isActive,
+  onPress,
+}: {
+  label: string;
+  isActive: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.8}
+      className={`rounded-full border px-3 py-1.5 ${
+        isActive ? "border-primary bg-primary/10" : "border-border bg-background"
+      }`}
+    >
+      <Text
+        className={`text-xs font-medium ${isActive ? "text-primary" : "text-muted-foreground"}`}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 interface CategoryRowProps {
   category: (typeof CATEGORIES)[number];
   activities: any[];
@@ -454,15 +720,23 @@ function CategoryRow({ category, activities, onViewAll, onTemplatePress }: Categ
   if (activities.length === 0) return null;
 
   return (
-    <View className="mb-6">
-      <View className="flex-row items-center justify-between px-4 mb-3">
-        <View className="flex-row items-center gap-2">
-          <Icon as={category.icon} size={20} className={category.color} />
-          <Text className="text-xl font-semibold">{category.name}</Text>
+    <View className="mb-6 gap-3">
+      <View className="flex-row items-start justify-between px-4 gap-3">
+        <View className="flex-1 flex-row gap-3">
+          <View className={`mt-0.5 rounded-xl p-2 ${category.bgColor}`}>
+            <Icon as={category.icon} size={18} className={category.color} />
+          </View>
+          <View className="flex-1 gap-1">
+            <Text className="text-lg font-semibold text-foreground">{category.name}</Text>
+            <Text className="text-sm text-muted-foreground">{category.description}</Text>
+            <Text className="text-xs text-muted-foreground">
+              {activities.length} plan{activities.length === 1 ? "" : "s"}
+            </Text>
+          </View>
         </View>
 
-        <TouchableOpacity onPress={onViewAll}>
-          <Text className="text-sm text-primary font-medium">View All</Text>
+        <TouchableOpacity onPress={onViewAll} activeOpacity={0.8}>
+          <Text className="text-sm text-primary font-medium">See all</Text>
         </TouchableOpacity>
       </View>
 
@@ -492,28 +766,57 @@ interface TrainingPlanCardProps {
 }
 
 function TrainingPlanCard({ template, onPress }: TrainingPlanCardProps) {
+  const sports = Array.isArray(template.sport) ? template.sport : [];
+  const experienceLevels = Array.isArray(template.experienceLevel)
+    ? template.experienceLevel
+    : template.experienceLevel
+      ? [template.experienceLevel]
+      : [];
+  const durationWeeks = template.durationWeeks?.recommended || template.durationWeeks?.min;
+  const sessionsPerWeek = template.sessions_per_week_target || template.sessionsPerWeek;
+
   return (
-    <TouchableOpacity onPress={onPress} className="bg-card border border-border rounded-xl p-4">
-      <View className="flex-row items-start justify-between">
-        <View className="flex-1">
-          <Text className="text-lg font-semibold text-foreground">{template.name}</Text>
-          <Text className="text-sm text-muted-foreground mt-1">
-            {template.durationWeeks?.recommended || template.durationWeeks?.min} weeks
-          </Text>
-        </View>
-        <View className="bg-primary/10 px-2 py-1 rounded-full">
-          <Text className="text-xs font-medium text-primary capitalize">
-            {template.experienceLevel}
-          </Text>
-        </View>
-      </View>
-      <View className="flex-row gap-2 mt-3">
-        {template.sport?.map((s: string) => (
-          <View key={s} className="bg-muted px-2 py-1 rounded-md">
-            <Text className="text-xs text-muted-foreground capitalize">{s}</Text>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      className="bg-card border border-border rounded-2xl p-4 gap-3"
+    >
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1 gap-1.5">
+          <View className="flex-row items-center gap-2">
+            <View className="rounded-full bg-primary/10 px-2.5 py-1">
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                Template
+              </Text>
+            </View>
+            {durationWeeks ? (
+              <View className="rounded-full bg-muted px-2.5 py-1">
+                <Text className="text-[11px] font-medium text-muted-foreground">
+                  {durationWeeks} week{durationWeeks === 1 ? "" : "s"}
+                </Text>
+              </View>
+            ) : null}
           </View>
+          <Text className="text-lg font-semibold text-foreground">{template.name}</Text>
+          <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={2}>
+            {template.description?.trim() ||
+              "Structured plan template with enough detail to preview before scheduling."}
+          </Text>
+        </View>
+        <Icon as={ChevronRight} size={18} className="mt-1 text-muted-foreground" />
+      </View>
+
+      <View className="flex-row flex-wrap gap-2">
+        {sessionsPerWeek ? <InfoChip label={`${sessionsPerWeek} sessions/week`} /> : null}
+        {sports.slice(0, 2).map((sport: string) => (
+          <InfoChip key={sport} label={sport} />
+        ))}
+        {experienceLevels.slice(0, 1).map((level: string) => (
+          <InfoChip key={level} label={level} />
         ))}
       </View>
+
+      <Text className="text-xs font-medium text-primary">Open plan details</Text>
     </TouchableOpacity>
   );
 }
@@ -524,36 +827,36 @@ interface RouteCardProps {
 }
 
 function RouteCard({ route, onPress }: RouteCardProps) {
-  const distanceKm = route.total_distance ? (route.total_distance / 1000).toFixed(1) : "0";
+  const distanceKm = route.total_distance ? (route.total_distance / 1000).toFixed(1) : "0.0";
   const elevationM = route.total_ascent || 0;
+  const routeType = ROUTE_CATEGORY_LABELS[route.activity_category] || "Route";
 
   return (
-    <TouchableOpacity onPress={onPress} className="bg-card border border-border rounded-xl p-4">
-      <View className="flex-row items-start justify-between">
-        <View className="flex-1">
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      className="bg-card border border-border rounded-2xl p-4 gap-3"
+    >
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1 gap-1.5">
+          <View className="rounded-full bg-muted px-2.5 py-1 self-start">
+            <Text className="text-[11px] font-medium text-muted-foreground">{routeType}</Text>
+          </View>
           <Text className="text-lg font-semibold text-foreground">{route.name}</Text>
-          {route.description && (
-            <Text className="text-sm text-muted-foreground mt-1" numberOfLines={2}>
-              {route.description}
-            </Text>
-          )}
-        </View>
-        <View className="bg-primary/10 px-2 py-1 rounded-full">
-          <Text className="text-xs font-medium text-primary capitalize">
-            {route.activity_category}
+          <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={2}>
+            {route.description?.trim() ||
+              "Open route details to inspect the full map and elevation."}
           </Text>
         </View>
+        <Icon as={ChevronRight} size={18} className="mt-1 text-muted-foreground" />
       </View>
-      <View className="flex-row gap-4 mt-3">
-        <View className="flex-row items-center gap-1">
-          <Icon as={MapPin} size={14} className="text-muted-foreground" />
-          <Text className="text-sm text-muted-foreground">{distanceKm} km</Text>
-        </View>
-        <View className="flex-row items-center gap-1">
-          <Icon as={Activity} size={14} className="text-muted-foreground" />
-          <Text className="text-sm text-muted-foreground">{elevationM} m</Text>
-        </View>
+
+      <View className="flex-row flex-wrap gap-2">
+        <InfoChip label={`${distanceKm} km`} />
+        {elevationM > 0 ? <InfoChip label={`${elevationM} m climb`} /> : null}
       </View>
+
+      <Text className="text-xs font-medium text-primary">Open route details</Text>
     </TouchableOpacity>
   );
 }
@@ -564,29 +867,45 @@ interface UserCardProps {
 }
 
 function UserCard({ user, onPress }: UserCardProps) {
+  const username = user.username || "User";
+  const visibilityLabel = user.is_public ? "Public profile" : "Private profile";
+  const description = user.is_public
+    ? "Open profile to view their public details and follow status."
+    : "Open profile to request access or follow them privately.";
+
   return (
     <TouchableOpacity
       onPress={onPress}
-      className="bg-card border border-border rounded-xl p-4 flex-row items-center gap-3"
+      activeOpacity={0.85}
+      className="bg-card border border-border rounded-2xl p-4 flex-row items-center gap-3"
     >
-      <Avatar alt={user.username || "User"} className="h-12 w-12">
+      <Avatar alt={username} className="h-14 w-14">
         <AvatarImage source={{ uri: user.avatar_url }} />
         <AvatarFallback>
-          <Text className="text-sm font-medium text-foreground">
-            {user.username?.slice(0, 2).toUpperCase()}
+          <Text className="text-base font-medium text-foreground">
+            {username.slice(0, 2).toUpperCase()}
           </Text>
         </AvatarFallback>
       </Avatar>
-      <View className="flex-1">
-        <Text className="text-lg font-semibold text-foreground">{user.username}</Text>
-        <Text className="text-sm text-muted-foreground">
-          {user.is_public ? "Public Profile" : "Private Profile"}
-        </Text>
+      <View className="flex-1 gap-1">
+        <View className="flex-row items-center gap-2">
+          <Text className="text-base font-semibold text-foreground">{username}</Text>
+          <View className="rounded-full bg-muted px-2 py-0.5">
+            <Text className="text-[11px] font-medium text-muted-foreground">{visibilityLabel}</Text>
+          </View>
+        </View>
+        <Text className="text-sm leading-5 text-muted-foreground">{description}</Text>
+        <Text className="text-xs font-medium text-primary">Open profile</Text>
       </View>
-      <Button size="sm" variant="outline" className="h-9">
-        <Icon as={UserPlus} size={16} className="text-primary mr-1" />
-        <Text className="text-primary text-sm">Follow</Text>
-      </Button>
+      <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
     </TouchableOpacity>
+  );
+}
+
+function InfoChip({ label }: { label: string }) {
+  return (
+    <View className="rounded-full border border-border/70 bg-muted/40 px-2.5 py-1">
+      <Text className="text-[11px] font-medium capitalize text-muted-foreground">{label}</Text>
+    </View>
   );
 }

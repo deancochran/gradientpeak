@@ -1,0 +1,30 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  INVALID_EMAIL: "gradientpeak.maestro.invalid@example.com"
+  INVALID_PASSWORD: "Password123"
+---
+- runFlow:
+    file: ../../reusable/bootstrap.yaml
+- assertVisible:
+    id: "sign-in-screen"
+- tapOn:
+    id: "email-input"
+- inputText: "${INVALID_EMAIL}"
+- tapOn:
+    id: "password-input"
+- inputText: "${INVALID_PASSWORD}"
+- hideKeyboard
+- tapOn:
+    id: "sign-in-button"
+- tapOn:
+    id: "sign-in-button"
+    optional: true
+- tapOn:
+    id: "sign-in-button"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "root-error-container"
+    timeout: 10000
+- assertVisible:
+    id: "sign-in-screen"

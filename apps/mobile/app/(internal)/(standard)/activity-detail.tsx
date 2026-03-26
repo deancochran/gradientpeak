@@ -3,6 +3,7 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
+import { MetricCard } from "@repo/ui/components/metric-card";
 import { Skeleton } from "@repo/ui/components/skeleton";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
@@ -24,13 +25,12 @@ import {
   Waves,
   Zap,
 } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Polyline as MapPolyline, Region } from "react-native-maps";
 import {
   ActivityHeader,
   ActivityPlanComparison,
-  MetricCard,
   ZoneDistributionCard,
 } from "@/components/activity";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
@@ -122,7 +122,8 @@ function ActivityDetailScreen() {
     { enabled: !!id },
   );
 
-  const activity = activityData as any;
+  const activity = activityData?.activity as any;
+  const derived = activityData?.derived;
 
   // Fetch profile for header
   const { data: profile } = trpc.profiles.getPublicById.useQuery(
@@ -175,8 +176,13 @@ function ActivityDetailScreen() {
   });
 
   // Like mutation
-  const [liked, setLiked] = useState(activity?.has_liked ?? false);
+  const [liked, setLiked] = useState(activityData?.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(activity?.likes_count ?? 0);
+
+  useEffect(() => {
+    setLiked(activityData?.has_liked ?? false);
+    setLikesCount(activity?.likes_count ?? 0);
+  }, [activity?.likes_count, activityData?.has_liked]);
 
   const toggleLikeMutation = trpc.social.toggleLike.useMutation({
     onSuccess: (data) => {
@@ -433,51 +439,17 @@ function ActivityDetailScreen() {
 
   // Memoize zone data
   const { hrZones, powerZones, hrColors, powerColors } = useMemo(() => {
-    const hrZone1 = activity?.hr_zone_1_seconds || 0;
-    const hrZone2 = activity?.hr_zone_2_seconds || 0;
-    const hrZone3 = activity?.hr_zone_3_seconds || 0;
-    const hrZone4 = activity?.hr_zone_4_seconds || 0;
-    const hrZone5 = activity?.hr_zone_5_seconds || 0;
-
-    const powerZone1 = activity?.power_zone_1_seconds || 0;
-    const powerZone2 = activity?.power_zone_2_seconds || 0;
-    const powerZone3 = activity?.power_zone_3_seconds || 0;
-    const powerZone4 = activity?.power_zone_4_seconds || 0;
-    const powerZone5 = activity?.power_zone_5_seconds || 0;
-    const powerZone6 = activity?.power_zone_6_seconds || 0;
-    const powerZone7 = activity?.power_zone_7_seconds || 0;
-
-    const hasHrZones = hrZone1 > 0 || hrZone2 > 0 || hrZone3 > 0 || hrZone4 > 0 || hrZone5 > 0;
-    const hasPowerZones =
-      powerZone1 > 0 ||
-      powerZone2 > 0 ||
-      powerZone3 > 0 ||
-      powerZone4 > 0 ||
-      powerZone5 > 0 ||
-      powerZone6 > 0 ||
-      powerZone7 > 0;
-
     return {
-      hrZones: hasHrZones
-        ? [
-            { zone: 1, time: hrZone1, label: "Zone 1 (Recovery)" },
-            { zone: 2, time: hrZone2, label: "Zone 2 (Endurance)" },
-            { zone: 3, time: hrZone3, label: "Zone 3 (Tempo)" },
-            { zone: 4, time: hrZone4, label: "Zone 4 (Threshold)" },
-            { zone: 5, time: hrZone5, label: "Zone 5 (VO2 Max)" },
-          ]
-        : [],
-      powerZones: hasPowerZones
-        ? [
-            { zone: 1, time: powerZone1, label: "Zone 1 (Active Recovery)" },
-            { zone: 2, time: powerZone2, label: "Zone 2 (Endurance)" },
-            { zone: 3, time: powerZone3, label: "Zone 3 (Tempo)" },
-            { zone: 4, time: powerZone4, label: "Zone 4 (Threshold)" },
-            { zone: 5, time: powerZone5, label: "Zone 5 (VO2 Max)" },
-            { zone: 6, time: powerZone6, label: "Zone 6 (Anaerobic)" },
-            { zone: 7, time: powerZone7, label: "Zone 7 (Neuromuscular)" },
-          ]
-        : [],
+      hrZones: (derived?.zones.hr ?? []).map((zone) => ({
+        zone: zone.zone,
+        time: zone.seconds,
+        label: zone.label,
+      })),
+      powerZones: (derived?.zones.power ?? []).map((zone) => ({
+        zone: zone.zone,
+        time: zone.seconds,
+        label: zone.label,
+      })),
       hrColors: ["bg-blue-400", "bg-green-400", "bg-yellow-400", "bg-orange-400", "bg-red-400"],
       powerColors: [
         "bg-gray-400",
@@ -489,7 +461,7 @@ function ActivityDetailScreen() {
         "bg-purple-400",
       ],
     };
-  }, [activity]);
+  }, [derived]);
 
   // Get laps
   const laps = streamsData?.laps || (activity as any)?.laps;
@@ -614,8 +586,8 @@ function ActivityDetailScreen() {
             activityPlan={activity.activity_plans as any}
             actualMetrics={{
               duration: activity.duration_seconds,
-              tss: activity.training_stress_score ?? undefined,
-              intensity_factor: activity.intensity_factor ?? undefined,
+              tss: derived?.stress.tss ?? undefined,
+              intensity_factor: derived?.stress.intensity_factor ?? undefined,
               adherence_score: undefined,
             }}
           />
@@ -729,7 +701,7 @@ function ActivityDetailScreen() {
         )}
 
         {/* Training Load */}
-        {activity.training_stress_score && (
+        {(derived?.stress.tss != null || derived?.stress.intensity_factor != null) && (
           <Card>
             <CardHeader>
               <CardTitle>Training Load</CardTitle>
@@ -742,17 +714,17 @@ function ActivityDetailScreen() {
                     <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
                   </View>
                   <Text className="text-3xl font-bold">
-                    {Math.round(activity.training_stress_score)}
+                    {derived?.stress.tss != null ? Math.round(derived.stress.tss) : "--"}
                   </Text>
                 </View>
 
-                {activity.intensity_factor && (
+                {derived?.stress.intensity_factor != null && (
                   <View className="flex-1">
                     <Text className="text-xs text-muted-foreground uppercase mb-1">
                       Intensity Factor
                     </Text>
                     <Text className="text-3xl font-bold">
-                      {activity.intensity_factor.toFixed(2)}
+                      {derived?.stress.intensity_factor?.toFixed(2)}
                     </Text>
                   </View>
                 )}

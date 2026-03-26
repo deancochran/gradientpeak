@@ -1,0 +1,30 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow: bootstrap.yaml
+- tapOn:
+    id: "signup-button"
+    optional: true
+- tapOn:
+    id: "sign-up-link-button"
+    optional: true
+- assertVisible:
+    id: "sign-up-screen"
+- tapOn:
+    id: "email-input"
+- inputText: "${email}"
+- tapOn:
+    id: "password-input"
+- inputText: "${password}"
+- hideKeyboard
+- swipe:
+    direction: UP
+- tapOn:
+    id: "repeat-password-input"
+- inputText: "${password}"
+- hideKeyboard
+- tapOn:
+    id: "sign-up-button"
+- extendedWaitUntil:
+    visible:
+      id: "verify-screen"
+    timeout: 15000

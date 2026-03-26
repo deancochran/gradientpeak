@@ -1,5 +1,5 @@
-import type { PublicActivityCategory } from "@repo/supabase";
 import type { DurationV2 } from "../schemas/activity_plan_v2";
+import type { CanonicalSport } from "../schemas/sport";
 import {
   getSportDistancePaceSecondsPerKm,
   getSportSecondsPerRep,
@@ -7,7 +7,7 @@ import {
 } from "../sports";
 
 export interface DurationEstimateOptions {
-  activityCategory?: PublicActivityCategory;
+  activityCategory?: CanonicalSport;
   paceSecondsPerKm?: number;
   secondsPerRep?: number;
   untilFinishedSeconds?: number;

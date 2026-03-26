@@ -11,14 +11,17 @@
   "engines": {
     "node": ">=18"
   },
-  "packageManager": "pnpm@10.20.0",
+  "packageManager": "pnpm@10.33.0",
   "private": true,
   "scripts": {
     "build": "turbo run build",
     "check": "biome check .",
     "dev": "turbo run dev --parallel --ui tui",
+    "dev:e2e": "bash ./scripts/dev-e2e.sh",
     "dev:web": "pnpm --filter web dev",
     "dev:mobile": "pnpm --filter mobile dev",
+    "dev:e2e:web": "pnpm --filter web dev:e2e",
+    "dev:e2e:mobile": "pnpm --filter mobile dev:e2e",
     "dev:apps": "turbo run dev --filter=!@repo/supabase --ui tui",
     "watch": "turbo run watch",
     "lint": "biome lint .",
@@ -27,10 +30,13 @@
     "check-types": "turbo run check-types",
     "update-types": "pnpm --filter @repo/supabase update-types",
     "test": "turbo run test",
+    "test:e2e": "bash ./scripts/test-e2e.sh",
     "test:e2e:web": "pnpm --filter web test:e2e",
     "test:e2e:mobile": "pnpm --filter mobile test:e2e",
+    "self-host": "pnpm run self-host:up",
     "self-host:up": "pnpm --filter @repo/supabase dev:supabase",
-    "self-host:down": "pnpm --filter @repo/supabase stop:supabase"
+    "self-host:down": "pnpm --filter @repo/supabase stop:supabase",
+    "self-host:stop": "pnpm run self-host:down"
   },
   "workspaces": [
     "apps/*",

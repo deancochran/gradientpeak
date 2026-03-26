@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { dateInputFixtures } from "./fixtures";
 import { DateInput } from "./index.web";
+import { exerciseDateInputStory } from "./interactions";
 
 const meta = {
   title: "Components/DateInput",
@@ -22,5 +23,12 @@ export const Playground: Story = {
   render: (args) => {
     const [value, setValue] = useState<string | undefined>(dateInputFixtures.raceDay.value);
     return <DateInput {...args} onChange={setValue} value={value} />;
+  },
+  play: async ({ canvasElement }) => {
+    await exerciseDateInputStory({
+      canvasElement,
+      expectedLabel: dateInputFixtures.raceDay.label,
+      nextValue: "2026-06-15",
+    });
   },
 };

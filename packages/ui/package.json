@@ -121,6 +121,14 @@
     "./lib/cn": "./src/lib/cn.ts",
     "./lib/*": "./src/lib/*.ts",
     "./registry": "./src/registry/index.ts",
+    "./testing/selectors": "./src/testing/selectors.ts",
+    "./testing/selectors.generated.json": "./src/testing/selectors.generated.json",
+    "./testing/ui-preview/contract": "./src/testing/ui-preview/contract.ts",
+    "./testing/ui-preview/manifest.generated.json": "./src/testing/ui-preview/manifest.generated.json",
+    "./testing/ui-preview": {
+      "react-native": "./src/testing/ui-preview/index.native.tsx",
+      "default": "./src/testing/ui-preview/index.web.tsx"
+    },
     "./theme": "./src/theme/index.ts",
     "./theme/native": "./src/theme/native.ts",
     "./theme/native.css": "./src/theme/native.css",
@@ -136,6 +144,8 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
+    "generate:selectors": "bash ./scripts/run-strip-types.sh ./scripts/generate-selectors.ts",
+    "generate:ui-preview-manifest": "bash ./scripts/run-strip-types.sh ./scripts/generate-ui-preview-manifest.ts",
     "test": "pnpm run test:web && pnpm run test:native",
     "test:web": "vitest run",
     "test:native": "jest --config ./jest.config.mjs --runInBand",

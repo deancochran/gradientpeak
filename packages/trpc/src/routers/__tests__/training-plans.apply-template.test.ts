@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { trainingPlansRouter } from "../training_plans";
+import { trainingPlansRouter } from "../planning/training-plans";
 
 type QueryResult = {
   data: any;
@@ -147,8 +147,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
     const eventInsertCall = callLog.find(
       (call) => call.table === "events" && call.operation === "insert",
     );
-    const insertedRows =
-      (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
+    const insertedRows = (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
 
     expect(result.applied_plan_id).toBe("11111111-1111-4111-8111-111111111111");
     expect(result.created_event_count).toBe(2);
@@ -387,8 +386,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
       const eventInsertCall = callLog.find(
         (call) => call.table === "events" && call.operation === "insert",
       );
-      const insertedRows =
-        (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
+      const insertedRows = (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
 
       expect(insertedRows[0]?.starts_at).toBe("2026-03-15T00:00:00.000Z");
       expect(insertedRows[1]?.starts_at).toBe("2026-03-17T00:00:00.000Z");

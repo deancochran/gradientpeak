@@ -1,0 +1,15 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  SIGNUP_PASSWORD: "Password123"
+---
+- runFlow:
+    file: ../reusable/sign_up_to_verify.yaml
+    env:
+      email: "${SIGNUP_EMAIL}"
+      password: "${SIGNUP_PASSWORD}"
+- tapOn:
+    id: "resend-code-button"
+- extendedWaitUntil:
+    visible:
+      id: "resend-message"
+    timeout: 10000

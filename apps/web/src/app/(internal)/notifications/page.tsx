@@ -5,6 +5,7 @@ import {
   getUnreadNotificationIds,
   normalizeNotificationListItem,
 } from "@repo/core";
+import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/trpc/react";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -36,10 +37,7 @@ export default function NotificationsPage() {
   const utils = trpc.useUtils();
 
   const markReadMutation = trpc.notifications.markRead.useMutation({
-    onSuccess: () => {
-      utils.notifications.getRecent.invalidate();
-      utils.notifications.getUnreadCount.invalidate();
-    },
+    onSuccess: async () => invalidateNotificationQueries(utils),
   });
 
   const NotificationItem = ({
@@ -52,19 +50,25 @@ export default function NotificationsPage() {
     const item = getNotificationViewModel(notification);
 
     const acceptMutation = trpc.social.acceptFollowRequest.useMutation({
-      onSuccess: () => {
+      onSuccess: async () => {
         toast.success("Follow request accepted");
         setHandled(true);
-        itemUtils.notifications.getRecent.invalidate();
+        await Promise.all([
+          invalidateNotificationQueries(itemUtils),
+          invalidateRelationshipQueries(itemUtils, [item.actorId]),
+        ]);
       },
       onError: (err) => toast.error(err.message),
     });
 
     const rejectMutation = trpc.social.rejectFollowRequest.useMutation({
-      onSuccess: () => {
+      onSuccess: async () => {
         toast.success("Follow request rejected");
         setHandled(true);
-        itemUtils.notifications.getRecent.invalidate();
+        await Promise.all([
+          invalidateNotificationQueries(itemUtils),
+          invalidateRelationshipQueries(itemUtils, [item.actorId]),
+        ]);
       },
       onError: (err) => toast.error(err.message),
     });

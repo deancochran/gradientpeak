@@ -1,5 +1,5 @@
+import type { CanonicalSport } from "../schemas";
 import type { BestEffort } from "../schemas/activity_efforts";
-import type { PublicActivityCategory } from "@repo/supabase";
 
 export interface CriticalPowerResult {
   cp: number;
@@ -19,7 +19,7 @@ export function calculateSeasonBestCurve(
   options: {
     days?: number;
     now?: Date;
-    activity_category?: PublicActivityCategory;
+    activity_category?: CanonicalSport;
     effort_type?: "power" | "speed";
   } = {},
 ): BestEffort[] {
@@ -34,8 +34,7 @@ export function calculateSeasonBestCurve(
   // 1. Filter efforts
   const filteredEfforts = efforts.filter((effort) => {
     // Filter by category if provided
-    if (activity_category && effort.activity_category !== activity_category)
-      return false;
+    if (activity_category && effort.activity_category !== activity_category) return false;
 
     // Filter by type if provided
     if (effort_type && effort.effort_type !== effort_type) return false;
@@ -75,9 +74,7 @@ export function calculateSeasonBestCurve(
  * @param seasonBestCurve - The season best power curve (list of BestEffort).
  * @returns The calculated CP and W', or null if insufficient data.
  */
-export function calculateCriticalPower(
-  seasonBestCurve: BestEffort[],
-): CriticalPowerResult | null {
+export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalPowerResult | null {
   // Filter for valid range: 3 minutes (180s) to 30 minutes (1800s)
   // This avoids anaerobic skew (<3m) and aerobic drift (>30m)
   const validEfforts = seasonBestCurve.filter(
