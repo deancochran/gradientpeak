@@ -122,7 +122,7 @@ export class LocationManager {
   private taskName = BACKGROUND_LOCATION_TASK;
   private locationBuffer: Location.LocationObject[] = [];
   private lastLocationTime = 0;
-  private healthCheckInterval: number | null = null;
+  private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
   private readonly HEALTH_CHECK_INTERVAL = 10000; // 10 seconds
   private headingSubscription: Location.LocationSubscription | null = null;
   private headingCallbacks = new Set<(heading: Location.LocationHeadingObject) => void>();

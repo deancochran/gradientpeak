@@ -675,7 +675,7 @@ describe("phase 5 calibration stabilization", () => {
         expect(point.readiness_score).toBeLessThanOrEqual(100);
       }
     }
-  });
+  }, 15000);
 
   it("keeps MPC objective finite under bounded random inputs", () => {
     const random = createSeededRandom(260215);

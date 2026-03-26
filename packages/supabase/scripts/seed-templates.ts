@@ -29,7 +29,9 @@ const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 const categoryArg = args.find((arg) => arg.startsWith("--category="));
-const category = categoryArg?.split("=")[1] as SystemTemplate["activity_category"] | undefined;
+const category = categoryArg
+  ? (categoryArg.slice("--category=".length) as SystemTemplate["activity_category"])
+  : undefined;
 
 // Environment variables
 const SUPABASE_URL = process.env.SUPABASE_URL;
