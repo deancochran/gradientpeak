@@ -20,7 +20,7 @@ for raw in source_text.splitlines():
 PY
 }
 
-SUPABASE_ENV="$(pnpm --dir "$ROOT_DIR" --filter @repo/supabase exec supabase status -o env)"
+SUPABASE_ENV="$(supabase status -o env)"
 PUBLISHABLE_KEY="$(extract_env_value "$SUPABASE_ENV" PUBLISHABLE_KEY)"
 SERVICE_ROLE_KEY="$(extract_env_value "$SUPABASE_ENV" SERVICE_ROLE_KEY)"
 

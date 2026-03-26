@@ -1,14 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 
-const statusOutput = execFileSync(
-  "pnpm",
-  ["--dir", process.cwd(), "--filter", "@repo/supabase", "exec", "supabase", "status", "-o", "env"],
-  {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  },
-);
+const statusOutput = execFileSync("supabase", ["status", "-o", "env"], {
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "pipe"],
+});
 
 const env = Object.fromEntries(
   statusOutput

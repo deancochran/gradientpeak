@@ -25,7 +25,7 @@ resolve_supabase_value() {
   local status_output=""
   local value=""
 
-  if ! status_output="$(pnpm --dir "$REPO_ROOT" --filter @repo/supabase exec supabase status -o env 2>/dev/null)"; then
+  if ! status_output="$(supabase status -o env 2>/dev/null)"; then
     return 1
   fi
 

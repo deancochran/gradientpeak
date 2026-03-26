@@ -114,7 +114,7 @@ export NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI=gradientpeak://sign-in
 export NEXT_PUBLIC_MOBILE_REDIRECT_URI=gradientpeak://integrations
 export NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK=gradientpeak://integrations
 
-SUPABASE_ENV="$(pnpm --filter @repo/supabase exec supabase status -o env)"
+SUPABASE_ENV="$(supabase status -o env)"
 export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$(extract_supabase_value "$SUPABASE_ENV" PUBLISHABLE_KEY)"
 export NEXT_PRIVATE_SUPABASE_SECRET_KEY="$(extract_supabase_value "$SUPABASE_ENV" SERVICE_ROLE_KEY)"
 export SUPABASE_SERVICE_ROLE_KEY="$NEXT_PRIVATE_SUPABASE_SECRET_KEY"
