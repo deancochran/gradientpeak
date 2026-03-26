@@ -235,7 +235,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private startTime?: number;
   private pausedTime: number = 0;
   private lastPauseTime?: number;
-  private elapsedTimeInterval?: ReturnType<typeof setInterval>;
+  private elapsedTimeInterval?: ReturnType<typeof setInterval> | number;
 
   // === Lap Tracking ===
   private laps: number[] = []; // Array of lap times (moving time in seconds)

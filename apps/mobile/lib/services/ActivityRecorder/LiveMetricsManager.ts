@@ -50,12 +50,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   public streamBuffer: StreamBuffer; // Accumulates data for periodic file writes
 
   // === Timers ===
-  private updateTimer?: ReturnType<typeof setInterval>; // 1s: Calculate metrics + emit UI updates
-  private persistenceTimer?: ReturnType<typeof setInterval>; // 60s: Write to DB + cleanup memory
+  private updateTimer?: ReturnType<typeof setInterval> | number; // 1s: Calculate metrics + emit UI updates
+  private persistenceTimer?: ReturnType<typeof setInterval> | number; // 60s: Write to DB + cleanup memory
 
   // === Performance Optimization ===
   private pendingSensorUpdates = new Map<string, number>();
-  private sensorUpdateTimer?: ReturnType<typeof setTimeout>;
+  private sensorUpdateTimer?: ReturnType<typeof setTimeout> | number;
   private lastStatsEmit = 0;
   private cachedStats?: SessionStats;
 

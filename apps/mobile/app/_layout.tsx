@@ -71,14 +71,17 @@ function AppContent() {
   } = useAuth();
   const { theme, resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
   const segments = useSegments();
+  const [rootSegment, childSegment, grandchildSegment] = segments;
   const clearSession = useAuthStore((state) => state.clearSession);
 
-  const inInternalGroup = segments[0] === "(internal)";
-  const inExternalGroup = segments[0] === "(external)";
+  const inInternalGroup = rootSegment === "(internal)";
+  const inExternalGroup = rootSegment === "(external)";
   const isOnboardingScreen =
-    segments[0] === "(internal)" && segments[1] === "(standard)" && segments[2] === "onboarding";
-  const isVerificationScreen = segments[0] === "(external)" && segments[1] === "verify";
-  const isAuthCallbackScreen = segments[0] === "(external)" && segments[1] === "callback";
+    rootSegment === "(internal)" &&
+    childSegment === "(standard)" &&
+    grandchildSegment === "onboarding";
+  const isVerificationScreen = rootSegment === "(external)" && childSegment === "verify";
+  const isAuthCallbackScreen = rootSegment === "(external)" && childSegment === "callback";
 
   const guardDecision = React.useMemo(() => {
     if (!isFullyLoaded || !isThemeLoaded) {
