@@ -5,7 +5,11 @@
     {
       "description": "A shared card with input and save action fixtures.",
       "key": "accountControls",
-      "selectors": ["profile-card", "auth-email", "settings-save"],
+      "selectors": [
+        "profile-card",
+        "auth-email",
+        "settings-save"
+      ],
       "testId": "ui-preview-scenario-account-controls",
       "title": "Account controls"
     },

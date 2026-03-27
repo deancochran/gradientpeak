@@ -16,6 +16,7 @@ import {
   withAuthRequestTimeout,
 } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
@@ -76,6 +77,8 @@ export default function SignInScreen() {
         }
       }
 
+      logMobileAction("auth.signIn", "attempt", { email: data.email });
+
       const { error } = await withAuthRequestTimeout(
         supabase.auth.signInWithPassword({
           email: data.email,
@@ -84,6 +87,7 @@ export default function SignInScreen() {
       );
 
       if (error) {
+        logMobileAction("auth.signIn", "failure", { email: data.email, error: error.message });
         console.log("Sign in error:", error.message);
         if (error.message?.includes("Invalid login credentials")) {
           form.setError("root", {
@@ -100,9 +104,16 @@ export default function SignInScreen() {
           });
         }
       }
+      if (!error) {
+        logMobileAction("auth.signIn", "success", { email: data.email });
+      }
       // On success, the `onAuthStateChange` listener in the auth store
       // will handle the session and trigger a redirect automatically.
     } catch (err) {
+      logMobileAction("auth.signIn", "failure", {
+        email: data.email,
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.log("Unexpected sign in error:", err);
       form.setError("root", {
         message:

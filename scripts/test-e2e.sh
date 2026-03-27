@@ -2,21 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+SUPABASE_DIR="$ROOT_DIR/packages/supabase"
 
-pids=()
-
-cleanup() {
-  local pid
-
-  for pid in "${pids[@]:-}"; do
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
-    fi
-  done
-}
-
-wait_for_port() {
+require_port() {
   local host="$1"
   local port="$2"
   local label="$3"
@@ -24,31 +12,36 @@ wait_for_port() {
   python - "$host" "$port" "$label" <<'PY'
 import socket
 import sys
-import time
 
 host = sys.argv[1]
 port = int(sys.argv[2])
 label = sys.argv[3]
 
-for _ in range(180):
-    sock = socket.socket()
-    sock.settimeout(0.5)
-    try:
-        sock.connect((host, port))
-        print(f"[test-e2e] {label} ready on {host}:{port}")
-        sys.exit(0)
-    except OSError:
-        time.sleep(1)
-    finally:
-        sock.close()
+sock = socket.socket()
+sock.settimeout(0.5)
 
-print(f"[test-e2e] ERROR: timed out waiting for {label} on {host}:{port}", file=sys.stderr)
-sys.exit(1)
+try:
+    sock.connect((host, port))
+except OSError:
+    print(
+        f"[test-e2e] ERROR: {label} is not running on {host}:{port}. Start `pnpm run dev:e2e` first.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+finally:
+    sock.close()
+
+print(f"[test-e2e] {label} ready on {host}:{port}")
 PY
 }
 
-port_is_open() {
-  python - "$1" "$2" <<'PY'
+resolve_preferred_port() {
+  local host="$1"
+  local label="$2"
+  shift 2
+
+  for port in "$@"; do
+    if python - "$host" "$port" <<'PY'
 import socket
 import sys
 
@@ -64,6 +57,14 @@ finally:
 
 sys.exit(0)
 PY
+    then
+      printf '%s' "$port"
+      return 0
+    fi
+  done
+
+  echo "[test-e2e] ERROR: ${label} is not running on any of: $*" >&2
+  return 1
 }
 
 extract_supabase_value() {
@@ -83,38 +84,27 @@ for raw in source_text.splitlines():
 PY
 }
 
-trap cleanup EXIT INT TERM
-
 cd "$ROOT_DIR"
 
-pnpm run self-host:up
-wait_for_port 127.0.0.1 54321 supabase
-node ./apps/mobile/scripts/seed-e2e-users.mjs
+require_port 127.0.0.1 54321 supabase
+WEB_PORT="$(resolve_preferred_port 127.0.0.1 web 3000)"
+METRO_PORT="$(resolve_preferred_port 127.0.0.1 metro 8081)"
 
-if ! port_is_open 127.0.0.1 3100; then
-  pnpm run dev:e2e:web > /tmp/gradientpeak-web-e2e.log 2>&1 &
-  pids+=("$!")
-fi
-
-if ! port_is_open 127.0.0.1 8082; then
-  pnpm run dev:e2e:mobile > /tmp/gradientpeak-mobile-e2e.log 2>&1 &
-  pids+=("$!")
-fi
-
-wait_for_port 127.0.0.1 3100 web-e2e
-wait_for_port 127.0.0.1 8082 metro-e2e
+echo "[test-e2e] web ready on 127.0.0.1:${WEB_PORT}"
+echo "[test-e2e] metro ready on 127.0.0.1:${METRO_PORT}"
 
 pnpm --filter mobile android:boot
-pnpm --filter mobile android:install
+GP_ANDROID_INSTALL_PROFILE=e2e pnpm --filter mobile android:install
+pnpm --filter mobile android:launch
 
-export PORT=3100
-export NEXT_PUBLIC_APP_URL=http://127.0.0.1:3100
+export PORT="$WEB_PORT"
+export NEXT_PUBLIC_APP_URL="http://127.0.0.1:${WEB_PORT}"
 export NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
 export NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI=gradientpeak://sign-in
 export NEXT_PUBLIC_MOBILE_REDIRECT_URI=gradientpeak://integrations
 export NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK=gradientpeak://integrations
 
-SUPABASE_ENV="$(supabase status -o env)"
+SUPABASE_ENV="$(cd "$SUPABASE_DIR" && supabase status -o env)"
 export NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$(extract_supabase_value "$SUPABASE_ENV" PUBLISHABLE_KEY)"
 export NEXT_PRIVATE_SUPABASE_SECRET_KEY="$(extract_supabase_value "$SUPABASE_ENV" SERVICE_ROLE_KEY)"
 export SUPABASE_SERVICE_ROLE_KEY="$NEXT_PRIVATE_SUPABASE_SECRET_KEY"

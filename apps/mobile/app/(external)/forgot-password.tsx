@@ -14,6 +14,7 @@ import {
   withAuthRequestTimeout,
 } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
@@ -61,6 +62,8 @@ export default function ForgotPasswordScreen() {
         }
       }
 
+      logMobileAction("auth.resetPasswordForEmail", "attempt", { email: data.email });
+
       const { error } = await withAuthRequestTimeout(
         supabase.auth.resetPasswordForEmail(data.email, {
           redirectTo: `${process.env.EXPO_PUBLIC_APP_URL}/(external)/reset-password`,
@@ -68,6 +71,10 @@ export default function ForgotPasswordScreen() {
       );
 
       if (error) {
+        logMobileAction("auth.resetPasswordForEmail", "failure", {
+          email: data.email,
+          error: error.message,
+        });
         console.log("Reset password error:", error.message);
         if (error.message?.includes("User not found")) {
           form.setError("email", {
@@ -83,9 +90,14 @@ export default function ForgotPasswordScreen() {
           });
         }
       } else {
+        logMobileAction("auth.resetPasswordForEmail", "success", { email: data.email });
         setEmailSent(true);
       }
     } catch (err) {
+      logMobileAction("auth.resetPasswordForEmail", "failure", {
+        email: data.email,
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.log("Unexpected reset password error:", err);
       form.setError("email", {
         message:

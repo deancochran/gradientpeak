@@ -1,7 +1,13 @@
 import { execFileSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const supabaseDir = path.resolve(scriptDir, "../../../packages/supabase");
+
 const statusOutput = execFileSync("supabase", ["status", "-o", "env"], {
+  cwd: supabaseDir,
   encoding: "utf8",
   stdio: ["ignore", "pipe", "pipe"],
 });

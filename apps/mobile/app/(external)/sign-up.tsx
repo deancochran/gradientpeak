@@ -16,6 +16,7 @@ import {
   withAuthRequestTimeout,
 } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
@@ -80,6 +81,8 @@ export default function SignUpScreen() {
         }
       }
 
+      logMobileAction("auth.signUp", "attempt", { email: data.email });
+
       const { error } = await withAuthRequestTimeout(
         supabase.auth.signUp({
           email: data.email,
@@ -92,6 +95,7 @@ export default function SignUpScreen() {
       );
 
       if (error) {
+        logMobileAction("auth.signUp", "failure", { email: data.email, error: error.message });
         console.log("Sign up error:", error.message);
         if (error.message?.includes("User already registered")) {
           form.setError("email", {
@@ -111,6 +115,7 @@ export default function SignUpScreen() {
           });
         }
       } else {
+        logMobileAction("auth.signUp", "success", { email: data.email });
         // Successfully signed up - show verification message
         console.log("Successfully signed up:", data.email);
         router.push({
@@ -119,6 +124,10 @@ export default function SignUpScreen() {
         });
       }
     } catch (err) {
+      logMobileAction("auth.signUp", "failure", {
+        email: data.email,
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.log("Unexpected sign up error:", err);
       form.setError("root", {
         message:

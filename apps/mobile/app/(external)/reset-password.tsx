@@ -9,6 +9,7 @@ import { AlertCircle } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { supabase } from "@/lib/supabase/client";
 
 const resetPasswordSchema = z
@@ -51,6 +52,10 @@ export default function ResetPasswordScreen() {
 
       if (access_token && refresh_token) {
         try {
+          logMobileAction("auth.resetPasswordCallback", "attempt", {
+            hasAccessToken: true,
+            hasRefreshToken: true,
+          });
           console.log("🔑 Setting session from reset password tokens...");
           const { error } = await supabase.auth.setSession({
             access_token: access_token as string,
@@ -58,6 +63,7 @@ export default function ResetPasswordScreen() {
           });
 
           if (error) {
+            logMobileAction("auth.resetPasswordCallback", "failure", { error: error.message });
             console.error("❌ Session error:", error.message);
             Alert.alert(
               "Invalid Link",
@@ -73,8 +79,12 @@ export default function ResetPasswordScreen() {
           }
 
           console.log("✅ Session set successfully for password reset");
+          logMobileAction("auth.resetPasswordCallback", "success", {});
           setSessionSet(true);
         } catch (err) {
+          logMobileAction("auth.resetPasswordCallback", "failure", {
+            error: err instanceof Error ? err.message : String(err),
+          });
           console.error("💥 Error setting session:", err);
           Alert.alert("Error", "Something went wrong. Please try again.", [
             {
@@ -84,6 +94,11 @@ export default function ResetPasswordScreen() {
           ]);
         }
       } else {
+        logMobileAction("auth.resetPasswordCallback", "failure", {
+          hasAccessToken: !!access_token,
+          hasRefreshToken: !!refresh_token,
+          error: "missing_tokens",
+        });
         console.warn("⚠️ No tokens found in reset password callback");
         Alert.alert(
           "Invalid Link",
@@ -112,18 +127,21 @@ export default function ResetPasswordScreen() {
     setIsLoading(true);
 
     try {
+      logMobileAction("auth.updatePassword", "attempt", {});
       console.log("🔄 Updating password...");
       const { error } = await supabase.auth.updateUser({
         password: data.password,
       });
 
       if (error) {
+        logMobileAction("auth.updatePassword", "failure", { error: error.message });
         console.error("❌ Password update error:", error.message);
         form.setError("root", { message: error.message });
         return;
       }
 
       console.log("✅ Password updated successfully");
+      logMobileAction("auth.updatePassword", "success", {});
 
       // Force sign-out for security
       await supabase.auth.signOut();
@@ -134,6 +152,9 @@ export default function ResetPasswordScreen() {
         [{ text: "OK", onPress: () => router.replace("/(external)/sign-in") }],
       );
     } catch (err) {
+      logMobileAction("auth.updatePassword", "failure", {
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.error("💥 Unexpected password update error:", err);
       form.setError("root", { message: "An unexpected error occurred" });
     } finally {
