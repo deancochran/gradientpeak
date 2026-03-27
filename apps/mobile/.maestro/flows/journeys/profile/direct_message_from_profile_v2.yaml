@@ -4,6 +4,7 @@ env:
   STANDARD_USER_PASS: "password123"
   TARGET_USERNAME: "coachcasey"
   TARGET_USER_ID: "coachcasey"
+  MESSAGE_TEXT: "Hey from Maestro"
 ---
 - runFlow:
     file: ../../reusable/open_profile_screen.yaml
@@ -13,12 +14,17 @@ env:
       TARGET_USERNAME: "${TARGET_USERNAME}"
       TARGET_USER_ID: "${TARGET_USER_ID}"
 - tapOn:
-    id: "integrations"
+    id: "user-detail-message-button"
 - extendedWaitUntil:
     visible:
-      id: "integrations-screen"
+      id: "message-thread-screen"
     timeout: 10000
-- assertVisible:
-    id: "integration-provider-strava"
-- assertVisible:
-    id: "integrations-pick-fit-file-button"
+- tapOn:
+    id: "message-input"
+- inputText: "${MESSAGE_TEXT}"
+- tapOn:
+    id: "message-send-button"
+- extendedWaitUntil:
+    visible:
+      id: "message-bubble-sent"
+    timeout: 10000

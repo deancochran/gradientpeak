@@ -33,10 +33,6 @@ function getTextContent(children: any): string {
   return "";
 }
 
-function buttonTestId(label: string): string {
-  return `button-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-}
-
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
@@ -75,11 +71,7 @@ jest.mock("@/components/charts/PlanVsActualChart", () => ({
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
   Button: ({ children, onPress, ...props }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: buttonTestId(getTextContent(children)), ...props },
-      children,
-    ),
+    React.createElement("Pressable", { onPress, ...props }, children),
 }));
 
 jest.mock("@repo/ui/components/card", () => ({
@@ -353,7 +345,7 @@ describe("plan dashboard navigation", () => {
   it("opens calendar from dashboard action", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    fireEvent.press(screen.getByTestId(buttonTestId("Open Calendar")));
+    fireEvent.press(screen.getByTestId("plan-open-calendar-button"));
 
     expect(pushMock).toHaveBeenCalledWith(ROUTES.CALENDAR);
   });
@@ -361,7 +353,7 @@ describe("plan dashboard navigation", () => {
   it("opens training plans list from management action", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    fireEvent.press(screen.getByTestId(buttonTestId("Manage Plans")));
+    fireEvent.press(screen.getByTestId("plan-manage-plans-button"));
 
     expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.LIST);
   });

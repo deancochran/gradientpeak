@@ -24,7 +24,7 @@
 ### Phase 3 - Flow Expansion
 
 - [x] Add screen-entry Maestro flows for major destinations that still lack one.
-- [ ] Add high-value journey flows for plans, calendar, profile, messages, and notifications.
+- [x] Add high-value journey flows for plans, calendar, profile, messages, and notifications.
 
 ## Pending Validation
 
@@ -37,3 +37,4 @@
 - Added the first high-priority app testability anchors across Home, Discover, Plan, Record, record activity selection, and record plan selection; targeted mobile typecheck passed.
 - Added a second anchor pass across training plans list, activities list, activity detail, routes list/detail, profile edit, training preferences, and integrations; targeted mobile typecheck passed again.
 - Added reusable profile-opening flow scaffolding plus first-pass screen-entry and journey flows for plans, activities, routes, profile edit, integrations, training preferences, and sign-out without requiring full-suite execution during build-out.
+- Hardened the first plan/profile flow set into more realistic journeys, including training-plan scheduling from Discover, activity-plan scheduling entry, direct messaging from profile via reusable profile openers, and integrations import-entry coverage.

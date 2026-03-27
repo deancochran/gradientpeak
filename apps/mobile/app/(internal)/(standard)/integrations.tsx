@@ -81,6 +81,19 @@ const ACTIVITY_TYPES = [
   { value: "other", label: "Other" },
 ] as const;
 
+function isFitParseFailureMessage(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("failed to parse fit file") ||
+    normalized.includes("fit decode") ||
+    normalized.includes("fit parser") ||
+    normalized.includes("fit parse") ||
+    normalized.includes("corrupt fit") ||
+    normalized.includes("invalid fit") ||
+    normalized.includes("bar error")
+  );
+}
+
 const createOption = (value: string, label?: string) => ({
   value,
   label: label || value,
@@ -246,7 +259,7 @@ export default function IntegrationsScreen() {
         return;
       }
 
-      if (message.includes("Failed to parse FIT file")) {
+      if (isFitParseFailureMessage(message)) {
         Alert.alert(
           "Import failed",
           "We could not read that FIT file. Try a different export or recording.",

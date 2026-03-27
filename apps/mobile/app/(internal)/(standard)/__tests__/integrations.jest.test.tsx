@@ -323,4 +323,29 @@ describe("integrations historical FIT import", () => {
       );
     });
   });
+
+  it("maps other parser errors like bar error to the same friendly import alert", async () => {
+    processFitFileMock.mockRejectedValueOnce(new Error("FIT decoder bar error while parsing"));
+
+    renderNative(<IntegrationsScreen />);
+
+    fireEvent.press(screen.getByText("Choose FIT File"));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("morning-ride")).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByText("Import FIT Activity"));
+
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Import failed",
+        "We could not read that FIT file. Try a different export or recording.",
+      );
+    });
+  });
 });

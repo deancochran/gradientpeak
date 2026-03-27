@@ -26,3 +26,5 @@ env:
     timeout: 10000
 - assertVisible:
     id: "training-plan-duplicate-button"
+- assertVisible:
+    id: "training-plan-open-calendar-button"

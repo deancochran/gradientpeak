@@ -14,6 +14,8 @@ env:
       TARGET_USER_ID: "${TARGET_USER_ID}"
 - tapOn:
     id: "sign-out"
+- assertVisible:
+    id: "user-detail-screen"
 - tapOn:
     text: "Sign Out"
     optional: true

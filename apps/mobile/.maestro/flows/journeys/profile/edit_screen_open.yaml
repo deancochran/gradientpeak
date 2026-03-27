@@ -20,3 +20,5 @@ env:
     timeout: 10000
 - assertVisible:
     id: "profile-edit-save-button"
+- assertVisible:
+    id: "profile-edit-avatar-button"
