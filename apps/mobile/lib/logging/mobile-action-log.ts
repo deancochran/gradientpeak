@@ -8,18 +8,17 @@ type MobileActionLogDetails = Record<string, string | number | boolean | null | 
 
 function getExpoConstants() {
   try {
-    // biome-ignore lint/suspicious/noExplicitAny: runtime optional import for Jest compatibility
-    return require("expo-constants").default as any;
+    return require("expo-constants").default as {
+      isDevice?: boolean;
+      deviceName?: string | null;
+    };
   } catch {
     return null;
   }
 }
 
 function inferDeviceKind() {
-  const expoConstants = getExpoConstants() as {
-    isDevice?: boolean;
-    deviceName?: string | null;
-  } | null;
+  const expoConstants = getExpoConstants();
 
   if (expoConstants?.isDevice === false) {
     return Platform.OS === "ios" ? "ios-simulator" : "android-emulator";
@@ -46,9 +45,7 @@ function inferDeviceKind() {
 }
 
 function getDeviceName() {
-  const expoConstants = getExpoConstants() as {
-    deviceName?: string | null;
-  } | null;
+  const expoConstants = getExpoConstants();
 
   return expoConstants?.deviceName ?? null;
 }
@@ -64,10 +61,18 @@ function getActorSnapshot() {
 }
 
 function getApiHost() {
+  if (typeof getServerConfig !== "function") {
+    return "unknown";
+  }
+
   try {
     return new URL(getServerConfig().apiUrl).host;
   } catch {
-    return getServerConfig().apiUrl;
+    try {
+      return getServerConfig().apiUrl;
+    } catch {
+      return "unknown";
+    }
   }
 }
 
