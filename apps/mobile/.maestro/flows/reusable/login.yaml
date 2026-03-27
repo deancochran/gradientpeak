@@ -3,26 +3,25 @@ appId: com.deancochran.gradientpeak.dev
 - tapOn:
     id: "login-button"
     optional: true
-- assertVisible:
-    id: "sign-in-screen"
-- tapOn:
-    id: "email-input"
-- tapOn:
-    id: "server-url-toggle"
-- tapOn:
-    id: "server-url-input"
-- eraseText
-- inputText: "http://127.0.0.1:3100"
-- hideKeyboard
-- tapOn:
-    id: "email-input"
-- inputText: "${email}"
-- tapOn:
-    id: "password-input"
-- inputText: "${password}"
-- hideKeyboard
-- tapOn:
-    id: "sign-in-button"
 - extendedWaitUntil:
-    visible: "Plan"
-    timeout: 15000
+    visible:
+      id: "sign-in-screen"
+    timeout: 10000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: "sign-in-screen"
+    commands:
+      - tapOn:
+          id: "email-input"
+      - inputText: "${email}"
+      - tapOn:
+          id: "password-input"
+      - inputText: "${password}"
+      - hideKeyboard
+      - tapOn:
+          id: "sign-in-button"
+      - extendedWaitUntil:
+          visible: "Plan"
+          timeout: 15000

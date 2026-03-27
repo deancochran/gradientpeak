@@ -418,7 +418,7 @@ export default function IntegrationsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="integrations-screen">
       {/* Header */}
       <View className="flex-row items-center px-6 py-4 border-b border-border/50">
         <Pressable onPress={handleClose} className="p-2 -ml-2" testID="back-button">
@@ -459,6 +459,7 @@ export default function IntegrationsScreen() {
               }
               disabled={isPending}
               activeOpacity={0.7}
+              testID={`integration-provider-${integration.provider}`}
               className={`flex-row items-center justify-between border rounded-xl px-4 py-3 mb-2 ${
                 connected ? "border-green-500 bg-green-500/10" : "border-border bg-card"
               } ${isPending ? "opacity-70" : ""}`}
@@ -510,6 +511,7 @@ export default function IntegrationsScreen() {
                 variant="outline"
                 className="justify-start gap-2"
                 disabled={isImporting}
+                testID="integrations-pick-fit-file-button"
               >
                 <Upload className="text-foreground" size={18} />
                 <Text>Choose FIT File</Text>
@@ -542,6 +544,7 @@ export default function IntegrationsScreen() {
               onChangeText={setHistoricalName}
               placeholder="Activity name"
               autoCapitalize="sentences"
+              testID="integrations-historical-name-input"
             />
 
             <Select
@@ -571,6 +574,7 @@ export default function IntegrationsScreen() {
               onChangeText={setHistoricalNotes}
               placeholder="Optional notes"
               className="min-h-[88px]"
+              testID="integrations-historical-notes-input"
             />
 
             <Text className="text-xs text-muted-foreground">
@@ -580,6 +584,7 @@ export default function IntegrationsScreen() {
             <Button
               onPress={handleHistoricalImport}
               disabled={isImporting || !selectedFitFile || !historicalName.trim()}
+              testID="integrations-import-fit-button"
             >
               <Text className="text-primary-foreground font-semibold">
                 {isImporting ? "Importing FIT Activity..." : "Import FIT Activity"}
@@ -588,14 +593,22 @@ export default function IntegrationsScreen() {
           </View>
 
           {importSummary ? (
-            <View className="mt-3 border border-border rounded-xl p-3 bg-muted/40">
+            <View
+              className="mt-3 border border-border rounded-xl p-3 bg-muted/40"
+              testID="integrations-import-summary"
+            >
               <Text className="text-sm text-foreground font-medium">
                 Historical activity imported
               </Text>
               <Text className="text-xs text-muted-foreground mt-1">
                 {importSummary.name} was created from {importSummary.fileName}.
               </Text>
-              <Button onPress={handleViewImportedActivity} variant="outline" className="mt-3">
+              <Button
+                onPress={handleViewImportedActivity}
+                variant="outline"
+                className="mt-3"
+                testID="integrations-view-imported-activity-button"
+              >
                 <Text>View Activity</Text>
               </Button>
             </View>

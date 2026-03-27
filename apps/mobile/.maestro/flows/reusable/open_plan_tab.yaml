@@ -1,6 +1,9 @@
 appId: com.deancochran.gradientpeak.dev
 ---
-- tapOn: "Plan"
+- runFlow:
+    file: ./reset_to_home.yaml
+- tapOn:
+    id: "tab-button-plan"
 - extendedWaitUntil:
     visible:
       id: "plan-projection-card"

@@ -135,8 +135,9 @@ export default function PlanPickerPage() {
   const currentEventId = service?.recordingMetadata?.eventId;
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="record-plan-screen">
       <ScrollView className="flex-1 px-4 pt-4">
+        {!isLoading ? <View testID="record-plan-content-ready" /> : null}
         {/* Search Input */}
         <View className="mb-3">
           <View className="relative">
@@ -151,6 +152,7 @@ export default function PlanPickerPage() {
               value={searchQuery}
               onChangeText={setSearchQuery}
               className="pl-10"
+              testID="record-plan-search-input"
             />
           </View>
         </View>
@@ -163,6 +165,7 @@ export default function PlanPickerPage() {
                 <Pressable
                   key={option.value}
                   onPress={() => setCategoryFilter(option.value)}
+                  testID={`record-plan-filter-${option.value}`}
                   className="px-3 py-2 rounded-full border border-border"
                   style={{
                     backgroundColor:
@@ -185,7 +188,7 @@ export default function PlanPickerPage() {
 
         {/* Loading State */}
         {isLoading && (
-          <View className="items-center justify-center py-8">
+          <View className="items-center justify-center py-8" testID="record-plan-loading">
             <ActivityIndicator size="large" />
             <Text className="text-sm text-muted-foreground mt-2">Loading plans...</Text>
           </View>
@@ -206,6 +209,7 @@ export default function PlanPickerPage() {
         {!isLoading && currentEventId && !isSetupLocked && (
           <Pressable
             onPress={handleDetach}
+            testID="record-plan-detach-button"
             className="bg-card p-4 rounded-lg border border-border mb-3"
           >
             <View className="flex-row items-center justify-between">
@@ -236,20 +240,22 @@ export default function PlanPickerPage() {
           </View>
         ) : (
           !isLoading && (
-            <EmptyStateCard
-              icon={CalendarDays}
-              title={
-                searchQuery || categoryFilter !== "all"
-                  ? "No matching activities found"
-                  : "No planned activities for today"
-              }
-              description={
-                searchQuery || categoryFilter !== "all"
-                  ? "Try adjusting your search or filter"
-                  : "Schedule activities from the Plan tab"
-              }
-              iconSize={32}
-            />
+            <View testID="record-plan-empty-state">
+              <EmptyStateCard
+                icon={CalendarDays}
+                title={
+                  searchQuery || categoryFilter !== "all"
+                    ? "No matching activities found"
+                    : "No planned activities for today"
+                }
+                description={
+                  searchQuery || categoryFilter !== "all"
+                    ? "Try adjusting your search or filter"
+                    : "Schedule activities from the Plan tab"
+                }
+                iconSize={32}
+              />
+            </View>
           )
         )}
       </ScrollView>
@@ -286,6 +292,7 @@ function PlannedActivityListItem({
     <Pressable
       onPress={onPress}
       disabled={disabled}
+      testID={`record-plan-item-${plannedActivity.id}`}
       className="bg-card p-4 rounded-lg border border-border"
       style={{
         borderColor: isSelected ? "rgb(34, 197, 94)" : undefined,

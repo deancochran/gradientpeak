@@ -36,7 +36,7 @@ function TrainingPlansListScreen() {
 
   if (isLoading) {
     return (
-      <ScrollView className="flex-1 bg-background">
+      <ScrollView className="flex-1 bg-background" testID="training-plans-list-loading">
         <View className="p-4">
           <ListSkeleton count={6} />
         </View>
@@ -45,24 +45,29 @@ function TrainingPlansListScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="training-plans-list-screen">
       <ScrollView
         className="flex-1"
         contentContainerClassName="gap-3 px-4 py-4"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        <Button onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}>
+        <Button
+          onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
+          testID="training-plans-list-create-button"
+        >
           <Icon as={Plus} size={16} className="text-primary-foreground mr-2" />
           <Text className="text-primary-foreground">Create Training Plan</Text>
         </Button>
 
         {sortedPlans.length === 0 ? (
-          <EmptyStateCard
-            title="No training plans yet"
-            description="Create your first plan to start scheduling structured training."
-            actionLabel="Create Training Plan"
-            onAction={() => router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
-          />
+          <View testID="training-plans-list-empty-state">
+            <EmptyStateCard
+              title="No training plans yet"
+              description="Create your first plan to start scheduling structured training."
+              actionLabel="Create Training Plan"
+              onAction={() => router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
+            />
+          </View>
         ) : (
           sortedPlans.map((plan) => {
             const isPublic = plan.template_visibility === "public";
@@ -73,6 +78,7 @@ function TrainingPlansListScreen() {
                 key={plan.id}
                 onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
                 activeOpacity={0.8}
+                testID={`training-plans-list-item-${plan.id}`}
               >
                 <Card>
                   <CardContent className="p-4 gap-3">

@@ -6,7 +6,7 @@ import { AppHeader } from "@/components/shared";
 
 function HomeScreen() {
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="home-screen">
       <AppHeader title="Feed" />
       <FeedList />
     </View>

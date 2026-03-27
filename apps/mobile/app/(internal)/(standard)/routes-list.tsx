@@ -58,7 +58,11 @@ export default function RoutesLibraryScreen() {
     const coordinates = decodePolyline(item.polyline);
 
     return (
-      <Pressable onPress={() => router.push(`/route-detail?id=${item.id}` as any)} className="mb-3">
+      <Pressable
+        onPress={() => router.push(`/route-detail?id=${item.id}` as any)}
+        className="mb-3"
+        testID={`routes-list-item-${item.id}`}
+      >
         <Card>
           <CardContent className="p-0">
             {/* Map Preview */}
@@ -93,6 +97,7 @@ export default function RoutesLibraryScreen() {
                   size="sm"
                   onPress={() => handleDelete(item.id, item.name)}
                   disabled={deleteMutation.isPending}
+                  testID={`routes-list-delete-${item.id}`}
                 >
                   <Trash2 className="text-destructive" size={18} />
                 </Button>
@@ -137,20 +142,27 @@ export default function RoutesLibraryScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="routes-list-screen">
       <FlatList
+        testID="routes-list-content"
         data={routes}
         renderItem={renderRouteCard}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16 }}
         ListEmptyComponent={
-          <View className="flex-1 items-center justify-center py-12">
+          <View
+            className="flex-1 items-center justify-center py-12"
+            testID="routes-list-empty-state"
+          >
             <MapPin size={64} className="text-muted-foreground mb-4" />
             <Text className="text-xl font-semibold mb-2">No Routes Yet</Text>
             <Text className="text-muted-foreground text-center mb-6">
               Upload your first GPX route to get started
             </Text>
-            <Button onPress={() => router.push("/route-upload" as any)}>
+            <Button
+              onPress={() => router.push("/route-upload" as any)}
+              testID="routes-list-upload-button"
+            >
               <Plus className="text-primary-foreground mr-2" size={20} />
               <Text className="text-primary-foreground">Upload Route</Text>
             </Button>
@@ -172,6 +184,7 @@ export default function RoutesLibraryScreen() {
             size="lg"
             className="rounded-full shadow-lg"
             onPress={() => router.push("/route-upload" as any)}
+            testID="routes-list-fab-upload-button"
           >
             <Plus className="text-primary-foreground" size={24} />
           </Button>

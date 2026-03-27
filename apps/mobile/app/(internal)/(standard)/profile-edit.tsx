@@ -264,6 +264,7 @@ function ProfileEditScreen() {
     <KeyboardAvoidingView
       className="flex-1 bg-background"
       behavior={Platform.OS === "ios" ? "padding" : "height"}
+      testID="profile-edit-screen"
     >
       <ScrollView
         className="flex-1"
@@ -291,6 +292,7 @@ function ProfileEditScreen() {
                 onPress={handleAvatarUpload}
                 className="absolute bottom-0 right-0 bg-primary rounded-full p-2"
                 disabled={avatarUploadLoading}
+                testID="profile-edit-avatar-button"
               >
                 {avatarUploadLoading ? (
                   <Icon as={Loader2} size={20} className="text-primary-foreground animate-spin" />
@@ -305,6 +307,7 @@ function ProfileEditScreen() {
               size="sm"
               onPress={handleAvatarUpload}
               disabled={avatarUploadLoading}
+              testID="profile-edit-change-avatar-button"
             >
               <Text>{avatarUploadLoading ? "Uploading..." : "Change Avatar"}</Text>
             </Button>
@@ -454,6 +457,7 @@ function ProfileEditScreen() {
             className="flex-1"
             onPress={form.handleSubmit(onSubmit)}
             disabled={updateProfileMutation.isPending}
+            testID="profile-edit-save-button"
           >
             {updateProfileMutation.isPending ? (
               <>

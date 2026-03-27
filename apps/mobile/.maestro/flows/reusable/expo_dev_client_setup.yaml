@@ -1,0 +1,43 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- launchApp
+- runFlow:
+    when:
+      visible: "${EXPO_DEV_SERVER_LABEL}"
+    commands:
+      - tapOn: "${EXPO_DEV_SERVER_LABEL}"
+- runFlow:
+    when:
+      visible: "Got It"
+    commands:
+      - tapOn: "Got It"
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+- runFlow:
+    when:
+      visible: "Go home"
+    commands:
+      - tapOn: "Go home"
+- runFlow:
+    when:
+      visible: "Toggle performance monitor"
+    commands:
+      - swipe:
+          from:
+            text: "Toggle performance monitor"
+          direction: DOWN
+- runFlow:
+    when:
+      visible:
+        id: "sign-in-screen"
+    commands:
+      - assertVisible:
+          id: "sign-in-screen"
+- runFlow:
+    when:
+      visible: "Discover"
+    commands:
+      - assertVisible: "Discover"

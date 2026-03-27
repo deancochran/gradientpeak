@@ -1,0 +1,7 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- tapOn:
+    id: "tab-button-home"
+- extendedWaitUntil:
+    visible: "Discover"
+    timeout: 10000

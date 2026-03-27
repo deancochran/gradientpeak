@@ -33,6 +33,7 @@ export default function InternalLayout() {
           options={{
             title: "Home",
             tabBarIcon: ({ color }) => <Icon as={Home} size={28} color={color} />,
+            tabBarButtonTestID: "tab-button-home",
           }}
         />
         <Tabs.Screen
@@ -40,6 +41,7 @@ export default function InternalLayout() {
           options={{
             title: "Discover",
             tabBarIcon: ({ color }) => <Icon as={Search} size={28} color={color} />,
+            tabBarButtonTestID: "tab-button-discover",
           }}
         />
         <Tabs.Screen
@@ -50,6 +52,7 @@ export default function InternalLayout() {
             tabBarButton: (props) => (
               <TouchableOpacity
                 {...(props as any)}
+                testID="tab-button-record"
                 onPress={() => guardNavigation(() => router.push("/record"))}
               />
             ),
@@ -60,6 +63,7 @@ export default function InternalLayout() {
           options={{
             title: "Plan",
             tabBarIcon: ({ color }) => <Icon as={Target} size={28} color={color} />,
+            tabBarButtonTestID: "tab-button-plan",
           }}
         />
         <Tabs.Screen
@@ -67,6 +71,7 @@ export default function InternalLayout() {
           options={{
             title: "Calendar",
             tabBarIcon: ({ color }) => <Icon as={Calendar} size={28} color={color} />,
+            tabBarButtonTestID: "tab-button-calendar",
           }}
         />
       </Tabs>

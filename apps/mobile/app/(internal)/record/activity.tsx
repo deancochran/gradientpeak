@@ -60,7 +60,7 @@ export default function ActivitySelectionScreen() {
   const hasChanges = selectedCategory !== activityCategory;
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="record-activity-screen">
       <ScrollView className="flex-1 px-4 pt-4">
         {/* Info Banner - Category Locked */}
         {hasPlan && (
@@ -88,6 +88,7 @@ export default function ActivitySelectionScreen() {
                 key={cat.value}
                 onPress={() => !hasPlan && setSelectedCategory(cat.value)}
                 disabled={hasPlan}
+                testID={`record-activity-option-${cat.value}`}
                 className="bg-card p-4 rounded-lg border border-border"
                 style={{
                   borderColor: selectedCategory === cat.value ? "rgb(34, 197, 94)" : undefined,
@@ -112,7 +113,12 @@ export default function ActivitySelectionScreen() {
 
       {/* Save Button */}
       <View className="p-4 border-t border-border">
-        <Button onPress={handleSave} disabled={!hasChanges} className="w-full">
+        <Button
+          onPress={handleSave}
+          disabled={!hasChanges}
+          className="w-full"
+          testID="record-activity-save-button"
+        >
           <Text className="text-primary-foreground">Save Changes</Text>
         </Button>
       </View>

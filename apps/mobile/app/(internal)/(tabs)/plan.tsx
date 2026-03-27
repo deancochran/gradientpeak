@@ -728,7 +728,7 @@ function PlanDashboardScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="plan-screen">
       <AppHeader title="Plan" />
       <ScrollView
         className="flex-1"
@@ -892,6 +892,7 @@ function PlanDashboardScreen() {
                   setEditingGoalId(null);
                   setShowGoalModal(true);
                 }}
+                testID="plan-add-goal-button"
               >
                 <Text>Add Goal</Text>
               </Button>
@@ -952,6 +953,7 @@ function PlanDashboardScreen() {
                 <Button
                   className="flex-1"
                   onPress={() => router.push(ROUTES.PLAN.TRAINING_PLAN.LIST as any)}
+                  testID="plan-manage-plans-button"
                 >
                   <Text className="text-primary-foreground">Manage Plans</Text>
                 </Button>
@@ -959,6 +961,7 @@ function PlanDashboardScreen() {
                   variant="outline"
                   className="flex-1"
                   onPress={() => router.push(ROUTES.CALENDAR as any)}
+                  testID="plan-open-calendar-button"
                 >
                   <Text>Open Calendar</Text>
                 </Button>

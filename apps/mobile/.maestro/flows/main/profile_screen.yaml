@@ -1,17 +1,13 @@
 # Main Test: Verify Profile Screen after Login
 appId: com.deancochran.gradientpeak.dev
-env:
-  USER_EMAIL: "test@example.com"
-  USER_PASS: "password123"
-  TARGET_USERNAME: "coachcasey"
 ---
 - runFlow:
     file: ../reusable/bootstrap.yaml
 - runFlow:
     file: ../reusable/login.yaml
     env:
-      email: "${USER_EMAIL}"
-      password: "${USER_PASS}"
+      email: "${STANDARD_USER_EMAIL}"
+      password: "${STANDARD_USER_PASS}"
 - tapOn: "Discover"
 - tapOn: "Users"
 - tapOn: "Search users, activities, plans..."

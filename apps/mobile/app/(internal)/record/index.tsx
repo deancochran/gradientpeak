@@ -375,7 +375,10 @@ function RecordScreen() {
   // Show loading state while initializing
   if (!isInitialized) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View
+        className="flex-1 bg-background items-center justify-center"
+        testID="record-screen-loading"
+      >
         <Text className="text-muted-foreground">Initializing activity...</Text>
       </View>
     );
@@ -385,13 +388,14 @@ function RecordScreen() {
   const needsActivitySelection = !activityCategory;
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="record-screen-ready">
       {/* Floating Close Button (only shows before recording starts) */}
       {state === "pending" && (
         <View className="absolute top-4 left-4 z-50" style={{ top: insets.top + 16 }}>
           <Button
             size="icon"
             variant="outline"
+            testID="record-close-button"
             onPress={() => {
               // Dismiss the record screen
               router.back();
@@ -472,7 +476,10 @@ function RecordScreen() {
       />
 
       {isFinishing ? (
-        <View className="absolute inset-0 items-center justify-center bg-background/80 px-8">
+        <View
+          className="absolute inset-0 items-center justify-center bg-background/80 px-8"
+          testID="record-screen-finishing"
+        >
           <Text className="text-lg font-semibold text-foreground">Finalizing activity...</Text>
           <Text className="mt-2 text-center text-sm text-muted-foreground">
             The submit screen will open after local files are saved.

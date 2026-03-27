@@ -469,7 +469,7 @@ function ActivityDetailScreen() {
   // Loading skeleton
   if (isLoadingActivity || !activity) {
     return (
-      <ScrollView className="flex-1 bg-background">
+      <ScrollView className="flex-1 bg-background" testID="activity-detail-loading">
         <View className="p-4 gap-4">
           <Skeleton className="h-48 w-full bg-muted" />
           <View className="flex-row gap-2">
@@ -483,7 +483,7 @@ function ActivityDetailScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background">
+    <ScrollView className="flex-1 bg-background" testID="activity-detail-screen">
       <View className="p-4 gap-4">
         {/* Header */}
         <ActivityHeader
@@ -509,6 +509,7 @@ function ActivityDetailScreen() {
             <Pressable
               onPress={handleLikeToggle}
               disabled={toggleLikeMutation.isPending}
+              testID="activity-detail-like-button"
               className="flex-row items-center gap-2 mb-4"
             >
               <Heart
@@ -550,11 +551,13 @@ function ActivityDetailScreen() {
                 placeholder="Add a comment..."
                 value={newComment}
                 onChangeText={setNewComment}
+                testID="activity-detail-comment-input"
               />
               <Button
                 onPress={handleAddComment}
                 disabled={!newComment.trim() || addCommentMutation.isPending}
                 size="icon"
+                testID="activity-detail-comment-submit"
               >
                 <Send size={18} />
               </Button>
@@ -913,6 +916,7 @@ function ActivityDetailScreen() {
           <Pressable
             onPress={handleDelete}
             disabled={deleteMutation.isPending}
+            testID="activity-detail-delete-button"
             className="flex-row items-center justify-center gap-2 p-4 bg-destructive/10 rounded-lg border border-destructive/20 active:bg-destructive/20"
           >
             <Icon

@@ -153,6 +153,21 @@ function useDebounce(value: string, delay: number): string {
   return debouncedValue;
 }
 
+function getDiscoverResultsListId(tab: TabType) {
+  switch (tab) {
+    case "activityPlans":
+      return "discover-activity-plans-list";
+    case "trainingPlans":
+      return "discover-training-plans-list";
+    case "routes":
+      return "discover-routes-list";
+    case "users":
+      return "discover-users-list";
+    default:
+      return "discover-results-list";
+  }
+}
+
 export default function DiscoverPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("activityPlans");
@@ -296,6 +311,7 @@ export default function DiscoverPage() {
             <TouchableOpacity
               key={tab.id}
               onPress={() => setActiveTab(tab.id)}
+              testID={`discover-tab-${tab.id}`}
               className={`flex-1 items-center justify-center gap-1.5 rounded-xl px-1 py-2.5 ${
                 isActive ? "bg-background shadow-sm" : "bg-transparent"
               }`}
@@ -345,6 +361,7 @@ export default function DiscoverPage() {
           label="All"
           isActive={!selectedCategoryId}
           onPress={() => handleCategoryToggle(null)}
+          testID="discover-category-all"
         />
         {CATEGORIES.map((category) => (
           <FilterChip
@@ -352,6 +369,7 @@ export default function DiscoverPage() {
             label={category.name}
             isActive={selectedCategoryId === category.id}
             onPress={() => handleCategoryToggle(category.id)}
+            testID={`discover-category-${category.id}`}
           />
         ))}
       </ScrollView>
@@ -372,6 +390,7 @@ export default function DiscoverPage() {
             value={searchQuery}
             onChangeText={setSearchQuery}
             className="h-12 pl-10 pr-10"
+            testID="discover-search-input"
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity
@@ -496,6 +515,7 @@ export default function DiscoverPage() {
 
     return (
       <FlatList
+        testID="discover-activity-plans-list"
         data={filteredActivities}
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
@@ -554,6 +574,7 @@ export default function DiscoverPage() {
 
     return (
       <FlatList
+        testID="discover-training-plans-list"
         data={trainingPlans}
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
@@ -584,6 +605,7 @@ export default function DiscoverPage() {
 
     return (
       <FlatList
+        testID="discover-routes-list"
         data={routes}
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
@@ -633,6 +655,7 @@ export default function DiscoverPage() {
 
     return (
       <FlatList
+        testID="discover-users-list"
         data={users}
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
@@ -666,10 +689,11 @@ export default function DiscoverPage() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="discover-screen">
       <AppHeader title="Discover" />
       {renderSearchInput()}
       {renderTabBar()}
+      <View testID={getDiscoverResultsListId(activeTab)} />
       {renderContent()}
     </View>
   );
@@ -687,15 +711,18 @@ function FilterChip({
   label,
   isActive,
   onPress,
+  testID,
 }: {
   label: string;
   isActive: boolean;
   onPress: () => void;
+  testID?: string;
 }) {
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
+      testID={testID}
       className={`rounded-full border px-3 py-1.5 ${
         isActive ? "border-primary bg-primary/10" : "border-border bg-background"
       }`}
@@ -779,6 +806,7 @@ function TrainingPlanCard({ template, onPress }: TrainingPlanCardProps) {
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
+      testID={`discover-training-plan-${template.id}`}
       className="bg-card border border-border rounded-2xl p-4 gap-3"
     >
       <View className="flex-row items-start justify-between gap-3">
@@ -835,6 +863,7 @@ function RouteCard({ route, onPress }: RouteCardProps) {
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
+      testID={`discover-route-${route.id}`}
       className="bg-card border border-border rounded-2xl p-4 gap-3"
     >
       <View className="flex-row items-start justify-between gap-3">
@@ -877,6 +906,7 @@ function UserCard({ user, onPress }: UserCardProps) {
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
+      testID={`discover-user-${user.id}`}
       className="bg-card border border-border rounded-2xl p-4 flex-row items-center gap-3"
     >
       <Avatar alt={username} className="h-14 w-14">

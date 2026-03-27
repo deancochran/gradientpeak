@@ -103,7 +103,10 @@ export default function RouteDetailScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View
+        className="flex-1 bg-background items-center justify-center"
+        testID="route-detail-loading"
+      >
         <Text>Loading...</Text>
       </View>
     );
@@ -111,7 +114,10 @@ export default function RouteDetailScreen() {
 
   if (!route) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View
+        className="flex-1 bg-background items-center justify-center"
+        testID="route-detail-not-found"
+      >
         <Text>Route not found</Text>
       </View>
     );
@@ -131,7 +137,7 @@ export default function RouteDetailScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="route-detail-screen">
       <ScrollView>
         {/* Map */}
         <View className="h-64 bg-muted">
@@ -282,6 +288,7 @@ export default function RouteDetailScreen() {
           <View className="gap-3 pb-6">
             <Pressable
               onPress={handleToggleLike}
+              testID="route-detail-like-button"
               className="flex-row items-center justify-center gap-2 py-3 rounded-lg border border-border bg-card"
             >
               <Icon

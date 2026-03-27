@@ -1,6 +1,9 @@
 appId: com.deancochran.gradientpeak.dev
 ---
-- tapOn: "Discover"
+- runFlow:
+    file: ./reset_to_home.yaml
+- tapOn:
+    id: "tab-button-discover"
 - extendedWaitUntil:
     visible: "Activity Plans"
     timeout: 10000

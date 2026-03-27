@@ -1,0 +1,24 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ./authenticated_home.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+- runFlow:
+    file: ./open_discover_tab.yaml
+- tapOn:
+    id: "discover-tab-users"
+- tapOn:
+    id: "discover-search-input"
+- inputText: "${TARGET_USERNAME}"
+- extendedWaitUntil:
+    visible:
+      id: "discover-user-${TARGET_USER_ID}"
+    timeout: 10000
+- tapOn:
+    id: "discover-user-${TARGET_USER_ID}"
+- extendedWaitUntil:
+    visible:
+      id: "user-detail-screen"
+    timeout: 10000

@@ -4,8 +4,6 @@ appId: com.deancochran.gradientpeak.dev
     file: ../reusable/bootstrap.yaml
 - assertVisible:
     id: "sign-in-screen"
-- assertVisible:
-    id: "sign-in-screen"
 - tapOn:
     id: "sign-up-link-button"
 - assertVisible:

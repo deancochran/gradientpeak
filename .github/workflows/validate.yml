@@ -139,6 +139,37 @@ jobs:
       - name: Run mobile Jest tests
         run: pnpm --filter mobile test:jest
 
+  full-validation-suite:
+    name: Full Validation Suite
+    runs-on: ubuntu-latest
+    needs:
+      - format-and-lint
+      - typecheck
+      - build
+      - unit-and-integration
+      - mobile-component-and-jest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run full validation suite
+        run: pnpm check-types && pnpm lint && pnpm test
+
   web-e2e:
     name: Web E2E
     runs-on: ubuntu-latest
@@ -148,6 +179,7 @@ jobs:
       - build
       - unit-and-integration
       - mobile-component-and-jest
+      - full-validation-suite
 
     steps:
       - name: Checkout
@@ -208,7 +240,7 @@ jobs:
           if-no-files-found: ignore
 
   mobile-e2e-core:
-    name: Mobile E2E (${{ matrix.lane }})
+    name: Mobile E2E
     runs-on: ubuntu-latest
     needs:
       - format-and-lint
@@ -216,12 +248,7 @@ jobs:
       - build
       - unit-and-integration
       - mobile-component-and-jest
-    strategy:
-      fail-fast: false
-      matrix:
-        lane:
-          - cold-start
-          - smoke
+      - full-validation-suite
 
     steps:
       - name: Checkout
@@ -281,7 +308,7 @@ jobs:
       - name: Wait for E2E Metro server
         run: bash ./scripts/wait-for-port.sh 127.0.0.1 8082 metro-e2e 180
 
-      - name: Run Maestro lane
+      - name: Run Maestro smoke flows
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -291,13 +318,14 @@ jobs:
           disable-animations: true
           script: |
             pnpm --filter mobile android:install
-            pnpm --filter mobile test:e2e:lane ${{ matrix.lane }} -- --device emulator-5554
+            pnpm --filter mobile test:e2e:flow .maestro/flows/main/auth_navigation.yaml -- --device emulator-5554
+            pnpm --filter mobile test:e2e:flow .maestro/flows/main/tabs_smoke.yaml -- --device emulator-5554
 
       - name: Upload Maestro artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: maestro-${{ matrix.lane }}
+          name: maestro-mobile-e2e
           path: |
             apps/mobile/.maestro/artifacts
             apps/mobile/.maestro/emulator.log

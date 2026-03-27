@@ -900,6 +900,8 @@ function CalendarScreen() {
     }, [refetchActivities]),
   );
 
+  const hasRenderableCalendar = !!activitiesData && !loadingEvents;
+
   if (loadingEvents) {
     return (
       <View className="flex-1 bg-background">
@@ -907,6 +909,7 @@ function CalendarScreen() {
         <ScrollView className="flex-1 p-6">
           <PlanCalendarSkeleton />
         </ScrollView>
+        <View testID="calendar-screen-loading" />
       </View>
     );
   }
@@ -932,7 +935,7 @@ function CalendarScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="calendar-screen-ready">
       <AppHeader title="Calendar" />
 
       <View className="border-b border-border bg-background px-4 pt-3 pb-3">
@@ -962,6 +965,7 @@ function CalendarScreen() {
               className="rounded-md border border-border bg-card px-3 py-2 flex-row items-center"
               activeOpacity={0.8}
               testID="create-event-entry"
+              accessibilityLabel="create-event-entry"
             >
               <Icon as={Plus} size={14} className="text-foreground mr-1" />
               <Text className="text-xs font-medium">Create</Text>
@@ -1400,6 +1404,8 @@ function CalendarScreen() {
           );
         }}
       />
+
+      {hasRenderableCalendar ? <View testID="calendar-screen-content-ready" /> : null}
 
       {editingEventId && (
         <ScheduleActivityModal
