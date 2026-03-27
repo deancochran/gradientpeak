@@ -203,6 +203,8 @@ const IntegrationsScreen = require("../integrations").default;
 const { Alert } = require("react-native");
 
 describe("integrations historical FIT import", () => {
+  const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
@@ -224,6 +226,10 @@ describe("integrations historical FIT import", () => {
   afterEach(() => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
+  });
+
+  afterAll(() => {
+    consoleErrorSpy.mockRestore();
   });
 
   it("auto-fills the activity name from a selected FIT file", async () => {

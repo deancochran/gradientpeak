@@ -1,4 +1,3 @@
-import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { getServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -7,17 +6,26 @@ type MobileActionPhase = "attempt" | "success" | "failure";
 
 type MobileActionLogDetails = Record<string, string | number | boolean | null | undefined>;
 
+function getExpoConstants() {
+  try {
+    // biome-ignore lint/suspicious/noExplicitAny: runtime optional import for Jest compatibility
+    return require("expo-constants").default as any;
+  } catch {
+    return null;
+  }
+}
+
 function inferDeviceKind() {
-  const expoConstants = Constants as typeof Constants & {
+  const expoConstants = getExpoConstants() as {
     isDevice?: boolean;
     deviceName?: string | null;
-  };
+  } | null;
 
-  if (expoConstants.isDevice === false) {
+  if (expoConstants?.isDevice === false) {
     return Platform.OS === "ios" ? "ios-simulator" : "android-emulator";
   }
 
-  if (expoConstants.isDevice === true) {
+  if (expoConstants?.isDevice === true) {
     return Platform.OS === "ios" ? "ios-device" : "android-device";
   }
 
@@ -38,11 +46,11 @@ function inferDeviceKind() {
 }
 
 function getDeviceName() {
-  const expoConstants = Constants as typeof Constants & {
+  const expoConstants = getExpoConstants() as {
     deviceName?: string | null;
-  };
+  } | null;
 
-  return expoConstants.deviceName ?? null;
+  return expoConstants?.deviceName ?? null;
 }
 
 function getActorSnapshot() {

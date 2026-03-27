@@ -97,7 +97,7 @@ describe("tabs layout", () => {
   it("routes the record tab through the navigation guard", () => {
     renderNative(<TabsLayout />);
 
-    fireEvent.press(screen.getByTestId("tab-button-record-launcher"));
+    fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(guardNavigationMock).toHaveBeenCalledTimes(1);
     expect(pushMock).toHaveBeenCalledWith("/record");
