@@ -122,7 +122,7 @@ jobs:
         with:
           api-level: 35
           arch: x86_64
-          profile: pixel_8
+          profile: pixel_7
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
