@@ -308,13 +308,20 @@ jobs:
       - name: Wait for E2E Metro server
         run: bash ./scripts/wait-for-port.sh 127.0.0.1 8081 metro-e2e 180
 
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Run Maestro smoke flows
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86
           profile: pixel_7
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-boot-timeout: 900
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: |
             pnpm --filter mobile android:install
