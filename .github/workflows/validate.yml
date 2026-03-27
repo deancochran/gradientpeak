@@ -223,7 +223,7 @@ jobs:
         run: nohup pnpm run dev:e2e:web > /tmp/gradientpeak-web-e2e.log 2>&1 &
 
       - name: Wait for web server
-        run: bash ./scripts/wait-for-port.sh 127.0.0.1 3100 web-e2e 180
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 3000 web-e2e 180
 
       - name: Run Playwright
         run: pnpm --filter web test:e2e
@@ -303,10 +303,10 @@ jobs:
         run: nohup pnpm run dev:e2e:mobile > /tmp/gradientpeak-mobile-e2e.log 2>&1 &
 
       - name: Wait for E2E web server
-        run: bash ./scripts/wait-for-port.sh 127.0.0.1 3100 web-e2e 180
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 3000 web-e2e 180
 
       - name: Wait for E2E Metro server
-        run: bash ./scripts/wait-for-port.sh 127.0.0.1 8082 metro-e2e 180
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 8081 metro-e2e 180
 
       - name: Run Maestro smoke flows
         uses: reactivecircus/android-emulator-runner@v2
