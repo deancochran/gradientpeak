@@ -30,7 +30,7 @@ ui_contains() {
 wait_for_ui() {
   local needle="$1"
 
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ui_contains "$needle"; then
       return 0
     fi
@@ -41,7 +41,7 @@ wait_for_ui() {
 }
 
 app_content_visible() {
-  ui_contains 'resource-id="sign-in-screen"' || ui_contains 'text="Discover"' || ui_contains 'text="Plan"'
+  ui_contains 'sign-in-screen' || ui_contains 'text="Welcome Back"' || ui_contains 'text="Discover"' || ui_contains 'text="Plan"'
 }
 
 dev_server_url="${EXPO_DEV_SERVER_URL:-http://localhost:8081}"
@@ -61,7 +61,7 @@ adb -s "$serial" reverse tcp:54321 tcp:54321 >/dev/null
 
 adb -s "$serial" shell am start -W -a android.intent.action.VIEW -d "$dev_client_link" >/dev/null
 
-if ! wait_for_ui 'text="Connected to:"' && ! wait_for_ui 'text="Continue"' && ! wait_for_ui 'resource-id="sign-in-screen"' && ! wait_for_ui 'text="Discover"'; then
+if ! wait_for_ui 'text="Connected to:"' && ! wait_for_ui 'text="Continue"' && ! wait_for_ui 'sign-in-screen' && ! wait_for_ui 'text="Welcome Back"' && ! wait_for_ui 'text="Discover"'; then
   echo "[maestro-prepare] ERROR: Expo dev client did not become visible" >&2
   exit 1
 fi
