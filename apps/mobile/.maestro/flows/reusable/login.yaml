@@ -23,5 +23,6 @@ appId: com.deancochran.gradientpeak.dev
       - tapOn:
           id: "sign-in-button"
       - extendedWaitUntil:
-          visible: "Plan"
-          timeout: 15000
+          visible:
+            id: "tab-button-plan"
+          timeout: 20000
