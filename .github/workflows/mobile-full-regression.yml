@@ -206,8 +206,7 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: |
-            apk_path=$(echo "$GITHUB_WORKSPACE"/apps/mobile/.maestro/build-artifacts/*.apk)
-            adb install -r "$apk_path"
+            adb install -r "$(echo "$GITHUB_WORKSPACE"/apps/mobile/.maestro/build-artifacts/*.apk)"
             pnpm --filter mobile maestro:lane -- ${{ matrix.lane }} --device emulator-5554
 
       - name: Upload Maestro artifacts
