@@ -10,7 +10,9 @@ if [ -f "$fixtures_file" ]; then
     case "$key" in
       \#*) continue ;;
     esac
-    export "$key=$value"
+    if [ -z "${!key:-}" ]; then
+      export "$key=$value"
+    fi
   done < "$fixtures_file"
 fi
 
