@@ -175,12 +175,13 @@ install_app() {
 }
 
 build_e2e_apk() {
+  CI=1 \
   EXPO_NO_DOTENV=1 \
   EXPO_PUBLIC_API_URL="http://127.0.0.1:3000" \
   EXPO_PUBLIC_SUPABASE_URL="http://127.0.0.1:54321" \
   EXPO_PUBLIC_APP_URL="http://127.0.0.1:3000" \
   EXPO_PUBLIC_REDIRECT_URI="gradientpeak://integrations" \
-  pnpm exec expo prebuild --platform android --non-interactive
+  pnpm exec expo prebuild --platform android
 
   EXPO_NO_DOTENV=1 \
   EXPO_PUBLIC_API_URL="http://127.0.0.1:3000" \
@@ -189,6 +190,7 @@ build_e2e_apk() {
   EXPO_PUBLIC_REDIRECT_URI="gradientpeak://integrations" \
   "$APP_DIR/android/gradlew" -p "$APP_DIR/android" \
     -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
+    -PreactNativeArchitectures=x86_64 \
     :app:assembleRelease \
     -x lintVitalRelease \
     -x lintVitalAnalyzeRelease \
