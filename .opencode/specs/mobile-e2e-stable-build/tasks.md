@@ -15,3 +15,4 @@
 - Prioritize Android first.
 - Treat developer simplicity as a first-class requirement.
 - Keep the documented happy path to three commands or fewer.
+- 2026-03-28 CI research: current local install fingerprint skip in `apps/mobile/scripts/android-emulator.sh` does not help GitHub-hosted runners because each job is fresh. Biggest likely wins are build-once artifact reuse across Maestro lanes, AVD snapshot caching with `reactivecircus/android-emulator-runner`, and Gradle cache priming via `gradle/actions/setup-gradle` while keeping matrix jobs read-only.

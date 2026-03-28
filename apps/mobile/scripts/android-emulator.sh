@@ -7,6 +7,7 @@ REPO_ROOT="$(cd -- "$APP_DIR/../.." && pwd)"
 STAMP_DIR="$APP_DIR/.maestro/cache"
 STAMP_FILE="$STAMP_DIR/android-install.stamp"
 PACKAGE_NAME="com.deancochran.gradientpeak.dev"
+E2E_APK_PATH="$APP_DIR/android/app/build/outputs/apk/release/app-release.apk"
 
 resolve_serial() {
   adb devices | while read -r serial state; do
@@ -173,6 +174,19 @@ install_app() {
   record_install_fingerprint "$fingerprint"
 }
 
+build_e2e_apk() {
+  EXPO_NO_DOTENV=1 \
+  EXPO_PUBLIC_API_URL="http://127.0.0.1:3000" \
+  EXPO_PUBLIC_SUPABASE_URL="http://127.0.0.1:54321" \
+  EXPO_PUBLIC_APP_URL="http://127.0.0.1:3000" \
+  EXPO_PUBLIC_REDIRECT_URI="gradientpeak://integrations" \
+  "$APP_DIR/android/gradlew" -p "$APP_DIR/android" :app:assembleRelease
+}
+
+print_e2e_apk_path() {
+  printf "%s\n" "$E2E_APK_PATH"
+}
+
 launch_app() {
   local serial="$(require_serial)"
 
@@ -187,6 +201,12 @@ case "${1:-}" in
   install)
     install_app
     ;;
+  build-e2e-apk)
+    build_e2e_apk
+    ;;
+  print-e2e-apk-path)
+    print_e2e_apk_path
+    ;;
   install-force)
     FORCE_ANDROID_INSTALL=1 install_app
     ;;
@@ -194,7 +214,7 @@ case "${1:-}" in
     launch_app
     ;;
   *)
-    echo "Usage: $0 {boot|install|install-force|launch}" >&2
+    echo "Usage: $0 {boot|install|build-e2e-apk|print-e2e-apk-path|install-force|launch}" >&2
     exit 1
     ;;
 esac

@@ -38,11 +38,56 @@ jobs:
       - name: Run full validation suite
         run: pnpm check-types && pnpm lint && pnpm test
 
+  mobile-e2e-build:
+    name: Mobile E2E Build
+    runs-on: ubuntu-latest
+    needs:
+      - validation-gate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build bundled Android E2E APK
+        run: pnpm --filter mobile android:e2e:build
+
+      - name: Upload Android E2E APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          retention-days: 3
+          if-no-files-found: error
+
   maestro-lanes:
     name: Maestro Full Regression (${{ matrix.lane }})
     runs-on: ubuntu-latest
     needs:
       - validation-gate
+      - mobile-e2e-build
     strategy:
       fail-fast: false
       matrix:
@@ -80,9 +125,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Gradle cache
-        uses: gradle/actions/setup-gradle@v5
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -108,17 +150,20 @@ jobs:
           curl -Ls "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
+      - name: Download bundled Android E2E APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-e2e-apk
+          path: apps/mobile/.maestro/build-artifacts
+
+      - name: Generate Maestro assets
+        run: pnpm --filter mobile generate:maestro
+
       - name: Start E2E web server
         run: nohup pnpm run dev:e2e:web > /tmp/gradientpeak-web-e2e.log 2>&1 &
 
-      - name: Start E2E Metro server
-        run: nohup pnpm run dev:e2e:mobile > /tmp/gradientpeak-mobile-e2e.log 2>&1 &
-
       - name: Wait for E2E web server
         run: bash ./scripts/wait-for-port.sh 127.0.0.1 3000 web-e2e 180
-
-      - name: Wait for E2E Metro server
-        run: bash ./scripts/wait-for-port.sh 127.0.0.1 8081 metro-e2e 180
 
       - name: Enable KVM group perms
         run: |
@@ -126,18 +171,44 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run Maestro lane
+      - name: Restore Android emulator snapshot cache
+        id: avd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: full-regression-avd-${{ runner.os }}-api30-x86_64-pixel_7
+
+      - name: Create Android emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86_64
           profile: pixel_7
+          force-avd-creation: false
           emulator-boot-timeout: 900
-          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Android emulator snapshot ready."
+
+      - name: Run Maestro lane
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GP_MAESTRO_RUNTIME: installed
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_7
+          force-avd-creation: false
+          emulator-boot-timeout: 900
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: |
-            pnpm --filter mobile android:install
-            pnpm --filter mobile test:e2e:lane -- --device emulator-5554 ${{ matrix.lane }}
+            apk_path=$(echo "$GITHUB_WORKSPACE"/apps/mobile/.maestro/build-artifacts/*.apk)
+            adb install -r "$apk_path"
+            pnpm --filter mobile maestro:lane -- ${{ matrix.lane }} --device emulator-5554
 
       - name: Upload Maestro artifacts
         if: always()
@@ -148,5 +219,4 @@ jobs:
             apps/mobile/.maestro/artifacts
             apps/mobile/.maestro/emulator.log
             /tmp/gradientpeak-web-e2e.log
-            /tmp/gradientpeak-mobile-e2e.log
           if-no-files-found: ignore

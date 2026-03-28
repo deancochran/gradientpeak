@@ -16,6 +16,9 @@ if [ -z "$serial" ]; then
   exit 1
 fi
 
+runtime_mode="${GP_MAESTRO_RUNTIME:-auto}"
+package_name="${GP_MAESTRO_PACKAGE_NAME:-com.deancochran.gradientpeak.dev}"
+
 dump_ui() {
   adb -s "$serial" exec-out uiautomator dump /dev/tty 2>/dev/null
 }
@@ -42,6 +45,10 @@ app_content_visible() {
   ui_contains 'sign-in-screen' || ui_contains 'text="Welcome Back"' || ui_contains 'text="Discover"' || ui_contains 'text="Plan"'
 }
 
+launch_installed_app() {
+  adb -s "$serial" shell monkey -p "$package_name" 1 >/dev/null 2>&1
+}
+
 dev_server_url="${EXPO_DEV_SERVER_URL:-http://localhost:8081}"
 dev_server_row_label="${EXPO_DEV_SERVER_ROW_LABEL:-http://localhost:8081}"
 maestro_device="${MAESTRO_DEVICE:-${serial}}"
@@ -55,6 +62,7 @@ PY
 
 adb -s "$serial" reverse tcp:8081 tcp:8081 >/dev/null
 adb -s "$serial" reverse tcp:3000 tcp:3000 >/dev/null
+adb -s "$serial" reverse tcp:3100 tcp:3100 >/dev/null
 adb -s "$serial" reverse tcp:54321 tcp:54321 >/dev/null
 
 if app_content_visible; then
@@ -62,7 +70,17 @@ if app_content_visible; then
   exit 0
 fi
 
-adb -s "$serial" shell pm clear com.deancochran.gradientpeak.dev >/dev/null 2>&1 || true
+if launch_installed_app && (wait_for_ui 'sign-in-screen' || wait_for_ui 'text="Welcome Back"' || wait_for_ui 'text="Discover"' || wait_for_ui 'text="Plan"'); then
+  echo "[maestro-prepare] Installed app launch is ready"
+  exit 0
+fi
+
+if [ "$runtime_mode" = "installed" ]; then
+  echo "[maestro-prepare] ERROR: installed app launch did not become visible" >&2
+  exit 1
+fi
+
+adb -s "$serial" shell pm clear "$package_name" >/dev/null 2>&1 || true
 
 adb -s "$serial" shell am start -W -a android.intent.action.VIEW -d "$dev_client_link" >/dev/null
 
