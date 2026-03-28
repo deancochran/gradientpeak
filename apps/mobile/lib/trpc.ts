@@ -12,7 +12,7 @@ import { getAuthHeaders } from "@/lib/supabase/auth-headers";
 
 export { trpc };
 
-const TRPC_REQUEST_TIMEOUT_MS = 10000;
+const TRPC_REQUEST_TIMEOUT_MS = 20000;
 
 function getActionName(input: RequestInfo | URL) {
   const rawUrl =
