@@ -187,7 +187,11 @@ build_e2e_apk() {
   EXPO_PUBLIC_SUPABASE_URL="http://127.0.0.1:54321" \
   EXPO_PUBLIC_APP_URL="http://127.0.0.1:3000" \
   EXPO_PUBLIC_REDIRECT_URI="gradientpeak://integrations" \
-  "$APP_DIR/android/gradlew" -p "$APP_DIR/android" :app:assembleRelease
+  "$APP_DIR/android/gradlew" -p "$APP_DIR/android" \
+    -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
+    :app:assembleRelease \
+    -x lintVitalAnalyzeRelease \
+    -x lintVitalReportRelease
 }
 
 print_e2e_apk_path() {
