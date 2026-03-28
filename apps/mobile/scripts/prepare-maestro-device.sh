@@ -18,7 +18,6 @@ fi
 
 runtime_mode="${GP_MAESTRO_RUNTIME:-auto}"
 package_name="${GP_MAESTRO_PACKAGE_NAME:-com.deancochran.gradientpeak.dev}"
-
 dump_ui() {
   adb -s "$serial" exec-out uiautomator dump /dev/tty 2>/dev/null
 }
