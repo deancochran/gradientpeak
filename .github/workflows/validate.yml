@@ -328,8 +328,8 @@ jobs:
           disable-animations: false
           script: |
             pnpm --filter mobile android:install
-            pnpm --filter mobile test:e2e:flow .maestro/flows/main/auth_navigation.yaml -- --device emulator-5554
-            pnpm --filter mobile test:e2e:flow .maestro/flows/main/tabs_smoke.yaml -- --device emulator-5554
+            pnpm --filter mobile test:e2e:flow -- --device emulator-5554 .maestro/flows/main/auth_navigation.yaml
+            pnpm --filter mobile test:e2e:flow -- --device emulator-5554 .maestro/flows/main/tabs_smoke.yaml
 
       - name: Upload Maestro artifacts
         if: always()

@@ -137,7 +137,7 @@ jobs:
           disable-animations: false
           script: |
             pnpm --filter mobile android:install
-            pnpm --filter mobile test:e2e:lane ${{ matrix.lane }} -- --device emulator-5554
+            pnpm --filter mobile test:e2e:lane -- --device emulator-5554 ${{ matrix.lane }}
 
       - name: Upload Maestro artifacts
         if: always()
