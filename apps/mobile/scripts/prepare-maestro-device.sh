@@ -16,8 +16,6 @@ if [ -z "$serial" ]; then
   exit 1
 fi
 
-adb -s "$serial" shell pm clear com.deancochran.gradientpeak.dev >/dev/null 2>&1 || true
-
 dump_ui() {
   adb -s "$serial" exec-out uiautomator dump /dev/tty 2>/dev/null
 }
@@ -58,6 +56,13 @@ PY
 adb -s "$serial" reverse tcp:8081 tcp:8081 >/dev/null
 adb -s "$serial" reverse tcp:3000 tcp:3000 >/dev/null
 adb -s "$serial" reverse tcp:54321 tcp:54321 >/dev/null
+
+if app_content_visible; then
+  echo "[maestro-prepare] App content is already visible"
+  exit 0
+fi
+
+adb -s "$serial" shell pm clear com.deancochran.gradientpeak.dev >/dev/null 2>&1 || true
 
 adb -s "$serial" shell am start -W -a android.intent.action.VIEW -d "$dev_client_link" >/dev/null
 
