@@ -1,0 +1,3 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow: expo_dev_client_setup.yaml
