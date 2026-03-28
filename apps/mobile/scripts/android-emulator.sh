@@ -180,6 +180,13 @@ build_e2e_apk() {
   EXPO_PUBLIC_SUPABASE_URL="http://127.0.0.1:54321" \
   EXPO_PUBLIC_APP_URL="http://127.0.0.1:3000" \
   EXPO_PUBLIC_REDIRECT_URI="gradientpeak://integrations" \
+  pnpm exec expo prebuild --platform android --non-interactive
+
+  EXPO_NO_DOTENV=1 \
+  EXPO_PUBLIC_API_URL="http://127.0.0.1:3000" \
+  EXPO_PUBLIC_SUPABASE_URL="http://127.0.0.1:54321" \
+  EXPO_PUBLIC_APP_URL="http://127.0.0.1:3000" \
+  EXPO_PUBLIC_REDIRECT_URI="gradientpeak://integrations" \
   "$APP_DIR/android/gradlew" -p "$APP_DIR/android" :app:assembleRelease
 }
 
