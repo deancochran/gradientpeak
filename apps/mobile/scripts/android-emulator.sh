@@ -190,6 +190,7 @@ build_e2e_apk() {
   "$APP_DIR/android/gradlew" -p "$APP_DIR/android" \
     -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
     :app:assembleRelease \
+    -x lintVitalRelease \
     -x lintVitalAnalyzeRelease \
     -x lintVitalReportRelease
 }
