@@ -83,7 +83,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
       Number.isNaN(endDate.getTime()) || endDate < startDate ? fallbackEndDate : endDate;
 
     const maxEndDate = new Date(startDate);
-    maxEndDate.setDate(startDate.getDate() + 365);
+    maxEndDate.setDate(startDate.getDate() + 364);
 
     const cappedEndDate = normalizedEndDate > maxEndDate ? maxEndDate : normalizedEndDate;
 
