@@ -7,8 +7,8 @@
 
 import type { GoalTargetV2 } from "../../../schemas/training_plan_structure";
 import type {
-  ProjectionPointReadinessInput,
   ProjectionPointReadinessGoalInput,
+  ProjectionPointReadinessInput,
 } from "../readiness";
 
 /**
@@ -150,13 +150,7 @@ export function createTestScenario(config: {
   ctlProgression?: "flat" | "ramp" | "peak";
 }): ProjectionPointReadinessInput[] {
   const points: ProjectionPointReadinessInput[] = [];
-  const {
-    startDate,
-    durationDays,
-    startingCtl,
-    startingAtl,
-    ctlProgression = "flat",
-  } = config;
+  const { startDate, durationDays, startingCtl, startingAtl, ctlProgression = "flat" } = config;
 
   for (let day = 0; day < durationDays; day++) {
     const date = addDays(startDate, day);
@@ -216,12 +210,7 @@ export class CtlAtlStateBuilder {
   private addPoint(): void {
     const tsb = this.currentCtl - this.currentAtl;
     this.points.push(
-      createMockProjectionPoint(
-        this.currentDate,
-        this.currentCtl,
-        this.currentAtl,
-        tsb,
-      ),
+      createMockProjectionPoint(this.currentDate, this.currentCtl, this.currentAtl, tsb),
     );
   }
 

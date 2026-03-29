@@ -27,6 +27,10 @@
       "cache": false,
       "persistent": true
     },
+    "dev:e2e": {
+      "cache": false,
+      "persistent": true
+    },
     "test": {
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"],

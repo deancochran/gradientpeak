@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { View } from "react-native";
-import { CartesianChart, Bar, Line } from "victory-native";
+import { Bar, CartesianChart, Line } from "victory-native";
 
 export interface VolumeDataPoint {
   date: string;
@@ -45,9 +45,7 @@ export function VolumeTrendsChart({
 
   return (
     <View className="rounded-lg border bg-card border-border p-4">
-      <Text className="text-base font-semibold text-foreground mb-2">
-        Volume Trends
-      </Text>
+      <Text className="text-base font-semibold text-foreground mb-2">Volume Trends</Text>
 
       <View className="flex-row items-center gap-4 mb-2">
         {showDistance && (
@@ -73,20 +71,13 @@ export function VolumeTrendsChart({
       <View style={{ height: height - 100 }}>
         {isEmpty ? (
           <View className="flex-1 items-center justify-center bg-muted/30 rounded">
-            <Text className="text-muted-foreground text-sm mb-1">
-              No volume data yet
-            </Text>
+            <Text className="text-muted-foreground text-sm mb-1">No volume data yet</Text>
             <Text className="text-muted-foreground text-xs text-center px-4">
-              Record activities to see your distance, time, and activity count
-              trends
+              Record activities to see your distance, time, and activity count trends
             </Text>
           </View>
         ) : (
-          <CartesianChart
-            data={chartData}
-            xKey="index"
-            yKeys={["distance", "time", "count"]}
-          >
+          <CartesianChart data={chartData} xKey="index" yKeys={["distance", "time", "count"]}>
             {({ points, chartBounds }) => (
               <>
                 {showDistance && (
@@ -107,9 +98,7 @@ export function VolumeTrendsChart({
                     roundedCorners={{ topLeft: 4, topRight: 4 }}
                   />
                 )}
-                {showCount && (
-                  <Line points={points.count} color="#f97316" strokeWidth={2} />
-                )}
+                {showCount && <Line points={points.count} color="#f97316" strokeWidth={2} />}
               </>
             )}
           </CartesianChart>
@@ -121,14 +110,9 @@ export function VolumeTrendsChart({
         <View className="flex-row justify-around mt-2 pt-2 border-t border-border">
           {showDistance && (
             <View className="items-center">
-              <Text className="text-xs text-muted-foreground">
-                Total Distance
-              </Text>
+              <Text className="text-xs text-muted-foreground">Total Distance</Text>
               <Text className="text-sm font-semibold text-foreground">
-                {(
-                  data.reduce((sum, d) => sum + d.totalDistance, 0) / 1000
-                ).toFixed(1)}{" "}
-                km
+                {(data.reduce((sum, d) => sum + d.totalDistance, 0) / 1000).toFixed(1)} km
               </Text>
             </View>
           )}
@@ -136,10 +120,7 @@ export function VolumeTrendsChart({
             <View className="items-center">
               <Text className="text-xs text-muted-foreground">Total Time</Text>
               <Text className="text-sm font-semibold text-foreground">
-                {(data.reduce((sum, d) => sum + d.totalTime, 0) / 3600).toFixed(
-                  1,
-                )}{" "}
-                h
+                {(data.reduce((sum, d) => sum + d.totalTime, 0) / 3600).toFixed(1)} h
               </Text>
             </View>
           )}

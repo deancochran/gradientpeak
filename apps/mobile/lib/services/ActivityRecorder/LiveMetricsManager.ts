@@ -12,15 +12,12 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
+import { GLOBAL_DEFAULTS, type PerformanceMetrics } from "@repo/core";
 import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
-import {
-  convertToSimplifiedMetrics,
-  getSensorModel,
-  SimplifiedMetrics,
-} from "./SimplifiedMetrics";
+import { convertToSimplifiedMetrics, getSensorModel, SimplifiedMetrics } from "./SimplifiedMetrics";
 import { StreamBuffer } from "./StreamBuffer";
 import {
   LiveMetricsState,
@@ -30,16 +27,12 @@ import {
   SessionStats,
   ZoneConfig,
 } from "./types";
-import { GLOBAL_DEFAULTS, type PerformanceMetrics } from "@repo/core";
 
 // Define event types for LiveMetricsManager
 interface LiveMetricsEvents {
   statsUpdate: (data: { stats: SessionStats; timestamp: number }) => void;
   sensorUpdate: (data: { readings: any; timestamp: number }) => void;
-  metricsUpdated: (data: {
-    profile: ProfileMetrics;
-    zones: ZoneConfig;
-  }) => void;
+  metricsUpdated: (data: { profile: ProfileMetrics; zones: ZoneConfig }) => void;
   persistenceError: (error: unknown) => void;
   [key: string]: (...args: any[]) => void; // Index signature for EventsMap
 }
@@ -57,12 +50,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   public streamBuffer: StreamBuffer; // Accumulates data for periodic file writes
 
   // === Timers ===
-  private updateTimer?: number; // 1s: Calculate metrics + emit UI updates
-  private persistenceTimer?: number; // 60s: Write to DB + cleanup memory
+  private updateTimer?: ReturnType<typeof setInterval> | number; // 1s: Calculate metrics + emit UI updates
+  private persistenceTimer?: ReturnType<typeof setInterval> | number; // 60s: Write to DB + cleanup memory
 
   // === Performance Optimization ===
   private pendingSensorUpdates = new Map<string, number>();
-  private sensorUpdateTimer?: number;
+  private sensorUpdateTimer?: ReturnType<typeof setTimeout> | number;
   private lastStatsEmit = 0;
   private cachedStats?: SessionStats;
 
@@ -141,12 +134,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public updateMetrics(metrics: Partial<PerformanceMetrics>): void {
     if (metrics.ftp !== undefined) this.profile.ftp = metrics.ftp;
-    if (metrics.thresholdHr !== undefined)
-      this.profile.threshold_hr = metrics.thresholdHr;
+    if (metrics.thresholdHr !== undefined) this.profile.threshold_hr = metrics.thresholdHr;
     if (metrics.weightKg !== undefined) this.profile.weight = metrics.weightKg;
     if (metrics.thresholdPaceSecondsPerKm !== undefined)
-      this.profile.threshold_pace_seconds_per_km =
-        metrics.thresholdPaceSecondsPerKm;
+      this.profile.threshold_pace_seconds_per_km = metrics.thresholdPaceSecondsPerKm;
 
     // Re-calculate zones
     this.zones = this.calculateZones(this.profile);
@@ -343,15 +334,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       const distance = this.calculateDistance(previousLocation, location);
 
       // Filter GPS noise
-      if (
-        distance > MOVEMENT_THRESHOLDS.DISTANCE_MIN_DELTA_M &&
-        distance < 1000
-      ) {
+      if (distance > MOVEMENT_THRESHOLDS.DISTANCE_MIN_DELTA_M && distance < 1000) {
         this.totalDistance += distance;
 
         // Calculate speed
-        const timeDelta =
-          (location.timestamp - this.lastLocation.timestamp) / 1000; // seconds
+        const timeDelta = (location.timestamp - this.lastLocation.timestamp) / 1000; // seconds
         if (timeDelta > 0) {
           const speed = distance / timeDelta; // m/s
           this.maxSpeed = Math.max(this.maxSpeed, speed);
@@ -396,12 +383,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const currentReadings = this.getCurrentReadings();
     const hasEnoughData = this.hasEnoughDataForAdvancedMetrics();
 
-    return convertToSimplifiedMetrics(
-      this.metrics,
-      currentReadings,
-      hasEnoughData,
-      this.profile,
-    );
+    return convertToSimplifiedMetrics(this.metrics, currentReadings, hasEnoughData, this.profile);
   }
 
   /**
@@ -485,13 +467,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       maxCadence: this.maxCadence,
 
       // Zones
-      hrZones: [...this.hrZoneTimes] as [
-        number,
-        number,
-        number,
-        number,
-        number,
-      ],
+      hrZones: [...this.hrZoneTimes] as [number, number, number, number, number],
       powerZones: [...this.powerZoneTimes] as [
         number,
         number,
@@ -679,9 +655,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     if (recentPoints.length < 2) {
       // Fall back to using all recent points if not enough in last 3s
       if (recentReadings.length >= 2) {
-        return this.computeSpeedFromPoints(
-          recentReadings as LatLngBufferedReading[],
-        );
+        return this.computeSpeedFromPoints(recentReadings as LatLngBufferedReading[]);
       }
       return undefined;
     }
@@ -719,8 +693,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     // Calculate time span
-    const totalTime =
-      (points[points.length - 1].timestamp - points[0].timestamp) / 1000;
+    const totalTime = (points[points.length - 1].timestamp - points[0].timestamp) / 1000;
 
     // Avoid division by zero and require reasonable time span
     if (totalTime < 0.5) {
@@ -838,9 +811,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const pauseTime = this.pauseStartTime ? now - this.pauseStartTime : 0;
 
     this.metrics.elapsedTime = Math.floor(elapsed / 1000);
-    this.metrics.movingTime = Math.floor(
-      (elapsed - this.totalPauseTime - pauseTime) / 1000,
-    );
+    this.metrics.movingTime = Math.floor((elapsed - this.totalPauseTime - pauseTime) / 1000);
   }
 
   /**
@@ -857,8 +828,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // Calculate elevation gain per km
     if (this.totalDistance > 0) {
-      this.metrics.elevationGainPerKm =
-        (this.totalAscent / this.totalDistance) * 1000;
+      this.metrics.elevationGainPerKm = (this.totalAscent / this.totalDistance) * 1000;
     }
   }
 
@@ -886,16 +856,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const hrValues = this.buffer.getAll("heartrate");
 
     if (hrValues.length > 0) {
-      this.metrics.avgHeartRate = Math.round(
-        this.buffer.getAverage("heartrate"),
-      );
+      this.metrics.avgHeartRate = Math.round(this.buffer.getAverage("heartrate"));
       this.metrics.maxHeartRate = this.maxHeartRate;
 
       // Calculate % of threshold HR
       if (this.profile.threshold_hr) {
         const latestHr = this.buffer.getLatest("heartrate") || 0;
-        this.metrics.maxHrPctThreshold =
-          (latestHr / this.profile.threshold_hr) * 100;
+        this.metrics.maxHrPctThreshold = (latestHr / this.profile.threshold_hr) * 100;
       }
     }
   }
@@ -919,8 +886,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const tempValues = this.buffer.getAll("temperature");
 
     if (tempValues.length > 0) {
-      this.metrics.avgTemperature =
-        Math.round(this.buffer.getAverage("temperature") * 10) / 10;
+      this.metrics.avgTemperature = Math.round(this.buffer.getAverage("temperature") * 10) / 10;
       this.metrics.maxTemperature = Math.round(this.maxTemperature * 10) / 10;
     }
   }
@@ -992,16 +958,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     // TIER 1: Power + Heart Rate (most accurate)
     if (this.metrics.avgPower > 0 && this.metrics.avgHeartRate > 0) {
       // Power-based calculation with HR efficiency adjustment
-      const powerCalories =
-        (this.metrics.avgPower * this.metrics.movingTime * 0.239) / 1000;
+      const powerCalories = (this.metrics.avgPower * this.metrics.movingTime * 0.239) / 1000;
 
       // HR efficiency factor: adjust based on HR intensity
       const hrEfficiency = this.profile.threshold_hr
-        ? Math.min(
-            1.15,
-            0.85 +
-              (this.metrics.avgHeartRate / this.profile.threshold_hr) * 0.3,
-          )
+        ? Math.min(1.15, 0.85 + (this.metrics.avgHeartRate / this.profile.threshold_hr) * 0.3)
         : 1.0;
 
       this.metrics.calories = Math.round(powerCalories * hrEfficiency);
@@ -1038,8 +999,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       // Adjust MET based on HR intensity
       let intensityMultiplier = 1.0;
       if (this.profile.threshold_hr) {
-        const hrPercent =
-          (this.metrics.avgHeartRate / this.profile.threshold_hr) * 100;
+        const hrPercent = (this.metrics.avgHeartRate / this.profile.threshold_hr) * 100;
         if (hrPercent < 70)
           intensityMultiplier = 0.7; // Easy
         else if (hrPercent < 85)
@@ -1063,8 +1023,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       // Simplified HR-based formula (gender-neutral approximation)
       // Based on ACSM equation
       this.metrics.calories = Math.round(
-        ((0.6309 * this.metrics.avgHeartRate + 0.1988 * weight + 0.2017 * age) /
-          4.184) *
+        ((0.6309 * this.metrics.avgHeartRate + 0.1988 * weight + 0.2017 * age) / 4.184) *
           hours *
           60,
       );
@@ -1122,36 +1081,27 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const recentPower = this.buffer.getRecent("power", 30);
     if (recentPower.length > 0) {
       // Simplified NP calculation (true NP requires 30s rolling avg of power^4)
-      const avgRecent =
-        recentPower.reduce((sum, p) => sum + p, 0) / recentPower.length;
+      const avgRecent = recentPower.reduce((sum, p) => sum + p, 0) / recentPower.length;
       this.metrics.normalizedPowerEst = Math.round(avgRecent * 1.05); // Rough approximation
     }
 
     // Intensity Factor (IF = NP / FTP)
     if (this.profile.ftp && this.metrics.normalizedPowerEst > 0) {
-      this.metrics.intensityFactorEst =
-        this.metrics.normalizedPowerEst / this.profile.ftp;
+      this.metrics.intensityFactorEst = this.metrics.normalizedPowerEst / this.profile.ftp;
     }
 
     // Training Stress Score (TSS = (duration * NP * IF) / (FTP * 3600) * 100)
-    if (
-      this.profile.ftp &&
-      this.metrics.normalizedPowerEst > 0 &&
-      this.metrics.movingTime > 0
-    ) {
+    if (this.profile.ftp && this.metrics.normalizedPowerEst > 0 && this.metrics.movingTime > 0) {
       const hours = this.metrics.movingTime / 3600;
       this.metrics.trainingStressScoreEst = Math.round(
-        (hours *
-          this.metrics.normalizedPowerEst *
-          this.metrics.intensityFactorEst) /
+        (hours * this.metrics.normalizedPowerEst * this.metrics.intensityFactorEst) /
           (this.profile.ftp * 36),
       );
     }
 
     // Variability Index (VI = NP / Average Power)
     if (this.metrics.avgPower > 0 && this.metrics.normalizedPowerEst > 0) {
-      this.metrics.variabilityIndexEst =
-        this.metrics.normalizedPowerEst / this.metrics.avgPower;
+      this.metrics.variabilityIndexEst = this.metrics.normalizedPowerEst / this.metrics.avgPower;
     }
 
     // Efficiency Factor (EF = NP / Average HR)
@@ -1162,8 +1112,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // Power to HR ratio
     if (this.metrics.avgHeartRate > 0 && this.metrics.avgPower > 0) {
-      this.metrics.powerHeartRateRatio =
-        this.metrics.avgPower / this.metrics.avgHeartRate;
+      this.metrics.powerHeartRateRatio = this.metrics.avgPower / this.metrics.avgHeartRate;
     }
 
     // Decoupling (placeholder - requires more complex calculation)
@@ -1179,8 +1128,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     if (recentAltitudes.length < 2) return;
 
     // Smooth altitude with 10-second average
-    const smoothed =
-      recentAltitudes.reduce((sum, a) => sum + a, 0) / recentAltitudes.length;
+    const smoothed = recentAltitudes.reduce((sum, a) => sum + a, 0) / recentAltitudes.length;
 
     // Calculate change (with noise threshold)
     const previous = recentAltitudes[recentAltitudes.length - 2];
@@ -1247,10 +1195,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const avgPower = (powerWatts + this.lastPowerValue) / 2;
 
     // Calculate virtual distance using power-to-speed model
-    const distanceMeters = this.calculateVirtualDistanceFromPower(
-      avgPower,
-      deltaTime,
-    );
+    const distanceMeters = this.calculateVirtualDistanceFromPower(avgPower, deltaTime);
 
     // Add to total distance
     this.totalDistance += distanceMeters;
@@ -1268,10 +1213,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * @param durationSeconds - Duration in seconds
    * @returns Distance in meters
    */
-  private calculateVirtualDistanceFromPower(
-    powerWatts: number,
-    durationSeconds: number,
-  ): number {
+  private calculateVirtualDistanceFromPower(powerWatts: number, durationSeconds: number): number {
     // Physics constants for road cycling
     const CRR = 0.005; // Coefficient of rolling resistance (typical road tire)
     const CDA = 0.324; // Drag coefficient * frontal area (typical cycling position)
@@ -1322,10 +1264,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Calculate distance between two locations (Haversine formula)
    */
-  private calculateDistance(
-    loc1: LocationReading,
-    loc2: LocationReading,
-  ): number {
+  private calculateDistance(loc1: LocationReading, loc2: LocationReading): number {
     const R = 6371e3; // Earth radius in meters
     const φ1 = (loc1.latitude * Math.PI) / 180;
     const φ2 = (loc2.latitude * Math.PI) / 180;
@@ -1378,8 +1317,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       ftp: metrics?.ftp ?? undefined,
       threshold_hr: metrics?.thresholdHr ?? undefined,
       weight: metrics?.weightKg ?? undefined,
-      threshold_pace_seconds_per_km:
-        metrics?.thresholdPaceSecondsPerKm ?? undefined,
+      threshold_pace_seconds_per_km: metrics?.thresholdPaceSecondsPerKm ?? undefined,
       age: undefined, // Age calculation from DOB would go here if needed
     };
   }

@@ -35,10 +35,9 @@ export function calculateSystemicLoadMetrics(input: {
   dailySportLoads: DailySportLoadInput[];
   history?: HistoricalDailySportLoad[];
 }): SystemicLoadMetrics {
-  const systemicSeries = [
-    ...(input.history ?? []),
-    { sport_loads: input.dailySportLoads },
-  ].map((day) => sumSystemicLoad(day.sport_loads));
+  const systemicSeries = [...(input.history ?? []), { sport_loads: input.dailySportLoads }].map(
+    (day) => sumSystemicLoad(day.sport_loads),
+  );
   const dailySystemicLoad = systemicSeries.at(-1) ?? 0;
 
   return {

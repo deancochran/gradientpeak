@@ -14,6 +14,7 @@ import {
   getTopBlockingIssues,
   reducePreviewState,
   trainingPlanCalibrationConfigSchema,
+  trainingPlanFormSchema,
 } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -56,7 +57,6 @@ import {
   shouldIgnorePreviewResponse,
 } from "@/lib/training-plan-form/previewRequestState";
 import { mapTrainingPlanSaveError } from "@/lib/training-plan-form/saveErrorMapping";
-import { trainingPlanFormSchema } from "@/lib/training-plan-form/validation";
 import { trpc } from "@/lib/trpc";
 
 export type TrainingPlanComposerModeContract =
@@ -1040,7 +1040,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="training-plan-composer-screen">
       <Stack.Screen
         options={{
           title: isEditMode ? "Edit Training Plan" : "Create Training Plan",
@@ -1051,6 +1051,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
                 void form.handleSubmit(handleSave)();
               }}
               disabled={!canCreatePlan}
+              testID="training-plan-save-button"
               hitSlop={8}
               className={canCreatePlan ? "opacity-100" : "opacity-50"}
               accessibilityRole="button"

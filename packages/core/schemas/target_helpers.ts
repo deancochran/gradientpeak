@@ -53,19 +53,14 @@ export const Target = {
 /**
  * Get primary target from step
  */
-export function getPrimaryTarget(
-  step: PlanStepV2,
-): IntensityTargetV2 | undefined {
+export function getPrimaryTarget(step: PlanStepV2): IntensityTargetV2 | undefined {
   return step.targets?.[0];
 }
 
 /**
  * Check if step has a specific target type
  */
-export function hasTargetType(
-  step: PlanStepV2,
-  type: IntensityTargetV2["type"],
-): boolean {
+export function hasTargetType(step: PlanStepV2, type: IntensityTargetV2["type"]): boolean {
   return step.targets?.some((t) => t.type === type) ?? false;
 }
 
@@ -86,10 +81,7 @@ export function getTargetByType(
  * NOTE: This is evaluated at runtime during recording.
  * Tolerances adapt to actual performance, handling GPS drift, pace changes, and pauses.
  */
-export function isInTargetRange(
-  value: number,
-  target: IntensityTargetV2,
-): boolean {
+export function isInTargetRange(value: number, target: IntensityTargetV2): boolean {
   // Default tolerance: ±5% for percentage-based, ±5 absolute for others
   let tolerance: number;
 
@@ -116,10 +108,7 @@ export function isInTargetRange(
       break;
   }
 
-  return (
-    value >= target.intensity - tolerance &&
-    value <= target.intensity + tolerance
-  );
+  return value >= target.intensity - tolerance && value <= target.intensity + tolerance;
 }
 
 /**
@@ -278,9 +267,7 @@ export function convertTargetToAbsolute(
     case "%ThresholdHR":
       if (profile.threshold_hr) {
         return {
-          intensity: Math.round(
-            (target.intensity / 100) * profile.threshold_hr,
-          ),
+          intensity: Math.round((target.intensity / 100) * profile.threshold_hr),
           unit: "bpm",
           label: "Heart Rate",
         };

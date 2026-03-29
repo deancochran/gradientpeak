@@ -11,28 +11,23 @@ describe("Tabs web", () => {
     renderWeb(
       <Tabs defaultValue={fixture.values.profile} testId={fixture.rootTestId}>
         <TabsList testId={fixture.listTestId}>
-          <TabsTrigger
-            testId={fixture.triggers.profile.testId}
-            value={fixture.values.profile}
-          >
+          <TabsTrigger testId={fixture.triggers.profile.testId} value={fixture.values.profile}>
             {fixture.triggers.profile.label}
           </TabsTrigger>
         </TabsList>
-        <TabsContent
-          testId={fixture.contentTestIds.profile}
-          value={fixture.values.profile}
-        >
+        <TabsContent testId={fixture.contentTestIds.profile} value={fixture.values.profile}>
           {fixture.content.profile}
         </TabsContent>
       </Tabs>,
     );
 
     expect(screen.getByTestId(fixture.rootTestId)).toBeInTheDocument();
-    expect(
-      screen.getByRole("tab", { name: fixture.triggers.profile.label }),
-    ).toHaveAttribute("data-testid", fixture.triggers.profile.testId);
-    expect(
-      screen.getByTestId(fixture.contentTestIds.profile),
-    ).toHaveTextContent(fixture.content.profile);
+    expect(screen.getByRole("tab", { name: fixture.triggers.profile.label })).toHaveAttribute(
+      "data-testid",
+      fixture.triggers.profile.testId,
+    );
+    expect(screen.getByTestId(fixture.contentTestIds.profile)).toHaveTextContent(
+      fixture.content.profile,
+    );
   });
 });

@@ -49,19 +49,14 @@ function getTargetSortKey(target: GoalTargetV2): string {
         String(Math.round(target.test_duration_s)),
       ].join("|");
     case "hr_threshold":
-      return [
-        target.target_type,
-        String(Math.round(target.target_lthr_bpm)),
-      ].join("|");
+      return [target.target_type, String(Math.round(target.target_lthr_bpm))].join("|");
   }
 }
 
 /**
  * Aggregates deterministic per-target satisfaction into a per-goal score.
  */
-export function scoreGoalAssessment(
-  input: GoalAssessmentInput,
-): GoalAssessmentResult {
+export function scoreGoalAssessment(input: GoalAssessmentInput): GoalAssessmentResult {
   const orderedTargets = [...input.targets].sort((a, b) => {
     const aKey = getTargetSortKey(a);
     const bKey = getTargetSortKey(b);
@@ -85,9 +80,7 @@ export function scoreGoalAssessment(
     };
   }
 
-  const weights = orderedTargets.map((target) =>
-    normalizeTargetWeight(target.weight),
-  );
+  const weights = orderedTargets.map((target) => normalizeTargetWeight(target.weight));
   const weightedScore = weightedMean(
     targetScores.map((targetScore) => targetScore.score_0_100 / 100),
     weights,

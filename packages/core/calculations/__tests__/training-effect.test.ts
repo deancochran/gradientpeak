@@ -6,18 +6,14 @@ describe("Training Effect", () => {
     const hrStream = Array(60).fill(100);
     const timestamps = Array.from({ length: 60 }, (_, i) => i);
     const lthr = 170;
-    expect(calculateTrainingEffect(hrStream, timestamps, lthr)).toBe(
-      "recovery",
-    );
+    expect(calculateTrainingEffect(hrStream, timestamps, lthr)).toBe("recovery");
   });
 
   it("should return threshold for HR near LTHR", () => {
     const hrStream = Array(60).fill(165); // 97% of 170
     const timestamps = Array.from({ length: 60 }, (_, i) => i);
     const lthr = 170;
-    expect(calculateTrainingEffect(hrStream, timestamps, lthr)).toBe(
-      "threshold",
-    );
+    expect(calculateTrainingEffect(hrStream, timestamps, lthr)).toBe("threshold");
   });
 
   it("should return vo2max for HR above LTHR", () => {

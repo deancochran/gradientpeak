@@ -60,9 +60,7 @@ export function TrendCard({
           {Icon && <Icon size={20} className={iconColor} />}
           <Text className="text-sm font-semibold text-foreground">{title}</Text>
         </View>
-        {changeDirection !== "neutral" && (
-          <Text className="text-lg">{getDirectionIcon()}</Text>
-        )}
+        {changeDirection !== "neutral" && <Text className="text-lg">{getDirectionIcon()}</Text>}
       </View>
 
       {/* Micro Chart or Visual */}
@@ -70,28 +68,18 @@ export function TrendCard({
 
       {/* Current Value */}
       <View className="mb-2">
-        <Text className="text-3xl font-bold text-foreground">
-          {currentValue}
-        </Text>
-        {subtitle && (
-          <Text className="text-xs text-muted-foreground mt-0.5">
-            {subtitle}
-          </Text>
-        )}
+        <Text className="text-3xl font-bold text-foreground">{currentValue}</Text>
+        {subtitle && <Text className="text-xs text-muted-foreground mt-0.5">{subtitle}</Text>}
       </View>
 
       {/* Change Value */}
       {changeValue && (
-        <Text className={`text-sm font-medium ${getChangeColor()}`}>
-          {changeValue}
-        </Text>
+        <Text className={`text-sm font-medium ${getChangeColor()}`}>{changeValue}</Text>
       )}
 
       {/* Tap Affordance */}
       <View className="mt-3 pt-3 border-t border-border">
-        <Text className="text-xs text-muted-foreground text-center">
-          Tap for details →
-        </Text>
+        <Text className="text-xs text-muted-foreground text-center">Tap for details →</Text>
       </View>
     </TouchableOpacity>
   );

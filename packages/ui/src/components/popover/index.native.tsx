@@ -5,14 +5,13 @@ import { FadeIn, FadeOut } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 
 import { cn } from "../../lib/cn";
-import { TextClassContext } from "../text/context";
 import { NativeOnlyAnimatedView } from "../native-only-animated-view/index.native";
+import { TextClassContext } from "../text/context";
 import { DEFAULT_POPOVER_SIDE_OFFSET } from "./shared";
 
 const Popover = PopoverPrimitive.Root;
 const PopoverTrigger = PopoverPrimitive.Trigger;
-const FullWindowOverlay =
-  Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
+const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
 
 function PopoverContent({
   className,
@@ -27,13 +26,8 @@ function PopoverContent({
   return (
     <PopoverPrimitive.Portal hostName={portalHost}>
       <FullWindowOverlay>
-        <PopoverPrimitive.Overlay
-          style={Platform.select({ native: StyleSheet.absoluteFill })}
-        >
-          <NativeOnlyAnimatedView
-            entering={FadeIn.duration(200)}
-            exiting={FadeOut}
-          >
+        <PopoverPrimitive.Overlay style={Platform.select({ native: StyleSheet.absoluteFill })}>
+          <NativeOnlyAnimatedView entering={FadeIn.duration(200)} exiting={FadeOut}>
             <TextClassContext.Provider value="text-popover-foreground">
               <PopoverPrimitive.Content
                 align={align}

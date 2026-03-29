@@ -1,15 +1,15 @@
 import {
-  feasibilityAssessmentSchema,
   type EventDemand,
   type FeasibilityAssessment,
+  feasibilityAssessmentSchema,
   type NormalizedPlanningGoal,
   type TrajectoryMode,
 } from "../../../schemas/planning";
 import type { AthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
 import { getSportModelConfig } from "../sports";
 import {
-  resolveConstraintProfile,
   type ResolvedConstraintProfile,
+  resolveConstraintProfile,
 } from "./resolveConstraintProfile";
 
 export interface AssessFeasibilityInput {
@@ -35,16 +35,14 @@ function assessAvailability(
   demand: EventDemand,
   preferenceProfile: AthletePreferenceProfile,
 ): boolean {
-  const maxDurationMinutes =
-    preferenceProfile.dose_limits.max_weekly_duration_minutes;
+  const maxDurationMinutes = preferenceProfile.dose_limits.max_weekly_duration_minutes;
 
   if (maxDurationMinutes === undefined) {
     return true;
   }
 
   const maxSupportedWeeklyLoad =
-    (maxDurationMinutes / 60) *
-    getSportModelConfig(demand.sport).weekly_tss_per_hour;
+    (maxDurationMinutes / 60) * getSportModelConfig(demand.sport).weekly_tss_per_hour;
 
   return maxSupportedWeeklyLoad >= demand.required_weekly_load_floor;
 }
@@ -63,13 +61,9 @@ function hasRecoveryConflict(
     }
 
     const deltaDays =
-      (Date.parse(current.target_date) - Date.parse(previous.target_date)) /
-      86400000;
+      (Date.parse(current.target_date) - Date.parse(previous.target_date)) / 86400000;
 
-    if (
-      deltaDays < recoveryDays + taperDays &&
-      previous.priority >= current.priority
-    ) {
+    if (deltaDays < recoveryDays + taperDays && previous.priority >= current.priority) {
       return true;
     }
   }
@@ -85,14 +79,10 @@ export function resolveTrajectoryMode(
     return "capacity_bounded";
   }
 
-  return feasibility.status === "feasible"
-    ? "target_seeking"
-    : "capacity_bounded";
+  return feasibility.status === "feasible" ? "target_seeking" : "capacity_bounded";
 }
 
-export function assessFeasibility(
-  input: AssessFeasibilityInput,
-): FeasibilityAssessmentResult {
+export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAssessmentResult {
   const primaryDemand = [...input.resolvedDemands].sort(
     (left, right) => right.required_peak_ctl - left.required_peak_ctl,
   )[0];
@@ -116,9 +106,7 @@ export function assessFeasibility(
       limiting_constraints: input.unsupportedGoalIds,
       required_peak_ctl: primaryDemand.required_peak_ctl,
       achievable_peak_ctl: input.currentCtl,
-      readiness_gap_ctl: round(
-        primaryDemand.required_peak_ctl - input.currentCtl,
-      ),
+      readiness_gap_ctl: round(primaryDemand.required_peak_ctl - input.currentCtl),
       rationale_codes: ["unsupported_goal_mapping_detected"],
     });
 
@@ -136,11 +124,9 @@ export function assessFeasibility(
       sport: primaryDemand.sport,
     });
   const weeksToPeak = Math.max(input.weeksToPeak, 1);
-  const requiredCtlRamp =
-    (primaryDemand.required_peak_ctl - input.currentCtl) / weeksToPeak;
+  const requiredCtlRamp = (primaryDemand.required_peak_ctl - input.currentCtl) / weeksToPeak;
   const achievablePeakCtl = round(
-    input.currentCtl +
-      constraintProfile.effective_max_ctl_ramp_per_week * weeksToPeak,
+    input.currentCtl + constraintProfile.effective_max_ctl_ramp_per_week * weeksToPeak,
   );
   let status: FeasibilityAssessment["status"] = "feasible";
   const limitingConstraints: string[] = [];
@@ -153,9 +139,7 @@ export function assessFeasibility(
   } else if (!assessAvailability(primaryDemand, input.preferenceProfile)) {
     status = "infeasible_availability";
     limitingConstraints.push("max_weekly_duration_minutes");
-    rationaleCodes.push(
-      "availability_constrained_weekly_load_floor_not_supported",
-    );
+    rationaleCodes.push("availability_constrained_weekly_load_floor_not_supported");
   } else if (
     hasRecoveryConflict(
       input.goals,
@@ -168,8 +152,7 @@ export function assessFeasibility(
     rationaleCodes.push("minimum_taper_plus_recovery_window_conflict");
   } else if (
     input.goals.some(
-      (goal, index) =>
-        index > 0 && goal.target_date === input.goals[index - 1]?.target_date,
+      (goal, index) => index > 0 && goal.target_date === input.goals[index - 1]?.target_date,
     )
   ) {
     status = "infeasible_multigoal";
@@ -182,12 +165,8 @@ export function assessFeasibility(
     limiting_constraints: limitingConstraints,
     required_peak_ctl: primaryDemand.required_peak_ctl,
     achievable_peak_ctl:
-      status === "feasible"
-        ? primaryDemand.required_peak_ctl
-        : achievablePeakCtl,
-    readiness_gap_ctl: round(
-      Math.max(0, primaryDemand.required_peak_ctl - achievablePeakCtl),
-    ),
+      status === "feasible" ? primaryDemand.required_peak_ctl : achievablePeakCtl,
+    readiness_gap_ctl: round(Math.max(0, primaryDemand.required_peak_ctl - achievablePeakCtl)),
     rationale_codes: rationaleCodes,
   });
 

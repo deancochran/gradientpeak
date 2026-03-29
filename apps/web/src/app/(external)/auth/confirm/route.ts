@@ -1,14 +1,10 @@
-import { createServerCaller } from "@/lib/trpc/server";
 import { type NextRequest, NextResponse } from "next/server";
+import { createServerCaller } from "@/lib/trpc/server";
 
 const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://sign-in";
 
 const getPublicWebAppUrl = (request: NextRequest) => {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.APP_URL ??
-    new URL(request.url).origin
-  );
+  return process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? new URL(request.url).origin;
 };
 
 const extractSchemePrefix = (uri: string) => {
@@ -17,9 +13,7 @@ const extractSchemePrefix = (uri: string) => {
 };
 
 const getAllowedDeepLinkPrefixes = () => {
-  const configuredPrefixes = process.env.AUTH_ALLOWED_DEEP_LINK_PREFIXES?.split(
-    ",",
-  )
+  const configuredPrefixes = process.env.AUTH_ALLOWED_DEEP_LINK_PREFIXES?.split(",")
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
 
@@ -39,12 +33,7 @@ const getAllowedDeepLinkPrefixes = () => {
     .filter((value): value is string => Boolean(value));
 
   return [
-    ...new Set([
-      "gradientpeak://",
-      "gradientpeak-dev://",
-      "gradientpeak-prev://",
-      ...envPrefixes,
-    ]),
+    ...new Set(["gradientpeak://", "gradientpeak-dev://", "gradientpeak-prev://", ...envPrefixes]),
   ];
 };
 
@@ -67,10 +56,7 @@ const getSafeRedirectTarget = (nextParam: string | null) => {
   return getDefaultDeepLinkTarget();
 };
 
-const getSafeFallbackTarget = (
-  request: NextRequest,
-  fallbackParam: string | null,
-) => {
+const getSafeFallbackTarget = (request: NextRequest, fallbackParam: string | null) => {
   const defaultFallback = getDefaultWebFallback(request);
 
   if (!fallbackParam) return defaultFallback;
@@ -108,8 +94,7 @@ export async function GET(request: NextRequest) {
       });
     } catch (error: unknown) {
       // redirect the user to an error page with some instructions
-      const message =
-        error instanceof Error ? error.message : "Verification failed";
+      const message = error instanceof Error ? error.message : "Verification failed";
       const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
       errorUrl.searchParams.set("error", message);
       return NextResponse.redirect(errorUrl);

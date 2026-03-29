@@ -1,9 +1,5 @@
-import { createQueryClient } from "@repo/trpc/client";
-import {
-  focusManager,
-  onlineManager,
-  QueryClientProvider,
-} from "@tanstack/react-query";
+import { createQueryClient } from "@repo/trpc/react";
+import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import * as Network from "expo-network";
 import * as React from "react";
 import { Alert, AppState, Platform } from "react-native";

@@ -1,0 +1,8 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- tapOn:
+    id: "messages-header-button"
+- extendedWaitUntil:
+    visible:
+      id: "messages-screen"
+    timeout: 10000

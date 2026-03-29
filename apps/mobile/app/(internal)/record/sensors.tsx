@@ -1,4 +1,5 @@
 import { Button } from "@repo/ui/components/button";
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Battery, Bluetooth, RefreshCw, Zap } from "lucide-react-native";
@@ -377,18 +378,19 @@ function SensorsScreen() {
           </Text>
 
           {!bluetoothGranted ? (
-            <View className="py-12 items-center">
-              <Icon as={Bluetooth} size={40} className="text-muted-foreground/40 mb-3" />
-              <Text className="text-sm text-muted-foreground">Grant permission to scan</Text>
-            </View>
+            <EmptyStateCard
+              icon={Bluetooth}
+              title="Grant permission to scan"
+              description="Enable Bluetooth permissions to discover nearby sensors."
+              iconSize={40}
+            />
           ) : availableDevices.length === 0 && !isScanning ? (
-            <View className="py-12 items-center">
-              <Icon as={Bluetooth} size={40} className="text-muted-foreground/40 mb-3" />
-              <Text className="text-sm text-muted-foreground mb-1">No devices found</Text>
-              <Text className="text-xs text-muted-foreground/60">
-                {isScanning ? "Searching..." : "Tap scan to search"}
-              </Text>
-            </View>
+            <EmptyStateCard
+              icon={Bluetooth}
+              title="No devices found"
+              description={isScanning ? "Searching..." : "Tap scan to search"}
+              iconSize={40}
+            />
           ) : (
             availableDevices.map((device) => {
               const isConnecting = connectingDevices.has(device.id);

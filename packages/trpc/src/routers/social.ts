@@ -50,8 +50,7 @@ async function checkPlanAccess(
   planType: "training_plan" | "activity_plan",
   userId: string,
 ): Promise<boolean> {
-  const table =
-    planType === "training_plan" ? "training_plans" : "activity_plans";
+  const table = planType === "training_plan" ? "training_plans" : "activity_plans";
 
   const { data: plan, error } = await supabase
     .from(table)
@@ -91,9 +90,7 @@ export const socialRouter = createTRPCRouter({
       }
 
       // Check if target profile is public
-      const { data: targetProfile, error: profileError } = await (
-        ctx.supabase as any
-      )
+      const { data: targetProfile, error: profileError } = await (ctx.supabase as any)
         .from("profiles")
         .select("is_public")
         .eq("id", input.target_user_id)
@@ -160,19 +157,14 @@ export const socialRouter = createTRPCRouter({
 
         // Only create notification if one doesn't exist
         if (!existingNotif) {
-          const { error: notifError } = await (ctx.supabase as any)
-            .from("notifications")
-            .insert({
-              user_id: input.target_user_id,
-              actor_id: ctx.session.user.id,
-              type: "follow_request",
-            });
+          const { error: notifError } = await (ctx.supabase as any).from("notifications").insert({
+            user_id: input.target_user_id,
+            actor_id: ctx.session.user.id,
+            type: "follow_request",
+          });
 
           if (notifError) {
-            console.error(
-              "Failed to create follow request notification:",
-              notifError,
-            );
+            console.error("Failed to create follow request notification:", notifError);
           }
         }
       }
@@ -221,10 +213,7 @@ export const socialRouter = createTRPCRouter({
           .eq("type", "follow_request");
 
         if (deleteNotifError) {
-          console.error(
-            "Failed to delete orphan notification:",
-            deleteNotifError,
-          );
+          console.error("Failed to delete orphan notification:", deleteNotifError);
         }
 
         return {
@@ -270,19 +259,14 @@ export const socialRouter = createTRPCRouter({
         .eq("type", "follow_request");
 
       // Create notification for the follower that their request was accepted
-      const { error: notifError } = await (ctx.supabase as any)
-        .from("notifications")
-        .insert({
-          user_id: input.follower_id,
-          actor_id: ctx.session.user.id,
-          type: "new_follower",
-        });
+      const { error: notifError } = await (ctx.supabase as any).from("notifications").insert({
+        user_id: input.follower_id,
+        actor_id: ctx.session.user.id,
+        type: "new_follower",
+      });
 
       if (notifError) {
-        console.error(
-          "Failed to create follow accepted notification:",
-          notifError,
-        );
+        console.error("Failed to create follow accepted notification:", notifError);
       }
 
       return { success: true };
@@ -310,10 +294,7 @@ export const socialRouter = createTRPCRouter({
           .eq("type", "follow_request");
 
         if (deleteNotifError) {
-          console.error(
-            "Failed to delete orphan notification:",
-            deleteNotifError,
-          );
+          console.error("Failed to delete orphan notification:", deleteNotifError);
         }
 
         return {
@@ -365,12 +346,7 @@ export const socialRouter = createTRPCRouter({
     .input(
       z.object({
         entity_id: z.string().uuid(),
-        entity_type: z.enum([
-          "activity",
-          "training_plan",
-          "activity_plan",
-          "route",
-        ]),
+        entity_type: z.enum(["activity", "training_plan", "activity_plan", "route"]),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -378,11 +354,7 @@ export const socialRouter = createTRPCRouter({
 
       // For activities, check if user has access to view the activity
       if (input.entity_type === "activity") {
-        const hasAccess = await checkActivityAccess(
-          ctx.supabase,
-          input.entity_id,
-          userId,
-        );
+        const hasAccess = await checkActivityAccess(ctx.supabase, input.entity_id, userId);
 
         if (!hasAccess) {
           throw new TRPCError({
@@ -393,10 +365,7 @@ export const socialRouter = createTRPCRouter({
       }
 
       // For training_plan and activity_plan, check access
-      if (
-        input.entity_type === "training_plan" ||
-        input.entity_type === "activity_plan"
-      ) {
+      if (input.entity_type === "training_plan" || input.entity_type === "activity_plan") {
         const hasAccess = await checkPlanAccess(
           ctx.supabase,
           input.entity_id,
@@ -413,9 +382,7 @@ export const socialRouter = createTRPCRouter({
       }
 
       // Check if already liked
-      const { data: existingLike, error: checkError } = await (
-        ctx.supabase as any
-      )
+      const { data: existingLike, error: checkError } = await (ctx.supabase as any)
         .from("likes")
         .select("id")
         .eq("profile_id", ctx.session.user.id)
@@ -446,13 +413,11 @@ export const socialRouter = createTRPCRouter({
         return { liked: false };
       } else {
         // Like
-        const { error: insertError } = await (ctx.supabase as any)
-          .from("likes")
-          .insert({
-            profile_id: ctx.session.user.id,
-            entity_id: input.entity_id,
-            entity_type: input.entity_type,
-          });
+        const { error: insertError } = await (ctx.supabase as any).from("likes").insert({
+          profile_id: ctx.session.user.id,
+          entity_id: input.entity_id,
+          entity_type: input.entity_type,
+        });
 
         if (insertError) {
           throw new TRPCError({
@@ -503,9 +468,7 @@ export const socialRouter = createTRPCRouter({
 
         // Extract the follower profiles from the joined data
         const followers =
-          follows
-            ?.map((f: any) => f.follower)
-            ?.filter((p: any) => p !== null) ?? [];
+          follows?.map((f: any) => f.follower)?.filter((p: any) => p !== null) ?? [];
 
         // Get total count for pagination
         const { count } = await (ctx.supabase as any)
@@ -599,9 +562,7 @@ export const socialRouter = createTRPCRouter({
 
         // Extract the following profiles from the joined data
         const following =
-          follows
-            ?.map((f: any) => f.following)
-            ?.filter((p: any) => p !== null) ?? [];
+          follows?.map((f: any) => f.following)?.filter((p: any) => p !== null) ?? [];
 
         // Get total count for pagination
         const { count } = await (ctx.supabase as any)
@@ -731,12 +692,7 @@ export const socialRouter = createTRPCRouter({
     .input(
       z.object({
         entity_id: z.string().uuid(),
-        entity_type: z.enum([
-          "activity",
-          "training_plan",
-          "activity_plan",
-          "route",
-        ]),
+        entity_type: z.enum(["activity", "training_plan", "activity_plan", "route"]),
         content: z.string().min(1).max(1000),
       }),
     )
@@ -745,11 +701,7 @@ export const socialRouter = createTRPCRouter({
 
       // For activities, check if user has access to view the activity
       if (input.entity_type === "activity") {
-        const hasAccess = await checkActivityAccess(
-          ctx.supabase,
-          input.entity_id,
-          userId,
-        );
+        const hasAccess = await checkActivityAccess(ctx.supabase, input.entity_id, userId);
 
         if (!hasAccess) {
           throw new TRPCError({
@@ -760,10 +712,7 @@ export const socialRouter = createTRPCRouter({
       }
 
       // For training_plan and activity_plan, check access
-      if (
-        input.entity_type === "training_plan" ||
-        input.entity_type === "activity_plan"
-      ) {
+      if (input.entity_type === "training_plan" || input.entity_type === "activity_plan") {
         const hasAccess = await checkPlanAccess(
           ctx.supabase,
           input.entity_id,
@@ -807,9 +756,7 @@ export const socialRouter = createTRPCRouter({
     .input(z.object({ comment_id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       // First check if the comment exists and belongs to the user
-      const { data: existingComment, error: fetchError } = await (
-        ctx.supabase as any
-      )
+      const { data: existingComment, error: fetchError } = await (ctx.supabase as any)
         .from("comments")
         .select("profile_id")
         .eq("id", input.comment_id)
@@ -852,12 +799,7 @@ export const socialRouter = createTRPCRouter({
     .input(
       z.object({
         entity_id: z.string().uuid(),
-        entity_type: z.enum([
-          "activity",
-          "training_plan",
-          "activity_plan",
-          "route",
-        ]),
+        entity_type: z.enum(["activity", "training_plan", "activity_plan", "route"]),
         limit: z.number().min(1).max(100).default(20),
         offset: z.number().min(0).default(0),
       }),
@@ -867,26 +809,18 @@ export const socialRouter = createTRPCRouter({
 
       // For activities, check if user has access to view the activity
       if (input.entity_type === "activity") {
-        const hasAccess = await checkActivityAccess(
-          ctx.supabase,
-          input.entity_id,
-          userId,
-        );
+        const hasAccess = await checkActivityAccess(ctx.supabase, input.entity_id, userId);
 
         if (!hasAccess) {
           throw new TRPCError({
             code: "FORBIDDEN",
-            message:
-              "You don't have permission to view comments on this activity",
+            message: "You don't have permission to view comments on this activity",
           });
         }
       }
 
       // For training_plan and activity_plan, check access
-      if (
-        input.entity_type === "training_plan" ||
-        input.entity_type === "activity_plan"
-      ) {
+      if (input.entity_type === "training_plan" || input.entity_type === "activity_plan") {
         const hasAccess = await checkPlanAccess(
           ctx.supabase,
           input.entity_id,

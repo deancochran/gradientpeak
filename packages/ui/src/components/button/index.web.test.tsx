@@ -6,9 +6,7 @@ import { Button } from "./index.web";
 
 describe("Button web", () => {
   it("maps normalized test props onto the DOM button", () => {
-    renderWeb(
-      <Button {...buttonFixtures.save}>{buttonFixtures.save.children}</Button>,
-    );
+    renderWeb(<Button {...buttonFixtures.save}>{buttonFixtures.save.children}</Button>);
 
     const button = screen.getByRole("button", {
       name: buttonFixtures.save.accessibilityLabel,

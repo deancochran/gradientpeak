@@ -9,8 +9,8 @@
  * - Preparing metrics by merging user input with baseline
  */
 
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@repo/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // These specific calculation modules are new and might not be in the main exports yet
 // Import them directly from their source files until they're properly exported
@@ -27,9 +27,7 @@ const derivePowerCurveFromFTP = (ftp: number): DerivedEffort[] => {
   }));
 };
 
-const deriveSpeedCurveFromThresholdPace = (
-  thresholdPaceSecondsPerKm: number,
-): DerivedEffort[] => {
+const deriveSpeedCurveFromThresholdPace = (thresholdPaceSecondsPerKm: number): DerivedEffort[] => {
   const durations = [5, 10, 30, 60, 180, 300, 600, 1200, 1800, 3600];
   const thresholdSpeedMps = 1000 / thresholdPaceSecondsPerKm;
 
@@ -53,9 +51,7 @@ const deriveSpeedCurveFromThresholdPace = (
   });
 };
 
-const deriveSwimPaceCurveFromCSS = (
-  cssSecondsPerHundredMeters: number,
-): DerivedEffort[] => {
+const deriveSwimPaceCurveFromCSS = (cssSecondsPerHundredMeters: number): DerivedEffort[] => {
   const durations = [10, 20, 30, 60, 120, 180, 300, 600, 900, 1800];
   const cssSpeedMps = 100 / cssSecondsPerHundredMeters;
 

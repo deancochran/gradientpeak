@@ -45,6 +45,36 @@ describe("server-config", () => {
     });
   });
 
+  it("maps the local 3100 API override to local Supabase", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+    const result = await module.setServerUrlOverride("http://127.0.0.1:3100/");
+
+    expect(result.changed).toBe(true);
+
+    expect(module.getServerConfig()).toMatchObject({
+      apiUrl: "http://127.0.0.1:3100",
+      supabaseUrl: "http://127.0.0.1:54321",
+      overrideUrl: "http://127.0.0.1:3100",
+    });
+  });
+
+  it("keeps the hosted Supabase URL for non-local API overrides", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+    const result = await module.setServerUrlOverride("https://api.custom.example.com");
+
+    expect(result.changed).toBe(true);
+
+    expect(module.getServerConfig()).toMatchObject({
+      apiUrl: "https://api.custom.example.com",
+      supabaseUrl: "https://db.gradientpeak.app",
+      overrideUrl: "https://api.custom.example.com",
+    });
+  });
+
   it("rejects malformed URLs", async () => {
     const { module } = await loadServerConfigModule();
 

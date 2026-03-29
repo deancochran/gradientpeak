@@ -20,23 +20,11 @@ export const controlTypeEnum = z.enum(["grade", "resistance", "powerTarget"]);
 
 export const controlUnitEnum = z.enum(["%", "watts", "rpm", "kg", "reps"]);
 
-export const durationUnitEnum = z.enum([
-  "seconds",
-  "minutes",
-  "meters",
-  "km",
-  "reps",
-]);
+export const durationUnitEnum = z.enum(["seconds", "minutes", "meters", "km", "reps"]);
 
 export const durationTypeEnum = z.enum(["time", "distance", "repetitions"]);
 
-export const activityCategoryEnum = z.enum([
-  "run",
-  "bike",
-  "swim",
-  "strength",
-  "other",
-]);
+export const activityCategoryEnum = z.enum(["run", "bike", "swim", "strength", "other"]);
 
 // ==============================
 // CONTROL
@@ -200,10 +188,7 @@ export const stepSchema = z.object({
     .array(intensityTargetSchema)
     .max(2, { message: "Cannot have more than 2 targets per step" })
     .optional(),
-  notes: z
-    .string()
-    .max(1000, { message: "Notes cannot exceed 1000 characters" })
-    .optional(),
+  notes: z.string().max(1000, { message: "Notes cannot exceed 1000 characters" }).optional(),
 });
 
 export type Step = z.infer<typeof stepSchema>;
@@ -235,10 +220,7 @@ export type Repetition = z.infer<typeof repetitionSchema>;
 // ==============================
 // STEP OR REPETITION UNION
 // ==============================
-export const stepOrRepetitionSchema = z.discriminatedUnion("type", [
-  stepSchema,
-  repetitionSchema,
-]);
+export const stepOrRepetitionSchema = z.discriminatedUnion("type", [stepSchema, repetitionSchema]);
 
 export type StepOrRepetition = z.infer<typeof stepOrRepetitionSchema>;
 
@@ -259,8 +241,7 @@ export const activityPlanStructureSchema = z.object({
         return totalSteps <= 200;
       },
       {
-        message:
-          "Total expanded steps cannot exceed 200 (including repetitions)",
+        message: "Total expanded steps cannot exceed 200 (including repetitions)",
       },
     )
     .optional(),
@@ -285,10 +266,7 @@ export const activityPlanSchema = z
     activity_category: activityCategoryEnum,
     structure: activityPlanStructureSchema,
     route_id: z.string().uuid().optional(),
-    notes: z
-      .string()
-      .max(1000, { message: "Notes cannot exceed 1000 characters" })
-      .optional(),
+    notes: z.string().max(1000, { message: "Notes cannot exceed 1000 characters" }).optional(),
   })
   .strict()
   .refine(
@@ -427,15 +405,9 @@ export function getIntensityColor(intensity: number, type?: string): string {
 /**
  * Check if current value is within target range
  */
-export function isValueInTargetRange(
-  current: number,
-  target: IntensityTargetV2,
-): boolean {
+export function isValueInTargetRange(current: number, target: IntensityTargetV2): boolean {
   const tolerance = target.intensity * 0.05;
-  return (
-    current >= target.intensity - tolerance &&
-    current <= target.intensity + tolerance
-  );
+  return current >= target.intensity - tolerance && current <= target.intensity + tolerance;
 }
 
 /**
@@ -517,10 +489,7 @@ export function formatMetricValue(target: IntensityTargetV2): string {
 /**
  * Get guidance text based on current vs target
  */
-export function getTargetGuidanceText(
-  target: IntensityTargetV2,
-  current?: number,
-): string {
+export function getTargetGuidanceText(target: IntensityTargetV2, current?: number): string {
   if (!current) return "Waiting for data...";
 
   const inRange = isValueInTargetRange(current, target);
@@ -575,9 +544,7 @@ export function convertTargetToAbsolute(
     case "%ThresholdHR":
       if (profile.threshold_hr && target.intensity) {
         return {
-          intensity: Math.round(
-            (target.intensity / 100) * profile.threshold_hr,
-          ),
+          intensity: Math.round((target.intensity / 100) * profile.threshold_hr),
           unit: "bpm",
           label: "Heart Rate",
         };
@@ -617,10 +584,7 @@ export function canHaveRoute(activityType: string): boolean {
 /**
  * Build activity cards for carousel display
  */
-export function buildActivityCards(
-  activity: ActivityPlan,
-  steps: FlattenedStep[],
-): ActivityCard[] {
+export function buildActivityCards(activity: ActivityPlan, steps: FlattenedStep[]): ActivityCard[] {
   return [
     { id: "overview", type: "overview", activity },
     ...steps.map((step, index) => ({
@@ -636,10 +600,7 @@ export function buildActivityCards(
 /**
  * Calculate progress percentage
  */
-export function calculateProgress(
-  currentIndex: number,
-  totalCards: number,
-): number {
+export function calculateProgress(currentIndex: number, totalCards: number): number {
   if (totalCards <= 1) return 0;
   return (currentIndex / (totalCards - 1)) * 100;
 }

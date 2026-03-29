@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getPlanTabProjectionService } from "../training-plans.base";
+import { getPlanTabProjectionService } from "../planning/training-plans/base";
 
 type QueryResult = {
   data: any;

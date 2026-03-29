@@ -7,6 +7,9 @@ import { cookies, headers } from "next/headers";
 export const GET = handler;
 export const POST = handler;
 
+const serverSupabaseUrl =
+  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+
 async function handler(request: Request) {
   const headersList = await headers();
   const cookieStore = await cookies();
@@ -17,7 +20,7 @@ async function handler(request: Request) {
   // 2. tRPC protectedProcedure middleware validates authentication
   // 3. All queries explicitly filter by ctx.session.user.id
   const supabase = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serverSupabaseUrl!,
     process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
     {
       cookies: {

@@ -60,9 +60,7 @@ function Accordion({
         {...(props as AccordionPrimitive.RootProps)}
         asChild={Platform.OS !== "web"}
       >
-        <Animated.View layout={LinearTransition.duration(200)}>
-          {children}
-        </Animated.View>
+        <Animated.View layout={LinearTransition.duration(200)}>{children}</Animated.View>
       </AccordionPrimitive.Root>
     </LayoutAnimationConfig>
   );
@@ -115,10 +113,7 @@ function AccordionTrigger({
   const { isExpanded } = AccordionPrimitive.useItemContext();
 
   const progress = useDerivedValue(
-    () =>
-      isExpanded
-        ? withTiming(1, { duration: 250 })
-        : withTiming(0, { duration: 200 }),
+    () => (isExpanded ? withTiming(1, { duration: 250 }) : withTiming(0, { duration: 200 })),
     [isExpanded],
   );
 
@@ -136,11 +131,7 @@ function AccordionTrigger({
           <Trigger className={accordionTriggerVariants(className)}>
             <>{children}</>
             <Animated.View style={chevronStyle}>
-              <Icon
-                as={ChevronDown}
-                size={16}
-                className={accordionChevronVariants()}
-              />
+              <Icon as={ChevronDown} size={16} className={accordionChevronVariants()} />
             </Animated.View>
           </Trigger>
         </AccordionPrimitive.Trigger>
@@ -153,16 +144,12 @@ function AccordionContent({
   children,
   className,
   ...props
-}: AccordionPrimitive.ContentProps &
-  React.RefAttributes<AccordionPrimitive.ContentRef>) {
+}: AccordionPrimitive.ContentProps & React.RefAttributes<AccordionPrimitive.ContentRef>) {
   const { isExpanded } = AccordionPrimitive.useItemContext();
 
   return (
     <TextClassContext.Provider value="text-sm">
-      <AccordionPrimitive.Content
-        className={accordionContentVariants({ isExpanded })}
-        {...props}
-      >
+      <AccordionPrimitive.Content className={accordionContentVariants({ isExpanded })} {...props}>
         <Animated.View
           exiting={Platform.select({ native: FadeOutUp.duration(200) })}
           className={accordionContentInnerVariants(className)}

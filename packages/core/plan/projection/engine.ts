@@ -1,4 +1,3 @@
-import { buildDeterministicProjectionPayload as buildDeterministicProjectionPayloadInternal } from "../projectionCalculations";
 import type {
   BuildDeterministicProjectionInput,
   DeterministicProjectionGoalMarker,
@@ -7,9 +6,10 @@ import type {
   DeterministicProjectionPoint,
   ProjectionDiagnostics,
   ProjectionRecoverySegment,
-  WeeklyOptimizationPath,
   ProjectionWeekMetadata,
+  WeeklyOptimizationPath,
 } from "../projectionCalculations";
+import { buildDeterministicProjectionPayload as buildDeterministicProjectionPayloadInternal } from "../projectionCalculations";
 
 export type {
   BuildDeterministicProjectionInput,
@@ -19,8 +19,8 @@ export type {
   DeterministicProjectionPoint,
   ProjectionDiagnostics,
   ProjectionRecoverySegment,
-  WeeklyOptimizationPath,
   ProjectionWeekMetadata,
+  WeeklyOptimizationPath,
 };
 
 /**

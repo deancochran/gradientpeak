@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  getNextGpsRecordingEnabled,
-  shouldStartGpsTracking,
-} from "./gpsRuntime";
+import { getNextGpsRecordingEnabled, shouldStartGpsTracking } from "./gpsRuntime";
 
 describe("gpsRuntime", () => {
   it("toggles GPS recording state", () => {

@@ -12,7 +12,7 @@ vi.mock("../../utils/estimation-helpers", () => ({
   computePlanMetrics: vi.fn(),
 }));
 
-import { activityPlansRouter } from "../activity_plans";
+import { activityPlansRouter } from "../activity-plans";
 
 type QueryResult = {
   data: any;
@@ -152,9 +152,7 @@ describe("activityPlansRouter.getManyByIds", () => {
       "33333333-3333-4333-8333-333333333333",
       "22222222-2222-4222-8222-222222222222",
     ]);
-    expect((accessFilter?.payload as any)?.value).toContain(
-      "is_system_template.eq.true",
-    );
+    expect((accessFilter?.payload as any)?.value).toContain("is_system_template.eq.true");
     expect(result.items.map((item) => item.id)).toEqual([
       "11111111-1111-4111-8111-111111111111",
       "22222222-2222-4222-8222-222222222222",

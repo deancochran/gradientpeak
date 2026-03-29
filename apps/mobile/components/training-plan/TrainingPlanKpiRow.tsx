@@ -29,10 +29,7 @@ const valueClassByVariant: Record<TrainingPlanKpiRowVariant, string> = {
   default: "text-lg font-bold",
 };
 
-export function TrainingPlanKpiRow({
-  items,
-  variant = "default",
-}: TrainingPlanKpiRowProps) {
+export function TrainingPlanKpiRow({ items, variant = "default" }: TrainingPlanKpiRowProps) {
   return (
     <View className="flex-row gap-3">
       {items.map((item) => (

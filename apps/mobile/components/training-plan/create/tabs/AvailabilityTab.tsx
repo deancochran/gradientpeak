@@ -1,6 +1,6 @@
+import type { CreationAvailabilityConfig } from "@repo/core";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import type { CreationAvailabilityConfig } from "@repo/core";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
 import React from "react";
 import { Pressable, View } from "react-native";
@@ -35,14 +35,10 @@ export function AvailabilityTab({
       >
         <View className="flex-1">
           <Text className="text-sm font-medium">Availability</Text>
-          <Text className="text-xs text-muted-foreground">
-            {selectedAvailabilityDays} day(s)
-          </Text>
+          <Text className="text-xs text-muted-foreground">{selectedAvailabilityDays} day(s)</Text>
         </View>
         <View className="flex-row items-center gap-1">
-          <Text className="text-xs text-muted-foreground">
-            {expanded ? "Hide" : "Edit"}
-          </Text>
+          <Text className="text-xs text-muted-foreground">{expanded ? "Hide" : "Edit"}</Text>
           {expanded ? (
             <ChevronUp size={16} className="text-muted-foreground" />
           ) : (
@@ -56,23 +52,18 @@ export function AvailabilityTab({
           <View className="gap-1.5">
             {weekDays.map((day) => {
               const dayConfig =
-                configData.availabilityConfig.days.find(
-                  (item) => item.day === day,
-                ) ?? configData.availabilityConfig.days[0];
+                configData.availabilityConfig.days.find((item) => item.day === day) ??
+                configData.availabilityConfig.days[0];
               if (!dayConfig) {
                 return null;
               }
 
               const isAvailable = dayConfig.windows.length > 0;
               const startLabel = isAvailable
-                ? formatMinutesAsTime(
-                    dayConfig.windows[0]?.start_minute_of_day ?? 360,
-                  )
+                ? formatMinutesAsTime(dayConfig.windows[0]?.start_minute_of_day ?? 360)
                 : "-";
               const endLabel = isAvailable
-                ? formatMinutesAsTime(
-                    dayConfig.windows[0]?.end_minute_of_day ?? 450,
-                  )
+                ? formatMinutesAsTime(dayConfig.windows[0]?.end_minute_of_day ?? 450)
                 : "-";
 
               return (
@@ -93,22 +84,21 @@ export function AvailabilityTab({
                           draft.availabilityConfig = {
                             ...draft.availabilityConfig,
                             template: "custom",
-                            days: draft.availabilityConfig.days.map(
-                              (candidate) =>
-                                candidate.day === day
-                                  ? {
-                                      ...candidate,
-                                      windows: nextValue
-                                        ? [
-                                            {
-                                              start_minute_of_day: 360,
-                                              end_minute_of_day: 450,
-                                            },
-                                          ]
-                                        : [],
-                                      max_sessions: nextValue ? 1 : 0,
-                                    }
-                                  : candidate,
+                            days: draft.availabilityConfig.days.map((candidate) =>
+                              candidate.day === day
+                                ? {
+                                    ...candidate,
+                                    windows: nextValue
+                                      ? [
+                                          {
+                                            start_minute_of_day: 360,
+                                            end_minute_of_day: 450,
+                                          },
+                                        ]
+                                      : [],
+                                    max_sessions: nextValue ? 1 : 0,
+                                  }
+                                : candidate,
                             ),
                           };
                           draft.availabilityProvenance = {

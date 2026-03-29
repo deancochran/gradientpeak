@@ -1,18 +1,18 @@
-import { TRPCError } from "@trpc/server";
 import {
-  createFromCreationConfigInputSchema,
-  inferredStateSnapshotSchema,
-  trainingPlanCalibrationConfigSchema,
-  type OverridePolicy,
-  type CreationFeasibilitySafetySummary,
   type CreationContextSummary,
+  type CreationFeasibilitySafetySummary,
+  createFromCreationConfigInputSchema,
   type InferredStateSnapshot,
+  inferredStateSnapshotSchema,
   type LoadBootstrapState,
+  type OverridePolicy,
   type ProjectionConstraintSummary,
   type TrainingPlanCreationConfig,
+  trainingPlanCalibrationConfigSchema,
 } from "@repo/core";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Json } from "@repo/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   buildConflictCommitError,
@@ -21,9 +21,7 @@ import {
   buildStalePreviewCommitError,
 } from "../../lib/errors/trainingPlanCommitErrors";
 
-type UpdateFromCreationConfigInput = z.infer<
-  typeof createFromCreationConfigInputSchema
-> & {
+type UpdateFromCreationConfigInput = z.infer<typeof createFromCreationConfigInputSchema> & {
   plan_id: string;
   prior_inferred_snapshot?: InferredStateSnapshot;
 };
@@ -73,20 +71,13 @@ function evaluateOverrideAudit(input: {
   conflicts: CreationConflictItem[];
   overridePolicy?: OverridePolicy;
 }): { isBlocking: boolean; audit: OverrideAudit } {
-  const blockingConflicts = input.conflicts.filter(
-    (conflict) => conflict.severity === "blocking",
-  );
+  const blockingConflicts = input.conflicts.filter((conflict) => conflict.severity === "blocking");
   const overridableBlockingConflictCodes = blockingConflicts
-    .filter((conflict) =>
-      OVERRIDABLE_BLOCKING_CONFLICT_CODES.has(conflict.code),
-    )
+    .filter((conflict) => OVERRIDABLE_BLOCKING_CONFLICT_CODES.has(conflict.code))
     .map((conflict) => conflict.code);
 
-  const overrideRequested =
-    input.overridePolicy?.allow_blocking_conflicts === true;
-  const overrideEffectiveCodes = overrideRequested
-    ? overridableBlockingConflictCodes
-    : [];
+  const overrideRequested = input.overridePolicy?.allow_blocking_conflicts === true;
+  const overrideEffectiveCodes = overrideRequested ? overridableBlockingConflictCodes : [];
 
   const unresolvedBlockingConflictCodes = blockingConflicts
     .map((conflict) => conflict.code)
@@ -102,13 +93,9 @@ function evaluateOverrideAudit(input: {
   if (overrideRequested) {
     rationaleCodes.push("override_scope_objective_risk_budget");
     if (overrideEffectiveCodes.length > 0) {
-      rationaleCodes.push(
-        "override_applied_to_objective_risk_budget_conflicts",
-      );
+      rationaleCodes.push("override_applied_to_objective_risk_budget_conflicts");
     } else {
-      rationaleCodes.push(
-        "override_requested_without_overridable_blocking_conflicts",
-      );
+      rationaleCodes.push("override_requested_without_overridable_blocking_conflicts");
     }
   }
   if (unresolvedBlockingConflictCodes.length > 0) {
@@ -153,9 +140,7 @@ export async function updateFromCreationConfigUseCase<
     startingCtlOverride?: number;
     startingAtlOverride?: number;
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
-    contextSummary: Awaited<
-      ReturnType<TEvaluateCreationConfig>
-    >["contextSummary"];
+    contextSummary: Awaited<ReturnType<TEvaluateCreationConfig>>["contextSummary"];
   }) => {
     expandedPlan: {
       name: string;
@@ -200,9 +185,7 @@ export async function updateFromCreationConfigUseCase<
   };
 }) {
   input.deps.enforceCreationConfigFeatureEnabled();
-  input.deps.enforceNoAutonomousPostCreateMutation(
-    input.params.post_create_behavior,
-  );
+  input.deps.enforceNoAutonomousPostCreateMutation(input.params.post_create_behavior);
 
   const { data: existingPlan, error: existingPlanError } = await input.supabase
     .from("training_plans")
@@ -238,15 +221,14 @@ export async function updateFromCreationConfigUseCase<
       contextSummary: evaluation.contextSummary,
     });
 
-  const expectedPreviewSnapshotToken =
-    input.deps.buildCreationPreviewSnapshotToken({
-      minimalPlan: input.params.minimal_plan,
-      finalConfig: evaluation.finalConfig,
-      loadBootstrapState: evaluation.loadBootstrapState,
-      projectionConstraintSummary: projectionChart.constraint_summary,
-      projectionFeasibility,
-      noHistoryMetadata: projectionChart.no_history,
-    });
+  const expectedPreviewSnapshotToken = input.deps.buildCreationPreviewSnapshotToken({
+    minimalPlan: input.params.minimal_plan,
+    finalConfig: evaluation.finalConfig,
+    loadBootstrapState: evaluation.loadBootstrapState,
+    projectionConstraintSummary: projectionChart.constraint_summary,
+    projectionFeasibility,
+    noHistoryMetadata: projectionChart.no_history,
+  });
 
   if (
     input.params.preview_snapshot_token &&
@@ -263,10 +245,7 @@ export async function updateFromCreationConfigUseCase<
     projectionChart,
     postGoalRecoveryDays: evaluation.finalConfig.post_goal_recovery_days,
   });
-  const allConflicts = [
-    ...evaluation.conflictResolution.conflicts,
-    ...projectionConflicts,
-  ];
+  const allConflicts = [...evaluation.conflictResolution.conflicts, ...projectionConflicts];
 
   const overrideEvaluation = evaluateOverrideAudit({
     conflicts: allConflicts,
@@ -276,8 +255,7 @@ export async function updateFromCreationConfigUseCase<
   if (overrideEvaluation.isBlocking) {
     throw buildConflictCommitError({
       operation: "updateFromCreationConfig",
-      blockingConflictCodes:
-        overrideEvaluation.audit.effective.unresolved_blocking_conflict_codes,
+      blockingConflictCodes: overrideEvaluation.audit.effective.unresolved_blocking_conflict_codes,
     });
   }
 
@@ -316,9 +294,8 @@ export async function updateFromCreationConfigUseCase<
   };
 
   if (projectionChart.inferred_current_state) {
-    (
-      structureWithId.metadata as Record<string, unknown>
-    ).inferred_state_snapshot = projectionChart.inferred_current_state;
+    (structureWithId.metadata as Record<string, unknown>).inferred_state_snapshot =
+      projectionChart.inferred_current_state;
   }
 
   try {
@@ -329,9 +306,7 @@ export async function updateFromCreationConfigUseCase<
       reason: "generated_plan_failed_schema_validation",
       details: {
         validation_error:
-          validationError instanceof Error
-            ? validationError.message
-            : "unknown_validation_error",
+          validationError instanceof Error ? validationError.message : "unknown_validation_error",
       },
     });
   }

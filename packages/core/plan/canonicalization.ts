@@ -30,17 +30,11 @@ function targetSortKey(
         String(Math.round(target.test_duration_s)),
       ].join("|");
     case "hr_threshold":
-      return [
-        target.target_type,
-        String(Math.round(target.target_lthr_bpm)),
-      ].join("|");
+      return [target.target_type, String(Math.round(target.target_lthr_bpm))].join("|");
   }
 }
 
-function goalSortKey(
-  goal: MinimalTrainingPlanCreate["goals"][number],
-  index: number,
-): string {
+function goalSortKey(goal: MinimalTrainingPlanCreate["goals"][number], index: number): string {
   return [
     String(Math.round(goal.priority ?? 1)),
     goal.target_date,
@@ -60,16 +54,10 @@ export function canonicalizeMinimalTrainingPlanCreate(
   return {
     ...input,
     goals: goalsWithStableIndex
-      .sort((a, b) =>
-        goalSortKey(a.goal, a.index).localeCompare(
-          goalSortKey(b.goal, b.index),
-        ),
-      )
+      .sort((a, b) => goalSortKey(a.goal, a.index).localeCompare(goalSortKey(b.goal, b.index)))
       .map(({ goal }) => ({
         ...goal,
-        targets: [...goal.targets].sort((a, b) =>
-          targetSortKey(a).localeCompare(targetSortKey(b)),
-        ),
+        targets: [...goal.targets].sort((a, b) => targetSortKey(a).localeCompare(targetSortKey(b))),
       })),
   };
 }

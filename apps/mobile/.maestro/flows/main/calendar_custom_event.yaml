@@ -1,0 +1,32 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  USER_EMAIL: "test@example.com"
+  USER_PASS: "password123"
+---
+- runFlow:
+    file: ../reusable/bootstrap.yaml
+- runFlow:
+    file: ../reusable/login.yaml
+    env:
+      email: "${USER_EMAIL}"
+      password: "${USER_PASS}"
+- tapOn: "Calendar"
+- extendedWaitUntil:
+    visible:
+      id: "create-event-entry"
+    timeout: 10000
+- tapOn:
+    id: "create-event-entry"
+- tapOn:
+    id: "create-type-custom"
+- assertVisible:
+    id: "manual-create-modal"
+- tapOn:
+    id: "manual-create-title-input"
+- inputText: "Maestro Custom Session"
+- assertVisible:
+    id: "manual-create-submit"
+- tapOn:
+    id: "close-manual-create"
+- assertNotVisible:
+    id: "manual-create-modal"

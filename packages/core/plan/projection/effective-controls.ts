@@ -1,13 +1,7 @@
 import type { TrainingPlanCalibrationConfig } from "../../schemas/training_plan_structure";
-import type {
-  OptimizationProfile,
-  ProjectionSafetyConfig,
-} from "./safety-caps";
-import {
-  ABSOLUTE_MAX_CTL_RAMP_PER_WEEK,
-  ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT,
-} from "./safety-caps";
 import { getMpcProfileBounds } from "./mpc/lattice";
+import type { OptimizationProfile, ProjectionSafetyConfig } from "./safety-caps";
+import { ABSOLUTE_MAX_CTL_RAMP_PER_WEEK, ABSOLUTE_MAX_WEEKLY_TSS_RAMP_PCT } from "./safety-caps";
 
 export interface EffectiveProjectionControls {
   behavior_controls: ResolvedBehaviorControls;
@@ -30,12 +24,7 @@ export interface EffectiveProjectionControls {
   };
 }
 
-export type CurvatureEnvelopePattern =
-  | "ramp"
-  | "deload"
-  | "taper"
-  | "event"
-  | "recovery";
+export type CurvatureEnvelopePattern = "ramp" | "deload" | "taper" | "event" | "recovery";
 
 interface ResolveEffectiveProjectionControlsInput {
   normalized_config: ProjectionSafetyConfig;
@@ -88,19 +77,14 @@ const CURVATURE_TARGET_SCALE = 0.18;
 export function resolveEffectiveProjectionControls(
   input: ResolveEffectiveProjectionControlsInput,
 ): EffectiveProjectionControls {
-  const behaviorControls = normalizeBehaviorControls(
-    input.behavior_controls_v1,
-  );
+  const behaviorControls = normalizeBehaviorControls(input.behavior_controls_v1);
   const aggressiveness = behaviorControls.aggressiveness;
   const variability = behaviorControls.variability;
   const spikeFrequency = behaviorControls.spike_frequency;
   const recoveryPriority = behaviorControls.recovery_priority;
-  const startingFitnessConfidence =
-    behaviorControls.starting_fitness_confidence;
+  const startingFitnessConfidence = behaviorControls.starting_fitness_confidence;
 
-  const profileBounds = getMpcProfileBounds(
-    input.normalized_config.optimization_profile,
-  );
+  const profileBounds = getMpcProfileBounds(input.normalized_config.optimization_profile);
   const maxLookahead = Math.min(
     OPTIMIZER_SCHEMA_BOUNDS.lookahead_weeks.max,
     profileBounds.horizon_weeks,
@@ -124,31 +108,20 @@ export function resolveEffectiveProjectionControls(
 
   const preparednessScale = lerp(0.82, 1.5, aggressiveness);
   const recoveryPreparednessScale = lerp(1.08, 0.82, recoveryPriority);
-  const confidencePreparednessScale = lerp(
-    0.88,
-    1.08,
-    startingFitnessConfidence,
-  );
+  const confidencePreparednessScale = lerp(0.88, 1.08, startingFitnessConfidence);
   const riskScale =
     lerp(1.45, 0.62, aggressiveness) *
     lerp(0.85, 1.4, recoveryPriority) *
     lerp(1.3, 0.82, startingFitnessConfidence) *
     lerp(1.18, 0.86, spikeFrequency);
-  const volatilityScale =
-    lerp(1.6, 0.58, variability) * lerp(0.9, 1.3, recoveryPriority);
-  const churnScale =
-    lerp(1.52, 0.64, variability) * lerp(0.92, 1.28, recoveryPriority);
+  const volatilityScale = lerp(1.6, 0.58, variability) * lerp(0.9, 1.3, recoveryPriority);
+  const churnScale = lerp(1.52, 0.64, variability) * lerp(0.92, 1.28, recoveryPriority);
   const lookaheadTarget =
-    baseLookahead +
-    (maxLookahead - baseLookahead) * lerp(0.35, 1, aggressiveness);
+    baseLookahead + (maxLookahead - baseLookahead) * lerp(0.35, 1, aggressiveness);
   const candidateTarget =
     baseCandidateSteps +
     (maxCandidateSteps - baseCandidateSteps) *
-      clampNumber(
-        0.55 * aggressiveness + 0.3 * spikeFrequency + 0.15 * variability,
-        0,
-        1,
-      );
+      clampNumber(0.55 * aggressiveness + 0.3 * spikeFrequency + 0.15 * variability, 0, 1);
 
   return {
     behavior_controls: behaviorControls,
@@ -159,15 +132,9 @@ export function resolveEffectiveProjectionControls(
           recoveryPreparednessScale *
           confidencePreparednessScale,
       ),
-      risk_penalty_weight: round3(
-        baseOptimizer.risk_penalty_weight * riskScale,
-      ),
-      volatility_penalty_weight: round3(
-        baseOptimizer.volatility_penalty_weight * volatilityScale,
-      ),
-      churn_penalty_weight: round3(
-        baseOptimizer.churn_penalty_weight * churnScale,
-      ),
+      risk_penalty_weight: round3(baseOptimizer.risk_penalty_weight * riskScale),
+      volatility_penalty_weight: round3(baseOptimizer.volatility_penalty_weight * volatilityScale),
+      churn_penalty_weight: round3(baseOptimizer.churn_penalty_weight * churnScale),
       lookahead_weeks: clampInteger(
         Math.round(lookaheadTarget),
         OPTIMIZER_SCHEMA_BOUNDS.lookahead_weeks.min,
@@ -198,9 +165,7 @@ export function resolveEffectiveProjectionControls(
     curvature: {
       target: behaviorControls.shape_target,
       strength: behaviorControls.shape_strength,
-      weight: round3(
-        lerp(0, CURVATURE_WEIGHT_MAX, behaviorControls.shape_strength),
-      ),
+      weight: round3(lerp(0, CURVATURE_WEIGHT_MAX, behaviorControls.shape_strength)),
     },
   };
 }
@@ -241,8 +206,7 @@ export function computeCurvaturePenalty(input: {
     const currentDelta = (series[t + 1] ?? 0) - (series[t] ?? 0);
     const previousDelta = (series[t] ?? 0) - (series[t - 1] ?? 0);
     const delta2 = (currentDelta - previousDelta) / safeScale;
-    const envelope =
-      input.envelopes[t] ?? input.envelopes[input.envelopes.length - 1] ?? 0;
+    const envelope = input.envelopes[t] ?? input.envelopes[input.envelopes.length - 1] ?? 0;
     const kappa = input.curvature * envelope * CURVATURE_TARGET_SCALE;
 
     penalty += (delta2 - kappa) ** 2;
@@ -265,21 +229,13 @@ function normalizeBehaviorControls(
       0,
       1,
     ),
-    variability: clampNumber(
-      input?.variability ?? BEHAVIOR_CONTROL_DEFAULTS.variability,
-      0,
-      1,
-    ),
+    variability: clampNumber(input?.variability ?? BEHAVIOR_CONTROL_DEFAULTS.variability, 0, 1),
     spike_frequency: clampNumber(
       input?.spike_frequency ?? BEHAVIOR_CONTROL_DEFAULTS.spike_frequency,
       0,
       1,
     ),
-    shape_target: clampNumber(
-      input?.shape_target ?? BEHAVIOR_CONTROL_DEFAULTS.shape_target,
-      -1,
-      1,
-    ),
+    shape_target: clampNumber(input?.shape_target ?? BEHAVIOR_CONTROL_DEFAULTS.shape_target, -1, 1),
     shape_strength: clampNumber(
       input?.shape_strength ?? BEHAVIOR_CONTROL_DEFAULTS.shape_strength,
       0,
@@ -291,8 +247,7 @@ function normalizeBehaviorControls(
       1,
     ),
     starting_fitness_confidence: clampNumber(
-      input?.starting_fitness_confidence ??
-        BEHAVIOR_CONTROL_DEFAULTS.starting_fitness_confidence,
+      input?.starting_fitness_confidence ?? BEHAVIOR_CONTROL_DEFAULTS.starting_fitness_confidence,
       0,
       1,
     ),
@@ -314,19 +269,11 @@ function resolvePhaseWeight(pattern: CurvatureEnvelopePattern): number {
   }
 }
 
-function clampNumber(
-  value: number,
-  minValue: number,
-  maxValue: number,
-): number {
+function clampNumber(value: number, minValue: number, maxValue: number): number {
   return Math.max(minValue, Math.min(maxValue, value));
 }
 
-function clampInteger(
-  value: number,
-  minValue: number,
-  maxValue: number,
-): number {
+function clampInteger(value: number, minValue: number, maxValue: number): number {
   return Math.max(minValue, Math.min(maxValue, Math.round(value)));
 }
 
@@ -350,17 +297,11 @@ export function resolveProfileSearchBounds(profile: OptimizationProfile): {
   return {
     lookahead_weeks: {
       min: OPTIMIZER_SCHEMA_BOUNDS.lookahead_weeks.min,
-      max: Math.min(
-        OPTIMIZER_SCHEMA_BOUNDS.lookahead_weeks.max,
-        profileBounds.horizon_weeks,
-      ),
+      max: Math.min(OPTIMIZER_SCHEMA_BOUNDS.lookahead_weeks.max, profileBounds.horizon_weeks),
     },
     candidate_steps: {
       min: OPTIMIZER_SCHEMA_BOUNDS.candidate_steps.min,
-      max: Math.min(
-        OPTIMIZER_SCHEMA_BOUNDS.candidate_steps.max,
-        profileBounds.candidate_count,
-      ),
+      max: Math.min(OPTIMIZER_SCHEMA_BOUNDS.candidate_steps.max, profileBounds.candidate_count),
     },
   };
 }

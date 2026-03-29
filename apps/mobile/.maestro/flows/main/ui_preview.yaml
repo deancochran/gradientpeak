@@ -1,12 +1,14 @@
-# Main Test: Verify fixture-driven UI preview screen in dev mode
+# Generated from packages/ui/src/testing/selectors.generated.json. Do not edit manually.
 appId: com.deancochran.gradientpeak.dev
 ---
-- launchApp:
-    clearState: true
+- runFlow:
+    file: ../reusable/bootstrap.yaml
 - assertVisible:
     id: "sign-in-screen"
 - tapOn:
     id: "open-ui-preview-button"
+- assertVisible:
+    id: "ui-preview-surface"
 - assertVisible:
     id: "profile-card"
 - assertVisible:
@@ -14,5 +16,37 @@ appId: com.deancochran.gradientpeak.dev
 - assertVisible:
     id: "settings-save"
 - assertVisible:
-    id: "settings-tabs"
+    id: "ui-preview-scenario-account-controls"
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- assertVisible:
+    id: "ui-preview-scenario-plan-tabs"
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- assertVisible:
+    id: "ui-preview-scenario-feedback-states"
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- assertVisible:
+    id: "ui-preview-scenario-form-fields"
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- assertVisible:
+    id: "ui-preview-scenario-selection-controls"
 - takeScreenshot: reports/ui_preview_screen.png

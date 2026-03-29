@@ -1,3 +1,4 @@
+import { invalidateTrainingPlanQueries } from "@repo/trpc/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { DateInput as DateField } from "@repo/ui/components/date-input";
@@ -12,6 +13,7 @@ import {
   DialogTrigger,
 } from "@repo/ui/components/dialog";
 import { Icon } from "@repo/ui/components/icon";
+import { RadioGroup, RadioGroupItem } from "@repo/ui/components/radio-group";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
@@ -301,7 +303,7 @@ export default function TrainingPlanOverview() {
 
   const duplicatePlanMutation = trpc.trainingPlans.duplicate.useMutation({
     onSuccess: async (result: { id: string }) => {
-      await utils.trainingPlans.invalidate();
+      await invalidateTrainingPlanQueries(utils);
       Alert.alert("Duplicated", "Training plan added to your plans.", [
         {
           text: "Open",
@@ -383,9 +385,7 @@ export default function TrainingPlanOverview() {
   }, [plan?.template_visibility]);
 
   const updateVisibilityMutation = trpc.trainingPlans.update.useMutation({
-    onSuccess: () => {
-      utils.trainingPlans.invalidate();
-    },
+    onSuccess: async () => invalidateTrainingPlanQueries(utils),
     onError: (error) => {
       setIsPublic(plan?.template_visibility === "public");
       Alert.alert("Update Failed", error.message || "Failed to update visibility");
@@ -453,7 +453,7 @@ export default function TrainingPlanOverview() {
 
   const updatePlanStructureMutation = trpc.trainingPlans.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([utils.trainingPlans.invalidate(), snapshot.refetchAll()]);
+      await Promise.all([invalidateTrainingPlanQueries(utils), snapshot.refetchAll()]);
       Alert.alert("Session updated", "Training plan structure was saved.");
       setShowActivityPicker(false);
       setSelectedSessionRow(null);
@@ -981,6 +981,47 @@ export default function TrainingPlanOverview() {
           <Card className="mt-3">
             <CardContent className="p-3 gap-3">
               <View className="gap-1">
+                <Text className="text-sm font-semibold">Plan snapshot</Text>
+                <Text className="text-xs text-muted-foreground">
+                  Understand the commitment first, then decide whether to schedule sessions or make
+                  an editable copy.
+                </Text>
+              </View>
+              <View className="flex-row flex-wrap gap-2">
+                {plan.durationWeeks?.recommended || plan.durationWeeks?.min ? (
+                  <TrainingPlanDetailChip
+                    label={`${plan.durationWeeks?.recommended || plan.durationWeeks?.min} week${(plan.durationWeeks?.recommended || plan.durationWeeks?.min) === 1 ? "" : "s"}`}
+                  />
+                ) : null}
+                {plan.sessions_per_week_target ? (
+                  <TrainingPlanDetailChip
+                    label={`${plan.sessions_per_week_target} sessions/week`}
+                  />
+                ) : null}
+                {Array.isArray(plan.sport)
+                  ? plan.sport
+                      .slice(0, 2)
+                      .map((sport: string) => <TrainingPlanDetailChip key={sport} label={sport} />)
+                  : null}
+                {Array.isArray(plan.experienceLevel)
+                  ? plan.experienceLevel
+                      .slice(0, 1)
+                      .map((level: string) => <TrainingPlanDetailChip key={level} label={level} />)
+                  : typeof plan.experienceLevel === "string"
+                    ? [
+                        <TrainingPlanDetailChip
+                          key={plan.experienceLevel}
+                          label={plan.experienceLevel}
+                        />,
+                      ]
+                    : null}
+              </View>
+            </CardContent>
+          </Card>
+
+          <Card className="mt-3">
+            <CardContent className="p-3 gap-3">
+              <View className="gap-1">
                 <Text className="text-sm font-semibold">Plan Actions</Text>
                 <Text className="text-xs text-muted-foreground">
                   Get this plan onto your calendar first, then use editing only when you need to
@@ -1021,7 +1062,12 @@ export default function TrainingPlanOverview() {
 
               <View className="flex-row gap-2">
                 {isOwnedByUser ? (
-                  <Button variant="outline" onPress={handleEditStructure} className="flex-1">
+                  <Button
+                    variant="outline"
+                    onPress={handleEditStructure}
+                    className="flex-1"
+                    testID="training-plan-edit-button"
+                  >
                     <Text>Edit Plan</Text>
                   </Button>
                 ) : (
@@ -1030,6 +1076,7 @@ export default function TrainingPlanOverview() {
                     onPress={handleDuplicate}
                     disabled={duplicatePlanMutation.isPending}
                     className="flex-1"
+                    testID="training-plan-duplicate-button"
                   >
                     <Icon as={Copy} size={16} className="text-foreground mr-2" />
                     <Text className="text-foreground font-medium">
@@ -1041,14 +1088,15 @@ export default function TrainingPlanOverview() {
                   variant="outline"
                   onPress={() => router.push(ROUTES.CALENDAR as any)}
                   className="flex-1"
+                  testID="training-plan-open-calendar-button"
                 >
-                  <Text>Calendar</Text>
+                  <Text>Open Calendar</Text>
                 </Button>
               </View>
 
               <Dialog open={showApplyModal} onOpenChange={setShowApplyModal}>
                 <DialogTrigger asChild>
-                  <Button className="w-full">
+                  <Button className="w-full" testID="training-plan-schedule-button">
                     <Text className="text-primary-foreground font-semibold">Schedule Sessions</Text>
                   </Button>
                 </DialogTrigger>
@@ -1063,28 +1111,52 @@ export default function TrainingPlanOverview() {
                   <View className="gap-4 py-4">
                     <View className="gap-2">
                       <Text className="text-sm font-medium">How should this schedule line up?</Text>
-                      <View className="gap-2">
+                      <RadioGroup
+                        value={scheduleAnchorMode}
+                        onValueChange={(nextValue) => {
+                          if (nextValue === "start" || nextValue === "finish") {
+                            handleSelectScheduleAnchorMode(nextValue);
+                          }
+                        }}
+                      >
                         <TouchableOpacity
                           onPress={() => handleSelectScheduleAnchorMode("start")}
                           className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
                           activeOpacity={0.8}
+                          testID="training-plan-anchor-start"
                         >
-                          <Text className="text-sm font-semibold text-foreground">Start On</Text>
-                          <Text className="text-xs text-muted-foreground mt-1">
-                            Put week 1 on a specific date.
-                          </Text>
+                          <View className="flex-row items-start gap-3">
+                            <RadioGroupItem value="start" />
+                            <View className="flex-1">
+                              <Text className="text-sm font-semibold text-foreground">
+                                Start On
+                              </Text>
+                              <Text className="mt-1 text-xs text-muted-foreground">
+                                Put week 1 on a specific date.
+                              </Text>
+                            </View>
+                          </View>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => handleSelectScheduleAnchorMode("finish")}
                           className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "finish" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
                           activeOpacity={0.8}
+                          testID="training-plan-anchor-finish"
                         >
-                          <Text className="text-sm font-semibold text-foreground">Finish By</Text>
-                          <Text className="text-xs text-muted-foreground mt-1">
-                            Back-schedule the plan so the final session lands by a specific date.
-                          </Text>
+                          <View className="flex-row items-start gap-3">
+                            <RadioGroupItem value="finish" />
+                            <View className="flex-1">
+                              <Text className="text-sm font-semibold text-foreground">
+                                Finish By
+                              </Text>
+                              <Text className="mt-1 text-xs text-muted-foreground">
+                                Back-schedule the plan so the final session lands by a specific
+                                date.
+                              </Text>
+                            </View>
+                          </View>
                         </TouchableOpacity>
-                      </View>
+                      </RadioGroup>
                     </View>
                     <View className="gap-2">
                       <DateField
@@ -1101,13 +1173,14 @@ export default function TrainingPlanOverview() {
                   </View>
                   <DialogFooter>
                     <DialogClose asChild>
-                      <Button variant="outline">
+                      <Button variant="outline" testID="training-plan-schedule-cancel">
                         <Text className="text-foreground font-medium">Cancel</Text>
                       </Button>
                     </DialogClose>
                     <Button
                       onPress={handleApplyTemplate}
                       disabled={applyTemplateMutation.isPending}
+                      testID="training-plan-schedule-confirm"
                     >
                       <Text className="text-primary-foreground font-semibold">
                         {applyTemplateMutation.isPending ? "Scheduling..." : "Schedule Sessions"}
@@ -1122,7 +1195,7 @@ export default function TrainingPlanOverview() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Training Plan Structure</CardTitle>
+            <CardTitle>Plan overview and structure</CardTitle>
           </CardHeader>
           <CardContent>
             <View className="gap-3">
@@ -1178,7 +1251,11 @@ export default function TrainingPlanOverview() {
                   {isOwnedByUser && (
                     <>
                       <View className="h-px bg-border" />
-                      <TouchableOpacity onPress={handleEditStructure} className="pt-1">
+                      <TouchableOpacity
+                        onPress={handleEditStructure}
+                        className="pt-1"
+                        testID="training-plan-edit-structure-link"
+                      >
                         <Text className="text-sm font-semibold text-primary">
                           Edit structure in composer
                         </Text>
@@ -1226,6 +1303,9 @@ export default function TrainingPlanOverview() {
               <View className="h-px bg-border" />
               <View className="gap-2">
                 <Text className="text-sm font-semibold">Linked activity plan structures</Text>
+                <Text className="text-xs text-muted-foreground">
+                  These are the workout building blocks referenced by this plan.
+                </Text>
                 {isLoadingLinkedPlans ? (
                   <Text className="text-xs text-muted-foreground">
                     Loading linked activity plans...
@@ -1263,6 +1343,10 @@ export default function TrainingPlanOverview() {
               <View className="h-px bg-border" />
               <View className="gap-2">
                 <Text className="text-sm font-semibold">Sessions by microcycle and day</Text>
+                <Text className="text-xs text-muted-foreground">
+                  Review how sessions are distributed across each week before scheduling the full
+                  plan.
+                </Text>
                 {groupedStructureSessions.length === 0 ? (
                   <Text className="text-xs text-muted-foreground">
                     No structured sessions found in this template yet.
@@ -1489,5 +1573,13 @@ export default function TrainingPlanOverview() {
         </DialogContent>
       </Dialog>
     </ScrollView>
+  );
+}
+
+function TrainingPlanDetailChip({ label }: { label: string }) {
+  return (
+    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+      <Text className="text-xs font-medium capitalize text-foreground">{label}</Text>
+    </View>
   );
 }

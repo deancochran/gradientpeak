@@ -1,9 +1,6 @@
-import { describe, it, expect } from "vitest";
-import {
-  calculateSeasonBestCurve,
-  calculateCriticalPower,
-} from "../critical-power";
+import { describe, expect, it } from "vitest";
 import type { BestEffort } from "../../schemas/activity_efforts";
+import { calculateCriticalPower, calculateSeasonBestCurve } from "../critical-power";
 
 // Helper to create mock efforts
 const createEffort = (

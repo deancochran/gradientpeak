@@ -13,6 +13,7 @@ export function MessagesHeaderButton() {
   return (
     <TouchableOpacity
       onPress={() => router.push("/messages")}
+      testID="messages-header-button"
       className="w-10 h-10 items-center justify-center mr-2"
     >
       <Icon as={MessageSquare} size={24} className="text-foreground" />
@@ -34,6 +35,7 @@ export function NotificationsHeaderButton() {
   return (
     <TouchableOpacity
       onPress={() => router.push("/notifications")}
+      testID="notifications-header-button"
       className="w-10 h-10 items-center justify-center mr-2"
     >
       <Icon as={Bell} size={24} className="text-foreground" />

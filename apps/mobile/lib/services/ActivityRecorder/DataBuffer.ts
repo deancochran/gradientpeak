@@ -34,18 +34,14 @@ export type BufferedReading = NumericBufferedReading | LatLngBufferedReading;
 /**
  * Type guard to check if a reading is numeric
  */
-function isNumericReading(
-  reading: BufferedReading,
-): reading is NumericBufferedReading {
+function isNumericReading(reading: BufferedReading): reading is NumericBufferedReading {
   return typeof reading.value === "number";
 }
 
 /**
  * Type guard to check if a reading is lat/lng
  */
-function isLatLngReading(
-  reading: BufferedReading,
-): reading is LatLngBufferedReading {
+function isLatLngReading(reading: BufferedReading): reading is LatLngBufferedReading {
   return Array.isArray(reading.value);
 }
 
@@ -82,10 +78,7 @@ export class DataBuffer {
     // Optimization: Binary search for start index could be added here if arrays get very large
     // For now, filter is O(M) where M is readings for this metric, much better than O(N)
     return readings
-      .filter(
-        (d): d is NumericBufferedReading =>
-          d.timestamp > cutoff && isNumericReading(d),
-      )
+      .filter((d): d is NumericBufferedReading => d.timestamp > cutoff && isNumericReading(d))
       .map((d) => d.value);
   }
 
@@ -101,10 +94,7 @@ export class DataBuffer {
 
     const cutoff = Date.now() - seconds * 1000;
     return readings
-      .filter(
-        (d): d is LatLngBufferedReading =>
-          d.timestamp > cutoff && isLatLngReading(d),
-      )
+      .filter((d): d is LatLngBufferedReading => d.timestamp > cutoff && isLatLngReading(d))
       .map((d) => d.value);
   }
 
@@ -195,9 +185,7 @@ export class DataBuffer {
    * Calculate average of recent numeric values
    */
   getAverage(metric: string, seconds?: number): number {
-    const values = seconds
-      ? this.getRecent(metric, seconds)
-      : this.getAll(metric);
+    const values = seconds ? this.getRecent(metric, seconds) : this.getAll(metric);
     if (values.length === 0) return 0;
     return values.reduce((sum, val) => sum + val, 0) / values.length;
   }
@@ -244,10 +232,7 @@ export class DataBuffer {
       if (firstValidIndex === -1) {
         // All readings are old (or array empty)
         // If array not empty, all are old -> clear
-        if (
-          readings.length > 0 &&
-          readings[readings.length - 1].timestamp <= cutoff
-        ) {
+        if (readings.length > 0 && readings[readings.length - 1].timestamp <= cutoff) {
           this.stores.set(metric, []);
           totalRemoved += beforeCount;
         } else {

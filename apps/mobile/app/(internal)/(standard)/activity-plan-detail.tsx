@@ -1,17 +1,3 @@
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
-import { Switch } from "@repo/ui/components/switch";
-import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
-import { Button } from "@repo/ui/components/button";
-import { Icon } from "@repo/ui/components/icon";
-import { Text } from "@repo/ui/components/text";
-import { useAuth } from "@/lib/hooks/useAuth";
-import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
-import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { buildPlanRoute, ROUTES } from "@/lib/constants/routes";
-import { trpc } from "@/lib/trpc";
-import { getDurationMs } from "@/lib/utils/durationConversion";
-import { skipToken, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityPayload,
   buildEstimationContext,
@@ -20,6 +6,13 @@ import {
   getStepIntensityColor,
   IntervalStepV2,
 } from "@repo/core";
+import { invalidateActivityPlanQueries, invalidateTrainingPlanQueries } from "@repo/trpc/react";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Switch } from "@repo/ui/components/switch";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
+import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
@@ -33,24 +26,24 @@ import {
   Heart,
   MessageCircle,
   Send,
-  Share2,
   Smartphone,
   Trash2,
 } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
+import { buildPlanRoute, ROUTES } from "@/lib/constants/routes";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { trpc } from "@/lib/trpc";
+import { getDurationMs } from "@/lib/utils/durationConversion";
 
 function isValidUuid(value: string): boolean {
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(value);
 }
 
@@ -59,48 +52,40 @@ export default function ActivityPlanDetailPage() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const params = useLocalSearchParams();
-  const planIdParam =
-    typeof params.planId === "string" ? params.planId : undefined;
+  const planIdParam = typeof params.planId === "string" ? params.planId : undefined;
   const fallbackIdParam = typeof params.id === "string" ? params.id : undefined;
   const planId = planIdParam ?? fallbackIdParam;
-  const eventId =
-    typeof params.eventId === "string" ? params.eventId : undefined;
+  const eventId = typeof params.eventId === "string" ? params.eventId : undefined;
   const action = typeof params.action === "string" ? params.action : undefined;
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const scheduleActionHandledRef = React.useRef<string | null>(null);
 
   const utils = trpc.useUtils();
-  const { beginRedirect, isRedirecting, redirectOnNotFound } =
-    useDeletedDetailRedirect({
-      onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
-    });
+  const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
+    onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+  });
 
   // Fetch plan from database if planId is provided
-  const { data: fetchedPlan, isLoading: loadingPlan } =
-    trpc.activityPlans.getById.useQuery({ id: planId! }, { enabled: !!planId });
+  const { data: fetchedPlan, isLoading: loadingPlan } = trpc.activityPlans.getById.useQuery(
+    { id: planId! },
+    { enabled: !!planId },
+  );
 
   // Fetch planned activity if eventId is provided
   const {
     data: plannedActivity,
     error: plannedActivityError,
     isLoading: loadingPlannedActivity,
-  } = trpc.events.getById.useQuery(
-    { id: eventId! },
-    { enabled: !!eventId && !isRedirecting },
-  );
+  } = trpc.events.getById.useQuery({ id: eventId! }, { enabled: !!eventId && !isRedirecting });
 
   React.useEffect(() => {
     redirectOnNotFound(plannedActivityError);
   }, [plannedActivityError, redirectOnNotFound]);
 
   // Fetch route if plan has one
-  const routeId =
-    fetchedPlan?.route_id || plannedActivity?.activity_plan?.route_id;
-  const { data: route } = trpc.routes.get.useQuery(
-    { id: routeId! },
-    { enabled: !!routeId },
-  );
+  const routeId = fetchedPlan?.route_id || plannedActivity?.activity_plan?.route_id;
+  const { data: route } = trpc.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
 
   // Parse activity plan from params
   // This can be either a template from discover page, a database activity_plan record, or from a planned activity
@@ -182,9 +167,7 @@ export default function ActivityPlanDetailPage() {
     if (minutes < 60) return `${minutes}m`;
     const hours = Math.floor(minutes / 60);
     const remainingMinutes = minutes % 60;
-    return remainingMinutes > 0
-      ? `${hours}h ${remainingMinutes}m`
-      : `${hours}h`;
+    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
   };
 
   // Get scheduled date if this is a planned activity
@@ -257,10 +240,7 @@ export default function ActivityPlanDetailPage() {
     onSuccess: async (duplicatedPlan) => {
       const duplicateAction = duplicateActionRef.current;
       duplicateActionRef.current = null;
-      await Promise.all([
-        utils.activityPlans.list.invalidate(),
-        utils.activityPlans.getUserPlansCount.invalidate(),
-      ]);
+      await invalidateActivityPlanQueries(utils);
       if (duplicateAction === "schedule") {
         router.replace(buildPlanRoute(duplicatedPlan.id, "schedule") as any);
         return;
@@ -277,10 +257,7 @@ export default function ActivityPlanDetailPage() {
       ]);
     },
     onError: (error) => {
-      Alert.alert(
-        "Duplicate failed",
-        error.message || "Could not duplicate this activity plan",
-      );
+      Alert.alert("Duplicate failed", error.message || "Could not duplicate this activity plan");
     },
   });
 
@@ -298,11 +275,6 @@ export default function ActivityPlanDetailPage() {
     });
   };
 
-  const handleShare = () => {
-    // TODO: Implement share functionality
-    console.log("Share activity");
-  };
-
   const handleEdit = () => {
     if (!activityPlan) return;
     // Navigate to edit screen (using create flow with existing data)
@@ -315,9 +287,7 @@ export default function ActivityPlanDetailPage() {
   // Delete mutation
   const deleteMutation = trpc.activityPlans.delete.useMutation({
     onSuccess: async () => {
-      // Invalidate queries
-      await utils.activityPlans.list.invalidate();
-      await utils.activityPlans.getUserPlansCount.invalidate();
+      await invalidateActivityPlanQueries(utils);
 
       Alert.alert("Success", "Activity plan deleted successfully");
       router.back();
@@ -330,8 +300,7 @@ export default function ActivityPlanDetailPage() {
       });
       Alert.alert(
         "Error",
-        error.message ||
-          "Failed to delete activity plan. It may be used in scheduled activities.",
+        error.message || "Failed to delete activity plan. It may be used in scheduled activities.",
       );
     },
   });
@@ -339,8 +308,11 @@ export default function ActivityPlanDetailPage() {
   // Privacy update mutation
   const updatePrivacyMutation = trpc.activityPlans.update.useMutation({
     onSuccess: async () => {
-      await utils.activityPlans.getById.invalidate({ id: planId });
-      await utils.activityPlans.list.invalidate();
+      await invalidateActivityPlanQueries(utils, {
+        planId,
+        includeCount: false,
+        includeDetail: true,
+      });
     },
     onError: (error) => {
       console.error("Privacy update error:", error);
@@ -365,10 +337,7 @@ export default function ActivityPlanDetailPage() {
       await refreshScheduleViews(queryClient, "eventDeletionMutation");
     },
     onError: (error) => {
-      Alert.alert(
-        "Error",
-        error.message || "Failed to remove scheduled activity",
-      );
+      Alert.alert("Error", error.message || "Failed to remove scheduled activity");
     },
   });
 
@@ -385,10 +354,7 @@ export default function ActivityPlanDetailPage() {
 
     // Check ownership before allowing delete
     if (activityPlan.profile_id !== profile?.id) {
-      Alert.alert(
-        "Error",
-        "You don't have permission to delete this activity plan",
-      );
+      Alert.alert("Error", "You don't have permission to delete this activity plan");
       return;
     }
 
@@ -421,8 +387,7 @@ export default function ActivityPlanDetailPage() {
   // Helper to validate UUID format
   const isValidUUID = (id: string | undefined): boolean => {
     if (!id) return false;
-    const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     return uuidRegex.test(id);
   };
 
@@ -461,15 +426,14 @@ export default function ActivityPlanDetailPage() {
   const isCommentEntityIdValid = isValidUuid(commentEntityId);
 
   // Fetch comments
-  const { data: commentsData, refetch: refetchComments } =
-    trpc.social.getComments.useQuery(
-      isCommentEntityIdValid
-        ? {
-            entity_id: commentEntityId,
-            entity_type: "activity_plan",
-          }
-        : skipToken,
-    );
+  const { data: commentsData, refetch: refetchComments } = trpc.social.getComments.useQuery(
+    isCommentEntityIdValid
+      ? {
+          entity_id: commentEntityId,
+          entity_type: "activity_plan",
+        }
+      : skipToken,
+  );
 
   // Add comment mutation
   const addCommentMutation = trpc.social.addComment.useMutation({
@@ -516,13 +480,7 @@ export default function ActivityPlanDetailPage() {
 
     scheduleActionHandledRef.current = scheduleKey;
     setShowScheduleModal(true);
-  }, [
-    action,
-    activityPlan?.id,
-    activityPlan?.profile_id,
-    eventId,
-    profile?.id,
-  ]);
+  }, [action, activityPlan?.id, activityPlan?.profile_id, eventId, profile?.id]);
 
   if (loadingPlan || loadingPlannedActivity || isRedirecting) {
     return (
@@ -546,14 +504,13 @@ export default function ActivityPlanDetailPage() {
   const durationMinutes = estimates
     ? Math.round(estimates.duration / 60)
     : Math.round(totalDuration / 60000);
-  const tss = estimates
-    ? Math.round(estimates.tss)
-    : activityPlan.estimated_tss;
+  const tss = estimates ? Math.round(estimates.tss) : activityPlan.estimated_tss;
   const intensityFactor = estimates?.intensityFactor;
 
   // Check if user owns this plan for edit permission
   // Database uses profile_id field, not user_id
   const isOwnedByUser = activityPlan.profile_id === profile?.id;
+  const visibilityLabel = isOwnedByUser ? (isPublic ? "Public" : "Private") : "Read only";
   const primaryScheduleLabel = isScheduled
     ? "Reschedule"
     : isOwnedByUser
@@ -561,42 +518,90 @@ export default function ActivityPlanDetailPage() {
       : duplicatePlanMutation.isPending
         ? "Duplicating..."
         : "Duplicate and Schedule";
+  const detailBadges = [
+    activityPlan.activity_category,
+    isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
+    visibilityLabel,
+  ];
 
   // Decode route coordinates if available
-  const routeCoordinates = route?.polyline
-    ? decodePolyline(route.polyline)
-    : null;
+  const routeCoordinates = route?.polyline ? decodePolyline(route.polyline) : null;
 
   return (
     <View className="flex-1 bg-background">
       {/* Scrollable Content */}
       <ScrollView className="flex-1">
         <View className="p-4">
-          {/* Title */}
           <Text className="text-3xl font-bold mb-2">{activityPlan.name}</Text>
-          <View className="flex-row items-center gap-2 mb-3">
-            <Text className="text-sm text-muted-foreground capitalize">
-              {activityPlan.activity_category}
-            </Text>
+          <View className="flex-row flex-wrap gap-2 mb-4">
+            {detailBadges.map((badge) => (
+              <View
+                key={badge}
+                className="rounded-full border border-border bg-muted/30 px-3 py-1.5"
+              >
+                <Text className="text-xs font-medium capitalize text-muted-foreground">
+                  {badge}
+                </Text>
+              </View>
+            ))}
           </View>
 
-          {/* Action Buttons - Two Rows */}
+          {isScheduled && scheduledDate && (
+            <View className="bg-primary/10 border border-primary/20 rounded-xl p-4 mb-4 flex-row items-center">
+              <Icon as={CalendarCheck} size={20} className="text-primary mr-3" />
+              <View className="flex-1">
+                <Text className="text-sm font-semibold text-primary mb-0.5">
+                  Scheduled Activity
+                </Text>
+                <Text className="text-xs text-primary/80">
+                  {format(new Date(scheduledDate), "EEEE, MMMM d, yyyy 'at' h:mm a")}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <View className="bg-card border border-border rounded-xl p-4 mb-4 gap-3">
+            <View className="flex-row justify-between gap-3">
+              <OverviewMetric label="Duration" value={formatDuration(durationMinutes * 60)} />
+              <OverviewMetric label="TSS" value={tss ? `${tss}` : "--"} />
+              <OverviewMetric
+                label="Intensity"
+                value={intensityFactor ? intensityFactor.toFixed(2) : "--"}
+              />
+              <OverviewMetric label="Steps" value={`${steps.length}`} />
+            </View>
+            {(activityPlan.description || activityPlan.notes) && (
+              <View className="gap-2 border-t border-border pt-3">
+                {activityPlan.description ? (
+                  <View className="gap-1">
+                    <Text className="text-sm font-semibold text-foreground">Overview</Text>
+                    <Text className="text-sm leading-5 text-muted-foreground">
+                      {activityPlan.description}
+                    </Text>
+                  </View>
+                ) : null}
+                {activityPlan.notes ? (
+                  <View className="gap-1">
+                    <Text className="text-sm font-semibold text-foreground">Notes</Text>
+                    <Text className="text-sm leading-5 text-muted-foreground">
+                      {activityPlan.notes}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+          </View>
+
           <View className="gap-2 mb-6">
-            {/* Primary Actions Row */}
             <View className="flex-row gap-2">
               <Button
                 onPress={handleRecordNow}
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
+                testID="activity-plan-record-now-button"
               >
-                <Icon
-                  as={Smartphone}
-                  size={16}
-                  className="text-primary-foreground"
-                />
-                <Text className="text-primary-foreground text-sm font-semibold">
-                  Record Now
-                </Text>
+                <Icon as={Smartphone} size={16} className="text-primary-foreground" />
+                <Text className="text-primary-foreground text-sm font-semibold">Record Now</Text>
               </Button>
 
               <Button
@@ -605,11 +610,12 @@ export default function ActivityPlanDetailPage() {
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
                 disabled={!isScheduled && duplicatePlanMutation.isPending}
+                testID={
+                  isScheduled ? "activity-plan-reschedule-button" : "activity-plan-schedule-button"
+                }
               >
                 <Icon as={Calendar} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">
-                  {primaryScheduleLabel}
-                </Text>
+                <Text className="text-foreground text-sm">{primaryScheduleLabel}</Text>
               </Button>
             </View>
 
@@ -621,18 +627,16 @@ export default function ActivityPlanDetailPage() {
                   size="sm"
                   className="flex-1 flex-row items-center justify-center gap-1.5"
                   disabled={removeScheduleMutation.isPending}
+                  testID="activity-plan-remove-schedule-button"
                 >
                   <Icon as={CalendarX} size={16} className="text-destructive" />
                   <Text className="text-destructive text-sm">
-                    {removeScheduleMutation.isPending
-                      ? "Removing..."
-                      : "Remove Schedule"}
+                    {removeScheduleMutation.isPending ? "Removing..." : "Remove Schedule"}
                   </Text>
                 </Button>
               </View>
             )}
 
-            {/* Secondary Actions Row */}
             <View className="flex-row gap-2">
               <Pressable
                 onPress={handleToggleLike}
@@ -641,17 +645,11 @@ export default function ActivityPlanDetailPage() {
                 <Icon
                   as={Heart}
                   size={16}
-                  className={
-                    isLiked
-                      ? "text-red-500 fill-red-500"
-                      : "text-muted-foreground"
-                  }
+                  className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
                 />
                 <Text
                   className={
-                    isLiked
-                      ? "text-red-500 text-sm font-medium"
-                      : "text-muted-foreground text-sm"
+                    isLiked ? "text-red-500 text-sm font-medium" : "text-muted-foreground text-sm"
                   }
                 >
                   {likesCount > 0 ? likesCount : "Like"}
@@ -659,14 +657,8 @@ export default function ActivityPlanDetailPage() {
                 {(commentsData?.total ?? 0) > 0 && (
                   <>
                     <Text className="text-muted-foreground text-sm">·</Text>
-                    <Icon
-                      as={MessageCircle}
-                      size={14}
-                      className="text-muted-foreground"
-                    />
-                    <Text className="text-muted-foreground text-sm">
-                      {commentsData?.total}
-                    </Text>
+                    <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+                    <Text className="text-muted-foreground text-sm">{commentsData?.total}</Text>
                   </>
                 )}
               </Pressable>
@@ -677,23 +669,12 @@ export default function ActivityPlanDetailPage() {
                 size="sm"
                 className="flex-1 flex-row items-center justify-center gap-1.5"
                 disabled={duplicatePlanMutation.isPending}
+                testID="activity-plan-duplicate-button"
               >
                 <Icon as={Copy} size={16} className="text-foreground" />
                 <Text className="text-foreground text-sm">
-                  {duplicatePlanMutation.isPending
-                    ? "Duplicating..."
-                    : "Duplicate"}
+                  {duplicatePlanMutation.isPending ? "Duplicating..." : "Duplicate"}
                 </Text>
-              </Button>
-
-              <Button
-                onPress={handleShare}
-                variant="outline"
-                size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5"
-              >
-                <Icon as={Share2} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">Share</Text>
               </Button>
             </View>
 
@@ -722,6 +703,7 @@ export default function ActivityPlanDetailPage() {
                   variant="outline"
                   size="sm"
                   className="flex-1 flex-row items-center justify-center gap-1.5"
+                  testID="activity-plan-edit-button"
                 >
                   <Icon as={Edit} size={16} className="text-foreground" />
                   <Text className="text-foreground text-sm">Edit</Text>
@@ -733,6 +715,7 @@ export default function ActivityPlanDetailPage() {
                   size="sm"
                   className="flex-1 flex-row items-center justify-center gap-1.5"
                   disabled={deleteMutation.isPending}
+                  testID="activity-plan-delete-button"
                 >
                   <Icon as={Trash2} size={16} className="text-destructive" />
                   <Text className="text-destructive text-sm">
@@ -743,71 +726,6 @@ export default function ActivityPlanDetailPage() {
             )}
           </View>
 
-          {/* Comments Section */}
-          {commentsData && commentsData.comments.length > 0 && (
-            <View className="mb-4 border-t border-border pt-4">
-              <Text className="font-semibold text-foreground mb-3">
-                Comments ({commentsData.total})
-              </Text>
-              {commentsData.comments.map((comment: any) => (
-                <View key={comment.id} className="mb-3">
-                  <View className="flex-row items-center gap-2 mb-1">
-                    <Text className="font-medium text-sm text-foreground">
-                      {comment.profile?.username || "Unknown User"}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {new Date(comment.created_at).toLocaleDateString()}
-                    </Text>
-                  </View>
-                  <Text className="text-sm text-foreground">
-                    {comment.content}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Add Comment Input */}
-          <View className="flex-row items-center gap-2 mb-6">
-            <TextInput
-              className="flex-1 border border-border rounded-lg px-3 py-2 text-foreground"
-              placeholder="Add a comment..."
-              placeholderTextColor="#9ca3af"
-              value={newComment}
-              onChangeText={setNewComment}
-              multiline
-            />
-            <Button
-              onPress={handleAddComment}
-              disabled={!newComment.trim() || addCommentMutation.isPending}
-              size="icon"
-            >
-              <Icon as={Send} size={18} className="text-primary-foreground" />
-            </Button>
-          </View>
-
-          {/* Scheduled Date Banner */}
-          {isScheduled && scheduledDate && (
-            <View className="bg-primary/10 border border-primary/20 rounded-xl p-4 mb-6 flex-row items-center">
-              <Icon
-                as={CalendarCheck}
-                size={20}
-                className="text-primary mr-3"
-              />
-              <View className="flex-1">
-                <Text className="text-sm font-semibold text-primary mb-0.5">
-                  Scheduled Activity
-                </Text>
-                <Text className="text-xs text-primary/80">
-                  {format(
-                    new Date(scheduledDate),
-                    "EEEE, MMMM d, yyyy 'at' h:mm a",
-                  )}
-                </Text>
-              </View>
-            </View>
-          )}
-
           {/* GPX Route Map Preview */}
           {routeCoordinates && routeCoordinates.length > 0 && (
             <View className="bg-card border border-border rounded-xl overflow-hidden mb-6">
@@ -816,12 +734,8 @@ export default function ActivityPlanDetailPage() {
                   style={{ flex: 1 }}
                   provider={PROVIDER_DEFAULT}
                   initialRegion={{
-                    latitude:
-                      routeCoordinates[Math.floor(routeCoordinates.length / 2)]
-                        .latitude,
-                    longitude:
-                      routeCoordinates[Math.floor(routeCoordinates.length / 2)]
-                        .longitude,
+                    latitude: routeCoordinates[Math.floor(routeCoordinates.length / 2)].latitude,
+                    longitude: routeCoordinates[Math.floor(routeCoordinates.length / 2)].longitude,
                     latitudeDelta: 0.05,
                     longitudeDelta: 0.05,
                   }}
@@ -847,9 +761,7 @@ export default function ActivityPlanDetailPage() {
                       {(route.total_distance / 1000).toFixed(1)} km
                     </Text>
                     {route.total_ascent != null && route.total_ascent > 0 && (
-                      <Text className="text-xs text-muted-foreground">
-                        ↑ {route.total_ascent}m
-                      </Text>
+                      <Text className="text-xs text-muted-foreground">↑ {route.total_ascent}m</Text>
                     )}
                     {route.total_descent != null && route.total_descent > 0 && (
                       <Text className="text-xs text-muted-foreground">
@@ -865,13 +777,10 @@ export default function ActivityPlanDetailPage() {
           {/* Intensity Timeline Chart with Stats */}
           {activityPlan.structure && steps.length > 0 && (
             <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              {/* Stats Row Above Chart */}
               <View className="flex-row justify-around mb-4 pb-3 border-b border-border">
                 {durationMinutes && (
                   <View className="items-center">
-                    <Text className="text-xs text-muted-foreground mb-1">
-                      Duration
-                    </Text>
+                    <Text className="text-xs text-muted-foreground mb-1">Duration</Text>
                     <Text className="text-lg font-bold">
                       {formatDuration(durationMinutes * 60)}
                     </Text>
@@ -879,116 +788,118 @@ export default function ActivityPlanDetailPage() {
                 )}
                 {tss && (
                   <View className="items-center">
-                    <Text className="text-xs text-muted-foreground mb-1">
-                      TSS
-                    </Text>
+                    <Text className="text-xs text-muted-foreground mb-1">TSS</Text>
                     <Text className="text-lg font-bold">{tss}</Text>
                   </View>
                 )}
                 {intensityFactor && (
                   <View className="items-center">
-                    <Text className="text-xs text-muted-foreground mb-1">
-                      IF
-                    </Text>
-                    <Text className="text-lg font-bold">
-                      {intensityFactor.toFixed(2)}
-                    </Text>
+                    <Text className="text-xs text-muted-foreground mb-1">IF</Text>
+                    <Text className="text-lg font-bold">{intensityFactor.toFixed(2)}</Text>
                   </View>
                 )}
                 <View className="items-center">
-                  <Text className="text-xs text-muted-foreground mb-1">
-                    Steps
-                  </Text>
+                  <Text className="text-xs text-muted-foreground mb-1">Steps</Text>
                   <Text className="text-lg font-bold">{steps.length}</Text>
                 </View>
               </View>
 
               {/* Intensity Chart */}
-              <Text className="text-sm font-semibold mb-3">
-                Intensity Profile
-              </Text>
+              <Text className="text-sm font-semibold mb-3">Intensity Profile</Text>
               <TimelineChart structure={activityPlan.structure} height={140} />
             </View>
           )}
 
-          {/* Description */}
-          {activityPlan.description && (
-            <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              <Text className="text-sm font-semibold mb-2">Description</Text>
-              <Text className="text-sm text-muted-foreground leading-5">
-                {activityPlan.description}
-              </Text>
-            </View>
-          )}
-
-          {/* Notes */}
-          {activityPlan.notes && (
-            <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              <Text className="text-sm font-semibold mb-2">Notes</Text>
-              <Text className="text-sm text-muted-foreground leading-5">
-                {activityPlan.notes}
-              </Text>
-            </View>
-          )}
-
           {/* Intervals Breakdown */}
-          {activityPlan.structure?.intervals &&
-            activityPlan.structure.intervals.length > 0 && (
-              <View className="bg-card border border-border rounded-xl p-4 mb-6">
-                <Text className="text-sm font-semibold mb-3">
-                  Intervals ({activityPlan.structure.intervals.length})
-                </Text>
+          {activityPlan.structure?.intervals && activityPlan.structure.intervals.length > 0 && (
+            <View className="bg-card border border-border rounded-xl p-4 mb-6">
+              <Text className="text-sm font-semibold mb-3">
+                Intervals ({activityPlan.structure.intervals.length})
+              </Text>
 
-                <View className="gap-3">
-                  {activityPlan.structure.intervals.map(
-                    (interval: any, idx: number) => (
-                      <View
-                        key={interval.id || idx}
-                        className="border border-border rounded-lg p-3"
-                      >
-                        <View className="flex-row items-center justify-between mb-2">
-                          <Text className="font-medium">{interval.name}</Text>
+              <View className="gap-3">
+                {activityPlan.structure.intervals.map((interval: any, idx: number) => (
+                  <View key={interval.id || idx} className="border border-border rounded-lg p-3">
+                    <View className="flex-row items-center justify-between mb-2">
+                      <Text className="font-medium">{interval.name}</Text>
+                      <Text className="text-xs text-muted-foreground">{interval.repetitions}x</Text>
+                    </View>
+
+                    {interval.notes && (
+                      <Text className="text-xs text-muted-foreground mb-2">{interval.notes}</Text>
+                    )}
+
+                    <View className="gap-1.5">
+                      {interval.steps.map((step: IntervalStepV2, stepIdx: number) => (
+                        <View key={step.id || stepIdx} className="flex-row items-center ml-3">
+                          <View
+                            className="w-2 h-2 rounded-full mr-2"
+                            style={{
+                              backgroundColor: getStepIntensityColor(step),
+                            }}
+                          />
+                          <Text className="text-xs text-muted-foreground flex-1">{step.name}</Text>
                           <Text className="text-xs text-muted-foreground">
-                            {interval.repetitions}x
+                            {formatStepDuration(step.duration)}
                           </Text>
                         </View>
-
-                        {interval.notes && (
-                          <Text className="text-xs text-muted-foreground mb-2">
-                            {interval.notes}
-                          </Text>
-                        )}
-
-                        <View className="gap-1.5">
-                          {interval.steps.map(
-                            (step: IntervalStepV2, stepIdx: number) => (
-                              <View
-                                key={step.id || stepIdx}
-                                className="flex-row items-center ml-3"
-                              >
-                                <View
-                                  className="w-2 h-2 rounded-full mr-2"
-                                  style={{
-                                    backgroundColor:
-                                      getStepIntensityColor(step),
-                                  }}
-                                />
-                                <Text className="text-xs text-muted-foreground flex-1">
-                                  {step.name}
-                                </Text>
-                                <Text className="text-xs text-muted-foreground">
-                                  {formatStepDuration(step.duration)}
-                                </Text>
-                              </View>
-                            ),
-                          )}
-                        </View>
-                      </View>
-                    ),
-                  )}
-                </View>
+                      ))}
+                    </View>
+                  </View>
+                ))}
               </View>
+            </View>
+          )}
+
+          <View className="bg-card border border-border rounded-xl p-4 mb-6 gap-4">
+            <View>
+              <Text className="font-semibold text-foreground mb-1">
+                Comments ({commentsData?.total ?? 0})
+              </Text>
+              <Text className="text-sm text-muted-foreground">
+                Ask questions or leave context for anyone reusing this session.
+              </Text>
+            </View>
+
+            <View className="flex-row items-center gap-2">
+              <Textarea
+                className="min-h-11 flex-1"
+                placeholder="Add a comment..."
+                value={newComment}
+                onChangeText={setNewComment}
+              />
+              <Button
+                onPress={handleAddComment}
+                disabled={!newComment.trim() || addCommentMutation.isPending}
+                size="icon"
+              >
+                <Icon as={Send} size={18} className="text-primary-foreground" />
+              </Button>
+            </View>
+
+            {commentsData && commentsData.comments.length > 0 ? (
+              <View className="gap-3 border-t border-border pt-4">
+                {commentsData.comments.map((comment: any) => (
+                  <View
+                    key={comment.id}
+                    className="rounded-lg border border-border/60 bg-background p-3"
+                  >
+                    <View className="flex-row items-center gap-2 mb-1">
+                      <Text className="font-medium text-sm text-foreground">
+                        {comment.profile?.username || "Unknown User"}
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {new Date(comment.created_at).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <Text className="text-sm text-foreground">{comment.content}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text className="text-sm text-muted-foreground">No comments yet.</Text>
             )}
+          </View>
         </View>
       </ScrollView>
 
@@ -997,21 +908,26 @@ export default function ActivityPlanDetailPage() {
         <ScheduleActivityModal
           visible={showScheduleModal}
           onClose={() => setShowScheduleModal(false)}
-          activityPlanId={
-            eventId ? undefined : isOwnedByUser ? activityPlan.id : undefined
-          }
-          activityPlan={
-            !planId && !eventId && isOwnedByUser ? activityPlan : undefined
-          }
+          activityPlanId={eventId ? undefined : isOwnedByUser ? activityPlan.id : undefined}
+          activityPlan={!planId && !eventId && isOwnedByUser ? activityPlan : undefined}
           eventId={eventId}
           onSuccess={() => {
             setShowScheduleModal(false);
             utils.events.invalidate();
-            utils.trainingPlans.invalidate();
+            void invalidateTrainingPlanQueries(utils);
             router.back();
           }}
         />
       )}
+    </View>
+  );
+}
+
+function OverviewMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-1 items-center gap-1">
+      <Text className="text-xs text-muted-foreground">{label}</Text>
+      <Text className="text-base font-semibold text-foreground">{value}</Text>
     </View>
   );
 }

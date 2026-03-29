@@ -76,32 +76,20 @@ export function WeeklyPlanPreview({
                 <Text className="text-muted-foreground text-xs font-medium mr-2">
                   {activity.day}
                 </Text>
-                <View
-                  className={`px-2 py-0.5 rounded ${getStatusBadgeColor(activity.status)}`}
-                >
-                  <Text
-                    className={`${getStatusTextColor(activity.status)} text-xs font-medium`}
-                  >
+                <View className={`px-2 py-0.5 rounded ${getStatusBadgeColor(activity.status)}`}>
+                  <Text className={`${getStatusTextColor(activity.status)} text-xs font-medium`}>
                     {activity.status}
                   </Text>
                 </View>
               </View>
-              <Text className="text-foreground font-medium mb-1">
-                {activity.title}
-              </Text>
+              <Text className="text-foreground font-medium mb-1">{activity.title}</Text>
               <View className="flex-row items-center gap-3">
-                <Text className="text-muted-foreground text-xs">
-                  {activity.type}
-                </Text>
+                <Text className="text-muted-foreground text-xs">{activity.type}</Text>
                 {activity.distance > 0 && (
-                  <Text className="text-muted-foreground text-xs">
-                    {activity.distance} km
-                  </Text>
+                  <Text className="text-muted-foreground text-xs">{activity.distance} km</Text>
                 )}
                 {activity.duration > 0 && (
-                  <Text className="text-muted-foreground text-xs">
-                    {activity.duration} min
-                  </Text>
+                  <Text className="text-muted-foreground text-xs">{activity.duration} min</Text>
                 )}
               </View>
             </View>

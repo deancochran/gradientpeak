@@ -1,14 +1,12 @@
-import { TrainingPlanComposerScreen } from "@/components/training-plan/create/TrainingPlanComposerScreen";
 import { Text } from "@repo/ui/components/text";
-import { ROUTES } from "../../../lib/constants/routes";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { Pressable, View } from "react-native";
+import { TrainingPlanComposerScreen } from "@/components/training-plan/create/TrainingPlanComposerScreen";
+import { ROUTES } from "../../../lib/constants/routes";
 
 const isUuid = (value: string): boolean =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 export default function TrainingPlanEditRoute() {
   const { id, initialTab, section } = useLocalSearchParams<{
@@ -28,12 +26,7 @@ export default function TrainingPlanEditRoute() {
       tab === "calibration" ||
       tab === "review"
     ) {
-      return tab as
-        | "plan"
-        | "availability"
-        | "constraints"
-        | "calibration"
-        | "review";
+      return tab as "plan" | "availability" | "constraints" | "calibration" | "review";
     }
 
     if ((section || "").toLowerCase() === "overview") {
@@ -54,19 +47,13 @@ export default function TrainingPlanEditRoute() {
           className="mt-4 rounded-md bg-primary px-4 py-2"
           onPress={() => router.replace(ROUTES.PLAN.INDEX)}
         >
-          <Text className="font-semibold text-primary-foreground">
-            Back to plan
-          </Text>
+          <Text className="font-semibold text-primary-foreground">Back to plan</Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <TrainingPlanComposerScreen
-      mode="edit"
-      planId={id as string}
-      initialTab={resolvedInitialTab}
-    />
+    <TrainingPlanComposerScreen mode="edit" planId={id as string} initialTab={resolvedInitialTab} />
   );
 }

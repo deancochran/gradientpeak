@@ -1,7 +1,7 @@
 "use client";
 
-import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import * as React from "react";
 
 import { cn } from "../../lib/cn";
 import { DEFAULT_TOOLTIP_DELAY_DURATION, type TooltipSide } from "./shared";
@@ -44,9 +44,7 @@ function Tooltip(props: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   );
 }
 
-function TooltipTrigger(
-  props: React.ComponentProps<typeof TooltipPrimitive.Trigger>,
-) {
+function TooltipTrigger(props: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 

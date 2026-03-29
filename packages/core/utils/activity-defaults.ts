@@ -1,12 +1,11 @@
-import type { PublicActivityCategory } from "@repo/supabase";
-import type { DurationV2, IntensityTargetV2, PlanStepV2 } from "../schemas";
+import type { CanonicalSport, DurationV2, IntensityTargetV2, PlanStepV2 } from "../schemas";
 import { getSportStepDefaults, getSportStepName } from "../sports";
 
 /**
  * Context for generating smart defaults for activity steps
  */
 export interface DefaultsContext {
-  activityCategory: PublicActivityCategory;
+  activityCategory: CanonicalSport;
   position: number; // 0 = first step, -1 = last step
   totalSteps: number;
 }

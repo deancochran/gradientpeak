@@ -150,9 +150,7 @@ export const activityPlanStructureSchemaV2 = z.object({
   intervals: z.array(intervalSchemaV2).min(1).max(50),
 });
 
-export type ActivityPlanStructureV2 = z.infer<
-  typeof activityPlanStructureSchemaV2
->;
+export type ActivityPlanStructureV2 = z.infer<typeof activityPlanStructureSchemaV2>;
 
 // ==============================
 // MINIMAL STRUCTURE HELPERS
@@ -262,9 +260,7 @@ export function validateActivityPlanStructureV2(data: unknown): {
 /**
  * Get intensity color for visualization (works with both IntervalStepV2 and deprecated PlanStepV2)
  */
-export function getStepIntensityColor(
-  step: IntervalStepV2 | PlanStepV2,
-): string {
+export function getStepIntensityColor(step: IntervalStepV2 | PlanStepV2): string {
   const primaryTarget = step.targets?.[0];
   if (!primaryTarget) return "#94a3b8"; // gray for no target
 

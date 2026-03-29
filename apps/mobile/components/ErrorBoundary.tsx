@@ -1,10 +1,10 @@
 // apps/mobile/components/ErrorBoundary.tsx
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { captureException } from "@/lib/services/sentry";
 import { router, useRouter } from "expo-router";
 import * as React from "react";
 import { ScrollView, View } from "react-native";
+import { captureException } from "@/lib/services/sentry";
 
 interface Props {
   children: React.ReactNode;
@@ -80,9 +80,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (this.state.hasError && this.state.error) {
       const FallbackComponent = this.props.fallback || DefaultErrorFallback;
-      return (
-        <FallbackComponent error={this.state.error} resetError={this.reset} />
-      );
+      return <FallbackComponent error={this.state.error} resetError={this.reset} />;
     }
 
     return this.props.children;
@@ -117,13 +115,9 @@ function DefaultErrorFallback({ error, resetError }: ErrorFallbackProps) {
           <Text className="text-muted-foreground text-sm font-semibold mb-2">
             Error Details (Dev Mode):
           </Text>
-          <Text className="text-muted-foreground text-xs font-mono">
-            {error.message}
-          </Text>
+          <Text className="text-muted-foreground text-xs font-mono">{error.message}</Text>
           {error.stack && (
-            <Text className="text-muted-foreground text-xs font-mono mt-2">
-              {error.stack}
-            </Text>
+            <Text className="text-muted-foreground text-xs font-mono mt-2">{error.stack}</Text>
           )}
         </ScrollView>
       )}
@@ -132,11 +126,7 @@ function DefaultErrorFallback({ error, resetError }: ErrorFallbackProps) {
         <Text className="text-primary-foreground font-semibold">Try Again</Text>
       </Button>
 
-      <Button
-        variant="outline"
-        onPress={handleGoHome}
-        className="w-full max-w-xs"
-      >
+      <Button variant="outline" onPress={handleGoHome} className="w-full max-w-xs">
         <Text className="text-foreground">Go Home</Text>
       </Button>
     </View>
@@ -160,15 +150,12 @@ export function ScreenErrorFallback({ error, resetError }: ErrorFallbackProps) {
   return (
     <View className="flex-1 justify-center items-center p-6 bg-background">
       <View className="items-center max-w-md">
-        <Text className="text-destructive text-3xl font-bold mb-4 text-center">
-          Oops!
-        </Text>
+        <Text className="text-destructive text-3xl font-bold mb-4 text-center">Oops!</Text>
         <Text className="text-foreground text-xl font-semibold mb-2 text-center">
           Something went wrong on this screen
         </Text>
         <Text className="text-muted-foreground text-base mb-8 text-center">
-          Don&apos;t worry, the rest of the app should still work. Try
-          refreshing or go back.
+          Don&apos;t worry, the rest of the app should still work. Try refreshing or go back.
         </Text>
 
         {__DEV__ && (
@@ -176,9 +163,7 @@ export function ScreenErrorFallback({ error, resetError }: ErrorFallbackProps) {
             <Text className="text-muted-foreground text-sm font-semibold mb-2">
               Error Details (Dev Mode):
             </Text>
-            <Text className="text-muted-foreground text-xs font-mono">
-              {error.message}
-            </Text>
+            <Text className="text-muted-foreground text-xs font-mono">{error.message}</Text>
             {error.stack && (
               <Text className="text-muted-foreground text-xs font-mono mt-2 opacity-70">
                 {error.stack.split("\n").slice(0, 5).join("\n")}
@@ -188,9 +173,7 @@ export function ScreenErrorFallback({ error, resetError }: ErrorFallbackProps) {
         )}
 
         <Button onPress={resetError} className="mb-3 w-full">
-          <Text className="text-primary-foreground font-semibold">
-            Refresh Screen
-          </Text>
+          <Text className="text-primary-foreground font-semibold">Refresh Screen</Text>
         </Button>
 
         <Button variant="outline" onPress={handleGoBack} className="w-full">
@@ -230,24 +213,15 @@ export function ModalErrorFallback({ error, resetError }: ErrorFallbackProps) {
             <Text className="text-muted-foreground text-xs font-semibold mb-1">
               Dev Mode Error:
             </Text>
-            <Text className="text-muted-foreground text-xs font-mono">
-              {error.message}
-            </Text>
+            <Text className="text-muted-foreground text-xs font-mono">{error.message}</Text>
           </View>
         )}
 
         <Button onPress={resetError} size="sm" className="mb-2 w-full">
-          <Text className="text-primary-foreground font-semibold">
-            Try Again
-          </Text>
+          <Text className="text-primary-foreground font-semibold">Try Again</Text>
         </Button>
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onPress={handleClose}
-          className="w-full"
-        >
+        <Button variant="ghost" size="sm" onPress={handleClose} className="w-full">
           <Text className="text-muted-foreground">Close</Text>
         </Button>
       </View>
@@ -261,9 +235,7 @@ export function ModalErrorFallback({ error, resetError }: ErrorFallbackProps) {
 export function InlineErrorFallback({ error, resetError }: ErrorFallbackProps) {
   return (
     <View className="p-4 bg-muted rounded-lg">
-      <Text className="text-destructive text-sm font-semibold mb-2">
-        Failed to load
-      </Text>
+      <Text className="text-destructive text-sm font-semibold mb-2">Failed to load</Text>
       <Text className="text-muted-foreground text-xs mb-3">
         {__DEV__ ? error.message : "Something went wrong. Please try again."}
       </Text>
@@ -277,10 +249,7 @@ export function InlineErrorFallback({ error, resetError }: ErrorFallbackProps) {
 /**
  * Utility function to compare arrays for resetKeys
  */
-function areArraysEqual(
-  arr1: Array<string | number>,
-  arr2: Array<string | number>,
-): boolean {
+function areArraysEqual(arr1: Array<string | number>, arr2: Array<string | number>): boolean {
   if (arr1.length !== arr2.length) return false;
   return arr1.every((value, index) => value === arr2[index]);
 }

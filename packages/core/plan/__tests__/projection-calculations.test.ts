@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
+import { buildDeterministicProjectionPayload as buildDeterministicProjectionPayloadFromEngine } from "../projection/engine";
 import {
   buildDeterministicProjectionPayload,
   clampNoHistoryFloorByAvailability,
+  classifyBuildTimeFeasibility,
   collectNoHistoryEvidence,
   computeBuildTimeFeasibilityScore,
-  deriveNoHistoryProjectionFloor,
   deriveGoalDemandProfileFromTargets,
+  deriveNoHistoryProjectionFloor,
   determineNoHistoryFitnessLevel,
   getOptimizationProfileBehavior,
+  getProjectionWeekPattern,
   mapFeasibilityToConfidence,
   resolveNoHistoryAnchor,
-  classifyBuildTimeFeasibility,
-  getProjectionWeekPattern,
   weeklyLoadFromBlockAndBaseline,
 } from "../projectionCalculations";
-import { buildDeterministicProjectionPayload as buildDeterministicProjectionPayloadFromEngine } from "../projection/engine";
 
 describe("projection calculations", () => {
   it("keeps engine entrypoint behavior aligned with legacy projectionCalculations export", () => {
@@ -45,8 +45,7 @@ describe("projection calculations", () => {
     };
 
     const legacyProjection = buildDeterministicProjectionPayload(input);
-    const engineProjection =
-      buildDeterministicProjectionPayloadFromEngine(input);
+    const engineProjection = buildDeterministicProjectionPayloadFromEngine(input);
 
     expect(engineProjection).toEqual(legacyProjection);
   });
@@ -131,12 +130,8 @@ describe("projection calculations", () => {
       preference_profile: defaultAthletePreferenceProfile,
     });
 
-    expect(projection.reference_trajectory?.mode).toBe(
-      projection.trajectory_mode,
-    );
-    expect(projection.reference_trajectory?.feasibility).toEqual(
-      projection.feasibility_assessment,
-    );
+    expect(projection.reference_trajectory?.mode).toBe(projection.trajectory_mode);
+    expect(projection.reference_trajectory?.feasibility).toEqual(projection.feasibility_assessment);
     expect(projection.projection_diagnostics?.reference_context).toMatchObject({
       status: "available",
       supported_goal_count: 1,
@@ -180,9 +175,7 @@ describe("projection calculations", () => {
 
     expect(buildProjection).not.toThrow();
     expect(buildProjection().reference_trajectory).toBeUndefined();
-    expect(
-      buildProjection().projection_diagnostics?.reference_context,
-    ).toMatchObject({
+    expect(buildProjection().projection_diagnostics?.reference_context).toMatchObject({
       status: "unsupported",
       supported_goal_count: 0,
     });
@@ -247,18 +240,12 @@ describe("projection calculations", () => {
     });
 
     expect(tracked.reference_trajectory).toBeDefined();
-    expect(tracked.projection_diagnostics?.reference_context?.status).toBe(
-      "available",
-    );
+    expect(tracked.projection_diagnostics?.reference_context?.status).toBe("available");
     expect(
       tracked.projection_diagnostics?.reference_tracking?.taper_pressure ?? 0,
     ).toBeGreaterThanOrEqual(0);
-    expect(
-      Number.isFinite(tracked.microcycles[0]?.planned_weekly_tss ?? NaN),
-    ).toBe(true);
-    expect(
-      Number.isFinite(unsupported.microcycles[0]?.planned_weekly_tss ?? NaN),
-    ).toBe(true);
+    expect(Number.isFinite(tracked.microcycles[0]?.planned_weekly_tss ?? NaN)).toBe(true);
+    expect(Number.isFinite(unsupported.microcycles[0]?.planned_weekly_tss ?? NaN)).toBe(true);
   });
 
   it("blends block target range and baseline weekly TSS", () => {
@@ -333,9 +320,7 @@ describe("projection calculations", () => {
 
     expect(highPriorityPattern.pattern).toBe("taper");
     expect(lowPriorityPattern.pattern).toBe("taper");
-    expect(highPriorityPattern.multiplier).toBeLessThan(
-      lowPriorityPattern.multiplier,
-    );
+    expect(highPriorityPattern.multiplier).toBeLessThan(lowPriorityPattern.multiplier);
   });
 
   it("blends multi-goal taper influence using priority-aware weighting", () => {
@@ -398,9 +383,7 @@ describe("projection calculations", () => {
     const week3 = projection.microcycles[2]?.planned_weekly_tss ?? 0;
     const week4 = projection.microcycles[3]?.planned_weekly_tss ?? 0;
     expect(week4).toBeGreaterThan(0);
-    expect(Math.abs(week4 - week3)).toBeLessThanOrEqual(
-      Math.max(15, week3 * 0.1),
-    );
+    expect(Math.abs(week4 - week3)).toBeLessThanOrEqual(Math.max(15, week3 * 0.1));
   });
 
   it("keeps week-to-week load variability from periodization patterns without explicit ramp overrides", () => {
@@ -433,15 +416,11 @@ describe("projection calculations", () => {
       disable_weekly_tss_optimizer: true,
     });
 
-    const weekLoads = projection.microcycles
-      .slice(0, 4)
-      .map((cycle) => cycle.planned_weekly_tss);
+    const weekLoads = projection.microcycles.slice(0, 4).map((cycle) => cycle.planned_weekly_tss);
 
     expect(new Set(weekLoads).size).toBeGreaterThan(1);
     expect(weekLoads[2] ?? 0).toBeGreaterThan(weekLoads[1] ?? 0);
-    expect(weekLoads[3] ?? Number.POSITIVE_INFINITY).toBeLessThan(
-      weekLoads[2] ?? 0,
-    );
+    expect(weekLoads[3] ?? Number.POSITIVE_INFINITY).toBeLessThan(weekLoads[2] ?? 0);
   });
 });
 
@@ -521,9 +500,7 @@ describe("deterministic projection goal conflict weighting", () => {
       },
     });
 
-    expect(
-      highPriorityUrgent.microcycles[0]?.planned_weekly_tss,
-    ).toBeLessThanOrEqual(
+    expect(highPriorityUrgent.microcycles[0]?.planned_weekly_tss).toBeLessThanOrEqual(
       lowPriorityUrgent.microcycles[0]?.planned_weekly_tss ?? 0,
     );
   });
@@ -559,33 +536,17 @@ describe("deterministic inferred current state", () => {
   it("emits inferred_current_state with bootstrap metadata", () => {
     const projection = buildDeterministicProjectionPayload(baseInput);
 
-    expect(projection.inferred_current_state.as_of).toBe(
-      "2026-03-02T00:00:00.000Z",
-    );
-    expect(projection.inferred_current_state.mean.ctl).toBeGreaterThanOrEqual(
+    expect(projection.inferred_current_state.as_of).toBe("2026-03-02T00:00:00.000Z");
+    expect(projection.inferred_current_state.mean.ctl).toBeGreaterThanOrEqual(0);
+    expect(projection.inferred_current_state.mean.atl).toBeGreaterThanOrEqual(0);
+    expect(projection.inferred_current_state.uncertainty.state_variance).toBeGreaterThanOrEqual(0);
+    expect(projection.inferred_current_state.uncertainty.state_variance).toBeLessThanOrEqual(1);
+    expect(projection.inferred_current_state.evidence_quality.score).toBeGreaterThanOrEqual(0);
+    expect(projection.inferred_current_state.evidence_quality.score).toBeLessThanOrEqual(1);
+    expect(projection.inferred_current_state.metadata.missingness_counter).toBeGreaterThanOrEqual(
       0,
     );
-    expect(projection.inferred_current_state.mean.atl).toBeGreaterThanOrEqual(
-      0,
-    );
-    expect(
-      projection.inferred_current_state.uncertainty.state_variance,
-    ).toBeGreaterThanOrEqual(0);
-    expect(
-      projection.inferred_current_state.uncertainty.state_variance,
-    ).toBeLessThanOrEqual(1);
-    expect(
-      projection.inferred_current_state.evidence_quality.score,
-    ).toBeGreaterThanOrEqual(0);
-    expect(
-      projection.inferred_current_state.evidence_quality.score,
-    ).toBeLessThanOrEqual(1);
-    expect(
-      projection.inferred_current_state.metadata.missingness_counter,
-    ).toBeGreaterThanOrEqual(0);
-    expect(
-      projection.inferred_current_state.metadata.evidence_counter,
-    ).toBeGreaterThanOrEqual(0);
+    expect(projection.inferred_current_state.metadata.evidence_counter).toBeGreaterThanOrEqual(0);
   });
 
   it("reuses prior inferred snapshot deterministically", () => {
@@ -624,12 +585,10 @@ describe("deterministic inferred current state", () => {
     });
 
     expect(first.inferred_current_state).toEqual(second.inferred_current_state);
-    expect(
-      first.constraint_summary.starting_state.starting_state_is_prior,
-    ).toBe(true);
-    expect(
-      first.constraint_summary.starting_state.starting_ctl,
-    ).toBeGreaterThan(baseInput.starting_ctl ?? 0);
+    expect(first.constraint_summary.starting_state.starting_state_is_prior).toBe(true);
+    expect(first.constraint_summary.starting_state.starting_ctl).toBeGreaterThan(
+      baseInput.starting_ctl ?? 0,
+    );
     expect(first.constraint_summary.starting_state.starting_ctl).toBe(
       first.inferred_current_state.mean.ctl,
     );
@@ -637,9 +596,7 @@ describe("deterministic inferred current state", () => {
 });
 
 describe("deterministic weekly TSS optimizer", () => {
-  const optimizerFixture: Parameters<
-    typeof buildDeterministicProjectionPayload
-  >[0] = {
+  const optimizerFixture: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
     timeline: {
       start_date: "2026-01-05",
       end_date: "2026-02-08",
@@ -674,9 +631,7 @@ describe("deterministic weekly TSS optimizer", () => {
     projection: ReturnType<typeof buildDeterministicProjectionPayload>,
   ): number => {
     const resolveGoalReadiness = (targetDate: string): number => {
-      const exact = projection.points.find(
-        (point) => point.date === targetDate,
-      );
+      const exact = projection.points.find((point) => point.date === targetDate);
       if (exact) {
         return exact.readiness_score;
       }
@@ -685,8 +640,7 @@ describe("deterministic weekly TSS optimizer", () => {
       let nearestDistance = Number.POSITIVE_INFINITY;
       for (const point of projection.points) {
         const distance = Math.abs(
-          Date.parse(`${point.date}T00:00:00.000Z`) -
-            Date.parse(`${targetDate}T00:00:00.000Z`),
+          Date.parse(`${point.date}T00:00:00.000Z`) - Date.parse(`${targetDate}T00:00:00.000Z`),
         );
         if (distance < nearestDistance) {
           nearest = point;
@@ -700,10 +654,7 @@ describe("deterministic weekly TSS optimizer", () => {
     let weightedTotal = 0;
     let totalWeight = 0;
     for (const goal of projection.goal_markers) {
-      const priority = Math.max(
-        1,
-        Math.min(10, Math.round(goal.priority ?? 1)),
-      );
+      const priority = Math.max(1, Math.min(10, Math.round(goal.priority ?? 1)));
       const weight = 11 - priority;
       weightedTotal += resolveGoalReadiness(goal.target_date) * weight;
       totalWeight += weight;
@@ -720,15 +671,11 @@ describe("deterministic weekly TSS optimizer", () => {
     });
 
     const hasDecisionDiff = optimized.microcycles.some(
-      (cycle, index) =>
-        cycle.planned_weekly_tss !==
-        naive.microcycles[index]?.planned_weekly_tss,
+      (cycle, index) => cycle.planned_weekly_tss !== naive.microcycles[index]?.planned_weekly_tss,
     );
 
     if (hasDecisionDiff) {
-      expect(weightedGoalReadiness(optimized)).toBeGreaterThanOrEqual(
-        weightedGoalReadiness(naive),
-      );
+      expect(weightedGoalReadiness(optimized)).toBeGreaterThanOrEqual(weightedGoalReadiness(naive));
     } else {
       expect(optimized.microcycles).toEqual(naive.microcycles);
     }
@@ -741,9 +688,7 @@ describe("deterministic weekly TSS optimizer", () => {
       disable_weekly_tss_optimizer: true,
     });
 
-    expect(weightedGoalReadiness(optimized)).toBeGreaterThanOrEqual(
-      weightedGoalReadiness(naive),
-    );
+    expect(weightedGoalReadiness(optimized)).toBeGreaterThanOrEqual(weightedGoalReadiness(naive));
   });
 
   it("maximizes safe preparedness toward readiness 100", () => {
@@ -753,9 +698,7 @@ describe("deterministic weekly TSS optimizer", () => {
       disable_weekly_tss_optimizer: true,
     });
 
-    expect(optimized.readiness_score).toBeGreaterThanOrEqual(
-      baseline.readiness_score,
-    );
+    expect(optimized.readiness_score).toBeGreaterThanOrEqual(baseline.readiness_score);
     expect(
       optimized.microcycles.every((cycle) => {
         const tssRamp = cycle.metadata.tss_ramp;
@@ -776,9 +719,7 @@ describe("deterministic weekly TSS optimizer", () => {
   });
 
   it("remains deterministic for multi-goal plans", () => {
-    const multiGoalInput: Parameters<
-      typeof buildDeterministicProjectionPayload
-    >[0] = {
+    const multiGoalInput: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
       ...optimizerFixture,
       goals: [
         {
@@ -811,15 +752,11 @@ describe("deterministic weekly TSS optimizer", () => {
     expect(aggressive.optimizer_lookahead_weeks).toBeGreaterThan(
       balanced.optimizer_lookahead_weeks,
     );
-    expect(stable.volatility_penalty_weight).toBeGreaterThan(
-      balanced.volatility_penalty_weight,
-    );
+    expect(stable.volatility_penalty_weight).toBeGreaterThan(balanced.volatility_penalty_weight);
     expect(aggressive.goal_readiness_weight).toBe(1);
     expect(balanced.goal_readiness_weight).toBe(1);
     expect(stable.goal_readiness_weight).toBe(1);
-    expect(stable.overload_penalty_weight).toBeGreaterThan(
-      aggressive.overload_penalty_weight,
-    );
+    expect(stable.overload_penalty_weight).toBeGreaterThan(aggressive.overload_penalty_weight);
   });
 });
 
@@ -922,12 +859,8 @@ describe("no-history anchor orchestration", () => {
 
     expect(anchor.required_peak_weekly_tss?.target ?? 0).toBeGreaterThan(450);
     expect(anchor.evidence_confidence?.score ?? 0).toBeGreaterThanOrEqual(0.75);
-    expect(anchor.fitness_inference_reasons).toContain(
-      "demand_model_dynamic_continuous_v1",
-    );
-    expect(anchor.fitness_inference_reasons).toContain(
-      "race_performance_target_with_pace",
-    );
+    expect(anchor.fitness_inference_reasons).toContain("demand_model_dynamic_continuous_v1");
+    expect(anchor.fitness_inference_reasons).toContain("race_performance_target_with_pace");
   });
 
   it("keeps demand continuous for nearby marathon target times", () => {
@@ -1011,9 +944,7 @@ describe("no-history anchor orchestration", () => {
     const high = deriveNoHistoryProjectionFloor("high", "weak", 0.9);
 
     expect(high.start_ctl_floor).toBeGreaterThan(low.start_ctl_floor);
-    expect(high.start_weekly_tss_floor).toBe(
-      Math.round(high.start_ctl_floor * 7),
-    );
+    expect(high.start_weekly_tss_floor).toBe(Math.round(high.start_ctl_floor * 7));
   });
 
   it("clamps no-history floor by availability and returns clamp flag", () => {
@@ -1121,13 +1052,9 @@ describe("no-history anchor orchestration", () => {
 
     expect(resolved.fitness_level).toBe("weak");
     expect(resolved.fitness_signal_0_1 ?? 1).toBeLessThan(0.62);
-    expect(resolved.fitness_inference_reasons).toContain(
-      "availability_missing_skip_floor_clamp",
-    );
+    expect(resolved.fitness_inference_reasons).toContain("availability_missing_skip_floor_clamp");
     expect(resolved.starting_ctl_for_projection).toBe(18);
-    expect(resolved.fitness_inference_reasons).toContain(
-      "starting_ctl_defaulted_shared_prior",
-    );
+    expect(resolved.fitness_inference_reasons).toContain("starting_ctl_defaulted_shared_prior");
   });
 
   it("supports no-history starting ctl override when explicitly provided", () => {
@@ -1151,9 +1078,7 @@ describe("no-history anchor orchestration", () => {
 
     expect(resolved.starting_ctl_for_projection).toBe(18);
     expect(resolved.starting_weekly_tss_for_projection).toBe(126);
-    expect(resolved.fitness_inference_reasons).toContain(
-      "starting_ctl_override_applied",
-    );
+    expect(resolved.fitness_inference_reasons).toContain("starting_ctl_override_applied");
   });
 
   it("caps youth no-history demand using the age-safe ctl ceiling", () => {
@@ -1183,9 +1108,7 @@ describe("no-history anchor orchestration", () => {
     });
 
     expect(resolved.starting_ctl_for_projection).toBeLessThan(18);
-    expect(
-      resolved.required_event_demand_range?.target ?? 0,
-    ).toBeLessThanOrEqual(90);
+    expect(resolved.required_event_demand_range?.target ?? 0).toBeLessThanOrEqual(90);
   });
 
   it("maps feasibility bands to confidence levels", () => {
@@ -1258,9 +1181,7 @@ describe("no-history anchor orchestration", () => {
     });
 
     expect(resolved.projection_floor_confidence).toBe("medium");
-    expect(resolved.fitness_inference_reasons).toContain(
-      "confidence_downgraded_multi_goal_plan",
-    );
+    expect(resolved.fitness_inference_reasons).toContain("confidence_downgraded_multi_goal_plan");
   });
 
   it("emits demand-band floor metadata on constrained early weeks", () => {
@@ -1312,9 +1233,9 @@ describe("no-history anchor orchestration", () => {
     });
 
     expect(projection.no_history.projection_floor_applied).toBe(true);
-    expect(
-      projection.no_history.projection_floor_values?.start_weekly_tss,
-    ).toBeGreaterThanOrEqual(140);
+    expect(projection.no_history.projection_floor_values?.start_weekly_tss).toBeGreaterThanOrEqual(
+      140,
+    );
     expect(projection.no_history.evidence_confidence).toBeTruthy();
     expect(projection.no_history.projection_feasibility).toBeTruthy();
     expect(projection.constraint_summary.starting_state.starting_ctl).toBe(18);
@@ -1322,10 +1243,7 @@ describe("no-history anchor orchestration", () => {
       projection.microcycles
         .slice(0, 6)
         .some((cycle) =>
-          Number.isFinite(
-            cycle.metadata.tss_ramp.demand_band_minimum_weekly_tss ??
-              Number.NaN,
-          ),
+          Number.isFinite(cycle.metadata.tss_ramp.demand_band_minimum_weekly_tss ?? Number.NaN),
         ),
     ).toBe(true);
   });
@@ -1380,9 +1298,7 @@ describe("no-history anchor orchestration", () => {
 
     expect(firstFeasibility?.readiness_score).toBeGreaterThanOrEqual(0);
     expect(firstFeasibility?.readiness_score).toBeLessThanOrEqual(100);
-    expect(firstFeasibility?.readiness_score).toBe(
-      secondFeasibility?.readiness_score,
-    );
+    expect(firstFeasibility?.readiness_score).toBe(secondFeasibility?.readiness_score);
     expect(firstFeasibility?.readiness_components).toBeTruthy();
     expect(firstFeasibility?.projection_uncertainty).toBeTruthy();
     expect(first.readiness_confidence).toBeGreaterThanOrEqual(0);
@@ -1405,9 +1321,7 @@ describe("no-history anchor orchestration", () => {
           target_weekly_tss_range: { min: 180, max: 220 },
         },
       ],
-      goals: [
-        { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
-      ],
+      goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
       starting_ctl: 22,
       creation_config: {
         optimization_profile: "outcome_first",
@@ -1443,9 +1357,7 @@ describe("no-history anchor orchestration", () => {
           target_weekly_tss_range: { min: 120, max: 140 },
         },
       ],
-      goals: [
-        { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
-      ],
+      goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
       starting_ctl: 8,
       creation_config: {
         optimization_profile: "sustainable",
@@ -1471,15 +1383,14 @@ describe("no-history anchor orchestration", () => {
     });
 
     const lenientFeasibility = lenient.no_history.projection_feasibility!;
-    const constrainedFeasibility =
-      constrained.no_history.projection_feasibility!;
+    const constrainedFeasibility = constrained.no_history.projection_feasibility!;
 
     expect(constrainedFeasibility.readiness_score ?? 100).toBeLessThan(
       lenientFeasibility.readiness_score ?? 0,
     );
-    expect(
-      constrainedFeasibility.demand_gap.unmet_weekly_tss,
-    ).toBeGreaterThanOrEqual(lenientFeasibility.demand_gap.unmet_weekly_tss);
+    expect(constrainedFeasibility.demand_gap.unmet_weekly_tss).toBeGreaterThanOrEqual(
+      lenientFeasibility.demand_gap.unmet_weekly_tss,
+    );
   });
 
   it("keeps goal-too-soon scenarios explicitly timeline-limited", () => {
@@ -1529,12 +1440,8 @@ describe("no-history anchor orchestration", () => {
     const feasibility = projection.no_history.projection_feasibility;
 
     expect(feasibility?.low_readiness_limiter_mode).toBe("timeline_limited");
-    expect(feasibility?.readiness_rationale_codes).toContain(
-      "readiness_limiter_timeline_limited",
-    );
-    expect(projection.readiness_rationale_codes).toContain(
-      "readiness_limiter_timeline_limited",
-    );
+    expect(feasibility?.readiness_rationale_codes).toContain("readiness_limiter_timeline_limited");
+    expect(projection.readiness_rationale_codes).toContain("readiness_limiter_timeline_limited");
   });
 
   it("keeps low-capacity long-horizon scenarios explicitly capacity-limited", () => {
@@ -1584,12 +1491,8 @@ describe("no-history anchor orchestration", () => {
     const feasibility = projection.no_history.projection_feasibility;
 
     expect(feasibility?.low_readiness_limiter_mode).toBe("capacity_limited");
-    expect(feasibility?.readiness_rationale_codes).toContain(
-      "readiness_limiter_capacity_limited",
-    );
-    expect(projection.readiness_rationale_codes).toContain(
-      "readiness_limiter_capacity_limited",
-    );
+    expect(feasibility?.readiness_rationale_codes).toContain("readiness_limiter_capacity_limited");
+    expect(projection.readiness_rationale_codes).toContain("readiness_limiter_capacity_limited");
   });
 
   it("widens uncertainty and lowers readiness with weaker evidence confidence", () => {
@@ -1604,9 +1507,7 @@ describe("no-history anchor orchestration", () => {
           target_weekly_tss_range: { min: 120, max: 150 },
         },
       ],
-      goals: [
-        { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
-      ],
+      goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
       no_history_context: {
         history_availability_state: "rich",
         goal_tier: "high",
@@ -1636,9 +1537,7 @@ describe("no-history anchor orchestration", () => {
           target_weekly_tss_range: { min: 120, max: 150 },
         },
       ],
-      goals: [
-        { id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 },
-      ],
+      goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
       no_history_context: {
         history_availability_state: "none",
         goal_tier: "high",
@@ -1660,15 +1559,13 @@ describe("no-history anchor orchestration", () => {
     const high = highConfidence.no_history.projection_feasibility!;
     const low = lowConfidence.no_history.projection_feasibility!;
     const highWidth =
-      (high.projection_uncertainty?.tss_high ?? 0) -
-      (high.projection_uncertainty?.tss_low ?? 0);
+      (high.projection_uncertainty?.tss_high ?? 0) - (high.projection_uncertainty?.tss_low ?? 0);
     const lowWidth =
-      (low.projection_uncertainty?.tss_high ?? 0) -
-      (low.projection_uncertainty?.tss_low ?? 0);
+      (low.projection_uncertainty?.tss_high ?? 0) - (low.projection_uncertainty?.tss_low ?? 0);
 
-    expect(
-      Math.abs((high.readiness_score ?? 0) - (low.readiness_score ?? 0)),
-    ).toBeLessThanOrEqual(4);
+    expect(Math.abs((high.readiness_score ?? 0) - (low.readiness_score ?? 0))).toBeLessThanOrEqual(
+      4,
+    );
     expect(lowWidth).toBeGreaterThan(highWidth);
   });
 
@@ -1706,12 +1603,10 @@ describe("no-history anchor orchestration", () => {
 
     expect(week1.metadata.tss_ramp.seed_source).toBe("starting_ctl");
     expect(week1.metadata.tss_ramp.seed_weekly_tss).toBe(210);
-    expect(
-      week2.metadata.tss_ramp.rolling_base_components.previous_week_tss,
-    ).toBe(week1.planned_weekly_tss);
-    expect(
-      week2.metadata.tss_ramp.rolling_base_components.previous_week_tss,
-    ).not.toBe(80);
+    expect(week2.metadata.tss_ramp.rolling_base_components.previous_week_tss).toBe(
+      week1.planned_weekly_tss,
+    );
+    expect(week2.metadata.tss_ramp.rolling_base_components.previous_week_tss).not.toBe(80);
   });
 
   it("falls back to dynamic seed when CTL is unavailable", () => {
@@ -1742,12 +1637,8 @@ describe("no-history anchor orchestration", () => {
       },
     });
 
-    expect(projection.microcycles[0]!.metadata.tss_ramp.seed_source).toBe(
-      "dynamic_seed",
-    );
-    expect(projection.microcycles[0]!.metadata.tss_ramp.seed_weekly_tss).toBe(
-      135,
-    );
+    expect(projection.microcycles[0]!.metadata.tss_ramp.seed_source).toBe("dynamic_seed");
+    expect(projection.microcycles[0]!.metadata.tss_ramp.seed_weekly_tss).toBe(135);
   });
 });
 
@@ -1831,12 +1722,8 @@ describe("phase 1 scoring integration", () => {
     });
 
     expect(projection.readiness_confidence).toBeGreaterThanOrEqual(0);
-    expect(projection.capacity_envelope?.envelope_state).toMatch(
-      /inside|edge|outside/,
-    );
-    expect(projection.readiness_rationale_codes?.length ?? 0).toBeGreaterThan(
-      0,
-    );
+    expect(projection.capacity_envelope?.envelope_state).toMatch(/inside|edge|outside/);
+    expect(projection.readiness_rationale_codes?.length ?? 0).toBeGreaterThan(0);
     expect("mode_applied" in projection).toBe(false);
     expect("overrides_applied" in projection).toBe(false);
   });
@@ -1885,8 +1772,7 @@ describe("phase 1 scoring integration", () => {
     const goalReadinessValues = projection.goal_markers
       .map(
         (goal) =>
-          projection.points.find((point) => point.date === goal.target_date)
-            ?.readiness_score,
+          projection.points.find((point) => point.date === goal.target_date)?.readiness_score,
       )
       .filter((value): value is number => value !== undefined);
 
@@ -1894,14 +1780,10 @@ describe("phase 1 scoring integration", () => {
       goalReadinessValues.reduce((sum, value) => sum + value, 0) /
       Math.max(1, goalReadinessValues.length);
 
-    expect(
-      Math.abs(projection.readiness_score - weightedGoalReadiness),
-    ).toBeLessThanOrEqual(12);
+    expect(Math.abs(projection.readiness_score - weightedGoalReadiness)).toBeLessThanOrEqual(12);
 
     for (const goal of projection.goal_markers) {
-      const goalPoint = projection.points.find(
-        (point) => point.date === goal.target_date,
-      );
+      const goalPoint = projection.points.find((point) => point.date === goal.target_date);
       if (goalPoint) {
         expect(
           Math.abs(projection.readiness_score - goalPoint.readiness_score),
@@ -1958,9 +1840,9 @@ describe("phase 1 scoring integration", () => {
 
     const targetScore = projection.goal_assessments?.[0]?.target_scores[0];
     expect(targetScore?.effective_target?.surplus_applied).toBe(true);
-    expect(
-      targetScore?.effective_target?.effective_scoring_target ?? 0,
-    ).toBeGreaterThan(targetScore?.effective_target?.raw_target ?? 0);
+    expect(targetScore?.effective_target?.effective_scoring_target ?? 0).toBeGreaterThan(
+      targetScore?.effective_target?.raw_target ?? 0,
+    );
   });
 
   it("keeps sparse-data projections bounded with continuous evidence and capability signals", () => {
@@ -2016,15 +1898,9 @@ describe("phase 1 scoring integration", () => {
     expect(projection.readiness_score).toBeLessThanOrEqual(100);
     expect(projection.readiness_confidence).toBeGreaterThanOrEqual(0);
     expect(projection.readiness_confidence).toBeLessThanOrEqual(100);
-    expect(
-      projection.no_history.evidence_confidence?.support_signal,
-    ).toBeGreaterThan(0);
-    expect(
-      projection.no_history.capability_factors?.aerobic_base,
-    ).toBeGreaterThanOrEqual(0);
-    expect(
-      projection.no_history.capability_factors?.evidence_quality,
-    ).toBeLessThanOrEqual(1);
+    expect(projection.no_history.evidence_confidence?.support_signal).toBeGreaterThan(0);
+    expect(projection.no_history.capability_factors?.aerobic_base).toBeGreaterThanOrEqual(0);
+    expect(projection.no_history.capability_factors?.evidence_quality).toBeLessThanOrEqual(1);
   });
 
   it("emits sport-specific load provenance and dose recommendations", () => {
@@ -2076,21 +1952,15 @@ describe("phase 1 scoring integration", () => {
       preference_profile: defaultAthletePreferenceProfile,
     });
 
-    const runLoad = projection.sport_load_states?.find(
-      (state) => state.sport === "run",
-    );
-    const bikeLoad = projection.sport_load_states?.find(
-      (state) => state.sport === "bike",
-    );
+    const runLoad = projection.sport_load_states?.find((state) => state.sport === "run");
+    const bikeLoad = projection.sport_load_states?.find((state) => state.sport === "bike");
 
     expect(runLoad?.load_method).toBe("run_pace");
     expect(bikeLoad?.load_method).toBe("bike_power");
     expect(runLoad?.mechanical_stress_score ?? 0).toBeGreaterThan(
       bikeLoad?.mechanical_stress_score ?? 0,
     );
-    expect(
-      projection.dose_recommendation?.recommended_weekly_load ?? 0,
-    ).toBeGreaterThan(0);
+    expect(projection.dose_recommendation?.recommended_weekly_load ?? 0).toBeGreaterThan(0);
     expect(
       projection.dose_recommendation?.recommended_weekly_duration_minutes ?? 0,
     ).toBeGreaterThan(0);
@@ -2144,12 +2014,8 @@ describe("phase 1 scoring integration", () => {
       starting_ctl: 26,
     });
 
-    const near = projection.goal_assessments?.find(
-      (goal) => goal.goal_id === "goal-near",
-    );
-    const far = projection.goal_assessments?.find(
-      (goal) => goal.goal_id === "goal-far",
-    );
+    const near = projection.goal_assessments?.find((goal) => goal.goal_id === "goal-near");
+    const far = projection.goal_assessments?.find((goal) => goal.goal_id === "goal-far");
 
     expect(near?.limiter_shares?.timeline_pressure).not.toBe(
       far?.limiter_shares?.timeline_pressure,
@@ -2157,16 +2023,12 @@ describe("phase 1 scoring integration", () => {
     expect(near?.interference_notes).toContain(
       "cross_sport_goal_interference_requires_split_focus",
     );
-    expect(far?.interference_notes).toContain(
-      "cross_sport_goal_interference_requires_split_focus",
-    );
+    expect(far?.interference_notes).toContain("cross_sport_goal_interference_requires_split_focus");
   });
 });
 
 describe("phase 2 mpc integration diagnostics", () => {
-  const phase2Fixture: Parameters<
-    typeof buildDeterministicProjectionPayload
-  >[0] = {
+  const phase2Fixture: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
     timeline: {
       start_date: "2026-01-05",
       end_date: "2026-02-16",
@@ -2202,28 +2064,19 @@ describe("phase 2 mpc integration diagnostics", () => {
 
     expect(first.projection_diagnostics).toEqual(second.projection_diagnostics);
     expect(first.projection_diagnostics?.selected_path).toBeDefined();
-    expect([
-      "full_mpc",
-      "degraded_bounded_mpc",
-      "legacy_optimizer",
-      "cap_only_baseline",
-    ]).toContain(first.projection_diagnostics?.selected_path);
+    expect(["full_mpc", "degraded_bounded_mpc", "legacy_optimizer", "cap_only_baseline"]).toContain(
+      first.projection_diagnostics?.selected_path,
+    );
   });
 
   it("emits solver diagnostics metadata for candidate counts and tie-break chain", () => {
     const projection = buildDeterministicProjectionPayload(phase2Fixture);
     const diagnostics = projection.projection_diagnostics;
 
-    expect(diagnostics?.candidate_counts.full_mpc ?? 0).toBeGreaterThanOrEqual(
-      0,
-    );
-    expect(diagnostics?.active_constraints).toContain(
-      "invariant_numeric_bounds_enforced",
-    );
+    expect(diagnostics?.candidate_counts.full_mpc ?? 0).toBeGreaterThanOrEqual(0);
+    expect(diagnostics?.active_constraints).toContain("invariant_numeric_bounds_enforced");
     expect(diagnostics?.tie_break_chain).toEqual(expect.any(Array));
-    expect((diagnostics?.tie_break_chain ?? []).length).toBeGreaterThanOrEqual(
-      0,
-    );
+    expect((diagnostics?.tie_break_chain ?? []).length).toBeGreaterThanOrEqual(0);
     expect(diagnostics?.effective_optimizer_config).toMatchObject({
       weights: {
         preparedness_weight: expect.any(Number),
@@ -2292,12 +2145,8 @@ describe("phase 2 mpc integration diagnostics", () => {
     });
 
     expect(first.projection_diagnostics).toEqual(second.projection_diagnostics);
-    expect(first.projection_diagnostics?.selected_path).toBe(
-      "cap_only_baseline",
-    );
-    expect(first.projection_diagnostics?.fallback_reason).toBe(
-      "optimizer_disabled",
-    );
+    expect(first.projection_diagnostics?.selected_path).toBe("cap_only_baseline");
+    expect(first.projection_diagnostics?.fallback_reason).toBe("optimizer_disabled");
   });
 
   it("applies configured ramp caps deterministically", () => {
@@ -2318,30 +2167,23 @@ describe("phase 2 mpc integration diagnostics", () => {
       },
     });
 
-    expect(
-      strictProjection.microcycles[0]?.metadata.tss_ramp
-        .max_weekly_tss_ramp_pct,
-    ).toBeLessThan(
-      lenientProjection.microcycles[0]?.metadata.tss_ramp
-        .max_weekly_tss_ramp_pct ?? Number.POSITIVE_INFINITY,
+    expect(strictProjection.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct).toBeLessThan(
+      lenientProjection.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct ??
+        Number.POSITIVE_INFINITY,
+    );
+    expect(strictProjection.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week).toBeLessThan(
+      lenientProjection.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week ??
+        Number.POSITIVE_INFINITY,
     );
     expect(
-      strictProjection.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week,
-    ).toBeLessThan(
-      lenientProjection.microcycles[0]?.metadata.ctl_ramp
-        .max_ctl_ramp_per_week ?? Number.POSITIVE_INFINITY,
-    );
-    expect(
-      strictProjection.microcycles[0]?.metadata.tss_ramp
-        .max_weekly_tss_ramp_pct,
+      strictProjection.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct,
     ).toBeGreaterThanOrEqual(0);
     expect(
-      lenientProjection.microcycles[0]?.metadata.tss_ramp
-        .max_weekly_tss_ramp_pct,
+      lenientProjection.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct,
     ).toBeLessThanOrEqual(40);
-    expect(
-      strictProjection.projection_diagnostics?.active_constraints,
-    ).toContain("invariant_numeric_bounds_enforced");
+    expect(strictProjection.projection_diagnostics?.active_constraints).toContain(
+      "invariant_numeric_bounds_enforced",
+    );
     expect(strictProjection.projection_diagnostics?.clamp_counts).toEqual({
       tss: strictProjection.constraint_summary.tss_ramp_clamp_weeks,
       ctl: strictProjection.constraint_summary.ctl_ramp_clamp_weeks,
@@ -2366,28 +2208,14 @@ describe("phase 2 mpc integration diagnostics", () => {
       },
     });
 
-    expect(
-      outcomeFirstControls.microcycles[0]?.metadata.tss_ramp
-        .max_weekly_tss_ramp_pct,
-    ).toBe(
-      sustainableControls.microcycles[0]?.metadata.tss_ramp
-        .max_weekly_tss_ramp_pct,
+    expect(outcomeFirstControls.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct).toBe(
+      sustainableControls.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct,
     );
-    expect(
-      outcomeFirstControls.microcycles[0]?.metadata.ctl_ramp
-        .max_ctl_ramp_per_week,
-    ).toBe(
-      sustainableControls.microcycles[0]?.metadata.ctl_ramp
-        .max_ctl_ramp_per_week,
+    expect(outcomeFirstControls.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week).toBe(
+      sustainableControls.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week,
     );
-    expect(
-      outcomeFirstControls.microcycles[0]?.metadata.tss_ramp
-        .max_weekly_tss_ramp_pct,
-    ).toBe(7);
-    expect(
-      outcomeFirstControls.microcycles[0]?.metadata.ctl_ramp
-        .max_ctl_ramp_per_week,
-    ).toBe(3);
+    expect(outcomeFirstControls.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct).toBe(7);
+    expect(outcomeFirstControls.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week).toBe(3);
   });
 
   it("applies a bounded direct aggressiveness effect to weekly load signals", () => {
@@ -2432,14 +2260,10 @@ describe("phase 2 mpc integration diagnostics", () => {
     );
 
     expect(highRequested).toHaveLength(lowRequested.length);
-    expect(
-      highRequested.some(
-        (value, index) => value > (lowRequested[index] ?? value) + 0.4,
-      ),
-    ).toBe(true);
-    expect(
-      highRequested.every((value) => Number.isFinite(value) && value >= 0),
-    ).toBe(true);
+    expect(highRequested.some((value, index) => value > (lowRequested[index] ?? value) + 0.4)).toBe(
+      true,
+    );
+    expect(highRequested.every((value) => Number.isFinite(value) && value >= 0)).toBe(true);
   });
 
   it("exposes widened frontier caps and preserves monotonic upper band under higher overrides", () => {
@@ -2460,11 +2284,9 @@ describe("phase 2 mpc integration diagnostics", () => {
       },
     });
 
-    const practicalCaps =
-      practicalCeiling.projection_diagnostics?.effective_optimizer_config.caps;
+    const practicalCaps = practicalCeiling.projection_diagnostics?.effective_optimizer_config.caps;
     const frontierCaps =
-      theoreticalFrontier.projection_diagnostics?.effective_optimizer_config
-        .caps;
+      theoreticalFrontier.projection_diagnostics?.effective_optimizer_config.caps;
 
     expect(frontierCaps?.max_weekly_tss_ramp_pct ?? 0).toBeGreaterThan(20);
     expect(frontierCaps?.max_ctl_ramp_per_week ?? 0).toBeGreaterThan(8);
@@ -2479,9 +2301,7 @@ describe("phase 2 mpc integration diagnostics", () => {
       ...practicalCeiling.microcycles.map((cycle) => cycle.planned_weekly_tss),
     );
     const frontierUpperBand = Math.max(
-      ...theoreticalFrontier.microcycles.map(
-        (cycle) => cycle.planned_weekly_tss,
-      ),
+      ...theoreticalFrontier.microcycles.map((cycle) => cycle.planned_weekly_tss),
     );
 
     expect(frontierUpperBand).toBeGreaterThanOrEqual(practicalUpperBand);
@@ -2501,10 +2321,8 @@ describe("phase 2 mpc integration diagnostics", () => {
       },
     });
 
-    const firstCurvature =
-      first.projection_diagnostics?.effective_optimizer_config.curvature;
-    const secondCurvature =
-      second.projection_diagnostics?.effective_optimizer_config.curvature;
+    const firstCurvature = first.projection_diagnostics?.effective_optimizer_config.curvature;
+    const secondCurvature = second.projection_diagnostics?.effective_optimizer_config.curvature;
 
     expect(firstCurvature?.target).toBe(0);
     expect(firstCurvature?.strength).toBe(0.35);
@@ -2552,9 +2370,7 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
       },
     });
 
-    const weeklyPeak = Math.max(
-      ...projection.microcycles.map((cycle) => cycle.planned_weekly_tss),
-    );
+    const weeklyPeak = Math.max(...projection.microcycles.map((cycle) => cycle.planned_weekly_tss));
 
     expect(weeklyPeak).toBeGreaterThanOrEqual(800);
     expect(weeklyPeak).toBeLessThanOrEqual(1200);
@@ -2577,17 +2393,13 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
       },
     });
 
-    const weeklyPeak = Math.max(
-      ...projection.microcycles.map((cycle) => cycle.planned_weekly_tss),
-    );
+    const weeklyPeak = Math.max(...projection.microcycles.map((cycle) => cycle.planned_weekly_tss));
 
     expect(weeklyPeak).toBeGreaterThanOrEqual(1500);
   });
 
   it("supports theoretical stress runs above benchmark ranges while staying deterministic and finite", () => {
-    const theoreticalInput: Parameters<
-      typeof buildDeterministicProjectionPayload
-    >[0] = {
+    const theoreticalInput: Parameters<typeof buildDeterministicProjectionPayload>[0] = {
       ...benchmarkBase,
       blocks: [
         {
@@ -2605,9 +2417,7 @@ describe("phase 5 benchmark and theoretical frontier validation", () => {
 
     const first = buildDeterministicProjectionPayload(theoreticalInput);
     const second = buildDeterministicProjectionPayload(theoreticalInput);
-    const weeklyPeak = Math.max(
-      ...first.microcycles.map((cycle) => cycle.planned_weekly_tss),
-    );
+    const weeklyPeak = Math.max(...first.microcycles.map((cycle) => cycle.planned_weekly_tss));
 
     expect(weeklyPeak).toBeGreaterThan(2200);
     expect(first.microcycles.map((cycle) => cycle.planned_weekly_tss)).toEqual(

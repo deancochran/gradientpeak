@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
+  calculateHRReserve,
+  calculateHRZones,
+  calculateTargetHR,
   calculateVO2MaxFromHR,
   estimateLTHR,
   estimateMaxHRFromAge,
-  calculateHRReserve,
-  calculateTargetHR,
-  calculateHRZones,
 } from "../heart-rate";
 
 describe("calculateVO2MaxFromHR", () => {
@@ -23,9 +23,7 @@ describe("calculateVO2MaxFromHR", () => {
   it("should throw error for invalid HR values", () => {
     expect(() => calculateVO2MaxFromHR(0, 60)).toThrow();
     expect(() => calculateVO2MaxFromHR(150, 0)).toThrow();
-    expect(() => calculateVO2MaxFromHR(150, 160)).toThrow(
-      "Max HR must be greater than resting HR",
-    );
+    expect(() => calculateVO2MaxFromHR(150, 160)).toThrow("Max HR must be greater than resting HR");
   });
 
   it("should clamp to reasonable limits", () => {

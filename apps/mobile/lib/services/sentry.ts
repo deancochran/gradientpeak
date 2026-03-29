@@ -135,11 +135,7 @@ export function captureMessage(
 /**
  * Set user context for error tracking
  */
-export function setUser(user: {
-  id: string;
-  email?: string;
-  username?: string;
-}) {
+export function setUser(user: { id: string; email?: string; username?: string }) {
   if (!shouldEnableSentry()) {
     return;
   }
@@ -171,11 +167,7 @@ export function clearUser() {
 /**
  * Add breadcrumb for debugging context
  */
-export function addBreadcrumb(
-  category: string,
-  message: string,
-  data?: Record<string, any>,
-) {
+export function addBreadcrumb(category: string, message: string, data?: Record<string, any>) {
   if (!shouldEnableSentry()) {
     return;
   }
@@ -194,10 +186,7 @@ export function addBreadcrumb(
 /**
  * Wrap a function with error boundary
  */
-export function withErrorBoundary<T extends (...args: any[]) => any>(
-  fn: T,
-  context?: string,
-): T {
+export function withErrorBoundary<T extends (...args: any[]) => any>(fn: T, context?: string): T {
   return ((...args: any[]) => {
     try {
       const result = fn(...args);

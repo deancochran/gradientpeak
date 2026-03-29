@@ -48,10 +48,7 @@ function resolveEvidenceSupport(input: {
   evidence_state?: EvidenceState;
   evidence_score?: number;
 }): number {
-  if (
-    typeof input.evidence_score === "number" &&
-    Number.isFinite(input.evidence_score)
-  ) {
+  if (typeof input.evidence_score === "number" && Number.isFinite(input.evidence_score)) {
     return clamp01(input.evidence_score);
   }
 
@@ -87,15 +84,11 @@ function deriveEnvelopeBounds(input: {
 } {
   const eliteLoadFactor = deriveEliteLoadFactor(input.baselineWeeklyTss);
   const progressiveGrowthCeiling = 0.38 + eliteLoadFactor * 0.52;
-  const progressiveGrowth =
-    1 + Math.min(progressiveGrowthCeiling, input.weekIndex * 0.035);
-  const safeLow =
-    input.baselineWeeklyTss * (0.76 + Math.min(0.08, input.weekIndex * 0.006));
+  const progressiveGrowth = 1 + Math.min(progressiveGrowthCeiling, input.weekIndex * 0.035);
+  const safeLow = input.baselineWeeklyTss * (0.76 + Math.min(0.08, input.weekIndex * 0.006));
   const safeHighMultiplier = 1.08 + eliteLoadFactor * 0.28;
   const safeHigh =
-    input.baselineWeeklyTss *
-    progressiveGrowth *
-    (safeHighMultiplier * input.historyMultiplier);
+    input.baselineWeeklyTss * progressiveGrowth * (safeHighMultiplier * input.historyMultiplier);
   const rampLimitCeiling = 14 + eliteLoadFactor * 10;
   const rampLimit = clamp(
     7 + input.baselineWeeklyTss / 160 + input.weekIndex * 0.2,
@@ -113,9 +106,7 @@ function deriveEnvelopeBounds(input: {
 /**
  * Scores projected weekly load realism against a profile/history-aware capacity envelope.
  */
-export function computeCapacityEnvelope(
-  input: CapacityEnvelopeInput,
-): CapacityEnvelopeResult {
+export function computeCapacityEnvelope(input: CapacityEnvelopeInput): CapacityEnvelopeResult {
   if (input.weeks.length === 0) {
     return {
       envelope_score: 100,
@@ -158,9 +149,7 @@ export function computeCapacityEnvelope(
     const normOverRamp = overRamp / bounds.ramp_limit;
 
     const weekPenalty = clamp01(
-      weightOverHigh * normOverHigh +
-        weightUnderLow * normUnderLow +
-        weightOverRamp * normOverRamp,
+      weightOverHigh * normOverHigh + weightUnderLow * normUnderLow + weightOverRamp * normOverRamp,
     );
     const weekWeight = 1 + index * 0.04;
 

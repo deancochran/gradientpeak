@@ -39,9 +39,7 @@ export function extractStartCoordinates(gpxContent: string): {
   longitude: number;
 } | null {
   // Simple regex to find first trkpt element
-  const trkptMatch = gpxContent.match(
-    /<trkpt[^>]*lat="([^"]*)"[^>]*lon="([^"]*)"/,
-  );
+  const trkptMatch = gpxContent.match(/<trkpt[^>]*lat="([^"]*)"[^>]*lon="([^"]*)"/);
 
   if (trkptMatch && trkptMatch[1] && trkptMatch[2]) {
     return {
@@ -90,9 +88,7 @@ export function validateRouteForWahoo(routeData: RouteFileData): {
 /**
  * Get workout type family ID for route
  */
-export function getWorkoutTypeFamilyForRoute(
-  activityType: ActivityType,
-): number {
+export function getWorkoutTypeFamilyForRoute(activityType: ActivityType): number {
   const sport = toSportName(activityType);
 
   switch (sport) {

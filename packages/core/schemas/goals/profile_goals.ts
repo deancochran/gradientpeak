@@ -10,18 +10,9 @@ const positiveIntegerSchema = z.number().int().positive();
 const boundedDemandSchema = z.number().min(0).max(1);
 const tolerancePctSchema = z.number().min(0).max(1).optional();
 
-export const canonicalGoalActivityCategorySchema = z.enum([
-  "run",
-  "bike",
-  "swim",
-  "other",
-]);
+export const canonicalGoalActivityCategorySchema = z.enum(["run", "bike", "swim", "other"]);
 
-export const canonicalGoalThresholdMetricSchema = z.enum([
-  "pace",
-  "power",
-  "hr",
-]);
+export const canonicalGoalThresholdMetricSchema = z.enum(["pace", "power", "hr"]);
 
 const eventPerformanceObjectiveSchema = z
   .object({
@@ -39,20 +30,15 @@ const eventPerformanceObjectiveSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["distance_m"],
-        message:
-          "event_performance objectives must include distance_m in canonical meters",
+        message: "event_performance objectives must include distance_m in canonical meters",
       });
     }
 
-    if (
-      objective.target_time_s === undefined &&
-      objective.target_speed_mps === undefined
-    ) {
+    if (objective.target_time_s === undefined && objective.target_speed_mps === undefined) {
       ctx.addIssue({
         code: "custom",
         path: ["target_time_s"],
-        message:
-          "event_performance objectives require target_time_s or target_speed_mps",
+        message: "event_performance objectives require target_time_s or target_speed_mps",
       });
     }
   });
@@ -77,15 +63,11 @@ const completionObjectiveSchema = z
   })
   .strict()
   .superRefine((objective, ctx) => {
-    if (
-      objective.distance_m === undefined &&
-      objective.duration_s === undefined
-    ) {
+    if (objective.distance_m === undefined && objective.duration_s === undefined) {
       ctx.addIssue({
         code: "custom",
         path: ["distance_m"],
-        message:
-          "completion objectives require distance_m, duration_s, or both",
+        message: "completion objectives require distance_m, duration_s, or both",
       });
     }
   });
@@ -98,15 +80,11 @@ const consistencyObjectiveSchema = z
   })
   .strict()
   .superRefine((objective, ctx) => {
-    if (
-      objective.target_sessions_per_week === undefined &&
-      objective.target_weeks === undefined
-    ) {
+    if (objective.target_sessions_per_week === undefined && objective.target_weeks === undefined) {
       ctx.addIssue({
         code: "custom",
         path: ["target_sessions_per_week"],
-        message:
-          "consistency objectives require target_sessions_per_week, target_weeks, or both",
+        message: "consistency objectives require target_sessions_per_week, target_weeks, or both",
       });
     }
   });
@@ -191,11 +169,7 @@ export const profileGoalLegacySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-function prependIssuePath(
-  path: PropertyKey[],
-  issues: z.ZodIssue[],
-  ctx: z.RefinementCtx,
-): void {
+function prependIssuePath(path: PropertyKey[], issues: z.ZodIssue[], ctx: z.RefinementCtx): void {
   for (const issue of issues) {
     ctx.addIssue({
       ...issue,
@@ -226,8 +200,7 @@ function safeParseCanonicalGoalObjective(
         {
           code: "custom",
           path: ["activity_category"],
-          message:
-            "objective.activity_category must match profile_goals.activity_category",
+          message: "objective.activity_category must match profile_goals.activity_category",
         },
       ]),
     };
@@ -262,10 +235,7 @@ export const profileGoalRecordSchema = profileGoalRecordInputBaseSchema
   })
   .transform((record) => ({
     ...record,
-    target_payload: parseCanonicalGoalObjective(
-      record.activity_category,
-      record.target_payload,
-    ),
+    target_payload: parseCanonicalGoalObjective(record.activity_category, record.target_payload),
   }));
 
 export const profileGoalCreateSchema = profileGoalRecordInputBaseSchema
@@ -284,18 +254,12 @@ export const profileGoalCreateSchema = profileGoalRecordInputBaseSchema
   })
   .transform((record) => ({
     ...record,
-    target_payload: parseCanonicalGoalObjective(
-      record.activity_category,
-      record.target_payload,
-    ),
+    target_payload: parseCanonicalGoalObjective(record.activity_category, record.target_payload),
   }));
 
 export const profileGoalSchema = profileGoalDomainInputBaseSchema
   .superRefine((goal, ctx) => {
-    const parsedObjective = safeParseCanonicalGoalObjective(
-      goal.activity_category,
-      goal.objective,
-    );
+    const parsedObjective = safeParseCanonicalGoalObjective(goal.activity_category, goal.objective);
 
     if (!parsedObjective.success) {
       prependIssuePath(["objective"], parsedObjective.error.issues, ctx);
@@ -303,10 +267,7 @@ export const profileGoalSchema = profileGoalDomainInputBaseSchema
   })
   .transform((goal) => ({
     ...goal,
-    objective: parseCanonicalGoalObjective(
-      goal.activity_category,
-      goal.objective,
-    ),
+    objective: parseCanonicalGoalObjective(goal.activity_category, goal.objective),
   }));
 
 export const canonicalGoalSchema = profileGoalSchema;
@@ -326,9 +287,7 @@ function roundDemand(value: number): number {
   return Math.round(clamp01(value) * 1000) / 1000;
 }
 
-function getTechnicalDemand(
-  activityCategory: CanonicalGoalActivityCategory,
-): number {
+function getTechnicalDemand(activityCategory: CanonicalGoalActivityCategory): number {
   switch (activityCategory) {
     case "swim":
       return 0.65;
@@ -381,9 +340,7 @@ export function resolveGoalEventDate(
   const event = profileGoalLinkedEventSchema.parse(linkedEvent);
 
   if (event.id !== goal.milestone_event_id) {
-    throw new Error(
-      "linked event id must match goal.milestone_event_id for timing resolution",
-    );
+    throw new Error("linked event id must match goal.milestone_event_id for timing resolution");
   }
 
   return event.starts_at.slice(0, 10);
@@ -406,24 +363,17 @@ export function deriveGoalDemandProfile(goal: ProfileGoal): GoalDemandProfile {
       const distanceKm = (goal.objective.distance_m ?? 5000) / 1000;
       const distancePressure = clamp01((distanceKm - 5) / 37.195);
       const performanceBias =
-        goal.objective.target_time_s !== undefined ||
-        goal.objective.target_speed_mps !== undefined
+        goal.objective.target_time_s !== undefined || goal.objective.target_speed_mps !== undefined
           ? 0.08
           : 0;
 
       return goalDemandProfileSchema.parse({
         endurance_demand: roundDemand(0.5 + distancePressure * 0.4),
-        threshold_demand: roundDemand(
-          0.82 - distancePressure * 0.28 + performanceBias,
-        ),
-        high_intensity_demand: roundDemand(
-          0.7 - distancePressure * 0.4 + performanceBias / 2,
-        ),
+        threshold_demand: roundDemand(0.82 - distancePressure * 0.28 + performanceBias),
+        high_intensity_demand: roundDemand(0.7 - distancePressure * 0.4 + performanceBias / 2),
         durability_demand: roundDemand(0.35 + distancePressure * 0.55),
         technical_demand: roundDemand(technicalDemand),
-        specificity_demand: roundDemand(
-          0.72 + distancePressure * 0.14 + performanceBias,
-        ),
+        specificity_demand: roundDemand(0.72 + distancePressure * 0.14 + performanceBias),
       });
     }
 
@@ -459,12 +409,8 @@ export function deriveGoalDemandProfile(goal: ProfileGoal): GoalDemandProfile {
     }
 
     case "completion": {
-      const distancePressure = clamp01(
-        ((goal.objective.distance_m ?? 5000) / 1000 - 5) / 37.195,
-      );
-      const durationPressure = clamp01(
-        ((goal.objective.duration_s ?? 3600) / 3600 - 1) / 4,
-      );
+      const distancePressure = clamp01(((goal.objective.distance_m ?? 5000) / 1000 - 5) / 37.195);
+      const durationPressure = clamp01(((goal.objective.duration_s ?? 3600) / 3600 - 1) / 4);
       const workloadPressure = Math.max(distancePressure, durationPressure);
 
       return goalDemandProfileSchema.parse({
@@ -478,40 +424,24 @@ export function deriveGoalDemandProfile(goal: ProfileGoal): GoalDemandProfile {
     }
 
     case "consistency": {
-      const sessionPressure = clamp01(
-        ((goal.objective.target_sessions_per_week ?? 3) - 3) / 4,
-      );
-      const durationPressure = clamp01(
-        ((goal.objective.target_weeks ?? 8) - 8) / 8,
-      );
+      const sessionPressure = clamp01(((goal.objective.target_sessions_per_week ?? 3) - 3) / 4);
+      const durationPressure = clamp01(((goal.objective.target_weeks ?? 8) - 8) / 8);
 
       return goalDemandProfileSchema.parse({
-        endurance_demand: roundDemand(
-          0.4 + sessionPressure * 0.2 + durationPressure * 0.1,
-        ),
+        endurance_demand: roundDemand(0.4 + sessionPressure * 0.2 + durationPressure * 0.1),
         threshold_demand: 0.2,
         high_intensity_demand: 0.12,
-        durability_demand: roundDemand(
-          0.55 + sessionPressure * 0.2 + durationPressure * 0.15,
-        ),
+        durability_demand: roundDemand(0.55 + sessionPressure * 0.2 + durationPressure * 0.15),
         technical_demand: roundDemand(technicalDemand * 0.75),
-        specificity_demand: roundDemand(
-          0.35 + sessionPressure * 0.15 + durationPressure * 0.1,
-        ),
+        specificity_demand: roundDemand(0.35 + sessionPressure * 0.15 + durationPressure * 0.1),
       });
     }
   }
 }
 
-export type CanonicalGoalActivityCategory = z.infer<
-  typeof canonicalGoalActivityCategorySchema
->;
-export type CanonicalGoalThresholdMetric = z.infer<
-  typeof canonicalGoalThresholdMetricSchema
->;
-export type CanonicalGoalObjective = z.infer<
-  typeof canonicalGoalObjectiveSchema
->;
+export type CanonicalGoalActivityCategory = z.infer<typeof canonicalGoalActivityCategorySchema>;
+export type CanonicalGoalThresholdMetric = z.infer<typeof canonicalGoalThresholdMetricSchema>;
+export type CanonicalGoalObjective = z.infer<typeof canonicalGoalObjectiveSchema>;
 export type GoalDemandProfile = z.infer<typeof goalDemandProfileSchema>;
 export type ProfileGoalRecord = z.output<typeof profileGoalRecordSchema>;
 export type ProfileGoalRecordInput = z.input<typeof profileGoalRecordSchema>;
@@ -519,8 +449,6 @@ export type ProfileGoalCreate = z.output<typeof profileGoalCreateSchema>;
 export type ProfileGoalCreateInput = z.input<typeof profileGoalCreateSchema>;
 export type ProfileGoal = z.output<typeof profileGoalSchema>;
 export type CanonicalGoal = ProfileGoal;
-export type ProfileGoalLinkedEvent = z.infer<
-  typeof profileGoalLinkedEventSchema
->;
+export type ProfileGoalLinkedEvent = z.infer<typeof profileGoalLinkedEventSchema>;
 export type ProfileGoalTarget = z.infer<typeof profileGoalTargetSchema>;
 export type ProfileGoalLegacy = z.infer<typeof profileGoalLegacySchema>;

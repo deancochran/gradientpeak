@@ -1,7 +1,7 @@
+import { defaultAthletePreferenceProfile } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
-import { defaultAthletePreferenceProfile } from "@repo/core";
-import { profileSettingsRouter } from "../profile_settings";
+import { profileSettingsRouter } from "../profile-settings";
 
 type QueryResult = {
   data: any;
@@ -23,9 +23,7 @@ function createSupabaseMock(queryMap: QueryMap) {
     const index = counters.get(table) ?? 0;
     counters.set(table, index + 1);
 
-    return (
-      entry[index] ?? entry[entry.length - 1] ?? { data: null, error: null }
-    );
+    return entry[index] ?? entry[entry.length - 1] ?? { data: null, error: null };
   };
 
   return {
@@ -132,19 +130,12 @@ describe("profileSettingsRouter", () => {
                 days: [
                   {
                     day: "monday",
-                    windows: [
-                      { start_minute_of_day: 360, end_minute_of_day: 420 },
-                    ],
+                    windows: [{ start_minute_of_day: 360, end_minute_of_day: 420 }],
                     max_sessions: 1,
                   },
-                  ...[
-                    "tuesday",
-                    "wednesday",
-                    "thursday",
-                    "friday",
-                    "saturday",
-                    "sunday",
-                  ].map((day) => ({ day, windows: [] })),
+                  ...["tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map(
+                    (day) => ({ day, windows: [] }),
+                  ),
                 ],
               },
               recent_influence: { influence_score: 0.2 },
@@ -185,12 +176,8 @@ describe("profileSettingsRouter", () => {
 
     expect(result?.settings.availability.hard_rest_days).toEqual(["friday"]);
     expect(result?.settings.training_style.progression_pace).toBe(0.55);
-    expect(result?.settings.recovery_preferences.post_goal_recovery_days).toBe(
-      6,
-    );
-    expect(
-      result?.settings.goal_strategy_preferences.target_surplus_preference,
-    ).toBe(0);
+    expect(result?.settings.recovery_preferences.post_goal_recovery_days).toBe(6);
+    expect(result?.settings.goal_strategy_preferences.target_surplus_preference).toBe(0);
   });
 
   it("coerces legacy stored settings even when extra legacy metadata keys are present", async () => {
@@ -207,32 +194,24 @@ describe("profileSettingsRouter", () => {
                 days: [
                   {
                     day: "monday",
-                    windows: [
-                      { start_minute_of_day: 360, end_minute_of_day: 450 },
-                    ],
+                    windows: [{ start_minute_of_day: 360, end_minute_of_day: 450 }],
                     max_sessions: 1,
                   },
                   {
                     day: "tuesday",
-                    windows: [
-                      { start_minute_of_day: 360, end_minute_of_day: 450 },
-                    ],
+                    windows: [{ start_minute_of_day: 360, end_minute_of_day: 450 }],
                     max_sessions: 1,
                   },
                   { day: "wednesday", windows: [], max_sessions: 0 },
                   {
                     day: "thursday",
-                    windows: [
-                      { start_minute_of_day: 360, end_minute_of_day: 450 },
-                    ],
+                    windows: [{ start_minute_of_day: 360, end_minute_of_day: 450 }],
                     max_sessions: 1,
                   },
                   { day: "friday", windows: [], max_sessions: 0 },
                   {
                     day: "saturday",
-                    windows: [
-                      { start_minute_of_day: 450, end_minute_of_day: 570 },
-                    ],
+                    windows: [{ start_minute_of_day: 450, end_minute_of_day: 570 }],
                     max_sessions: 1,
                   },
                   { day: "sunday", windows: [], max_sessions: 0 },
@@ -295,11 +274,7 @@ describe("profileSettingsRouter", () => {
 
     const result = await caller.getForProfile({ profile_id: profileId });
 
-    expect(result?.settings.availability.hard_rest_days).toEqual([
-      "wednesday",
-      "friday",
-      "sunday",
-    ]);
+    expect(result?.settings.availability.hard_rest_days).toEqual(["wednesday", "friday", "sunday"]);
     expect(result?.settings.dose_limits.max_sessions_per_week).toBe(4);
     expect(result?.settings.training_style.progression_pace).toBe(0.48);
   });

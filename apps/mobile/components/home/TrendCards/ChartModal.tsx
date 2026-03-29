@@ -1,13 +1,7 @@
 import { Text } from "@repo/ui/components/text";
-import React, { useState } from "react";
-import {
-  Modal,
-  ScrollView,
-  TouchableOpacity,
-  View,
-  Dimensions,
-} from "react-native";
 import { X } from "lucide-react-native";
+import React, { useState } from "react";
+import { Dimensions, Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import type { TimeRange } from "@/components/TimeRangeSelector";
 
 interface ChartModalProps {
@@ -70,9 +64,7 @@ export function ChartModal({
               >
                 <Text
                   className={`text-center text-sm font-medium ${
-                    timeRange === range.value
-                      ? "text-primary-foreground"
-                      : "text-muted-foreground"
+                    timeRange === range.value ? "text-primary-foreground" : "text-muted-foreground"
                   }`}
                 >
                   {range.label}

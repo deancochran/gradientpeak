@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  computeAcwr,
-  computeMonotony,
-  computeTrimp,
-  getSparseHistoryStatus,
-} from "../workload";
+import { computeAcwr, computeMonotony, computeTrimp, getSparseHistoryStatus } from "../workload";
 
 describe("workload", () => {
   describe("getSparseHistoryStatus", () => {

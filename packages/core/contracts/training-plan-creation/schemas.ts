@@ -9,9 +9,9 @@ import {
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
   creationRecentInfluenceSchema,
-  trainingPlanCalibrationInputSchema,
-  trainingPlanCalibrationConfigSchema,
   minimalTrainingPlanCreateSchema,
+  trainingPlanCalibrationConfigSchema,
+  trainingPlanCalibrationInputSchema,
 } from "../../schemas/training_plan_structure";
 
 const creationConfigCoreFields = {
@@ -58,9 +58,7 @@ export const creationNormalizationInputSchema = z
     provenance_overrides: z
       .object({
         availability_provenance: creationProvenanceSchema.partial().optional(),
-        recent_influence_provenance: creationProvenanceSchema
-          .partial()
-          .optional(),
+        recent_influence_provenance: creationProvenanceSchema.partial().optional(),
       })
       .optional(),
     now_iso: z.string().datetime().optional(),
@@ -85,15 +83,11 @@ export const getCreationSuggestionsInputSchema = z
     locks: creationConfigLocksSchema.partial().optional(),
     existing_values: z
       .object({
-        availability_config:
-          creationConfigCoreFields.availability_config.optional(),
+        availability_config: creationConfigCoreFields.availability_config.optional(),
         recent_influence: creationConfigCoreFields.recent_influence.optional(),
-        optimization_profile:
-          creationConfigCoreFields.optimization_profile.optional(),
-        post_goal_recovery_days:
-          creationConfigCoreFields.post_goal_recovery_days.optional(),
-        behavior_controls_v1:
-          creationConfigCoreFields.behavior_controls_v1.optional(),
+        optimization_profile: creationConfigCoreFields.optimization_profile.optional(),
+        post_goal_recovery_days: creationConfigCoreFields.post_goal_recovery_days.optional(),
+        behavior_controls_v1: creationConfigCoreFields.behavior_controls_v1.optional(),
         calibration_composite_locks:
           creationConfigCoreFields.calibration_composite_locks.optional(),
         calibration: trainingPlanCalibrationInputSchema.optional(),
@@ -127,19 +121,16 @@ export const previewCreationConfigInputSchema = z
   })
   .strict();
 
-export const createFromCreationConfigInputSchema =
-  previewCreationConfigInputSchema.extend({
-    is_active: z.boolean().optional().default(true),
-    preview_snapshot_token: z.string().min(1).optional(),
-  });
+export const createFromCreationConfigInputSchema = previewCreationConfigInputSchema.extend({
+  is_active: z.boolean().optional().default(true),
+  preview_snapshot_token: z.string().min(1).optional(),
+});
 
 const projectionChartDiagnosticsCompatSchema = z
   .object({
     inferred_current_state: z.unknown().optional(),
     prediction_uncertainty: z.record(z.string(), z.unknown()).optional(),
-    goal_target_distributions: z
-      .array(z.record(z.string(), z.unknown()))
-      .optional(),
+    goal_target_distributions: z.array(z.record(z.string(), z.unknown())).optional(),
     optimization_tradeoff_summary: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
@@ -161,20 +152,12 @@ export const createFromCreationConfigResponseCompatSchema = z
   .passthrough();
 
 export type CreationConfigValue = z.infer<typeof creationConfigValueSchema>;
-export type CreationNormalizationInput = z.infer<
-  typeof creationNormalizationInputSchema
->;
+export type CreationNormalizationInput = z.infer<typeof creationNormalizationInputSchema>;
 export type PostCreateBehavior = z.infer<typeof postCreateBehaviorSchema>;
 export type OverridePolicy = z.infer<typeof overridePolicySchema>;
-export type GetCreationSuggestionsInput = z.infer<
-  typeof getCreationSuggestionsInputSchema
->;
-export type PreviewCreationConfigInput = z.infer<
-  typeof previewCreationConfigInputSchema
->;
-export type CreateFromCreationConfigInput = z.infer<
-  typeof createFromCreationConfigInputSchema
->;
+export type GetCreationSuggestionsInput = z.infer<typeof getCreationSuggestionsInputSchema>;
+export type PreviewCreationConfigInput = z.infer<typeof previewCreationConfigInputSchema>;
+export type CreateFromCreationConfigInput = z.infer<typeof createFromCreationConfigInputSchema>;
 export type PreviewCreationConfigResponseCompat = z.infer<
   typeof previewCreationConfigResponseCompatSchema
 >;

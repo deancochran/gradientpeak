@@ -1,9 +1,6 @@
 import { z } from "zod";
 
-export const templateItemTypeSchema = z.enum([
-  "training_plan",
-  "activity_plan",
-]);
+export const templateItemTypeSchema = z.enum(["training_plan", "activity_plan"]);
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 

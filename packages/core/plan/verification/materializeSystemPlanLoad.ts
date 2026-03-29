@@ -94,10 +94,7 @@ function estimateTemplateLoad(
 ): {
   estimated_tss: number;
   estimated_duration_seconds: number;
-  estimation_source: Exclude<
-    MaterializedSystemPlanEstimationSource,
-    "rest_day" | "missing"
-  >;
+  estimation_source: Exclude<MaterializedSystemPlanEstimationSource, "rest_day" | "missing">;
   estimation_confidence: "high" | "medium" | "low";
 } {
   const context = {
@@ -108,22 +105,17 @@ function estimateTemplateLoad(
     ftp: input.estimationContext?.ftp,
     thresholdHr: input.estimationContext?.thresholdHr,
     weightKg: input.estimationContext?.weightKg,
-    thresholdPaceSecondsPerKm:
-      input.estimationContext?.thresholdPaceSecondsPerKm,
+    thresholdPaceSecondsPerKm: input.estimationContext?.thresholdPaceSecondsPerKm,
   };
 
   const estimation = hasIntervals(template)
-    ? estimateFromStructure(
-        context as Parameters<typeof estimateFromStructure>[0],
-      )
+    ? estimateFromStructure(context as Parameters<typeof estimateFromStructure>[0])
     : hasRoute(template)
       ? estimateFromRoute({
           ...context,
           route: template.route,
         } as Parameters<typeof estimateFromRoute>[0])
-      : estimateFromTemplate(
-          context as Parameters<typeof estimateFromTemplate>[0],
-        );
+      : estimateFromTemplate(context as Parameters<typeof estimateFromTemplate>[0]);
 
   return {
     estimated_tss: estimation.tss,
@@ -150,65 +142,58 @@ function estimateTemplateLoad(
 export function materializeSystemPlanLoad(
   input: MaterializeSystemPlanLoadInput,
 ): MaterializeSystemPlanLoadResult {
-  const materializedEvents = materializePlanToEvents(
-    input.systemPlan.structure,
-    input.startDate,
-  );
-  const templateLookup = buildTemplateLookup(
-    input.activityTemplates ?? SYSTEM_TEMPLATES,
-  );
+  const materializedEvents = materializePlanToEvents(input.systemPlan.structure, input.startDate);
+  const templateLookup = buildTemplateLookup(input.activityTemplates ?? SYSTEM_TEMPLATES);
   const unresolvedActivityPlanIds = new Set<string>();
 
-  const sessions = materializedEvents.map<MaterializedSystemPlanLoadSession>(
-    (event) => {
-      if (event.event_type === "rest_day") {
-        return {
-          ...event,
-          resolved_activity_template_id: null,
-          activity_category: null,
-          estimated_tss: 0,
-          estimated_duration_seconds: 0,
-          estimation_source: "rest_day",
-          estimation_confidence: null,
-        };
-      }
-
-      if (!event.activity_plan_id) {
-        return {
-          ...event,
-          resolved_activity_template_id: null,
-          activity_category: null,
-          estimated_tss: 0,
-          estimated_duration_seconds: 0,
-          estimation_source: "missing",
-          estimation_confidence: null,
-        };
-      }
-
-      const template = templateLookup.get(event.activity_plan_id);
-      if (!template) {
-        unresolvedActivityPlanIds.add(event.activity_plan_id);
-        return {
-          ...event,
-          resolved_activity_template_id: null,
-          activity_category: null,
-          estimated_tss: 0,
-          estimated_duration_seconds: 0,
-          estimation_source: "missing",
-          estimation_confidence: null,
-        };
-      }
-
-      const estimation = estimateTemplateLoad(template, input);
-
+  const sessions = materializedEvents.map<MaterializedSystemPlanLoadSession>((event) => {
+    if (event.event_type === "rest_day") {
       return {
         ...event,
-        resolved_activity_template_id: template.id,
-        activity_category: template.activity_category,
-        ...estimation,
+        resolved_activity_template_id: null,
+        activity_category: null,
+        estimated_tss: 0,
+        estimated_duration_seconds: 0,
+        estimation_source: "rest_day",
+        estimation_confidence: null,
       };
-    },
-  );
+    }
+
+    if (!event.activity_plan_id) {
+      return {
+        ...event,
+        resolved_activity_template_id: null,
+        activity_category: null,
+        estimated_tss: 0,
+        estimated_duration_seconds: 0,
+        estimation_source: "missing",
+        estimation_confidence: null,
+      };
+    }
+
+    const template = templateLookup.get(event.activity_plan_id);
+    if (!template) {
+      unresolvedActivityPlanIds.add(event.activity_plan_id);
+      return {
+        ...event,
+        resolved_activity_template_id: null,
+        activity_category: null,
+        estimated_tss: 0,
+        estimated_duration_seconds: 0,
+        estimation_source: "missing",
+        estimation_confidence: null,
+      };
+    }
+
+    const estimation = estimateTemplateLoad(template, input);
+
+    return {
+      ...event,
+      resolved_activity_template_id: template.id,
+      activity_category: template.activity_category,
+      ...estimation,
+    };
+  });
 
   return {
     system_plan_id: input.systemPlan.id,
@@ -216,19 +201,12 @@ export function materializeSystemPlanLoad(
     sessions_per_week_target: input.systemPlan.sessions_per_week_target,
     sessions,
     unresolved_activity_plan_ids: Array.from(unresolvedActivityPlanIds).sort(),
-    total_estimated_tss: sessions.reduce(
-      (sum, session) => sum + session.estimated_tss,
-      0,
-    ),
+    total_estimated_tss: sessions.reduce((sum, session) => sum + session.estimated_tss, 0),
     total_estimated_duration_seconds: sessions.reduce(
       (sum, session) => sum + session.estimated_duration_seconds,
       0,
     ),
-    total_planned_sessions: sessions.filter(
-      (session) => session.event_type === "planned",
-    ).length,
-    total_rest_days: sessions.filter(
-      (session) => session.event_type === "rest_day",
-    ).length,
+    total_planned_sessions: sessions.filter((session) => session.event_type === "planned").length,
+    total_rest_days: sessions.filter((session) => session.event_type === "rest_day").length,
   };
 }

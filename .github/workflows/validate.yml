@@ -1,0 +1,418 @@
+name: Validate
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  format-and-lint:
+    name: Format And Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Biome check
+        run: pnpm check
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run type checks
+        run: pnpm check-types
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run builds
+        run: pnpm build
+
+  unit-and-integration:
+    name: Unit And Integration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit and integration tests
+        run: pnpm test
+
+  mobile-component-and-jest:
+    name: Mobile Component And Jest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run mobile Jest tests
+        run: pnpm --filter mobile test:jest
+
+  full-validation-suite:
+    name: Full Validation Suite
+    runs-on: ubuntu-latest
+    needs:
+      - format-and-lint
+      - typecheck
+      - build
+      - unit-and-integration
+      - mobile-component-and-jest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run full validation suite
+        run: pnpm check-types && pnpm lint && pnpm test
+
+  mobile-e2e-build:
+    name: Mobile E2E Build
+    runs-on: ubuntu-latest
+    needs:
+      - format-and-lint
+      - typecheck
+      - build
+      - unit-and-integration
+      - mobile-component-and-jest
+      - full-validation-suite
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build bundled Android E2E APK
+        run: pnpm --filter mobile android:e2e:build
+
+      - name: Upload Android E2E APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-e2e-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          retention-days: 3
+          if-no-files-found: error
+
+  web-e2e:
+    name: Web E2E
+    runs-on: ubuntu-latest
+    needs:
+      - format-and-lint
+      - typecheck
+      - build
+      - unit-and-integration
+      - mobile-component-and-jest
+      - full-validation-suite
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: pnpm run self-host:up
+
+      - name: Wait for Supabase
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
+
+      - name: Export local test environment
+        run: bash ./scripts/ci-export-local-env.sh >> "$GITHUB_ENV"
+
+      - name: Seed E2E users
+        run: node ./apps/mobile/scripts/seed-e2e-users.mjs
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start web E2E server
+        run: nohup pnpm run dev:e2e:web > /tmp/gradientpeak-web-e2e.log 2>&1 &
+
+      - name: Wait for web server
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 3000 web-e2e 180
+
+      - name: Run Playwright
+        run: pnpm --filter web test:e2e
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            /tmp/gradientpeak-web-e2e.log
+          if-no-files-found: ignore
+
+  mobile-e2e-core:
+    name: Mobile E2E
+    runs-on: ubuntu-latest
+    needs:
+      - format-and-lint
+      - typecheck
+      - build
+      - unit-and-integration
+      - mobile-component-and-jest
+      - full-validation-suite
+      - mobile-e2e-build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        run: pnpm run self-host:up
+
+      - name: Wait for Supabase
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
+
+      - name: Export local test environment
+        run: bash ./scripts/ci-export-local-env.sh >> "$GITHUB_ENV"
+
+      - name: Seed E2E users
+        run: node ./apps/mobile/scripts/seed-e2e-users.mjs
+
+      - name: Install Maestro
+        run: |
+          curl -Ls "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Download bundled Android E2E APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-e2e-apk
+          path: apps/mobile/.maestro/build-artifacts
+
+      - name: Generate Maestro assets
+        run: pnpm --filter mobile generate:maestro
+
+      - name: Start E2E web server
+        run: nohup pnpm run dev:e2e:web > /tmp/gradientpeak-web-e2e.log 2>&1 &
+
+      - name: Wait for E2E web server
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 3000 web-e2e 180
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Restore Android emulator snapshot cache
+        id: avd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: validate-avd-${{ runner.os }}-api30-x86_64-pixel_7
+
+      - name: Create Android emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_7
+          force-avd-creation: false
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Android emulator snapshot ready."
+
+      - name: Run Maestro smoke flows
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GP_MAESTRO_RUNTIME: installed
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_7
+          force-avd-creation: false
+          emulator-boot-timeout: 900
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: |
+            adb install -r "$(echo "$GITHUB_WORKSPACE"/apps/mobile/.maestro/build-artifacts/*.apk)"
+            pnpm --filter mobile maestro:flow -- --device emulator-5554 .maestro/flows/main/auth_navigation.yaml
+            pnpm --filter mobile maestro:flow -- --device emulator-5554 .maestro/flows/main/tabs_smoke.yaml
+
+      - name: Upload Maestro artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-mobile-e2e
+          path: |
+            apps/mobile/.maestro/artifacts
+            apps/mobile/.maestro/emulator.log
+            /tmp/gradientpeak-web-e2e.log
+          if-no-files-found: ignore

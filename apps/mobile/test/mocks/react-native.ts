@@ -14,6 +14,5 @@ export const View = createHost("View");
 
 export const Platform = {
   OS: "test",
-  select: (values: Record<string, unknown>) =>
-    values.native ?? values.default ?? undefined,
+  select: (values: Record<string, unknown>) => values.native ?? values.default ?? undefined,
 };

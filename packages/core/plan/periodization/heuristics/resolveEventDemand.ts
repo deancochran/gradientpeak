@@ -1,13 +1,10 @@
 import {
-  eventDemandSchema,
   type EventDemand,
   type EventDemandFamily,
+  eventDemandSchema,
   type NormalizedPlanningGoal,
 } from "../../../schemas/planning";
-import {
-  MAX_BIASED_AGGREGATION_WEIGHT,
-  WEIGHTED_AVERAGE_AGGREGATION_WEIGHT,
-} from "../constants";
+import { MAX_BIASED_AGGREGATION_WEIGHT, WEIGHTED_AVERAGE_AGGREGATION_WEIGHT } from "../constants";
 import { getSportModelConfig } from "../sports";
 
 export interface EventDemandResolutionSuccess {
@@ -22,9 +19,7 @@ export interface EventDemandResolutionUnsupported {
   unsupported_target_types: string[];
 }
 
-export type EventDemandResolution =
-  | EventDemandResolutionSuccess
-  | EventDemandResolutionUnsupported;
+export type EventDemandResolution = EventDemandResolutionSuccess | EventDemandResolutionUnsupported;
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
@@ -61,17 +56,12 @@ function deriveContribution(target: NormalizedPlanningGoal["targets"][number]) {
         family: "threshold_hr" as const,
         durationMinutes: 60,
         requiredPeakCtl: round(20 + target.target_lthr_bpm / 5),
-        rationale_codes: [
-          "hr_threshold_demand_mapped",
-          "hr_threshold_low_specificity_confidence",
-        ],
+        rationale_codes: ["hr_threshold_demand_mapped", "hr_threshold_low_specificity_confidence"],
       };
   }
 }
 
-function resolveAggregateFamily(
-  families: EventDemandFamily[],
-): EventDemandFamily {
+function resolveAggregateFamily(families: EventDemandFamily[]): EventDemandFamily {
   if (families.includes("race_performance")) {
     return "race_performance";
   }
@@ -79,9 +69,7 @@ function resolveAggregateFamily(
   return families[0] ?? "threshold_hr";
 }
 
-export function resolveEventDemand(
-  goal: NormalizedPlanningGoal,
-): EventDemandResolution {
+export function resolveEventDemand(goal: NormalizedPlanningGoal): EventDemandResolution {
   if (goal.targets.length === 0) {
     return {
       status: "unsupported",
@@ -104,18 +92,13 @@ export function resolveEventDemand(
   const totalWeight = resolved.reduce((sum, item) => sum + item.weight, 0);
   const maxCtl = Math.max(...resolved.map((item) => item.requiredPeakCtl));
   const weightedCtl =
-    resolved.reduce(
-      (sum, item) => sum + item.requiredPeakCtl * (item.weight / totalWeight),
-      0,
-    ) || 0;
+    resolved.reduce((sum, item) => sum + item.requiredPeakCtl * (item.weight / totalWeight), 0) ||
+    0;
   const weightedDuration =
-    resolved.reduce(
-      (sum, item) => sum + item.durationMinutes * (item.weight / totalWeight),
-      0,
-    ) || 0;
+    resolved.reduce((sum, item) => sum + item.durationMinutes * (item.weight / totalWeight), 0) ||
+    0;
   const requiredPeakCtl = round(
-    maxCtl * MAX_BIASED_AGGREGATION_WEIGHT +
-      weightedCtl * WEIGHTED_AVERAGE_AGGREGATION_WEIGHT,
+    maxCtl * MAX_BIASED_AGGREGATION_WEIGHT + weightedCtl * WEIGHTED_AVERAGE_AGGREGATION_WEIGHT,
   );
 
   return {
@@ -123,9 +106,7 @@ export function resolveEventDemand(
     demand: eventDemandSchema.parse({
       goal_id: goal.id,
       sport: goal.activity_category,
-      demand_family: resolveAggregateFamily(
-        resolved.map((item) => item.family),
-      ),
+      demand_family: resolveAggregateFamily(resolved.map((item) => item.family)),
       demand_duration_minutes: round(weightedDuration),
       required_peak_ctl: requiredPeakCtl,
       required_weekly_load_floor: round(requiredPeakCtl * 7),

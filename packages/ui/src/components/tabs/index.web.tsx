@@ -1,7 +1,7 @@
 "use client";
 
-import * as React from "react";
 import * as TabsPrimitive from "@radix-ui/react-tabs";
+import * as React from "react";
 
 import { cn } from "../../lib/cn";
 import { getWebTestProps } from "../../lib/test-props";
@@ -14,10 +14,7 @@ import {
 } from "./shared";
 
 function tabsRootVariants(className?: string) {
-  return cn(
-    "group/tabs flex gap-2 data-[orientation=horizontal]:flex-col",
-    className,
-  );
+  return cn("group/tabs flex gap-2 data-[orientation=horizontal]:flex-col", className);
 }
 
 function tabsListVariants({
@@ -123,5 +120,5 @@ function TabsContent({
   );
 }
 
-export { Tabs, TabsContent, TabsList, TabsTrigger };
 export type { TabsListVariant } from "./shared";
+export { Tabs, TabsContent, TabsList, TabsTrigger };

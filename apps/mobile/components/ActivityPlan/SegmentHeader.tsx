@@ -1,15 +1,8 @@
+import type { PlanStepV2 } from "@repo/core/schemas/activity_plan_v2";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import type { PlanStepV2 } from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
-import {
-  ChevronDown,
-  ChevronRight,
-  Copy,
-  Edit2,
-  MoreVertical,
-  Trash2,
-} from "lucide-react-native";
+import { ChevronDown, ChevronRight, Copy, Edit2, MoreVertical, Trash2 } from "lucide-react-native";
 import { useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 
@@ -123,9 +116,7 @@ export function SegmentHeader({
           <View className="flex-row items-baseline gap-2">
             <Text className="text-base font-semibold">{segmentName}</Text>
             {repetitions > 1 && (
-              <Text className="text-sm text-muted-foreground">
-                × {repetitions}
-              </Text>
+              <Text className="text-sm text-muted-foreground">× {repetitions}</Text>
             )}
             <Text className="text-sm text-muted-foreground">•</Text>
             <Text className="text-sm text-muted-foreground">
@@ -181,9 +172,7 @@ export function SegmentHeader({
 
                 {onDelete && (
                   <>
-                    {(onRename || onCopy) && (
-                      <View className="h-px bg-border mx-2" />
-                    )}
+                    {(onRename || onCopy) && <View className="h-px bg-border mx-2" />}
                     <Pressable
                       onPress={handleDelete}
                       className="flex-row items-center px-4 py-3 active:bg-muted"

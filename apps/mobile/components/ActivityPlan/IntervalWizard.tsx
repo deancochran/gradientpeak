@@ -1,18 +1,18 @@
+import type {
+  IntensityTargetV2,
+  IntervalStepV2,
+  IntervalV2,
+} from "@repo/core/schemas/activity_plan_v2";
 import { Button } from "@repo/ui/components/button";
 import { Dialog, DialogContent } from "@repo/ui/components/dialog";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
-import { convertUIToV2Duration } from "@/lib/utils/durationConversion";
-import type {
-  IntensityTargetV2,
-  IntervalV2,
-  IntervalStepV2,
-} from "@repo/core/schemas/activity_plan_v2";
 import * as Haptics from "expo-haptics";
 import { useEffect, useState } from "react";
 import { Dimensions, ScrollView, View } from "react-native";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
+import { convertUIToV2Duration } from "@/lib/utils/durationConversion";
 
 interface IntervalWizardProps {
   open: boolean;
@@ -60,13 +60,9 @@ export function IntervalWizard({
   }, [open, defaultSegmentName]);
 
   const workDurationSeconds =
-    config.workUnit === "minutes"
-      ? config.workDuration * 60
-      : config.workDuration;
+    config.workUnit === "minutes" ? config.workDuration * 60 : config.workDuration;
   const restDurationSeconds =
-    config.restUnit === "minutes"
-      ? config.restDuration * 60
-      : config.restDuration;
+    config.restUnit === "minutes" ? config.restDuration * 60 : config.restDuration;
 
   const intervalDuration = workDurationSeconds + restDurationSeconds;
   const totalDuration = intervalDuration * config.repeatCount;
@@ -163,9 +159,7 @@ export function IntervalWizard({
       >
         {/* Header */}
         <View className="flex-row items-center justify-between p-4 border-b">
-          <Text className="text-lg font-medium flex-1 text-center">
-            Create Intervals
-          </Text>
+          <Text className="text-lg font-medium flex-1 text-center">Create Intervals</Text>
           <Button onPress={handleSave} size="sm">
             <Text className="text-primary-foreground">Create</Text>
           </Button>
@@ -183,9 +177,7 @@ export function IntervalWizard({
                 <Label>Segment Name</Label>
                 <Input
                   value={config.segmentName}
-                  onChangeText={(text) =>
-                    setConfig({ ...config, segmentName: text })
-                  }
+                  onChangeText={(text) => setConfig({ ...config, segmentName: text })}
                   placeholder="e.g., Intervals, Main Set"
                 />
               </View>
@@ -213,9 +205,7 @@ export function IntervalWizard({
                     <Label>Work Name</Label>
                     <Input
                       value={config.workName}
-                      onChangeText={(text) =>
-                        setConfig({ ...config, workName: text })
-                      }
+                      onChangeText={(text) => setConfig({ ...config, workName: text })}
                       placeholder="Work"
                     />
                   </View>
@@ -237,15 +227,9 @@ export function IntervalWizard({
                       <Label>Unit</Label>
                       <View className="flex-row gap-1">
                         <Button
-                          variant={
-                            config.workUnit === "seconds"
-                              ? "default"
-                              : "outline"
-                          }
+                          variant={config.workUnit === "seconds" ? "default" : "outline"}
                           size="sm"
-                          onPress={() =>
-                            setConfig({ ...config, workUnit: "seconds" })
-                          }
+                          onPress={() => setConfig({ ...config, workUnit: "seconds" })}
                           className="flex-1"
                         >
                           <Text
@@ -259,15 +243,9 @@ export function IntervalWizard({
                           </Text>
                         </Button>
                         <Button
-                          variant={
-                            config.workUnit === "minutes"
-                              ? "default"
-                              : "outline"
-                          }
+                          variant={config.workUnit === "minutes" ? "default" : "outline"}
                           size="sm"
-                          onPress={() =>
-                            setConfig({ ...config, workUnit: "minutes" })
-                          }
+                          onPress={() => setConfig({ ...config, workUnit: "minutes" })}
                           className="flex-1"
                         >
                           <Text
@@ -308,9 +286,7 @@ export function IntervalWizard({
                     <Label>Rest Name</Label>
                     <Input
                       value={config.restName}
-                      onChangeText={(text) =>
-                        setConfig({ ...config, restName: text })
-                      }
+                      onChangeText={(text) => setConfig({ ...config, restName: text })}
                       placeholder="Rest"
                     />
                   </View>
@@ -332,15 +308,9 @@ export function IntervalWizard({
                       <Label>Unit</Label>
                       <View className="flex-row gap-1">
                         <Button
-                          variant={
-                            config.restUnit === "seconds"
-                              ? "default"
-                              : "outline"
-                          }
+                          variant={config.restUnit === "seconds" ? "default" : "outline"}
                           size="sm"
-                          onPress={() =>
-                            setConfig({ ...config, restUnit: "seconds" })
-                          }
+                          onPress={() => setConfig({ ...config, restUnit: "seconds" })}
                           className="flex-1"
                         >
                           <Text
@@ -354,15 +324,9 @@ export function IntervalWizard({
                           </Text>
                         </Button>
                         <Button
-                          variant={
-                            config.restUnit === "minutes"
-                              ? "default"
-                              : "outline"
-                          }
+                          variant={config.restUnit === "minutes" ? "default" : "outline"}
                           size="sm"
-                          onPress={() =>
-                            setConfig({ ...config, restUnit: "minutes" })
-                          }
+                          onPress={() => setConfig({ ...config, restUnit: "minutes" })}
                           className="flex-1"
                         >
                           <Text
@@ -401,34 +365,22 @@ export function IntervalWizard({
                 {/* Summary Stats */}
                 <View className="flex-row justify-between mb-4">
                   <View>
-                    <Text className="text-xs text-muted-foreground">
-                      Total Steps
-                    </Text>
+                    <Text className="text-xs text-muted-foreground">Total Steps</Text>
                     <Text className="text-lg font-semibold">{totalSteps}</Text>
                   </View>
                   <View>
-                    <Text className="text-xs text-muted-foreground">
-                      Interval Duration
-                    </Text>
-                    <Text className="text-lg font-semibold">
-                      {formatTime(intervalDuration)}
-                    </Text>
+                    <Text className="text-xs text-muted-foreground">Interval Duration</Text>
+                    <Text className="text-lg font-semibold">{formatTime(intervalDuration)}</Text>
                   </View>
                   <View>
-                    <Text className="text-xs text-muted-foreground">
-                      Total Duration
-                    </Text>
-                    <Text className="text-lg font-semibold">
-                      {formatTime(totalDuration)}
-                    </Text>
+                    <Text className="text-xs text-muted-foreground">Total Duration</Text>
+                    <Text className="text-lg font-semibold">{formatTime(totalDuration)}</Text>
                   </View>
                 </View>
 
                 {/* SVG Visual Preview */}
                 <View>
-                  <Text className="text-xs text-muted-foreground mb-2">
-                    Interval Pattern
-                  </Text>
+                  <Text className="text-xs text-muted-foreground mb-2">Interval Pattern</Text>
                   <Svg width={previewWidth} height={previewHeight}>
                     {/* Single interval visualization */}
                     <Rect
@@ -460,10 +412,7 @@ export function IntervalWizard({
                       rx="4"
                     />
                     <SvgText
-                      x={
-                        previewWidth * workPercent +
-                        (previewWidth * restPercent) / 2
-                      }
+                      x={previewWidth * workPercent + (previewWidth * restPercent) / 2}
                       y={previewHeight / 2}
                       fontSize="12"
                       fill="white"

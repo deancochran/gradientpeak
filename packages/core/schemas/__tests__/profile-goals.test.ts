@@ -45,8 +45,7 @@ describe("canonical profile goal schemas", () => {
       expect.arrayContaining([
         expect.objectContaining({
           path: ["target_payload", "activity_category"],
-          message:
-            "objective.activity_category must match profile_goals.activity_category",
+          message: "objective.activity_category must match profile_goals.activity_category",
         }),
       ]),
     );
@@ -68,8 +67,7 @@ describe("canonical profile goal schemas", () => {
       expect.arrayContaining([
         expect.objectContaining({
           path: ["target_payload", "target_time_s"],
-          message:
-            "event_performance objectives require target_time_s or target_speed_mps",
+          message: "event_performance objectives require target_time_s or target_speed_mps",
         }),
       ]),
     );
@@ -90,8 +88,7 @@ describe("canonical profile goal schemas", () => {
       expect.arrayContaining([
         expect.objectContaining({
           path: ["target_payload", "distance_m"],
-          message:
-            "completion objectives require distance_m, duration_s, or both",
+          message: "completion objectives require distance_m, duration_s, or both",
         }),
       ]),
     );
@@ -111,8 +108,7 @@ describe("canonical profile goal schemas", () => {
       expect.arrayContaining([
         expect.objectContaining({
           path: ["target_payload", "target_sessions_per_week"],
-          message:
-            "consistency objectives require target_sessions_per_week, target_weeks, or both",
+          message: "consistency objectives require target_sessions_per_week, target_weeks, or both",
         }),
       ]),
     );
@@ -134,16 +130,12 @@ describe("canonical profile goal helpers", () => {
         ...canonicalGoalFixtures[0]!.linkedEvent,
         id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
       }),
-    ).toThrow(
-      "linked event id must match goal.milestone_event_id for timing resolution",
-    );
+    ).toThrow("linked event id must match goal.milestone_event_id for timing resolution");
   });
 
   it("derives deterministic demand profiles for supported canonical goal types", () => {
     for (const fixture of canonicalGoalFixtures) {
-      expect(deriveGoalDemandProfile(fixture.goal)).toEqual(
-        fixture.demandProfile,
-      );
+      expect(deriveGoalDemandProfile(fixture.goal)).toEqual(fixture.demandProfile);
     }
   });
 });

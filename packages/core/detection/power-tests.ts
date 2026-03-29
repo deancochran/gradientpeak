@@ -4,14 +4,14 @@
  * Analyzes power streams to detect test efforts and suggest performance metrics.
  */
 
-import { findMaxAveragePower } from '../calculations/curves';
+import { findMaxAveragePower } from "../calculations/curves";
 
 export interface TestEffortSuggestion {
-  type: 'ftp' | 'vo2max_power' | 'anaerobic_power' | 'sprint_power';
+  type: "ftp" | "vo2max_power" | "anaerobic_power" | "sprint_power";
   value: number;
   duration: number;
   detectionMethod: string;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
   startTime?: number;
   endTime?: number;
 }
@@ -31,7 +31,7 @@ export interface TestEffortSuggestion {
  */
 export function detectPowerTestEfforts(
   powerStream: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): TestEffortSuggestion[] {
   if (powerStream.length === 0 || timestamps.length === 0) {
     return [];
@@ -43,11 +43,11 @@ export function detectPowerTestEfforts(
   const twentyMinMax = findMaxAveragePower(powerStream, timestamps, 1200);
   if (twentyMinMax && twentyMinMax.avgPower > 150) {
     suggestions.push({
-      type: 'ftp',
+      type: "ftp",
       value: Math.round(twentyMinMax.avgPower * 0.95),
       duration: 1200,
-      detectionMethod: '20min test × 0.95',
-      confidence: 'high',
+      detectionMethod: "20min test × 0.95",
+      confidence: "high",
       startTime: timestamps[twentyMinMax.startIndex],
       endTime: timestamps[twentyMinMax.endIndex],
     });
@@ -57,11 +57,11 @@ export function detectPowerTestEfforts(
   const fiveMinMax = findMaxAveragePower(powerStream, timestamps, 300);
   if (fiveMinMax && fiveMinMax.avgPower > 200) {
     suggestions.push({
-      type: 'vo2max_power',
+      type: "vo2max_power",
       value: Math.round(fiveMinMax.avgPower),
       duration: 300,
-      detectionMethod: '5min max effort',
-      confidence: 'medium',
+      detectionMethod: "5min max effort",
+      confidence: "medium",
       startTime: timestamps[fiveMinMax.startIndex],
       endTime: timestamps[fiveMinMax.endIndex],
     });
@@ -71,11 +71,11 @@ export function detectPowerTestEfforts(
   const oneMinMax = findMaxAveragePower(powerStream, timestamps, 60);
   if (oneMinMax && oneMinMax.avgPower > 300) {
     suggestions.push({
-      type: 'anaerobic_power',
+      type: "anaerobic_power",
       value: Math.round(oneMinMax.avgPower),
       duration: 60,
-      detectionMethod: '1min max effort',
-      confidence: 'medium',
+      detectionMethod: "1min max effort",
+      confidence: "medium",
       startTime: timestamps[oneMinMax.startIndex],
       endTime: timestamps[oneMinMax.endIndex],
     });
@@ -85,11 +85,11 @@ export function detectPowerTestEfforts(
   const fiveSecMax = findMaxAveragePower(powerStream, timestamps, 5);
   if (fiveSecMax && fiveSecMax.avgPower > 500) {
     suggestions.push({
-      type: 'sprint_power',
+      type: "sprint_power",
       value: Math.round(fiveSecMax.avgPower),
       duration: 5,
-      detectionMethod: '5sec max effort',
-      confidence: 'low',
+      detectionMethod: "5sec max effort",
+      confidence: "low",
       startTime: timestamps[fiveSecMax.startIndex],
       endTime: timestamps[fiveSecMax.endIndex],
     });
@@ -110,7 +110,7 @@ export function detectPowerTestEfforts(
  */
 export function detectPowerRampTest(
   powerStream: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): {
   ftpEstimate: number;
   vo2maxEstimate: number;
@@ -167,7 +167,7 @@ export function detectPowerRampTest(
       // VO2max estimate: 5-minute power from ramp test
       const lastFiveMin = window.slice(-60); // Last 60 seconds (approximate 5min)
       const vo2maxEstimate = Math.round(
-        lastFiveMin.reduce((sum, p) => sum + p, 0) / lastFiveMin.length
+        lastFiveMin.reduce((sum, p) => sum + p, 0) / lastFiveMin.length,
       );
 
       return {
@@ -194,7 +194,7 @@ export function detectPowerRampTest(
  */
 export function detectIntervalWorkout(
   powerStream: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): {
   intervals: Array<{ power: number; duration: number; startIndex: number; endIndex: number }>;
   avgIntervalPower: number;
@@ -254,8 +254,7 @@ export function detectIntervalWorkout(
     return null; // Not an interval workout
   }
 
-  const avgIntervalPower =
-    intervals.reduce((sum, int) => sum + int.power, 0) / intervals.length;
+  const avgIntervalPower = intervals.reduce((sum, int) => sum + int.power, 0) / intervals.length;
   const avgIntervalDuration =
     intervals.reduce((sum, int) => sum + int.duration, 0) / intervals.length;
 

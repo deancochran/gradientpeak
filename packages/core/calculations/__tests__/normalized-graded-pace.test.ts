@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  calculateGradedSpeed,
-  calculateNGP,
-  getCostFactor,
-} from "../normalized-graded-pace";
+import { calculateGradedSpeed, calculateNGP, getCostFactor } from "../normalized-graded-pace";
 
 describe("Normalized Graded Pace", () => {
   describe("getCostFactor", () => {

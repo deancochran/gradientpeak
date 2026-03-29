@@ -1,6 +1,9 @@
 // Client-side only exports - safe for browser bundling
+
+export type { SchedulingRefreshScope } from "./query-client";
 export {
   createQueryClient,
+  invalidatePostActivityIngestionQueries,
   invalidateQueries,
   invalidateSchedulingQueries,
   isSchedulingSensitiveQueryKey,
@@ -9,4 +12,3 @@ export {
   updateQueryData,
 } from "./query-client";
 export type { AppRouter } from "./routers";
-export type { SchedulingRefreshScope } from "./query-client";

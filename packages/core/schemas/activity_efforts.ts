@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicActivityCategorySchema } from "@repo/supabase";
+import { canonicalSportSchema } from "./sport";
 
 export const effortTypeSchema = z.enum(["power", "speed"]);
 
@@ -7,7 +7,7 @@ export const BestEffortSchema = z.object({
   id: z.string().uuid().optional(), // Optional for creation
   activity_id: z.string().uuid(),
   profile_id: z.string().uuid(),
-  activity_category: publicActivityCategorySchema,
+  activity_category: canonicalSportSchema,
   duration_seconds: z.number().int().positive(),
   effort_type: effortTypeSchema,
   value: z.number(),

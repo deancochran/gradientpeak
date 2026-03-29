@@ -9,19 +9,13 @@ import { NativeOnlyAnimatedView } from "../../lib/native-only-animated-view";
 import { TextClassContext } from "../text/context";
 import { DEFAULT_TOOLTIP_SIDE_OFFSET, type TooltipSide } from "./shared";
 
-function tooltipContentVariants({
-  className,
-}: {
-  className?: string;
-  side?: TooltipSide;
-} = {}) {
+function tooltipContentVariants({ className }: { className?: string; side?: TooltipSide } = {}) {
   return cn("bg-primary z-50 rounded-md px-3 py-2 sm:py-1.5", className);
 }
 
 const Tooltip = TooltipPrimitive.Root;
 const TooltipTrigger = TooltipPrimitive.Trigger;
-const FullWindowOverlay =
-  Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
+const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
 
 function TooltipContent({
   className,
@@ -36,9 +30,7 @@ function TooltipContent({
   return (
     <TooltipPrimitive.Portal hostName={portalHost}>
       <FullWindowOverlay>
-        <TooltipPrimitive.Overlay
-          style={Platform.select({ native: StyleSheet.absoluteFill })}
-        >
+        <TooltipPrimitive.Overlay style={Platform.select({ native: StyleSheet.absoluteFill })}>
           <NativeOnlyAnimatedView
             entering={
               side === "top"

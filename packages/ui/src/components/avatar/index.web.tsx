@@ -1,17 +1,14 @@
 "use client";
 
-import * as React from "react";
 import * as AvatarPrimitive from "@radix-ui/react-avatar";
+import * as React from "react";
 
 import { cn } from "../../lib/cn";
 import { getWebTestProps } from "../../lib/test-props";
 import type { AvatarTestProps } from "./shared";
 
 function avatarRootClasses(className?: string) {
-  return cn(
-    "relative flex size-8 shrink-0 overflow-hidden rounded-full",
-    className,
-  );
+  return cn("relative flex size-8 shrink-0 overflow-hidden rounded-full", className);
 }
 
 function avatarImageClasses(className?: string) {
@@ -19,10 +16,7 @@ function avatarImageClasses(className?: string) {
 }
 
 function avatarFallbackClasses(className?: string) {
-  return cn(
-    "bg-muted flex size-full items-center justify-center rounded-full",
-    className,
-  );
+  return cn("bg-muted flex size-full items-center justify-center rounded-full", className);
 }
 
 function Avatar({
@@ -43,10 +37,7 @@ function Avatar({
   );
 }
 
-function AvatarImage({
-  className,
-  ...props
-}: React.ComponentProps<typeof AvatarPrimitive.Image>) {
+function AvatarImage({ className, ...props }: React.ComponentProps<typeof AvatarPrimitive.Image>) {
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"

@@ -288,9 +288,7 @@ export class WahooClient {
   /**
    * Fetch completed workout summary (for webhook processing)
    */
-  async getWorkoutSummary(
-    workoutSummaryId: string,
-  ): Promise<WahooWorkoutSummary> {
+  async getWorkoutSummary(workoutSummaryId: string): Promise<WahooWorkoutSummary> {
     return await this.makeRequest<WahooWorkoutSummary>(
       `/v1/workout_summaries/${workoutSummaryId}`,
       {
@@ -313,10 +311,7 @@ export class WahooClient {
     if (routeData.description) {
       formData.append("route[description]", routeData.description);
     }
-    formData.append(
-      "route[workout_type_family_id]",
-      routeData.workoutTypeFamilyId.toString(),
-    );
+    formData.append("route[workout_type_family_id]", routeData.workoutTypeFamilyId.toString());
     formData.append("route[start_lat]", routeData.startLat.toString());
     formData.append("route[start_lng]", routeData.startLng.toString());
     formData.append("route[distance]", routeData.distance.toString());
@@ -349,9 +344,7 @@ export class WahooClient {
    * Get all routes, optionally filtered by external_id
    */
   async getRoutes(externalId?: string): Promise<WahooRoute[]> {
-    const params = externalId
-      ? `?external_id=${encodeURIComponent(externalId)}`
-      : "";
+    const params = externalId ? `?external_id=${encodeURIComponent(externalId)}` : "";
     return await this.makeRequest<WahooRoute[]>(`/v1/routes${params}`, {
       method: "GET",
     });
@@ -371,10 +364,7 @@ export class WahooClient {
   /**
    * Make authenticated request to Wahoo API with error handling
    */
-  private async makeRequest<T = any>(
-    endpoint: string,
-    options: RequestInit,
-  ): Promise<T> {
+  private async makeRequest<T = any>(endpoint: string, options: RequestInit): Promise<T> {
     const url = `${WAHOO_API_BASE}${endpoint}`;
 
     const headers = {
@@ -416,9 +406,7 @@ export class WahooClient {
   /**
    * Handle API error responses
    */
-  private async handleErrorResponse(
-    response: Response,
-  ): Promise<WahooApiError> {
+  private async handleErrorResponse(response: Response): Promise<WahooApiError> {
     let errorMessage = `Wahoo API error: ${response.status} ${response.statusText}`;
     let errorCode = `HTTP_${response.status}`;
 
@@ -436,10 +424,7 @@ export class WahooClient {
       }
     } catch {
       // Response wasn't JSON, use default message
-      console.error(
-        "[Wahoo API] Non-JSON error response:",
-        response.statusText,
-      );
+      console.error("[Wahoo API] Non-JSON error response:", response.statusText);
     }
 
     const error: WahooApiError = new Error(errorMessage);

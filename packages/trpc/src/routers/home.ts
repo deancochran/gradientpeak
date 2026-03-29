@@ -2,6 +2,7 @@ import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@r
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { buildDynamicStressSeries } from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlans } from "../utils/estimation-helpers";
@@ -147,9 +148,22 @@ export const homeRouter = createTRPCRouter({
         });
       }
 
+      const { byActivityId: derivedActivityMap, byDate: tssByDate } =
+        await buildDynamicStressSeries({
+          supabase: ctx.supabase,
+          profileId: userId,
+          activities: activities || [],
+        });
+
       const rollingTrainingQuality =
         featureFlags.personalizationTrainingQuality && activities
-          ? calculateRollingTrainingQuality(activities)
+          ? calculateRollingTrainingQuality(
+              activities.map((activity) => ({
+                started_at: activity.started_at,
+                tss: derivedActivityMap.get(activity.id)?.tss ?? null,
+                intensity_factor: derivedActivityMap.get(activity.id)?.intensity_factor ?? null,
+              })),
+            )
           : undefined;
 
       // --- 4. Fetch Planned Activities (Future & Current Week) ---
@@ -205,14 +219,6 @@ export const homeRouter = createTRPCRouter({
       }
 
       // --- 6. Calculate Fitness Trends (CTL/ATL/TSB) ---
-      const tssByDate = new Map<string, number>();
-      activities?.forEach((a) => {
-        if (!a.started_at) return;
-        const dateStr = a.started_at.split("T")[0]!; // Non-null assertion after check
-        const tss = a.training_stress_score || 0;
-        tssByDate.set(dateStr, (tssByDate.get(dateStr) || 0) + tss);
-      });
-
       const fitnessTrends = [];
       let todayStatus = { ctl: 0, atl: 0, tsb: 0, form: "fresh" };
 
@@ -336,7 +342,9 @@ export const homeRouter = createTRPCRouter({
       const weeklyActualStats = {
         distance: weeklyActuals.reduce((sum, a) => sum + (a.distance_meters || 0), 0) / 1000, // km
         duration: weeklyActuals.reduce((sum, a) => sum + (a.duration_seconds || 0), 0),
-        tss: Math.round(weeklyActuals.reduce((sum, a) => sum + (a.training_stress_score || 0), 0)),
+        tss: Math.round(
+          weeklyActuals.reduce((sum, a) => sum + (derivedActivityMap.get(a.id)?.tss || 0), 0),
+        ),
         count: weeklyActuals.length,
       };
 
@@ -368,7 +376,14 @@ export const homeRouter = createTRPCRouter({
       // --- 9. Current Workload Envelopes (ACWR/Monotony) ---
       const workloadWindowStart = new Date(today);
       workloadWindowStart.setDate(today.getDate() - 27);
-      const workload = buildWorkloadEnvelopes(activities || [], workloadWindowStart, today);
+      const workload = buildWorkloadEnvelopes(
+        (activities || []).map((activity) => ({
+          started_at: activity.started_at,
+          tss: derivedActivityMap.get(activity.id)?.tss ?? null,
+        })),
+        workloadWindowStart,
+        today,
+      );
 
       // --- 10. Schedule (Future) ---
       const todayStr = today.toISOString().split("T")[0]!;

@@ -1,4 +1,5 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
@@ -333,20 +334,13 @@ export function PeriodizationForm({
 
           {/* Warning for aggressive ramp rate */}
           {parseInt(rampRateText) > 10 && (
-            <Card className="bg-amber-500/10 border-amber-500">
-              <CardContent className="p-4 flex-row items-start gap-2">
-                <Icon as={AlertCircle} size={20} className="text-amber-500 mt-0.5" />
-                <View className="flex-1">
-                  <Text className="text-amber-500 font-semibold mb-1">
-                    Warning: Very Aggressive Ramp Rate
-                  </Text>
-                  <Text className="text-amber-500 text-sm">
-                    A ramp rate above 10% per week is very aggressive and significantly increases
-                    injury risk. Most athletes should aim for 5-7% per week.
-                  </Text>
-                </View>
-              </CardContent>
-            </Card>
+            <Alert icon={AlertCircle} iconClassName="text-amber-500">
+              <AlertTitle className="text-amber-500">Warning: Very Aggressive Ramp Rate</AlertTitle>
+              <AlertDescription className="text-amber-500">
+                A ramp rate above 10% per week is very aggressive and significantly increases injury
+                risk. Most athletes should aim for 5-7% per week.
+              </AlertDescription>
+            </Alert>
           )}
         </>
       )}

@@ -4,15 +4,7 @@ import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  Calendar,
-  Edit,
-  Heart,
-  MapPin,
-  Trash2,
-  TrendingDown,
-  TrendingUp,
-} from "lucide-react-native";
+import { Calendar, Heart, MapPin, Trash2, TrendingDown, TrendingUp } from "lucide-react-native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
@@ -111,7 +103,10 @@ export default function RouteDetailScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View
+        className="flex-1 bg-background items-center justify-center"
+        testID="route-detail-loading"
+      >
         <Text>Loading...</Text>
       </View>
     );
@@ -119,7 +114,10 @@ export default function RouteDetailScreen() {
 
   if (!route) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View
+        className="flex-1 bg-background items-center justify-center"
+        testID="route-detail-not-found"
+      >
         <Text>Route not found</Text>
       </View>
     );
@@ -139,7 +137,7 @@ export default function RouteDetailScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="route-detail-screen">
       <ScrollView>
         {/* Map */}
         <View className="h-64 bg-muted">
@@ -193,11 +191,33 @@ export default function RouteDetailScreen() {
 
         <View className="p-4 gap-4">
           {/* Header */}
-          <View>
-            <Text className="text-2xl font-bold mb-2">{route.name}</Text>
-            <Text className="text-base text-muted-foreground">
-              {ACTIVITY_CATEGORY_LABELS[route.activity_category] || route.activity_category}
-            </Text>
+          <View className="gap-3">
+            <View>
+              <Text className="text-2xl font-bold mb-2">{route.name}</Text>
+              <Text className="text-base text-muted-foreground">
+                {ACTIVITY_CATEGORY_LABELS[route.activity_category] || route.activity_category}
+              </Text>
+            </View>
+
+            <View className="flex-row flex-wrap gap-2">
+              <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                <Text className="text-xs font-medium text-foreground">
+                  {formatDistance(route.total_distance)}
+                </Text>
+              </View>
+              {route.total_ascent != null && route.total_ascent > 0 ? (
+                <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                  <Text className="text-xs font-medium text-foreground">
+                    {route.total_ascent}m climb
+                  </Text>
+                </View>
+              ) : null}
+              <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                <Text className="text-xs font-medium text-foreground">
+                  Uploaded {formatDate(route.created_at)}
+                </Text>
+              </View>
+            </View>
           </View>
 
           {/* Stats Card */}
@@ -265,50 +285,47 @@ export default function RouteDetailScreen() {
             </Card>
           )}
 
-          {/* Actions */}
           <View className="gap-3 pb-6">
-            <View className="flex-row gap-3">
-              <Pressable
-                onPress={handleToggleLike}
-                className="flex-1 flex-row items-center justify-center gap-2 py-3 rounded-lg border border-border bg-card"
+            <Pressable
+              onPress={handleToggleLike}
+              testID="route-detail-like-button"
+              className="flex-row items-center justify-center gap-2 py-3 rounded-lg border border-border bg-card"
+            >
+              <Icon
+                as={Heart}
+                size={20}
+                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
+              />
+              <Text
+                className={isLiked ? "text-red-500 font-medium" : "text-foreground font-medium"}
               >
-                <Icon
-                  as={Heart}
-                  size={20}
-                  className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-                />
-                <Text
-                  className={isLiked ? "text-red-500 font-medium" : "text-foreground font-medium"}
-                >
-                  {isLiked ? "Liked" : "Like"}
-                </Text>
-                {likesCount > 0 && <Text className="text-muted-foreground">({likesCount})</Text>}
-              </Pressable>
-            </View>
-
-            <Button
-              variant="outline"
-              className="flex-row items-center gap-2"
-              onPress={() => {
-                // TODO: Navigate to plan creation with this route selected
-                Alert.alert("Coming Soon", "Use this route in a plan");
-              }}
-            >
-              <Edit className="text-foreground" size={20} />
-              <Text>Use in Activity Plan</Text>
-            </Button>
-
-            <Button
-              variant="destructive"
-              className="flex-row items-center gap-2"
-              onPress={handleDelete}
-              disabled={deleteMutation.isPending}
-            >
-              <Trash2 className="text-destructive-foreground" size={20} />
-              <Text className="text-destructive-foreground">
-                {deleteMutation.isPending ? "Deleting..." : "Delete Route"}
+                {isLiked ? "Liked" : "Like this route"}
               </Text>
-            </Button>
+              {likesCount > 0 && <Text className="text-muted-foreground">({likesCount})</Text>}
+            </Pressable>
+
+            <Card className="border-destructive/40">
+              <CardContent className="p-4 gap-3">
+                <View className="gap-1">
+                  <Text className="text-sm font-semibold text-foreground">Route management</Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Delete only if you no longer want this route in your personal library.
+                  </Text>
+                </View>
+                <Button
+                  variant="destructive"
+                  className="flex-row items-center gap-2"
+                  onPress={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  testID="route-detail-delete-button"
+                >
+                  <Trash2 className="text-destructive-foreground" size={20} />
+                  <Text className="text-destructive-foreground">
+                    {deleteMutation.isPending ? "Deleting..." : "Delete Route"}
+                  </Text>
+                </Button>
+              </CardContent>
+            </Card>
           </View>
         </View>
       </ScrollView>

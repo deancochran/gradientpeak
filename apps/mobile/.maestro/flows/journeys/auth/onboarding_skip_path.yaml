@@ -1,0 +1,82 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  ONBOARDING_USER_EMAIL: "onboarding@example.com"
+  ONBOARDING_USER_PASS: "password123"
+---
+- runFlow:
+    file: ../../reusable/bootstrap.yaml
+- runFlow:
+    when:
+      visible: "Discover"
+    commands:
+      - tapOn:
+          id: "app-header-avatar-button"
+      - extendedWaitUntil:
+          visible:
+            id: "user-detail-screen"
+          timeout: 10000
+      - tapOn:
+          id: "sign-out"
+      - tapOn:
+          text: "Sign Out"
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: "sign-in-screen"
+          timeout: 10000
+- runFlow:
+    when:
+      visible:
+        id: "sign-in-screen"
+    commands:
+      - tapOn:
+          id: "email-input"
+      - inputText: "${ONBOARDING_USER_EMAIL}"
+      - tapOn:
+          id: "password-input"
+      - inputText: "${ONBOARDING_USER_PASS}"
+      - hideKeyboard
+      - tapOn:
+          id: "sign-in-button"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-screen"
+    timeout: 15000
+- tapOn:
+    id: "onboarding-next-button"
+- tapOn:
+    id: "onboarding-experience-beginner"
+- tapOn:
+    id: "onboarding-next-button"
+- tapOn:
+    id: "onboarding-gender-male"
+- tapOn:
+    id: "onboarding-next-button"
+- tapOn:
+    id: "onboarding-dob"
+- inputText: "1990-01-01"
+- tapOn:
+    id: "onboarding-next-button"
+- tapOn:
+    id: "onboarding-weight"
+- inputText: "72"
+- tapOn:
+    id: "onboarding-next-button"
+- tapOn:
+    id: "onboarding-sport-other"
+- tapOn:
+    id: "onboarding-next-button"
+- tapOn:
+    id: "onboarding-skip-button"
+- tapOn:
+    id: "onboarding-skip-button"
+- tapOn:
+    id: "onboarding-next-button"
+- extendedWaitUntil:
+    visible: "All Set!"
+    timeout: 10000
+- tapOn:
+    id: "onboarding-finish-button"
+- extendedWaitUntil:
+    visible: "Plan"
+    timeout: 15000

@@ -1,5 +1,5 @@
-import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import React from "react";
+import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import { StreamChart } from "./StreamChart";
 
 interface MultiMetricChartProps {
@@ -136,9 +136,7 @@ export function MultiMetricChart({
   }
 
   // Generate title if not provided
-  const chartTitle =
-    title ||
-    `${availableMetrics.map((m) => m.label).join(" & ")} Over Time`;
+  const chartTitle = title || `${availableMetrics.map((m) => m.label).join(" & ")} Over Time`;
 
   return (
     <StreamChart

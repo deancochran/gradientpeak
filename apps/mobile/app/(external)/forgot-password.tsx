@@ -7,7 +7,16 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
+import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import {
+  AuthRequestTimeoutError,
+  getAuthRequestTimeoutMessage,
+  withAuthRequestTimeout,
+} from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
+import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
 
 const forgotPasswordSchema = z.object({
@@ -21,6 +30,15 @@ export default function ForgotPasswordScreen() {
   const { loading: authLoading } = useAuth();
   const [emailSent, setEmailSent] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
+  const serverConfig = useServerConfig();
+  const [serverUrlInput, setServerUrlInput] = React.useState(
+    serverConfig.overrideUrl ?? serverConfig.apiUrl,
+  );
+
+  React.useEffect(() => {
+    setServerUrlInput(serverConfig.overrideUrl ?? serverConfig.apiUrl);
+  }, [serverConfig.overrideUrl, serverConfig.apiUrl]);
 
   const form = useZodForm({
     schema: forgotPasswordSchema,
@@ -32,11 +50,31 @@ export default function ForgotPasswordScreen() {
   const onSendResetEmail = async (data: ForgotPasswordFields) => {
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-        redirectTo: `${process.env.EXPO_PUBLIC_APP_URL}/(external)/reset-password`,
-      });
+      if (isServerConfigExpanded) {
+        const nextUrl = serverUrlInput.trim();
+        const hostedApiUrl = getHostedApiUrl();
+        const { changed } = await setServerUrlOverride(
+          nextUrl.length === 0 || nextUrl === hostedApiUrl ? null : nextUrl,
+        );
+
+        if (changed) {
+          await useAuthStore.getState().clearSession();
+        }
+      }
+
+      logMobileAction("auth.resetPasswordForEmail", "attempt", { email: data.email });
+
+      const { error } = await withAuthRequestTimeout(
+        supabase.auth.resetPasswordForEmail(data.email, {
+          redirectTo: `${process.env.EXPO_PUBLIC_APP_URL}/(external)/reset-password`,
+        }),
+      );
 
       if (error) {
+        logMobileAction("auth.resetPasswordForEmail", "failure", {
+          email: data.email,
+          error: error.message,
+        });
         console.log("Reset password error:", error.message);
         if (error.message?.includes("User not found")) {
           form.setError("email", {
@@ -52,12 +90,20 @@ export default function ForgotPasswordScreen() {
           });
         }
       } else {
+        logMobileAction("auth.resetPasswordForEmail", "success", { email: data.email });
         setEmailSent(true);
       }
     } catch (err) {
+      logMobileAction("auth.resetPasswordForEmail", "failure", {
+        email: data.email,
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.log("Unexpected reset password error:", err);
       form.setError("email", {
-        message: "An unexpected error occurred. Please try again.",
+        message:
+          err instanceof AuthRequestTimeoutError
+            ? getAuthRequestTimeoutMessage()
+            : "An unexpected error occurred. Please try again.",
       });
     } finally {
       setIsSubmitting(false);
@@ -186,6 +232,14 @@ export default function ForgotPasswordScreen() {
             >
               <Text>{isLoading ? "Sending..." : "Send Reset Instructions"}</Text>
             </Button>
+
+            <ServerUrlOverride
+              expanded={isServerConfigExpanded}
+              value={serverUrlInput}
+              usingHostedDefault={!serverConfig.overrideUrl}
+              onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
+              onChange={setServerUrlInput}
+            />
 
             {/* Back to Sign In Link */}
             <View className="border-t border-border pt-4">

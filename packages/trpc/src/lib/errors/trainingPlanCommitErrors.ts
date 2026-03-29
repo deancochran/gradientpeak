@@ -22,13 +22,9 @@ const trainingPlanCommitErrorCauseSchema = z.object({
   details: z.record(z.string(), z.unknown()).optional(),
 });
 
-export type TrainingPlanCommitErrorCause = z.infer<
-  typeof trainingPlanCommitErrorCauseSchema
->;
+export type TrainingPlanCommitErrorCause = z.infer<typeof trainingPlanCommitErrorCauseSchema>;
 
-type TrainingPlanCommitOperation = z.infer<
-  typeof trainingPlanCommitOperationSchema
->;
+type TrainingPlanCommitOperation = z.infer<typeof trainingPlanCommitOperationSchema>;
 
 export function isTrainingPlanCommitErrorCause(
   value: unknown,
@@ -102,9 +98,7 @@ export function buildInvalidPayloadCommitError(input: {
   });
 }
 
-export function buildNotFoundCommitError(input: {
-  operation: TrainingPlanCommitOperation;
-}) {
+export function buildNotFoundCommitError(input: { operation: TrainingPlanCommitOperation }) {
   return new TRPCError({
     code: "NOT_FOUND",
     message: "Training plan not found or you do not have access to edit it",

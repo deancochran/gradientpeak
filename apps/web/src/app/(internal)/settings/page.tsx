@@ -1,5 +1,11 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  getProfileQuickUpdateDefaults,
+  normalizeProfileSettingsView,
+  profileQuickUpdateSchema,
+} from "@repo/core";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,25 +30,24 @@ import {
 import { FileInput } from "@repo/ui/components/file-input";
 import { Form, FormSwitchField, FormTextField } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
-import { useZodForm } from "@repo/ui/hooks";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth } from "@/components/providers/auth-provider";
 import { trpc } from "@/lib/trpc/client";
 
-// Types removed - using tRPC generated types
-
-// Zod schema for profile form validation
-const profileSchema = z.object({
-  username: z
-    .string()
-    .min(2, "Name must be at least 2 characters")
-    .max(50, "Name must be less than 50 characters"),
-  is_public: z.boolean(),
+const webProfileSettingsSchema = profileQuickUpdateSchema.pick({
+  username: true,
+  is_public: true,
 });
+
+type WebProfileSettingsFormData = Pick<
+  z.output<typeof webProfileSettingsSchema>,
+  "username" | "is_public"
+>;
 
 export default function SettingsPage() {
   // Auth and Profile data
@@ -99,8 +104,8 @@ export default function SettingsPage() {
   // Hooks
   const router = useRouter();
 
-  const form = useZodForm({
-    schema: profileSchema,
+  const form = useForm<z.input<typeof webProfileSettingsSchema>, any, WebProfileSettingsFormData>({
+    resolver: zodResolver(webProfileSettingsSchema),
     defaultValues: {
       username: "",
       is_public: false,
@@ -110,10 +115,10 @@ export default function SettingsPage() {
   // Update form when profile data loads
   useEffect(() => {
     if (profile) {
-      const isPublicField = (profile as unknown as { is_public?: unknown }).is_public;
+      const defaults = getProfileQuickUpdateDefaults(normalizeProfileSettingsView(profile));
       form.reset({
-        username: profile.username || "",
-        is_public: typeof isPublicField === "boolean" ? isPublicField : false,
+        username: defaults.username,
+        is_public: defaults.is_public,
       });
     }
   }, [profile, form]);
@@ -153,7 +158,7 @@ export default function SettingsPage() {
   }, [avatarBlobUrl]);
 
   // Event handlers
-  const onSubmit = async (values: z.infer<typeof profileSchema>) => {
+  const onSubmit = async (values: WebProfileSettingsFormData) => {
     if (!user) return;
 
     setUpdating(true);

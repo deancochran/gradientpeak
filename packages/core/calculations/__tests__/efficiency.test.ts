@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  calculateAerobicDecoupling,
-  calculateEfficiencyFactor,
-} from "../efficiency";
+import { calculateAerobicDecoupling, calculateEfficiencyFactor } from "../efficiency";
 
 describe("Efficiency Metrics", () => {
   describe("calculateEfficiencyFactor", () => {

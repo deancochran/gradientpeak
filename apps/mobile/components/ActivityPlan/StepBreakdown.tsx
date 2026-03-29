@@ -1,7 +1,7 @@
+import { PlanStepV2 } from "@repo/core";
+import { Text } from "@repo/ui/components/text";
 import { memo } from "react";
 import { View } from "react-native";
-import { Text } from "@repo/ui/components/text";
-import { PlanStepV2 } from "@repo/core";
 import StepPreviewCard from "./StepPreviewCard";
 
 interface StepBreakdownProps {

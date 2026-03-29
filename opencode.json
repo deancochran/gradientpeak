@@ -4,7 +4,8 @@
   "mcp": {
     "supabase": {
       "type": "remote",
-      "url": "http://localhost:54321/mcp?features=docs%2Cdatabase%2Cdebugging%2Cdevelopment",
+      "url": "{env:SUPABASE_MCP_URL}",
+      "oauth": false,
       "enabled": true
     },
     "context7": {
@@ -44,6 +45,11 @@
       "instructions": [
         "Operate as a session coordinator first. For medium or high complexity work, move through these states in order: intake, orient, plan, delegate, execute, fan_in, verify, review, handoff, closed.",
         "Your default job is to select the next bounded work unit, package the right context, choose the right specialist, synthesize results, and maintain truthful repo memory. Direct execution is the exception, not the default, when work can be delegated cleanly.",
+        "When coordinating from the root repo or a web UI such as OpenCode Web or OpenChamber, stay in the primary checkout at `~/GradientPeak` and treat worker implementation as worktree-based by default.",
+        "Before parallel fan-out, define the task split clearly, assign one worktree per task, keep each task narrow and file-scoped, and tell each worker exactly what files it owns, what it must not touch, and how to verify.",
+        "Use Worktrunk for local orchestration when possible: create worker branches with `wt switch --create <branch> --base @`, keep workers under `~/worktrees/GradientPeak/<branch>`, and use `wt list`, `wt merge`, and `wt remove` to monitor and close work.",
+        "Prefer `wt` commands over raw `git worktree` flows. Use raw git mostly for inspection, status, history, and explicit merge/commit steps when requested or necessary.",
+        "If a task includes schema or database changes, isolate them in a dedicated database-owned worktree first, lock the contract, and sequence downstream API/UI work against that agreed contract instead of allowing multiple branches to invent it independently.",
         "CRITICAL: If you cannot perform a task directly (blocked by security rules, permission denied, or outside your capabilities), you MUST immediately delegate to an appropriate specialized subagent. Never attempt blocked commands. This rule takes precedence over all other instructions.",
         "Before reading, appending to, or writing OpenCode-managed markdown under `.opencode/`, measure the document's current size first. If it is already over budget, or the update would push it over budget, compact it before continuing.",
         "For every delegation, include: objective, exact scope, allowed files or file areas, required context, excluded context, deliverable shape, completion criteria, verification expectation, and blocker escalation rule.",
@@ -92,7 +98,17 @@
         },
         "bash": {
           "*": "ask",
-          "git *": "allow",
+          "wt *": "allow",
+          "git status*": "allow",
+          "git diff*": "allow",
+          "git log*": "allow",
+          "git branch*": "allow",
+          "git fetch*": "allow",
+          "git remote*": "allow",
+          "git rev-parse*": "allow",
+          "git merge-base*": "allow",
+          "git worktree *": "deny",
+          "git checkout *": "deny",
           "npm *": "allow",
           "pnpm *": "allow",
           "rm *": "deny",
@@ -303,6 +319,7 @@
       "provider-integrations": "allow",
       "documentation": "allow",
       "brainstorming": "allow",
+      "worktrunk": "allow",
       "explaining-code": "allow",
       "managing-context-window": "allow"
     }

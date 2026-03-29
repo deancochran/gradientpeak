@@ -16,16 +16,10 @@ const coachingScenarios = getEnabledSystemPlanContractScenarios().filter(
 
 describe("system training plan coaching invariants", () => {
   it("advanced marathon build keeps week-over-week ramps controlled", () => {
-    const scenario = coachingScenarios.find(
-      (entry) => entry.key === "advanced_marathon_build",
-    )!;
+    const scenario = coachingScenarios.find((entry) => entry.key === "advanced_marathon_build")!;
     const comparison = compareScenarioToReference(scenario);
 
-    for (
-      let index = 1;
-      index < comparison.weeklyComparison.length;
-      index += 1
-    ) {
+    for (let index = 1; index < comparison.weeklyComparison.length; index += 1) {
       const previous = comparison.weeklyComparison[index - 1]!;
       const current = comparison.weeklyComparison[index]!;
       const allowedRamp = Math.max(35, previous.actual * 0.18);
@@ -36,14 +30,9 @@ describe("system training plan coaching invariants", () => {
   });
 
   it("advanced marathon build preserves long-session emphasis every week", () => {
-    const scenario = coachingScenarios.find(
-      (entry) => entry.key === "advanced_marathon_build",
-    )!;
+    const scenario = coachingScenarios.find((entry) => entry.key === "advanced_marathon_build")!;
     const materialized = materializeSystemPlanScenario(scenario);
-    const sessionsByWeek = new Map<
-      number,
-      typeof materialized.materializedSessions
-    >();
+    const sessionsByWeek = new Map<number, typeof materialized.materializedSessions>();
 
     for (const session of materialized.materializedSessions) {
       const weekIndex = Math.floor(
@@ -57,31 +46,18 @@ describe("system training plan coaching invariants", () => {
     }
 
     for (const [weekIndex, sessions] of sessionsByWeek.entries()) {
-      const totalWeekTss = sessions.reduce(
-        (total, session) => total + session.estimated_tss,
-        0,
-      );
+      const totalWeekTss = sessions.reduce((total, session) => total + session.estimated_tss, 0);
       const longSession = sessions
-        .filter(
-          (session) =>
-            /long/i.test(session.title) || /long/i.test(session.template_name),
-        )
+        .filter((session) => /long/i.test(session.title) || /long/i.test(session.template_name))
         .sort((left, right) => right.estimated_tss - left.estimated_tss)[0];
 
-      expect(
-        longSession,
-        `expected long session in week ${weekIndex + 1}`,
-      ).toBeDefined();
-      expect(
-        (longSession?.estimated_tss ?? 0) / totalWeekTss,
-      ).toBeGreaterThanOrEqual(0.25);
+      expect(longSession, `expected long session in week ${weekIndex + 1}`).toBeDefined();
+      expect((longSession?.estimated_tss ?? 0) / totalWeekTss).toBeGreaterThanOrEqual(0.25);
     }
   });
 
   it("exact 5K speed block keeps a clear taper into race week", () => {
-    const scenario = coachingScenarios.find(
-      (entry) => entry.key === "exact_5k_speed_block",
-    )!;
+    const scenario = coachingScenarios.find((entry) => entry.key === "exact_5k_speed_block")!;
     const comparison = compareScenarioToReference(scenario);
     const penultimateWeek = comparison.weeklyComparison.at(-2);
     const raceWeek = comparison.weeklyComparison.at(-1);
@@ -93,14 +69,9 @@ describe("system training plan coaching invariants", () => {
   });
 
   it("boundary feasible bike keeps long-ride emphasis and lighter recovery weeks", () => {
-    const scenario = coachingScenarios.find(
-      (entry) => entry.key === "boundary_feasible_bike",
-    )!;
+    const scenario = coachingScenarios.find((entry) => entry.key === "boundary_feasible_bike")!;
     const materialized = materializeSystemPlanScenario(scenario);
-    const sessionsByWeek = new Map<
-      number,
-      typeof materialized.materializedSessions
-    >();
+    const sessionsByWeek = new Map<number, typeof materialized.materializedSessions>();
 
     for (const session of materialized.materializedSessions) {
       const weekIndex = Math.floor(
@@ -116,44 +87,24 @@ describe("system training plan coaching invariants", () => {
     const weeklyLoads = Array.from(sessionsByWeek.entries())
       .sort((left, right) => left[0] - right[0])
       .map(([weekIndex, sessions]) => {
-        const totalWeekTss = sessions.reduce(
-          (total, session) => total + session.estimated_tss,
-          0,
-        );
+        const totalWeekTss = sessions.reduce((total, session) => total + session.estimated_tss, 0);
         const longRide = sessions
-          .filter(
-            (session) =>
-              /long/i.test(session.title) ||
-              /long/i.test(session.template_name),
-          )
+          .filter((session) => /long/i.test(session.title) || /long/i.test(session.template_name))
           .sort((left, right) => right.estimated_tss - left.estimated_tss)[0];
 
-        expect(
-          longRide,
-          `expected long ride in week ${weekIndex + 1}`,
-        ).toBeDefined();
-        expect(
-          (longRide?.estimated_tss ?? 0) / totalWeekTss,
-        ).toBeGreaterThanOrEqual(0.3);
+        expect(longRide, `expected long ride in week ${weekIndex + 1}`).toBeDefined();
+        expect((longRide?.estimated_tss ?? 0) / totalWeekTss).toBeGreaterThanOrEqual(0.3);
 
         return totalWeekTss;
       });
 
-    expect(weeklyLoads[3]).toBeLessThan(
-      weeklyLoads[2] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(weeklyLoads[7]).toBeLessThan(
-      weeklyLoads[6] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(weeklyLoads[11]).toBeLessThan(
-      weeklyLoads[10] ?? Number.POSITIVE_INFINITY,
-    );
+    expect(weeklyLoads[3]).toBeLessThan(weeklyLoads[2] ?? Number.POSITIVE_INFINITY);
+    expect(weeklyLoads[7]).toBeLessThan(weeklyLoads[6] ?? Number.POSITIVE_INFINITY);
+    expect(weeklyLoads[11]).toBeLessThan(weeklyLoads[10] ?? Number.POSITIVE_INFINITY);
   });
 
   it("B race before A race applies a micro-taper instead of a full reset", () => {
-    const scenario = coachingScenarios.find(
-      (entry) => entry.key === "b_race_before_a_race",
-    )!;
+    const scenario = coachingScenarios.find((entry) => entry.key === "b_race_before_a_race")!;
     const comparison = compareScenarioToReference(scenario);
     const tuneUpWeek = comparison.reference.weeklyTargetLoad[2]?.value ?? 0;
     const aRaceWeek = comparison.reference.weeklyTargetLoad[3]?.value ?? 0;
@@ -165,13 +116,9 @@ describe("system training plan coaching invariants", () => {
   });
 
   it("two close A goals keep a sustained peak floor without a chaotic re-ramp", () => {
-    const scenario = coachingScenarios.find(
-      (entry) => entry.key === "two_close_a_goals",
-    )!;
+    const scenario = coachingScenarios.find((entry) => entry.key === "two_close_a_goals")!;
     const comparison = compareScenarioToReference(scenario);
-    const weeks = comparison.reference.weeklyTargetLoad.map(
-      (week) => week.value,
-    );
+    const weeks = comparison.reference.weeklyTargetLoad.map((week) => week.value);
     const valley = Math.min(...weeks.slice(2));
     const preFirstGoalPeak = Math.max(...weeks.slice(0, 2));
 

@@ -6,13 +6,7 @@
  */
 
 import type { StandardActivity } from "@repo/core";
-import {
-  calculateTSSFromAvailableData,
-  computeTrimp,
-  extractHeartRateZones,
-  extractPowerZones,
-  parseFitFileWithSDK,
-} from "@repo/core";
+import { parseFitFileWithSDK } from "@repo/core";
 import {
   calculateAerobicDecoupling,
   calculateBestEfforts,
@@ -22,7 +16,6 @@ import {
   calculateNGP,
   calculateNormalizedPower,
   calculateNormalizedSpeed,
-  calculateTrainingEffect,
   detectLTHR,
   estimateVO2Max,
 } from "@repo/core/calculations";
@@ -44,12 +37,9 @@ const uploadFitFileInput = z.object({
     ),
   fileType: z
     .string()
-    .refine(
-      (type) => FIT_FILE_TYPES.some((ext) => type.toLowerCase().endsWith(ext)),
-      {
-        message: `File type must be one of: ${FIT_FILE_TYPES.join(", ")}`,
-      },
-    ),
+    .refine((type) => FIT_FILE_TYPES.some((ext) => type.toLowerCase().endsWith(ext)), {
+      message: `File type must be one of: ${FIT_FILE_TYPES.join(", ")}`,
+    }),
   fileData: z.string(), // Base64 encoded file data
 });
 
@@ -59,12 +49,25 @@ const analyzeFitFileInput = z.object({
   bucketName: z.string().default("fit-files"),
 });
 
+const manualHistoricalImportProvenanceSchema = z.object({
+  import_source: z.literal("manual_historical"),
+  import_file_type: z.literal("fit"),
+  import_original_file_name: z.string().trim().min(1, "Original file name is required"),
+});
+
 const processFitFileInput = z.object({
   fitFilePath: z.string().min(1, "File path is required"),
   name: z.string().min(1, "Activity name is required"),
   notes: z.string().optional(),
   activityType: z.string().min(1, "Activity type is required"),
+  importProvenance: manualHistoricalImportProvenanceSchema.optional(),
 });
+
+function subtractDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() - days);
+  return next;
+}
 
 export const fitFilesRouter = createTRPCRouter({
   /**
@@ -104,9 +107,7 @@ export const fitFilesRouter = createTRPCRouter({
           .createSignedUploadUrl(filePath);
 
         if (error) {
-          throw new Error(
-            `Failed to create signed upload URL: ${error.message}`,
-          );
+          throw new Error(`Failed to create signed upload URL: ${error.message}`);
         }
 
         return {
@@ -117,897 +118,723 @@ export const fitFilesRouter = createTRPCRouter({
         };
       } catch (error) {
         console.error("Get signed upload URL error:", error);
-        throw new Error(
-          `Failed to generate upload URL: ${(error as Error).message}`,
-        );
+        throw new Error(`Failed to generate upload URL: ${(error as Error).message}`);
       }
     }),
 
   /**
    * Process a FIT file that has been uploaded to storage
    */
-  processFitFile: protectedProcedure
-    .input(processFitFileInput)
-    .mutation(async ({ ctx, input }) => {
-      const { fitFilePath, name, notes, activityType } = input;
-      const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+  processFitFile: protectedProcedure.input(processFitFileInput).mutation(async ({ ctx, input }) => {
+    const { fitFilePath, name, notes, activityType, importProvenance } = input;
+    const userId = ctx.session?.user?.id;
+    const supabase = ctx.supabase;
 
-      if (!userId) {
-        throw new TRPCError({
-          code: "UNAUTHORIZED",
-          message: "User not authenticated",
-        });
-      }
+    if (!userId) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "User not authenticated",
+      });
+    }
 
-      try {
-        console.log("[processFitFile] Starting FIT file processing:", {
+    try {
+      console.log("[processFitFile] Starting FIT file processing:", {
+        fitFilePath,
+        userId,
+        name,
+        activityType,
+      });
+
+      // ========================================================================
+      // T-302, T-303: Download FIT file from storage
+      // ========================================================================
+      console.log("[processFitFile] Downloading FIT file from storage:", fitFilePath);
+
+      const { data: fitFile, error: downloadError } = await supabase.storage
+        .from("fit-files")
+        .download(fitFilePath);
+
+      if (downloadError || !fitFile) {
+        // Log error and notify admins
+        console.error("[processFitFile] Failed to download FIT file:", {
+          error: downloadError,
+          errorMessage: downloadError?.message,
           fitFilePath,
           userId,
-          name,
-          activityType,
         });
+        // TODO: Send notification to admin/monitoring system
 
-        // ========================================================================
-        // T-302, T-303: Download FIT file from storage
-        // ========================================================================
-        console.log(
-          "[processFitFile] Downloading FIT file from storage:",
-          fitFilePath,
-        );
-
-        const { data: fitFile, error: downloadError } = await supabase.storage
-          .from("fit-files")
-          .download(fitFilePath);
-
-        if (downloadError || !fitFile) {
-          // Log error and notify admins
-          console.error("[processFitFile] Failed to download FIT file:", {
-            error: downloadError,
-            errorMessage: downloadError?.message,
-            fitFilePath,
-            userId,
-          });
-          // TODO: Send notification to admin/monitoring system
-
-          // Remove the invalid FIT file from storage
-          await supabase.storage.from("fit-files").remove([fitFilePath]);
-
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to download FIT file from storage: ${downloadError?.message || "Unknown error"}`,
-            cause: downloadError,
-          });
-        }
-
-        console.log("[processFitFile] FIT file downloaded successfully:", {
-          size: fitFile.size,
-          type: fitFile.type,
-        });
-
-        // ========================================================================
-        // T-304, T-305: Parse FIT file using @repo/core
-        // ========================================================================
-        let parsedData: StandardActivity;
-        try {
-          console.log("[processFitFile] Parsing FIT file with SDK...");
-          const buffer = Buffer.from(await fitFile.arrayBuffer());
-          parsedData = parseFitFileWithSDK(buffer);
-          console.log("[processFitFile] FIT file parsed successfully:", {
-            sport: parsedData.metadata.type,
-            duration: parsedData.summary.totalTime,
-            distance: parsedData.summary.totalDistance,
-            recordCount: parsedData.records.length,
-            lapCount: parsedData.laps?.length,
-          });
-        } catch (parseError) {
-          // Log error and notify admins
-          console.error("[processFitFile] Failed to parse FIT file:", {
-            error: parseError,
-            errorMessage: (parseError as Error).message,
-            errorStack: (parseError as Error).stack,
-            fitFilePath,
-            fileSize: fitFile.size,
-          });
-          // TODO: Send notification to admin/monitoring system
-
-          // Remove the invalid FIT file from storage
-          await supabase.storage.from("fit-files").remove([fitFilePath]);
-
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Failed to parse FIT file: ${(parseError as Error).message}`,
-          });
-        }
-
-        const { summary, records } = parsedData;
-
-        // ========================================================================
-        // T-306: Extract activity summary
-        // ========================================================================
-        const startTime = parsedData.metadata.startTime;
-        const duration = summary.totalTime;
-
-        console.log("[processFitFile] Activity summary extracted:", {
-          startTime: startTime.toISOString(),
-          duration,
-          distance: summary.totalDistance,
-          avgHeartRate: summary.avgHeartRate,
-          avgPower: summary.avgPower,
-        });
-
-        if (duration <= 0) {
-          console.error(
-            `[processFitFile] Invalid FIT file: duration is ${duration}. Deleting file: ${fitFilePath}`,
-          );
-          await supabase.storage.from("fit-files").remove([fitFilePath]);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Activity has zero duration and cannot be processed.",
-          });
-        }
-
-        const distance = summary.totalDistance || 0;
-        const calories = summary.calories || 0;
-        const elevationGain = summary.totalAscent || 0;
-        const avgHeartRate = summary.avgHeartRate;
-        const maxHeartRate = summary.maxHeartRate;
-        const avgPower = summary.avgPower;
-        const maxPower = summary.maxPower;
-        const avgCadence = summary.avgCadence;
-        const maxCadence = summary.maxCadence;
-
-        // ========================================================================
-        // T-307: Extract streams for calculations
-        // ========================================================================
-        const powerStream: number[] = [];
-        const hrStream: number[] = [];
-        const timestamps: number[] = [];
-        const cadenceStream: number[] = [];
-        const altitudeStream: number[] = [];
-        const speedStream: number[] = [];
-        const coords: { latitude: number; longitude: number }[] = [];
-
-        for (const record of records) {
-          if (record.timestamp !== undefined) {
-            timestamps.push(record.timestamp.getTime() / 1000);
-          }
-          if (record.power !== undefined) {
-            powerStream.push(record.power);
-          }
-          if (record.heartRate !== undefined) {
-            hrStream.push(record.heartRate);
-          }
-          if (record.cadence !== undefined) {
-            cadenceStream.push(record.cadence);
-          }
-          if (record.altitude !== undefined) {
-            altitudeStream.push(record.altitude);
-          }
-          if (record.speed !== undefined) {
-            speedStream.push(record.speed);
-          }
-          // Collect valid coordinates for polyline
-          if (
-            record.positionLat !== undefined &&
-            record.positionLong !== undefined &&
-            Math.abs(record.positionLat) <= 90 &&
-            Math.abs(record.positionLong) <= 180 &&
-            !(record.positionLat === 0 && record.positionLong === 0)
-          ) {
-            coords.push({
-              latitude: record.positionLat,
-              longitude: record.positionLong,
-            });
-          }
-        }
-
-        // ========================================================================
-        // Calculate Polyline and Bounds (commented out until migration is applied)
-        // ========================================================================
-        // let polyline: string | null = null;
-        // let mapBounds: any = null;
-        //
-        // if (coords.length > 0) {
-        //   polyline = encodePolyline(coords);
-        //   const bounds = calculateBounds(coords);
-        //   mapBounds = {
-        //     min_lat: bounds.minLat,
-        //     max_lat: bounds.maxLat,
-        //     min_lng: bounds.minLng,
-        //     max_lng: bounds.maxLng,
-        //   };
-        // }
-
-        // ========================================================================
-        // New: Calculate Swim Metrics
-        // ========================================================================
-        let avgSwolf: number | null = null;
-        const totalStrokes = summary.totalStrokes || null;
-        const poolLength = summary.poolLength || null;
-
-        if (
-          activityType === "swim" &&
-          summary.totalDistance &&
-          summary.totalTime &&
-          totalStrokes &&
-          poolLength
-        ) {
-          // SWOLF = Time + Strokes per length
-          // Avg SWOLF = (Total Time + Total Strokes) / (Total Distance / Pool Length)
-          const numLengths = summary.totalDistance / poolLength;
-          if (numLengths > 0) {
-            avgSwolf =
-              (summary.totalTime + totalStrokes) / Math.round(numLengths);
-            avgSwolf = Math.round(avgSwolf * 10) / 10; // Round to 1 decimal
-          }
-        }
-
-        // Calculate pace stream from speed stream
-        const paceStream: number[] = [];
-        if (speedStream.length > 0) {
-          for (const speed of speedStream) {
-            if (speed > 0) {
-              if (activityType === "swim") {
-                // Swim pace: seconds per 100m
-                paceStream.push(100 / speed);
-              } else if (activityType === "run") {
-                // Run pace: seconds per km
-                paceStream.push(1000 / speed);
-              } else {
-                // Default to seconds per km for other activities
-                paceStream.push(1000 / speed);
-              }
-            } else {
-              paceStream.push(0);
-            }
-          }
-        }
-
-        // ========================================================================
-        // T-308: Fetch User Performance Metrics (with Cold Start Defaults)
-        // ========================================================================
-
-        // REFACTOR: We no longer use profile_performance_metric_logs.
-        // Instead, we should use the new analytics router logic or just defaults for now.
-        // For TSS calculation, we need FTP and LTHR.
-
-        // Fetch LTHR from profile_metrics
-        const { data: lthrMetric } = await supabase
-          .from("profile_metrics")
-          .select("value")
-          .eq("profile_id", userId)
-          .eq("metric_type", "lthr")
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        // Cold Start: Default to 170bpm if no LTHR found
-        const lthr = lthrMetric?.value ? Number(lthrMetric.value) : 170;
-
-        // Fetch Max HR
-        const { data: maxHRMetric } = await supabase
-          .from("profile_metrics")
-          .select("value")
-          .eq("profile_id", userId)
-          .eq("metric_type", "max_hr")
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        // Cold Start: Default to 190bpm if no Max HR found
-        const maxHR =
-          maxHeartRate ||
-          (maxHRMetric?.value ? Number(maxHRMetric.value) : 190);
-
-        // Fetch Resting HR
-        const { data: restingHRMetric } = await supabase
-          .from("profile_metrics")
-          .select("value")
-          .eq("profile_id", userId)
-          .eq("metric_type", "resting_hr")
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const restingHR = restingHRMetric?.value
-          ? Number(restingHRMetric.value)
-          : 60; // Default 60
-
-        // For FTP, we ideally want to calculate it dynamically, but that's expensive here.
-        // For now, let's use a default or try to fetch a cached value if we had one.
-        // Since we removed the logs table, we'll default to 200W for now,
-        // or we could implement a quick lookup of the best 20m power from activity_efforts
-        // and estimate it (0.95 * 20m).
-
-        // Quick estimation of FTP from recent history (last 90 days)
-        const cutoffDate = new Date(
-          Date.now() - 90 * 24 * 60 * 60 * 1000,
-        ).toISOString();
-        const { data: best20m } = await supabase
-          .from("activity_efforts")
-          .select("value")
-          .eq("profile_id", userId)
-          .eq("activity_category", "bike")
-          .eq("effort_type", "power")
-          .eq("duration_seconds", 1200)
-          .gte("recorded_at", cutoffDate)
-          .order("value", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const ftp = best20m?.value ? Math.round(best20m.value * 0.95) : 200;
-
-        // ========================================================================
-        // T-308: Calculate TSS using @repo/core (Universal Method)
-        // ========================================================================
-        let tss: number | undefined;
-        let normalizedPower: number | undefined;
-        let intensityFactor: number | undefined;
-        let trimp: number | null = null;
-        let trimpSource: string | null = null;
-
-        // Calculate TSS using whatever data is available (Power > HR > Pace)
-        try {
-          const tssResult = calculateTSSFromAvailableData({
-            powerStream,
-            hrStream,
-            paceStream, // Pass calculated pace stream
-            timestamps,
-            ftp,
-            lthr,
-            maxHR,
-            // Estimate threshold pace if needed (e.g. 5:00/km = 300s/km)
-            // TODO: Fetch threshold pace from user metrics if available
-            thresholdPace: activityType === "swim" ? 120 : 300, // 2:00/100m for swim, 5:00/km for run
-            distance,
-            activityType: activityType as any,
-          });
-
-          if (tssResult) {
-            // Normalize the result based on the source
-            if ("tss" in tssResult) {
-              // Power, Running, or Swimming TSS
-              tss = tssResult.tss;
-              intensityFactor = tssResult.intensityFactor;
-            } else if ("hrss" in tssResult) {
-              // Heart Rate TSS
-              tss = tssResult.hrss;
-              // Estimate IF for HR: AvgHR / LTHR (rough approximation)
-              if (lthr && tssResult.avgHR) {
-                intensityFactor =
-                  Math.round((tssResult.avgHR / lthr) * 100) / 100;
-              }
-            }
-
-            // Only set NP if it was a power-based calculation
-            if ("normalizedPower" in tssResult) {
-              normalizedPower = tssResult.normalizedPower;
-            }
-
-            console.log(
-              `TSS calculated (${tssResult.source}): ${tss} (IF: ${intensityFactor})`,
-            );
-          }
-        } catch (error) {
-          console.error("Failed to calculate TSS:", error);
-          // Don't fail the mutation, just skip TSS calculation
-        }
-
-        try {
-          const trimpResult = computeTrimp({
-            coverageDays: 28,
-            durationSeconds: duration,
-            avgHeartRateBpm: avgHeartRate ?? null,
-            restingHeartRateBpm: restingHR,
-            maxHeartRateBpm: maxHR,
-            hrSampleCount: hrStream.length,
-            hrCoverageRatio: hrStream.length / Math.max(records.length, 1),
-            avgPowerWatts: avgPower ?? null,
-          });
-
-          if (typeof trimpResult.value === "number") {
-            trimp = trimpResult.value;
-            trimpSource = trimpResult.source ?? null;
-          }
-        } catch (error) {
-          console.error("Failed to calculate TRIMP:", error);
-        }
-
-        // ========================================================================
-        // T-310: Extract zones using @repo/core
-        // ========================================================================
-        let hrZones: ReturnType<typeof extractHeartRateZones> | undefined;
-        let powerZones: ReturnType<typeof extractPowerZones> | undefined;
-
-        if (records.length > 0) {
-          hrZones = extractHeartRateZones(records);
-          powerZones = extractPowerZones(records);
-        }
-
-        // ========================================================================
-        // T-5.1, T-5.2: Calculate Advanced Metrics
-        // ========================================================================
-
-        // 1. Normalized Speed (All activities)
-        const normalizedSpeed = calculateNormalizedSpeed(distance, duration);
-
-        // 2. Normalized Graded Pace (Run)
-        let normalizedGradedSpeed: number | null = null;
-        if (
-          activityType === "run" &&
-          speedStream.length > 0 &&
-          altitudeStream.length > 0
-        ) {
-          const gradedSpeedStream = calculateGradedSpeedStream(
-            speedStream,
-            altitudeStream,
-            timestamps,
-          );
-          normalizedGradedSpeed = calculateNGP(gradedSpeedStream);
-        }
-
-        // 3. Efficiency Factor (EF)
-        // EF = Normalized Power / Avg HR (Bike) or Normalized Graded Speed / Avg HR (Run)
-        let efficiencyFactor: number | null = null;
-        if (avgHeartRate && avgHeartRate > 0) {
-          if (activityType === "bike" && normalizedPower) {
-            efficiencyFactor = calculateEfficiencyFactor(
-              normalizedPower,
-              avgHeartRate,
-            );
-          } else if (activityType === "run" && normalizedGradedSpeed) {
-            efficiencyFactor = calculateEfficiencyFactor(
-              normalizedGradedSpeed,
-              avgHeartRate,
-            );
-          }
-        }
-
-        // 4. Aerobic Decoupling (Pa:HR)
-        let aerobicDecoupling: number | null = null;
-        if (powerStream.length > 0 && hrStream.length > 0) {
-          aerobicDecoupling = calculateDecouplingFromStreams(
-            powerStream,
-            hrStream,
-            timestamps,
-            calculateNormalizedPower,
-          );
-        } else if (
-          activityType === "run" &&
-          speedStream.length > 0 &&
-          hrStream.length > 0
-        ) {
-          // For run, use graded speed if available, else speed
-          const runPowerStream = normalizedGradedSpeed
-            ? calculateGradedSpeedStream(
-                speedStream,
-                altitudeStream,
-                timestamps,
-              )
-            : speedStream;
-          aerobicDecoupling = calculateDecouplingFromStreams(
-            runPowerStream,
-            hrStream,
-            timestamps,
-            calculateNGP,
-          );
-        }
-
-        // 5. Training Effect
-        let trainingEffectLabel: string | null = null;
-        if (hrStream.length > 0 && lthr) {
-          trainingEffectLabel = calculateTrainingEffect(
-            hrStream,
-            timestamps,
-            lthr,
-          );
-        }
-
-        // ========================================================================
-        // T-5.3: Fetch Weather
-        // ========================================================================
-        let avgTemperature: number | null = null;
-
-        // Calculate average temperature from records if available
-        let tempSum = 0;
-        let tempCount = 0;
-        for (const record of records) {
-          if (record.temperature !== undefined) {
-            tempSum += record.temperature;
-            tempCount++;
-          }
-        }
-
-        if (tempCount > 0) {
-          avgTemperature = tempSum / tempCount;
-        }
-
-        if (avgTemperature === null) {
-          // Fetch from API if we have coordinates
-          if (coords.length > 0) {
-            const startCoord = coords[0];
-            if (startCoord) {
-              const temp = await fetchActivityTemperature(
-                startCoord.latitude,
-                startCoord.longitude,
-                startTime,
-              );
-              if (temp !== null) {
-                avgTemperature = temp;
-              }
-            }
-          }
-        }
-
-        // ========================================================================
-        // T-313, T-314: Create activity record
-        // ========================================================================
-        const endTime = new Date(startTime.getTime() + duration * 1000);
-
-        const activityData = {
-          profile_id: userId,
-          name,
-          notes: notes || null,
-          type: activityType,
-          is_private: true,
-          started_at: startTime.toISOString(),
-          finished_at: endTime.toISOString(),
-          duration_seconds: Math.round(duration),
-          moving_seconds: Math.round(duration), // Could be calculated from speed stream
-          distance_meters: Math.round(distance),
-
-          // FIT file metadata
-          fit_file_path: fitFilePath,
-          fit_file_size: fitFile.size,
-
-          // Basic metrics
-          calories: calories ? Math.round(calories) : null,
-          elevation_gain_meters: elevationGain
-            ? Math.round(elevationGain)
-            : null,
-
-          // Heart rate metrics
-          avg_heart_rate: avgHeartRate ? Math.round(avgHeartRate) : null,
-          max_heart_rate: maxHeartRate ? Math.round(maxHeartRate) : null,
-
-          // Power metrics
-          avg_power: avgPower ? Math.round(avgPower) : null,
-          max_power: maxPower ? Math.round(maxPower) : null,
-          normalized_power: normalizedPower
-            ? Math.round(normalizedPower)
-            : null,
-          intensity_factor: intensityFactor || null,
-          training_stress_score: tss ? Math.round(tss) : null,
-          trimp,
-          trimp_source: trimpSource,
-
-          // Cadence metrics
-          avg_cadence: avgCadence ? Math.round(avgCadence) : null,
-          max_cadence: maxCadence ? Math.round(maxCadence) : null,
-
-          // Speed metrics
-          avg_speed_mps:
-            summary.avgSpeed ??
-            (distance && duration ? distance / duration : null),
-          max_speed_mps: summary.maxSpeed ?? null,
-          normalized_speed_mps: normalizedSpeed || null,
-          normalized_graded_speed_mps: normalizedGradedSpeed || null,
-
-          // Efficiency & Training Effect
-          efficiency_factor: efficiencyFactor || null,
-          aerobic_decoupling: aerobicDecoupling || null,
-          training_effect: trainingEffectLabel as any,
-          avg_temperature: avgTemperature ? Math.round(avgTemperature) : null,
-
-          // Heart rate zones (seconds in each zone)
-          hr_zone_1_seconds: hrZones?.zone1 || null,
-          hr_zone_2_seconds: hrZones?.zone2 || null,
-          hr_zone_3_seconds: hrZones?.zone3 || null,
-          hr_zone_4_seconds: hrZones?.zone4 || null,
-          hr_zone_5_seconds: hrZones?.zone5 || null,
-
-          // Power zones (seconds in each zone)
-          power_zone_1_seconds: powerZones?.zone1 || null,
-          power_zone_2_seconds: powerZones?.zone2 || null,
-          power_zone_3_seconds: powerZones?.zone3 || null,
-          power_zone_4_seconds: powerZones?.zone4 || null,
-          power_zone_5_seconds: powerZones?.zone5 || null,
-          power_zone_6_seconds: powerZones?.zone6 || null,
-
-          // ========================================================================
-          // Extended Metadata (only fields that exist in current schema)
-          // Note: polyline, map_bounds, laps, total_strokes, pool_length, avg_swolf,
-          // device_manufacturer, device_product will be added in future migration
-          // ========================================================================
-        };
-
-        console.log("[processFitFile] Attempting to insert activity record:", {
-          profile_id: userId,
-          name,
-          type: activityType,
-          duration: Math.round(duration),
-          distance: Math.round(distance),
-          fit_file_path: fitFilePath,
-        });
-
-        const { data: createdActivity, error: insertError } = await supabase
-          .from("activities")
-          .insert(activityData)
-          .select()
-          .single();
-
-        if (insertError || !createdActivity) {
-          // T-316: Cleanup uploaded file on failure
-          console.error("[processFitFile] Failed to insert activity record:", {
-            error: insertError,
-            errorMessage: insertError?.message,
-            errorDetails: insertError?.details,
-            errorHint: insertError?.hint,
-            errorCode: insertError?.code,
-            activityData: {
-              profile_id: userId,
-              name,
-              type: activityType,
-              started_at: startTime.toISOString(),
-              finished_at: endTime.toISOString(),
-              duration_seconds: Math.round(duration),
-              distance_meters: Math.round(distance),
-            },
-          });
-
-          await supabase.storage.from("fit-files").remove([fitFilePath]);
-
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to create activity record: ${insertError?.message || "Unknown error"}. Details: ${insertError?.details || "None"}. Hint: ${insertError?.hint || "None"}`,
-            cause: insertError,
-          });
-        }
-
-        console.log(
-          "[processFitFile] Activity record created successfully:",
-          createdActivity.id,
-        );
-
-        // ========================================================================
-        // T-5.4, T-5.5, T-5.6: Post-Processing (Best Efforts, Profile Metrics, Notifications)
-        // ========================================================================
-
-        // 1. Calculate Best Efforts
-        const effortsToInsert: any[] = [];
-
-        // Power Efforts
-        if (powerStream.length > 0) {
-          const bestPowers = calculateBestEfforts(powerStream, timestamps);
-          for (const effort of bestPowers) {
-            effortsToInsert.push({
-              activity_id: createdActivity.id,
-              profile_id: userId,
-              activity_category: activityType,
-              duration_seconds: effort.duration,
-              effort_type: "power",
-              value: effort.value,
-              unit: "watts",
-              start_offset:
-                effort.startIndex !== undefined
-                  ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
-                  : null,
-              recorded_at: startTime.toISOString(),
-            });
-          }
-        }
-
-        // Speed/Pace Efforts (Run)
-        if (activityType === "run" && speedStream.length > 0) {
-          // Use graded speed if available for "effort"
-          const streamToUse = normalizedGradedSpeed
-            ? calculateGradedSpeedStream(
-                speedStream,
-                altitudeStream,
-                timestamps,
-              )
-            : speedStream;
-          const bestSpeeds = calculateBestEfforts(streamToUse, timestamps);
-          for (const effort of bestSpeeds) {
-            effortsToInsert.push({
-              activity_id: createdActivity.id,
-              profile_id: userId,
-              activity_category: activityType,
-              duration_seconds: effort.duration,
-              effort_type: "speed",
-              value: effort.value,
-              unit: "meters_per_second",
-              start_offset:
-                effort.startIndex !== undefined
-                  ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
-                  : null,
-              recorded_at: startTime.toISOString(),
-            });
-          }
-        }
-
-        // Bulk insert efforts
-        if (effortsToInsert.length > 0) {
-          const { error: effortsError } = await supabase
-            .from("activity_efforts")
-            .insert(effortsToInsert);
-          if (effortsError) {
-            console.error("Failed to insert best efforts:", effortsError);
-          }
-        }
-
-        // 2. Detect LTHR
-        if (hrStream.length > 0) {
-          const detectedLTHR = detectLTHR(hrStream, timestamps);
-          if (detectedLTHR && detectedLTHR > lthr) {
-            // Update profile_metrics
-            await supabase.from("profile_metrics").insert({
-              profile_id: userId,
-              metric_type: "lthr",
-              value: detectedLTHR,
-              unit: "bpm",
-              recorded_at: startTime.toISOString(),
-            });
-
-            // Create notification for new LTHR detection.
-            await supabase.from("notifications").insert({
-              profile_id: userId,
-              title: "New LTHR detected",
-              message: `Detected lactate threshold heart rate: ${Math.round(detectedLTHR)} bpm`,
-              is_read: false,
-            });
-          }
-        }
-
-        // 3. Estimate VO2 Max
-        if (maxHeartRate && restingHR) {
-          const estimatedVO2 = estimateVO2Max(maxHeartRate, restingHR);
-          // We could log this or notify
-        }
-
-        return {
-          success: true,
-          activity: createdActivity,
-        };
-      } catch (error) {
-        // T-316: Handle errors with proper TRPCError types
-        if (error instanceof TRPCError) {
-          console.error("[processFitFile] TRPCError caught:", {
-            code: error.code,
-            message: error.message,
-            cause: error.cause,
-          });
-          throw error;
-        }
-
-        // Log unexpected errors with full context
-        console.error("[processFitFile] Unexpected error:", {
-          error,
-          errorMessage: (error as Error).message,
-          errorStack: (error as Error).stack,
-          errorName: (error as Error).name,
-          fitFilePath,
-          userId,
-          name,
-          activityType,
-        });
-
-        // Cleanup file on unexpected errors
-        try {
-          await supabase.storage.from("fit-files").remove([fitFilePath]);
-          console.log(
-            "[processFitFile] Cleaned up FIT file after error:",
-            fitFilePath,
-          );
-        } catch (cleanupError) {
-          console.error(
-            "[processFitFile] Failed to cleanup file after error:",
-            cleanupError,
-          );
-        }
+        // Remove the invalid FIT file from storage
+        await supabase.storage.from("fit-files").remove([fitFilePath]);
 
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `FIT file processing failed: ${(error as Error).message}`,
-          cause: error,
+          message: `Failed to download FIT file from storage: ${downloadError?.message || "Unknown error"}`,
+          cause: downloadError,
         });
       }
-    }),
+
+      console.log("[processFitFile] FIT file downloaded successfully:", {
+        size: fitFile.size,
+        type: fitFile.type,
+      });
+
+      // ========================================================================
+      // T-304, T-305: Parse FIT file using @repo/core
+      // ========================================================================
+      let parsedData: StandardActivity;
+      try {
+        console.log("[processFitFile] Parsing FIT file with SDK...");
+        const buffer = Buffer.from(await fitFile.arrayBuffer());
+        parsedData = parseFitFileWithSDK(buffer);
+        console.log("[processFitFile] FIT file parsed successfully:", {
+          sport: parsedData.metadata.type,
+          duration: parsedData.summary.totalTime,
+          distance: parsedData.summary.totalDistance,
+          recordCount: parsedData.records.length,
+          lapCount: parsedData.laps?.length,
+        });
+      } catch (parseError) {
+        // Log error and notify admins
+        console.error("[processFitFile] Failed to parse FIT file:", {
+          error: parseError,
+          errorMessage: (parseError as Error).message,
+          errorStack: (parseError as Error).stack,
+          fitFilePath,
+          fileSize: fitFile.size,
+        });
+        // TODO: Send notification to admin/monitoring system
+
+        // Remove the invalid FIT file from storage
+        await supabase.storage.from("fit-files").remove([fitFilePath]);
+
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Failed to parse FIT file: ${(parseError as Error).message}`,
+        });
+      }
+
+      const { summary, records } = parsedData;
+
+      // ========================================================================
+      // T-306: Extract activity summary
+      // ========================================================================
+      const startTime = parsedData.metadata.startTime;
+      const duration = summary.totalTime;
+
+      console.log("[processFitFile] Activity summary extracted:", {
+        startTime: startTime.toISOString(),
+        duration,
+        distance: summary.totalDistance,
+        avgHeartRate: summary.avgHeartRate,
+        avgPower: summary.avgPower,
+      });
+
+      if (duration <= 0) {
+        console.error(
+          `[processFitFile] Invalid FIT file: duration is ${duration}. Deleting file: ${fitFilePath}`,
+        );
+        await supabase.storage.from("fit-files").remove([fitFilePath]);
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Activity has zero duration and cannot be processed.",
+        });
+      }
+
+      const distance = summary.totalDistance || 0;
+      const calories = summary.calories || 0;
+      const elevationGain = summary.totalAscent || 0;
+      const avgHeartRate = summary.avgHeartRate;
+      const maxHeartRate = summary.maxHeartRate;
+      const avgPower = summary.avgPower;
+      const maxPower = summary.maxPower;
+      const avgCadence = summary.avgCadence;
+      const maxCadence = summary.maxCadence;
+
+      // ========================================================================
+      // T-307: Extract streams for calculations
+      // ========================================================================
+      const powerStream: number[] = [];
+      const hrStream: number[] = [];
+      const timestamps: number[] = [];
+      const cadenceStream: number[] = [];
+      const altitudeStream: number[] = [];
+      const speedStream: number[] = [];
+      const coords: { latitude: number; longitude: number }[] = [];
+
+      for (const record of records) {
+        if (record.timestamp !== undefined) {
+          timestamps.push(record.timestamp.getTime() / 1000);
+        }
+        if (record.power !== undefined) {
+          powerStream.push(record.power);
+        }
+        if (record.heartRate !== undefined) {
+          hrStream.push(record.heartRate);
+        }
+        if (record.cadence !== undefined) {
+          cadenceStream.push(record.cadence);
+        }
+        if (record.altitude !== undefined) {
+          altitudeStream.push(record.altitude);
+        }
+        if (record.speed !== undefined) {
+          speedStream.push(record.speed);
+        }
+        // Collect valid coordinates for polyline
+        if (
+          record.positionLat !== undefined &&
+          record.positionLong !== undefined &&
+          Math.abs(record.positionLat) <= 90 &&
+          Math.abs(record.positionLong) <= 180 &&
+          !(record.positionLat === 0 && record.positionLong === 0)
+        ) {
+          coords.push({
+            latitude: record.positionLat,
+            longitude: record.positionLong,
+          });
+        }
+      }
+
+      // ========================================================================
+      // Calculate Polyline and Bounds (commented out until migration is applied)
+      // ========================================================================
+      // let polyline: string | null = null;
+      // let mapBounds: any = null;
+      //
+      // if (coords.length > 0) {
+      //   polyline = encodePolyline(coords);
+      //   const bounds = calculateBounds(coords);
+      //   mapBounds = {
+      //     min_lat: bounds.minLat,
+      //     max_lat: bounds.maxLat,
+      //     min_lng: bounds.minLng,
+      //     max_lng: bounds.maxLng,
+      //   };
+      // }
+
+      // ========================================================================
+      // New: Calculate Swim Metrics
+      // ========================================================================
+      let avgSwolf: number | null = null;
+      const totalStrokes = summary.totalStrokes || null;
+      const poolLength = summary.poolLength || null;
+
+      if (
+        activityType === "swim" &&
+        summary.totalDistance &&
+        summary.totalTime &&
+        totalStrokes &&
+        poolLength
+      ) {
+        // SWOLF = Time + Strokes per length
+        // Avg SWOLF = (Total Time + Total Strokes) / (Total Distance / Pool Length)
+        const numLengths = summary.totalDistance / poolLength;
+        if (numLengths > 0) {
+          avgSwolf = (summary.totalTime + totalStrokes) / Math.round(numLengths);
+          avgSwolf = Math.round(avgSwolf * 10) / 10; // Round to 1 decimal
+        }
+      }
+
+      // Calculate pace stream from speed stream
+      const paceStream: number[] = [];
+      if (speedStream.length > 0) {
+        for (const speed of speedStream) {
+          if (speed > 0) {
+            if (activityType === "swim") {
+              // Swim pace: seconds per 100m
+              paceStream.push(100 / speed);
+            } else if (activityType === "run") {
+              // Run pace: seconds per km
+              paceStream.push(1000 / speed);
+            } else {
+              // Default to seconds per km for other activities
+              paceStream.push(1000 / speed);
+            }
+          } else {
+            paceStream.push(0);
+          }
+        }
+      }
+
+      // ========================================================================
+      // T-308: Fetch User Performance Metrics (with Cold Start Defaults)
+      // ========================================================================
+
+      // REFACTOR: We no longer use profile_performance_metric_logs.
+      // Instead, we should use the new analytics router logic or just defaults for now.
+      // For TSS calculation, we need FTP and LTHR.
+
+      const activityCompletedAtIso = new Date(startTime.getTime() + duration * 1000).toISOString();
+
+      // Fetch LTHR from profile_metrics as of the imported activity timestamp
+      const { data: lthrMetric } = await supabase
+        .from("profile_metrics")
+        .select("value")
+        .eq("profile_id", userId)
+        .eq("metric_type", "lthr")
+        .lte("recorded_at", activityCompletedAtIso)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Cold Start: Default to 170bpm if no LTHR found
+      const lthr = lthrMetric?.value ? Number(lthrMetric.value) : 170;
+
+      // Fetch Max HR
+      const { data: maxHRMetric } = await supabase
+        .from("profile_metrics")
+        .select("value")
+        .eq("profile_id", userId)
+        .eq("metric_type", "max_hr")
+        .lte("recorded_at", activityCompletedAtIso)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Cold Start: Default to 190bpm if no Max HR found
+      const maxHR = maxHeartRate || (maxHRMetric?.value ? Number(maxHRMetric.value) : 190);
+
+      // Fetch Resting HR
+      const { data: restingHRMetric } = await supabase
+        .from("profile_metrics")
+        .select("value")
+        .eq("profile_id", userId)
+        .eq("metric_type", "resting_hr")
+        .lte("recorded_at", activityCompletedAtIso)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const restingHR = restingHRMetric?.value ? Number(restingHRMetric.value) : 60; // Default 60
+
+      // For FTP, we ideally want to calculate it dynamically, but that's expensive here.
+      // For now, let's use a default or try to fetch a cached value if we had one.
+      // Since we removed the logs table, we'll default to 200W for now,
+      // or we could implement a quick lookup of the best 20m power from activity_efforts
+      // and estimate it (0.95 * 20m).
+
+      // Quick estimation of FTP from recent history (last 90 days)
+      const cutoffDate = subtractDays(new Date(activityCompletedAtIso), 90).toISOString();
+      const { data: best20m } = await supabase
+        .from("activity_efforts")
+        .select("value")
+        .eq("profile_id", userId)
+        .eq("activity_category", "bike")
+        .eq("effort_type", "power")
+        .eq("duration_seconds", 1200)
+        .gte("recorded_at", cutoffDate)
+        .lte("recorded_at", activityCompletedAtIso)
+        .order("value", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const ftp = best20m?.value ? Math.round(best20m.value * 0.95) : 200;
+
+      let normalizedPower: number | undefined;
+      // Preserve activity-local derived metrics that remain durable.
+      normalizedPower = powerStream.length > 0 ? calculateNormalizedPower(powerStream) : undefined;
+
+      // ========================================================================
+      // T-5.1, T-5.2: Calculate Advanced Metrics
+      // ========================================================================
+
+      // 1. Normalized Speed (All activities)
+      const normalizedSpeed = calculateNormalizedSpeed(distance, duration);
+
+      // 2. Normalized Graded Pace (Run)
+      let normalizedGradedSpeed: number | null = null;
+      if (activityType === "run" && speedStream.length > 0 && altitudeStream.length > 0) {
+        const gradedSpeedStream = calculateGradedSpeedStream(
+          speedStream,
+          altitudeStream,
+          timestamps,
+        );
+        normalizedGradedSpeed = calculateNGP(gradedSpeedStream);
+      }
+
+      // 3. Efficiency Factor (EF)
+      // EF = Normalized Power / Avg HR (Bike) or Normalized Graded Speed / Avg HR (Run)
+      let efficiencyFactor: number | null = null;
+      if (avgHeartRate && avgHeartRate > 0) {
+        if (activityType === "bike" && normalizedPower) {
+          efficiencyFactor = calculateEfficiencyFactor(normalizedPower, avgHeartRate);
+        } else if (activityType === "run" && normalizedGradedSpeed) {
+          efficiencyFactor = calculateEfficiencyFactor(normalizedGradedSpeed, avgHeartRate);
+        }
+      }
+
+      // 4. Aerobic Decoupling (Pa:HR)
+      let aerobicDecoupling: number | null = null;
+      if (powerStream.length > 0 && hrStream.length > 0) {
+        aerobicDecoupling = calculateDecouplingFromStreams(
+          powerStream,
+          hrStream,
+          timestamps,
+          calculateNormalizedPower,
+        );
+      } else if (activityType === "run" && speedStream.length > 0 && hrStream.length > 0) {
+        // For run, use graded speed if available, else speed
+        const runPowerStream = normalizedGradedSpeed
+          ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
+          : speedStream;
+        aerobicDecoupling = calculateDecouplingFromStreams(
+          runPowerStream,
+          hrStream,
+          timestamps,
+          calculateNGP,
+        );
+      }
+
+      // ========================================================================
+      // T-5.3: Fetch Weather
+      // ========================================================================
+      let avgTemperature: number | null = null;
+
+      // Calculate average temperature from records if available
+      let tempSum = 0;
+      let tempCount = 0;
+      for (const record of records) {
+        if (record.temperature !== undefined) {
+          tempSum += record.temperature;
+          tempCount++;
+        }
+      }
+
+      if (tempCount > 0) {
+        avgTemperature = tempSum / tempCount;
+      }
+
+      if (avgTemperature === null) {
+        // Fetch from API if we have coordinates
+        if (coords.length > 0) {
+          const startCoord = coords[0];
+          if (startCoord) {
+            const temp = await fetchActivityTemperature(
+              startCoord.latitude,
+              startCoord.longitude,
+              startTime,
+            );
+            if (temp !== null) {
+              avgTemperature = temp;
+            }
+          }
+        }
+      }
+
+      // ========================================================================
+      // T-313, T-314: Create activity record
+      // ========================================================================
+      const endTime = new Date(activityCompletedAtIso);
+
+      const activityData = {
+        profile_id: userId,
+        name,
+        notes: notes || null,
+        type: activityType,
+        is_private: true,
+        started_at: startTime.toISOString(),
+        finished_at: endTime.toISOString(),
+        duration_seconds: Math.round(duration),
+        moving_seconds: Math.round(duration), // Could be calculated from speed stream
+        distance_meters: Math.round(distance),
+
+        // FIT file metadata
+        fit_file_path: fitFilePath,
+        fit_file_size: fitFile.size,
+        import_source: importProvenance?.import_source ?? null,
+        import_file_type: importProvenance?.import_file_type ?? null,
+        import_original_file_name: importProvenance?.import_original_file_name ?? null,
+
+        // Basic metrics
+        calories: calories ? Math.round(calories) : null,
+        elevation_gain_meters: elevationGain ? Math.round(elevationGain) : null,
+
+        // Heart rate metrics
+        avg_heart_rate: avgHeartRate ? Math.round(avgHeartRate) : null,
+        max_heart_rate: maxHeartRate ? Math.round(maxHeartRate) : null,
+
+        // Power metrics
+        avg_power: avgPower ? Math.round(avgPower) : null,
+        max_power: maxPower ? Math.round(maxPower) : null,
+        normalized_power: normalizedPower ? Math.round(normalizedPower) : null,
+
+        // Cadence metrics
+        avg_cadence: avgCadence ? Math.round(avgCadence) : null,
+        max_cadence: maxCadence ? Math.round(maxCadence) : null,
+
+        // Speed metrics
+        avg_speed_mps: summary.avgSpeed ?? (distance && duration ? distance / duration : null),
+        max_speed_mps: summary.maxSpeed ?? null,
+        normalized_speed_mps: normalizedSpeed || null,
+        normalized_graded_speed_mps: normalizedGradedSpeed || null,
+
+        // Efficiency & Training Effect
+        efficiency_factor: efficiencyFactor || null,
+        aerobic_decoupling: aerobicDecoupling || null,
+        avg_temperature: avgTemperature ? Math.round(avgTemperature) : null,
+
+        // ========================================================================
+        // Extended Metadata (only fields that exist in current schema)
+        // Note: polyline, map_bounds, laps, total_strokes, pool_length, avg_swolf,
+        // device_manufacturer, device_product will be added in future migration
+        // ========================================================================
+      };
+
+      console.log("[processFitFile] Attempting to insert activity record:", {
+        profile_id: userId,
+        name,
+        type: activityType,
+        duration: Math.round(duration),
+        distance: Math.round(distance),
+        fit_file_path: fitFilePath,
+      });
+
+      const { data: createdActivity, error: insertError } = await supabase
+        .from("activities")
+        .insert(activityData)
+        .select()
+        .single();
+
+      if (insertError || !createdActivity) {
+        // T-316: Cleanup uploaded file on failure
+        console.error("[processFitFile] Failed to insert activity record:", {
+          error: insertError,
+          errorMessage: insertError?.message,
+          errorDetails: insertError?.details,
+          errorHint: insertError?.hint,
+          errorCode: insertError?.code,
+          activityData: {
+            profile_id: userId,
+            name,
+            type: activityType,
+            started_at: startTime.toISOString(),
+            finished_at: endTime.toISOString(),
+            duration_seconds: Math.round(duration),
+            distance_meters: Math.round(distance),
+          },
+        });
+
+        await supabase.storage.from("fit-files").remove([fitFilePath]);
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Failed to create activity record: ${insertError?.message || "Unknown error"}. Details: ${insertError?.details || "None"}. Hint: ${insertError?.hint || "None"}`,
+          cause: insertError,
+        });
+      }
+
+      console.log("[processFitFile] Activity record created successfully:", createdActivity.id);
+
+      // ========================================================================
+      // T-5.4, T-5.5, T-5.6: Post-Processing (Best Efforts, Profile Metrics, Notifications)
+      // ========================================================================
+
+      // 1. Calculate Best Efforts
+      const effortsToInsert: any[] = [];
+
+      // Power Efforts
+      if (powerStream.length > 0) {
+        const bestPowers = calculateBestEfforts(powerStream, timestamps);
+        for (const effort of bestPowers) {
+          effortsToInsert.push({
+            activity_id: createdActivity.id,
+            profile_id: userId,
+            activity_category: activityType,
+            duration_seconds: effort.duration,
+            effort_type: "power",
+            value: effort.value,
+            unit: "watts",
+            start_offset:
+              effort.startIndex !== undefined
+                ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
+                : null,
+            recorded_at: activityCompletedAtIso,
+          });
+        }
+      }
+
+      // Speed/Pace Efforts (Run)
+      if (activityType === "run" && speedStream.length > 0) {
+        // Use graded speed if available for "effort"
+        const streamToUse = normalizedGradedSpeed
+          ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
+          : speedStream;
+        const bestSpeeds = calculateBestEfforts(streamToUse, timestamps);
+        for (const effort of bestSpeeds) {
+          effortsToInsert.push({
+            activity_id: createdActivity.id,
+            profile_id: userId,
+            activity_category: activityType,
+            duration_seconds: effort.duration,
+            effort_type: "speed",
+            value: effort.value,
+            unit: "meters_per_second",
+            start_offset:
+              effort.startIndex !== undefined
+                ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
+                : null,
+            recorded_at: activityCompletedAtIso,
+          });
+        }
+      }
+
+      // Bulk insert efforts
+      if (effortsToInsert.length > 0) {
+        const { error: effortsError } = await supabase
+          .from("activity_efforts")
+          .insert(effortsToInsert);
+        if (effortsError) {
+          console.error("Failed to insert best efforts:", effortsError);
+        }
+      }
+
+      // 2. Detect LTHR
+      if (hrStream.length > 0) {
+        const detectedLTHR = detectLTHR(hrStream, timestamps);
+        if (detectedLTHR && detectedLTHR > lthr) {
+          // Update profile_metrics
+          await supabase.from("profile_metrics").insert({
+            profile_id: userId,
+            metric_type: "lthr",
+            value: detectedLTHR,
+            unit: "bpm",
+            recorded_at: activityCompletedAtIso,
+          });
+        }
+      }
+
+      // 3. Estimate VO2 Max
+      if (maxHeartRate && restingHR) {
+        const estimatedVO2 = estimateVO2Max(maxHeartRate, restingHR);
+        // We could log this or notify
+      }
+
+      return {
+        success: true,
+        activity: createdActivity,
+      };
+    } catch (error) {
+      // T-316: Handle errors with proper TRPCError types
+      if (error instanceof TRPCError) {
+        console.error("[processFitFile] TRPCError caught:", {
+          code: error.code,
+          message: error.message,
+          cause: error.cause,
+        });
+        throw error;
+      }
+
+      // Log unexpected errors with full context
+      console.error("[processFitFile] Unexpected error:", {
+        error,
+        errorMessage: (error as Error).message,
+        errorStack: (error as Error).stack,
+        errorName: (error as Error).name,
+        fitFilePath,
+        userId,
+        name,
+        activityType,
+      });
+
+      // Cleanup file on unexpected errors
+      try {
+        await supabase.storage.from("fit-files").remove([fitFilePath]);
+        console.log("[processFitFile] Cleaned up FIT file after error:", fitFilePath);
+      } catch (cleanupError) {
+        console.error("[processFitFile] Failed to cleanup file after error:", cleanupError);
+      }
+
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: `FIT file processing failed: ${(error as Error).message}`,
+        cause: error,
+      });
+    }
+  }),
 
   /**
    * Upload a FIT file to Supabase Storage
    */
-  uploadFitFile: protectedProcedure
-    .input(uploadFitFileInput)
-    .mutation(async ({ ctx, input }) => {
-      const { fileName, fileSize, fileType, fileData } = input;
-      const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+  uploadFitFile: protectedProcedure.input(uploadFitFileInput).mutation(async ({ ctx, input }) => {
+    const { fileName, fileSize, fileType, fileData } = input;
+    const userId = ctx.session?.user?.id;
+    const supabase = ctx.supabase;
 
-      if (!userId) {
-        throw new Error("User not authenticated");
+    if (!userId) {
+      throw new Error("User not authenticated");
+    }
+
+    try {
+      // Validate file type again (double security)
+      if (!fileName.toLowerCase().endsWith(".fit")) {
+        throw new Error("Only .fit files are supported");
       }
 
-      try {
-        // Validate file type again (double security)
-        if (!fileName.toLowerCase().endsWith(".fit")) {
-          throw new Error("Only .fit files are supported");
-        }
-
-        // Convert base64 to buffer
-        const binaryString = atob(fileData);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        // Create unique file path
-        const filePath = `${userId}/${Date.now()}-${fileName}`;
-
-        // Upload to storage
-        const { data, error } = await supabase.storage
-          .from("fit-files")
-          .upload(filePath, bytes, {
-            contentType: "application/octet-stream",
-            upsert: false,
-          });
-
-        if (error) {
-          throw new Error(`Failed to upload FIT file: ${error.message}`);
-        }
-
-        return {
-          success: true,
-          filePath,
-          size: fileSize,
-        };
-      } catch (error) {
-        console.error("FIT file upload error:", error);
-        throw new Error(`FIT file upload failed: ${(error as Error).message}`);
+      // Convert base64 to buffer
+      const binaryString = atob(fileData);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
       }
-    }),
+
+      // Create unique file path
+      const filePath = `${userId}/${Date.now()}-${fileName}`;
+
+      // Upload to storage
+      const { data, error } = await supabase.storage.from("fit-files").upload(filePath, bytes, {
+        contentType: "application/octet-stream",
+        upsert: false,
+      });
+
+      if (error) {
+        throw new Error(`Failed to upload FIT file: ${error.message}`);
+      }
+
+      return {
+        success: true,
+        filePath,
+        size: fileSize,
+      };
+    } catch (error) {
+      console.error("FIT file upload error:", error);
+      throw new Error(`FIT file upload failed: ${(error as Error).message}`);
+    }
+  }),
 
   /**
    * Trigger FIT file analysis via edge function
    */
-  analyzeFitFile: protectedProcedure
-    .input(analyzeFitFileInput)
-    .mutation(async ({ ctx, input }) => {
-      const { activityId, filePath, bucketName } = input;
-      const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+  analyzeFitFile: protectedProcedure.input(analyzeFitFileInput).mutation(async ({ ctx, input }) => {
+    const { activityId, filePath, bucketName } = input;
+    const userId = ctx.session?.user?.id;
+    const supabase = ctx.supabase;
 
-      if (!userId) {
-        throw new Error("User not authenticated");
+    if (!userId) {
+      throw new Error("User not authenticated");
+    }
+
+    try {
+      // Note: This assumes the activities table has been migrated to include FIT file columns
+      // For now, we'll just call the edge function and return the result
+      const { data, error } = await supabase.functions.invoke("analyze-fit-file", {
+        body: {
+          activityId,
+          filePath,
+          bucketName,
+        },
+      });
+
+      if (error) {
+        throw new Error(`Edge function error: ${error.message}`);
       }
 
-      try {
-        // Note: This assumes the activities table has been migrated to include FIT file columns
-        // For now, we'll just call the edge function and return the result
-        const { data, error } = await supabase.functions.invoke(
-          "analyze-fit-file",
-          {
-            body: {
-              activityId,
-              filePath,
-              bucketName,
-            },
-          },
-        );
-
-        if (error) {
-          throw new Error(`Edge function error: ${error.message}`);
-        }
-
-        return data;
-      } catch (error) {
-        console.error("FIT file analysis error:", error);
-        throw new Error(
-          `FIT file analysis failed: ${(error as Error).message}`,
-        );
-      }
-    }),
+      return data;
+    } catch (error) {
+      console.error("FIT file analysis error:", error);
+      throw new Error(`FIT file analysis failed: ${(error as Error).message}`);
+    }
+  }),
 
   /**
    * Get FIT file processing status
@@ -1047,9 +874,7 @@ export const fitFilesRouter = createTRPCRouter({
         };
       } catch (error) {
         console.error("FIT file status error:", error);
-        throw new Error(
-          `Failed to get FIT file status: ${(error as Error).message}`,
-        );
+        throw new Error(`Failed to get FIT file status: ${(error as Error).message}`);
       }
     }),
 
@@ -1100,16 +925,11 @@ export const fitFilesRouter = createTRPCRouter({
 
         return {
           files: data || [],
-          nextCursor:
-            data?.length === pageSize
-              ? data[data.length - 1]?.created_at
-              : null,
+          nextCursor: data?.length === pageSize ? data[data.length - 1]?.created_at : null,
         };
       } catch (error) {
         console.error("List FIT files error:", error);
-        throw new Error(
-          `Failed to list FIT files: ${(error as Error).message}`,
-        );
+        throw new Error(`Failed to list FIT files: ${(error as Error).message}`);
       }
     }),
 
@@ -1153,9 +973,7 @@ export const fitFilesRouter = createTRPCRouter({
         };
       } catch (error) {
         console.error("Get FIT file URL error:", error);
-        throw new Error(
-          `Failed to generate download URL: ${(error as Error).message}`,
-        );
+        throw new Error(`Failed to generate download URL: ${(error as Error).message}`);
       }
     }),
 
@@ -1184,9 +1002,7 @@ export const fitFilesRouter = createTRPCRouter({
         }
 
         // Delete from storage
-        const { error } = await supabase.storage
-          .from("fit-files")
-          .remove([filePath]);
+        const { error } = await supabase.storage.from("fit-files").remove([filePath]);
 
         if (error) {
           throw new Error(`Failed to delete FIT file: ${error.message}`);
@@ -1195,9 +1011,7 @@ export const fitFilesRouter = createTRPCRouter({
         return { success: true };
       } catch (error) {
         console.error("FIT file deletion error:", error);
-        throw new Error(
-          `FIT file deletion failed: ${(error as Error).message}`,
-        );
+        throw new Error(`FIT file deletion failed: ${(error as Error).message}`);
       }
     }),
 
@@ -1267,9 +1081,7 @@ export const fitFilesRouter = createTRPCRouter({
             cleanPath.includes(userId);
 
           if (!isOwnFile) {
-            throw new Error(
-              "Access denied: You can only access your own files",
-            );
+            throw new Error("Access denied: You can only access your own files");
           }
         }
 

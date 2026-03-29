@@ -33,9 +33,7 @@ export type PerformanceMetricLog = {
  * ```
  */
 export function getPerformanceMetricAtDate(
-  metrics: Array<
-    Pick<PerformanceMetricLog, "id" | "value" | "recorded_at" | "unit">
-  >,
+  metrics: Array<Pick<PerformanceMetricLog, "id" | "value" | "recorded_at" | "unit">>,
   date: Date,
 ): Pick<PerformanceMetricLog, "id" | "value" | "recorded_at" | "unit"> | null {
   if (metrics.length === 0) {
@@ -75,9 +73,7 @@ export function getPerformanceMetricAtDate(
  * ```
  */
 export function getProfileMetricAtDate(
-  metrics: Array<
-    Pick<ProfileMetricLog, "id" | "value" | "recorded_at" | "unit">
-  >,
+  metrics: Array<Pick<ProfileMetricLog, "id" | "value" | "recorded_at" | "unit">>,
   date: Date,
 ): Pick<ProfileMetricLog, "id" | "value" | "recorded_at" | "unit"> | null {
   if (metrics.length === 0) {
@@ -181,9 +177,7 @@ export function getClosestPerformanceMetric(
   if (!firstMetric) return null;
 
   let closestMetric = firstMetric;
-  let closestDiff = Math.abs(
-    new Date(closestMetric.recorded_at).getTime() - targetTime,
-  );
+  let closestDiff = Math.abs(new Date(closestMetric.recorded_at).getTime() - targetTime);
 
   for (const metric of metrics) {
     const metricTime = new Date(metric.recorded_at).getTime();
@@ -219,9 +213,7 @@ export function getClosestProfileMetric(
   if (!firstMetric) return null;
 
   let closestMetric = firstMetric;
-  let closestDiff = Math.abs(
-    new Date(closestMetric.recorded_at).getTime() - targetTime,
-  );
+  let closestDiff = Math.abs(new Date(closestMetric.recorded_at).getTime() - targetTime);
 
   for (const metric of metrics) {
     const metricTime = new Date(metric.recorded_at).getTime();
@@ -243,9 +235,7 @@ export function getClosestProfileMetric(
  * @returns Trend information (increasing, decreasing, or stable)
  */
 export function calculateMetricTrend(
-  metrics: Array<
-    Pick<PerformanceMetricLog | ProfileMetricLog, "value" | "recorded_at">
-  >,
+  metrics: Array<Pick<PerformanceMetricLog | ProfileMetricLog, "value" | "recorded_at">>,
 ): {
   direction: "increasing" | "decreasing" | "stable";
   changePercent: number;
@@ -266,9 +256,7 @@ export function calculateMetricTrend(
   const changePercent = (valueChange / first.value) * 100;
 
   // Calculate rate of change per day
-  const timeRangeMs =
-    new Date(last.recorded_at).getTime() -
-    new Date(first.recorded_at).getTime();
+  const timeRangeMs = new Date(last.recorded_at).getTime() - new Date(first.recorded_at).getTime();
   const timeRangeDays = timeRangeMs / (1000 * 60 * 60 * 24);
   const rate = timeRangeDays > 0 ? valueChange / timeRangeDays : 0;
 

@@ -97,8 +97,7 @@ export const DEV_SAMPLE_RUN: RecordingServiceActivityPlan = {
 export const DEV_SAMPLE_TREADMILL: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "DEV – Treadmill Schema Demo",
-  description:
-    "Short treadmill validation activity testing RPE, speed, and intervals.",
+  description: "Short treadmill validation activity testing RPE, speed, and intervals.",
   activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()
@@ -138,8 +137,7 @@ export const DEV_SAMPLE_TREADMILL: RecordingServiceActivityPlan = {
 export const DEV_SAMPLE_SWIM: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "DEV – Swim Schema Demo",
-  description:
-    "Compact swim plan verifying distance units and stroke-rate handling.",
+  description: "Compact swim plan verifying distance units and stroke-rate handling.",
   activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()
@@ -179,8 +177,7 @@ export const DEV_SAMPLE_SWIM: RecordingServiceActivityPlan = {
 export const DEV_SAMPLE_STRENGTH: RecordingServiceActivityPlan = {
   version: "2.0",
   name: "DEV – Strength Schema Demo",
-  description:
-    "One-minute strength training plan to validate reps, resistance, and dual targets.",
+  description: "One-minute strength training plan to validate reps, resistance, and dual targets.",
   activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()

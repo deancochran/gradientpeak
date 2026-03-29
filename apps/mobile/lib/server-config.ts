@@ -2,15 +2,14 @@ import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
 
 const SERVER_URL_OVERRIDE_KEY = "server_url_override";
+const useLocalE2EHost = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
 
-const hostedApiUrl = requireUrl(
-  process.env.EXPO_PUBLIC_API_URL,
-  "EXPO_PUBLIC_API_URL",
-);
-const hostedSupabaseUrl = requireUrl(
-  process.env.EXPO_PUBLIC_SUPABASE_URL,
-  "EXPO_PUBLIC_SUPABASE_URL",
-);
+const hostedApiUrl = useLocalE2EHost
+  ? "http://127.0.0.1:3000"
+  : requireUrl(process.env.EXPO_PUBLIC_API_URL, "EXPO_PUBLIC_API_URL");
+const hostedSupabaseUrl = useLocalE2EHost
+  ? "http://127.0.0.1:54321"
+  : requireUrl(process.env.EXPO_PUBLIC_SUPABASE_URL, "EXPO_PUBLIC_SUPABASE_URL");
 
 type ServerConfigState = {
   initialized: boolean;
@@ -71,13 +70,14 @@ function requireUrl(value: string | undefined, name: string): string {
 function deriveSupabaseUrl(apiUrl: string): string {
   try {
     const parsed = new URL(apiUrl);
-    if (parsed.port === "3000") {
+    const isLocalHost = ["127.0.0.1", "localhost", "10.0.2.2"].includes(parsed.hostname);
+    if (isLocalHost && ["3000", "3100"].includes(parsed.port)) {
       parsed.port = "54321";
       parsed.pathname = "";
       return parsed.origin;
     }
 
-    return parsed.origin;
+    return hostedSupabaseUrl;
   } catch {
     return hostedSupabaseUrl;
   }
@@ -85,9 +85,7 @@ function deriveSupabaseUrl(apiUrl: string): string {
 
 function updateState(overrideUrl: string | null) {
   const nextApiUrl = overrideUrl ?? hostedApiUrl;
-  const nextSupabaseUrl = overrideUrl
-    ? deriveSupabaseUrl(nextApiUrl)
-    : hostedSupabaseUrl;
+  const nextSupabaseUrl = overrideUrl ? deriveSupabaseUrl(nextApiUrl) : hostedSupabaseUrl;
 
   state = {
     initialized: true,

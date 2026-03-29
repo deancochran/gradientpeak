@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CreationContextSummary } from "../../schemas/training_plan_structure";
 import { deriveCreationSuggestions } from "../deriveCreationSuggestions";
 
-function buildContext(
-  overrides: Partial<CreationContextSummary> = {},
-): CreationContextSummary {
+function buildContext(overrides: Partial<CreationContextSummary> = {}): CreationContextSummary {
   return {
     history_availability_state: "sparse",
     recent_consistency_marker: "moderate",
@@ -34,9 +32,7 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
 
     expect(suggestions.behavior_controls_v1.aggressiveness).toBeLessThan(0.4);
     expect(suggestions.behavior_controls_v1.spike_frequency).toBeLessThan(0.5);
-    expect(suggestions.behavior_controls_v1.recovery_priority).toBeGreaterThan(
-      0.55,
-    );
+    expect(suggestions.behavior_controls_v1.recovery_priority).toBeGreaterThan(0.55);
   });
 
   it("infers higher aggressiveness for rich-history, high-signal contexts", () => {
@@ -68,9 +64,7 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
     expect(aggressive.behavior_controls_v1.spike_frequency).toBeGreaterThan(
       conservative.behavior_controls_v1.spike_frequency,
     );
-    expect(
-      aggressive.behavior_controls_v1.starting_fitness_confidence,
-    ).toBeGreaterThan(
+    expect(aggressive.behavior_controls_v1.starting_fitness_confidence).toBeGreaterThan(
       conservative.behavior_controls_v1.starting_fitness_confidence,
     );
   });
@@ -115,17 +109,11 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
         signal_quality: 0.82,
         recommended_baseline_tss_range: { min: 360, max: 520 },
         recommended_sessions_per_week_range: { min: 5, max: 6 },
-        rationale_codes: [
-          "history_rich",
-          "preferred_day_tuesday",
-          "preferred_day_thursday",
-        ],
+        rationale_codes: ["history_rich", "preferred_day_tuesday", "preferred_day_thursday"],
       }),
     });
 
-    expect(suggestions.constraints.max_single_session_duration_minutes).toBe(
-      72,
-    );
+    expect(suggestions.constraints.max_single_session_duration_minutes).toBe(72);
     expect(suggestions.constraints.hard_rest_days).not.toContain("tuesday");
     expect(suggestions.constraints.hard_rest_days).not.toContain("thursday");
   });
@@ -143,13 +131,9 @@ describe("deriveCreationSuggestions behavior control heuristics", () => {
       }),
     });
 
-    expect(
-      youth.constraints.max_single_session_duration_minutes,
-    ).toBeLessThanOrEqual(75);
+    expect(youth.constraints.max_single_session_duration_minutes).toBeLessThanOrEqual(75);
     expect(youth.constraints.goal_difficulty_preference).toBe("conservative");
-    expect(
-      unknownAge.constraints.max_single_session_duration_minutes,
-    ).toBeLessThanOrEqual(90);
+    expect(unknownAge.constraints.max_single_session_duration_minutes).toBeLessThanOrEqual(90);
     expect(unknownAge.recent_influence_action).toBe("disabled");
   });
 

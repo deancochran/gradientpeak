@@ -1,0 +1,23 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ./reset_to_home.yaml
+- tapOn:
+    id: "tab-button-calendar"
+- repeat:
+    times: 2
+    commands:
+      - tapOn:
+          id: "tab-button-calendar"
+- extendedWaitUntil:
+    visible:
+      text: "Calendar"
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: "calendar-mode-switcher"
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: "create-event-entry"
+    timeout: 15000

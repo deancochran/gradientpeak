@@ -15,13 +15,7 @@ interface StatCardProps {
   className?: string;
 }
 
-export function StatCard({
-  title,
-  value,
-  icon: IconComponent,
-  trend,
-  className,
-}: StatCardProps) {
+export function StatCard({ title, value, icon: IconComponent, trend, className }: StatCardProps) {
   const getTrendColor = () => {
     if (!trend) return "text-muted-foreground";
     // For fitness-related stats, up is usually good, down is bad
@@ -41,14 +35,8 @@ export function StatCard({
     <Card className={`flex-1 bg-card border-border ${className || ""}`}>
       <CardContent className="p-4">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-muted-foreground text-xs font-medium">
-            {title}
-          </Text>
-          <Icon
-            as={IconComponent}
-            size={16}
-            className="text-muted-foreground"
-          />
+          <Text className="text-muted-foreground text-xs font-medium">{title}</Text>
+          <Icon as={IconComponent} size={16} className="text-muted-foreground" />
         </View>
         <View className="flex-row items-end justify-between">
           <Text className="text-foreground text-xl font-bold">{value}</Text>

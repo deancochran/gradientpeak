@@ -1,12 +1,7 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
-import {
-  Dimensions,
-  TouchableOpacity,
-  View,
-  useColorScheme,
-} from "react-native";
+import { Dimensions, TouchableOpacity, useColorScheme, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 
 interface FitnessProgressCardProps {
@@ -87,9 +82,7 @@ export function FitnessProgressCard({
                   backgroundGradientTo: isDark ? "#0a0a0a" : "#ffffff",
                   decimalPlaces: 0,
                   color: (opacity = 1) =>
-                    isDark
-                      ? `rgba(250, 250, 250, ${opacity})`
-                      : `rgba(10, 10, 10, ${opacity})`,
+                    isDark ? `rgba(250, 250, 250, ${opacity})` : `rgba(10, 10, 10, ${opacity})`,
                   strokeWidth: 2,
                   propsForBackgroundLines: {
                     strokeWidth: 0,
@@ -110,43 +103,31 @@ export function FitnessProgressCard({
             <View className="flex-row items-baseline justify-between">
               <Text className="text-xs text-muted-foreground">Current</Text>
               <View className="flex-row items-baseline gap-2">
-                <Text className="text-2xl font-semibold text-foreground">
-                  {currentCTL}
-                </Text>
-                {hasProjection &&
-                  behindSchedule !== undefined &&
-                  behindSchedule !== 0 && (
-                    <Text
-                      className={`text-sm font-medium ${
-                        behindSchedule > 0
-                          ? "text-green-600"
-                          : "text-orange-500"
-                      }`}
-                    >
-                      {behindSchedule > 0 ? "+" : ""}
-                      {behindSchedule}
-                    </Text>
-                  )}
+                <Text className="text-2xl font-semibold text-foreground">{currentCTL}</Text>
+                {hasProjection && behindSchedule !== undefined && behindSchedule !== 0 && (
+                  <Text
+                    className={`text-sm font-medium ${
+                      behindSchedule > 0 ? "text-green-600" : "text-orange-500"
+                    }`}
+                  >
+                    {behindSchedule > 0 ? "+" : ""}
+                    {behindSchedule}
+                  </Text>
+                )}
               </View>
             </View>
 
             {hasProjection && (
               <View className="flex-row items-baseline justify-between">
-                <Text className="text-xs text-muted-foreground">
-                  Target Today
-                </Text>
-                <Text className="text-2xl font-semibold text-foreground">
-                  {projectedCTL}
-                </Text>
+                <Text className="text-xs text-muted-foreground">Target Today</Text>
+                <Text className="text-2xl font-semibold text-foreground">{projectedCTL}</Text>
               </View>
             )}
 
             {hasGoal && (
               <View className="flex-row items-baseline justify-between">
                 <Text className="text-xs text-muted-foreground">Goal</Text>
-                <Text className="text-2xl font-semibold text-foreground">
-                  {goalCTL}
-                </Text>
+                <Text className="text-2xl font-semibold text-foreground">{goalCTL}</Text>
               </View>
             )}
           </View>

@@ -1,0 +1,21 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  USER_EMAIL: "test@example.com"
+  USER_PASS: "password123"
+---
+- runFlow:
+    file: ../reusable/bootstrap.yaml
+- runFlow:
+    file: ../reusable/login.yaml
+    env:
+      email: "${USER_EMAIL}"
+      password: "${USER_PASS}"
+- tapOn: "Plan"
+- extendedWaitUntil:
+    visible: "Goals"
+    timeout: 10000
+- tapOn:
+    id: "projection-settings-button"
+- extendedWaitUntil:
+    visible: "Training Preferences"
+    timeout: 10000

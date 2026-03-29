@@ -1,0 +1,36 @@
+{
+  "description": "Example two-actor messaging setup using reusable actor accounts on separate devices.",
+  "defaults": {
+    "envFile": ".maestro/fixtures.env"
+  },
+  "actors": {
+    "sender": {
+      "device": "REPLACE_WITH_DEVICE_A",
+      "envFile": ".maestro/actors/sender.env"
+    },
+    "receiver": {
+      "device": "REPLACE_WITH_DEVICE_B",
+      "envFile": ".maestro/actors/receiver.env"
+    }
+  },
+  "steps": [
+    {
+      "name": "sender-creates-dm",
+      "actors": [
+        {
+          "actor": "sender",
+          "flows": [".maestro/flows/journeys/messaging/direct_message_from_profile.yaml"]
+        }
+      ]
+    },
+    {
+      "name": "receiver-checks-inbox",
+      "actors": [
+        {
+          "actor": "receiver",
+          "flows": [".maestro/flows/journeys/messaging/inbox_expect_conversation.yaml"]
+        }
+      ]
+    }
+  ]
+}

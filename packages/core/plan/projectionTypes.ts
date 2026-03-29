@@ -5,11 +5,11 @@ import type {
 } from "../schemas/planning";
 import type {
   DeterministicProjectionMicrocycle,
-  ProjectionDiagnostics,
   DeterministicProjectionPoint,
+  ProjectionDiagnostics,
+  ProjectionDoseRecommendation,
   ProjectionRecoverySegment,
   ProjectionSafetyConfig,
-  ProjectionDoseRecommendation,
   ProjectionSportLoadState,
 } from "./projectionCalculations";
 
@@ -31,10 +31,7 @@ export interface ProjectionGoalMarker {
 
 export type ReadinessBand = "low" | "medium" | "high";
 export type DemandConfidence = "high" | "medium" | "low";
-export type LowReadinessLimiterMode =
-  | "timeline_limited"
-  | "capacity_limited"
-  | "mixed_limiters";
+export type LowReadinessLimiterMode = "timeline_limited" | "capacity_limited" | "mixed_limiters";
 
 export interface DemandBand {
   min: number;
@@ -174,12 +171,7 @@ export interface ProjectionChartPayload {
       over_ramp: number;
     };
   };
-  feasibility_band?:
-    | "feasible"
-    | "stretch"
-    | "aggressive"
-    | "nearly_impossible"
-    | "infeasible";
+  feasibility_band?: "feasible" | "stretch" | "aggressive" | "nearly_impossible" | "infeasible";
   risk_score?: number;
   risk_level?: "low" | "moderate" | "high" | "extreme";
   risk_flags?: string[];
@@ -199,12 +191,7 @@ export interface ProjectionChartPayload {
     goal_readiness_score?: number;
     state_readiness_score?: number;
     goal_alignment_loss_0_100?: number;
-    feasibility_band:
-      | "feasible"
-      | "stretch"
-      | "aggressive"
-      | "nearly_impossible"
-      | "infeasible";
+    feasibility_band: "feasible" | "stretch" | "aggressive" | "nearly_impossible" | "infeasible";
     limiter_shares?: {
       timeline_pressure: number;
       capacity_pressure: number;

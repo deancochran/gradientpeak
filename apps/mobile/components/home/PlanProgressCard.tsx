@@ -1,7 +1,7 @@
-import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
 import { Progress } from "@repo/ui/components/progress";
 import { Target } from "lucide-react-native";
+import React from "react";
+import { Text, TouchableOpacity, View } from "react-native";
 
 interface PlanProgressCardProps {
   planName: string;
@@ -35,18 +35,13 @@ const PlanProgressCard: React.FC<PlanProgressCardProps> = ({
           <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Active Plan
           </Text>
-          <Text
-            className="text-base font-bold text-foreground"
-            numberOfLines={1}
-          >
+          <Text className="text-base font-bold text-foreground" numberOfLines={1}>
             {planName}
           </Text>
         </View>
         <View className="items-end">
           <Text className="text-xs text-muted-foreground">{date}</Text>
-          <Text className="text-xs font-semibold text-foreground">
-            {weeksOut}w out
-          </Text>
+          <Text className="text-xs font-semibold text-foreground">{weeksOut}w out</Text>
         </View>
       </View>
 

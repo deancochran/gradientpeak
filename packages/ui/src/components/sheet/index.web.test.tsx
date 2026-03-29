@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { renderWeb, screen } from "../../test/render-web";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-  SheetTrigger,
-} from "./index.web";
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "./index.web";
 
 describe("Sheet web", () => {
   it("renders trigger text and open sheet content", () => {

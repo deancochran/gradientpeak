@@ -5,11 +5,11 @@ import {
   eventMutationScopeSchema,
   eventRecurrenceSchema,
   eventTypeInputSchema,
+  eventUpdateSchema,
   importedEventLifecycleMutationSchema,
   importedEventSourceMetadataSchema,
   plannedActivityCreateSchema,
   plannedActivityRescheduleSchema,
-  eventUpdateSchema,
 } from "../planned_activity";
 
 describe("planned activity event domain schemas", () => {

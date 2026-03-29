@@ -1,8 +1,5 @@
 import { useCallback, useMemo } from "react";
-import {
-  decompressAllStreams,
-  type DecompressedStream,
-} from "@/lib/utils/streamDecompression";
+import { type DecompressedStream, decompressAllStreams } from "@/lib/utils/streamDecompression";
 
 /**
  * Custom hook to decompress and memoize activity streams
@@ -38,12 +35,10 @@ export function useActivityStreams(activityStreams?: any[]) {
     if (!latlngStream || latlngStream.dataType !== "latlng") {
       return { coordinates: [], timestamps: [] };
     }
-    const coordinates = (latlngStream.values as [number, number][]).map(
-      ([lat, lng]) => ({
-        latitude: lat,
-        longitude: lng,
-      }),
-    );
+    const coordinates = (latlngStream.values as [number, number][]).map(([lat, lng]) => ({
+      latitude: lat,
+      longitude: lng,
+    }));
     return {
       coordinates,
       timestamps: latlngStream.timestamps,
@@ -69,10 +64,7 @@ export function useActivityStreams(activityStreams?: any[]) {
     () => gpsCoordinatesWithTimestamps,
     [gpsCoordinatesWithTimestamps],
   );
-  const getElevationStream = useCallback(
-    () => elevationStream,
-    [elevationStream],
-  );
+  const getElevationStream = useCallback(() => elevationStream, [elevationStream]);
 
   return {
     /**

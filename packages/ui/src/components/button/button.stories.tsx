@@ -1,8 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { expect, fn } from "@storybook/test";
 import { ChevronRight } from "lucide-react";
 
 import { buttonFixtures } from "./fixtures";
 import { Button } from "./index.web";
+import { exerciseButtonStory } from "./interactions";
 import { BUTTON_SIZES, BUTTON_VARIANTS } from "./shared";
 
 const meta = {
@@ -33,6 +35,19 @@ type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {};
 
+Playground.args = {
+  onClick: fn(),
+};
+
+Playground.play = async ({ args, canvasElement }) => {
+  await exerciseButtonStory({
+    canvasElement,
+    expectedLabel: buttonFixtures.continue.accessibilityLabel,
+  });
+
+  await expect(args.onClick).toHaveBeenCalledTimes(1);
+};
+
 export const Variants: Story = {
   render: () => (
     <div className="flex flex-wrap items-center gap-3">
@@ -49,11 +64,7 @@ export const Sizes: Story = {
   render: () => (
     <div className="flex flex-wrap items-center gap-3">
       {BUTTON_SIZES.map((size) => (
-        <Button
-          key={size}
-          size={size}
-          variant={size === "icon" ? "outline" : "default"}
-        >
+        <Button key={size} size={size} variant={size === "icon" ? "outline" : "default"}>
           {size === "icon" ? <ChevronRight /> : size}
         </Button>
       ))}

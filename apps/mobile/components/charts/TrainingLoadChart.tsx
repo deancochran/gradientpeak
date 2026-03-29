@@ -1,5 +1,5 @@
 import { Text } from "@repo/ui/components/text";
-import { Dimensions, View, useColorScheme } from "react-native";
+import { Dimensions, useColorScheme, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import type { InsightTimelinePoint } from "./PlanVsActualChart";
 
@@ -16,11 +16,7 @@ export interface TrainingLoadChartProps {
   height?: number;
 }
 
-export function TrainingLoadChart({
-  data,
-  timeline,
-  height = 250,
-}: TrainingLoadChartProps) {
+export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoadChartProps) {
   const screenWidth = Dimensions.get("window").width;
   const chartWidth = screenWidth - 48;
   const colorScheme = useColorScheme();
@@ -79,9 +75,7 @@ export function TrainingLoadChart({
         {isEmpty ? (
           <View className="flex-1 items-center justify-center bg-muted/30 rounded">
             <Text className="text-muted-foreground text-sm mb-1">
-              {useTimeline
-                ? "No load timeline available"
-                : "No training load data yet"}
+              {useTimeline ? "No load timeline available" : "No training load data yet"}
             </Text>
             <Text className="text-muted-foreground text-xs text-center px-4">
               {useTimeline
@@ -108,19 +102,13 @@ export function TrainingLoadChart({
               backgroundGradientTo: isDark ? "#0a0a0a" : "#ffffff",
               decimalPlaces: 0,
               color: (opacity = 1) =>
-                isDark
-                  ? `rgba(250, 250, 250, ${opacity})`
-                  : `rgba(10, 10, 10, ${opacity})`,
+                isDark ? `rgba(250, 250, 250, ${opacity})` : `rgba(10, 10, 10, ${opacity})`,
               labelColor: (opacity = 1) =>
-                isDark
-                  ? `rgba(163, 163, 163, ${opacity})`
-                  : `rgba(115, 115, 115, ${opacity})`,
+                isDark ? `rgba(163, 163, 163, ${opacity})` : `rgba(115, 115, 115, ${opacity})`,
               strokeWidth: 2,
               propsForBackgroundLines: {
                 strokeWidth: 1,
-                stroke: isDark
-                  ? "rgba(38, 38, 38, 0.5)"
-                  : "rgba(228, 228, 228, 0.5)",
+                stroke: isDark ? "rgba(38, 38, 38, 0.5)" : "rgba(228, 228, 228, 0.5)",
               },
             }}
             bezier
@@ -178,9 +166,7 @@ export function TrainingLoadChart({
             </Text>
             <Text
               className={`text-sm font-semibold ${
-                recentData[recentData.length - 1]!.tsb > 0
-                  ? "text-green-600"
-                  : "text-red-600"
+                recentData[recentData.length - 1]!.tsb > 0 ? "text-green-600" : "text-red-600"
               }`}
             >
               {recentData[recentData.length - 1]!.tsb > 0 ? "+" : ""}

@@ -59,10 +59,7 @@ export const STANDARD_POWER_DURATIONS = [
  * //   { duration_seconds: 3600, value: 250, ... }, // 60m (FTP)
  * // ]
  */
-export function derivePowerCurveFromFTP(
-  ftp: number,
-  wPrime: number = 20000,
-): DerivedEffort[] {
+export function derivePowerCurveFromFTP(ftp: number, wPrime: number = 20000): DerivedEffort[] {
   // Validate inputs
   if (ftp <= 0) {
     throw new Error("FTP must be greater than 0");

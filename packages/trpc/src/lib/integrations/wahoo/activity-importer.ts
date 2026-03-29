@@ -5,8 +5,8 @@
 
 import type { Database } from "@repo/supabase";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { type ActivityType, fromActivityType } from "./activity-type-utils";
 import type { WahooWorkoutSummary } from "./client";
-import { fromActivityType, type ActivityType } from "./activity-type-utils";
 
 // Wahoo workout type mapping to GradientPeak activity categories
 const WAHOO_WORKOUT_TYPE_MAP: Record<number, ActivityType> = {
@@ -48,10 +48,7 @@ export class WahooActivityImporter {
         .single();
 
       if (integrationError || !integration) {
-        console.error(
-          `No integration found for Wahoo user ${wahooUserId}`,
-          integrationError,
-        );
+        console.error(`No integration found for Wahoo user ${wahooUserId}`, integrationError);
         return {
           success: false,
           error: `No integration found for Wahoo user ${wahooUserId}`,
@@ -108,8 +105,7 @@ export class WahooActivityImporter {
 
       // 6. Map Wahoo metrics to GradientPeak schema
       const finishedAt = new Date(
-        new Date(startedAt).getTime() +
-          (summary.duration_total_accum || 0) * 1000,
+        new Date(startedAt).getTime() + (summary.duration_total_accum || 0) * 1000,
       ).toISOString();
 
       // 4a. If we have an event_id, get the associated activity_plan_id
@@ -150,7 +146,6 @@ export class WahooActivityImporter {
         calories: toInteger(summary.calories_accum),
         avg_power: toNullableNumber(summary.power_avg),
         normalized_power: toNullableNumber(summary.power_bike_np_last),
-        training_stress_score: toNullableNumber(summary.power_bike_tss_last),
         avg_heart_rate: toNullableInteger(summary.heart_rate_avg),
         avg_cadence: toNullableInteger(summary.cadence_avg),
         avg_speed_mps: toNullableNumber(summary.speed_avg),
@@ -185,10 +180,7 @@ export class WahooActivityImporter {
       console.error("Error importing Wahoo activity:", error);
       return {
         success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error during import",
+        error: error instanceof Error ? error.message : "Unknown error during import",
       };
     }
   }
@@ -200,10 +192,7 @@ export class WahooActivityImporter {
    */
   private inferActivityType(summary: WahooWorkoutSummary): ActivityType {
     const workoutTypeId = summary.workout?.workout_type_id;
-    if (
-      workoutTypeId !== undefined &&
-      WAHOO_WORKOUT_TYPE_MAP[workoutTypeId] !== undefined
-    ) {
+    if (workoutTypeId !== undefined && WAHOO_WORKOUT_TYPE_MAP[workoutTypeId] !== undefined) {
       return WAHOO_WORKOUT_TYPE_MAP[workoutTypeId]!;
     }
 
@@ -251,10 +240,7 @@ export class WahooActivityImporter {
 
       return { path: fitPath, size: bytes.byteLength };
     } catch (error) {
-      console.warn(
-        `Failed to fetch/store Wahoo FIT file for summary ${workoutSummaryId}`,
-        error,
-      );
+      console.warn(`Failed to fetch/store Wahoo FIT file for summary ${workoutSummaryId}`, error);
       return null;
     }
   }
@@ -270,9 +256,7 @@ export class WahooActivityImporter {
     }
 
     const now = new Date();
-    const startTime = new Date(
-      now.getTime() - toNumber(summary.duration_total_accum) * 1000,
-    );
+    const startTime = new Date(now.getTime() - toNumber(summary.duration_total_accum) * 1000);
     return startTime.toISOString();
   }
 }
@@ -282,9 +266,7 @@ function toNumber(value: number | string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function toNullableNumber(
-  value: number | string | null | undefined,
-): number | null {
+function toNullableNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined || value === "") {
     return null;
   }
@@ -297,9 +279,7 @@ function toInteger(value: number | string | null | undefined): number {
   return Math.round(toNumber(value));
 }
 
-function toNullableInteger(
-  value: number | string | null | undefined,
-): number | null {
+function toNullableInteger(value: number | string | null | undefined): number | null {
   const parsed = toNullableNumber(value);
   return parsed === null ? null : Math.round(parsed);
 }
@@ -307,8 +287,6 @@ function toNullableInteger(
 /**
  * Create an activity importer instance
  */
-export function createActivityImporter(
-  supabase: SupabaseClient<Database>,
-): WahooActivityImporter {
+export function createActivityImporter(supabase: SupabaseClient<Database>): WahooActivityImporter {
   return new WahooActivityImporter(supabase);
 }

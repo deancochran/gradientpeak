@@ -29,11 +29,7 @@ export function getRecordingViewConfig(
     showStepCarousel: hasSteps,
     showRouteOverlay: canTrackLocation && hasRoute,
     showTurnByTurn: canTrackLocation && hasRoute,
-    primaryNavigation: hasSteps
-      ? "steps"
-      : canTrackLocation
-        ? "distance"
-        : "time",
+    primaryNavigation: hasSteps ? "steps" : canTrackLocation ? "distance" : "time",
   };
 }
 

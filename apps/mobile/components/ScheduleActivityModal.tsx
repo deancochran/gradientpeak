@@ -72,21 +72,31 @@
  * ```
  */
 
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { plannedActivityScheduleFormSchema } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Form, FormDateInputField, FormTextareaField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
+import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Calendar, ChevronDown, ChevronUp, Clock, TrendingUp, X } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { z } from "zod";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
-import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
 import { trpc } from "@/lib/trpc";
 import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
 
@@ -111,6 +121,14 @@ interface ScheduleActivityModalProps {
 
   // Recurrence scope for edit mode updates
   editScope?: "single" | "future" | "series";
+}
+
+function isRecurringEvent(event: any) {
+  if (!event) {
+    return false;
+  }
+
+  return !!(event.series_id || event.recurrence_rule || event.recurrence?.rule);
 }
 
 function toDateOnlyString(value: Date): string {
@@ -140,6 +158,18 @@ function alertSuccess(message: string) {
   Alert.alert("Success", message);
 }
 
+function buildAllDayStartIso(value: Date) {
+  return `${toDateOnlyString(value)}T00:00:00.000Z`;
+}
+
+function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean | null }) {
+  if (event.all_day) {
+    return toPickerDate(event.starts_at.slice(0, 10));
+  }
+
+  return new Date(event.starts_at);
+}
+
 export function ScheduleActivityModal({
   visible,
   onClose,
@@ -149,7 +179,7 @@ export function ScheduleActivityModal({
   eventId,
   preselectedDate,
   trainingPlanId,
-  editScope = "single",
+  editScope,
 }: ScheduleActivityModalProps) {
   if (!visible) {
     return null;
@@ -178,6 +208,10 @@ export function ScheduleActivityModal({
 
   const [showPlanPreviewDetails, setShowPlanPreviewDetails] = useState(false);
   const [showConstraintDetails, setShowConstraintDetails] = useState(false);
+  const [startsAt, setStartsAt] = useState(new Date());
+  const [allDay, setAllDay] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   const scheduledDateString = form.watch("scheduled_date");
   const scheduledDateForApi = scheduledDateString || toDateOnlyString(new Date());
@@ -218,6 +252,8 @@ export function ScheduleActivityModal({
       form.reset();
       setShowPlanPreviewDetails(false);
       setShowConstraintDetails(false);
+      setShowDatePicker(false);
+      setShowTimePicker(false);
     }
   }, [visible, form]);
 
@@ -235,15 +271,27 @@ export function ScheduleActivityModal({
       form.setValue("activity_plan_id", existingActivity.activity_plan.id);
       form.setValue("scheduled_date", existingActivity.scheduled_date);
       form.setValue("notes", existingActivity.notes || null);
+      setAllDay(!!existingActivity.all_day);
+      setStartsAt(parseEventDateForEditor(existingActivity));
     }
   }, [existingActivity, form]);
 
+  useEffect(() => {
+    if (!isEditMode) {
+      setStartsAt(toPickerDate(scheduledDateForApi));
+      setAllDay(false);
+    }
+  }, [isEditMode, scheduledDateForApi]);
+
   const queryClient = useQueryClient();
+  const existingActivityIsRecurring = isRecurringEvent(existingActivity);
 
   const createMutation = trpc.events.create.useMutation({
     onSuccess: async () => {
-      await refreshScheduleViews(queryClient);
-      await onSuccess?.();
+      await refreshScheduleWithCallbacks({
+        queryClient,
+        callbacks: onSuccess ? [onSuccess] : [],
+      });
       onClose();
       setTimeout(() => {
         alertSuccess("Activity scheduled!");
@@ -253,8 +301,10 @@ export function ScheduleActivityModal({
 
   const updateMutation = trpc.events.update.useMutation({
     onSuccess: async () => {
-      await refreshScheduleViews(queryClient);
-      await onSuccess?.();
+      await refreshScheduleWithCallbacks({
+        queryClient,
+        callbacks: onSuccess ? [onSuccess] : [],
+      });
       onClose();
       setTimeout(() => {
         alertSuccess("Activity updated!");
@@ -262,15 +312,40 @@ export function ScheduleActivityModal({
     },
   });
 
+  const submitEditWithScope = (
+    data: PlannedActivityScheduleFormOutput,
+    scope: "single" | "future" | "series",
+  ) => {
+    updateMutation.mutate({
+      id: eventId!,
+      scope,
+      patch: {
+        activity_plan_id: data.activity_plan_id,
+        notes: data.notes || null,
+        all_day: allDay,
+        timezone: "UTC",
+        starts_at: allDay ? buildAllDayStartIso(startsAt) : startsAt.toISOString(),
+      },
+    });
+  };
+
+  const promptForEditScope = (onSelect: (scope: "single" | "future" | "series") => void) => {
+    Alert.alert("Recurring Schedule", "Choose how much of this series to update.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "This event only", onPress: () => onSelect("single") },
+      { text: "This and future events", onPress: () => onSelect("future") },
+      { text: "Entire series", onPress: () => onSelect("series") },
+    ]);
+  };
+
   const onSubmit = (data: PlannedActivityScheduleFormOutput) => {
     if (isEditMode) {
-      updateMutation.mutate({
-        id: eventId,
-        activity_plan_id: data.activity_plan_id,
-        scheduled_date: data.scheduled_date,
-        notes: data.notes || undefined,
-        scope: editScope,
-      });
+      if (existingActivityIsRecurring && !editScope) {
+        promptForEditScope((scope) => submitEditWithScope(data, scope));
+        return;
+      }
+
+      submitEditWithScope(data, editScope ?? "single");
     } else {
       createMutation.mutate({
         activity_plan_id: data.activity_plan_id,
@@ -363,7 +438,7 @@ export function ScheduleActivityModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View className="flex-1 bg-background">
+      <View className="flex-1 bg-background" testID="schedule-modal">
         {/* Header */}
         <View className="flex-row items-center justify-between px-4 py-4 border-b border-border">
           <View className="flex-1">
@@ -493,16 +568,66 @@ export function ScheduleActivityModal({
                 </Card>
 
                 <Form {...form}>
-                  <FormDateInputField
-                    accessibilityHint="Choose when this activity should be scheduled"
-                    control={form.control}
-                    disabled={isSubmitting}
-                    label="Scheduled Date"
-                    minimumDate={new Date()}
-                    name="scheduled_date"
-                    placeholder="Choose a date"
-                    testId="scheduled-date-field"
-                  />
+                  {isEditMode ? (
+                    <View className="gap-3">
+                      <View className="gap-2">
+                        <Text className="text-sm font-medium text-foreground">Scheduled Date</Text>
+                        <TouchableOpacity
+                          accessibilityHint="Choose the day for this activity"
+                          className="rounded-xl border border-border bg-card px-3 py-3"
+                          disabled={isSubmitting}
+                          onPress={() => setShowDatePicker(true)}
+                          testID="scheduled-date-button"
+                        >
+                          <Text className="text-sm text-foreground">
+                            {format(startsAt, "EEEE, MMM d, yyyy")}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View className="flex-row items-center justify-between rounded-xl border border-border bg-card px-3 py-3">
+                        <View className="flex-1 pr-3">
+                          <Text className="text-sm font-medium text-foreground">All day</Text>
+                          <Text className="text-xs text-muted-foreground">
+                            Turn this on when the event does not need a start time.
+                          </Text>
+                        </View>
+                        <Switch
+                          checked={allDay}
+                          disabled={isSubmitting}
+                          onCheckedChange={setAllDay}
+                          testID="schedule-all-day-toggle"
+                        />
+                      </View>
+
+                      {!allDay ? (
+                        <View className="gap-2">
+                          <Text className="text-sm font-medium text-foreground">Start Time</Text>
+                          <TouchableOpacity
+                            className="rounded-xl border border-border bg-card px-3 py-3"
+                            disabled={isSubmitting}
+                            onPress={() => setShowTimePicker(true)}
+                            testID="scheduled-time-button"
+                          >
+                            <Text className="text-sm text-foreground">
+                              {format(startsAt, "h:mm a")}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : (
+                    <FormDateInputField
+                      accessibilityHint="Choose when this activity should be scheduled"
+                      control={form.control}
+                      disabled={isSubmitting}
+                      label="Scheduled Date"
+                      minimumDate={new Date()}
+                      name="scheduled_date"
+                      placeholder="Choose a date"
+                      testId="scheduled-date-field"
+                    />
+                  )}
                 </Form>
 
                 {/* Constraint Validation Summary */}
@@ -597,13 +722,20 @@ export function ScheduleActivityModal({
         {/* Footer Actions */}
         <View className="px-4 py-4 border-t border-border bg-background">
           <View className="flex-row gap-3">
-            <Button variant="outline" onPress={onClose} disabled={isSubmitting} className="flex-1">
+            <Button
+              variant="outline"
+              onPress={onClose}
+              disabled={isSubmitting}
+              className="flex-1"
+              testID="schedule-cancel-button"
+            >
               <Text>Cancel</Text>
             </Button>
             <Button
               onPress={submitForm.handleSubmit}
               disabled={!canSchedule || submitForm.isSubmitting}
               className="flex-1"
+              testID="schedule-submit-button"
             >
               {isSubmitting ? (
                 <ActivityIndicator size="small" color="#fff" className="mr-2" />
@@ -626,6 +758,45 @@ export function ScheduleActivityModal({
           )}
         </View>
       </View>
+
+      {isEditMode && showDatePicker ? (
+        <DateTimePicker
+          display="default"
+          mode="date"
+          onChange={(_, selected) => {
+            setShowDatePicker(false);
+            if (!selected) {
+              return;
+            }
+
+            const next = new Date(startsAt);
+            next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
+            setStartsAt(next);
+            form.setValue("scheduled_date", toDateOnlyString(next), { shouldDirty: true });
+          }}
+          testID="schedule-date-picker"
+          value={startsAt}
+        />
+      ) : null}
+
+      {isEditMode && showTimePicker ? (
+        <DateTimePicker
+          display="default"
+          mode="time"
+          onChange={(_, selected) => {
+            setShowTimePicker(false);
+            if (!selected) {
+              return;
+            }
+
+            const next = new Date(startsAt);
+            next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
+            setStartsAt(next);
+          }}
+          testID="schedule-time-picker"
+          value={startsAt}
+        />
+      ) : null}
     </Modal>
   );
 }

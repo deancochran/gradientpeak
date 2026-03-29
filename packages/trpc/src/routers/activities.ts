@@ -1,13 +1,20 @@
-import { ActivityUploadSchema } from "@repo/core";
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
+  ActivityUploadSchema,
+  analyzeActivityDerivedMetrics,
   calculateAge,
   estimateFTPFromWeight,
-  estimateMaxHR,
   estimateLTHR,
+  estimateMaxHR,
 } from "@repo/core";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import {
+  buildActivityDerivedSummaryMap,
+  mapActivityToDerivedResponse,
+  mapActivityToListDerivedResponse,
+  resolveActivityContextAsOf,
+} from "../lib/activity-analysis";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 /**
  * Check if a user has access to view an activity
@@ -73,6 +80,12 @@ export const activitiesRouter = createTRPCRouter({
 
       if (error) throw new Error(error.message);
 
+      const derivedMap = await buildActivityDerivedSummaryMap({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        activities: data || [],
+      });
+
       const activityIds = data?.map((a) => a.id) || [];
       let userLikes: string[] = [];
 
@@ -87,10 +100,13 @@ export const activitiesRouter = createTRPCRouter({
         userLikes = likesData?.map((l: any) => l.entity_id) || [];
       }
 
-      return (data || []).map((a) => ({
-        ...a,
-        has_liked: userLikes.includes(a.id),
-      }));
+      return (data || []).map((a) =>
+        mapActivityToListDerivedResponse({
+          activity: a,
+          has_liked: userLikes.includes(a.id),
+          derived: derivedMap.get(a.id) ?? null,
+        }),
+      );
     }),
 
   // Paginated list of activities with filters
@@ -100,53 +116,61 @@ export const activitiesRouter = createTRPCRouter({
         .object({
           limit: z.number().min(1).max(100).default(20),
           offset: z.number().min(0).default(0),
-          activity_category: z
-            .enum(["run", "bike", "swim", "strength", "other"])
-            .optional(),
+          activity_category: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
           date_from: z.string().optional(),
           date_to: z.string().optional(),
-          sort_by: z
-            .enum(["date", "distance", "duration", "tss"])
-            .default("date"),
+          sort_by: z.enum(["date", "distance", "duration", "tss"]).default("date"),
           sort_order: z.enum(["asc", "desc"]).default("desc"),
         })
         .strict(),
     )
     .query(async ({ ctx, input }) => {
-      let query = ctx.supabase
-        .from("activities")
-        .select("*", { count: "exact" })
-        .eq("profile_id", ctx.session.user.id);
+      const baseQuery = () => {
+        let query = ctx.supabase
+          .from("activities")
+          .select("*", { count: "exact" })
+          .eq("profile_id", ctx.session.user.id);
 
-      // Apply filters
-      if (input.activity_category) {
-        query = query.eq("type", input.activity_category); // Updated column name
+        if (input.activity_category) {
+          query = query.eq("type", input.activity_category);
+        }
+        if (input.date_from) {
+          query = query.gte("started_at", input.date_from);
+        }
+        if (input.date_to) {
+          query = query.lte("started_at", input.date_to);
+        }
+
+        return query;
+      };
+
+      let data;
+      let count;
+      let error;
+
+      if (input.sort_by === "tss") {
+        ({ data, error, count } = await baseQuery().order("started_at", { ascending: false }));
+      } else {
+        const sortColumn = {
+          date: "started_at",
+          distance: "distance_meters",
+          duration: "duration_seconds",
+        }[input.sort_by];
+
+        ({ data, error, count } = await baseQuery()
+          .order(sortColumn, {
+            ascending: input.sort_order === "asc",
+          })
+          .range(input.offset, input.offset + input.limit - 1));
       }
-      if (input.date_from) {
-        query = query.gte("started_at", input.date_from);
-      }
-      if (input.date_to) {
-        query = query.lte("started_at", input.date_to);
-      }
-
-      // Apply sorting
-      const sortColumn = {
-        date: "started_at",
-        distance: "distance_meters", // Updated column name
-        duration: "duration_seconds", // Updated column name
-        tss: "training_stress_score", // Now individual column
-      }[input.sort_by];
-
-      query = query.order(sortColumn, {
-        ascending: input.sort_order === "asc",
-      });
-
-      // Apply pagination
-      query = query.range(input.offset, input.offset + input.limit - 1);
-
-      const { data, error, count } = await query;
 
       if (error) throw new Error(error.message);
+
+      const derivedMap = await buildActivityDerivedSummaryMap({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        activities: data || [],
+      });
 
       const activityIds = data?.map((a) => a.id) || [];
       let userLikes: string[] = [];
@@ -162,10 +186,23 @@ export const activitiesRouter = createTRPCRouter({
         userLikes = likesData?.map((l: any) => l.entity_id) || [];
       }
 
-      const items = (data || []).map((a) => ({
-        ...a,
-        has_liked: userLikes.includes(a.id),
-      }));
+      let items = (data || []).map((a) =>
+        mapActivityToListDerivedResponse({
+          activity: a,
+          has_liked: userLikes.includes(a.id),
+          derived: derivedMap.get(a.id) ?? null,
+        }),
+      );
+
+      if (input.sort_by === "tss") {
+        items = items
+          .sort((a, b) => {
+            const left = a.derived?.tss ?? Number.NEGATIVE_INFINITY;
+            const right = b.derived?.tss ?? Number.NEGATIVE_INFINITY;
+            return input.sort_order === "asc" ? left - right : right - left;
+          })
+          .slice(input.offset, input.offset + input.limit);
+      }
 
       return {
         items,
@@ -182,19 +219,14 @@ export const activitiesRouter = createTRPCRouter({
         eventId: z.string().uuid().optional().nullable(),
       })
         .strict()
-        .refine(
-          (data) => new Date(data.finishedAt) > new Date(data.startedAt),
-          {
-            message: "finishedAt must be after startedAt",
-            path: ["finishedAt"],
-          },
-        ),
+        .refine((data) => new Date(data.finishedAt) > new Date(data.startedAt), {
+          message: "finishedAt must be after startedAt",
+          path: ["finishedAt"],
+        }),
     )
     .mutation(async ({ input, ctx }) => {
       const duration_seconds =
-        (new Date(input.finishedAt).getTime() -
-          new Date(input.startedAt).getTime()) /
-        1000;
+        (new Date(input.finishedAt).getTime() - new Date(input.startedAt).getTime()) / 1000;
 
       if (duration_seconds <= 0) {
         throw new Error("Activity duration must be positive.");
@@ -202,14 +234,13 @@ export const activitiesRouter = createTRPCRouter({
 
       let linkedActivityPlanId: string | null = null;
       if (input.eventId) {
-        const { data: linkedEvent, error: linkedEventError } =
-          await ctx.supabase
-            .from("events")
-            .select("activity_plan_id")
-            .eq("id", input.eventId)
-            .eq("profile_id", ctx.session.user.id)
-            .eq("event_type", "planned_activity")
-            .single();
+        const { data: linkedEvent, error: linkedEventError } = await ctx.supabase
+          .from("events")
+          .select("activity_plan_id")
+          .eq("id", input.eventId)
+          .eq("profile_id", ctx.session.user.id)
+          .eq("event_type", "planned_activity")
+          .single();
 
         if (linkedEventError || !linkedEvent) {
           throw new Error("Linked event not found.");
@@ -229,11 +260,7 @@ export const activitiesRouter = createTRPCRouter({
         moving_seconds: input.movingSeconds,
         distance_meters: input.distanceMeters,
         activity_plan_id: linkedActivityPlanId,
-        // Metrics - will be updated later
-        training_stress_score: input.metrics.tss,
-        intensity_factor: input.metrics.if,
         normalized_power: input.metrics.normalized_power,
-        // Note: hr and power zones need to be mapped to individual columns
       };
 
       const { data, error } = await ctx.supabase
@@ -258,11 +285,7 @@ export const activitiesRouter = createTRPCRouter({
       const userId = ctx.session.user.id;
 
       // Check authorization
-      const hasAccess = await checkActivityAccess(
-        ctx.supabase,
-        input.id,
-        userId,
-      );
+      const hasAccess = await checkActivityAccess(ctx.supabase, input.id, userId);
 
       if (!hasAccess) {
         throw new TRPCError({
@@ -293,10 +316,39 @@ export const activitiesRouter = createTRPCRouter({
         .eq("entity_id", input.id)
         .maybeSingle();
 
-      return {
-        ...data,
+      const context = await resolveActivityContextAsOf({
+        supabase: ctx.supabase,
+        profileId: data.profile_id,
+        activityTimestamp: data.finished_at,
+      });
+
+      const derived = analyzeActivityDerivedMetrics({
+        activity: {
+          id: data.id,
+          type: data.type,
+          started_at: data.started_at,
+          finished_at: data.finished_at,
+          duration_seconds: data.duration_seconds,
+          moving_seconds: data.moving_seconds,
+          distance_meters: data.distance_meters,
+          avg_heart_rate: data.avg_heart_rate,
+          max_heart_rate: data.max_heart_rate,
+          avg_power: data.avg_power,
+          max_power: data.max_power,
+          avg_speed_mps: data.avg_speed_mps,
+          max_speed_mps: data.max_speed_mps,
+          normalized_power: data.normalized_power,
+          normalized_speed_mps: data.normalized_speed_mps,
+          normalized_graded_speed_mps: data.normalized_graded_speed_mps,
+        },
+        context,
+      });
+
+      return mapActivityToDerivedResponse({
+        activity: data,
         has_liked: !!likeData,
-      };
+        derived,
+      });
     }),
 
   // Update activity (e.g., to set metrics after calculation)
@@ -305,8 +357,6 @@ export const activitiesRouter = createTRPCRouter({
       z
         .object({
           id: z.string().uuid(),
-          intensity_factor: z.number().optional(),
-          training_stress_score: z.number().optional(),
           normalized_power: z.number().optional(),
           name: z.string().optional(),
           notes: z.string().nullable().optional(),
@@ -349,9 +399,7 @@ export const activitiesRouter = createTRPCRouter({
         .single();
 
       if (fetchError || !activity) {
-        throw new Error(
-          "Activity not found or you do not have permission to delete it.",
-        );
+        throw new Error("Activity not found or you do not have permission to delete it.");
       }
 
       // If there's an associated FIT file, delete it from storage

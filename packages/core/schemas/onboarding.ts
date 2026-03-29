@@ -28,13 +28,7 @@ export type ExperienceLevel = z.infer<typeof experienceLevelSchema>;
 /**
  * Sport/activity type for primary sport selection.
  */
-export const sportSchema = z.enum([
-  "cycling",
-  "running",
-  "swimming",
-  "triathlon",
-  "other",
-]);
+export const sportSchema = z.enum(["cycling", "running", "swimming", "triathlon", "other"]);
 
 export type Sport = z.infer<typeof sportSchema>;
 

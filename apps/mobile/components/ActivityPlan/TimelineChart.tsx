@@ -1,20 +1,15 @@
-import { Text } from "@repo/ui/components/text";
-import { getDurationMs } from "@/lib/utils/durationConversion";
 import {
   type ActivityPlanStructureV2,
+  getStepIntensityColor,
   type IntervalStepV2,
   type IntervalV2,
-  getStepIntensityColor,
 } from "@repo/core/schemas/activity_plan_v2";
+import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";
 import { useMemo } from "react";
-import {
-  Pressable,
-  ScrollView,
-  TouchableWithoutFeedback,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, TouchableWithoutFeedback, View } from "react-native";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
+import { getDurationMs } from "@/lib/utils/durationConversion";
 
 interface IntervalIssueSummary {
   interval: number;
@@ -94,10 +89,7 @@ export function TimelineChart({
     return flatSteps;
   }, [intervalMeta]);
 
-  const steps = useMemo(
-    () => flattenedSteps.map((entry) => entry.step),
-    [flattenedSteps],
-  );
+  const steps = useMemo(() => flattenedSteps.map((entry) => entry.step), [flattenedSteps]);
 
   const maxAxisY = useMemo(() => {
     const maxIntensity = flattenedSteps.reduce((max, entry) => {
@@ -129,9 +121,7 @@ export function TimelineChart({
 
       const nextEntry = flattenedSteps[index + 1];
       width +=
-        nextEntry.intervalIndex !== entry.intervalIndex
-          ? gapBetweenIntervals
-          : gapWithinInterval;
+        nextEntry.intervalIndex !== entry.intervalIndex ? gapBetweenIntervals : gapWithinInterval;
     });
 
     return width;
@@ -139,8 +129,7 @@ export function TimelineChart({
 
   const chartWidth = useMemo(() => {
     const minWidth = 340;
-    const byStepCount =
-      flattenedSteps.length * 30 + totalGapWidth + margin.left + margin.right;
+    const byStepCount = flattenedSteps.length * 30 + totalGapWidth + margin.left + margin.right;
     const byIntervals = intervalMeta.length * 92 + margin.left + margin.right;
     return Math.max(minWidth, byStepCount, byIntervals);
   }, [flattenedSteps.length, intervalMeta.length, totalGapWidth]);
@@ -156,10 +145,7 @@ export function TimelineChart({
       return selectedIntervalId;
     }
 
-    if (
-      selectedStepIndex !== undefined &&
-      flattenedSteps[selectedStepIndex]?.intervalId
-    ) {
+    if (selectedStepIndex !== undefined && flattenedSteps[selectedStepIndex]?.intervalId) {
       return flattenedSteps[selectedStepIndex].intervalId;
     }
 
@@ -169,12 +155,10 @@ export function TimelineChart({
   const chartData = useMemo(() => {
     return flattenedSteps.map((entry, index) => {
       const durationMs = getDurationMs(entry.step.duration);
-      const widthPercent =
-        totalDuration > 0 ? (durationMs / totalDuration) * 100 : 0;
+      const widthPercent = totalDuration > 0 ? (durationMs / totalDuration) * 100 : 0;
       const intensity = entry.step.targets?.[0]?.intensity ?? 0;
 
-      const barHeight =
-        minStepHeight + (intensity / maxAxisY) * (maxBarHeight - minStepHeight);
+      const barHeight = minStepHeight + (intensity / maxAxisY) * (maxBarHeight - minStepHeight);
       const barY = margin.top + plotHeight - barHeight;
 
       return {
@@ -187,8 +171,7 @@ export function TimelineChart({
         intervalIndex: entry.intervalIndex,
         intervalId: entry.intervalId,
         isInSelectedInterval:
-          !!derivedSelectedIntervalId &&
-          entry.intervalId === derivedSelectedIntervalId,
+          !!derivedSelectedIntervalId && entry.intervalId === derivedSelectedIntervalId,
       };
     });
   }, [
@@ -254,8 +237,7 @@ export function TimelineChart({
 
       const existing = segments.get(interval.id);
       if (!existing) {
-        const durationPerRepMs =
-          intervalMeta[bar.intervalIndex]?.durationPerRepMs ?? 0;
+        const durationPerRepMs = intervalMeta[bar.intervalIndex]?.durationPerRepMs ?? 0;
         segments.set(interval.id, {
           interval,
           intervalIndex: bar.intervalIndex,
@@ -271,9 +253,7 @@ export function TimelineChart({
       existing.xEnd = Math.max(existing.xEnd, bar.x + bar.width);
     });
 
-    return Array.from(segments.values()).sort(
-      (a, b) => a.intervalIndex - b.intervalIndex,
-    );
+    return Array.from(segments.values()).sort((a, b) => a.intervalIndex - b.intervalIndex);
   }, [intervalMeta, positionedBars, structure.intervals]);
 
   const maxAxisXMinutes = Math.max(0, Math.round(totalDuration / 60000));
@@ -332,17 +312,9 @@ export function TimelineChart({
                 width={bar.width}
                 height={bar.barHeight}
                 fill={bar.color}
-                opacity={
-                  bar.isSelected ? 1 : bar.isInSelectedInterval ? 0.95 : 0.82
-                }
-                stroke={
-                  bar.isSelected || bar.isInSelectedInterval
-                    ? "#2563EB"
-                    : "transparent"
-                }
-                strokeWidth={
-                  bar.isSelected ? 2.6 : bar.isInSelectedInterval ? 1.2 : 0
-                }
+                opacity={bar.isSelected ? 1 : bar.isInSelectedInterval ? 0.95 : 0.82}
+                stroke={bar.isSelected || bar.isInSelectedInterval ? "#2563EB" : "transparent"}
+                strokeWidth={bar.isSelected ? 2.6 : bar.isInSelectedInterval ? 1.2 : 0}
                 rx={3}
                 ry={3}
               />
@@ -361,13 +333,7 @@ export function TimelineChart({
               </SvgText>
             ))}
 
-            <SvgText
-              x={margin.left}
-              y={height - 2}
-              fontSize={9}
-              fill="#64748B"
-              textAnchor="start"
-            >
+            <SvgText x={margin.left} y={height - 2} fontSize={9} fill="#64748B" textAnchor="start">
               0
             </SvgText>
 
@@ -385,12 +351,10 @@ export function TimelineChart({
           {onIntervalPress && intervalSegments.length > 0 ? (
             <View className="absolute inset-0">
               {intervalSegments.map((segment) => {
-                const isSelected =
-                  derivedSelectedIntervalId === segment.interval.id;
+                const isSelected = derivedSelectedIntervalId === segment.interval.id;
                 const rawWidth = segment.xEnd - segment.xStart;
                 const segmentWidth = Math.max(rawWidth, 48);
-                const segmentLeft =
-                  margin.left + segment.xStart - (segmentWidth - rawWidth) / 2;
+                const segmentLeft = margin.left + segment.xStart - (segmentWidth - rawWidth) / 2;
                 const intervalDurationMinutes = Math.max(
                   1,
                   Math.round(segment.totalDurationMs / 60000),
@@ -412,9 +376,7 @@ export function TimelineChart({
                       borderRadius: 6,
                       borderWidth: isSelected ? 2 : 0,
                       borderColor: isSelected ? "#2563EB" : "transparent",
-                      backgroundColor: isSelected
-                        ? "rgba(37, 99, 235, 0.08)"
-                        : "transparent",
+                      backgroundColor: isSelected ? "rgba(37, 99, 235, 0.08)" : "transparent",
                     }}
                   />
                 );
@@ -430,10 +392,7 @@ export function TimelineChart({
                   <View
                     style={{
                       position: "absolute",
-                      left:
-                        margin.left +
-                        bar.x -
-                        (Math.max(bar.width, 44) - bar.width) / 2,
+                      left: margin.left + bar.x - (Math.max(bar.width, 44) - bar.width) / 2,
                       top: margin.top,
                       width: Math.max(bar.width, 44),
                       height: plotHeight,
@@ -460,9 +419,7 @@ export function TimelineChart({
         </View>
       ) : null}
 
-      {!compact &&
-      selectedStepIndex !== undefined &&
-      steps[selectedStepIndex] ? (
+      {!compact && selectedStepIndex !== undefined && steps[selectedStepIndex] ? (
         <View className="mt-1 rounded-md bg-muted p-2">
           <Text className="text-xs font-medium">
             Step {selectedStepIndex + 1}: {steps[selectedStepIndex].name}

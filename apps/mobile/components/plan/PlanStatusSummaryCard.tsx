@@ -93,9 +93,7 @@ function Pill({
 }) {
   return (
     <View className={`px-2.5 py-1 rounded-full border ${className}`}>
-      <Text className={`text-[11px] font-medium ${textClassName}`}>
-        {label}
-      </Text>
+      <Text className={`text-[11px] font-medium ${textClassName}`}>{label}</Text>
     </View>
   );
 }
@@ -114,15 +112,9 @@ export function PlanStatusSummaryCard({
     activeGoalSafety?.reasons?.[0] ||
     activeGoalFeasibility?.reasons?.[0];
 
-  const activeGoalFeasibilityStyle = feasibilityStyles(
-    activeGoalFeasibility?.state || "unsafe",
-  );
-  const activeGoalSafetyStyle = safetyStyles(
-    activeGoalSafety?.state || "exceeded",
-  );
-  const planFeasibilityStyle = feasibilityStyles(
-    planFeasibility?.state || "unsafe",
-  );
+  const activeGoalFeasibilityStyle = feasibilityStyles(activeGoalFeasibility?.state || "unsafe");
+  const activeGoalSafetyStyle = safetyStyles(activeGoalSafety?.state || "exceeded");
+  const planFeasibilityStyle = feasibilityStyles(planFeasibility?.state || "unsafe");
   const planSafetyStyle = safetyStyles(planSafety?.state || "exceeded");
 
   return (

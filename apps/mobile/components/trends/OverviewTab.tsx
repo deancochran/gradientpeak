@@ -1,5 +1,7 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { TrendsOverviewSkeleton } from "@repo/ui/components/loading-skeletons";
+import { Progress } from "@repo/ui/components/progress";
+import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { TrendingUp } from "lucide-react-native";
 import { View } from "react-native";
@@ -122,7 +124,7 @@ export function OverviewTab({
             <Text className="text-2xl font-bold text-foreground">{status.ctl}</Text>
           </View>
 
-          <View className="h-px bg-border" />
+          <Separator />
 
           <View className="flex-row items-center justify-between">
             <View>
@@ -132,7 +134,7 @@ export function OverviewTab({
             <Text className="text-2xl font-bold text-foreground">{status.atl}</Text>
           </View>
 
-          <View className="h-px bg-border" />
+          <Separator />
 
           <View className="flex-row items-center justify-between">
             <View>
@@ -163,14 +165,14 @@ export function OverviewTab({
                 {status.weekProgress.completedTSS} / {status.weekProgress.targetTSS}
               </Text>
             </View>
-            <View className="h-2 bg-muted rounded-full overflow-hidden">
-              <View
-                className="h-full bg-blue-500"
-                style={{
-                  width: `${Math.min((status.weekProgress.completedTSS / status.weekProgress.targetTSS) * 100, 100)}%`,
-                }}
-              />
-            </View>
+            <Progress
+              value={Math.min(
+                (status.weekProgress.completedTSS / status.weekProgress.targetTSS) * 100,
+                100,
+              )}
+              className="h-2"
+              indicatorClassName="bg-blue-500"
+            />
           </View>
 
           <View>
@@ -181,14 +183,16 @@ export function OverviewTab({
                 {status.weekProgress.totalPlannedActivities}
               </Text>
             </View>
-            <View className="h-2 bg-muted rounded-full overflow-hidden">
-              <View
-                className="h-full bg-green-500"
-                style={{
-                  width: `${Math.min((status.weekProgress.completedActivities / status.weekProgress.totalPlannedActivities) * 100, 100)}%`,
-                }}
-              />
-            </View>
+            <Progress
+              value={Math.min(
+                (status.weekProgress.completedActivities /
+                  status.weekProgress.totalPlannedActivities) *
+                  100,
+                100,
+              )}
+              className="h-2"
+              indicatorClassName="bg-green-500"
+            />
           </View>
         </View>
       </View>

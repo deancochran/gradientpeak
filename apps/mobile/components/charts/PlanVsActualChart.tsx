@@ -1,9 +1,9 @@
 import { Text } from "@repo/ui/components/text";
 import {
   DashPathEffect,
-  useFont,
   Line as SkiaLine,
   Text as SkiaText,
+  useFont,
   vec,
 } from "@shopify/react-native-skia";
 import React, { useMemo, useState } from "react";
@@ -14,7 +14,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { CartesianChart, Line, Area, Scatter } from "victory-native";
+import { Area, CartesianChart, Line, Scatter } from "victory-native";
 
 export interface FitnessDataPoint {
   date: string;
@@ -79,9 +79,7 @@ const chartDomainPadding = { left: 0, right: 0, top: 10, bottom: 0 };
 
 const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
   try {
-    return require("@/assets/fonts/SpaceMono-Regular.ttf") as Parameters<
-      typeof useFont
-    >[0];
+    return require("@/assets/fonts/SpaceMono-Regular.ttf") as Parameters<typeof useFont>[0];
   } catch {
     return undefined;
   }
@@ -174,9 +172,7 @@ function aggregateTimelineByWeek(timeline: InsightTimelinePoint[]) {
     buckets.set(weekKey, current);
   }
 
-  const sortedWeeks = [...buckets.entries()].sort(([left], [right]) =>
-    left.localeCompare(right),
-  );
+  const sortedWeeks = [...buckets.entries()].sort(([left], [right]) => left.localeCompare(right));
 
   return sortedWeeks.map(([weekKey, bucket], index) => ({
     index,
@@ -185,9 +181,7 @@ function aggregateTimelineByWeek(timeline: InsightTimelinePoint[]) {
     planned: Math.round(bucket.planned * 10) / 10,
     actual: Math.round(bucket.actual * 10) / 10,
     adherenceScore:
-      bucket.adherenceCount > 0
-        ? bucket.adherenceTotal / bucket.adherenceCount
-        : undefined,
+      bucket.adherenceCount > 0 ? bucket.adherenceTotal / bucket.adherenceCount : undefined,
   }));
 }
 
@@ -223,9 +217,7 @@ function computeYAxisMax(values: number[]) {
 }
 
 function fillSeries(values: Array<number | null>) {
-  const firstKnown = values.find(
-    (value): value is number => typeof value === "number",
-  );
+  const firstKnown = values.find((value): value is number => typeof value === "number");
   const seed = firstKnown ?? 0;
   let previous = seed;
 
@@ -247,15 +239,9 @@ function buildFallbackPoints({
   projectedData: FitnessDataPoint[];
   idealData: Array<{ date: string; ctl: number }>;
 }): NormalizedPoint[] {
-  const idealByDate = new Map(
-    idealData.map((point) => [point.date, point.ctl]),
-  );
-  const projectedByDate = new Map(
-    projectedData.map((point) => [point.date, point.ctl]),
-  );
-  const actualByDate = new Map(
-    actualData.map((point) => [point.date, point.ctl]),
-  );
+  const idealByDate = new Map(idealData.map((point) => [point.date, point.ctl]));
+  const projectedByDate = new Map(projectedData.map((point) => [point.date, point.ctl]));
+  const actualByDate = new Map(actualData.map((point) => [point.date, point.ctl]));
 
   const primaryDates =
     idealData.length > 0
@@ -323,17 +309,13 @@ export function PlanVsActualChart({
     if (latestGoalTargetDate) {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const thirtyDaysAgoWeek = getWeekStartDateKey(
-        thirtyDaysAgo.toISOString().split("T")[0],
-      );
+      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgo.toISOString().split("T")[0]);
 
       const goalDateObj = new Date(`${latestGoalTargetDate}T12:00:00.000Z`);
       if (!Number.isNaN(goalDateObj.getTime())) {
         goalDateObj.setDate(goalDateObj.getDate() + 30);
       }
-      const goalPlusThirtyWeek = getWeekStartDateKey(
-        goalDateObj.toISOString().split("T")[0],
-      );
+      const goalPlusThirtyWeek = getWeekStartDateKey(goalDateObj.toISOString().split("T")[0]);
 
       const sIdx = base.findIndex((p) => p.date >= thirtyDaysAgoWeek);
       const eIdx = base.findIndex((p) => p.date >= goalPlusThirtyWeek);
@@ -344,16 +326,12 @@ export function PlanVsActualChart({
     } else {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const thirtyDaysAgoWeek = getWeekStartDateKey(
-        thirtyDaysAgo.toISOString().split("T")[0],
-      );
+      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgo.toISOString().split("T")[0]);
 
       const sIdx = base.findIndex((p) => p.date >= thirtyDaysAgoWeek);
 
       const revBase = [...base].reverse();
-      const revEIdx = revBase.findIndex(
-        (p) => (p.planned ?? 0) > 0 || (p.actual ?? 0) > 0,
-      );
+      const revEIdx = revBase.findIndex((p) => (p.planned ?? 0) > 0 || (p.actual ?? 0) > 0);
 
       if (sIdx !== -1) startIndex = sIdx;
       if (revEIdx !== -1) endIndex = base.length - 1 - revEIdx;
@@ -366,11 +344,7 @@ export function PlanVsActualChart({
       const futureIdx = base.findIndex((p) => p.date >= thirtyDaysFutureWeek);
       if (futureIdx !== -1 && futureIdx > endIndex) {
         endIndex = futureIdx;
-      } else if (
-        futureIdx === -1 &&
-        base.length > 0 &&
-        base.length - 1 > endIndex
-      ) {
+      } else if (futureIdx === -1 && base.length > 0 && base.length - 1 > endIndex) {
         endIndex = base.length - 1;
       }
     }
@@ -379,22 +353,11 @@ export function PlanVsActualChart({
     endIndex = Math.min(base.length - 1, endIndex + 1);
 
     if (startIndex > endIndex) return base;
-    return base
-      .slice(startIndex, endIndex + 1)
-      .map((p, i) => ({ ...p, index: i }));
-  }, [
-    actualData,
-    idealData,
-    projectedData,
-    timeline,
-    useInsightTimeline,
-    latestGoalTargetDate,
-  ]);
+    return base.slice(startIndex, endIndex + 1).map((p, i) => ({ ...p, index: i }));
+  }, [actualData, idealData, projectedData, timeline, useInsightTimeline, latestGoalTargetDate]);
 
   const hasSeriesData = {
-    projection: framedPoints.some(
-      (point) => typeof point.projection === "number",
-    ),
+    projection: framedPoints.some((point) => typeof point.projection === "number"),
     planned: framedPoints.some((point) => typeof point.planned === "number"),
     actual: framedPoints.some((point) => typeof point.actual === "number"),
   };
@@ -449,12 +412,8 @@ export function PlanVsActualChart({
   }, [normalizedGoalMarkers]);
 
   const chartData = useMemo<ChartDatum[]>(() => {
-    const projectionValues = fillSeries(
-      framedPoints.map((point) => point.projection),
-    );
-    const plannedValues = fillSeries(
-      framedPoints.map((point) => point.planned),
-    );
+    const projectionValues = fillSeries(framedPoints.map((point) => point.projection));
+    const plannedValues = fillSeries(framedPoints.map((point) => point.planned));
     const actualValues = framedPoints.map((point) => point.actual);
 
     return framedPoints.map((point, index) => ({
@@ -494,9 +453,7 @@ export function PlanVsActualChart({
     let lastLabeledIndex = -Infinity;
 
     return groupedGoalMarkers.map((marker) => {
-      const markerIndex = framedPoints.findIndex(
-        (point) => point.date >= marker.weekKey,
-      );
+      const markerIndex = framedPoints.findIndex((point) => point.date >= marker.weekKey);
       const shouldShowLabel = markerIndex - lastLabeledIndex >= 2;
 
       if (shouldShowLabel) {
@@ -517,9 +474,7 @@ export function PlanVsActualChart({
         {isEmpty || !hasAnyVisibleSeries ? (
           <View className="flex-1 items-center justify-center bg-muted/20 rounded-md">
             <Text className="text-muted-foreground text-sm">
-              {isEmpty
-                ? "No chart data available"
-                : "Enable at least one series"}
+              {isEmpty ? "No chart data available" : "Enable at least one series"}
             </Text>
           </View>
         ) : (
@@ -562,22 +517,15 @@ export function PlanVsActualChart({
                     domain: [0, yAxisMax] as [number, number],
                     tickCount: 6,
                     font: axisFont,
-                    labelColor: isDark
-                      ? "rgba(71, 85, 105, 0.8)"
-                      : "rgba(148, 163, 184, 0.8)",
-                    lineColor: isDark
-                      ? "rgba(71, 85, 105, 0.4)"
-                      : "rgba(148, 163, 184, 0.45)",
+                    labelColor: isDark ? "rgba(71, 85, 105, 0.8)" : "rgba(148, 163, 184, 0.8)",
+                    lineColor: isDark ? "rgba(71, 85, 105, 0.4)" : "rgba(148, 163, 184, 0.45)",
                     lineWidth: 1,
                     linePathEffect: <DashPathEffect intervals={[4, 4]} />,
-                    formatYLabel: (value: unknown) =>
-                      `${Math.round(Number(value))}`,
+                    formatYLabel: (value: unknown) => `${Math.round(Number(value))}`,
                   },
                 ]}
                 frame={{
-                  lineColor: isDark
-                    ? "rgba(71, 85, 105, 0.8)"
-                    : "rgba(148, 163, 184, 0.8)",
+                  lineColor: isDark ? "rgba(71, 85, 105, 0.8)" : "rgba(148, 163, 184, 0.8)",
                   lineWidth: { bottom: 1, left: 1, right: 0, top: 0 },
                 }}
               >
@@ -587,10 +535,7 @@ export function PlanVsActualChart({
                       <Area
                         points={points.projection}
                         y0={chartBounds.bottom}
-                        color={SERIES_META.projection.color.replace(
-                          "0.95)",
-                          "0.15)",
-                        )}
+                        color={SERIES_META.projection.color.replace("0.95)", "0.15)")}
                         curveType="natural"
                         animate={{ type: "timing", duration: 180 }}
                       />
@@ -601,10 +546,7 @@ export function PlanVsActualChart({
                         <Area
                           points={points.planned}
                           y0={chartBounds.bottom}
-                          color={SERIES_META.planned.color.replace(
-                            "0.95)",
-                            "0.15)",
-                          )}
+                          color={SERIES_META.planned.color.replace("0.95)", "0.15)")}
                           curveType="natural"
                           animate={{ type: "timing", duration: 180 }}
                         />
@@ -643,9 +585,7 @@ export function PlanVsActualChart({
 
                       const goalDateStr = compactDateLabel(marker.targetDate);
                       const goalLabel =
-                        marker.count > 1
-                          ? `${goalDateStr} (${marker.count})`
-                          : goalDateStr;
+                        marker.count > 1 ? `${goalDateStr} (${marker.count})` : goalDateStr;
                       const fontTextWidth =
                         axisFont && typeof axisFont.getTextWidth === "function"
                           ? axisFont.getTextWidth(goalLabel)
@@ -656,8 +596,7 @@ export function PlanVsActualChart({
                         Math.max(targetPoint.x - fontTextWidth / 2, minX),
                         Math.max(minX, maxX),
                       );
-                      const labelY =
-                        chartBounds.top + 8 + (markerOrder % 2) * 10;
+                      const labelY = chartBounds.top + 8 + (markerOrder % 2) * 10;
 
                       return (
                         <React.Fragment key={`goal-marker-${marker.weekKey}`}>

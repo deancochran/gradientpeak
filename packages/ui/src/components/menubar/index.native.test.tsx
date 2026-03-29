@@ -1,11 +1,5 @@
 import { renderNative } from "../../test/render-native";
-import {
-  Menubar,
-  MenubarContent,
-  MenubarItem,
-  MenubarMenu,
-  MenubarTrigger,
-} from "./index.native";
+import { Menubar, MenubarContent, MenubarItem, MenubarMenu, MenubarTrigger } from "./index.native";
 
 describe("Menubar native", () => {
   it("renders menu trigger and item text", () => {

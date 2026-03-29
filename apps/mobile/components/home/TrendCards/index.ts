@@ -1,3 +1,3 @@
-export { TrendCard } from "./TrendCard";
-export { MicroLineChart, MicroBarChart } from "./MicroChart";
 export { ChartModal } from "./ChartModal";
+export { MicroBarChart, MicroLineChart } from "./MicroChart";
+export { TrendCard } from "./TrendCard";

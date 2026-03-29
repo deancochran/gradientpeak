@@ -30,8 +30,6 @@ describe("derivePlanTimeline", () => {
         today_date: "2026-01-15",
         goals: [{ target_date: "2026-05-01" }, { target_date: "2026-04-01" }],
       }),
-    ).toThrow(
-      "plan_start_date must be on or before the latest goal target_date",
-    );
+    ).toThrow("plan_start_date must be on or before the latest goal target_date");
   });
 });

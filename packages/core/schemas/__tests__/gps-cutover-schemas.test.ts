@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  ActivityPayloadSchema,
-  ActivityUploadSchema,
-} from "../activity_payload";
+import { ActivityPayloadSchema, ActivityUploadSchema } from "../activity_payload";
 import { activityPlanCreateSchema } from "../index";
 
 describe("GPS cutover schemas", () => {

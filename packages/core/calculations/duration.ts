@@ -4,11 +4,8 @@
  * This ensures consistency across different parts of the application,
  * from live recording to FIT file encoding and backend processing.
  */
-import type {
-  StandardActivity,
-  ActivityLap,
-  ActivityRecord,
-} from "../types/normalization";
+import type { ActivityLap, ActivityRecord, StandardActivity } from "../types/normalization";
+
 interface DurationSource {
   startTime: Date;
   endTime?: Date;
@@ -46,9 +43,7 @@ export function calculateDuration(source: DurationSource): number {
     } else if (source.laps?.length) {
       const lastLap = source.laps?.[source.laps.length - 1];
       if (lastLap) {
-        endTime = new Date(
-          lastLap.startTime.getTime() + lastLap.totalTime * 1000,
-        );
+        endTime = new Date(lastLap.startTime.getTime() + lastLap.totalTime * 1000);
       }
     }
   }
@@ -59,9 +54,7 @@ export function calculateDuration(source: DurationSource): number {
   }
   // 4. Fallback for activities with no records, laps, or end time
   if (source.totalTime === 0) return 0;
-  throw new Error(
-    "Could not determine activity duration from the provided source.",
-  );
+  throw new Error("Could not determine activity duration from the provided source.");
 }
 /**
  * Calculates the end time of an activity.

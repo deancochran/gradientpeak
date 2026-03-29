@@ -11,16 +11,10 @@ describe("DropdownMenu native", () => {
   it("renders trigger text and item content", () => {
     const { getByTestId } = renderNative(
       <DropdownMenu>
-        <DropdownMenuTrigger testID="workout-menu-trigger">
-          Open menu
-        </DropdownMenuTrigger>
+        <DropdownMenuTrigger testID="workout-menu-trigger">Open menu</DropdownMenuTrigger>
         <DropdownMenuContent testID="workout-menu-content">
-          <DropdownMenuItem testID="pin-workout-item">
-            Pin workout
-          </DropdownMenuItem>
-          <DropdownMenuShortcut testID="pin-workout-shortcut">
-            Shift+P
-          </DropdownMenuShortcut>
+          <DropdownMenuItem testID="pin-workout-item">Pin workout</DropdownMenuItem>
+          <DropdownMenuShortcut testID="pin-workout-shortcut">Shift+P</DropdownMenuShortcut>
         </DropdownMenuContent>
       </DropdownMenu>,
     );

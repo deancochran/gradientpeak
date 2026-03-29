@@ -4,13 +4,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const BUCKET_NAME = "profile-avatars";
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const ALLOWED_MIME_TYPES = [
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-];
+const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
 
 export const storageRouter = createTRPCRouter({
   createSignedUploadUrl: protectedProcedure
@@ -118,9 +112,7 @@ export const storageRouter = createTRPCRouter({
           });
         }
 
-        const { error } = await ctx.supabase.storage
-          .from(BUCKET_NAME)
-          .remove([input.filePath]);
+        const { error } = await ctx.supabase.storage.from(BUCKET_NAME).remove([input.filePath]);
 
         if (error) {
           throw new TRPCError({

@@ -1,3 +1,4 @@
+import { canonicalizeMinimalTrainingPlanCreate, type MinimalTrainingPlanCreate } from "@repo/core";
 import type {
   GoalFormData,
   GoalTargetFormData,
@@ -8,10 +9,6 @@ import {
   parseHmsToSeconds,
   parseMmSsToSeconds,
 } from "../input-parsers";
-import {
-  canonicalizeMinimalTrainingPlanCreate,
-  type MinimalTrainingPlanCreate,
-} from "@repo/core";
 
 function normalizePlanStartDate(value: string | undefined): string | undefined {
   return parseDateOnly(value);
@@ -27,9 +24,7 @@ function toPayloadTarget(
       const activityCategory = target.activityCategory;
 
       if (!distanceM || !targetTimeS || !activityCategory) {
-        throw new Error(
-          "race_performance target requires activity, distance, and time",
-        );
+        throw new Error("race_performance target requires activity, distance, and time");
       }
 
       return {
@@ -45,9 +40,7 @@ function toPayloadTarget(
       const activityCategory = target.activityCategory;
 
       if (!paceSeconds || !testDurationS || !activityCategory) {
-        throw new Error(
-          "pace_threshold target requires pace, activity, and test duration",
-        );
+        throw new Error("pace_threshold target requires pace, activity, and test duration");
       }
 
       return {
@@ -62,9 +55,7 @@ function toPayloadTarget(
       const activityCategory = target.activityCategory;
 
       if (!target.targetWatts || !testDurationS || !activityCategory) {
-        throw new Error(
-          "power_threshold target requires watts, activity, and test duration",
-        );
+        throw new Error("power_threshold target requires watts, activity, and test duration");
       }
 
       return {

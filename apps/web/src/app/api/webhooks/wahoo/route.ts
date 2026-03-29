@@ -19,6 +19,9 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+const serverSupabaseUrl =
+  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+
 const WAHOO_WEBHOOK_TOKEN = process.env.WAHOO_WEBHOOK_TOKEN;
 
 // Webhook payload types
@@ -59,9 +62,7 @@ export async function POST(request: NextRequest) {
   try {
     // 1. Verify webhook token is configured
     if (!WAHOO_WEBHOOK_TOKEN) {
-      console.error(
-        "WAHOO_WEBHOOK_TOKEN not configured in environment variables",
-      );
+      console.error("WAHOO_WEBHOOK_TOKEN not configured in environment variables");
       // Still return 200 to prevent retries
       return NextResponse.json({ received: true }, { status: 200 });
     }
@@ -87,10 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Verify optional HMAC signature if present
-    if (
-      signature &&
-      !verifyWebhookSignature(body, signature, WAHOO_WEBHOOK_TOKEN)
-    ) {
+    if (signature && !verifyWebhookSignature(body, signature, WAHOO_WEBHOOK_TOKEN)) {
       console.error("Invalid webhook signature", {
         hasSignature: true,
         bodyLength: body.length,
@@ -126,11 +124,7 @@ export async function POST(request: NextRequest) {
  * @param signature - X-Wahoo-Signature header value
  * @param secret - Webhook token (secret)
  */
-function verifyWebhookSignature(
-  body: string,
-  signature: string | null,
-  secret: string,
-): boolean {
+function verifyWebhookSignature(body: string, signature: string | null, secret: string): boolean {
   if (!signature) {
     console.warn("No signature provided in webhook");
     return false;
@@ -150,10 +144,7 @@ function verifyWebhookSignature(
     }
 
     // Constant-time comparison to prevent timing attacks
-    return crypto.timingSafeEqual(
-      Buffer.from(normalizedSignature),
-      Buffer.from(digest),
-    );
+    return crypto.timingSafeEqual(Buffer.from(normalizedSignature), Buffer.from(digest));
   } catch (error) {
     console.error("Error verifying webhook signature:", error);
     return false;
@@ -177,7 +168,7 @@ async function processWorkoutSummary(
   try {
     // Create Supabase client with service role for webhook processing
     const supabase = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serverSupabaseUrl!,
       process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
     );
 
@@ -194,9 +185,7 @@ async function processWorkoutSummary(
         );
       }
     } else {
-      console.error(
-        `Failed to import workout summary ${summary.id}: ${result.error}`,
-      );
+      console.error(`Failed to import workout summary ${summary.id}: ${result.error}`);
     }
   } catch (error) {
     console.error("Error processing workout summary:", error);

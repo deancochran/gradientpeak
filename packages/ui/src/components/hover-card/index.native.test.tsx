@@ -5,9 +5,7 @@ describe("HoverCard native", () => {
   it("renders trigger text and preview content", () => {
     const { getByTestId } = renderNative(
       <HoverCard openDelay={0}>
-        <HoverCardTrigger testID="athlete-preview-trigger">
-          Athlete preview
-        </HoverCardTrigger>
+        <HoverCardTrigger testID="athlete-preview-trigger">Athlete preview</HoverCardTrigger>
         <HoverCardContent testID="athlete-preview-content">
           Last session: 10 x 400m.
         </HoverCardContent>

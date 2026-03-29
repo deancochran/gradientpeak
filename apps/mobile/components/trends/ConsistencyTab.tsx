@@ -1,4 +1,6 @@
 import { TrendsOverviewSkeleton } from "@repo/ui/components/loading-skeletons";
+import { Progress } from "@repo/ui/components/progress";
+import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import { type ConsistencyData, ConsistencyHeatmap } from "@/components/charts";
@@ -49,18 +51,17 @@ export function ConsistencyTab({
                 {trainingDaysPercentage.toFixed(1)}%
               </Text>
             </View>
-            <View className="h-3 bg-muted rounded-full overflow-hidden">
-              <View
-                className="h-full bg-green-500"
-                style={{ width: `${trainingDaysPercentage}%` }}
-              />
-            </View>
+            <Progress
+              value={trainingDaysPercentage}
+              className="h-3"
+              indicatorClassName="bg-green-500"
+            />
             <Text className="text-xs text-muted-foreground mt-1">
               {consistencyData?.totalActivities ?? 0} of {consistencyData?.totalDays ?? 0} days
             </Text>
           </View>
 
-          <View className="h-px bg-border" />
+          <Separator />
 
           <View>
             <View className="flex-row items-center justify-between mb-2">
@@ -69,9 +70,8 @@ export function ConsistencyTab({
                 {restDaysPercentage.toFixed(1)}%
               </Text>
             </View>
-            <View className="h-3 bg-muted rounded-full overflow-hidden">
-              <View className="h-full bg-gray-400" style={{ width: `${restDaysPercentage}%` }} />
-            </View>
+            <Progress value={restDaysPercentage} className="h-3" indicatorClassName="bg-gray-400" />
+            <Progress value={restDaysPercentage} className="h-3" indicatorClassName="bg-gray-400" />
             <Text className="text-xs text-muted-foreground mt-1">
               {(consistencyData?.totalDays ?? 0) - (consistencyData?.totalActivities ?? 0)} of{" "}
               {consistencyData?.totalDays ?? 0} days

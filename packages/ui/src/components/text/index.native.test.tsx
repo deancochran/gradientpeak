@@ -4,11 +4,7 @@ import { Text } from "./index.native";
 describe("Text native", () => {
   it("maps normalized test props onto the rendered text node", () => {
     const { getByTestId, getByText } = renderNative(
-      <Text
-        accessibilityLabel="Welcome copy"
-        id="welcome-copy"
-        testId="welcome-copy-text"
-      >
+      <Text accessibilityLabel="Welcome copy" id="welcome-copy" testId="welcome-copy-text">
         Welcome back
       </Text>,
     );

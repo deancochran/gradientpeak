@@ -18,20 +18,20 @@
  * - Bottom sheet uses containerStyle.zIndex to stay on top
  */
 
-import { GPSStatusOverlay } from "@/components/recording/GPSStatusOverlay";
-import { VirtualRouteMap } from "@/components/recording/VirtualRouteMap";
+import type {} from "@repo/supabase";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
-import { useFocusMode } from "@/lib/contexts/FocusModeContext";
-import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type {} from "@repo/supabase";
 import type { LocationObject } from "expo-location";
 import { Minimize2, Navigation } from "lucide-react-native";
 import React, { useEffect, useRef, useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import MapView, { Camera, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GPSStatusOverlay } from "@/components/recording/GPSStatusOverlay";
+import { VirtualRouteMap } from "@/components/recording/VirtualRouteMap";
+import { useFocusMode } from "@/lib/contexts/FocusModeContext";
+import { useGpsTracking } from "@/lib/hooks/useActivityRecorder";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface ZoneAProps {
   service: ActivityRecorderService | null;
@@ -40,12 +40,7 @@ export interface ZoneAProps {
   isFocused: boolean; // Whether this zone is currently focused
 }
 
-export function ZoneA({
-  service,
-  gpsRecordingEnabled,
-  hasRoute,
-  isFocused,
-}: ZoneAProps) {
+export function ZoneA({ service, gpsRecordingEnabled, hasRoute, isFocused }: ZoneAProps) {
   const { focusZoneA, clearFocus } = useFocusMode();
   const { gpsEnabled } = useGpsTracking(service);
   const insets = useSafeAreaInsets();
@@ -53,9 +48,7 @@ export function ZoneA({
   const mapRef = useRef<MapView>(null);
 
   // GPS state
-  const [currentLocation, setCurrentLocation] = useState<LocationObject | null>(
-    null,
-  );
+  const [currentLocation, setCurrentLocation] = useState<LocationObject | null>(null);
   const [breadcrumbTrail, setBreadcrumbTrail] = useState<
     Array<{ latitude: number; longitude: number }>
   >([]);
@@ -117,8 +110,7 @@ export function ZoneA({
     if (!service) return;
 
     const handleHeadingUpdate = (headingObject: any) => {
-      const newHeading =
-        headingObject.magHeading ?? headingObject.trueHeading ?? 0;
+      const newHeading = headingObject.magHeading ?? headingObject.trueHeading ?? 0;
 
       // Smooth interpolation to prevent jitter
       setMagnetometerHeading((prev) => {
@@ -381,10 +373,7 @@ export function ZoneA({
 
       {/* GPS Status Overlay (GPS ON only) */}
       {gpsRecordingEnabled && (
-        <GPSStatusOverlay
-          service={service}
-          gpsRecordingEnabled={gpsRecordingEnabled}
-        />
+        <GPSStatusOverlay service={service} gpsRecordingEnabled={gpsRecordingEnabled} />
       )}
 
       {/* Re-center Button (shows when not auto-centered, in both normal and focused) */}
@@ -398,11 +387,7 @@ export function ZoneA({
             accessibilityLabel="Re-center map"
             accessibilityHint="Centers the map on your current location"
           >
-            <Icon
-              as={Navigation}
-              size={20}
-              className="text-primary-foreground"
-            />
+            <Icon as={Navigation} size={20} className="text-primary-foreground" />
           </Button>
         </View>
       )}

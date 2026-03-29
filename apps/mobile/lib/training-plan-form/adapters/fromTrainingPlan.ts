@@ -1,19 +1,16 @@
+import {
+  type CreationAvailabilityConfig,
+  type CreationProvenance,
+  type CreationValueSource,
+  trainingPlanCalibrationConfigSchema,
+} from "@repo/core";
 import type {
   GoalFormData,
   GoalTargetFormData,
   TrainingPlanConfigFormData,
   TrainingPlanFormData,
 } from "@/components/training-plan/create/SinglePageForm";
-import {
-  formatSecondsToHms,
-  formatSecondsToMmSs,
-} from "@/lib/training-plan-form/input-parsers";
-import {
-  trainingPlanCalibrationConfigSchema,
-  type CreationAvailabilityConfig,
-  type CreationProvenance,
-  type CreationValueSource,
-} from "@repo/core";
+import { formatSecondsToHms, formatSecondsToMmSs } from "@/lib/training-plan-form/input-parsers";
 
 const STABLE_PROVENANCE_TS = "1970-01-01T00:00:00.000Z";
 
@@ -46,9 +43,7 @@ const asDateOnly = (value: unknown): string | undefined => {
 };
 
 const asNumber = (value: unknown): number | undefined => {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 };
 
 const asStringArray = (value: unknown): string[] | undefined => {
@@ -56,9 +51,7 @@ const asStringArray = (value: unknown): string[] | undefined => {
     return undefined;
   }
 
-  const parsed = value.filter(
-    (entry): entry is string => typeof entry === "string",
-  );
+  const parsed = value.filter((entry): entry is string => typeof entry === "string");
   return parsed.length > 0 ? parsed : undefined;
 };
 
@@ -84,32 +77,20 @@ const createDefaultAvailability = (): CreationAvailabilityConfig => ({
   days: weekDays.map((day) => ({
     day,
     windows:
-      day === "wednesday" ||
-      day === "friday" ||
-      day === "saturday" ||
-      day === "sunday"
+      day === "wednesday" || day === "friday" || day === "saturday" || day === "sunday"
         ? [{ start_minute_of_day: 360, end_minute_of_day: 450 }]
         : [],
     max_sessions:
-      day === "wednesday" ||
-      day === "friday" ||
-      day === "saturday" ||
-      day === "sunday"
-        ? 1
-        : 0,
+      day === "wednesday" || day === "friday" || day === "saturday" || day === "sunday" ? 1 : 0,
   })),
 });
 
 const createDefaultConfigState = (): TrainingPlanConfigFormData => ({
   availabilityConfig: createDefaultAvailability(),
-  availabilityProvenance: createProvenance("default", [
-    "edit_fallback_default",
-  ]),
+  availabilityProvenance: createProvenance("default", ["edit_fallback_default"]),
   recentInfluenceScore: 0,
   recentInfluenceAction: "disabled",
-  recentInfluenceProvenance: createProvenance("default", [
-    "edit_fallback_default",
-  ]),
+  recentInfluenceProvenance: createProvenance("default", ["edit_fallback_default"]),
   constraints: {
     hard_rest_days: ["monday", "tuesday", "thursday"],
     min_sessions_per_week: 3,
@@ -164,10 +145,7 @@ const mapTarget = (
 ): GoalTargetFormData | undefined => {
   const targetType = target.target_type;
   const baseTarget = {
-    id:
-      typeof target.id === "string"
-        ? target.id
-        : `goal-${goalIndex}-target-${targetIndex}`,
+    id: typeof target.id === "string" ? target.id : `goal-${goalIndex}-target-${targetIndex}`,
   };
 
   if (targetType === "race_performance") {
@@ -260,9 +238,7 @@ export function toTrainingPlanFormDataFromStructure(input: {
   const parsedStructure = asRecord(input.structure) ?? {};
   const { formSnapshot } = resolveMetadataSnapshots(parsedStructure);
   const fallbackTargetDate = createFallbackTargetDate();
-  const goalsSource = Array.isArray(parsedStructure.goals)
-    ? parsedStructure.goals
-    : [];
+  const goalsSource = Array.isArray(parsedStructure.goals) ? parsedStructure.goals : [];
 
   const mappedGoals = goalsSource
     .map((goalValue, goalIndex): GoalFormData | undefined => {
@@ -273,9 +249,7 @@ export function toTrainingPlanFormDataFromStructure(input: {
 
       const goalTargets = Array.isArray(goal.targets)
         ? goal.targets
-            .map((target, targetIndex) =>
-              mapTarget(asRecord(target) ?? {}, goalIndex, targetIndex),
-            )
+            .map((target, targetIndex) => mapTarget(asRecord(target) ?? {}, goalIndex, targetIndex))
             .filter((target): target is GoalTargetFormData => Boolean(target))
         : [];
 
@@ -323,23 +297,18 @@ export function toTrainingPlanConfigFormDataFromStructure(input: {
   structure: unknown;
 }): TrainingPlanConfigFormData {
   const parsedStructure = asRecord(input.structure) ?? {};
-  const { metadata, creationConfigSnapshot } =
-    resolveMetadataSnapshots(parsedStructure);
+  const { metadata, creationConfigSnapshot } = resolveMetadataSnapshots(parsedStructure);
   const defaults = createDefaultConfigState();
 
-  const calibrationSnapshot = asRecord(
-    asRecord(metadata.creation_calibration)?.snapshot,
-  );
+  const calibrationSnapshot = asRecord(asRecord(metadata.creation_calibration)?.snapshot);
   const merged = {
     ...defaults,
     availabilityConfig:
-      (creationConfigSnapshot?.availability_config as
-        | CreationAvailabilityConfig
-        | undefined) ?? defaults.availabilityConfig,
+      (creationConfigSnapshot?.availability_config as CreationAvailabilityConfig | undefined) ??
+      defaults.availabilityConfig,
     recentInfluenceScore:
-      asNumber(
-        asRecord(creationConfigSnapshot?.recent_influence)?.influence_score,
-      ) ?? defaults.recentInfluenceScore,
+      asNumber(asRecord(creationConfigSnapshot?.recent_influence)?.influence_score) ??
+      defaults.recentInfluenceScore,
     recentInfluenceAction:
       (creationConfigSnapshot?.recent_influence_action as
         | TrainingPlanConfigFormData["recentInfluenceAction"]
@@ -353,8 +322,7 @@ export function toTrainingPlanConfigFormDataFromStructure(input: {
         | TrainingPlanConfigFormData["optimizationProfile"]
         | undefined) ?? defaults.optimizationProfile,
     postGoalRecoveryDays:
-      asNumber(creationConfigSnapshot?.post_goal_recovery_days) ??
-      defaults.postGoalRecoveryDays,
+      asNumber(creationConfigSnapshot?.post_goal_recovery_days) ?? defaults.postGoalRecoveryDays,
     behaviorControlsV1:
       (creationConfigSnapshot?.behavior_controls_v1 as
         | TrainingPlanConfigFormData["behaviorControlsV1"]
@@ -373,18 +341,15 @@ export function toTrainingPlanConfigFormDataFromStructure(input: {
       ? "user"
       : defaults.constraintsSource) as TrainingPlanConfigFormData["constraintsSource"],
     locks:
-      (creationConfigSnapshot?.locks as
-        | TrainingPlanConfigFormData["locks"]
-        | undefined) ?? defaults.locks,
+      (creationConfigSnapshot?.locks as TrainingPlanConfigFormData["locks"] | undefined) ??
+      defaults.locks,
   };
 
   const lockedKeys = asStringArray(metadata.user_locked_fields) ?? [];
   if (lockedKeys.length > 0) {
     merged.locks = {
       ...merged.locks,
-      ...Object.fromEntries(
-        lockedKeys.map((key) => [key, { locked: true, locked_by: "user" }]),
-      ),
+      ...Object.fromEntries(lockedKeys.map((key) => [key, { locked: true, locked_by: "user" }])),
     } as TrainingPlanConfigFormData["locks"];
   }
 

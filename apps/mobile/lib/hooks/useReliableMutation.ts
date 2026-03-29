@@ -21,13 +21,10 @@
  * Your existing code still works - just more reliable!
  */
 
-import {
-  invalidateSchedulingQueries,
-  type SchedulingRefreshScope,
-} from "@repo/trpc/client";
+import { invalidateSchedulingQueries, type SchedulingRefreshScope } from "@repo/trpc/client";
 import { useQueryClient } from "@tanstack/react-query";
-import { showErrorAlert } from "@/lib/utils/formErrors";
 import { Alert } from "react-native";
+import { showErrorAlert } from "@/lib/utils/formErrors";
 
 type InvalidationTarget =
   | {
@@ -95,9 +92,7 @@ export function useReliableMutation<T extends { useMutation: any }>(
       }
 
       if (options.refresh) {
-        refreshTasks.push(
-          invalidateSchedulingQueries(queryClient, options.refresh),
-        );
+        refreshTasks.push(invalidateSchedulingQueries(queryClient, options.refresh));
       }
 
       if (refreshTasks.length > 0) {

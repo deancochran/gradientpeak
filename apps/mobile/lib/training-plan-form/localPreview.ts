@@ -1,28 +1,28 @@
 import {
+  type AthleteTrainingSettings,
   addDaysDateOnlyUtc,
-  buildProjectionEngineInput,
   buildDeterministicProjectionPayload,
   buildPreviewReadinessSnapshot,
+  buildProjectionEngineInput,
   buildReadinessDeltaDiagnostics,
-  canonicalizeMinimalTrainingPlanCreate,
-  classifyCreationFeasibility,
-  derivePlanTimeline,
-  countAvailableTrainingDays,
-  deterministicUuidFromSeed,
-  diffDateOnlyUtcDays,
-  formatDateOnlyUtc,
-  normalizeCreationConfig,
-  resolveConstraintConflicts,
   type CreationContextSummary,
   type CreationFeasibilitySafetySummary,
   type CreationNormalizationInput,
-  type AthleteTrainingSettings,
+  canonicalizeMinimalTrainingPlanCreate,
+  classifyCreationFeasibility,
+  countAvailableTrainingDays,
+  derivePlanTimeline,
+  deterministicUuidFromSeed,
+  diffDateOnlyUtcDays,
+  formatDateOnlyUtc,
   type InferredStateSnapshot,
-  type ProfileGoal,
+  type MinimalTrainingPlanCreate,
+  normalizeCreationConfig,
   type PreviewReadinessSnapshot,
+  type ProfileGoal,
   type ProjectionChartPayload,
   type ReadinessDeltaDiagnostics,
-  type MinimalTrainingPlanCreate,
+  resolveConstraintConflicts,
 } from "@repo/core";
 
 type LocalCreationConflict = {
@@ -108,10 +108,7 @@ function allocateBlockWeeks(totalWeeks: number, blockCount: number): number[] {
   const safeWeeks = Math.max(totalWeeks, blockCount);
   const base = Math.floor(safeWeeks / blockCount);
   const remainder = safeWeeks % blockCount;
-  return Array.from(
-    { length: blockCount },
-    (_, index) => base + (index < remainder ? 1 : 0),
-  );
+  return Array.from({ length: blockCount }, (_, index) => base + (index < remainder ? 1 : 0));
 }
 
 function resolveActivityDistribution(
@@ -133,13 +130,8 @@ function resolveActivityDistribution(
     return { other: { target_percentage: 1 } };
   }
 
-  const total = Array.from(categoryCounts.values()).reduce(
-    (sum, count) => sum + count,
-    0,
-  );
-  const entries = Array.from(categoryCounts.entries()).sort((a, b) =>
-    a[0].localeCompare(b[0]),
-  );
+  const total = Array.from(categoryCounts.values()).reduce((sum, count) => sum + count, 0);
+  const entries = Array.from(categoryCounts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 
   let runningTotal = 0;
   const distribution: ExpandedProjectionPlan["activity_distribution"] = {};
@@ -160,12 +152,10 @@ export function buildExpandedPlanFromMinimalGoal(
   minimalPlan: MinimalTrainingPlanCreate,
   input?: { startingCtl?: number },
 ): ExpandedProjectionPlan {
-  const canonicalMinimalPlan =
-    canonicalizeMinimalTrainingPlanCreate(minimalPlan);
+  const canonicalMinimalPlan = canonicalizeMinimalTrainingPlanCreate(minimalPlan);
   const timeline = derivePlanTimeline({
     goals: canonicalMinimalPlan.goals,
-    plan_start_date:
-      canonicalMinimalPlan.plan_start_date ?? formatDateOnlyUtc(new Date()),
+    plan_start_date: canonicalMinimalPlan.plan_start_date ?? formatDateOnlyUtc(new Date()),
   });
 
   const goals = canonicalMinimalPlan.goals
@@ -177,8 +167,7 @@ export function buildExpandedPlanFromMinimalGoal(
     }))
     .sort((a, b) => a.target_date.localeCompare(b.target_date));
 
-  const planDurationDays =
-    diffDateOnlyUtcDays(timeline.start_date, timeline.end_date) + 1;
+  const planDurationDays = diffDateOnlyUtcDays(timeline.start_date, timeline.end_date) + 1;
   const totalWeeks = Math.max(1, Math.ceil(planDurationDays / 7));
   const phaseBlueprint =
     totalWeeks < 8
@@ -190,10 +179,7 @@ export function buildExpandedPlanFromMinimalGoal(
   const blockWeeks = allocateBlockWeeks(totalWeeks, phaseBlueprint.length);
   const startingCtl = input?.startingCtl ?? 45;
   const baselineWeeklyTss = Math.max(140, Math.round(startingCtl * 7));
-  const tssMultiplierByPhase: Record<
-    ExpandedProjectionPlan["blocks"][number]["phase"],
-    number
-  > = {
+  const tssMultiplierByPhase: Record<ExpandedProjectionPlan["blocks"][number]["phase"], number> = {
     base: 1,
     build: 1.12,
     peak: 1.05,
@@ -215,19 +201,14 @@ export function buildExpandedPlanFromMinimalGoal(
         : timeline.end_date;
 
     const goalIds = goals
-      .filter(
-        (goal) =>
-          goal.target_date >= blockStart && goal.target_date <= blockEnd,
-      )
+      .filter((goal) => goal.target_date >= blockStart && goal.target_date <= blockEnd)
       .map((goal) => goal.id);
 
     if (isLast && goalIds.length === 0 && goals.length > 0) {
       goalIds.push(goals[goals.length - 1]!.id);
     }
 
-    const targetWeeklyTss = Math.round(
-      baselineWeeklyTss * tssMultiplierByPhase[phase.phase],
-    );
+    const targetWeeklyTss = Math.round(baselineWeeklyTss * tssMultiplierByPhase[phase.phase]);
 
     blocks.push({
       id: deterministicUuidFromSeed(
@@ -257,9 +238,7 @@ export function buildExpandedPlanFromMinimalGoal(
           Math.max(
             ...blocks.map(
               (block) =>
-                (block.target_weekly_tss_range.min +
-                  block.target_weekly_tss_range.max) /
-                14,
+                (block.target_weekly_tss_range.min + block.target_weekly_tss_range.max) / 14,
             ),
           ),
         )
@@ -267,17 +246,12 @@ export function buildExpandedPlanFromMinimalGoal(
 
   return {
     plan_type: "periodized",
-    name:
-      goals.length === 1
-        ? `${goals[0]!.name} Plan`
-        : "Multi-goal Training Plan",
+    name: goals.length === 1 ? `${goals[0]!.name} Plan` : "Multi-goal Training Plan",
     start_date: timeline.start_date,
     end_date: timeline.end_date,
     fitness_progression: {
       starting_ctl: startingCtl,
-      ...(typeof peakTargetCtl === "number"
-        ? { target_ctl_at_peak: peakTargetCtl }
-        : {}),
+      ...(typeof peakTargetCtl === "number" ? { target_ctl_at_peak: peakTargetCtl } : {}),
     },
     activity_distribution: resolveActivityDistribution(goals),
     blocks,
@@ -285,9 +259,7 @@ export function buildExpandedPlanFromMinimalGoal(
   };
 }
 
-export function computeLocalCreationPreview(
-  input: LocalPreviewInput,
-): LocalPreviewResult {
+export function computeLocalCreationPreview(input: LocalPreviewInput): LocalPreviewResult {
   const finalConfig = normalizeCreationConfig({
     ...(input.profileSettings ?? {}),
     ...input.creationInput,
@@ -332,10 +304,8 @@ export function computeLocalCreationPreview(
       name: block.name,
       start_date: block.start_date,
       end_date: block.end_date,
-      target_weekly_tss_min:
-        Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max:
-        Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
+      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
+      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
     })),
     microcycles: deterministicProjection.microcycles.map((microcycle) => ({
       id: deterministicUuidFromSeed(
@@ -346,13 +316,10 @@ export function computeLocalCreationPreview(
     recovery_segments: deterministicProjection.recovery_segments,
     constraint_summary: deterministicProjection.constraint_summary,
     inferred_current_state: deterministicProjection.inferred_current_state,
-    no_history: toNoHistoryMetadataOrUndefined(
-      deterministicProjection.no_history,
-    ),
+    no_history: toNoHistoryMetadataOrUndefined(deterministicProjection.no_history),
     readiness_score: deterministicProjection.readiness_score,
     readiness_confidence: deterministicProjection.readiness_confidence,
-    readiness_rationale_codes:
-      deterministicProjection.readiness_rationale_codes,
+    readiness_rationale_codes: deterministicProjection.readiness_rationale_codes,
     capacity_envelope: deterministicProjection.capacity_envelope,
     feasibility_band: deterministicProjection.feasibility_band,
     risk_score: deterministicProjection.risk_score,
@@ -360,8 +327,7 @@ export function computeLocalCreationPreview(
     risk_flags: deterministicProjection.risk_flags,
     caps_applied: deterministicProjection.caps_applied,
     projection_diagnostics: deterministicProjection.projection_diagnostics,
-    optimization_tradeoff_summary:
-      deterministicProjection.optimization_tradeoff_summary,
+    optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary,
     goal_assessments: deterministicProjection.goal_assessments,
   };
 
@@ -375,8 +341,7 @@ export function computeLocalCreationPreview(
     ...projectionConflicts,
   ];
 
-  const projectionFeasibilityState =
-    getProjectionFeasibilityState(projectionChart);
+  const projectionFeasibilityState = getProjectionFeasibilityState(projectionChart);
   const previewSnapshotBaseline = buildPreviewReadinessSnapshot({
     projectionChart,
     projectionFeasibilityState,
@@ -421,28 +386,17 @@ function getProjectionFeasibilityState(
       continue;
     }
 
-    if (
-      !tssRamp.clamped &&
-      tssRamp.previous_week_tss > 0 &&
-      tssRamp.max_weekly_tss_ramp_pct > 0
-    ) {
+    if (!tssRamp.clamped && tssRamp.previous_week_tss > 0 && tssRamp.max_weekly_tss_ramp_pct > 0) {
       const requestedRampPct =
-        ((tssRamp.requested_weekly_tss - tssRamp.previous_week_tss) /
-          tssRamp.previous_week_tss) *
+        ((tssRamp.requested_weekly_tss - tssRamp.previous_week_tss) / tssRamp.previous_week_tss) *
         100;
-      if (
-        requestedRampPct >=
-        tssRamp.max_weekly_tss_ramp_pct * nearCapThreshold
-      ) {
+      if (requestedRampPct >= tssRamp.max_weekly_tss_ramp_pct * nearCapThreshold) {
         tssNearCapWeeks += 1;
       }
     }
 
     if (!ctlRamp.clamped && ctlRamp.max_ctl_ramp_per_week > 0) {
-      if (
-        ctlRamp.requested_ctl_ramp >=
-        ctlRamp.max_ctl_ramp_per_week * nearCapThreshold
-      ) {
+      if (ctlRamp.requested_ctl_ramp >= ctlRamp.max_ctl_ramp_per_week * nearCapThreshold) {
         ctlNearCapWeeks += 1;
       }
     }
@@ -470,14 +424,11 @@ function deriveProjectionDrivenConflicts(input: {
 }): LocalCreationConflict[] {
   const conflicts: LocalCreationConflict[] = [];
 
-  if (
-    (input.projectionChart.constraint_summary?.tss_ramp_clamp_weeks ?? 0) > 0
-  ) {
+  if ((input.projectionChart.constraint_summary?.tss_ramp_clamp_weeks ?? 0) > 0) {
     conflicts.push({
       code: "required_tss_ramp_exceeds_cap",
       severity: "blocking",
-      message:
-        "Required week-to-week TSS progression exceeds current safety guardrails",
+      message: "Required week-to-week TSS progression exceeds current safety guardrails",
       suggestions: [
         "Lower aggressiveness or spike frequency",
         "Move one or more goals farther out",
@@ -486,9 +437,7 @@ function deriveProjectionDrivenConflicts(input: {
     });
   }
 
-  if (
-    (input.projectionChart.constraint_summary?.ctl_ramp_clamp_weeks ?? 0) > 0
-  ) {
+  if ((input.projectionChart.constraint_summary?.ctl_ramp_clamp_weeks ?? 0) > 0) {
     conflicts.push({
       code: "required_ctl_ramp_exceeds_cap",
       severity: "blocking",
@@ -512,10 +461,7 @@ function deriveProjectionDrivenConflicts(input: {
       continue;
     }
 
-    const recoveryEnd = addDaysDateOnlyUtc(
-      currentGoal.target_date,
-      input.postGoalRecoveryDays,
-    );
+    const recoveryEnd = addDaysDateOnlyUtc(currentGoal.target_date, input.postGoalRecoveryDays);
     const prepDays = diffDateOnlyUtcDays(recoveryEnd, nextGoal.target_date);
 
     if (prepDays < 21) {

@@ -1,0 +1,10 @@
+[pre-start]
+install = "pnpm install --frozen-lockfile"
+
+[pre-merge]
+check-types = "pnpm check-types"
+lint = "pnpm lint"
+test = "pnpm test"
+
+[post-remove]
+clear-marker = "wt config state marker clear --branch {{ branch }} || true"

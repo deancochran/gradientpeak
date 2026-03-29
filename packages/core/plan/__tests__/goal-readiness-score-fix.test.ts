@@ -56,9 +56,7 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
       starting_tsb: 2,
     });
 
-    const goalAssessment = projection.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
+    const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
 
     expect(goalAssessment).toBeDefined();
 
@@ -124,9 +122,7 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
       starting_tsb: 2,
     });
 
-    const goalAssessment = projection.goal_assessments?.find(
-      (g) => g.goal_id === "easy-goal",
-    );
+    const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "easy-goal");
 
     const readiness = goalAssessment?.goal_readiness_score ?? 0;
 
@@ -221,12 +217,8 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
       starting_tsb: 2,
     });
 
-    const highGoal = highScenario.goal_assessments?.find(
-      (g) => g.goal_id === "goal-high",
-    );
-    const lowGoal = lowScenario.goal_assessments?.find(
-      (g) => g.goal_id === "goal-low",
-    );
+    const highGoal = highScenario.goal_assessments?.find((g) => g.goal_id === "goal-high");
+    const lowGoal = lowScenario.goal_assessments?.find((g) => g.goal_id === "goal-low");
 
     const highReadiness = highGoal?.goal_readiness_score ?? 0;
     const lowReadiness = lowGoal?.goal_readiness_score ?? 0;
@@ -294,9 +286,7 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
       starting_tsb: 2,
     });
 
-    const goalAssessment = projection.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
+    const goalAssessment = projection.goal_assessments?.find((g) => g.goal_id === "marathon-1");
 
     const readiness = goalAssessment?.goal_readiness_score ?? 0;
     const alignmentLoss = goalAssessment?.goal_alignment_loss_0_100 ?? 0;
@@ -361,12 +351,8 @@ describe("Goal Readiness Score - Determinism", () => {
     const projection1 = buildDeterministicProjectionPayload(input);
     const projection2 = buildDeterministicProjectionPayload(input);
 
-    const goal1 = projection1.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
-    const goal2 = projection2.goal_assessments?.find(
-      (g) => g.goal_id === "marathon-1",
-    );
+    const goal1 = projection1.goal_assessments?.find((g) => g.goal_id === "marathon-1");
+    const goal2 = projection2.goal_assessments?.find((g) => g.goal_id === "marathon-1");
 
     expect(goal1?.goal_readiness_score).toBe(goal2?.goal_readiness_score);
   });

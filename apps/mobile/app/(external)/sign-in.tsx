@@ -1,14 +1,22 @@
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import {
+  AuthRequestTimeoutError,
+  getAuthRequestTimeoutMessage,
+  withAuthRequestTimeout,
+} from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
@@ -69,12 +77,17 @@ export default function SignInScreen() {
         }
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
-      });
+      logMobileAction("auth.signIn", "attempt", { email: data.email });
+
+      const { error } = await withAuthRequestTimeout(
+        supabase.auth.signInWithPassword({
+          email: data.email,
+          password: data.password,
+        }),
+      );
 
       if (error) {
+        logMobileAction("auth.signIn", "failure", { email: data.email, error: error.message });
         console.log("Sign in error:", error.message);
         if (error.message?.includes("Invalid login credentials")) {
           form.setError("root", {
@@ -91,11 +104,23 @@ export default function SignInScreen() {
           });
         }
       }
+      if (!error) {
+        logMobileAction("auth.signIn", "success", { email: data.email });
+      }
       // On success, the `onAuthStateChange` listener in the auth store
       // will handle the session and trigger a redirect automatically.
     } catch (err) {
+      logMobileAction("auth.signIn", "failure", {
+        email: data.email,
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.log("Unexpected sign in error:", err);
-      form.setError("root", { message: "An unexpected error occurred" });
+      form.setError("root", {
+        message:
+          err instanceof AuthRequestTimeoutError
+            ? getAuthRequestTimeoutMessage()
+            : "An unexpected error occurred",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -166,14 +191,11 @@ export default function SignInScreen() {
 
                 {/* Root Error */}
                 {form.formState.errors.root && (
-                  <View
-                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                    testID="root-error-container"
-                  >
-                    <Text variant="small" className="text-destructive text-center">
+                  <Alert icon={AlertCircle} variant="destructive" testID="root-error-container">
+                    <AlertDescription className="text-center">
                       {form.formState.errors.root.message}
-                    </Text>
-                  </View>
+                    </AlertDescription>
+                  </Alert>
                 )}
               </View>
             </Form>

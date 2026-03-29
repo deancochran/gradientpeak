@@ -1,5 +1,5 @@
-import { countAvailableTrainingDays } from "../availabilityUtils";
 import { describe, expect, it } from "vitest";
+import { countAvailableTrainingDays } from "../availabilityUtils";
 
 describe("countAvailableTrainingDays", () => {
   it("counts unique days with windows and excludes hard-rest days", () => {

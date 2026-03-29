@@ -7,21 +7,12 @@ import type {
 
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import {
-  IcalSyncError,
-  IcalSyncService,
-} from "../lib/integrations/ical/sync-service";
+import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
 import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 
 // Input schemas using supazod types
-const providerSchema = z.enum([
-  "strava",
-  "wahoo",
-  "trainingpeaks",
-  "garmin",
-  "zwift",
-]);
+const providerSchema = z.enum(["strava", "wahoo", "trainingpeaks", "garmin", "zwift"]);
 
 const getAuthUrlInputSchema = z.object({
   provider: providerSchema,
@@ -62,65 +53,61 @@ export const integrationsRouter = createTRPCRouter({
   }),
 
   // Get OAuth authorization URL
-  getAuthUrl: protectedProcedure
-    .input(getAuthUrlInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      // Clean up any expired states for this user before creating a new one
-      await ctx.supabase
-        .from("oauth_states")
-        .delete()
-        .eq("profile_id", ctx.session.user.id)
-        .lt("expires_at", new Date().toISOString());
+  getAuthUrl: protectedProcedure.input(getAuthUrlInputSchema).mutation(async ({ ctx, input }) => {
+    // Clean up any expired states for this user before creating a new one
+    await ctx.supabase
+      .from("oauth_states")
+      .delete()
+      .eq("profile_id", ctx.session.user.id)
+      .lt("expires_at", new Date().toISOString());
 
-      // Generate secure state token
-      const state = crypto.randomUUID();
+    // Generate secure state token
+    const state = crypto.randomUUID();
 
-      // Get environment-specific callback URL
-      const callbackUrl = getCallbackUrl(input.provider);
+    // Get environment-specific callback URL
+    const callbackUrl = getCallbackUrl(input.provider);
 
-      // Store state with user ID and mobile redirect URI
-      await storeOAuthState(state, {
-        userId: ctx.session.user.id,
-        provider: input.provider,
-        mobileRedirectUri: input.redirectUri || getDefaultMobileRedirect(),
-      });
+    // Store state with user ID and mobile redirect URI
+    await storeOAuthState(state, {
+      userId: ctx.session.user.id,
+      provider: input.provider,
+      mobileRedirectUri: input.redirectUri || getDefaultMobileRedirect(),
+    });
 
-      // Build OAuth URL based on provider
-      const authUrl = buildOAuthUrl(input.provider, state, callbackUrl);
+    // Build OAuth URL based on provider
+    const authUrl = buildOAuthUrl(input.provider, state, callbackUrl);
 
-      // Debug logging
-      console.log("OAuth URL generated:", {
-        provider: input.provider,
-        state: state,
-        callbackUrl: callbackUrl,
-        authUrl: authUrl,
-      });
+    // Debug logging
+    console.log("OAuth URL generated:", {
+      provider: input.provider,
+      state: state,
+      callbackUrl: callbackUrl,
+      authUrl: authUrl,
+    });
 
-      return {
-        url: authUrl,
-        state,
-      };
-    }),
+    return {
+      url: authUrl,
+      state,
+    };
+  }),
 
   // Disconnect integration
-  disconnect: protectedProcedure
-    .input(disconnectInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { error } = await ctx.supabase
-        .from("integrations")
-        .delete()
-        .eq("profile_id", ctx.session.user.id)
-        .eq("provider", input.provider);
+  disconnect: protectedProcedure.input(disconnectInputSchema).mutation(async ({ ctx, input }) => {
+    const { error } = await ctx.supabase
+      .from("integrations")
+      .delete()
+      .eq("profile_id", ctx.session.user.id)
+      .eq("provider", input.provider);
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+    if (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    }
 
-      return { success: true };
-    }),
+    return { success: true };
+  }),
 
   // Refresh access token
   refreshToken: protectedProcedure
@@ -149,10 +136,7 @@ export const integrationsRouter = createTRPCRouter({
       }
 
       // Refresh token with provider
-      const newTokens = await refreshProviderToken(
-        input.provider,
-        integration.refresh_token,
-      );
+      const newTokens = await refreshProviderToken(input.provider, integration.refresh_token);
 
       const updateData: PublicIntegrationsUpdate = {
         access_token: newTokens.access_token,
@@ -195,10 +179,7 @@ export const integrationsRouter = createTRPCRouter({
       }
 
       // Delete expired OAuth states
-      const { error: deleteError, count } = await query.lt(
-        "expires_at",
-        new Date().toISOString(),
-      );
+      const { error: deleteError, count } = await query.lt("expires_at", new Date().toISOString());
 
       if (deleteError) {
         console.error("Failed to cleanup expired OAuth states:", deleteError);
@@ -240,10 +221,7 @@ export const integrationsRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       // Clean up expired states while we're here
-      await ctx.supabase
-        .from("oauth_states")
-        .delete()
-        .lt("expires_at", new Date().toISOString());
+      await ctx.supabase.from("oauth_states").delete().lt("expires_at", new Date().toISOString());
 
       // Retrieve the OAuth state
       const { data, error } = await ctx.supabase
@@ -456,10 +434,7 @@ export const integrationsRouter = createTRPCRouter({
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = new WahooSyncService(ctx.supabase);
-        const result = await syncService.syncEvent(
-          input.eventId,
-          ctx.session.user.id,
-        );
+        const result = await syncService.syncEvent(input.eventId, ctx.session.user.id);
 
         if (!result.success) {
           throw new TRPCError({
@@ -480,10 +455,7 @@ export const integrationsRouter = createTRPCRouter({
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = new WahooSyncService(ctx.supabase);
-        const result = await syncService.unsyncEvent(
-          input.eventId,
-          ctx.session.user.id,
-        );
+        const result = await syncService.unsyncEvent(input.eventId, ctx.session.user.id);
 
         if (!result.success) {
           throw new TRPCError({
@@ -504,10 +476,7 @@ export const integrationsRouter = createTRPCRouter({
       )
       .query(async ({ ctx, input }) => {
         const syncService = new WahooSyncService(ctx.supabase);
-        const status = await syncService.getEventSyncStatus(
-          input.eventId,
-          ctx.session.user.id,
-        );
+        const status = await syncService.getEventSyncStatus(input.eventId, ctx.session.user.id);
 
         return status;
       }),
@@ -522,14 +491,9 @@ export const integrationsRouter = createTRPCRouter({
       .mutation(async ({ ctx, input }) => {
         const syncService = new WahooSyncService(ctx.supabase);
 
-        console.log(
-          `[Wahoo Test Sync] Starting test sync for event: ${input.eventId}`,
-        );
+        console.log(`[Wahoo Test Sync] Starting test sync for event: ${input.eventId}`);
 
-        const result = await syncService.syncEvent(
-          input.eventId,
-          ctx.session.user.id,
-        );
+        const result = await syncService.syncEvent(input.eventId, ctx.session.user.id);
 
         console.log("[Wahoo Test Sync] Sync result:", result);
 
@@ -558,9 +522,7 @@ function getCallbackUrl(provider: PublicIntegrationProvider): string {
 }
 
 function getDefaultMobileRedirect(): string {
-  return (
-    process.env.NEXT_PUBLIC_MOBILE_REDIRECT_URI || "gradientpeak://integrations"
-  );
+  return process.env.NEXT_PUBLIC_MOBILE_REDIRECT_URI || "gradientpeak://integrations";
 }
 
 function buildOAuthUrl(
@@ -679,8 +641,7 @@ async function refreshProviderToken(
       clientSecret: process.env.TRAININGPEAKS_CLIENT_SECRET!,
     },
     garmin: {
-      tokenUrl:
-        "https://connectapi.garmin.com/oauth-service/oauth/access_token",
+      tokenUrl: "https://connectapi.garmin.com/oauth-service/oauth/access_token",
       clientId: process.env.GARMIN_CLIENT_ID!,
       clientSecret: process.env.GARMIN_CLIENT_SECRET!,
     },

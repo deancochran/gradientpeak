@@ -11,14 +11,10 @@ describe("Dialog native", () => {
   it("renders trigger text and dialog content", () => {
     const { getByTestId } = renderNative(
       <Dialog open>
-        <DialogTrigger testID="plan-details-trigger">
-          Open plan details
-        </DialogTrigger>
+        <DialogTrigger testID="plan-details-trigger">Open plan details</DialogTrigger>
         <DialogContent testID="plan-details-content">
           <DialogTitle testID="plan-details-title">Plan details</DialogTitle>
-          <DialogDescription>
-            Review the upcoming block before saving.
-          </DialogDescription>
+          <DialogDescription>Review the upcoming block before saving.</DialogDescription>
         </DialogContent>
       </Dialog>,
     );

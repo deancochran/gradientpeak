@@ -1,6 +1,6 @@
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
-import { trpc } from "@/lib/trpc";
 import { useCallback, useMemo } from "react";
+import { trpc } from "@/lib/trpc";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { useProfileGoals } from "./useProfileGoals";
 import { useProfileSettings } from "./useProfileSettings";
 
@@ -28,9 +28,7 @@ type TrainingPlanSnapshotData = {
   };
 };
 
-const isTrainingPlanSnapshotData = (
-  value: unknown,
-): value is TrainingPlanSnapshotData => {
+const isTrainingPlanSnapshotData = (value: unknown): value is TrainingPlanSnapshotData => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
@@ -45,9 +43,7 @@ const isTrainingPlanSnapshotData = (
 
 const toDateKey = (value: Date) => value.toISOString().split("T")[0]!;
 
-export function useTrainingPlanSnapshot(
-  options: UseTrainingPlanSnapshotOptions = {},
-) {
+export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions = {}) {
   const {
     planId,
     includeWeeklySummaries = true,
@@ -84,15 +80,12 @@ export function useTrainingPlanSnapshot(
     }
 
     const normalizedEndDate =
-      Number.isNaN(endDate.getTime()) || endDate < startDate
-        ? fallbackEndDate
-        : endDate;
+      Number.isNaN(endDate.getTime()) || endDate < startDate ? fallbackEndDate : endDate;
 
     const maxEndDate = new Date(startDate);
-    maxEndDate.setDate(startDate.getDate() + 365);
+    maxEndDate.setDate(startDate.getDate() + 364);
 
-    const cappedEndDate =
-      normalizedEndDate > maxEndDate ? maxEndDate : normalizedEndDate;
+    const cappedEndDate = normalizedEndDate > maxEndDate ? maxEndDate : normalizedEndDate;
 
     return {
       start_date: toDateKey(startDate),
@@ -144,9 +137,7 @@ export function useTrainingPlanSnapshot(
 
       const planStartDate = new Date(planSnapshot.created_at);
       return {
-        start_date: toDateKey(
-          planStartDate < ninetyDaysAgo ? planStartDate : ninetyDaysAgo,
-        ),
+        start_date: toDateKey(planStartDate < ninetyDaysAgo ? planStartDate : ninetyDaysAgo),
         end_date: toDateKey(today),
       };
     }
@@ -282,13 +273,9 @@ export function useTrainingPlanSnapshot(
 
   const refetchAll = useCallback(async () => {
     const insightRefresh = refetchInsightTimeline();
-    const idealRefresh = planSnapshot?.id
-      ? refetchIdealCurve()
-      : Promise.resolve();
+    const idealRefresh = planSnapshot?.id ? refetchIdealCurve() : Promise.resolve();
     const weeklyRefresh =
-      includeWeeklySummaries && planSnapshot?.id
-        ? refetchWeeklySummaries()
-        : Promise.resolve();
+      includeWeeklySummaries && planSnapshot?.id ? refetchWeeklySummaries() : Promise.resolve();
 
     await Promise.all([
       refetchPlan(),

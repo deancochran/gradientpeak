@@ -14,10 +14,8 @@ import { ZodError } from "zod";
  */
 const ERROR_MESSAGE_MAP: Record<string, string> = {
   // Network errors
-  "Failed to fetch":
-    "Unable to connect to the server. Please check your internet connection.",
-  "Network request failed":
-    "Network error. Please check your connection and try again.",
+  "Failed to fetch": "Unable to connect to the server. Please check your internet connection.",
+  "Network request failed": "Network error. Please check your connection and try again.",
   NetworkError: "Connection problem. Please try again.",
   ECONNABORTED: "Request timed out. Please try again.",
 
@@ -32,8 +30,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
 
   // Server errors
   INTERNAL_SERVER_ERROR: "Something went wrong on our end. Please try again.",
-  SERVICE_UNAVAILABLE:
-    "Service temporarily unavailable. Please try again later.",
+  SERVICE_UNAVAILABLE: "Service temporarily unavailable. Please try again later.",
 
   // Database errors
   CONFLICT: "This item already exists.",
@@ -60,11 +57,7 @@ export function getErrorMessage(error: unknown): string {
     }
 
     // Return original message if it's user-friendly (not too technical)
-    if (
-      error.message &&
-      error.message.length < 100 &&
-      !error.message.includes("Error:")
-    ) {
+    if (error.message && error.message.length < 100 && !error.message.includes("Error:")) {
       return error.message;
     }
   }
@@ -128,10 +121,7 @@ export function getFirstFormError(errors: FieldErrors): string | null {
 /**
  * Shows an alert with the first form validation error
  */
-export function showFormErrorAlert(
-  errors: FieldErrors,
-  title = "Please check your input",
-) {
+export function showFormErrorAlert(errors: FieldErrors, title = "Please check your input") {
   const message = getFirstFormError(errors);
   if (message) {
     Alert.alert(title, message, [{ text: "OK" }]);
@@ -142,10 +132,7 @@ export function showFormErrorAlert(
  * Handles form submission errors with smart error detection
  * Shows appropriate error messages for validation vs submission errors
  */
-export function handleFormSubmissionError(
-  error: unknown,
-  formErrors?: FieldErrors,
-) {
+export function handleFormSubmissionError(error: unknown, formErrors?: FieldErrors) {
   // If we have form validation errors, show those first
   if (formErrors && Object.keys(formErrors).length > 0) {
     showFormErrorAlert(formErrors);

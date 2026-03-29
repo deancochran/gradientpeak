@@ -1,12 +1,15 @@
+import { AlertDescription, Alert as UiAlert } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { supabase } from "@/lib/supabase/client";
 
 const resetPasswordSchema = z
@@ -49,6 +52,10 @@ export default function ResetPasswordScreen() {
 
       if (access_token && refresh_token) {
         try {
+          logMobileAction("auth.resetPasswordCallback", "attempt", {
+            hasAccessToken: true,
+            hasRefreshToken: true,
+          });
           console.log("🔑 Setting session from reset password tokens...");
           const { error } = await supabase.auth.setSession({
             access_token: access_token as string,
@@ -56,6 +63,7 @@ export default function ResetPasswordScreen() {
           });
 
           if (error) {
+            logMobileAction("auth.resetPasswordCallback", "failure", { error: error.message });
             console.error("❌ Session error:", error.message);
             Alert.alert(
               "Invalid Link",
@@ -71,8 +79,12 @@ export default function ResetPasswordScreen() {
           }
 
           console.log("✅ Session set successfully for password reset");
+          logMobileAction("auth.resetPasswordCallback", "success", {});
           setSessionSet(true);
         } catch (err) {
+          logMobileAction("auth.resetPasswordCallback", "failure", {
+            error: err instanceof Error ? err.message : String(err),
+          });
           console.error("💥 Error setting session:", err);
           Alert.alert("Error", "Something went wrong. Please try again.", [
             {
@@ -82,6 +94,11 @@ export default function ResetPasswordScreen() {
           ]);
         }
       } else {
+        logMobileAction("auth.resetPasswordCallback", "failure", {
+          hasAccessToken: !!access_token,
+          hasRefreshToken: !!refresh_token,
+          error: "missing_tokens",
+        });
         console.warn("⚠️ No tokens found in reset password callback");
         Alert.alert(
           "Invalid Link",
@@ -110,18 +127,21 @@ export default function ResetPasswordScreen() {
     setIsLoading(true);
 
     try {
+      logMobileAction("auth.updatePassword", "attempt", {});
       console.log("🔄 Updating password...");
       const { error } = await supabase.auth.updateUser({
         password: data.password,
       });
 
       if (error) {
+        logMobileAction("auth.updatePassword", "failure", { error: error.message });
         console.error("❌ Password update error:", error.message);
         form.setError("root", { message: error.message });
         return;
       }
 
       console.log("✅ Password updated successfully");
+      logMobileAction("auth.updatePassword", "success", {});
 
       // Force sign-out for security
       await supabase.auth.signOut();
@@ -132,6 +152,9 @@ export default function ResetPasswordScreen() {
         [{ text: "OK", onPress: () => router.replace("/(external)/sign-in") }],
       );
     } catch (err) {
+      logMobileAction("auth.updatePassword", "failure", {
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.error("💥 Unexpected password update error:", err);
       form.setError("root", { message: "An unexpected error occurred" });
     } finally {
@@ -208,14 +231,11 @@ export default function ResetPasswordScreen() {
 
                 {/* Root Error */}
                 {form.formState.errors.root && (
-                  <View
-                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                    testID="form-error"
-                  >
-                    <Text variant="small" className="text-destructive text-center">
+                  <UiAlert icon={AlertCircle} variant="destructive" testID="form-error">
+                    <AlertDescription className="text-center">
                       {form.formState.errors.root.message}
-                    </Text>
-                  </View>
+                    </AlertDescription>
+                  </UiAlert>
                 )}
               </View>
             </Form>

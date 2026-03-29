@@ -4,8 +4,8 @@ import { View, type ViewProps } from "react-native";
 
 import { cn } from "../../lib/cn";
 import { Icon } from "../icon/index.native";
-import { Text } from "../text/index.native";
 import { TextClassContext } from "../text/context";
+import { Text } from "../text/index.native";
 import type { AlertVariant } from "./shared";
 
 function Alert({
@@ -40,11 +40,7 @@ function Alert({
         <View className="absolute left-3.5 top-3">
           <Icon
             as={icon}
-            className={cn(
-              "size-4",
-              variant === "destructive" && "text-destructive",
-              iconClassName,
-            )}
+            className={cn("size-4", variant === "destructive" && "text-destructive", iconClassName)}
           />
         </View>
         {children}
@@ -59,10 +55,7 @@ function AlertTitle({
 }: React.ComponentProps<typeof Text> & React.RefAttributes<Text>) {
   return (
     <Text
-      className={cn(
-        "mb-1 ml-0.5 min-h-4 pl-6 font-medium leading-none tracking-tight",
-        className,
-      )}
+      className={cn("mb-1 ml-0.5 min-h-4 pl-6 font-medium leading-none tracking-tight", className)}
       {...props}
     />
   );

@@ -1,15 +1,7 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import {
-  Activity,
-  Bike,
-  Clock,
-  Dumbbell,
-  Footprints,
-  User,
-  Waves,
-} from "lucide-react-native";
+import { Activity, Bike, Clock, Dumbbell, Footprints, User, Waves } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
 interface PlanCardProps {
@@ -55,21 +47,14 @@ const ACTIVITY_CONFIGS = {
   other: { name: "Other Activity", icon: Activity, color: "text-gray-600" },
 };
 
-export function PlanCard({
-  plan,
-  onPress,
-  showOwnership = true,
-}: PlanCardProps) {
+export function PlanCard({ plan, onPress, showOwnership = true }: PlanCardProps) {
   const config =
     ACTIVITY_CONFIGS[plan.activity_category as keyof typeof ACTIVITY_CONFIGS] ||
     ACTIVITY_CONFIGS.other;
   const isUserPlan = plan.created_by && showOwnership;
 
   return (
-    <TouchableOpacity
-      onPress={() => onPress(plan.id)}
-      className="active:opacity-70"
-    >
+    <TouchableOpacity onPress={() => onPress(plan.id)} className="active:opacity-70">
       <Card>
         <CardContent className="p-4">
           <View className="flex-row items-start">
@@ -84,30 +69,21 @@ export function PlanCard({
             <View className="flex-1">
               {/* Header */}
               <View className="flex-row items-start justify-between mb-1">
-                <Text className="text-lg font-semibold flex-1 pr-2">
-                  {plan.name}
-                </Text>
+                <Text className="text-lg font-semibold flex-1 pr-2">{plan.name}</Text>
                 {isUserPlan && (
                   <View className="bg-primary/10 px-2 py-1 rounded-full flex-row items-center">
                     <Icon as={User} size={12} className="text-primary mr-1" />
-                    <Text className="text-xs text-primary font-medium">
-                      Your Plan
-                    </Text>
+                    <Text className="text-xs text-primary font-medium">Your Plan</Text>
                   </View>
                 )}
               </View>
 
               {/* Activity Type */}
-              <Text className="text-sm text-muted-foreground mb-2">
-                {config.name}
-              </Text>
+              <Text className="text-sm text-muted-foreground mb-2">{config.name}</Text>
 
               {/* Description */}
               {plan.description && (
-                <Text
-                  className="text-sm text-muted-foreground mb-2"
-                  numberOfLines={2}
-                >
+                <Text className="text-sm text-muted-foreground mb-2" numberOfLines={2}>
                   {plan.description}
                 </Text>
               )}
@@ -116,11 +92,7 @@ export function PlanCard({
               <View className="flex-row items-center gap-4">
                 {plan.estimated_duration && (
                   <View className="flex-row items-center">
-                    <Icon
-                      as={Clock}
-                      size={14}
-                      className="text-muted-foreground mr-1"
-                    />
+                    <Icon as={Clock} size={14} className="text-muted-foreground mr-1" />
                     <Text className="text-xs text-muted-foreground">
                       {plan.estimated_duration} min
                     </Text>
@@ -128,9 +100,7 @@ export function PlanCard({
                 )}
 
                 {plan.estimated_tss && (
-                  <Text className="text-xs text-muted-foreground">
-                    TSS: {plan.estimated_tss}
-                  </Text>
+                  <Text className="text-xs text-muted-foreground">TSS: {plan.estimated_tss}</Text>
                 )}
 
                 {plan.structure?.steps && (

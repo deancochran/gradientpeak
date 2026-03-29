@@ -26,10 +26,7 @@ function unfoldIcalLines(icsText: string): string[] {
   const unfolded: string[] = [];
 
   for (const line of lines) {
-    if (
-      (line.startsWith(" ") || line.startsWith("\t")) &&
-      unfolded.length > 0
-    ) {
+    if ((line.startsWith(" ") || line.startsWith("\t")) && unfolded.length > 0) {
       unfolded[unfolded.length - 1] += line.slice(1);
       continue;
     }
@@ -160,9 +157,7 @@ function toUtcIsoFromTimezone(params: {
   timezone: string;
 }): string {
   const { year, month, day, hour, minute, second, timezone } = params;
-  const utcCandidate = new Date(
-    Date.UTC(year, month - 1, day, hour, minute, second),
-  );
+  const utcCandidate = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
 
   try {
     const tzLocalText = utcCandidate.toLocaleString("en-US", {
@@ -182,8 +177,7 @@ export function parseIcalDateValue(
   fallbackTimezone = "UTC",
 ): ParsedDateValue {
   const rawValue = property.value.trim();
-  const isDateOnly =
-    property.params.VALUE?.toUpperCase() === "DATE" || /^\d{8}$/.test(rawValue);
+  const isDateOnly = property.params.VALUE?.toUpperCase() === "DATE" || /^\d{8}$/.test(rawValue);
 
   if (isDateOnly) {
     const year = Number(rawValue.slice(0, 4));
@@ -206,14 +200,7 @@ export function parseIcalDateValue(
   let iso: string;
   if (parts.isUtc) {
     iso = new Date(
-      Date.UTC(
-        parts.year,
-        parts.month - 1,
-        parts.day,
-        parts.hour,
-        parts.minute,
-        parts.second,
-      ),
+      Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second),
     ).toISOString();
   } else if (property.params.TZID) {
     iso = toUtcIsoFromTimezone({
@@ -227,14 +214,7 @@ export function parseIcalDateValue(
     });
   } else {
     iso = new Date(
-      Date.UTC(
-        parts.year,
-        parts.month - 1,
-        parts.day,
-        parts.hour,
-        parts.minute,
-        parts.second,
-      ),
+      Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second),
     ).toISOString();
   }
 
@@ -260,9 +240,7 @@ export type NormalizedIcalEvent = {
   status: "scheduled" | "cancelled";
 };
 
-export function normalizeIcalEvent(
-  event: ParsedIcalEvent,
-): NormalizedIcalEvent {
+export function normalizeIcalEvent(event: ParsedIcalEvent): NormalizedIcalEvent {
   const starts = parseIcalDateValue(event.dtstart, "UTC");
   const recurrenceDate = event.recurrenceId
     ? parseIcalDateValue(event.recurrenceId, starts.timezone)
@@ -278,9 +256,7 @@ export function normalizeIcalEvent(
   }
 
   const normalizedStatus =
-    event.status?.trim().toUpperCase() === "CANCELLED"
-      ? "cancelled"
-      : "scheduled";
+    event.status?.trim().toUpperCase() === "CANCELLED" ? "cancelled" : "scheduled";
 
   return {
     externalEventId: event.uid,

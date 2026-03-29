@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  templateApplyInputSchema,
-  templateItemTypeSchema,
-} from "../template_library";
+import { templateApplyInputSchema, templateItemTypeSchema } from "../template_library";
 
 describe("template library schemas", () => {
   it("accepts supported template item types", () => {

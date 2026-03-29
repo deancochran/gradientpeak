@@ -1,25 +1,23 @@
 import {
   buildPreviewReadinessSnapshot,
   buildReadinessDeltaDiagnostics,
-  inferredStateSnapshotSchema,
-  previewCreationConfigInputSchema,
-  type OverridePolicy,
-  type CreationFeasibilitySafetySummary,
   type CreationContextSummary,
+  type CreationFeasibilitySafetySummary,
   type InferredStateSnapshot,
+  inferredStateSnapshotSchema,
   type LoadBootstrapState,
-  type ProjectionConstraintSummary,
-  type ReadinessDeltaDiagnostics,
+  type OverridePolicy,
   type PreviewReadinessSnapshot,
+  type ProjectionConstraintSummary,
+  previewCreationConfigInputSchema,
+  type ReadinessDeltaDiagnostics,
   type TrainingPlanCreationConfig,
 } from "@repo/core";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { TrainingPlanRepository } from "../../repositories";
 
-type PreviewCreationConfigInput = z.infer<
-  typeof previewCreationConfigInputSchema
-> & {
+type PreviewCreationConfigInput = z.infer<typeof previewCreationConfigInputSchema> & {
   prior_inferred_snapshot?: InferredStateSnapshot;
 };
 
@@ -55,20 +53,13 @@ function evaluateOverrideAudit(input: {
   conflicts: CreationConflictItem[];
   overridePolicy?: OverridePolicy;
 }): { isBlocking: boolean; audit: OverrideAudit } {
-  const blockingConflicts = input.conflicts.filter(
-    (conflict) => conflict.severity === "blocking",
-  );
+  const blockingConflicts = input.conflicts.filter((conflict) => conflict.severity === "blocking");
   const overridableBlockingConflictCodes = blockingConflicts
-    .filter((conflict) =>
-      OVERRIDABLE_BLOCKING_CONFLICT_CODES.has(conflict.code),
-    )
+    .filter((conflict) => OVERRIDABLE_BLOCKING_CONFLICT_CODES.has(conflict.code))
     .map((conflict) => conflict.code);
 
-  const overrideRequested =
-    input.overridePolicy?.allow_blocking_conflicts === true;
-  const overrideEffectiveCodes = overrideRequested
-    ? overridableBlockingConflictCodes
-    : [];
+  const overrideRequested = input.overridePolicy?.allow_blocking_conflicts === true;
+  const overrideEffectiveCodes = overrideRequested ? overridableBlockingConflictCodes : [];
 
   const unresolvedBlockingConflictCodes = blockingConflicts
     .map((conflict) => conflict.code)
@@ -84,13 +75,9 @@ function evaluateOverrideAudit(input: {
   if (overrideRequested) {
     rationaleCodes.push("override_scope_objective_risk_budget");
     if (overrideEffectiveCodes.length > 0) {
-      rationaleCodes.push(
-        "override_applied_to_objective_risk_budget_conflicts",
-      );
+      rationaleCodes.push("override_applied_to_objective_risk_budget_conflicts");
     } else {
-      rationaleCodes.push(
-        "override_requested_without_overridable_blocking_conflicts",
-      );
+      rationaleCodes.push("override_requested_without_overridable_blocking_conflicts");
     }
   }
   if (unresolvedBlockingConflictCodes.length > 0) {
@@ -154,9 +141,7 @@ export async function previewCreationConfigUseCase<
     startingCtlOverride?: number;
     startingAtlOverride?: number;
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
-    contextSummary: Awaited<
-      ReturnType<TEvaluateCreationConfig>
-    >["contextSummary"];
+    contextSummary: Awaited<ReturnType<TEvaluateCreationConfig>>["contextSummary"];
   }) => {
     expandedPlan: {
       name: string;
@@ -202,9 +187,7 @@ export async function previewCreationConfigUseCase<
   };
 }) {
   input.deps.enforceCreationConfigFeatureEnabled();
-  input.deps.enforceNoAutonomousPostCreateMutation(
-    input.params.post_create_behavior,
-  );
+  input.deps.enforceNoAutonomousPostCreateMutation(input.params.post_create_behavior);
 
   const evaluation = await input.deps.evaluateCreationConfig({
     supabase: input.supabase,
@@ -224,10 +207,8 @@ export async function previewCreationConfigUseCase<
       minimalPlan: input.params.minimal_plan,
       loadBootstrapState: evaluation.loadBootstrapState,
       priorInferredSnapshot: priorInferredSnapshot ?? undefined,
-      startingCtlOverride:
-        input.params.starting_ctl_override ?? evaluation.globalCtlOverride,
-      startingAtlOverride:
-        input.params.starting_atl_override ?? evaluation.globalAtlOverride,
+      startingCtlOverride: input.params.starting_ctl_override ?? evaluation.globalCtlOverride,
+      startingAtlOverride: input.params.starting_atl_override ?? evaluation.globalAtlOverride,
       finalConfig: evaluation.finalConfig,
       contextSummary: evaluation.contextSummary,
     });
@@ -260,9 +241,7 @@ export async function previewCreationConfigUseCase<
   });
 
   let readinessDeltaDiagnostics: ReadinessDeltaDiagnostics | undefined;
-  const previousBaseline = input.params.preview_baseline as
-    | PreviewReadinessSnapshot
-    | undefined;
+  const previousBaseline = input.params.preview_baseline as PreviewReadinessSnapshot | undefined;
 
   if (previousBaseline && currentPreviewSnapshot) {
     readinessDeltaDiagnostics = buildReadinessDeltaDiagnostics({
@@ -271,10 +250,7 @@ export async function previewCreationConfigUseCase<
     });
   }
 
-  const allConflicts = [
-    ...evaluation.conflictResolution.conflicts,
-    ...projectionConflicts,
-  ];
+  const allConflicts = [...evaluation.conflictResolution.conflicts, ...projectionConflicts];
 
   const overrideEvaluation = evaluateOverrideAudit({
     conflicts: allConflicts,

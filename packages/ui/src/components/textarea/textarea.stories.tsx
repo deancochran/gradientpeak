@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
-
 import { textareaFixtures } from "./fixtures";
 import { Textarea } from "./index.web";
+import { exerciseTextareaStory } from "./interactions";
 
 const meta = {
   title: "Components/Textarea",
@@ -16,7 +16,15 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Playground: Story = {};
+export const Playground: Story = {
+  play: async ({ canvasElement }) => {
+    await exerciseTextareaStory({
+      canvasElement,
+      expectedLabel: textareaFixtures.notes.accessibilityLabel,
+      nextValue: "Strong aerobic block with smooth breathing.",
+    });
+  },
+};
 
 export const States: Story = {
   render: () => (

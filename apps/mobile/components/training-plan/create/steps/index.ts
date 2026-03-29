@@ -1,5 +1,5 @@
-export { GoalSelectionStep } from "./GoalSelectionStep";
-export { CurrentFitnessStep } from "./CurrentFitnessStep";
-export { SportMixStep } from "./SportMixStep";
 export { AvailabilityStep } from "./AvailabilityStep";
+export { CurrentFitnessStep } from "./CurrentFitnessStep";
 export { ExperienceLevelStep } from "./ExperienceLevelStep";
+export { GoalSelectionStep } from "./GoalSelectionStep";
+export { SportMixStep } from "./SportMixStep";

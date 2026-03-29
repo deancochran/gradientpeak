@@ -1,15 +1,15 @@
 # Main Test: Verify Plan Screen after Login
 appId: com.deancochran.gradientpeak.dev
-env:
-  USER_EMAIL: "test@example.com"
-  USER_PASS: "password123"
 ---
-- launchApp:
-    clearState: true
+- runFlow:
+    file: ../reusable/bootstrap.yaml
 - runFlow:
     file: ../reusable/login.yaml
     env:
-      email: "${USER_EMAIL}"
-      password: "${USER_PASS}"
-- assertVisible: "Readiness" # An element on the Plan screen
+      email: "${STANDARD_USER_EMAIL}"
+      password: "${STANDARD_USER_PASS}"
+- tapOn: "Plan"
+- extendedWaitUntil:
+    visible: "Forecasted Projection"
+    timeout: 10000
 - takeScreenshot: reports/plan_screen_after_login.png

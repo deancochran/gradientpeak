@@ -115,15 +115,10 @@ function ToggleGroupItem({
   }) {
   const context = useToggleGroupContext();
   const { value } = ToggleGroupPrimitive.useRootContext();
-  const isSelected = ToggleGroupPrimitive.utils.getIsSelected(
-    value,
-    props.value,
-  );
+  const isSelected = ToggleGroupPrimitive.utils.getIsSelected(value, props.value);
 
   return (
-    <TextClassContext.Provider
-      value={toggleNativeTextVariants({ pressed: isSelected })}
-    >
+    <TextClassContext.Provider value={toggleNativeTextVariants({ pressed: isSelected })}>
       <ToggleGroupPrimitive.Item
         className={cn(
           toggleVariants({
@@ -135,11 +130,8 @@ function ToggleGroupItem({
           "min-w-0 shrink-0 rounded-none shadow-none",
           isFirst && "rounded-l-md",
           isLast && "rounded-r-md",
-          (context.variant === "outline" || variant === "outline") &&
-            "border-l-0",
-          (context.variant === "outline" || variant === "outline") &&
-            isFirst &&
-            "border-l",
+          (context.variant === "outline" || variant === "outline") && "border-l-0",
+          (context.variant === "outline" || variant === "outline") && isFirst && "border-l",
           className,
         )}
         {...(getNativeTestProps({
@@ -159,14 +151,9 @@ function ToggleGroupItem({
   );
 }
 
-function ToggleGroupIcon({
-  className,
-  ...props
-}: React.ComponentProps<typeof Icon>) {
+function ToggleGroupIcon({ className, ...props }: React.ComponentProps<typeof Icon>) {
   const textClass = React.useContext(TextClassContext);
-  return (
-    <Icon className={cn("size-4 shrink-0", textClass, className)} {...props} />
-  );
+  return <Icon className={cn("size-4 shrink-0", textClass, className)} {...props} />;
 }
 
 export { ToggleGroup, ToggleGroupIcon, ToggleGroupItem };

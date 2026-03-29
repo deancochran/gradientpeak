@@ -110,13 +110,8 @@ export function IntensityDistributionChart({
 
   if (activeZones.length === 0) {
     return (
-      <View
-        className="bg-white rounded-lg border border-gray-200 p-4"
-        style={{ height }}
-      >
-        <Text className="text-base font-semibold text-gray-900 mb-2">
-          Intensity Distribution
-        </Text>
+      <View className="bg-white rounded-lg border border-gray-200 p-4" style={{ height }}>
+        <Text className="text-base font-semibold text-gray-900 mb-2">Intensity Distribution</Text>
         <View className="flex-1 items-center justify-center">
           <Text className="text-gray-500">No intensity data available</Text>
           <Text className="text-xs text-gray-400 mt-1 text-center">
@@ -180,9 +175,7 @@ export function IntensityDistributionChart({
 
   return (
     <View className="bg-white rounded-lg border border-gray-200 p-4">
-      <Text className="text-base font-semibold text-gray-900 mb-2">
-        Intensity Distribution
-      </Text>
+      <Text className="text-base font-semibold text-gray-900 mb-2">Intensity Distribution</Text>
       <Text className="text-xs text-gray-500 mb-4">
         Training zones based on Intensity Factor (IF)
       </Text>
@@ -193,12 +186,7 @@ export function IntensityDistributionChart({
           <Svg width={chartSize} height={chartSize}>
             <G>
               {paths.map((item, index) => (
-                <Path
-                  key={index}
-                  d={item.path}
-                  fill={item.color}
-                  opacity={0.8}
-                />
+                <Path key={index} d={item.path} fill={item.color} opacity={0.8} />
               ))}
             </G>
             {/* Center circle for cleaner look */}
@@ -242,17 +230,10 @@ export function IntensityDistributionChart({
             className="flex-row items-center justify-between py-2 px-3 rounded-lg bg-gray-50 active:bg-gray-100"
           >
             <View className="flex-row items-center flex-1">
-              <View
-                className="w-4 h-4 rounded-full mr-3"
-                style={{ backgroundColor: zone.color }}
-              />
+              <View className="w-4 h-4 rounded-full mr-3" style={{ backgroundColor: zone.color }} />
               <View className="flex-1">
-                <Text className="text-sm font-medium text-gray-900">
-                  {zone.label}
-                </Text>
-                <Text className="text-xs text-gray-500">
-                  {zone.description}
-                </Text>
+                <Text className="text-sm font-medium text-gray-900">{zone.label}</Text>
+                <Text className="text-xs text-gray-500">{zone.description}</Text>
               </View>
             </View>
             <View className="items-end">
@@ -273,9 +254,7 @@ export function IntensityDistributionChart({
 
       {/* Training insights */}
       <View className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <Text className="text-xs font-semibold text-blue-900 mb-1">
-          💡 Training Pattern
-        </Text>
+        <Text className="text-xs font-semibold text-blue-900 mb-1">💡 Training Pattern</Text>
         <Text className="text-xs text-blue-700">
           {dominantZone.percentage > 50
             ? `Primarily ${dominantZone.label.toLowerCase()} focused training`

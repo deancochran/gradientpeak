@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityPlansRouter } from "../activity_plans";
+import { activityPlansRouter } from "../activity-plans";
 
 type QueryResult = {
   data: any;

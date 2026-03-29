@@ -1,12 +1,12 @@
-import { deterministicUuidFromSeed } from "../../normalizeGoalInput";
+import {
+  type AthletePreferenceProfile,
+  defaultAthletePreferenceProfile,
+} from "../../../schemas/settings/profile_settings";
+import type { GoalTargetV2 } from "../../../schemas/training-plan-structure/domain-schemas";
 import type { BuildProjectionEngineInputShape } from "../../buildProjectionEngineInput";
 import { normalizeCreationConfig } from "../../normalizeCreationConfig";
+import { deterministicUuidFromSeed } from "../../normalizeGoalInput";
 import type { NoHistoryAnchorContext } from "../../projection/no-history";
-import type { GoalTargetV2 } from "../../../schemas/training-plan-structure/domain-schemas";
-import {
-  defaultAthletePreferenceProfile,
-  type AthletePreferenceProfile,
-} from "../../../schemas/settings/profile_settings";
 import type { AthleteScenarioFixture } from "../types";
 
 const mastersPreferenceProfile: AthletePreferenceProfile = {
@@ -38,9 +38,7 @@ function createGoal(
   targets: GoalTargetV2[],
 ) {
   return {
-    id: deterministicUuidFromSeed(
-      `verification-scenario:${scenarioId}:goal:${goalKey}`,
-    ),
+    id: deterministicUuidFromSeed(`verification-scenario:${scenarioId}:goal:${goalKey}`),
     name,
     target_date: targetDate,
     priority,
@@ -110,8 +108,7 @@ function createAvailabilityContext(
       ],
     })),
     hard_rest_days: options?.hard_rest_days,
-    max_single_session_duration_minutes:
-      options?.max_single_session_duration_minutes,
+    max_single_session_duration_minutes: options?.max_single_session_duration_minutes,
   };
 }
 
@@ -134,56 +131,21 @@ const beginnerNoHistory5kProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-03-02",
     end_date: "2026-04-26",
     blocks: [
-      createBlock(
-        "Initial consistency",
-        "base",
-        "2026-03-02",
-        "2026-03-15",
-        110,
-        150,
-      ),
-      createBlock(
-        "Controlled build",
-        "build",
-        "2026-03-16",
-        "2026-04-05",
-        140,
-        185,
-      ),
-      createBlock(
-        "5K sharpening",
-        "peak",
-        "2026-04-06",
-        "2026-04-12",
-        175,
-        220,
-      ),
+      createBlock("Initial consistency", "base", "2026-03-02", "2026-03-15", 110, 150),
+      createBlock("Controlled build", "build", "2026-03-16", "2026-04-05", 140, 185),
+      createBlock("5K sharpening", "peak", "2026-04-06", "2026-04-12", 175, 220),
       createBlock("Taper", "taper", "2026-04-13", "2026-04-19", 120, 155),
-      createBlock(
-        "Post-race recovery",
-        "recovery",
-        "2026-04-20",
-        "2026-04-26",
-        90,
-        125,
-      ),
+      createBlock("Post-race recovery", "recovery", "2026-04-20", "2026-04-26", 90, 125),
     ],
     goals: [
-      createGoal(
-        "beginner_no_history_5k",
-        "primary-5k",
-        "Spring 5K",
-        "2026-04-19",
-        1,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 5000,
-            target_time_s: 1680,
-            activity_category: "run",
-          },
-        ],
-      ),
+      createGoal("beginner_no_history_5k", "primary-5k", "Spring 5K", "2026-04-19", 1, [
+        {
+          target_type: "race_performance",
+          distance_m: 5000,
+          target_time_s: 1680,
+          activity_category: "run",
+        },
+      ]),
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 6),
@@ -220,56 +182,21 @@ const exact5kSpeedBlockProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-03-02",
     end_date: "2026-04-26",
     blocks: [
-      createBlock(
-        "Speed-support base",
-        "base",
-        "2026-03-02",
-        "2026-03-15",
-        150,
-        190,
-      ),
-      createBlock(
-        "5K power build",
-        "build",
-        "2026-03-16",
-        "2026-04-05",
-        175,
-        235,
-      ),
-      createBlock(
-        "Race sharpening",
-        "peak",
-        "2026-04-06",
-        "2026-04-12",
-        205,
-        255,
-      ),
+      createBlock("Speed-support base", "base", "2026-03-02", "2026-03-15", 150, 190),
+      createBlock("5K power build", "build", "2026-03-16", "2026-04-05", 175, 235),
+      createBlock("Race sharpening", "peak", "2026-04-06", "2026-04-12", 205, 255),
       createBlock("Taper", "taper", "2026-04-13", "2026-04-19", 145, 185),
-      createBlock(
-        "Post-race recovery",
-        "recovery",
-        "2026-04-20",
-        "2026-04-26",
-        105,
-        140,
-      ),
+      createBlock("Post-race recovery", "recovery", "2026-04-20", "2026-04-26", 105, 140),
     ],
     goals: [
-      createGoal(
-        "exact_5k_speed_block",
-        "primary-5k",
-        "Exact 5K",
-        "2026-04-26",
-        1,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 5000,
-            target_time_s: 1140,
-            activity_category: "run",
-          },
-        ],
-      ),
+      createGoal("exact_5k_speed_block", "primary-5k", "Exact 5K", "2026-04-26", 1, [
+        {
+          target_type: "race_performance",
+          distance_m: 5000,
+          target_time_s: 1140,
+          activity_category: "run",
+        },
+      ]),
     ],
   },
   normalized_creation_config: createProjectionConfig("outcome_first", 6),
@@ -308,49 +235,21 @@ const recreationalSparse10kProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-02-02",
     end_date: "2026-04-12",
     blocks: [
-      createBlock(
-        "Aerobic re-entry",
-        "base",
-        "2026-02-02",
-        "2026-02-22",
-        150,
-        190,
-      ),
-      createBlock(
-        "Sustainable build",
-        "build",
-        "2026-02-23",
-        "2026-03-22",
-        180,
-        235,
-      ),
-      createBlock(
-        "10K specific work",
-        "peak",
-        "2026-03-23",
-        "2026-03-29",
-        220,
-        260,
-      ),
+      createBlock("Aerobic re-entry", "base", "2026-02-02", "2026-02-22", 150, 190),
+      createBlock("Sustainable build", "build", "2026-02-23", "2026-03-22", 180, 235),
+      createBlock("10K specific work", "peak", "2026-03-23", "2026-03-29", 220, 260),
       createBlock("Taper", "taper", "2026-03-30", "2026-04-05", 165, 205),
       createBlock("Recovery", "recovery", "2026-04-06", "2026-04-12", 130, 165),
     ],
     goals: [
-      createGoal(
-        "recreational_sparse_10k",
-        "primary-10k",
-        "Community 10K",
-        "2026-04-05",
-        1,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 10000,
-            target_time_s: 3300,
-            activity_category: "run",
-          },
-        ],
-      ),
+      createGoal("recreational_sparse_10k", "primary-10k", "Community 10K", "2026-04-05", 1, [
+        {
+          target_type: "race_performance",
+          distance_m: 10000,
+          target_time_s: 3300,
+          activity_category: "run",
+        },
+      ]),
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 7),
@@ -388,30 +287,9 @@ const intermediateRichHalfProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-02-02",
     end_date: "2026-04-12",
     blocks: [
-      createBlock(
-        "Aerobic strength",
-        "base",
-        "2026-02-02",
-        "2026-02-22",
-        230,
-        280,
-      ),
-      createBlock(
-        "Threshold build",
-        "build",
-        "2026-02-23",
-        "2026-03-22",
-        270,
-        335,
-      ),
-      createBlock(
-        "Half-marathon peak",
-        "peak",
-        "2026-03-23",
-        "2026-03-29",
-        320,
-        365,
-      ),
+      createBlock("Aerobic strength", "base", "2026-02-02", "2026-02-22", 230, 280),
+      createBlock("Threshold build", "build", "2026-02-23", "2026-03-22", 270, 335),
+      createBlock("Half-marathon peak", "peak", "2026-03-23", "2026-03-29", 320, 365),
       createBlock("Taper", "taper", "2026-03-30", "2026-04-05", 220, 270),
       createBlock("Recovery", "recovery", "2026-04-06", "2026-04-12", 180, 225),
     ],
@@ -460,22 +338,8 @@ const advancedMarathonBuildProjection: BuildProjectionEngineInputShape = {
     end_date: "2026-03-29",
     blocks: [
       createBlock("Foundation", "base", "2026-01-05", "2026-01-25", 280, 330),
-      createBlock(
-        "Marathon build",
-        "build",
-        "2026-01-26",
-        "2026-02-22",
-        320,
-        385,
-      ),
-      createBlock(
-        "Specific peak",
-        "peak",
-        "2026-02-23",
-        "2026-03-08",
-        380,
-        435,
-      ),
+      createBlock("Marathon build", "build", "2026-01-26", "2026-02-22", 320, 385),
+      createBlock("Specific peak", "peak", "2026-02-23", "2026-03-08", 380, 435),
       createBlock("Taper", "taper", "2026-03-09", "2026-03-22", 255, 325),
       createBlock("Recovery", "recovery", "2026-03-23", "2026-03-29", 180, 230),
     ],
@@ -524,22 +388,8 @@ const boundaryFeasibleBikeProjection: BuildProjectionEngineInputShape = {
     end_date: "2026-04-12",
     blocks: [
       createBlock("Bike base", "base", "2026-01-19", "2026-02-08", 210, 270),
-      createBlock(
-        "Threshold build",
-        "build",
-        "2026-02-09",
-        "2026-03-08",
-        255,
-        330,
-      ),
-      createBlock(
-        "Climbing and specificity",
-        "peak",
-        "2026-03-09",
-        "2026-03-29",
-        300,
-        370,
-      ),
+      createBlock("Threshold build", "build", "2026-02-09", "2026-03-08", 255, 330),
+      createBlock("Climbing and specificity", "peak", "2026-03-09", "2026-03-29", 300, 370),
       createBlock("Taper", "taper", "2026-03-30", "2026-04-05", 225, 280),
       createBlock("Recovery", "recovery", "2026-04-06", "2026-04-12", 175, 225),
     ],
@@ -596,30 +446,9 @@ const lowAvailabilityHighAmbitionProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-01-12",
     end_date: "2026-04-12",
     blocks: [
-      createBlock(
-        "Available-days base",
-        "base",
-        "2026-01-12",
-        "2026-02-08",
-        180,
-        230,
-      ),
-      createBlock(
-        "Constraint-aware build",
-        "build",
-        "2026-02-09",
-        "2026-03-08",
-        220,
-        290,
-      ),
-      createBlock(
-        "Event-specific peak",
-        "peak",
-        "2026-03-09",
-        "2026-03-22",
-        250,
-        320,
-      ),
+      createBlock("Available-days base", "base", "2026-01-12", "2026-02-08", 180, 230),
+      createBlock("Constraint-aware build", "build", "2026-02-09", "2026-03-08", 220, 290),
+      createBlock("Event-specific peak", "peak", "2026-03-09", "2026-03-22", 250, 320),
       createBlock("Taper", "taper", "2026-03-23", "2026-04-05", 180, 225),
       createBlock("Recovery", "recovery", "2026-04-06", "2026-04-12", 145, 185),
     ],
@@ -678,14 +507,7 @@ const infeasibleStretchGoalProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-01-05",
     end_date: "2026-02-16",
     blocks: [
-      createBlock(
-        "Compressed build",
-        "build",
-        "2026-01-05",
-        "2026-01-25",
-        170,
-        230,
-      ),
+      createBlock("Compressed build", "build", "2026-01-05", "2026-01-25", 170, 230),
       createBlock("Forced peak", "peak", "2026-01-26", "2026-02-01", 220, 280),
       createBlock("Taper", "taper", "2026-02-02", "2026-02-08", 160, 210),
       createBlock("Recovery", "recovery", "2026-02-09", "2026-02-16", 120, 160),
@@ -743,48 +565,20 @@ const mastersConservativeProfileProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-01-05",
     end_date: "2026-02-16",
     blocks: [
-      createBlock(
-        "Conservative base",
-        "base",
-        "2026-01-05",
-        "2026-01-18",
-        135,
-        175,
-      ),
-      createBlock(
-        "Durability build",
-        "build",
-        "2026-01-19",
-        "2026-02-01",
-        155,
-        205,
-      ),
-      createBlock(
-        "Maintenance taper",
-        "taper",
-        "2026-02-02",
-        "2026-02-08",
-        130,
-        165,
-      ),
+      createBlock("Conservative base", "base", "2026-01-05", "2026-01-18", 135, 175),
+      createBlock("Durability build", "build", "2026-01-19", "2026-02-01", 155, 205),
+      createBlock("Maintenance taper", "taper", "2026-02-02", "2026-02-08", 130, 165),
       createBlock("Recovery", "recovery", "2026-02-09", "2026-02-16", 105, 140),
     ],
     goals: [
-      createGoal(
-        "masters_conservative_profile",
-        "primary-10k",
-        "Masters 10K",
-        "2026-02-08",
-        1,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 10000,
-            target_time_s: 3720,
-            activity_category: "run",
-          },
-        ],
-      ),
+      createGoal("masters_conservative_profile", "primary-10k", "Masters 10K", "2026-02-08", 1, [
+        {
+          target_type: "race_performance",
+          distance_m: 10000,
+          target_time_s: 3720,
+          activity_category: "run",
+        },
+      ]),
     ],
   },
   normalized_creation_config: createProjectionConfig("sustainable", 8),
@@ -826,64 +620,29 @@ const bRaceBeforeARaceProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-02-02",
     end_date: "2026-04-12",
     blocks: [
-      createBlock(
-        "Primary build",
-        "build",
-        "2026-02-02",
-        "2026-03-01",
-        210,
-        270,
-      ),
-      createBlock(
-        "B-race taper",
-        "taper",
-        "2026-03-02",
-        "2026-03-08",
-        170,
-        215,
-      ),
+      createBlock("Primary build", "build", "2026-02-02", "2026-03-01", 210, 270),
+      createBlock("B-race taper", "taper", "2026-03-02", "2026-03-08", 170, 215),
       createBlock("Reload", "build", "2026-03-09", "2026-03-22", 220, 285),
-      createBlock(
-        "A-race taper",
-        "taper",
-        "2026-03-23",
-        "2026-04-05",
-        165,
-        220,
-      ),
+      createBlock("A-race taper", "taper", "2026-03-23", "2026-04-05", 165, 220),
       createBlock("Recovery", "recovery", "2026-04-06", "2026-04-12", 125, 165),
     ],
     goals: [
-      createGoal(
-        "b_race_before_a_race",
-        "b-race",
-        "Tune-up 10K",
-        "2026-03-08",
-        6,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 10000,
-            target_time_s: 3120,
-            activity_category: "run",
-          },
-        ],
-      ),
-      createGoal(
-        "b_race_before_a_race",
-        "a-race",
-        "Goal Half Marathon",
-        "2026-04-05",
-        1,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 21097,
-            target_time_s: 5940,
-            activity_category: "run",
-          },
-        ],
-      ),
+      createGoal("b_race_before_a_race", "b-race", "Tune-up 10K", "2026-03-08", 6, [
+        {
+          target_type: "race_performance",
+          distance_m: 10000,
+          target_time_s: 3120,
+          activity_category: "run",
+        },
+      ]),
+      createGoal("b_race_before_a_race", "a-race", "Goal Half Marathon", "2026-04-05", 1, [
+        {
+          target_type: "race_performance",
+          distance_m: 21097,
+          target_time_s: 5940,
+          activity_category: "run",
+        },
+      ]),
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 7),
@@ -914,56 +673,28 @@ const twoCloseAGoalsProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-02-02",
     end_date: "2026-04-12",
     blocks: [
-      createBlock(
-        "Shared build",
-        "build",
-        "2026-02-02",
-        "2026-03-08",
-        240,
-        305,
-      ),
+      createBlock("Shared build", "build", "2026-02-02", "2026-03-08", 240, 305),
       createBlock("Peak carry", "peak", "2026-03-09", "2026-03-22", 285, 340),
-      createBlock(
-        "Managed taper",
-        "taper",
-        "2026-03-23",
-        "2026-04-05",
-        220,
-        270,
-      ),
+      createBlock("Managed taper", "taper", "2026-03-23", "2026-04-05", 220, 270),
       createBlock("Recovery", "recovery", "2026-04-06", "2026-04-12", 170, 210),
     ],
     goals: [
-      createGoal(
-        "two_close_a_goals",
-        "a-race-1",
-        "First A Race",
-        "2026-03-22",
-        1,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 21097,
-            target_time_s: 6000,
-            activity_category: "run",
-          },
-        ],
-      ),
-      createGoal(
-        "two_close_a_goals",
-        "a-race-2",
-        "Second A Race",
-        "2026-04-05",
-        1,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 21097,
-            target_time_s: 5940,
-            activity_category: "run",
-          },
-        ],
-      ),
+      createGoal("two_close_a_goals", "a-race-1", "First A Race", "2026-03-22", 1, [
+        {
+          target_type: "race_performance",
+          distance_m: 21097,
+          target_time_s: 6000,
+          activity_category: "run",
+        },
+      ]),
+      createGoal("two_close_a_goals", "a-race-2", "Second A Race", "2026-04-05", 1, [
+        {
+          target_type: "race_performance",
+          distance_m: 21097,
+          target_time_s: 5940,
+          activity_category: "run",
+        },
+      ]),
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 6),
@@ -994,56 +725,28 @@ const sameDayABPriorityProjection: BuildProjectionEngineInputShape = {
     start_date: "2026-03-02",
     end_date: "2026-04-26",
     blocks: [
-      createBlock(
-        "General build",
-        "build",
-        "2026-03-02",
-        "2026-03-29",
-        180,
-        235,
-      ),
-      createBlock(
-        "Priority-sensitive peak",
-        "peak",
-        "2026-03-30",
-        "2026-04-12",
-        215,
-        260,
-      ),
+      createBlock("General build", "build", "2026-03-02", "2026-03-29", 180, 235),
+      createBlock("Priority-sensitive peak", "peak", "2026-03-30", "2026-04-12", 215, 260),
       createBlock("Taper", "taper", "2026-04-13", "2026-04-19", 160, 205),
       createBlock("Recovery", "recovery", "2026-04-20", "2026-04-26", 120, 155),
     ],
     goals: [
-      createGoal(
-        "same_day_a_b_priority",
-        "a-goal",
-        "Primary 5K",
-        "2026-04-19",
-        1,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 5000,
-            target_time_s: 1320,
-            activity_category: "run",
-          },
-        ],
-      ),
-      createGoal(
-        "same_day_a_b_priority",
-        "b-goal",
-        "Secondary 10K",
-        "2026-04-19",
-        6,
-        [
-          {
-            target_type: "race_performance",
-            distance_m: 10000,
-            target_time_s: 2820,
-            activity_category: "run",
-          },
-        ],
-      ),
+      createGoal("same_day_a_b_priority", "a-goal", "Primary 5K", "2026-04-19", 1, [
+        {
+          target_type: "race_performance",
+          distance_m: 5000,
+          target_time_s: 1320,
+          activity_category: "run",
+        },
+      ]),
+      createGoal("same_day_a_b_priority", "b-goal", "Secondary 10K", "2026-04-19", 6, [
+        {
+          target_type: "race_performance",
+          distance_m: 10000,
+          target_time_s: 2820,
+          activity_category: "run",
+        },
+      ]),
     ],
   },
   normalized_creation_config: createProjectionConfig("balanced", 6),
@@ -1080,8 +783,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
   {
     id: "beginner_no_history_5k",
     title: "Beginner no-history 5K",
-    description:
-      "No recent load, three-day availability, and a conservative first 5K target.",
+    description: "No recent load, three-day availability, and a conservative first 5K target.",
     scenario_group: "baseline",
     primary_activity_category: "run",
     default_tolerance_class: "moderate",
@@ -1101,12 +803,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: beginnerNoHistory5kProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: [
-        "projection_input",
-        "goal_dates",
-        "starting_ctl",
-        "availability_context",
-      ],
+      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
       audit_fields: [],
       limitations: [],
     },
@@ -1135,12 +832,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: exact5kSpeedBlockProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: [
-        "projection_input",
-        "goal_dates",
-        "starting_ctl",
-        "availability_context",
-      ],
+      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
       audit_fields: [],
       limitations: [],
     },
@@ -1177,8 +869,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
   {
     id: "intermediate_rich_half",
     title: "Intermediate rich half",
-    description:
-      "Established runner with reliable history and a feasible half-marathon build.",
+    description: "Established runner with reliable history and a feasible half-marathon build.",
     scenario_group: "baseline",
     primary_activity_category: "run",
     default_tolerance_class: "tight",
@@ -1254,12 +945,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: boundaryFeasibleBikeProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: [
-        "projection_input",
-        "goal_dates",
-        "starting_ctl",
-        "availability_context",
-      ],
+      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
       audit_fields: [],
       limitations: [],
     },
@@ -1267,8 +953,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
   {
     id: "low_availability_high_ambition",
     title: "Low availability high ambition",
-    description:
-      "Bike-focused endurance goal constrained by only three weekly training days.",
+    description: "Bike-focused endurance goal constrained by only three weekly training days.",
     scenario_group: "constraints",
     primary_activity_category: "bike",
     default_tolerance_class: "moderate",
@@ -1289,12 +974,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: lowAvailabilityHighAmbitionProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: [
-        "projection_input",
-        "goal_dates",
-        "starting_ctl",
-        "availability_context",
-      ],
+      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
       audit_fields: [],
       limitations: [],
     },
@@ -1302,8 +982,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
   {
     id: "infeasible_stretch_goal",
     title: "Infeasible stretch goal",
-    description:
-      "No-history runner aiming for a marathon on a compressed timeline.",
+    description: "No-history runner aiming for a marathon on a compressed timeline.",
     scenario_group: "constraints",
     primary_activity_category: "run",
     default_tolerance_class: "flexible",
@@ -1323,12 +1002,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
     projection_input: infeasibleStretchGoalProjection,
     audit: {
       fixture_precision: "exact",
-      exact_fields: [
-        "projection_input",
-        "goal_dates",
-        "starting_ctl",
-        "availability_context",
-      ],
+      exact_fields: ["projection_input", "goal_dates", "starting_ctl", "availability_context"],
       audit_fields: [],
       limitations: [],
     },
@@ -1402,8 +1076,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
   {
     id: "two_close_a_goals",
     title: "Two close A goals",
-    description:
-      "Two same-priority goals close together, requiring a managed sustained peak.",
+    description: "Two same-priority goals close together, requiring a managed sustained peak.",
     scenario_group: "multi_goal",
     primary_activity_category: "run",
     default_tolerance_class: "moderate",
@@ -1430,8 +1103,7 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
   {
     id: "same_day_a_b_priority",
     title: "Same-day A/B priority",
-    description:
-      "Conflicting same-day goals that should preserve priority semantics in the taper.",
+    description: "Conflicting same-day goals that should preserve priority semantics in the taper.",
     scenario_group: "multi_goal",
     primary_activity_category: "run",
     default_tolerance_class: "moderate",
@@ -1457,12 +1129,8 @@ export const ATHLETE_SCENARIO_FIXTURES: readonly AthleteScenarioFixture[] = [
   },
 ] as const;
 
-export type AthleteScenarioFixtureId =
-  (typeof ATHLETE_SCENARIO_FIXTURES)[number]["id"];
+export type AthleteScenarioFixtureId = (typeof ATHLETE_SCENARIO_FIXTURES)[number]["id"];
 
 export const ATHLETE_SCENARIO_FIXTURES_BY_ID = Object.fromEntries(
   ATHLETE_SCENARIO_FIXTURES.map((fixture) => [fixture.id, fixture]),
-) as Record<
-  AthleteScenarioFixtureId,
-  (typeof ATHLETE_SCENARIO_FIXTURES)[number]
->;
+) as Record<AthleteScenarioFixtureId, (typeof ATHLETE_SCENARIO_FIXTURES)[number]>;

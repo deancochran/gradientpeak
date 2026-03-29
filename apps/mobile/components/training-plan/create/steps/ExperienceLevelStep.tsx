@@ -7,10 +7,10 @@ import {
 } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
-import { WizardStep } from "../WizardStep";
-import { Sprout, Activity, Trophy, ChevronDown, ChevronUp } from "lucide-react-native";
+import { Activity, ChevronDown, ChevronUp, Sprout, Trophy } from "lucide-react-native";
 import React, { useState } from "react";
-import { View, Pressable } from "react-native";
+import { Pressable, View } from "react-native";
+import { WizardStep } from "../WizardStep";
 
 interface ExperienceLevelStepProps {
   experienceLevel: "beginner" | "intermediate" | "advanced";
@@ -118,25 +118,15 @@ export function ExperienceLevelStep({
               key={level.value}
               onPress={() => onExperienceLevelChange(level.value)}
               className={`rounded-xl border p-4 active:opacity-80 ${
-                isSelected
-                  ? "bg-primary/5 border-primary"
-                  : "bg-card border-border"
+                isSelected ? "bg-primary/5 border-primary" : "bg-card border-border"
               }`}
             >
               <View className="flex-row items-start gap-3">
                 {/* Icon */}
-                <View
-                  className={`p-3 rounded-full ${
-                    isSelected ? "bg-primary" : "bg-muted"
-                  }`}
-                >
+                <View className={`p-3 rounded-full ${isSelected ? "bg-primary" : "bg-muted"}`}>
                   <IconComponent
                     size={24}
-                    className={
-                      isSelected
-                        ? "text-primary-foreground"
-                        : "text-muted-foreground"
-                    }
+                    className={isSelected ? "text-primary-foreground" : "text-muted-foreground"}
                   />
                 </View>
 
@@ -149,18 +139,14 @@ export function ExperienceLevelStep({
                   >
                     {level.label}
                   </Text>
-                  <Text className="text-sm text-muted-foreground mb-2">
-                    {level.description}
-                  </Text>
+                  <Text className="text-sm text-muted-foreground mb-2">{level.description}</Text>
 
                   {/* Bullets */}
                   <View className="gap-1">
                     {level.bullets.map((bullet, idx) => (
                       <View key={idx} className="flex-row items-start gap-2">
                         <Text className="text-primary text-xs mt-0.5">●</Text>
-                        <Text className="text-xs text-muted-foreground flex-1">
-                          {bullet}
-                        </Text>
+                        <Text className="text-xs text-muted-foreground flex-1">{bullet}</Text>
                       </View>
                     ))}
                   </View>
@@ -169,9 +155,7 @@ export function ExperienceLevelStep({
                 {/* Selection Indicator */}
                 {isSelected && (
                   <View className="bg-primary rounded-full w-6 h-6 items-center justify-center">
-                    <Text className="text-primary-foreground text-xs font-bold">
-                      ✓
-                    </Text>
+                    <Text className="text-primary-foreground text-xs font-bold">✓</Text>
                   </View>
                 )}
               </View>
@@ -189,15 +173,12 @@ export function ExperienceLevelStep({
           <CardHeader>
             <View className="flex-row items-center justify-between">
               <View className="flex-1">
-                <CardTitle className="text-base">
-                  Intensity Distribution
-                </CardTitle>
+                <CardTitle className="text-base">Intensity Distribution</CardTitle>
                 <CardDescription>
-                  {INTENSITY_PRESETS.find((p) => p.value === intensityPreset)
-                    ?.label || "Pyramidal"}{" "}
+                  {INTENSITY_PRESETS.find((p) => p.value === intensityPreset)?.label || "Pyramidal"}{" "}
                   (
-                  {INTENSITY_PRESETS.find((p) => p.value === intensityPreset)
-                    ?.description || "Default"}
+                  {INTENSITY_PRESETS.find((p) => p.value === intensityPreset)?.description ||
+                    "Default"}
                   )
                 </CardDescription>
               </View>
@@ -214,8 +195,8 @@ export function ExperienceLevelStep({
           <CardContent>
             <View className="gap-2 mb-3">
               <Text className="text-sm text-muted-foreground">
-                Choose how your training intensity will be distributed. Most
-                athletes do well with Pyramidal.
+                Choose how your training intensity will be distributed. Most athletes do well with
+                Pyramidal.
               </Text>
             </View>
 
@@ -228,9 +209,7 @@ export function ExperienceLevelStep({
                     key={preset.value}
                     onPress={() => onIntensityPresetChange(preset.value)}
                     className={`p-3 rounded-lg border ${
-                      isSelected
-                        ? "bg-primary/10 border-primary"
-                        : "bg-background border-border"
+                      isSelected ? "bg-primary/10 border-primary" : "bg-background border-border"
                     }`}
                   >
                     <View className="flex-row items-center justify-between mb-1">
@@ -241,13 +220,9 @@ export function ExperienceLevelStep({
                       >
                         {preset.label}
                       </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {preset.description}
-                      </Text>
+                      <Text className="text-xs text-muted-foreground">{preset.description}</Text>
                     </View>
-                    <Text className="text-sm text-muted-foreground">
-                      {preset.detail}
-                    </Text>
+                    <Text className="text-sm text-muted-foreground">{preset.detail}</Text>
                   </Pressable>
                 );
               })}
@@ -260,9 +235,8 @@ export function ExperienceLevelStep({
       <Card className="bg-muted/30">
         <CardContent className="p-4">
           <Text className="text-sm text-muted-foreground">
-            💡 Your experience level helps us determine appropriate training
-            volume, intensity progression, and recovery needs. You can always
-            adjust your plan later.
+            💡 Your experience level helps us determine appropriate training volume, intensity
+            progression, and recovery needs. You can always adjust your plan later.
           </Text>
         </CardContent>
       </Card>

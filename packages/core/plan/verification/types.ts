@@ -5,10 +5,7 @@ export type VerificationToleranceClass = "tight" | "moderate" | "flexible";
 
 export type VerificationFixturePrecision = "exact" | "audit-first";
 
-export type VerificationScenarioGroup =
-  | "baseline"
-  | "constraints"
-  | "multi_goal";
+export type VerificationScenarioGroup = "baseline" | "constraints" | "multi_goal";
 
 export type VerificationHeuristicMode =
   | "target_seeking"

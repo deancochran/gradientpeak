@@ -16,10 +16,7 @@ type Story = StoryObj<typeof meta>;
 export const Profile: Story = {
   render: () => (
     <Avatar className="size-14" testId={avatarFixtures.profile.testId}>
-      <AvatarImage
-        alt={avatarFixtures.profile.alt}
-        src={avatarFixtures.profile.imageSrc}
-      />
+      <AvatarImage alt={avatarFixtures.profile.alt} src={avatarFixtures.profile.imageSrc} />
       <AvatarFallback>{avatarFixtures.profile.fallback}</AvatarFallback>
     </Avatar>
   ),

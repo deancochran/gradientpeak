@@ -291,7 +291,10 @@ export default function TrainingPreferencesScreen() {
 
   if (settingsQuery.isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <View
+        className="flex-1 items-center justify-center bg-background"
+        testID="training-preferences-loading"
+      >
         <ActivityIndicator size="large" />
         <Text className="mt-3 text-sm text-muted-foreground">Loading preferences...</Text>
       </View>
@@ -299,7 +302,7 @@ export default function TrainingPreferencesScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="training-preferences-screen">
       <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
         <Card>
           <CardHeader>
@@ -354,6 +357,7 @@ export default function TrainingPreferencesScreen() {
               <Pressable
                 key={tab.key}
                 onPress={() => setActiveTab(tab.key)}
+                testID={`training-preferences-tab-${tab.key}`}
                 className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
@@ -868,6 +872,7 @@ export default function TrainingPreferencesScreen() {
               scheduleValidation.issues.length > 0 ||
               upsertMutation.isPending
             }
+            testID="training-preferences-save-button"
           >
             <Text className="text-primary-foreground">
               {upsertMutation.isPending ? "Saving..." : "Save Preferences"}

@@ -1,0 +1,278 @@
+{
+  "accordion": {
+    "settings": {
+      "testId": "settings-section"
+    }
+  },
+  "alert-dialog": {
+    "confirmDelete": {
+      "testId": "confirm-delete-dialog"
+    }
+  },
+  "avatar": {
+    "profile": {
+      "testId": "profile-avatar"
+    }
+  },
+  "avatar-stack": {
+    "team": {
+      "maxAvatarsAmount": 3
+    }
+  },
+  "badge": {
+    "featured": {
+      "testId": "featured-badge"
+    }
+  },
+  "bounded-number-input": {
+    "ftp": {
+      "id": "ftp-target",
+      "min": 100,
+      "max": 500,
+      "decimals": 0,
+      "testId": "ftp-target-input"
+    }
+  },
+  "button": {
+    "continue": {
+      "accessibilityLabel": "Continue to next step",
+      "id": "continue-button",
+      "testId": "continue-button"
+    },
+    "save": {
+      "accessibilityLabel": "Save changes",
+      "id": "save-button",
+      "testId": "settings-save"
+    }
+  },
+  "card": {
+    "profile": {
+      "accessibilityLabel": "Profile summary",
+      "role": "summary",
+      "testId": "profile-card"
+    }
+  },
+  "checkbox": {
+    "terms": {
+      "accessibilityLabel": "Accept terms",
+      "id": "accept-terms",
+      "testId": "accept-terms-checkbox"
+    }
+  },
+  "command": {
+    "search": {
+      "accessibilityLabel": "Search commands"
+    }
+  },
+  "date-input": {
+    "raceDay": {
+      "id": "race-day",
+      "testId": "race-day-input"
+    }
+  },
+  "dialog": {
+    "workoutDetails": {
+      "testId": "workout-details-dialog"
+    }
+  },
+  "duration-input": {
+    "workout": {
+      "id": "workout-duration",
+      "testId": "workout-duration-input"
+    }
+  },
+  "empty-state-card": {
+    "generic": {
+      "iconSize": 48
+    }
+  },
+  "error-state-card": {
+    "generic": {
+      "iconSize": 48,
+      "showRetryButton": true
+    }
+  },
+  "file-input": {
+    "avatar": {
+      "id": "avatar-upload",
+      "testId": "profile-photo-input"
+    }
+  },
+  "icon": {
+    "status": {
+      "testId": "status-icon",
+      "size": 18
+    }
+  },
+  "input": {
+    "email": {
+      "accessibilityLabel": "Email",
+      "id": "email-input",
+      "testId": "auth-email"
+    }
+  },
+  "integer-stepper": {
+    "weeks": {
+      "id": "microcycle-weeks",
+      "value": 6,
+      "min": 1,
+      "max": 16,
+      "step": 1,
+      "testId": "microcycle-weeks-stepper"
+    }
+  },
+  "label": {
+    "email": {
+      "testId": "email-address-label"
+    }
+  },
+  "loading-skeletons": {
+    "chart": {
+      "height": 280
+    },
+    "list": {
+      "count": 5
+    }
+  },
+  "metric-card": {
+    "fatigue": {
+      "value": 68
+    }
+  },
+  "number-slider-input": {
+    "intensity": {
+      "id": "workout-intensity-range",
+      "value": 0.75,
+      "min": 0.5,
+      "max": 1.25,
+      "step": 0.05,
+      "decimals": 2,
+      "testId": "workout-intensity-range-input"
+    }
+  },
+  "pace-input": {
+    "threshold": {
+      "id": "threshold-pace",
+      "testId": "threshold-pace-input"
+    }
+  },
+  "pace-seconds-field": {
+    "easy": {
+      "id": "easy-pace",
+      "valueSeconds": 330,
+      "testId": "easy-pace-seconds-field"
+    }
+  },
+  "percent-slider-input": {
+    "recovery": {
+      "id": "recovery-percent",
+      "value": 12,
+      "min": 0,
+      "max": 20,
+      "step": 0.25,
+      "decimals": 2,
+      "testId": "recovery-percent-input"
+    }
+  },
+  "radio-group": {
+    "sport": {
+      "id": "preferred-sport",
+      "testId": "preferred-sport-radio-group"
+    }
+  },
+  "select": {
+    "workoutType": {
+      "id": "workout-type",
+      "testId": "workout-type-select"
+    }
+  },
+  "separator": {
+    "section": {
+      "accessibilityLabel": "Section divider",
+      "id": "section-divider",
+      "testId": "section-divider"
+    }
+  },
+  "sheet": {
+    "filters": {
+      "testId": "workout-filters-sheet"
+    }
+  },
+  "slider": {
+    "effort": {
+      "accessibilityLabel": "Workout intensity",
+      "id": "workout-intensity",
+      "maximumValue": 10,
+      "minimumValue": 0,
+      "step": 0.5,
+      "testId": "workout-intensity-slider",
+      "value": 6.5
+    }
+  },
+  "switch": {
+    "notifications": {
+      "accessibilityLabel": "Email notifications",
+      "id": "email-notifications",
+      "testId": "email-notifications-switch"
+    }
+  },
+  "tabs": {
+    "settings": {
+      "rootTestId": "settings-tabs",
+      "triggers": {
+        "notes": {
+          "testId": "settings-tabs-trigger-notes"
+        },
+        "overview": {
+          "testId": "settings-tabs-trigger-overview"
+        },
+        "profile": {
+          "testId": "settings-tabs-trigger-profile"
+        },
+        "sessions": {
+          "testId": "settings-tabs-trigger-sessions"
+        }
+      },
+      "contentTestIds": {
+        "notes": "settings-tabs-content-notes",
+        "overview": "settings-tabs-content-overview",
+        "profile": "settings-tabs-content-profile",
+        "sessions": "settings-tabs-content-sessions"
+      },
+      "listTestId": "settings-tabs-list"
+    }
+  },
+  "textarea": {
+    "notes": {
+      "accessibilityLabel": "Workout notes",
+      "id": "workout-notes",
+      "testId": "workout-notes-textarea"
+    }
+  },
+  "toggle": {
+    "pin": {
+      "accessibilityLabel": "Pin workout",
+      "testId": "pin-workout-toggle"
+    }
+  },
+  "toggle-group": {
+    "viewMode": {
+      "rootTestId": "view-toggle-group",
+      "options": [
+        {
+          "testId": "view-grid"
+        },
+        {
+          "testId": "view-list"
+        }
+      ]
+    }
+  },
+  "weight-input-field": {
+    "athlete": {
+      "id": "athlete-weight",
+      "valueKg": 70,
+      "testId": "athlete-weight-field"
+    }
+  }
+}

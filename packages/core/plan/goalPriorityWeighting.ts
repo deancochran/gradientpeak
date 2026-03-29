@@ -22,9 +22,7 @@ export function getGoalPriorityWeight(
 }
 
 export function calculateGoalPriorityWeights(
-  goals: Array<
-    Pick<TrainingGoal, "id"> & Partial<Pick<TrainingGoal, "priority">>
-  >,
+  goals: Array<Pick<TrainingGoal, "id"> & Partial<Pick<TrainingGoal, "priority">>>,
 ): Record<string, number> {
   if (goals.length === 0) {
     return {};
@@ -41,14 +39,11 @@ export function calculateGoalPriorityWeights(
     return Object.fromEntries(goals.map((goal) => [goal.id, evenWeight]));
   }
 
-  return Object.fromEntries(
-    rawWeights.map((item) => [item.id, item.weight / totalWeight]),
-  );
+  return Object.fromEntries(rawWeights.map((item) => [item.id, item.weight / totalWeight]));
 }
 
 export function applyGoalPriorityWeighting<
-  TGoal extends Pick<TrainingGoal, "id"> &
-    Partial<Pick<TrainingGoal, "priority">>,
+  TGoal extends Pick<TrainingGoal, "id"> & Partial<Pick<TrainingGoal, "priority">>,
 >(goals: TGoal[]): Array<TGoal & { priority: number; weight: number }> {
   const weightByGoalId = calculateGoalPriorityWeights(goals);
   return goals.map((goal) => {

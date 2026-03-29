@@ -1,8 +1,7 @@
+import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
-
-import { Text } from "@repo/ui/components/text";
 
 export default function SignUpSuccessScreen() {
   const router = useRouter();

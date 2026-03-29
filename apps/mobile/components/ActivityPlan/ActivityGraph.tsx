@@ -2,10 +2,7 @@
 // Activity Graph Component
 // ================================
 
-import {
-  type ActivityPlanStructureV2,
-  extractActivityProfileV2,
-} from "@repo/core";
+import { type ActivityPlanStructureV2, extractActivityProfileV2 } from "@repo/core";
 import { memo } from "react";
 
 interface ActivityGraphProps {
@@ -21,10 +18,7 @@ export const ActivityGraph = memo<ActivityGraphProps>(function ActivityGraph({
   className = "h-24",
 }: ActivityGraphProps) {
   const profileData = extractActivityProfileV2(structure);
-  const totalDuration = profileData.reduce(
-    (sum, step) => sum + step.duration,
-    0,
-  );
+  const totalDuration = profileData.reduce((sum, step) => sum + step.duration, 0);
 
   return null; // TODO: Implement graph visualization
 });

@@ -1,36 +1,30 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/charts/index.ts
 
-export { IntensityDistributionChart } from "./IntensityDistributionChart";
-export { PlanVsActualChart } from "./PlanVsActualChart";
-export { FitnessProjectionChart } from "./FitnessProjectionChart";
-export { TrainingLoadChart } from "./TrainingLoadChart";
-export { WeeklyProgressChart } from "./WeeklyProgressChart";
-export { VolumeTrendsChart } from "./VolumeTrendsChart";
-export { PerformanceTrendsChart } from "./PerformanceTrendsChart";
-export { ZoneDistributionOverTimeChart } from "./ZoneDistributionOverTimeChart";
+export type { ConsistencyData } from "./ConsistencyHeatmap";
 export { ConsistencyHeatmap } from "./ConsistencyHeatmap";
-
+export type { FitnessProjectionChartProps } from "./FitnessProjectionChart";
+export { FitnessProjectionChart } from "./FitnessProjectionChart";
 // Export types for external use
 export type { IntensityDistributionChartProps } from "./IntensityDistributionChart";
-
+export { IntensityDistributionChart } from "./IntensityDistributionChart";
+export type { PerformanceDataPoint } from "./PerformanceTrendsChart";
+export { PerformanceTrendsChart } from "./PerformanceTrendsChart";
 export type {
-  PlanVsActualChartProps,
   FitnessDataPoint,
+  PlanVsActualChartProps,
 } from "./PlanVsActualChart";
-
-export type { FitnessProjectionChartProps } from "./FitnessProjectionChart";
-
+export { PlanVsActualChart } from "./PlanVsActualChart";
 export type {
   TrainingLoadChartProps,
   TrainingLoadData,
 } from "./TrainingLoadChart";
-
+export { TrainingLoadChart } from "./TrainingLoadChart";
+export type { VolumeDataPoint } from "./VolumeTrendsChart";
+export { VolumeTrendsChart } from "./VolumeTrendsChart";
 export type {
   WeeklyData,
   WeeklyProgressChartProps,
 } from "./WeeklyProgressChart";
-
-export type { VolumeDataPoint } from "./VolumeTrendsChart";
-export type { PerformanceDataPoint } from "./PerformanceTrendsChart";
+export { WeeklyProgressChart } from "./WeeklyProgressChart";
 export type { ZoneDistributionWeekData } from "./ZoneDistributionOverTimeChart";
-export type { ConsistencyData } from "./ConsistencyHeatmap";
+export { ZoneDistributionOverTimeChart } from "./ZoneDistributionOverTimeChart";

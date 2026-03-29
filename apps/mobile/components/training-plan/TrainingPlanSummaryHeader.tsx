@@ -51,27 +51,18 @@ export function TrainingPlanSummaryHeader({
       <View className="flex-1">
         <Text className={titleClassByVariant[variant]}>{title}</Text>
         {description ? (
-          <Text className={descriptionClassByVariant[variant]}>
-            {description}
-          </Text>
+          <Text className={descriptionClassByVariant[variant]}>{description}</Text>
         ) : null}
 
         {showStatusDot ? (
           <View className="flex-row items-center gap-4 mb-2">
             <View className="flex-row items-center gap-1.5">
               <View
-                className={cn(
-                  "w-2 h-2 rounded-full",
-                  isActive ? "bg-green-500" : "bg-orange-500",
-                )}
+                className={cn("w-2 h-2 rounded-full", isActive ? "bg-green-500" : "bg-orange-500")}
               />
-              <Text className="text-sm text-muted-foreground">
-                {statusLabel}
-              </Text>
+              <Text className="text-sm text-muted-foreground">{statusLabel}</Text>
             </View>
-            <Text className="text-sm text-muted-foreground">
-              Started {startedDate}
-            </Text>
+            <Text className="text-sm text-muted-foreground">Started {startedDate}</Text>
           </View>
         ) : (
           <Text className="text-xs text-muted-foreground">

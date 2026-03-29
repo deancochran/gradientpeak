@@ -1,28 +1,18 @@
+import type { Mesocycle } from "@repo/core";
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@repo/ui/components/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
-import { X } from "lucide-react-native";
+import { AlertCircle, X } from "lucide-react-native";
 import React, { useState } from "react";
-import {
-  ActivityIndicator,
-  Modal,
-  ScrollView,
-  View,
-  Pressable,
-} from "react-native";
+import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
+import { FitnessProjectionChart } from "@/components/charts";
+import { ActivityDistributionForm } from "./forms/ActivityDistributionForm";
+import { MesocycleBuilderForm } from "./forms/MesocycleBuilderForm";
 import { PeriodizationForm } from "./forms/PeriodizationForm";
 import { RecoveryRulesForm } from "./forms/RecoveryRulesForm";
 import { WeeklyTargetsForm } from "./forms/WeeklyTargetsForm";
-import { ActivityDistributionForm } from "./forms/ActivityDistributionForm";
-import { MesocycleBuilderForm } from "./forms/MesocycleBuilderForm";
-import { FitnessProjectionChart } from "@/components/charts";
-import type { Mesocycle } from "@repo/core";
 
 type PublicActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
 
@@ -70,9 +60,7 @@ export function AdvancedConfigSheet({
 }: AdvancedConfigSheetProps) {
   const [activeTab, setActiveTab] = useState("targets");
   const [formData, setFormData] = useState<AdvancedConfigData>(initialData);
-  const [validationErrors, setValidationErrors] = useState<
-    Record<string, string>
-  >({});
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   // Reset form when modal opens
   React.useEffect(() => {
@@ -99,34 +87,20 @@ export function AdvancedConfigSheet({
     if (formData.target_weekly_tss_max < formData.target_weekly_tss_min) {
       errors.tss_max = "Max TSS must be greater than or equal to Min TSS";
     }
-    if (
-      formData.target_activities_per_week < 1 ||
-      formData.target_activities_per_week > 14
-    ) {
-      errors.activities_per_week =
-        "Activities per week must be between 1 and 14";
+    if (formData.target_activities_per_week < 1 || formData.target_activities_per_week > 14) {
+      errors.activities_per_week = "Activities per week must be between 1 and 14";
     }
 
     // Recovery Rules validation
-    if (
-      formData.max_consecutive_days < 1 ||
-      formData.max_consecutive_days > 7
-    ) {
-      errors.max_consecutive_days =
-        "Max consecutive days must be between 1 and 7";
+    if (formData.max_consecutive_days < 1 || formData.max_consecutive_days > 7) {
+      errors.max_consecutive_days = "Max consecutive days must be between 1 and 7";
     }
-    if (
-      formData.min_rest_days_per_week < 0 ||
-      formData.min_rest_days_per_week > 7
-    ) {
+    if (formData.min_rest_days_per_week < 0 || formData.min_rest_days_per_week > 7) {
       errors.min_rest_days = "Min rest days must be between 0 and 7";
     }
 
     // Cross-field validation
-    if (
-      formData.target_activities_per_week + formData.min_rest_days_per_week >
-      7
-    ) {
+    if (formData.target_activities_per_week + formData.min_rest_days_per_week > 7) {
       errors.schedule = "Activities per week plus rest days cannot exceed 7";
     }
 
@@ -149,10 +123,7 @@ export function AdvancedConfigSheet({
 
     // Activity distribution validation (if multi-sport)
     if (formData.activity_type_distribution) {
-      const sum = Object.values(formData.activity_type_distribution).reduce(
-        (a, b) => a + b,
-        0,
-      );
+      const sum = Object.values(formData.activity_type_distribution).reduce((a, b) => a + b, 0);
       if (Math.abs(sum - 1.0) > 0.01) {
         errors.activity_distribution = `Activity percentages must sum to 100% (currently ${Math.round(sum * 100)}%)`;
       }
@@ -180,9 +151,7 @@ export function AdvancedConfigSheet({
       <View className="flex-1 bg-background">
         {/* Header */}
         <View className="flex-row items-center justify-between p-4 border-b border-border">
-          <Text className="text-xl font-bold">
-            Advanced Training Configuration
-          </Text>
+          <Text className="text-xl font-bold">Advanced Training Configuration</Text>
           <Pressable onPress={onClose} className="p-2">
             <Icon as={X} size={24} className="text-foreground" />
           </Pressable>
@@ -197,16 +166,10 @@ export function AdvancedConfigSheet({
                 currentCTL={currentCTL}
                 targetCTL={formData.periodization_template.target_ctl}
                 targetDate={formData.periodization_template.target_date}
-                weeklyTSSAvg={
-                  (formData.target_weekly_tss_min +
-                    formData.target_weekly_tss_max) /
-                  2
-                }
+                weeklyTSSAvg={(formData.target_weekly_tss_min + formData.target_weekly_tss_max) / 2}
                 mesocycles={formData.periodization_template.mesocycles}
                 rampRate={formData.periodization_template.ramp_rate}
-                recoveryWeekFrequency={
-                  formData.periodization_template.recovery_week_frequency || 3
-                }
+                recoveryWeekFrequency={formData.periodization_template.recovery_week_frequency || 3}
                 recoveryWeekReduction={
                   formData.periodization_template.recovery_week_reduction || 0.5
                 }
@@ -246,8 +209,7 @@ export function AdvancedConfigSheet({
                 data={{
                   target_weekly_tss_min: formData.target_weekly_tss_min,
                   target_weekly_tss_max: formData.target_weekly_tss_max,
-                  target_activities_per_week:
-                    formData.target_activities_per_week,
+                  target_activities_per_week: formData.target_activities_per_week,
                 }}
                 onChange={(updates) => updateFormData(updates)}
                 errors={validationErrors}
@@ -260,8 +222,7 @@ export function AdvancedConfigSheet({
                 data={{
                   max_consecutive_days: formData.max_consecutive_days,
                   min_rest_days_per_week: formData.min_rest_days_per_week,
-                  target_activities_per_week:
-                    formData.target_activities_per_week,
+                  target_activities_per_week: formData.target_activities_per_week,
                 }}
                 onChange={(updates) => updateFormData(updates)}
                 errors={validationErrors}
@@ -308,8 +269,7 @@ export function AdvancedConfigSheet({
                     ? {
                         starting_ctl: currentCTL,
                         target_ctl: formData.periodization_template.target_ctl,
-                        target_date:
-                          formData.periodization_template.target_date,
+                        target_date: formData.periodization_template.target_date,
                       }
                     : undefined
                 }
@@ -323,29 +283,22 @@ export function AdvancedConfigSheet({
         <View className="p-4 border-t border-border gap-3">
           {/* Global validation error */}
           {validationErrors.schedule && (
-            <View className="bg-destructive/10 border border-destructive rounded-lg p-3">
-              <Text className="text-destructive text-sm font-medium">
+            <Alert icon={AlertCircle} variant="destructive">
+              <AlertDescription className="font-medium">
                 {validationErrors.schedule}
-              </Text>
-            </View>
+              </AlertDescription>
+            </Alert>
           )}
 
           <View className="flex-row gap-3">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onPress={onClose}
-              disabled={isSaving}
-            >
+            <Button variant="outline" className="flex-1" onPress={onClose} disabled={isSaving}>
               <Text className="text-foreground">Cancel</Text>
             </Button>
             <Button className="flex-1" onPress={handleSave} disabled={isSaving}>
               {isSaving ? (
                 <ActivityIndicator size="small" color="white" />
               ) : (
-                <Text className="text-primary-foreground font-semibold">
-                  Save Changes
-                </Text>
+                <Text className="text-primary-foreground font-semibold">Save Changes</Text>
               )}
             </Button>
           </View>

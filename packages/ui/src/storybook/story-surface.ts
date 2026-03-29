@@ -43,6 +43,7 @@ export const WEB_STORY_COMPONENTS = [
   "textarea",
   "toggle",
   "toggle-group",
+  "training-preferences-summary-card",
   "tooltip",
   "weight-input-field",
 ] as const;
@@ -88,6 +89,7 @@ export const NATIVE_STORY_COMPONENTS = [
   "radio-group",
   "select",
   "separator",
+  "settings-group",
   "skeleton",
   "slider",
   "switch",
@@ -97,5 +99,6 @@ export const NATIVE_STORY_COMPONENTS = [
   "toggle",
   "toggle-group",
   "tooltip",
+  "training-preferences-summary-card",
   "weight-input-field",
 ] as const;

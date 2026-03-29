@@ -105,7 +105,7 @@ function ActivitiesScreen() {
 
   if (isLoading && page === 0) {
     return (
-      <ScrollView className="flex-1 bg-background">
+      <ScrollView className="flex-1 bg-background" testID="activities-list-loading">
         <View className="p-4">
           <ListSkeleton count={8} />
         </View>
@@ -114,7 +114,7 @@ function ActivitiesScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="activities-list-screen">
       {/* Filter Chips */}
       <View className="bg-card border-b border-border">
         <ScrollView
@@ -126,6 +126,7 @@ function ActivitiesScreen() {
             <TouchableOpacity
               key={type.value}
               onPress={() => handleTypeChange(type.value)}
+              testID={`activities-filter-${type.value}`}
               className={`px-4 py-2 rounded-full border ${
                 selectedType === type.value
                   ? "bg-primary border-primary"
@@ -155,6 +156,7 @@ function ActivitiesScreen() {
 
       {/* Activity List */}
       <ScrollView
+        testID="activities-list-content"
         className="flex-1"
         contentContainerClassName="p-4 gap-3"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
@@ -169,7 +171,10 @@ function ActivitiesScreen() {
         scrollEventThrottle={400}
       >
         {activities.length === 0 ? (
-          <View className="flex-1 items-center justify-center py-12">
+          <View
+            className="flex-1 items-center justify-center py-12"
+            testID="activities-list-empty-state"
+          >
             <EmptyStateCard
               icon={Activity}
               title="No Activities Found"
@@ -187,6 +192,7 @@ function ActivitiesScreen() {
                 key={activity.id}
                 onPress={() => handleActivityPress(activity.id)}
                 activeOpacity={0.7}
+                testID={`activities-list-item-${activity.id}`}
               >
                 <Card>
                   <CardContent className="p-4">
@@ -248,15 +254,14 @@ function ActivitiesScreen() {
                           {formatDuration(activity.duration_seconds)}
                         </Text>
                       </View>
-                      {activity.training_stress_score !== null &&
-                        activity.training_stress_score !== undefined && (
-                          <View>
-                            <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
-                            <Text className="text-sm font-semibold text-primary">
-                              {Math.round(activity.training_stress_score)}
-                            </Text>
-                          </View>
-                        )}
+                      {activity.derived?.tss !== null && activity.derived?.tss !== undefined && (
+                        <View>
+                          <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
+                          <Text className="text-sm font-semibold text-primary">
+                            {Math.round(activity.derived.tss)}
+                          </Text>
+                        </View>
+                      )}
                       {activity.avg_power && (
                         <View>
                           <Text className="text-xs text-muted-foreground uppercase">Avg Power</Text>

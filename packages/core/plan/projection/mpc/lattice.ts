@@ -16,9 +16,7 @@ const DEFAULT_PRECISION = 1;
 /**
  * Returns deterministic MPC solve bounds for an optimization profile.
  */
-export function getMpcProfileBounds(
-  profile: OptimizationProfile,
-): MpcProfileBounds {
+export function getMpcProfileBounds(profile: OptimizationProfile): MpcProfileBounds {
   return MPC_PROFILE_BOUNDS[profile];
 }
 
@@ -37,16 +35,12 @@ export function buildDeterministicCandidateLattice(
   input: DeterministicCandidateLatticeInput,
 ): number[] {
   const finiteMin = Number.isFinite(input.min_value) ? input.min_value : 0;
-  const finiteMax = Number.isFinite(input.max_value)
-    ? input.max_value
-    : finiteMin;
+  const finiteMax = Number.isFinite(input.max_value) ? input.max_value : finiteMin;
   const finiteCenter = Number.isFinite(input.center_value)
     ? input.center_value
     : (finiteMin + finiteMax) / 2;
   const precision =
-    input.precision === undefined
-      ? DEFAULT_PRECISION
-      : Math.max(0, Math.floor(input.precision));
+    input.precision === undefined ? DEFAULT_PRECISION : Math.max(0, Math.floor(input.precision));
 
   const lower = Math.min(finiteMin, finiteMax);
   const upper = Math.max(finiteMin, finiteMax);
@@ -83,9 +77,9 @@ export function buildDeterministicCandidateLattice(
 
   lattice[nearestIndex] = roundedCenter;
 
-  return [
-    ...new Set(lattice.filter((candidate) => Number.isFinite(candidate))),
-  ].sort((a, b) => a - b);
+  return [...new Set(lattice.filter((candidate) => Number.isFinite(candidate)))].sort(
+    (a, b) => a - b,
+  );
 }
 
 export interface ProfileBoundedCandidateLatticeInput {
@@ -104,12 +98,8 @@ export function buildProfileBoundedCandidateLattice(
   input: ProfileBoundedCandidateLatticeInput,
 ): number[] {
   const profileBounds = getMpcProfileBounds(input.optimization_profile);
-  const requested =
-    input.requested_candidate_count ?? profileBounds.candidate_count;
-  const boundedCount = Math.max(
-    1,
-    Math.min(profileBounds.candidate_count, Math.floor(requested)),
-  );
+  const requested = input.requested_candidate_count ?? profileBounds.candidate_count;
+  const boundedCount = Math.max(1, Math.min(profileBounds.candidate_count, Math.floor(requested)));
 
   return buildDeterministicCandidateLattice({
     min_value: input.min_value,
@@ -125,10 +115,6 @@ function roundToPrecision(value: number, precision: number): number {
   return Math.round(value * scale) / scale;
 }
 
-function clampNumber(
-  value: number,
-  minValue: number,
-  maxValue: number,
-): number {
+function clampNumber(value: number, minValue: number, maxValue: number): number {
   return Math.max(minValue, Math.min(maxValue, value));
 }

@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 /**
@@ -23,7 +24,6 @@ export interface FeedActivity {
   max_heart_rate: number | null;
   avg_power: number | null;
   avg_cadence: number | null;
-  training_stress_score: number | null;
   elevation_gain_meters: number | null;
   calories: number | null;
   polyline: string | null;
@@ -41,6 +41,11 @@ export interface FeedActivity {
 
   // User's like status for this activity
   has_liked: boolean;
+  derived?: {
+    tss: number | null;
+    intensity_factor: number | null;
+    computed_as_of: string;
+  } | null;
 }
 
 const feedItemSchema = z.object({
@@ -58,41 +63,35 @@ export const feedRouter = createTRPCRouter({
    *
    * Sorted by started_at DESC (newest first)
    */
-  getFeed: protectedProcedure
-    .input(feedItemSchema)
-    .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const limit = input.limit ?? 20;
-      const cursor = input.cursor;
+  getFeed: protectedProcedure.input(feedItemSchema).query(async ({ ctx, input }) => {
+    const userId = ctx.session.user.id;
+    const limit = input.limit ?? 20;
+    const cursor = input.cursor;
 
-      try {
-        // First, get IDs of users the current user follows
-        const { data: followingData, error: followingError } = await (
-          ctx.supabase as any
-        )
-          .from("follows")
-          .select("following_id")
-          .eq("follower_id", userId)
-          .eq("status", "accepted");
+    try {
+      // First, get IDs of users the current user follows
+      const { data: followingData, error: followingError } = await (ctx.supabase as any)
+        .from("follows")
+        .select("following_id")
+        .eq("follower_id", userId)
+        .eq("status", "accepted");
 
-        if (followingError) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: followingError.message,
-          });
-        }
+      if (followingError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: followingError.message,
+        });
+      }
 
-        // Get the IDs of followed users + own ID
-        const followedUserIds = (followingData || []).map(
-          (f: any) => f.following_id,
-        );
-        const allRelevantUserIds = [...followedUserIds, userId];
+      // Get the IDs of followed users + own ID
+      const followedUserIds = (followingData || []).map((f: any) => f.following_id);
+      const allRelevantUserIds = [...followedUserIds, userId];
 
-        // Build the query for activities
-        let query = (ctx.supabase as any)
-          .from("activities")
-          .select(
-            `
+      // Build the query for activities
+      let query = (ctx.supabase as any)
+        .from("activities")
+        .select(
+          `
             id,
             profile_id,
             name,
@@ -106,12 +105,10 @@ export const feedRouter = createTRPCRouter({
             max_heart_rate,
             avg_power,
             avg_cadence,
-            training_stress_score,
             elevation_gain_meters,
             calories,
             polyline,
             likes_count,
-            comments_count,
             is_private,
             created_at,
             profile:profiles!activities_profile_id_fkey(
@@ -120,100 +117,121 @@ export const feedRouter = createTRPCRouter({
               avatar_url
             )
           `,
-          )
-          .in("profile_id", allRelevantUserIds)
-          .eq("is_private", false)
-          .order("started_at", { ascending: false })
-          .limit(limit + 1); // Fetch one extra to determine if there are more
+        )
+        .in("profile_id", allRelevantUserIds)
+        .eq("is_private", false)
+        .order("started_at", { ascending: false })
+        .limit(limit + 1); // Fetch one extra to determine if there are more
 
-        // Apply cursor if provided
-        if (cursor) {
-          const cursorDate = new Date(cursor);
-          query = query.lt("started_at", cursorDate.toISOString());
-        }
+      // Apply cursor if provided
+      if (cursor) {
+        const cursorDate = new Date(cursor);
+        query = query.lt("started_at", cursorDate.toISOString());
+      }
 
-        const { data: activities, error: activitiesError } = await query;
+      const { data: activities, error: activitiesError } = await query;
 
-        if (activitiesError) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: activitiesError.message,
-          });
-        }
-
-        // Get user's likes for these activities
-        const activityIds = (activities || []).map((a: any) => a.id);
-        let userLikes: string[] = [];
-
-        if (activityIds.length > 0) {
-          const { data: likesData } = await (ctx.supabase as any)
-            .from("likes")
-            .select("entity_id")
-            .eq("profile_id", userId)
-            .eq("entity_type", "activity")
-            .in("entity_id", activityIds);
-
-          userLikes = (likesData || []).map((l: any) => l.entity_id);
-        }
-
-        // Transform the data
-        let feedItems: FeedActivity[] = (activities || []).map((a: any) => ({
-          id: a.id,
-          profile_id: a.profile_id,
-          name: a.name,
-          type: a.type,
-          started_at: a.started_at,
-          finished_at: a.finished_at,
-          distance_meters: a.distance_meters,
-          duration_seconds: a.duration_seconds,
-          moving_seconds: a.moving_seconds,
-          avg_heart_rate: a.avg_heart_rate,
-          max_heart_rate: a.max_heart_rate,
-          avg_power: a.avg_power,
-          avg_cadence: a.avg_cadence,
-          training_stress_score: a.training_stress_score,
-          elevation_gain_meters: a.elevation_gain_meters,
-          calories: a.calories,
-          polyline: a.polyline,
-          likes_count: a.likes_count || 0,
-          comments_count: a.comments_count || 0,
-          is_private: a.is_private,
-          created_at: a.created_at,
-          profile: a.profile
-            ? {
-                id: a.profile.id,
-                username: a.profile.username,
-                avatar_url: a.profile.avatar_url,
-              }
-            : undefined,
-          has_liked: userLikes.includes(a.id),
-        }));
-
-        // Determine if there are more items
-        let nextCursor: string | null = null;
-        if (feedItems.length > limit) {
-          const nextItem = feedItems[limit - 1];
-          if (nextItem) {
-            nextCursor = nextItem.started_at;
-          }
-          feedItems = feedItems.slice(0, limit);
-        }
-
-        return {
-          items: feedItems,
-          nextCursor,
-          hasMore: nextCursor !== null,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
+      if (activitiesError) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch feed",
+          message: activitiesError.message,
         });
       }
-    }),
+
+      // Get user's likes for these activities
+      const activityIds = (activities || []).map((a: any) => a.id);
+      let userLikes: string[] = [];
+
+      if (activityIds.length > 0) {
+        const { data: likesData } = await (ctx.supabase as any)
+          .from("likes")
+          .select("entity_id")
+          .eq("profile_id", userId)
+          .eq("entity_type", "activity")
+          .in("entity_id", activityIds);
+
+        userLikes = (likesData || []).map((l: any) => l.entity_id);
+      }
+
+      const commentCounts = new Map<string, number>();
+
+      if (activityIds.length > 0) {
+        const { data: commentRows } = await (ctx.supabase as any)
+          .from("comments")
+          .select("entity_id")
+          .eq("entity_type", "activity")
+          .in("entity_id", activityIds);
+
+        for (const comment of commentRows || []) {
+          if (!comment.entity_id) continue;
+          commentCounts.set(comment.entity_id, (commentCounts.get(comment.entity_id) ?? 0) + 1);
+        }
+      }
+
+      const derivedMap = await buildActivityDerivedSummaryMap({
+        supabase: ctx.supabase,
+        profileId: userId,
+        activities: (activities || []) as any,
+      });
+
+      // Transform the data
+      let feedItems: FeedActivity[] = (activities || []).map((a: any) => ({
+        id: a.id,
+        profile_id: a.profile_id,
+        name: a.name,
+        type: a.type,
+        started_at: a.started_at,
+        finished_at: a.finished_at,
+        distance_meters: a.distance_meters,
+        duration_seconds: a.duration_seconds,
+        moving_seconds: a.moving_seconds,
+        avg_heart_rate: a.avg_heart_rate,
+        max_heart_rate: a.max_heart_rate,
+        avg_power: a.avg_power,
+        avg_cadence: a.avg_cadence,
+        elevation_gain_meters: a.elevation_gain_meters,
+        calories: a.calories,
+        polyline: a.polyline,
+        likes_count: a.likes_count || 0,
+        comments_count: commentCounts.get(a.id) ?? 0,
+        is_private: a.is_private,
+        created_at: a.created_at,
+        profile: a.profile
+          ? {
+              id: a.profile.id,
+              username: a.profile.username,
+              avatar_url: a.profile.avatar_url,
+            }
+          : undefined,
+        has_liked: userLikes.includes(a.id),
+        derived: derivedMap.get(a.id) ?? null,
+      }));
+
+      // Determine if there are more items
+      let nextCursor: string | null = null;
+      if (feedItems.length > limit) {
+        const nextItem = feedItems[limit - 1];
+        if (nextItem) {
+          nextCursor = nextItem.started_at;
+        }
+        feedItems = feedItems.slice(0, limit);
+      }
+
+      return {
+        items: feedItems,
+        nextCursor,
+        hasMore: nextCursor !== null,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to fetch feed",
+      });
+    }
+  }),
 
   /**
    * getActivity - Get a single activity for the feed detail view
@@ -230,9 +248,7 @@ export const feedRouter = createTRPCRouter({
 
       try {
         // First, get the activity to check authorization
-        const { data: activity, error: activityError } = await (
-          ctx.supabase as any
-        )
+        const { data: activity, error: activityError } = await (ctx.supabase as any)
           .from("activities")
           .select("profile_id, is_private")
           .eq("id", input.activityId)
@@ -289,8 +305,6 @@ export const feedRouter = createTRPCRouter({
             max_power,
             avg_cadence,
             max_cadence,
-            training_stress_score,
-            intensity_factor,
             normalized_power,
             elevation_gain_meters,
             elevation_loss_meters,
@@ -298,7 +312,6 @@ export const feedRouter = createTRPCRouter({
             polyline,
             map_bounds,
             likes_count,
-            comments_count,
             is_private,
             created_at,
             profile:profiles!activities_profile_id_fkey(
@@ -349,6 +362,7 @@ export const feedRouter = createTRPCRouter({
         return {
           ...fullActivity,
           has_liked: !!likeData,
+          comments_count: commentsData?.length ?? 0,
           comments: (commentsData || []).map((c: any) => ({
             id: c.id,
             content: c.content,

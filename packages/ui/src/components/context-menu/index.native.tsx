@@ -1,17 +1,12 @@
 import * as ContextMenuPrimitive from "@rn-primitives/context-menu";
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-} from "lucide-react-native";
+import { Check, ChevronDown, ChevronRight, ChevronUp } from "lucide-react-native";
 import * as React from "react";
 import {
   Platform,
+  type StyleProp,
   StyleSheet,
   Text,
   type TextProps,
-  type StyleProp,
   View,
   type ViewStyle,
 } from "react-native";
@@ -43,8 +38,7 @@ function ContextMenuSubTrigger({
     inset?: boolean;
   }) {
   const { open } = ContextMenuPrimitive.useSubContext();
-  const icon =
-    Platform.OS === "web" ? ChevronRight : open ? ChevronUp : ChevronDown;
+  const icon = Platform.OS === "web" ? ChevronRight : open ? ChevronUp : ChevronDown;
 
   return (
     <TextClassContext.Provider
@@ -66,13 +60,7 @@ function ContextMenuSubTrigger({
         {...props}
       >
         <>{children}</>
-        <Icon
-          as={icon}
-          className={cn(
-            "text-foreground ml-auto size-4 shrink-0",
-            iconClassName,
-          )}
-        />
+        <Icon as={icon} className={cn("text-foreground ml-auto size-4 shrink-0", iconClassName)} />
       </ContextMenuPrimitive.SubTrigger>
     </TextClassContext.Provider>
   );
@@ -81,8 +69,7 @@ function ContextMenuSubTrigger({
 function ContextMenuSubContent({
   className,
   ...props
-}: ContextMenuPrimitive.SubContentProps &
-  React.RefAttributes<ContextMenuPrimitive.SubContentRef>) {
+}: ContextMenuPrimitive.SubContentProps & React.RefAttributes<ContextMenuPrimitive.SubContentRef>) {
   return (
     <NativeOnlyAnimatedView entering={FadeIn}>
       <ContextMenuPrimitive.SubContent
@@ -99,8 +86,7 @@ function ContextMenuSubContent({
   );
 }
 
-const FullWindowOverlay =
-  Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
+const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
 
 function ContextMenuContent({
   className,
@@ -119,10 +105,7 @@ function ContextMenuContent({
       ? StyleSheet.absoluteFill
       : StyleSheet.flatten([
           StyleSheet.absoluteFill,
-          overlayStyle as Exclude<
-            StyleProp<ViewStyle>,
-            null | undefined | false
-          >,
+          overlayStyle as Exclude<StyleProp<ViewStyle>, null | undefined | false>,
         ]);
   const resolvedWebOverlayStyle =
     overlayStyle == null || overlayStyle === false ? undefined : overlayStyle;
@@ -131,11 +114,7 @@ function ContextMenuContent({
     <ContextMenuPrimitive.Portal hostName={portalHost}>
       <FullWindowOverlay>
         <ContextMenuPrimitive.Overlay
-          style={
-            Platform.OS === "web"
-              ? resolvedWebOverlayStyle
-              : resolvedNativeOverlayStyle
-          }
+          style={Platform.OS === "web" ? resolvedWebOverlayStyle : resolvedNativeOverlayStyle}
           className={overlayClassName}
         >
           <NativeOnlyAnimatedView entering={FadeIn}>
@@ -177,8 +156,7 @@ function ContextMenuItem({
     <TextClassContext.Provider
       value={cn(
         "select-none text-sm text-popover-foreground group-active:text-popover-foreground",
-        variant === "destructive" &&
-          "text-destructive group-active:text-destructive",
+        variant === "destructive" && "text-destructive group-active:text-destructive",
       )}
     >
       <ContextMenuPrimitive.Item
@@ -187,12 +165,10 @@ function ContextMenuItem({
           Platform.select({
             web: cn(
               "focus:bg-accent focus:text-accent-foreground cursor-default outline-none data-[disabled]:pointer-events-none",
-              variant === "destructive" &&
-                "focus:bg-destructive/10 dark:focus:bg-destructive/20",
+              variant === "destructive" && "focus:bg-destructive/10 dark:focus:bg-destructive/20",
             ),
           }),
-          variant === "destructive" &&
-            "active:bg-destructive/10 dark:active:bg-destructive/20",
+          variant === "destructive" && "active:bg-destructive/10 dark:active:bg-destructive/20",
           props.disabled && "opacity-50",
           inset && "pl-8",
           className,
@@ -297,8 +273,7 @@ function ContextMenuLabel({
 function ContextMenuSeparator({
   className,
   ...props
-}: ContextMenuPrimitive.SeparatorProps &
-  React.RefAttributes<ContextMenuPrimitive.SeparatorRef>) {
+}: ContextMenuPrimitive.SeparatorProps & React.RefAttributes<ContextMenuPrimitive.SeparatorRef>) {
   return (
     <ContextMenuPrimitive.Separator
       className={cn("bg-border -mx-1 my-1 h-px", className)}
@@ -307,16 +282,10 @@ function ContextMenuSeparator({
   );
 }
 
-function ContextMenuShortcut({
-  className,
-  ...props
-}: TextProps & React.RefAttributes<Text>) {
+function ContextMenuShortcut({ className, ...props }: TextProps & React.RefAttributes<Text>) {
   return (
     <Text
-      className={cn(
-        "text-muted-foreground ml-auto text-xs tracking-widest",
-        className,
-      )}
+      className={cn("text-muted-foreground ml-auto text-xs tracking-widest", className)}
       {...props}
     />
   );

@@ -1,10 +1,10 @@
-import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
 import {
-  parseDateOnly,
   parseDistanceKmToMeters,
   parseHmsToSeconds,
   parseMmSsToSeconds,
-} from "../utils/fitness-inputs";
+} from "../forms/input-parsers";
+import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
+import { parseDateOnly } from "../utils/fitness-inputs";
 import { canonicalizeMinimalTrainingPlanCreate } from "./canonicalization";
 
 type PreviewActivityCategory = "run" | "bike" | "swim" | "other";

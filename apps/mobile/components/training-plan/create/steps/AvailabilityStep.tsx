@@ -1,3 +1,5 @@
+import type { WizardConstraintsInput } from "@repo/core";
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -9,11 +11,10 @@ import {
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
-import { WizardStep } from "../WizardStep";
-import { ChevronDown, ChevronUp } from "lucide-react-native";
+import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react-native";
 import React, { useState } from "react";
-import { View, Pressable } from "react-native";
-import type { WizardConstraintsInput } from "@repo/core";
+import { Pressable, View } from "react-native";
+import { WizardStep } from "../WizardStep";
 
 interface AvailabilityStepProps {
   constraints: WizardConstraintsInput;
@@ -97,10 +98,8 @@ export function AvailabilityStep({
   };
 
   const isValid =
-    (constraints.max_hours_per_week !== undefined &&
-      constraints.max_hours_per_week > 0) ||
-    (constraints.max_sessions_per_week !== undefined &&
-      constraints.max_sessions_per_week > 0);
+    (constraints.max_hours_per_week !== undefined && constraints.max_hours_per_week > 0) ||
+    (constraints.max_sessions_per_week !== undefined && constraints.max_sessions_per_week > 0);
 
   return (
     <WizardStep
@@ -128,31 +127,19 @@ export function AvailabilityStep({
               }`}
             >
               <View className="flex-row items-start justify-between mb-1">
-                <Text className="text-foreground font-semibold">
-                  {preset.name}
-                </Text>
+                <Text className="text-foreground font-semibold">{preset.name}</Text>
                 <View className="flex-row gap-3">
                   <View className="items-end">
-                    <Text className="text-primary font-bold">
-                      {preset.hours}h
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      /week
-                    </Text>
+                    <Text className="text-primary font-bold">{preset.hours}h</Text>
+                    <Text className="text-xs text-muted-foreground">/week</Text>
                   </View>
                   <View className="items-end">
-                    <Text className="text-primary font-bold">
-                      {preset.sessions}x
-                    </Text>
-                    <Text className="text-xs text-muted-foreground">
-                      /week
-                    </Text>
+                    <Text className="text-primary font-bold">{preset.sessions}x</Text>
+                    <Text className="text-xs text-muted-foreground">/week</Text>
                   </View>
                 </View>
               </View>
-              <Text className="text-sm text-muted-foreground">
-                {preset.description}
-              </Text>
+              <Text className="text-sm text-muted-foreground">{preset.description}</Text>
             </Pressable>
           ))}
         </View>
@@ -162,17 +149,13 @@ export function AvailabilityStep({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Custom Values</CardTitle>
-          <CardDescription>
-            Adjust to match your exact availability
-          </CardDescription>
+          <CardDescription>Adjust to match your exact availability</CardDescription>
         </CardHeader>
         <CardContent>
           <View className="gap-4">
             {/* Hours per Week */}
             <View className="gap-2">
-              <Label nativeID="hours-per-week">
-                Hours per Week (Optional)
-              </Label>
+              <Label nativeID="hours-per-week">Hours per Week (Optional)</Label>
               <Input
                 placeholder="e.g., 8"
                 value={
@@ -194,9 +177,7 @@ export function AvailabilityStep({
 
             {/* Sessions per Week */}
             <View className="gap-2">
-              <Label nativeID="sessions-per-week">
-                Sessions per Week (Optional)
-              </Label>
+              <Label nativeID="sessions-per-week">Sessions per Week (Optional)</Label>
               <Input
                 placeholder="e.g., 5"
                 value={
@@ -218,9 +199,7 @@ export function AvailabilityStep({
 
             {/* Min Rest Days */}
             <View className="gap-2">
-              <Label nativeID="min-rest-days">
-                Minimum Rest Days per Week
-              </Label>
+              <Label nativeID="min-rest-days">Minimum Rest Days per Week</Label>
               <Input
                 placeholder="e.g., 1"
                 value={constraints.min_rest_days_per_week.toString()}
@@ -244,10 +223,7 @@ export function AvailabilityStep({
 
       {/* Advanced Options */}
       <Card>
-        <Pressable
-          onPress={() => setShowAdvanced(!showAdvanced)}
-          className="active:bg-accent"
-        >
+        <Pressable onPress={() => setShowAdvanced(!showAdvanced)} className="active:bg-accent">
           <CardHeader>
             <View className="flex-row items-center justify-between">
               <CardTitle className="text-base">Advanced Options</CardTitle>
@@ -257,9 +233,7 @@ export function AvailabilityStep({
                 <ChevronDown size={20} className="text-muted-foreground" />
               )}
             </View>
-            <CardDescription>
-              Specify which days you can train (optional)
-            </CardDescription>
+            <CardDescription>Specify which days you can train (optional)</CardDescription>
           </CardHeader>
         </Pressable>
 
@@ -269,25 +243,19 @@ export function AvailabilityStep({
               <Label>Available Training Days</Label>
               <View className="flex-row flex-wrap gap-2">
                 {DAYS_OF_WEEK.map((day) => {
-                  const isSelected =
-                    constraints.available_days?.includes(day.key as any) ||
-                    false;
+                  const isSelected = constraints.available_days?.includes(day.key as any) || false;
 
                   return (
                     <Pressable
                       key={day.key}
                       onPress={() => handleDayToggle(day.key)}
                       className={`px-4 py-2 rounded-lg border ${
-                        isSelected
-                          ? "bg-primary border-primary"
-                          : "bg-background border-border"
+                        isSelected ? "bg-primary border-primary" : "bg-background border-border"
                       }`}
                     >
                       <Text
                         className={`text-sm font-medium ${
-                          isSelected
-                            ? "text-primary-foreground"
-                            : "text-foreground"
+                          isSelected ? "text-primary-foreground" : "text-foreground"
                         }`}
                       >
                         {day.label}
@@ -307,13 +275,11 @@ export function AvailabilityStep({
 
       {/* Validation Warning */}
       {!isValid && (
-        <Card className="bg-destructive/10 border-destructive/20">
-          <CardContent className="p-4">
-            <Text className="text-sm text-destructive">
-              Please enter either hours per week or sessions per week
-            </Text>
-          </CardContent>
-        </Card>
+        <Alert icon={AlertCircle} variant="destructive">
+          <AlertDescription>
+            Please enter either hours per week or sessions per week
+          </AlertDescription>
+        </Alert>
       )}
     </WizardStep>
   );

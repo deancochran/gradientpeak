@@ -41,9 +41,7 @@ export function evaluateReferenceTrackingWindow(input: {
 
   const referenceByDate =
     input.reference_by_date ??
-    new Map(
-      input.reference_trajectory.points.map((point) => [point.date, point]),
-    );
+    new Map(input.reference_trajectory.points.map((point) => [point.date, point]));
   let matchedPoints = 0;
   let ctlErrorSum = 0;
   let tssErrorSum = 0;
@@ -58,23 +56,15 @@ export function evaluateReferenceTrackingWindow(input: {
     }
 
     matchedPoints += 1;
-    const ctlError = Math.abs(
-      state.predicted_fitness_ctl - referencePoint.target_ctl,
-    );
-    const tssError = Math.abs(
-      state.predicted_load_tss - referencePoint.target_tss,
-    );
+    const ctlError = Math.abs(state.predicted_fitness_ctl - referencePoint.target_ctl);
+    const tssError = Math.abs(state.predicted_load_tss - referencePoint.target_tss);
     const phaseWeight =
       referencePoint.phase === "event"
         ? 2
-        : referencePoint.phase === "taper" ||
-            referencePoint.phase === "recovery"
+        : referencePoint.phase === "taper" || referencePoint.phase === "recovery"
           ? 1.5
           : 1;
-    const positiveTssOvershoot = Math.max(
-      0,
-      state.predicted_load_tss - referencePoint.target_tss,
-    );
+    const positiveTssOvershoot = Math.max(0, state.predicted_load_tss - referencePoint.target_tss);
 
     ctlErrorSum += ctlError;
     tssErrorSum += tssError;
@@ -86,8 +76,7 @@ export function evaluateReferenceTrackingWindow(input: {
       referencePoint.phase === "recovery"
     ) {
       taperPressure +=
-        (positiveTssOvershoot / Math.max(1, referencePoint.target_tss + 15)) *
-        phaseWeight;
+        (positiveTssOvershoot / Math.max(1, referencePoint.target_tss + 15)) * phaseWeight;
     }
 
     if (state.predicted_form_tsb < -12 && positiveTssOvershoot > 0) {

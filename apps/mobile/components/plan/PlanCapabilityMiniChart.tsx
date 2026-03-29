@@ -38,14 +38,10 @@ export function PlanCapabilityMiniChart({
   confidence,
   category,
 }: PlanCapabilityMiniChartProps) {
-  const hasCurrent =
-    currentCapability !== null && currentCapability !== undefined;
-  const hasProjected =
-    projectedCapability !== null && projectedCapability !== undefined;
+  const hasCurrent = currentCapability !== null && currentCapability !== undefined;
+  const hasProjected = projectedCapability !== null && projectedCapability !== undefined;
   const latestCurrent = hasCurrent ? Number(currentCapability) : 0;
-  const latestProjected = hasProjected
-    ? Number(projectedCapability)
-    : latestCurrent;
+  const latestProjected = hasProjected ? Number(projectedCapability) : latestCurrent;
 
   const min = Math.min(latestCurrent, latestProjected, 0);
   const max = Math.max(latestCurrent, latestProjected, 1);
@@ -58,9 +54,7 @@ export function PlanCapabilityMiniChart({
     <View className="bg-card border border-border rounded-lg p-3 flex-1 min-h-40">
       <Text className="text-sm font-semibold mb-1">Readiness</Text>
       <Text className="text-[11px] text-muted-foreground mb-2">
-        {category
-          ? `${category.toUpperCase()} readiness projection`
-          : "Goal-date projection"}
+        {category ? `${category.toUpperCase()} readiness projection` : "Goal-date projection"}
       </Text>
 
       <View className="mt-2 mb-4 h-16 justify-center">

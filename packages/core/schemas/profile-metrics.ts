@@ -6,44 +6,53 @@
  */
 
 import { z } from "zod";
-import {
-  publicProfileMetricTypeSchema,
-  publicProfileMetricsRowSchema,
-  publicProfileMetricsInsertSchema,
-  publicProfileMetricsUpdateSchema,
-} from "@repo/supabase";
 
-// Re-export base enum from SupaZod
-export const profileMetricTypeSchema = publicProfileMetricTypeSchema;
+export const profileMetricTypeSchema = z.enum([
+  "weight_kg",
+  "resting_hr",
+  "max_hr",
+  "hrv_rmssd",
+  "vo2_max",
+  "body_fat_percentage",
+  "lthr",
+  "sleep_hours",
+  "hydration_level",
+  "stress_score",
+  "soreness_level",
+  "wellness_score",
+]);
 
-// Re-export base schema from SupaZod
-export const profileMetricLogSchema = publicProfileMetricsRowSchema;
+export const profileMetricLogSchema = z.object({
+  created_at: z.string().datetime(),
+  id: z.string().uuid(),
+  metric_type: profileMetricTypeSchema,
+  notes: z.string().nullable(),
+  profile_id: z.string().uuid(),
+  recorded_at: z.string().datetime(),
+  reference_activity_id: z.string().uuid().nullable(),
+  unit: z.string().min(1),
+  updated_at: z.string().datetime(),
+  value: z.number(),
+});
 export const ProfileMetricSchema = profileMetricLogSchema;
 
 /**
  * Input schema for creating a new profile metric log.
  * Extends SupaZod insert schema with additional validation.
  */
-export const createProfileMetricInputSchema = publicProfileMetricsInsertSchema
-  .omit({
-    id: true,
-    created_at: true,
+export const createProfileMetricInputSchema = z
+  .object({
+    metric_type: profileMetricTypeSchema,
+    notes: z.string().max(1000, "Notes must be less than 1000 characters").nullable().optional(),
+    profile_id: z.string().uuid("Invalid profile ID"),
+    recorded_at: z.string().datetime("Invalid datetime").optional(),
+    reference_activity_id: z.string().uuid("Invalid activity ID").nullable().optional(),
+    unit: z.string().min(1, "Unit is required"),
+    value: z.number(),
   })
   .extend({
-    // Profile ID required
-    profile_id: z.string().uuid("Invalid profile ID"),
-
-    // Metric type required
     metric_type: profileMetricTypeSchema,
-
-    // Value validation based on metric type (will be refined below)
-    value: z.number(),
-
-    // Unit required
-    unit: z.string().min(1, "Unit is required"),
-
-    // Optional fields with validation
-    recorded_at: z.string().datetime("Invalid datetime").optional(),
+    profile_id: z.string().uuid("Invalid profile ID"),
   })
   .refine(
     (data) => {
@@ -81,11 +90,7 @@ export const updateProfileMetricInputSchema = z.object({
   id: z.string().uuid("Invalid metric ID"),
   value: z.number().optional(),
   unit: z.string().min(1, "Unit is required").optional(),
-  notes: z
-    .string()
-    .max(1000, "Notes must be less than 1000 characters")
-    .nullable()
-    .optional(),
+  notes: z.string().max(1000, "Notes must be less than 1000 characters").nullable().optional(),
   recorded_at: z.string().datetime("Invalid datetime").optional(),
 });
 
@@ -117,18 +122,10 @@ export const getProfileMetricsInRangeInputSchema = z
 // Infer TypeScript types from schemas
 export type ProfileMetricType = z.infer<typeof profileMetricTypeSchema>;
 export type ProfileMetricLog = z.infer<typeof profileMetricLogSchema>;
-export type CreateProfileMetricInput = z.infer<
-  typeof createProfileMetricInputSchema
->;
-export type UpdateProfileMetricInput = z.infer<
-  typeof updateProfileMetricInputSchema
->;
-export type GetProfileMetricAtDateInput = z.infer<
-  typeof getProfileMetricAtDateInputSchema
->;
-export type GetProfileMetricsInRangeInput = z.infer<
-  typeof getProfileMetricsInRangeInputSchema
->;
+export type CreateProfileMetricInput = z.infer<typeof createProfileMetricInputSchema>;
+export type UpdateProfileMetricInput = z.infer<typeof updateProfileMetricInputSchema>;
+export type GetProfileMetricAtDateInput = z.infer<typeof getProfileMetricAtDateInputSchema>;
+export type GetProfileMetricsInRangeInput = z.infer<typeof getProfileMetricsInRangeInputSchema>;
 
 /**
  * Standard units for each metric type.
@@ -151,10 +148,7 @@ export const PROFILE_METRIC_UNITS: Record<ProfileMetricType, string> = {
 /**
  * Valid value ranges for each metric type.
  */
-export const PROFILE_METRIC_RANGES: Record<
-  ProfileMetricType,
-  { min: number; max: number }
-> = {
+export const PROFILE_METRIC_RANGES: Record<ProfileMetricType, { min: number; max: number }> = {
   weight_kg: { min: 20, max: 500 },
   resting_hr: { min: 30, max: 120 },
   max_hr: { min: 100, max: 250 },

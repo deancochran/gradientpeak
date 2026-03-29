@@ -136,10 +136,7 @@ export interface OptimizationProfileBehavior {
   baseline_deviation_penalty_weight: number;
 }
 
-const OPTIMIZATION_PROFILE_BEHAVIORS: Record<
-  OptimizationProfile,
-  OptimizationProfileBehavior
-> = {
+const OPTIMIZATION_PROFILE_BEHAVIORS: Record<OptimizationProfile, OptimizationProfileBehavior> = {
   outcome_first: {
     aggressiveness_score: 0.9,
     stability_score: 0.35,
@@ -183,28 +180,17 @@ export function normalizeProjectionSafetyConfig(
 ): ProjectionSafetyConfig {
   const profile = input?.optimization_profile ?? "balanced";
   const defaults = PROJECTION_PROFILE_DEFAULTS[profile];
-  const learnedRampRate = resolveEffectiveLearnedRampRate(
-    input?.learned_ramp_rate,
-  );
-  const learnedRampPct = convertLearnedRampRateToPct(
-    learnedRampRate.max_safe_ramp_rate,
-  );
+  const learnedRampRate = resolveEffectiveLearnedRampRate(input?.learned_ramp_rate);
+  const learnedRampPct = convertLearnedRampRateToPct(learnedRampRate.max_safe_ramp_rate);
   const effectiveWeeklyRampPct =
     input?.max_weekly_tss_ramp_pct ??
-    (learnedRampRate.source === "learned"
-      ? learnedRampPct
-      : defaults.max_weekly_tss_ramp_pct);
+    (learnedRampRate.source === "learned" ? learnedRampPct : defaults.max_weekly_tss_ramp_pct);
 
   return {
     optimization_profile: profile,
     post_goal_recovery_days: Math.max(
       0,
-      Math.min(
-        28,
-        Math.round(
-          input?.post_goal_recovery_days ?? defaults.post_goal_recovery_days,
-        ),
-      ),
+      Math.min(28, Math.round(input?.post_goal_recovery_days ?? defaults.post_goal_recovery_days)),
     ),
     max_weekly_tss_ramp_pct: Math.max(
       0,
@@ -222,10 +208,7 @@ export function normalizeProjectionSafetyConfig(
 }
 
 export function convertLearnedRampRateToPct(rampRate: number): number {
-  const safeRampRate = Math.max(
-    MIN_LEARNED_RAMP_RATE,
-    Math.min(MAX_LEARNED_RAMP_RATE, rampRate),
-  );
+  const safeRampRate = Math.max(MIN_LEARNED_RAMP_RATE, Math.min(MAX_LEARNED_RAMP_RATE, rampRate));
   return Math.round((safeRampRate / RAMP_PCT_BASELINE_WEEKLY_TSS) * 100);
 }
 

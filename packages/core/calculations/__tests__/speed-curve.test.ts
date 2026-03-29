@@ -1,13 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   deriveSpeedCurveFromThresholdPace,
-  paceToSpeed,
-  speedToPace,
-  formatPace,
-  parsePace,
   estimateSpeedForDuration,
-  STANDARD_SPEED_DURATIONS,
+  formatPace,
+  paceToSpeed,
+  parsePace,
   SPEED_MULTIPLIERS,
+  STANDARD_SPEED_DURATIONS,
+  speedToPace,
 } from "../speed-curve";
 
 describe("deriveSpeedCurveFromThresholdPace", () => {
@@ -120,16 +120,10 @@ describe("estimateSpeedForDuration", () => {
     const thresholdSpeed = paceToSpeed(thresholdPace);
 
     const sprintSpeed = estimateSpeedForDuration(thresholdPace, 30);
-    expect(sprintSpeed).toBeCloseTo(
-      thresholdSpeed * SPEED_MULTIPLIERS.sprint,
-      2,
-    );
+    expect(sprintSpeed).toBeCloseTo(thresholdSpeed * SPEED_MULTIPLIERS.sprint, 2);
 
     const thresholdSpeed300 = estimateSpeedForDuration(thresholdPace, 600);
-    expect(thresholdSpeed300).toBeCloseTo(
-      thresholdSpeed * SPEED_MULTIPLIERS.threshold,
-      2,
-    );
+    expect(thresholdSpeed300).toBeCloseTo(thresholdSpeed * SPEED_MULTIPLIERS.threshold, 2);
   });
 
   it("should match curve values", () => {

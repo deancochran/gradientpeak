@@ -18,8 +18,8 @@ import {
   extractStartCoordinates,
   getWorkoutTypeFamilyForRoute,
   prepareGPXForWahoo,
-  validateRouteForWahoo,
   type RouteFileData,
+  validateRouteForWahoo,
 } from "./route-converter";
 
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
@@ -95,8 +95,7 @@ export class WahooSyncService {
         return {
           success: false,
           action: "no_change",
-          error:
-            "Wahoo integration not found. Please connect your Wahoo account.",
+          error: "Wahoo integration not found. Please connect your Wahoo account.",
         };
       }
 
@@ -109,9 +108,7 @@ export class WahooSyncService {
         };
       }
 
-      const activityType = toActivityType(
-        planned.activity_plan.activity_category,
-      );
+      const activityType = toActivityType(planned.activity_plan.activity_category);
 
       if (!isActivityTypeSupportedByWahoo(activityType)) {
         return {
@@ -147,10 +144,9 @@ export class WahooSyncService {
 
         if (!routeError && route) {
           // Load GPX file from storage
-          const { data: fileData, error: storageError } =
-            await this.supabase.storage
-              .from("routes")
-              .download(route.file_path);
+          const { data: fileData, error: storageError } = await this.supabase.storage
+            .from("routes")
+            .download(route.file_path);
 
           if (!storageError && fileData) {
             try {
@@ -192,8 +188,7 @@ export class WahooSyncService {
       });
 
       // 6. Validate compatibility
-      const structure = planned.activity_plan
-        .structure as ActivityPlanStructureV2;
+      const structure = planned.activity_plan.structure as ActivityPlanStructureV2;
       const validation = validateWahooCompatibility(structure);
 
       if (!validation.compatible) {
@@ -237,10 +232,7 @@ export class WahooSyncService {
       return {
         success: false,
         action: "no_change",
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error occurred during sync",
+        error: error instanceof Error ? error.message : "Unknown error occurred during sync",
       };
     }
   }
@@ -294,9 +286,7 @@ export class WahooSyncService {
           providerUpdatedAt: new Date().toISOString(),
           name: routeData.name,
           description: routeData.description,
-          workoutTypeFamilyId: getWorkoutTypeFamilyForRoute(
-            routeData.activityType,
-          ),
+          workoutTypeFamilyId: getWorkoutTypeFamilyForRoute(routeData.activityType),
           startLat: routeData.startLat,
           startLng: routeData.startLng,
           distance: routeData.totalDistance,
@@ -309,10 +299,7 @@ export class WahooSyncService {
       } catch (error) {
         console.error("Failed to sync route to Wahoo:", error);
         // Continue without route - workout can still be created
-        warnings = [
-          ...(warnings || []),
-          "Route sync failed, workout created without route",
-        ];
+        warnings = [...(warnings || []), "Route sync failed, workout created without route"];
       }
     }
 
@@ -327,9 +314,7 @@ export class WahooSyncService {
     });
 
     // Create plan in Wahoo's library
-    console.log(
-      `[Wahoo Sync] Creating plan for "${planned.activity_plan.name}"`,
-    );
+    console.log(`[Wahoo Sync] Creating plan for "${planned.activity_plan.name}"`);
     const plan = await wahooClient.createPlan({
       structure: wahooPlan,
       name: planned.activity_plan.name,
@@ -392,9 +377,7 @@ export class WahooSyncService {
       durationMinutes: durationMinutes,
     });
 
-    console.log(
-      `[Wahoo Sync] Workout created successfully with ID: ${workout.id}`,
-    );
+    console.log(`[Wahoo Sync] Workout created successfully with ID: ${workout.id}`);
 
     // Store sync record (only workout_id, not plan_id)
     await this.syncedEventsTable().insert({
@@ -429,9 +412,7 @@ export class WahooSyncService {
     warnings?: string[],
   ): Promise<SyncResult> {
     // Determine what changed by comparing timestamps or hashing structure
-    const activityPlanUpdatedAt = new Date(
-      planned.activity_plan.updated_at,
-    ).getTime();
+    const activityPlanUpdatedAt = new Date(planned.activity_plan.updated_at).getTime();
     const syncUpdatedAt = new Date(existingSync.updated_at).getTime();
     const structureChanged = activityPlanUpdatedAt > syncUpdatedAt;
 
@@ -587,10 +568,7 @@ export class WahooSyncService {
       return {
         success: false,
         action: "no_change",
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error occurred during unsync",
+        error: error instanceof Error ? error.message : "Unknown error occurred during unsync",
       };
     }
   }

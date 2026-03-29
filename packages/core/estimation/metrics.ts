@@ -1,4 +1,5 @@
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
+import type { ProfileWithDob } from "../profile";
+import type { CanonicalSport } from "../schemas/sport";
 import { getSportTypicalSpeed } from "../sports";
 import { estimatePowerZoneDistribution, getHrZoneIndexFromThresholdPercent } from "../zones";
 import type { EstimationContext, EstimationResult, MetricEstimations } from "./types";
@@ -66,11 +67,11 @@ function estimateCalories(
   duration: number,
   intensityFactor: number,
   tss: number,
-  profile: PublicProfilesRow,
+  profile: ProfileWithDob,
   ftp?: number | null,
   thresholdHr?: number | null,
   weightKg?: number | null,
-  activityCategory: PublicActivityCategory = "other",
+  activityCategory: CanonicalSport = "other",
 ): number {
   // Method 1: Power-based (most accurate for cycling)
   if (ftp && activityCategory === "bike") {
@@ -165,7 +166,7 @@ export function estimateAvgHR(
 function estimateDistance(
   duration: number,
   intensityFactor: number,
-  activityCategory: PublicActivityCategory,
+  activityCategory: CanonicalSport,
   route?: { distanceMeters: number },
 ): number | undefined {
   // If route provided, use route distance
@@ -198,7 +199,7 @@ function getEffortLevel(intensityFactor: number): "easy" | "moderate" | "hard" {
  * Get typical speeds for activity types (m/s)
  */
 function getTypicalSpeeds(
-  activityCategory: PublicActivityCategory,
+  activityCategory: CanonicalSport,
   effortLevel: "easy" | "moderate" | "hard",
 ): number {
   return getSportTypicalSpeed(activityCategory, effortLevel);
@@ -211,7 +212,7 @@ function getTypicalSpeeds(
 export function estimateZoneDistribution(
   duration: number,
   intensityFactor: number,
-  activityCategory: PublicActivityCategory,
+  activityCategory: CanonicalSport,
 ): {
   powerZones?: number[]; // [z1-z7] in seconds
   hrZones?: number[]; // [z1-z5] in seconds

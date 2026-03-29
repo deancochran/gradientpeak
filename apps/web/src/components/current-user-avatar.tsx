@@ -1,10 +1,10 @@
 "use client";
 
-import { useAuth } from "@/components/providers/auth-provider";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
-import { trpc } from "@/lib/trpc/client";
 import { UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useAuth } from "@/components/providers/auth-provider";
+import { trpc } from "@/lib/trpc/client";
 
 export function CurrentUserAvatar() {
   const { user } = useAuth();
@@ -45,11 +45,7 @@ export function CurrentUserAvatar() {
     <Avatar className="h-8 w-8">
       <AvatarImage src={avatarUrl || ""} alt={profile?.username || "User"} />
       <AvatarFallback className="text-sm">
-        {profile?.username ? (
-          getInitials(profile.username)
-        ) : (
-          <UserRound className="h-4 w-4" />
-        )}
+        {profile?.username ? getInitials(profile.username) : <UserRound className="h-4 w-4" />}
       </AvatarFallback>
     </Avatar>
   );

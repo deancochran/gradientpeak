@@ -1,4 +1,3 @@
-import type { ActivityPlanStructureV2 } from "../../schemas/activity_plan_v2";
 import { SYSTEM_TEMPLATES, type SystemTemplate } from "../../samples";
 import {
   classifySystemActivityTemplate,
@@ -9,19 +8,12 @@ import {
   type SystemActivityTemplateRecoveryCostBand,
   type SystemActivityTemplateTrainingIntent,
 } from "../../samples/system-activity-template-taxonomy";
+import type { ActivityPlanStructureV2 } from "../../schemas/activity_plan_v2";
 import { calculateSystemTemplateDurationSeconds } from "./systemPlanAudit";
 
-export type SystemActivityTemplateDurationBand =
-  | "short"
-  | "medium"
-  | "long"
-  | "extra-long";
+export type SystemActivityTemplateDurationBand = "short" | "medium" | "long" | "extra-long";
 
-export type SystemActivityTemplateLoadBand =
-  | "low"
-  | "moderate"
-  | "high"
-  | "very-high";
+export type SystemActivityTemplateLoadBand = "low" | "moderate" | "high" | "very-high";
 
 export interface NormalizedSystemActivityTemplateCatalogEntry {
   template_id: string;
@@ -43,10 +35,7 @@ export interface NormalizedSystemActivityTemplateCatalogEntry {
   duplicate_name_count: number;
 }
 
-function mapStepTargetSignature(target: {
-  type: string;
-  intensity: number;
-}): string {
+function mapStepTargetSignature(target: { type: string; intensity: number }): string {
   return `${target.type}:${Math.round(target.intensity * 10) / 10}`;
 }
 
@@ -155,10 +144,7 @@ function deriveLoadBand(input: {
   ) {
     return "low";
   }
-  if (
-    input.intensityFamily === "high_intensity" ||
-    input.intensityFamily === "race_specific"
-  ) {
+  if (input.intensityFamily === "high_intensity" || input.intensityFamily === "race_specific") {
     return input.durationBand === "long" || input.durationBand === "extra-long"
       ? "very-high"
       : "high";
@@ -187,23 +173,15 @@ export function buildSystemActivityTemplateCatalog(
   const duplicateNameCounts = new Map<string, number>();
 
   for (const template of templates) {
-    duplicateNameCounts.set(
-      template.name,
-      (duplicateNameCounts.get(template.name) ?? 0) + 1,
-    );
+    duplicateNameCounts.set(template.name, (duplicateNameCounts.get(template.name) ?? 0) + 1);
   }
 
   return [...templates]
     .map((template) => {
       const taxonomy = classifySystemActivityTemplate(template);
       const durationSeconds = calculateSystemTemplateDurationSeconds(template);
-      const durationBand = deriveDurationBand(
-        template.activity_category,
-        durationSeconds,
-      );
-      const normalizedStructure = normalizeActivityTemplateStructureForAudit(
-        template.structure,
-      );
+      const durationBand = deriveDurationBand(template.activity_category, durationSeconds);
+      const normalizedStructure = normalizeActivityTemplateStructureForAudit(template.structure);
 
       return {
         template_id: template.id,

@@ -3,17 +3,18 @@ import {
   type NormalizedSystemActivityTemplateCatalogEntry,
 } from "./activityTemplateCatalog";
 import {
-  buildTrainingPlanTemplateDependencyMap,
-  analyzeTrainingPlanTemplateVariety,
-} from "./trainingPlanTemplateVariety";
-import {
   COVERAGE_STATUS_THRESHOLD,
   FIRST_WAVE_COVERAGE_CELLS,
   type FirstWaveCoverageCellKey,
   type SystemActivityTemplateCoverageStatus,
 } from "./systemActivityTemplateVerificationConfig";
+import {
+  analyzeTrainingPlanTemplateVariety,
+  buildTrainingPlanTemplateDependencyMap,
+} from "./trainingPlanTemplateVariety";
 
-export interface SystemActivityTemplateCoverageTemplateRow extends NormalizedSystemActivityTemplateCatalogEntry {
+export interface SystemActivityTemplateCoverageTemplateRow
+  extends NormalizedSystemActivityTemplateCatalogEntry {
   coverage_cell_key: FirstWaveCoverageCellKey | null;
   coverage_status: SystemActivityTemplateCoverageStatus | null;
   duplicate_risk: boolean;
@@ -67,10 +68,7 @@ export function resolveFirstWaveCoverageCellKey(
     ) {
       return "run_easy_recovery";
     }
-    if (
-      entry.session_archetype === "tempo" ||
-      entry.session_archetype === "threshold"
-    ) {
+    if (entry.session_archetype === "tempo" || entry.session_archetype === "threshold") {
       return "run_tempo_threshold";
     }
     if (entry.session_archetype === "long_endurance") {
@@ -93,10 +91,7 @@ export function resolveFirstWaveCoverageCellKey(
     ) {
       return "bike_easy_recovery";
     }
-    if (
-      entry.session_archetype === "threshold" ||
-      entry.session_archetype === "sweet_spot"
-    ) {
+    if (entry.session_archetype === "threshold" || entry.session_archetype === "sweet_spot") {
       return "bike_threshold_sweet_spot";
     }
     if (entry.session_archetype === "long_endurance") {
@@ -171,15 +166,12 @@ export function buildCoverageCellSummaries(
     const dependentPlanNames = Array.from(
       new Set(
         cellEntries.flatMap(
-          (entry) =>
-            options?.dependencyPlanNamesByTemplateId?.get(entry.template_id) ??
-            [],
+          (entry) => options?.dependencyPlanNamesByTemplateId?.get(entry.template_id) ?? [],
         ),
       ),
     ).sort();
     const reuseCount = cellEntries.reduce(
-      (total, entry) =>
-        total + (options?.reuseCountByTemplateId?.get(entry.template_id) ?? 0),
+      (total, entry) => total + (options?.reuseCountByTemplateId?.get(entry.template_id) ?? 0),
       0,
     );
 
@@ -219,9 +211,7 @@ export function buildSystemActivityTemplateCoverageMatrix(): SystemActivityTempl
   );
   const templateRows = catalog.map((entry) => {
     const coverageCellKey = resolveFirstWaveCoverageCellKey(entry);
-    const coverageCell = coverageCellKey
-      ? cellStatusByKey.get(coverageCellKey)
-      : null;
+    const coverageCell = coverageCellKey ? cellStatusByKey.get(coverageCellKey) : null;
 
     return {
       ...entry,
@@ -229,18 +219,14 @@ export function buildSystemActivityTemplateCoverageMatrix(): SystemActivityTempl
       coverage_status: coverageCell?.status ?? null,
       duplicate_risk: duplicateRiskTemplateIdSet.has(entry.template_id),
       dependent_plan_names:
-        dependencyPlanNamesByTemplateId
-          .get(entry.template_id)
-          ?.slice()
-          .sort() ?? [],
+        dependencyPlanNamesByTemplateId.get(entry.template_id)?.slice().sort() ?? [],
       reuse_count: reuseCountByTemplateId.get(entry.template_id) ?? 0,
     } satisfies SystemActivityTemplateCoverageTemplateRow;
   });
   const gapRows = cellRows.filter((row) => row.status !== "covered");
-  const representativePlanAnalyses =
-    analyzeTrainingPlanTemplateVariety().filter(
-      (analysis) => analysis.gate_scope === "first-wave",
-    );
+  const representativePlanAnalyses = analyzeTrainingPlanTemplateVariety().filter(
+    (analysis) => analysis.gate_scope === "first-wave",
+  );
   const blockingCellKeys = cellRows
     .filter((row) => row.status !== "covered")
     .map((row) => row.key)
@@ -248,9 +234,7 @@ export function buildSystemActivityTemplateCoverageMatrix(): SystemActivityTempl
   const blockingPlanNames = representativePlanAnalyses
     .filter(
       (analysis) =>
-        analysis.weak_variety ||
-        analysis.over_reuse ||
-        analysis.unresolved_template_ids.length > 0,
+        analysis.weak_variety || analysis.over_reuse || analysis.unresolved_template_ids.length > 0,
     )
     .map((analysis) => analysis.plan_name)
     .sort();

@@ -7,18 +7,14 @@ import { cn } from "../../lib/cn";
 function RadioGroup({
   className,
   ...props
-}: RadioGroupPrimitive.RootProps &
-  React.RefAttributes<RadioGroupPrimitive.RootRef>) {
-  return (
-    <RadioGroupPrimitive.Root className={cn("gap-3", className)} {...props} />
-  );
+}: RadioGroupPrimitive.RootProps & React.RefAttributes<RadioGroupPrimitive.RootRef>) {
+  return <RadioGroupPrimitive.Root className={cn("gap-3", className)} {...props} />;
 }
 
 function RadioGroupItem({
   className,
   ...props
-}: RadioGroupPrimitive.ItemProps &
-  React.RefAttributes<RadioGroupPrimitive.ItemRef>) {
+}: RadioGroupPrimitive.ItemProps & React.RefAttributes<RadioGroupPrimitive.ItemRef>) {
   return (
     <RadioGroupPrimitive.Item
       className={cn(

@@ -23,22 +23,12 @@ export type NativeTestProps = {
 };
 
 function compactProps<T extends Record<string, string | undefined>>(props: T) {
-  return Object.fromEntries(
-    Object.entries(props).filter(([, value]) => value !== undefined),
-  ) as {
-    [K in keyof T as T[K] extends undefined ? never : K]: Exclude<
-      T[K],
-      undefined
-    >;
+  return Object.fromEntries(Object.entries(props).filter(([, value]) => value !== undefined)) as {
+    [K in keyof T as T[K] extends undefined ? never : K]: Exclude<T[K], undefined>;
   };
 }
 
-export function getWebTestProps({
-  accessibilityLabel,
-  id,
-  role,
-  testId,
-}: TestProps): WebTestProps {
+export function getWebTestProps({ accessibilityLabel, id, role, testId }: TestProps): WebTestProps {
   return compactProps({
     "aria-label": accessibilityLabel,
     "data-testid": testId,

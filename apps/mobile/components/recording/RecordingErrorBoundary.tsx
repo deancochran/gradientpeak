@@ -12,10 +12,10 @@
  * - Detailed error logging for debugging
  */
 
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import React, { Component, ReactNode } from "react";
 import { View } from "react-native";
-import { Text } from "@repo/ui/components/text";
-import { Button } from "@repo/ui/components/button";
 
 export interface RecordingErrorBoundaryProps {
   children: ReactNode;
@@ -51,9 +51,7 @@ export class RecordingErrorBoundary extends Component<
     };
   }
 
-  static getDerivedStateFromError(
-    error: Error,
-  ): Partial<RecordingErrorBoundaryState> {
+  static getDerivedStateFromError(error: Error): Partial<RecordingErrorBoundaryState> {
     // Update state so the next render will show the fallback UI
     return {
       hasError: true,
@@ -87,9 +85,7 @@ export class RecordingErrorBoundary extends Component<
       errorInfo: null,
     });
 
-    console.log(
-      `[RecordingErrorBoundary] Reloading ${this.props.componentName}`,
-    );
+    console.log(`[RecordingErrorBoundary] Reloading ${this.props.componentName}`);
   };
 
   render(): ReactNode {
@@ -117,22 +113,14 @@ export class RecordingErrorBoundary extends Component<
               </Text>
               {this.state.errorInfo?.componentStack && (
                 <Text className="text-xs font-mono text-muted-foreground mt-2">
-                  {this.state.errorInfo.componentStack
-                    .split("\n")
-                    .slice(0, 3)
-                    .join("\n")}
+                  {this.state.errorInfo.componentStack.split("\n").slice(0, 3).join("\n")}
                 </Text>
               )}
             </View>
           )}
 
           {/* Reload button */}
-          <Button
-            onPress={this.handleReload}
-            variant="default"
-            size="default"
-            className="mt-2"
-          >
+          <Button onPress={this.handleReload} variant="default" size="default" className="mt-2">
             <Text>Reload {this.props.componentName}</Text>
           </Button>
         </View>

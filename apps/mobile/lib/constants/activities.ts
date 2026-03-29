@@ -1,11 +1,5 @@
 import type { PublicActivityCategory } from "@repo/supabase";
-import {
-  Activity,
-  Bike,
-  Dumbbell,
-  Footprints,
-  Waves,
-} from "lucide-react-native";
+import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
 /**
  * Activity category configuration for icons, labels, and colors
@@ -54,8 +48,7 @@ export const ACTIVITY_CATEGORY_CONFIGS = {
  */
 export function getActivityCategoryConfig(category: string) {
   return (
-    ACTIVITY_CATEGORY_CONFIGS[category as PublicActivityCategory] ||
-    ACTIVITY_CATEGORY_CONFIGS.other
+    ACTIVITY_CATEGORY_CONFIGS[category as PublicActivityCategory] || ACTIVITY_CATEGORY_CONFIGS.other
   );
 }
 
@@ -154,9 +147,7 @@ export type ActivityType = keyof typeof ACTIVITY_CONFIGS;
  * @deprecated Use getActivityCategoryConfig instead
  */
 export function getActivityConfig(activityType: string) {
-  return (
-    ACTIVITY_CONFIGS[activityType as ActivityType] || ACTIVITY_CONFIGS.other
-  );
+  return ACTIVITY_CONFIGS[activityType as ActivityType] || ACTIVITY_CONFIGS.other;
 }
 
 /**

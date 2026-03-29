@@ -18,8 +18,7 @@ export const EASY_AEROBIC_RUN: RecordingServiceActivityPlan = {
       name: "Easy Run",
       duration: Duration.minutes(30),
       targets: [Target.thresholdHR(65)],
-      notes:
-        "Should feel comfortable and easy - you should be able to hold a conversation",
+      notes: "Should feel comfortable and easy - you should be able to hold a conversation",
     })
     .build(),
 };
@@ -185,8 +184,7 @@ export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
   id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
   version: "2.0",
   name: "Tempo Run",
-  description:
-    "20 minute tempo run at 85% FTP - Comfortably hard sustained effort",
+  description: "20 minute tempo run at 85% FTP - Comfortably hard sustained effort",
   activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
@@ -276,8 +274,7 @@ export const SYSTEM_MARATHON_PACE_LONG_RUN: RecordingServiceActivityPlan = {
   id: "7e5f8a9b-1c4d-4e6f-8a2b-9c1d3e5f7a9b",
   version: "2.0",
   name: "Marathon Pace Long Run",
-  description:
-    "Long run with controlled marathon-pace segments to build race-specific durability.",
+  description: "Long run with controlled marathon-pace segments to build race-specific durability.",
   activity_category: "run",
   gps_recording_enabled: true,
   structure: createPlan()
@@ -306,14 +303,13 @@ export const SYSTEM_MARATHON_PACE_LONG_RUN: RecordingServiceActivityPlan = {
     .build(),
 };
 
-export const SAMPLE_OUTDOOR_RUN_ACTIVITIES: Array<RecordingServiceActivityPlan> =
-  [
-    EASY_AEROBIC_RUN,
-    INTERVAL_RUN,
-    LONG_RUN,
-    FARTLEK_RUN,
-    SYSTEM_TEMPO_RUN,
-    SYSTEM_THRESHOLD_INTERVALS_RUN,
-    SYSTEM_LONG_EASY_RUN,
-    SYSTEM_MARATHON_PACE_LONG_RUN,
-  ];
+export const SAMPLE_OUTDOOR_RUN_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
+  EASY_AEROBIC_RUN,
+  INTERVAL_RUN,
+  LONG_RUN,
+  FARTLEK_RUN,
+  SYSTEM_TEMPO_RUN,
+  SYSTEM_THRESHOLD_INTERVALS_RUN,
+  SYSTEM_LONG_EASY_RUN,
+  SYSTEM_MARATHON_PACE_LONG_RUN,
+];

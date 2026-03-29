@@ -1,9 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import React from "react";
 import { View } from "react-native";
-import { ActivityRouteMap } from "./ActivityRouteMap";
+import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import { ElevationProfileChart } from "../charts/ElevationProfileChart";
+import { ActivityRouteMap } from "./ActivityRouteMap";
 
 interface Coordinate {
   latitude: number;

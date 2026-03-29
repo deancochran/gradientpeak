@@ -4,17 +4,11 @@
  * Eliminates duplication across calendar list entry points
  */
 
-import {
-  ActivityPlanCard,
-  ActivityPlanCardData,
-} from "@/components/shared/ActivityPlanCard";
 import { Text } from "@repo/ui/components/text";
-import {
-  groupActivitiesByDate,
-  GroupedActivities,
-} from "@/lib/utils/plan/dateGrouping";
 import { useMemo } from "react";
 import { View } from "react-native";
+import { ActivityPlanCard, ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
+import { GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
 
 export interface ActivityListProps {
   activities: any[];
@@ -61,9 +55,7 @@ function GroupSection({ title, activities, onPress }: GroupSectionProps) {
       <View className="flex-row items-center mb-3 px-4">
         <Text className="text-lg font-semibold flex-1">{title}</Text>
         <View className="bg-muted px-3 py-1 rounded-full">
-          <Text className="text-sm text-muted-foreground">
-            {activities.length}
-          </Text>
+          <Text className="text-sm text-muted-foreground">{activities.length}</Text>
         </View>
       </View>
       <View className="gap-3 px-4">
@@ -120,9 +112,7 @@ export function ActivityList({
   if (!hasActivities && showEmptyState) {
     return (
       <View className="flex-1 items-center justify-center px-6 py-8">
-        <Text className="text-muted-foreground text-center">
-          {emptyStateMessage}
-        </Text>
+        <Text className="text-muted-foreground text-center">{emptyStateMessage}</Text>
       </View>
     );
   }
@@ -146,11 +136,7 @@ export function ActivityList({
   // Render grouped activities
   return (
     <View>
-      <GroupSection
-        title="Today"
-        activities={groupedActivities.today}
-        onPress={onActivityPress}
-      />
+      <GroupSection title="Today" activities={groupedActivities.today} onPress={onActivityPress} />
       <GroupSection
         title="Tomorrow"
         activities={groupedActivities.tomorrow}
@@ -166,11 +152,7 @@ export function ActivityList({
         activities={groupedActivities.nextWeek}
         onPress={onActivityPress}
       />
-      <GroupSection
-        title="Later"
-        activities={groupedActivities.later}
-        onPress={onActivityPress}
-      />
+      <GroupSection title="Later" activities={groupedActivities.later} onPress={onActivityPress} />
     </View>
   );
 }

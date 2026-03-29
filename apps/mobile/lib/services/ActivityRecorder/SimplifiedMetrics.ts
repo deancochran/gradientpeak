@@ -123,32 +123,14 @@ export class SensorModel<T> {
  * Sensor validation models with range checking
  */
 export const sensorModels = {
-  power: new SensorModel<number>(
-    "power",
-    (v: number) => v >= 0 && v <= 4000,
-    0,
-  ),
-  heartrate: new SensorModel<number>(
-    "heartrate",
-    (v: number) => v >= 30 && v <= 250,
-    0,
-  ),
-  cadence: new SensorModel<number>(
-    "cadence",
-    (v: number) => v >= 0 && v <= 255,
-    0,
-  ),
+  power: new SensorModel<number>("power", (v: number) => v >= 0 && v <= 4000, 0),
+  heartrate: new SensorModel<number>("heartrate", (v: number) => v >= 30 && v <= 250, 0),
+  cadence: new SensorModel<number>("cadence", (v: number) => v >= 0 && v <= 255, 0),
   speed: new SensorModel<number>("speed", (v: number) => v >= 0 && v <= 100, 0),
-  temperature: new SensorModel<number>(
-    "temperature",
-    (v: number) => v >= -50 && v <= 60,
-    0,
-  ),
+  temperature: new SensorModel<number>("temperature", (v: number) => v >= -50 && v <= 60, 0),
 };
 
-export function getSensorModel(
-  metric: string,
-): SensorModel<number> | undefined {
+export function getSensorModel(metric: string): SensorModel<number> | undefined {
   return sensorModels[metric as keyof typeof sensorModels];
 }
 
@@ -197,13 +179,7 @@ export const POWER_ZONE_NAMES = [
   "Neuromuscular",
 ] as const;
 
-export const HR_ZONE_NAMES = [
-  "Recovery",
-  "Aerobic",
-  "Tempo",
-  "Threshold",
-  "Anaerobic",
-] as const;
+export const HR_ZONE_NAMES = ["Recovery", "Aerobic", "Tempo", "Threshold", "Anaerobic"] as const;
 
 /**
  * Calculate zone distribution percentages
@@ -375,9 +351,7 @@ export function convertToSimplifiedMetrics(
       efficiencyFactor: state.efficiencyFactorEst,
       decoupling: state.decouplingEst,
       powerWeightRatio:
-        profile?.weight_kg && state.avgPower > 0
-          ? state.avgPower / profile.weight_kg
-          : 0,
+        profile?.weight_kg && state.avgPower > 0 ? state.avgPower / profile.weight_kg : 0,
       powerHrRatio: state.powerHeartRateRatio,
     };
   }

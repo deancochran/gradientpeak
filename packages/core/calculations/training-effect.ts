@@ -12,12 +12,7 @@
  * - VO2Max: Significant time in Zone 5
  */
 
-export type TrainingEffectLabel =
-  | "recovery"
-  | "base"
-  | "tempo"
-  | "threshold"
-  | "vo2max";
+export type TrainingEffectLabel = "recovery" | "base" | "tempo" | "threshold" | "vo2max";
 
 /**
  * Calculates the primary Training Effect label for an activity.
@@ -70,11 +65,7 @@ export function calculateTrainingEffect(
     let duration = 1;
     if (nextTimestamp !== undefined && currentTimestamp !== undefined) {
       duration = nextTimestamp - currentTimestamp;
-    } else if (
-      i > 0 &&
-      currentTimestamp !== undefined &&
-      timestamps[i - 1] !== undefined
-    ) {
+    } else if (i > 0 && currentTimestamp !== undefined && timestamps[i - 1] !== undefined) {
       duration = currentTimestamp - timestamps[i - 1]!;
     }
 
@@ -107,26 +98,17 @@ export function calculateTrainingEffect(
   const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
 
   // If significant time in Z5 (e.g., > 5% of duration or high score contribution)
-  if (
-    timeInZones.z5 / totalDuration > 0.05 ||
-    scores.vo2max / totalScore > 0.3
-  ) {
+  if (timeInZones.z5 / totalDuration > 0.05 || scores.vo2max / totalScore > 0.3) {
     return "vo2max";
   }
 
   // If significant time in Z4
-  if (
-    timeInZones.z4 / totalDuration > 0.1 ||
-    scores.threshold / totalScore > 0.3
-  ) {
+  if (timeInZones.z4 / totalDuration > 0.1 || scores.threshold / totalScore > 0.3) {
     return "threshold";
   }
 
   // If significant time in Z3
-  if (
-    timeInZones.z3 / totalDuration > 0.15 ||
-    scores.tempo / totalScore > 0.3
-  ) {
+  if (timeInZones.z3 / totalDuration > 0.15 || scores.tempo / totalScore > 0.3) {
     return "tempo";
   }
 

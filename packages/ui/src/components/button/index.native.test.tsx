@@ -2,13 +2,12 @@ import * as React from "react";
 
 jest.mock("@rn-primitives/slot", () => {
   return {
-    Text: (props: any) =>
-      React.createElement("Slot.Text", props, props.children),
+    Text: (props: any) => React.createElement("Slot.Text", props, props.children),
   };
 });
 
-import { Text } from "../text/index.native";
 import { fireEvent, renderNative } from "../../test/render-native";
+import { Text } from "../text/index.native";
 import { buttonFixtures } from "./fixtures";
 import { Button } from "./index.native";
 

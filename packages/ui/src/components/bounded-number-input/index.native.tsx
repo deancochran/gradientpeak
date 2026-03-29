@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { formatNumberForInput, parseBoundedNumber } from "../../lib/fitness-inputs";
+import {
+  formatNumberForInput,
+  parseBoundedNumber,
+  parseNumberOrUndefined,
+} from "../../lib/fitness-inputs";
 import { View } from "../../lib/react-native";
 import { Button } from "../button/index.native";
 import { Input } from "../input/index.native";
@@ -70,13 +74,7 @@ function BoundedNumberInput({
           onChangeText={(nextValue) => {
             setDraftValue(nextValue);
             onChange(nextValue);
-            onNumberChange?.(
-              parseBoundedNumber(nextValue, {
-                min,
-                max,
-                decimals,
-              }),
-            );
+            onNumberChange?.(parseNumberOrUndefined(nextValue));
           }}
           keyboardType="numbers-and-punctuation"
           placeholder={placeholder}

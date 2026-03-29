@@ -1,10 +1,11 @@
 import { computeAcwr, computeMonotony } from "@repo/core";
 
-export type LoadSource = "trimp" | "training_stress_score" | "mixed" | "none";
+export type LoadSource = "trimp" | "tss" | "mixed" | "none";
 
 export interface CanonicalLoadActivity {
   started_at?: string | null;
   trimp?: number | null;
+  tss?: number | null;
   training_stress_score?: number | null;
 }
 
@@ -37,14 +38,10 @@ export function buildCanonicalDailyLoads(
     if (!dateKey) continue;
 
     const trimp =
-      typeof activity.trimp === "number" && Number.isFinite(activity.trimp)
-        ? activity.trimp
-        : null;
+      typeof activity.trimp === "number" && Number.isFinite(activity.trimp) ? activity.trimp : null;
+    const tssCandidate = activity.tss ?? activity.training_stress_score;
     const tss =
-      typeof activity.training_stress_score === "number" &&
-      Number.isFinite(activity.training_stress_score)
-        ? activity.training_stress_score
-        : null;
+      typeof tssCandidate === "number" && Number.isFinite(tssCandidate) ? tssCandidate : null;
 
     const load = trimp ?? tss ?? 0;
     if (trimp !== null) {
@@ -70,7 +67,7 @@ export function buildCanonicalDailyLoads(
   } else if (trimpCount > 0) {
     source = "trimp";
   } else if (tssCount > 0) {
-    source = "training_stress_score";
+    source = "tss";
   }
 
   return {
@@ -81,8 +78,7 @@ export function buildCanonicalDailyLoads(
           Math.min(
             dailyLoads.length,
             Math.floor(
-              (endDate.getTime() - earliestActivityDate.getTime()) /
-                (1000 * 60 * 60 * 24),
+              (endDate.getTime() - earliestActivityDate.getTime()) / (1000 * 60 * 60 * 24),
             ) + 1,
           ),
         )
@@ -96,11 +92,7 @@ export function buildWorkloadEnvelopes(
   startDate: Date,
   endDate: Date,
 ) {
-  const canonicalLoads = buildCanonicalDailyLoads(
-    activities,
-    startDate,
-    endDate,
-  );
+  const canonicalLoads = buildCanonicalDailyLoads(activities, startDate, endDate);
 
   return {
     acwr: {
@@ -108,10 +100,7 @@ export function buildWorkloadEnvelopes(
       source: canonicalLoads.source,
     },
     monotony: {
-      ...computeMonotony(
-        canonicalLoads.dailyLoads,
-        canonicalLoads.coverageDays,
-      ),
+      ...computeMonotony(canonicalLoads.dailyLoads, canonicalLoads.coverageDays),
       source: canonicalLoads.source,
     },
   };

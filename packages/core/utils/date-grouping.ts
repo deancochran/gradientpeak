@@ -62,9 +62,9 @@ export function getDateRanges(referenceDate: Date = new Date()) {
 /**
  * Group activities by date ranges (today, tomorrow, this week, next week, later)
  */
-export function groupActivitiesByDate<
-  T extends { scheduled_date: string | Date },
->(activities: T[]): GroupedActivities<T> {
+export function groupActivitiesByDate<T extends { scheduled_date: string | Date }>(
+  activities: T[],
+): GroupedActivities<T> {
   const ranges = getDateRanges();
 
   const groups: GroupedActivities<T> = {
@@ -87,9 +87,7 @@ export function groupActivitiesByDate<
       activityDate > ranges.today
     ) {
       groups.thisWeek.push(activity);
-    } else if (
-      isDateInRange(activityDate, ranges.nextWeekStart, ranges.nextWeekEnd)
-    ) {
+    } else if (isDateInRange(activityDate, ranges.nextWeekStart, ranges.nextWeekEnd)) {
       groups.nextWeek.push(activity);
     } else if (activityDate > ranges.nextWeekEnd) {
       groups.later.push(activity);
@@ -102,9 +100,10 @@ export function groupActivitiesByDate<
 /**
  * Get activities for a specific week
  */
-export function getActivitiesForWeek<
-  T extends { scheduled_date: string | Date },
->(activities: T[], weekOffset: number = 0): T[][] {
+export function getActivitiesForWeek<T extends { scheduled_date: string | Date }>(
+  activities: T[],
+  weekOffset: number = 0,
+): T[][] {
   const now = new Date();
   const startOfWeek = getStartOfWeek(now);
   startOfWeek.setDate(startOfWeek.getDate() + weekOffset * 7);
@@ -114,8 +113,7 @@ export function getActivitiesForWeek<
   activities.forEach((activity) => {
     const activityDate = new Date(activity.scheduled_date);
     const daysDiff = Math.floor(
-      (normalizeDate(activityDate).getTime() - startOfWeek.getTime()) /
-        (24 * 60 * 60 * 1000),
+      (normalizeDate(activityDate).getTime() - startOfWeek.getTime()) / (24 * 60 * 60 * 1000),
     );
 
     if (daysDiff >= 0 && daysDiff < 7) {
@@ -159,19 +157,17 @@ export interface DayActivitySummary {
   activityCount: number;
 }
 
-export function getDayActivitySummary<
-  T extends { scheduled_date: string | Date },
->(activities: T[], date: Date): DayActivitySummary {
-  const dayActivities = activities.filter((a) =>
-    isSameDay(new Date(a.scheduled_date), date),
-  );
+export function getDayActivitySummary<T extends { scheduled_date: string | Date }>(
+  activities: T[],
+  date: Date,
+): DayActivitySummary {
+  const dayActivities = activities.filter((a) => isSameDay(new Date(a.scheduled_date), date));
 
   return {
     date,
     hasActivities: dayActivities.length > 0,
     completed: dayActivities.every((a) => isActivityCompleted(a)),
-    activityType:
-      (dayActivities[0] as any)?.activity_plan?.activity_category || "rest",
+    activityType: (dayActivities[0] as any)?.activity_plan?.activity_category || "rest",
     activityCount: dayActivities.length,
   };
 }

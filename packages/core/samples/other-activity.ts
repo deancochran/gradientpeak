@@ -56,8 +56,7 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
   id: "4e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
   version: "2.0",
   name: "Rock Climbing Session",
-  description:
-    "Indoor/outdoor rock climbing session with warm-up and cool-down",
+  description: "Indoor/outdoor rock climbing session with warm-up and cool-down",
   activity_category: "other",
   gps_recording_enabled: true,
   structure: createPlan()
@@ -65,8 +64,7 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
       name: "Dynamic Warm-up",
       duration: Duration.minutes(15),
       targets: [Target.thresholdHR(60)],
-      notes:
-        "Arm circles, finger/wrist mobility, easy traversing or easy routes",
+      notes: "Arm circles, finger/wrist mobility, easy traversing or easy routes",
     })
     .step({
       name: "Easy Routes",
@@ -141,8 +139,7 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
       name: "Trail Descent",
       duration: Duration.minutes(40),
       targets: [Target.thresholdHR(60)],
-      notes:
-        "Control pace on downhill, focus on foot placement and knee impact",
+      notes: "Control pace on downhill, focus on foot placement and knee impact",
     })
     .build(),
 };
@@ -176,8 +173,7 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
       name: "Main WOD",
       duration: Duration.minutes(15),
       targets: [Target.thresholdHR(88)],
-      notes:
-        "AMRAP, EMOM, or time-based activity - push hard but maintain form",
+      notes: "AMRAP, EMOM, or time-based activity - push hard but maintain form",
     })
     .step({
       name: "Cool-down & Mobility",

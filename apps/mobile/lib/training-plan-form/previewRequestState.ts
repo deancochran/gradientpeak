@@ -6,9 +6,6 @@ export function shouldIgnorePreviewResponse(input: {
   return input.cancelled || input.requestId < input.latestAppliedRequestId;
 }
 
-export function nextPendingPreviewCount(input: {
-  pendingCount: number;
-  delta: 1 | -1;
-}): number {
+export function nextPendingPreviewCount(input: { pendingCount: number; delta: 1 | -1 }): number {
   return Math.max(0, input.pendingCount + input.delta);
 }

@@ -10,24 +10,20 @@
  */
 
 import { z } from "zod";
+import { profileGoalTargetSchema } from "./goals/profile_goals";
 import {
-  publicActivitiesInsertSchema,
-  publicActivityCategorySchema,
-  publicActivityPlansInsertSchema,
-} from "@repo/supabase";
+  eventLifecycleSchema,
+  eventMutationScopeSchema,
+  eventRecurrenceSchema,
+  eventTypeInputSchema,
+  importedEventSourceMetadataSchema,
+} from "./planned_activity";
+import { canonicalSportSchema } from "./sport";
 import {
   creationProvenanceSchema,
   creationRecentInfluenceActionEnum,
   trainingPlanCreationConfigSchema,
 } from "./training_plan_structure";
-import { profileGoalTargetSchema } from "./goals/profile_goals";
-import {
-  eventMutationScopeSchema,
-  eventRecurrenceSchema,
-  eventTypeInputSchema,
-  eventLifecycleSchema,
-  importedEventSourceMetadataSchema,
-} from "./planned_activity";
 
 // ============================================================================
 // REUSABLE VALIDATION PATTERNS
@@ -87,9 +83,22 @@ export const distanceKmSchema = z.preprocess(
     .positive("Distance must be greater than 0 km"),
 );
 
-export const distanceKmToMetersSchema = distanceKmSchema.transform((km) =>
-  Math.round(km * 1000),
-);
+export const distanceKmToMetersSchema = distanceKmSchema.transform((km) => Math.round(km * 1000));
+
+const activityInsertShapeSchema = z.object({
+  is_private: z.boolean().optional(),
+  name: z.string(),
+  notes: z.string().nullable().optional(),
+});
+
+const activityPlanInsertShapeSchema = z.object({
+  activity_category: canonicalSportSchema,
+  description: z.string(),
+  name: z.string(),
+  notes: z.string().nullable().optional(),
+  route_id: z.string().uuid().nullable().optional(),
+  structure: z.unknown().nullable().optional(),
+});
 
 /**
  * Strict completion time input in h:mm:ss format.
@@ -99,11 +108,10 @@ export const completionTimeHmsSchema = z
   .trim()
   .regex(/^\d+:[0-5]\d:[0-5]\d$/, "Completion time must use h:mm:ss format");
 
-export const completionTimeHmsToSecondsSchema =
-  completionTimeHmsSchema.transform((value) => {
-    const [hours = 0, minutes = 0, seconds = 0] = value.split(":").map(Number);
-    return hours * 3600 + minutes * 60 + seconds;
-  });
+export const completionTimeHmsToSecondsSchema = completionTimeHmsSchema.transform((value) => {
+  const [hours = 0, minutes = 0, seconds = 0] = value.split(":").map(Number);
+  return hours * 3600 + minutes * 60 + seconds;
+});
 
 /**
  * Strict pace input in mm:ss format.
@@ -137,12 +145,7 @@ export const emailSchema = z
  */
 export const optionalEmailSchema = z.preprocess(
   emptyStringToNull,
-  z
-    .string()
-    .email("Please enter a valid email address")
-    .toLowerCase()
-    .trim()
-    .nullable(),
+  z.string().email("Please enter a valid email address").toLowerCase().trim().nullable(),
 );
 
 /**
@@ -150,10 +153,7 @@ export const optionalEmailSchema = z.preprocess(
  */
 export const phoneSchema = z
   .string()
-  .regex(
-    /^\+?[1-9]\d{1,14}$/,
-    "Please enter a valid phone number (e.g., +1234567890)",
-  )
+  .regex(/^\+?[1-9]\d{1,14}$/, "Please enter a valid phone number (e.g., +1234567890)")
   .trim();
 
 /**
@@ -163,10 +163,7 @@ export const optionalPhoneSchema = z.preprocess(
   emptyStringToNull,
   z
     .string()
-    .regex(
-      /^\+?[1-9]\d{1,14}$/,
-      "Please enter a valid phone number (e.g., +1234567890)",
-    )
+    .regex(/^\+?[1-9]\d{1,14}$/, "Please enter a valid phone number (e.g., +1234567890)")
     .trim()
     .nullable(),
 );
@@ -191,19 +188,13 @@ export const usernameSchema = z
   .string()
   .min(3, "Username must be at least 3 characters")
   .max(30, "Username must be less than 30 characters")
-  .regex(
-    /^[a-zA-Z0-9_]+$/,
-    "Username can only contain letters, numbers, and underscores",
-  )
+  .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores")
   .trim();
 
 /**
  * Optional username
  */
-export const optionalUsernameSchema = z.preprocess(
-  emptyStringToNull,
-  usernameSchema.nullable(),
-);
+export const optionalUsernameSchema = z.preprocess(emptyStringToNull, usernameSchema.nullable());
 
 /**
  * Date string validation (ISO 8601 format)
@@ -413,20 +404,12 @@ export const optionalAgeSchema = z.preprocess(
 /**
  * Gender validation
  */
-export const genderSchema = z.enum([
-  "male",
-  "female",
-  "other",
-  "prefer_not_to_say",
-]);
+export const genderSchema = z.enum(["male", "female", "other", "prefer_not_to_say"]);
 
 /**
  * Optional gender
  */
-export const optionalGenderSchema = z.preprocess(
-  emptyStringToNull,
-  genderSchema.nullable(),
-);
+export const optionalGenderSchema = z.preprocess(emptyStringToNull, genderSchema.nullable());
 
 /**
  * Date of Birth validation
@@ -437,43 +420,30 @@ export const dobSchema = z
   .refine((val) => !isNaN(Date.parse(val)), "Invalid date of birth")
   .refine((val) => {
     const dob = new Date(val);
-    const age = Math.floor(
-      (Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
-    );
+    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
     return age >= 13;
   }, "You must be at least 13 years old")
   .refine((val) => {
     const dob = new Date(val);
-    const age = Math.floor(
-      (Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
-    );
+    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
     return age <= 120;
   }, "Invalid date of birth");
 
 /**
  * Optional date of birth
  */
-export const optionalDobSchema = z.preprocess(
-  emptyStringToNull,
-  dobSchema.nullable(),
-);
+export const optionalDobSchema = z.preprocess(emptyStringToNull, dobSchema.nullable());
 
 /**
  * Bio/description validation
  * Max 500 characters
  */
-export const bioSchema = z
-  .string()
-  .max(500, "Bio must be less than 500 characters")
-  .trim();
+export const bioSchema = z.string().max(500, "Bio must be less than 500 characters").trim();
 
 /**
  * Optional bio
  */
-export const optionalBioSchema = z.preprocess(
-  emptyStringToNull,
-  bioSchema.nullable(),
-);
+export const optionalBioSchema = z.preprocess(emptyStringToNull, bioSchema.nullable());
 
 /**
  * Profile Settings Form Schema
@@ -504,8 +474,7 @@ export const profileSettingsFormSchema = z
       return true;
     },
     {
-      message:
-        "Power-to-weight ratio seems unrealistic. Please verify FTP and weight.",
+      message: "Power-to-weight ratio seems unrealistic. Please verify FTP and weight.",
       path: ["ftp"],
     },
   );
@@ -520,6 +489,7 @@ export const profileQuickUpdateSchema = z.object({
   weight_kg: optionalWeightKgSchema,
   ftp: optionalFtpSchema,
   threshold_hr: optionalThresholdHrSchema,
+  is_public: z.boolean().optional(),
 });
 
 export type ProfileQuickUpdateData = z.infer<typeof profileQuickUpdateSchema>;
@@ -561,11 +531,7 @@ export const activityNotesSchema = z.preprocess(
  * Handles undefined, null, empty strings, and actual content
  */
 export const optionalActivityNotesSchema = z
-  .union([
-    z.string().max(5000, "Notes must be less than 5000 characters"),
-    z.literal(""),
-    z.null(),
-  ])
+  .union([z.string().max(5000, "Notes must be less than 5000 characters"), z.literal(""), z.null()])
   .optional()
   .transform((val) => {
     // Handle undefined, null, or empty string - normalize to null
@@ -585,7 +551,7 @@ export const optionalActivityNotesSchema = z
  * - notes: optional, max 5000 characters (from supazod: optional nullable string)
  * - is_private: optional boolean, defaults to false (from supazod: optional boolean)
  */
-export const activitySubmissionFormSchema = publicActivitiesInsertSchema
+export const activitySubmissionFormSchema = activityInsertShapeSchema
   .pick({
     name: true,
     notes: true,
@@ -599,9 +565,7 @@ export const activitySubmissionFormSchema = publicActivitiesInsertSchema
     // Keep is_private as-is from supazod (optional boolean)
   });
 
-export type ActivitySubmissionFormData = z.infer<
-  typeof activitySubmissionFormSchema
->;
+export type ActivitySubmissionFormData = z.infer<typeof activitySubmissionFormSchema>;
 
 /**
  * Activity Update Schema (for editing existing activities)
@@ -632,10 +596,7 @@ export const activityPlanNameSchema = z.preprocess(
  */
 export const activityPlanDescriptionSchema = z.preprocess(
   trimString,
-  z
-    .string()
-    .max(1000, "Description must be less than 1000 characters")
-    .optional(),
+  z.string().max(1000, "Description must be less than 1000 characters").optional(),
 );
 
 /**
@@ -654,9 +615,7 @@ export const activityPlanNotesSchema = z
   .string()
   .nullable()
   .transform((val) => trimString(emptyStringToNull(val)))
-  .pipe(
-    z.string().max(2000, "Notes must be less than 2000 characters").nullable(),
-  );
+  .pipe(z.string().max(2000, "Notes must be less than 2000 characters").nullable());
 
 /**
  * Estimated duration validation (in seconds)
@@ -724,7 +683,7 @@ export const gpsRecordingEnabledSchema = z.boolean();
 /**
  * Activity category validation
  */
-export const activityCategorySchema = publicActivityCategorySchema;
+export const activityCategorySchema = canonicalSportSchema;
 
 /**
  * Activity Plan Create Form Schema
@@ -745,7 +704,7 @@ export const activityCategorySchema = publicActivityCategorySchema;
  * - Description-only: Casual activity with no structure
  * - Combinations supported
  */
-export const activityPlanCreateFormSchema = publicActivityPlansInsertSchema
+export const activityPlanCreateFormSchema = activityPlanInsertShapeSchema
   .pick({
     name: true,
     description: true,
@@ -761,10 +720,7 @@ export const activityPlanCreateFormSchema = publicActivityPlansInsertSchema
     // Form allows it to be optional, defaulting to empty string
     description: z.preprocess(
       trimString,
-      z
-        .string()
-        .max(1000, "Description must be less than 1000 characters")
-        .default(""),
+      z.string().max(1000, "Description must be less than 1000 characters").default(""),
     ),
     notes: activityPlanNotesSchema,
     structure: z
@@ -787,22 +743,16 @@ export const activityPlanCreateFormSchema = publicActivityPlansInsertSchema
     },
   );
 
-export type ActivityPlanCreateFormData = z.infer<
-  typeof activityPlanCreateFormSchema
->;
+export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSchema>;
 
 /**
  * Activity Plan Update Form Schema
  */
-export const activityPlanUpdateFormSchema = activityPlanCreateFormSchema
-  .partial()
-  .extend({
-    id: z.string().uuid("Invalid activity plan ID"),
-  });
+export const activityPlanUpdateFormSchema = activityPlanCreateFormSchema.partial().extend({
+  id: z.string().uuid("Invalid activity plan ID"),
+});
 
-export type ActivityPlanUpdateFormData = z.infer<
-  typeof activityPlanUpdateFormSchema
->;
+export type ActivityPlanUpdateFormData = z.infer<typeof activityPlanUpdateFormSchema>;
 
 // ============================================================================
 // PLANNED ACTIVITY FORM SCHEMAS
@@ -824,18 +774,13 @@ export const plannedActivityScheduleFormSchema = z.object({
   read_only: z.boolean().optional(),
 });
 
-export type PlannedActivityScheduleFormData = z.infer<
-  typeof plannedActivityScheduleFormSchema
->;
+export type PlannedActivityScheduleFormData = z.infer<typeof plannedActivityScheduleFormSchema>;
 
 /**
  * Planned Activity Update Form Schema
  */
 export const plannedActivityUpdateFormSchema = z.object({
-  activity_plan_id: z
-    .string()
-    .uuid("Please select an activity plan")
-    .optional(),
+  activity_plan_id: z.string().uuid("Please select an activity plan").optional(),
   scheduled_date: dateStringSchema.optional(),
   notes: activityPlanNotesSchema,
   event_type: eventTypeInputSchema.optional(),
@@ -844,9 +789,7 @@ export const plannedActivityUpdateFormSchema = z.object({
   scope: eventMutationScopeSchema.default("single").optional(),
 });
 
-export type PlannedActivityUpdateFormData = z.infer<
-  typeof plannedActivityUpdateFormSchema
->;
+export type PlannedActivityUpdateFormData = z.infer<typeof plannedActivityUpdateFormSchema>;
 
 /**
  * Planned Activity Reschedule Form Schema
@@ -860,9 +803,7 @@ export const plannedActivityRescheduleFormSchema = z.object({
   scope: eventMutationScopeSchema.default("single"),
 });
 
-export type PlannedActivityRescheduleFormData = z.infer<
-  typeof plannedActivityRescheduleFormSchema
->;
+export type PlannedActivityRescheduleFormData = z.infer<typeof plannedActivityRescheduleFormSchema>;
 
 // ============================================================================
 // TRAINING PLAN FORM SCHEMAS
@@ -884,10 +825,7 @@ export const trainingPlanNameSchema = z.preprocess(
  */
 export const optionalTrainingPlanDescriptionSchema = z.preprocess(
   (val) => trimString(emptyStringToNull(val)),
-  z
-    .string()
-    .max(1000, "Description must be less than 1000 characters")
-    .nullable(),
+  z.string().max(1000, "Description must be less than 1000 characters").nullable(),
 );
 
 export const trainingPlanGoalDateSchema = z
@@ -912,19 +850,14 @@ export const trainingPlanMinimalGoalFormSchema = z.object({
   target_date: trainingPlanGoalDateSchema,
 });
 
-export type TrainingPlanMinimalGoalFormData = z.infer<
-  typeof trainingPlanMinimalGoalFormSchema
->;
+export type TrainingPlanMinimalGoalFormData = z.infer<typeof trainingPlanMinimalGoalFormSchema>;
 
-export const trainingPlanAdvancedGoalFormSchema =
-  trainingPlanMinimalGoalFormSchema.extend({
-    priority: trainingPlanGoalPrioritySchema.optional(),
-    targets: z.array(trainingPlanGoalTargetFormSchema).min(1),
-  });
+export const trainingPlanAdvancedGoalFormSchema = trainingPlanMinimalGoalFormSchema.extend({
+  priority: trainingPlanGoalPrioritySchema.optional(),
+  targets: z.array(trainingPlanGoalTargetFormSchema).min(1),
+});
 
-export type TrainingPlanAdvancedGoalFormData = z.infer<
-  typeof trainingPlanAdvancedGoalFormSchema
->;
+export type TrainingPlanAdvancedGoalFormData = z.infer<typeof trainingPlanAdvancedGoalFormSchema>;
 
 export const trainingPlanMinimalSubmitFormSchema = z.object({
   goals: z
@@ -939,21 +872,18 @@ export const trainingPlanMinimalSubmitFormSchema = z.object({
     .min(1),
 });
 
-export type TrainingPlanMinimalSubmitFormData = z.infer<
-  typeof trainingPlanMinimalSubmitFormSchema
->;
+export type TrainingPlanMinimalSubmitFormData = z.infer<typeof trainingPlanMinimalSubmitFormSchema>;
 
 /**
  * Training plan creation provenance metadata at form boundary.
  * Allows confidence to be submitted as a number or numeric string.
  */
-export const trainingPlanCreationProvenanceFormSchema =
-  creationProvenanceSchema.extend({
-    confidence: z.preprocess(
-      (val) => stringToNumber(emptyStringToNull(val)),
-      z.number().min(0).max(1).nullable(),
-    ),
-  });
+export const trainingPlanCreationProvenanceFormSchema = creationProvenanceSchema.extend({
+  confidence: z.preprocess(
+    (val) => stringToNumber(emptyStringToNull(val)),
+    z.number().min(0).max(1).nullable(),
+  ),
+});
 
 export type TrainingPlanCreationProvenanceFormData = z.infer<
   typeof trainingPlanCreationProvenanceFormSchema
@@ -963,11 +893,10 @@ export type TrainingPlanCreationProvenanceFormData = z.infer<
  * Form-level validator for creation config used by preview/create MVP endpoints.
  * Adds cross-field checks that are specific to submission semantics.
  */
-export const trainingPlanCreationConfigFormSchema =
-  trainingPlanCreationConfigSchema.superRefine((data, ctx) => {
+export const trainingPlanCreationConfigFormSchema = trainingPlanCreationConfigSchema.superRefine(
+  (data, ctx) => {
     if (
-      data.recent_influence_action ===
-        creationRecentInfluenceActionEnum.enum.disabled &&
+      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.disabled &&
       data.recent_influence.influence_score !== 0
     ) {
       ctx.addIssue({
@@ -979,31 +908,28 @@ export const trainingPlanCreationConfigFormSchema =
     }
 
     if (
-      data.recent_influence_action ===
-        creationRecentInfluenceActionEnum.enum.accepted &&
+      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.accepted &&
       data.recent_influence_provenance.source !== "suggested"
     ) {
       ctx.addIssue({
         code: "custom",
         path: ["recent_influence_provenance", "source"],
-        message:
-          'recent_influence_provenance.source must be "suggested" when action is "accepted"',
+        message: 'recent_influence_provenance.source must be "suggested" when action is "accepted"',
       });
     }
 
     if (
-      data.recent_influence_action ===
-        creationRecentInfluenceActionEnum.enum.edited &&
+      data.recent_influence_action === creationRecentInfluenceActionEnum.enum.edited &&
       data.recent_influence_provenance.source !== "user"
     ) {
       ctx.addIssue({
         code: "custom",
         path: ["recent_influence_provenance", "source"],
-        message:
-          'recent_influence_provenance.source must be "user" when action is "edited"',
+        message: 'recent_influence_provenance.source must be "user" when action is "edited"',
       });
     }
-  });
+  },
+);
 
 export type TrainingPlanCreationConfigFormData = z.infer<
   typeof trainingPlanCreationConfigFormSchema
@@ -1050,9 +976,7 @@ export const trainingPlanBasicInfoFormSchema = z.object({
   end_date: futureDateSchema.optional(),
 });
 
-export type TrainingPlanBasicInfoFormData = z.infer<
-  typeof trainingPlanBasicInfoFormSchema
->;
+export type TrainingPlanBasicInfoFormData = z.infer<typeof trainingPlanBasicInfoFormSchema>;
 
 /**
  * Training Plan Weekly Targets Form Schema
@@ -1072,9 +996,7 @@ export const trainingPlanWeeklyTargetsFormSchema = z.object({
   ),
 });
 
-export type TrainingPlanWeeklyTargetsFormData = z.infer<
-  typeof trainingPlanWeeklyTargetsFormSchema
->;
+export type TrainingPlanWeeklyTargetsFormData = z.infer<typeof trainingPlanWeeklyTargetsFormSchema>;
 
 /**
  * Training Plan Recovery Rules Form Schema
@@ -1108,9 +1030,7 @@ export const trainingPlanRecoveryRulesFormSchema = z.object({
   ),
 });
 
-export type TrainingPlanRecoveryRulesFormData = z.infer<
-  typeof trainingPlanRecoveryRulesFormSchema
->;
+export type TrainingPlanRecoveryRulesFormData = z.infer<typeof trainingPlanRecoveryRulesFormSchema>;
 
 /**
  * Training Plan Periodization Form Schema (Optional Step 3)
@@ -1160,9 +1080,7 @@ export const trainingPlanPeriodizationFormSchema = z
     },
   );
 
-export type TrainingPlanPeriodizationFormData = z.infer<
-  typeof trainingPlanPeriodizationFormSchema
->;
+export type TrainingPlanPeriodizationFormData = z.infer<typeof trainingPlanPeriodizationFormSchema>;
 
 /**
  * Complete Training Plan Creation Form Schema
@@ -1273,15 +1191,12 @@ export const trainingPlanCreateFormSchema = z
       return avgPerActivity <= 500; // Max 500 TSS per activity
     },
     {
-      message:
-        "Average TSS per activity is unreasonably high (>500). Please adjust your targets.",
+      message: "Average TSS per activity is unreasonably high (>500). Please adjust your targets.",
       path: ["tss_max"],
     },
   );
 
-export type TrainingPlanCreateFormData = z.infer<
-  typeof trainingPlanCreateFormSchema
->;
+export type TrainingPlanCreateFormData = z.infer<typeof trainingPlanCreateFormSchema>;
 
 // ============================================================================
 // STEP VALIDATION SCHEMAS

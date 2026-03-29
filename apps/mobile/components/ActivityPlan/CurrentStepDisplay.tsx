@@ -1,13 +1,9 @@
-import { memo } from "react";
-import {
-  type ActivityPlanStructureV2,
-  formatDuration,
-  PlanStepV2,
-} from "@repo/core";
-import { Text } from "@repo/ui/components/text";
+import { type ActivityPlanStructureV2, formatDuration, PlanStepV2 } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
-import { View } from "react-native";
+import { Text } from "@repo/ui/components/text";
 import { Clock } from "lucide-react-native";
+import { memo } from "react";
+import { View } from "react-native";
 import { TargetMetricsGrid } from "./TargetMetricsCard";
 
 type CurrentMetrics = {
@@ -46,8 +42,7 @@ const CurrentStepDisplay = memo<{
           <View className="p-4 bg-muted/20 rounded-lg mb-4">
             <View className="mb-3">
               <Text className="text-base font-semibold">
-                {currentStep.name ||
-                  `Step ${planProgress.currentStepIndex + 1}`}
+                {currentStep.name || `Step ${planProgress.currentStepIndex + 1}`}
               </Text>
               {currentStep.description && (
                 <Text className="text-sm text-muted-foreground mt-1">
@@ -75,10 +70,7 @@ const CurrentStepDisplay = memo<{
 
         {/* Target vs Current Metrics */}
         {currentStep?.targets && (
-          <TargetMetricsGrid
-            targets={currentStep.targets}
-            currentMetrics={currentMetrics}
-          />
+          <TargetMetricsGrid targets={currentStep.targets} currentMetrics={currentMetrics} />
         )}
       </View>
     </View>

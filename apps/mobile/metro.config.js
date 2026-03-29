@@ -1,7 +1,23 @@
 const path = require("node:path");
 const { getDefaultConfig } = require("expo/metro-config");
-const withStorybook = require("@storybook/react-native/metro/withStorybook");
 const { withNativewind } = require("nativewind/metro");
+
+const isStorybookEnabled = process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1";
+
+function getWithStorybook() {
+  if (!isStorybookEnabled) {
+    return (metroConfig) => metroConfig;
+  }
+
+  try {
+    return require("@storybook/react-native/metro/withStorybook");
+  } catch (error) {
+    throw new Error(
+      "Storybook is enabled, but @storybook/react-native is not available in this install. Run `pnpm install` before starting Storybook.",
+      { cause: error },
+    );
+  }
+}
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = withNativewind(getDefaultConfig(__dirname));
@@ -27,7 +43,7 @@ config.resolver = {
   },
 };
 
-module.exports = withStorybook(config, {
-  enabled: process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1",
+module.exports = getWithStorybook()(config, {
+  enabled: isStorybookEnabled,
   configPath: path.resolve(__dirname, ".rnstorybook"),
 });

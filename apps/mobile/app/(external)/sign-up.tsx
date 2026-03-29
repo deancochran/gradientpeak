@@ -1,15 +1,22 @@
-import { zodResolver } from "@hookform/resolvers/zod";
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormMessage, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import {
+  AuthRequestTimeoutError,
+  getAuthRequestTimeoutMessage,
+  withAuthRequestTimeout,
+} from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
@@ -74,17 +81,21 @@ export default function SignUpScreen() {
         }
       }
 
-      const { error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          // For mobile apps, we don't set emailRedirectTo since we can't handle web redirects
-          // Instead, users should verify via the app after clicking the email link
-          // Or disable email confirmation in development
-        },
-      });
+      logMobileAction("auth.signUp", "attempt", { email: data.email });
+
+      const { error } = await withAuthRequestTimeout(
+        supabase.auth.signUp({
+          email: data.email,
+          password: data.password,
+          options: {
+            // For mobile apps, we don't set emailRedirectTo here.
+            // Local and production auth should both keep verify-first behavior.
+          },
+        }),
+      );
 
       if (error) {
+        logMobileAction("auth.signUp", "failure", { email: data.email, error: error.message });
         console.log("Sign up error:", error.message);
         if (error.message?.includes("User already registered")) {
           form.setError("email", {
@@ -104,6 +115,7 @@ export default function SignUpScreen() {
           });
         }
       } else {
+        logMobileAction("auth.signUp", "success", { email: data.email });
         // Successfully signed up - show verification message
         console.log("Successfully signed up:", data.email);
         router.push({
@@ -112,8 +124,17 @@ export default function SignUpScreen() {
         });
       }
     } catch (err) {
+      logMobileAction("auth.signUp", "failure", {
+        email: data.email,
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.log("Unexpected sign up error:", err);
-      form.setError("root", { message: "An unexpected error occurred" });
+      form.setError("root", {
+        message:
+          err instanceof AuthRequestTimeoutError
+            ? getAuthRequestTimeoutMessage()
+            : "An unexpected error occurred",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -202,14 +223,11 @@ export default function SignUpScreen() {
 
                 {/* Root Error */}
                 {form.formState.errors.root && (
-                  <View
-                    className="bg-destructive/15 p-3 rounded-md border border-destructive/25"
-                    testID="form-error"
-                  >
-                    <Text variant="small" className="text-destructive text-center">
+                  <Alert icon={AlertCircle} variant="destructive" testID="form-error">
+                    <AlertDescription className="text-center">
                       {form.formState.errors.root.message}
-                    </Text>
-                  </View>
+                    </AlertDescription>
+                  </Alert>
                 )}
               </View>
             </Form>

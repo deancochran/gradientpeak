@@ -47,10 +47,7 @@ const buildAuthConfirmRedirectUrl = () => {
   const webAppUrl = getWebAppUrl();
   const url = new URL("/auth/confirm", webAppUrl);
   url.searchParams.set("next", getMobileDeepLink());
-  url.searchParams.set(
-    "fallback",
-    new URL("/auth/login", webAppUrl).toString(),
-  );
+  url.searchParams.set("fallback", new URL("/auth/login", webAppUrl).toString());
   return url.toString();
 };
 
@@ -66,64 +63,60 @@ export const authRouter = createTRPCRouter({
   getSession: publicProcedure.query(({ ctx }) => {
     return ctx.session;
   }),
-  signUp: publicProcedure
-    .input(signUpSchema)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        const { data, error } = await ctx.supabase.auth.signUp({
-          email: input.email,
-          password: input.password,
-          options: {
-            emailRedirectTo: buildAuthConfirmRedirectUrl(),
-          },
-        });
+  signUp: publicProcedure.input(signUpSchema).mutation(async ({ ctx, input }) => {
+    try {
+      const { data, error } = await ctx.supabase.auth.signUp({
+        email: input.email,
+        password: input.password,
+        options: {
+          emailRedirectTo: buildAuthConfirmRedirectUrl(),
+        },
+      });
 
-        if (error) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: error.message,
-          });
-        }
-
-        return { user: data.user, session: data.session };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
+      if (error) {
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create user account",
+          code: "BAD_REQUEST",
+          message: error.message,
         });
       }
-    }),
 
-  signInWithPassword: publicProcedure
-    .input(signInSchema)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        const { data, error } = await ctx.supabase.auth.signInWithPassword({
-          email: input.email,
-          password: input.password,
-        });
+      return { user: data.user, session: data.session };
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to create user account",
+      });
+    }
+  }),
 
-        if (error) {
-          throw new TRPCError({
-            code: "UNAUTHORIZED",
-            message: error.message,
-          });
-        }
+  signInWithPassword: publicProcedure.input(signInSchema).mutation(async ({ ctx, input }) => {
+    try {
+      const { data, error } = await ctx.supabase.auth.signInWithPassword({
+        email: input.email,
+        password: input.password,
+      });
 
-        return { user: data.user, session: data.session };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
+      if (error) {
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to sign in",
+          code: "UNAUTHORIZED",
+          message: error.message,
         });
       }
-    }),
+
+      return { user: data.user, session: data.session };
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to sign in",
+      });
+    }
+  }),
 
   signOut: protectedProcedure.mutation(async ({ ctx }) => {
     try {
@@ -156,12 +149,9 @@ export const authRouter = createTRPCRouter({
     .input(sendPasswordResetEmailSchema)
     .mutation(async ({ ctx, input }) => {
       try {
-        const { error } = await ctx.supabase.auth.resetPasswordForEmail(
-          input.email,
-          {
-            redirectTo: buildPasswordResetRedirectUrl(),
-          },
-        );
+        const { error } = await ctx.supabase.auth.resetPasswordForEmail(input.email, {
+          redirectTo: buildPasswordResetRedirectUrl(),
+        });
 
         if (error) {
           throw new TRPCError({
@@ -189,11 +179,10 @@ export const authRouter = createTRPCRouter({
         if (input.currentPassword) {
           // Verify current password by re-authenticating when provided.
           // Recovery-link flows can rotate password without current password.
-          const { error: signInError } =
-            await ctx.supabase.auth.signInWithPassword({
-              email: ctx.session.user.email!,
-              password: input.currentPassword,
-            });
+          const { error: signInError } = await ctx.supabase.auth.signInWithPassword({
+            email: ctx.session.user.email!,
+            password: input.currentPassword,
+          });
 
           if (signInError) {
             throw new TRPCError({
@@ -227,55 +216,52 @@ export const authRouter = createTRPCRouter({
       }
     }),
 
-  updateEmail: protectedProcedure
-    .input(updateEmailSchema)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        // Verify password by re-authenticating
-        const { error: signInError } =
-          await ctx.supabase.auth.signInWithPassword({
-            email: ctx.session.user.email!,
-            password: input.password,
-          });
+  updateEmail: protectedProcedure.input(updateEmailSchema).mutation(async ({ ctx, input }) => {
+    try {
+      // Verify password by re-authenticating
+      const { error: signInError } = await ctx.supabase.auth.signInWithPassword({
+        email: ctx.session.user.email!,
+        password: input.password,
+      });
 
-        if (signInError) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Password is incorrect",
-          });
-        }
-
-        // Update email - Supabase will send verification emails to both old and new
-        const { error } = await ctx.supabase.auth.updateUser(
-          {
-            email: input.newEmail,
-          },
-          {
-            emailRedirectTo: buildAuthConfirmRedirectUrl(),
-          },
-        );
-
-        if (error) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: error.message,
-          });
-        }
-
-        return {
-          success: true,
-          message: `Verification emails sent to both ${ctx.session.user.email} and ${input.newEmail}. Please verify both to complete the email change.`,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
+      if (signInError) {
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to update email",
+          code: "BAD_REQUEST",
+          message: "Password is incorrect",
         });
       }
-    }),
+
+      // Update email - Supabase will send verification emails to both old and new
+      const { error } = await ctx.supabase.auth.updateUser(
+        {
+          email: input.newEmail,
+        },
+        {
+          emailRedirectTo: buildAuthConfirmRedirectUrl(),
+        },
+      );
+
+      if (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: error.message,
+        });
+      }
+
+      return {
+        success: true,
+        message: `Verification emails sent to both ${ctx.session.user.email} and ${input.newEmail}. Please verify both to complete the email change.`,
+      };
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to update email",
+      });
+    }
+  }),
 
   resendVerificationEmail: publicProcedure
     .input(resendVerificationEmailSchema)
@@ -308,42 +294,38 @@ export const authRouter = createTRPCRouter({
       }
     }),
 
-  verifyOtp: publicProcedure
-    .input(verifyOtpSchema)
-    .mutation(async ({ ctx, input }) => {
-      try {
-        const { error } = await ctx.supabase.auth.verifyOtp({
-          type: input.type as any,
-          token_hash: input.token_hash,
-        });
+  verifyOtp: publicProcedure.input(verifyOtpSchema).mutation(async ({ ctx, input }) => {
+    try {
+      const { error } = await ctx.supabase.auth.verifyOtp({
+        type: input.type as any,
+        token_hash: input.token_hash,
+      });
 
-        if (error) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: error.message,
-          });
-        }
-
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
+      if (error) {
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to verify OTP",
+          code: "BAD_REQUEST",
+          message: error.message,
         });
       }
-    }),
+
+      return { success: true };
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to verify OTP",
+      });
+    }
+  }),
 
   deleteAccount: protectedProcedure.mutation(async ({ ctx }) => {
     try {
       // Use the Admin API to delete the user directly
       // This is required because the RPC 'delete_own_account' relies on auth.uid()
       // which is not set when using the Service Role client in tRPC context
-      const { error: deleteError } = await ctx.supabase.auth.admin.deleteUser(
-        ctx.session.user.id,
-      );
+      const { error: deleteError } = await ctx.supabase.auth.admin.deleteUser(ctx.session.user.id);
 
       if (deleteError) {
         throw new TRPCError({
@@ -357,10 +339,7 @@ export const authRouter = createTRPCRouter({
 
       if (signOutError) {
         // Log but don't fail - account is already deleted
-        console.error(
-          "Error signing out after account deletion:",
-          signOutError,
-        );
+        console.error("Error signing out after account deletion:", signOutError);
       }
 
       return { success: true };

@@ -5,12 +5,12 @@
  */
 
 export interface RunningTestSuggestion {
-  type: 'threshold_pace' | '5k_pace' | '10k_pace' | 'tempo_pace';
+  type: "threshold_pace" | "5k_pace" | "10k_pace" | "tempo_pace";
   value: number; // seconds per km
   distance: number; // meters
   duration: number; // seconds
   detectionMethod: string;
-  confidence: 'high' | 'medium' | 'low';
+  confidence: "high" | "medium" | "low";
 }
 
 /**
@@ -30,13 +30,9 @@ export interface RunningTestSuggestion {
 export function detectRunningTestEfforts(
   paceStream: number[],
   timestamps: number[],
-  distanceStream: number[]
+  distanceStream: number[],
 ): RunningTestSuggestion[] {
-  if (
-    paceStream.length === 0 ||
-    timestamps.length === 0 ||
-    distanceStream.length === 0
-  ) {
+  if (paceStream.length === 0 || timestamps.length === 0 || distanceStream.length === 0) {
     return [];
   }
 
@@ -46,22 +42,22 @@ export function detectRunningTestEfforts(
   const fiveK = findBestPaceForDistance(paceStream, timestamps, distanceStream, 5000);
   if (fiveK && fiveK.time >= 1200 && fiveK.time <= 1800) {
     suggestions.push({
-      type: '5k_pace',
+      type: "5k_pace",
       value: fiveK.pace,
       distance: 5000,
       duration: fiveK.time,
-      detectionMethod: '5k time trial',
-      confidence: 'high',
+      detectionMethod: "5k time trial",
+      confidence: "high",
     });
 
     // Threshold pace ≈ 5k pace + 5%
     suggestions.push({
-      type: 'threshold_pace',
+      type: "threshold_pace",
       value: fiveK.pace * 1.05,
       distance: 5000,
       duration: fiveK.time,
-      detectionMethod: 'Estimated from 5k pace',
-      confidence: 'medium',
+      detectionMethod: "Estimated from 5k pace",
+      confidence: "medium",
     });
   }
 
@@ -69,22 +65,22 @@ export function detectRunningTestEfforts(
   const tenK = findBestPaceForDistance(paceStream, timestamps, distanceStream, 10000);
   if (tenK && tenK.time >= 2400 && tenK.time <= 3600) {
     suggestions.push({
-      type: '10k_pace',
+      type: "10k_pace",
       value: tenK.pace,
       distance: 10000,
       duration: tenK.time,
-      detectionMethod: '10k time trial',
-      confidence: 'high',
+      detectionMethod: "10k time trial",
+      confidence: "high",
     });
 
     // Threshold pace ≈ 10k pace
     suggestions.push({
-      type: 'threshold_pace',
+      type: "threshold_pace",
       value: tenK.pace,
       distance: 10000,
       duration: tenK.time,
-      detectionMethod: '10k pace (lactate threshold)',
-      confidence: 'high',
+      detectionMethod: "10k pace (lactate threshold)",
+      confidence: "high",
     });
   }
 
@@ -92,12 +88,12 @@ export function detectRunningTestEfforts(
   const tempoEfforts = detectTempoRuns(paceStream, timestamps);
   for (const tempo of tempoEfforts) {
     suggestions.push({
-      type: 'tempo_pace',
+      type: "tempo_pace",
       value: tempo.pace,
       distance: tempo.distance,
       duration: tempo.duration,
       detectionMethod: `${Math.round(tempo.duration / 60)}min tempo run`,
-      confidence: 'medium',
+      confidence: "medium",
     });
   }
 
@@ -116,7 +112,7 @@ export function detectRunningTestEfforts(
  */
 function detectTempoRuns(
   paceStream: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): Array<{ pace: number; distance: number; duration: number }> {
   const tempos: Array<{ pace: number; distance: number; duration: number }> = [];
   const minDuration = 1200; // 20 minutes
@@ -155,7 +151,7 @@ function detectTempoRuns(
  */
 export function detectRunningIntervals(
   paceStream: number[],
-  timestamps: number[]
+  timestamps: number[],
 ): {
   intervals: Array<{ pace: number; duration: number; startIndex: number; endIndex: number }>;
   avgIntervalPace: number;
@@ -215,8 +211,7 @@ export function detectRunningIntervals(
     return null; // Not an interval workout
   }
 
-  const avgIntervalPace =
-    intervals.reduce((sum, int) => sum + int.pace, 0) / intervals.length;
+  const avgIntervalPace = intervals.reduce((sum, int) => sum + int.pace, 0) / intervals.length;
   const avgIntervalDuration =
     intervals.reduce((sum, int) => sum + int.duration, 0) / intervals.length;
 
@@ -245,7 +240,7 @@ function findBestPaceForDistance(
   paceStream: number[],
   timestamps: number[],
   distanceStream: number[],
-  targetDistance: number
+  targetDistance: number,
 ): { pace: number; time: number } | null {
   let bestPace = Infinity;
   let bestTime = 0;
@@ -298,7 +293,7 @@ function findBestPaceForDistance(
 function findMaxAveragePace(
   paceStream: number[],
   timestamps: number[],
-  durationSeconds: number
+  durationSeconds: number,
 ): { avgPace: number; startIndex: number; endIndex: number } | null {
   if (paceStream.length < 2) return null;
 
@@ -333,7 +328,9 @@ function findMaxAveragePace(
     }
   }
 
-  return minAvg < Infinity ? { avgPace: minAvg, startIndex: minStartIdx, endIndex: minEndIdx } : null;
+  return minAvg < Infinity
+    ? { avgPace: minAvg, startIndex: minStartIdx, endIndex: minEndIdx }
+    : null;
 }
 
 /**

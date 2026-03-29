@@ -66,8 +66,7 @@ async function main() {
     {
       id: "00000000-0000-0000-0000-000000000002",
       name: "Marathon - Intermediate",
-      description:
-        "16-18 week plan for runners with marathon experience seeking improvement",
+      description: "16-18 week plan for runners with marathon experience seeking improvement",
       sport: "running",
       experienceLevel: "intermediate",
       durationWeeks: 18,
@@ -420,27 +419,25 @@ async function main() {
 
   // Then insert new ones
   for (const t of templates) {
-    const { error: insertError } = await supabase
-      .from("training_plans")
-      .insert({
-        id: t.id,
-        is_system_template: true,
-        template_visibility: "public",
-        name: t.name,
-        description: t.description,
-        structure: {
-          sport: [t.sport],
-          experienceLevel: [t.experienceLevel],
-          durationWeeks: {
-            min: Math.floor(t.durationWeeks * 0.8),
-            max: Math.ceil(t.durationWeeks * 1.2),
-            recommended: t.durationWeeks,
-          },
-          phases: t.phases,
+    const { error: insertError } = await supabase.from("training_plans").insert({
+      id: t.id,
+      is_system_template: true,
+      template_visibility: "public",
+      name: t.name,
+      description: t.description,
+      structure: {
+        sport: [t.sport],
+        experienceLevel: [t.experienceLevel],
+        durationWeeks: {
+          min: Math.floor(t.durationWeeks * 0.8),
+          max: Math.ceil(t.durationWeeks * 1.2),
+          recommended: t.durationWeeks,
         },
-        is_active: true,
-        likes_count: 0,
-      });
+        phases: t.phases,
+      },
+      is_active: true,
+      likes_count: 0,
+    });
 
     if (insertError) {
       console.error(`Error inserting ${t.id}:`, insertError);

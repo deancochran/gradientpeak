@@ -1,3 +1,4 @@
+import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/alert";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { IntegerStepper } from "@repo/ui/components/integer-stepper";
@@ -174,18 +175,13 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
 
       {/* Warning for unrealistic values */}
       {avgTssPerActivity > 300 && (
-        <Card className="bg-destructive/10 border-destructive">
-          <CardContent className="p-4 flex-row items-start gap-2">
-            <Icon as={AlertCircle} size={20} className="text-destructive mt-0.5" />
-            <View className="flex-1">
-              <Text className="text-destructive font-semibold mb-1">Warning: Very High TSS</Text>
-              <Text className="text-destructive text-sm">
-                Your average TSS per activity ({avgTssPerActivity}) is very high. This might be
-                unrealistic for most athletes. Consider adjusting your targets.
-              </Text>
-            </View>
-          </CardContent>
-        </Card>
+        <Alert icon={AlertCircle} variant="destructive">
+          <AlertTitle>Warning: Very High TSS</AlertTitle>
+          <AlertDescription>
+            Your average TSS per activity ({avgTssPerActivity}) is very high. This might be
+            unrealistic for most athletes. Consider adjusting your targets.
+          </AlertDescription>
+        </Alert>
       )}
     </View>
   );

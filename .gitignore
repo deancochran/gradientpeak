@@ -72,6 +72,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 **/.maestro/*.log
+**/.maestro/artifacts/
+**/.maestro/cache/
+**/.maestro/home/
+**/.maestro/utils/
+**/.maestro/actors/*.env
 packages/*/dist/
 packages/*/lib/
 # ------------------------------

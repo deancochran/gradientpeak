@@ -23,10 +23,7 @@ export function normalizeGoalPriority(priority: number): number {
  *
  * Formula: epsilon + (priority / 10)^gamma
  */
-export function mapGoalPriorityToWeight(
-  priority: number,
-  options?: PriorityWeightOptions,
-): number {
+export function mapGoalPriorityToWeight(priority: number, options?: PriorityWeightOptions): number {
   const epsilon = options?.epsilon ?? DEFAULT_EPSILON;
   const gamma = options?.gamma ?? DEFAULT_GAMMA;
   const normalized = normalizeGoalPriority(priority) / 10;

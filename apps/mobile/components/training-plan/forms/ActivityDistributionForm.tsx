@@ -1,11 +1,11 @@
+import { publicActivityCategorySchema } from "@repo/supabase";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
 import { Slider } from "@repo/ui/components/slider";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { publicActivityCategorySchema } from "@repo/supabase";
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 
 type PublicActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
@@ -38,11 +38,8 @@ export function ActivityDistributionForm({
   errors,
 }: ActivityDistributionFormProps) {
   const [isMultiSport, setIsMultiSport] = useState(false);
-  const [primaryActivity, setPrimaryActivity] =
-    useState<PublicActivityCategory>("run");
-  const [distribution, setDistribution] = useState<
-    Record<PublicActivityCategory, number>
-  >({
+  const [primaryActivity, setPrimaryActivity] = useState<PublicActivityCategory>("run");
+  const [distribution, setDistribution] = useState<Record<PublicActivityCategory, number>>({
     run: 0,
     bike: 0,
     swim: 0,
@@ -74,10 +71,7 @@ export function ActivityDistributionForm({
     setIsMultiSport(enabled);
     if (!enabled) {
       // Switch to single-sport mode
-      const newDist = { [primaryActivity]: 1.0 } as Record<
-        PublicActivityCategory,
-        number
-      >;
+      const newDist = { [primaryActivity]: 1.0 } as Record<PublicActivityCategory, number>;
       onChange(newDist);
     } else {
       // Switch to multi-sport mode with balanced distribution
@@ -96,18 +90,12 @@ export function ActivityDistributionForm({
   // Handle primary activity selection (single-sport)
   const handlePrimaryActivityChange = (activity: PublicActivityCategory) => {
     setPrimaryActivity(activity);
-    const newDist = { [activity]: 1.0 } as Record<
-      PublicActivityCategory,
-      number
-    >;
+    const newDist = { [activity]: 1.0 } as Record<PublicActivityCategory, number>;
     onChange(newDist);
   };
 
   // Handle slider change (multi-sport)
-  const handleSliderChange = (
-    category: PublicActivityCategory,
-    value: number,
-  ) => {
+  const handleSliderChange = (category: PublicActivityCategory, value: number) => {
     const newDist = {
       ...distribution,
       [category]: value,
@@ -148,10 +136,7 @@ export function ActivityDistributionForm({
                   : "Focus on a single primary activity"}
               </Text>
             </View>
-            <Switch
-              checked={isMultiSport}
-              onCheckedChange={handleMultiSportToggle}
-            />
+            <Switch checked={isMultiSport} onCheckedChange={handleMultiSportToggle} />
           </View>
         </CardContent>
       </Card>
@@ -161,28 +146,24 @@ export function ActivityDistributionForm({
         <View className="gap-3">
           <Label className="text-base font-semibold">Primary Activity</Label>
           <View className="gap-2">
-            {(Object.keys(ACTIVITY_LABELS) as PublicActivityCategory[]).map(
-              (activity) => (
-                <Button
-                  key={activity}
-                  variant={primaryActivity === activity ? "default" : "outline"}
-                  onPress={() => handlePrimaryActivityChange(activity)}
-                  className="justify-start"
-                >
-                  <View className="flex-row items-center gap-2">
-                    <Text
-                      className={
-                        primaryActivity === activity
-                          ? "text-primary-foreground"
-                          : "text-foreground"
-                      }
-                    >
-                      {ACTIVITY_EMOJIS[activity]} {ACTIVITY_LABELS[activity]}
-                    </Text>
-                  </View>
-                </Button>
-              ),
-            )}
+            {(Object.keys(ACTIVITY_LABELS) as PublicActivityCategory[]).map((activity) => (
+              <Button
+                key={activity}
+                variant={primaryActivity === activity ? "default" : "outline"}
+                onPress={() => handlePrimaryActivityChange(activity)}
+                className="justify-start"
+              >
+                <View className="flex-row items-center gap-2">
+                  <Text
+                    className={
+                      primaryActivity === activity ? "text-primary-foreground" : "text-foreground"
+                    }
+                  >
+                    {ACTIVITY_EMOJIS[activity]} {ACTIVITY_LABELS[activity]}
+                  </Text>
+                </View>
+              </Button>
+            ))}
           </View>
         </View>
       )}
@@ -191,48 +172,40 @@ export function ActivityDistributionForm({
       {isMultiSport && (
         <>
           <View className="gap-4">
-            {(Object.keys(ACTIVITY_LABELS) as PublicActivityCategory[]).map(
-              (activity) => (
-                <View key={activity} className="gap-2">
-                  <View className="flex-row justify-between items-center">
-                    <Label className="text-sm font-medium">
-                      {ACTIVITY_EMOJIS[activity]} {ACTIVITY_LABELS[activity]}
-                    </Label>
-                    <Text className="text-sm font-semibold text-primary">
-                      {Math.round(distribution[activity] * 100)}%
-                    </Text>
-                  </View>
-                  <Slider
-                    value={distribution[activity]}
-                    onValueChange={(value: number) =>
-                      handleSliderChange(activity, value)
-                    }
-                    minimumValue={0}
-                    maximumValue={1}
-                    step={0.05}
-                    minimumTrackTintColor="#3b82f6"
-                    maximumTrackTintColor="#e5e7eb"
-                  />
+            {(Object.keys(ACTIVITY_LABELS) as PublicActivityCategory[]).map((activity) => (
+              <View key={activity} className="gap-2">
+                <View className="flex-row justify-between items-center">
+                  <Label className="text-sm font-medium">
+                    {ACTIVITY_EMOJIS[activity]} {ACTIVITY_LABELS[activity]}
+                  </Label>
+                  <Text className="text-sm font-semibold text-primary">
+                    {Math.round(distribution[activity] * 100)}%
+                  </Text>
                 </View>
-              ),
-            )}
+                <Slider
+                  value={distribution[activity]}
+                  onValueChange={(value: number) => handleSliderChange(activity, value)}
+                  minimumValue={0}
+                  maximumValue={1}
+                  step={0.05}
+                  minimumTrackTintColor="#3b82f6"
+                  maximumTrackTintColor="#e5e7eb"
+                />
+              </View>
+            ))}
           </View>
 
           {/* Sum Validation */}
           <Card
             className={
-              isValid
-                ? "bg-success/10 border-success"
-                : "bg-destructive/10 border-destructive"
+              isValid ? "bg-success/10 border-success" : "bg-destructive/10 border-destructive"
             }
           >
             <CardContent className="p-4">
               <View className="flex-row items-center justify-between">
                 <Text
                   className={
-                    isValid
-                      ? "text-success font-semibold"
-                      : "text-destructive font-semibold"
+                    isValid ? "text-success font-semibold" : "text-destructive font-semibold"
                   }
                 >
                   Total: {sumPercent}%
@@ -240,18 +213,14 @@ export function ActivityDistributionForm({
                 {isValid ? (
                   <Text className="text-success text-sm">✓ Valid</Text>
                 ) : (
-                  <Text className="text-destructive text-sm">
-                    Must equal 100%
-                  </Text>
+                  <Text className="text-destructive text-sm">Must equal 100%</Text>
                 )}
               </View>
             </CardContent>
           </Card>
 
           {errors.activity_distribution && (
-            <Text className="text-destructive text-sm">
-              {errors.activity_distribution}
-            </Text>
+            <Text className="text-destructive text-sm">{errors.activity_distribution}</Text>
           )}
         </>
       )}
@@ -259,9 +228,7 @@ export function ActivityDistributionForm({
       {/* Info Card */}
       <Card className="bg-muted/50">
         <CardContent className="p-4 gap-2">
-          <Text className="font-semibold mb-1">
-            💡 Activity Distribution Tips
-          </Text>
+          <Text className="font-semibold mb-1">💡 Activity Distribution Tips</Text>
           {isMultiSport ? (
             <>
               <Text className="text-sm text-muted-foreground">
@@ -280,8 +247,7 @@ export function ActivityDistributionForm({
                 • Single-sport mode dedicates 100% of training to one activity
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • Switch to multi-sport if you&apos;re training for multiple
-                disciplines
+                • Switch to multi-sport if you&apos;re training for multiple disciplines
               </Text>
               <Text className="text-sm text-muted-foreground">
                 • You can always change this later in plan settings

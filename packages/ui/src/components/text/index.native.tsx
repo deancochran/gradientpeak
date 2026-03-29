@@ -1,9 +1,8 @@
-import { cva } from "class-variance-authority";
 import * as Slot from "@rn-primitives/slot";
+import { cva } from "class-variance-authority";
 import * as React from "react";
-import { Text as RNText } from "../../lib/react-native";
-
 import { cn } from "../../lib/cn";
+import { Text as RNText } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";
 import { TextClassContext } from "./context";
 import {
@@ -58,18 +57,12 @@ function Text({
     id,
     testId,
   });
-  const textRole = TEXT_ROLE[resolvedVariant] as React.ComponentProps<
-    typeof RNText
-  >["role"];
+  const textRole = TEXT_ROLE[resolvedVariant] as React.ComponentProps<typeof RNText>["role"];
 
   return (
     <Component
       aria-level={TEXT_ARIA_LEVEL[resolvedVariant]}
-      className={cn(
-        textVariants({ variant: resolvedVariant }),
-        contextClassName,
-        className,
-      )}
+      className={cn(textVariants({ variant: resolvedVariant }), contextClassName, className)}
       role={textRole as any}
       {...nativeTestProps}
       {...props}
@@ -77,6 +70,6 @@ function Text({
   );
 }
 
-export { Text, TextClassContext, textVariants };
 export type { TextVariant, TextVariantProps } from "./shared";
 export type { TextProps };
+export { Text, TextClassContext, textVariants };

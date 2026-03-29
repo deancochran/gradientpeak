@@ -1,5 +1,5 @@
-import type { AthletePreferenceProfile } from "../../schemas/settings/profile_settings";
 import { ALL_SAMPLE_PLANS } from "../../samples";
+import type { AthletePreferenceProfile } from "../../schemas/settings/profile_settings";
 import type { BuildProjectionEngineInputShape } from "../buildProjectionEngineInput";
 import {
   ATHLETE_SCENARIO_FIXTURES_BY_ID,
@@ -46,9 +46,7 @@ export interface FixtureBackedSystemPlanContract {
 
 const planById = new Map(ALL_SAMPLE_PLANS.map((plan) => [plan.id, plan]));
 
-function requireSingleMapping(
-  scenarioId: AthleteScenarioFixtureId,
-): SystemPlanMappingFixture {
+function requireSingleMapping(scenarioId: AthleteScenarioFixtureId): SystemPlanMappingFixture {
   const mappings = SYSTEM_PLAN_MAPPING_FIXTURES_BY_SCENARIO[scenarioId] ?? [];
 
   if (mappings.length !== 1) {
@@ -82,12 +80,9 @@ export function deriveFixtureBackedSystemPlanContracts(
   overrides: ReadonlyArray<FixtureBackedSystemPlanContractOverride>,
 ): FixtureBackedSystemPlanContract[] {
   return overrides.map((override) => {
-    const scenarioFixture =
-      ATHLETE_SCENARIO_FIXTURES_BY_ID[override.scenario_id];
+    const scenarioFixture = ATHLETE_SCENARIO_FIXTURES_BY_ID[override.scenario_id];
     if (!scenarioFixture) {
-      throw new Error(
-        `Missing athlete verification fixture ${override.scenario_id}`,
-      );
+      throw new Error(`Missing athlete verification fixture ${override.scenario_id}`);
     }
 
     const mappingFixture = requireSingleMapping(override.scenario_id);
@@ -105,11 +100,7 @@ export function deriveFixtureBackedSystemPlanContracts(
       preference_profile: scenarioFixture.preference_profile,
       goals: scenarioFixture.projection_input.expanded_plan.goals,
       expected_mode: override.expected_mode,
-      notes: [
-        scenarioFixture.description,
-        ...mappingFixture.audit.limitations,
-        override.notes,
-      ]
+      notes: [scenarioFixture.description, ...mappingFixture.audit.limitations, override.notes]
         .filter((value): value is string => Boolean(value))
         .join(" "),
       scenario_fixture: scenarioFixture,

@@ -1,5 +1,5 @@
-import { gunzipSync } from "node:zlib";
 import { Buffer } from "node:buffer";
+import { gunzipSync } from "node:zlib";
 
 /**
  * Server-side stream decompression utilities for activity streams.
@@ -27,9 +27,7 @@ export interface DecompressedStream {
  */
 export function base64ToBuffer(base64: string): any {
   if (!Buffer) {
-    throw new Error(
-      "Buffer is not available in this environment. Use server-side only.",
-    );
+    throw new Error("Buffer is not available in this environment. Use server-side only.");
   }
   return Buffer.from(base64, "base64");
 }
@@ -50,9 +48,7 @@ export function decompressStream(
   streamType: string,
 ): DecompressedStream {
   if (!gunzipSync) {
-    throw new Error(
-      "gunzipSync is not available in this environment. Use server-side only.",
-    );
+    throw new Error("gunzipSync is not available in this environment. Use server-side only.");
   }
 
   try {
@@ -174,10 +170,7 @@ export function calculateAge(dob: string | null): number | null {
   let age = today.getFullYear() - birthDate.getFullYear();
   const monthDiff = today.getMonth() - birthDate.getMonth();
 
-  if (
-    monthDiff < 0 ||
-    (monthDiff === 0 && today.getDate() < birthDate.getDate())
-  ) {
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
     age--;
   }
 

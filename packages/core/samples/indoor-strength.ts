@@ -127,8 +127,7 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
           name: "Circuit Round",
           duration: Duration.minutes(6),
           targets: [Target.thresholdHR(85)],
-          notes:
-            "Burpees, mountain climbers, squat jumps, push-ups - 45s work, 15s rest",
+          notes: "Burpees, mountain climbers, squat jumps, push-ups - 45s work, 15s rest",
         },
         {
           name: "Active Recovery",
@@ -259,8 +258,7 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   id: "e9f5a8b7-2c6d-1e0f-5a4b-6c3d9e8f7a0b",
   version: "2.0",
   name: "Upper Body Strength",
-  description:
-    "Bench press, rows, and overhead press - Complete upper body workout",
+  description: "Bench press, rows, and overhead press - Complete upper body workout",
   activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
@@ -388,11 +386,10 @@ export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
     .build(),
 };
 
-export const SAMPLE_INDOOR_STRENGTH_ACTIVITIES: Array<RecordingServiceActivityPlan> =
-  [
-    FULL_BODY_CIRCUIT,
-    CORE_STABILITY,
-    FUNCTIONAL_MOVEMENT,
-    SYSTEM_UPPER_BODY_STRENGTH,
-    SYSTEM_LOWER_BODY_STRENGTH,
-  ];
+export const SAMPLE_INDOOR_STRENGTH_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
+  FULL_BODY_CIRCUIT,
+  CORE_STABILITY,
+  FUNCTIONAL_MOVEMENT,
+  SYSTEM_UPPER_BODY_STRENGTH,
+  SYSTEM_LOWER_BODY_STRENGTH,
+];

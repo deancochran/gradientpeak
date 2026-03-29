@@ -9,30 +9,30 @@
  * - Skip: Minimal setup
  */
 
-import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+// Import calculation functions directly - they're exported from core package
+import {
+  calculateAgeFromDOB,
+  calculateVO2MaxFromHR,
+  estimateCSSFromGender,
+  estimateFTPFromWeight,
+  estimateLTHR,
+  estimateMaxHRFromAge,
+  estimateThresholdPaceFromGender,
+  getBaselineProfile,
+} from "@repo/core";
 import {
   completeOnboardingSchema,
   estimateMetricsInputSchema,
   type Sport,
 } from "@repo/core/schemas/onboarding";
+import { z } from "zod";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
-  batchInsertProfileMetrics,
   batchInsertActivityEfforts,
+  batchInsertProfileMetrics,
   deriveEffortsForSport,
   prepareProfileMetrics,
 } from "../utils/onboarding-helpers";
-// Import calculation functions directly - they're exported from core package
-import {
-  calculateAgeFromDOB,
-  getBaselineProfile,
-  estimateMaxHRFromAge,
-  estimateLTHR,
-  calculateVO2MaxFromHR,
-  estimateFTPFromWeight,
-  estimateThresholdPaceFromGender,
-  estimateCSSFromGender,
-} from "@repo/core";
 
 export const onboardingRouter = createTRPCRouter({
   /**
@@ -122,11 +122,7 @@ export const onboardingRouter = createTRPCRouter({
         baseline,
       );
 
-      const { error: metricsError } = await batchInsertProfileMetrics(
-        supabase,
-        userId,
-        metrics,
-      );
+      const { error: metricsError } = await batchInsertProfileMetrics(supabase, userId, metrics);
 
       if (metricsError) {
         throw new Error(`Failed to insert metrics: ${metricsError.message}`);
@@ -149,11 +145,9 @@ export const onboardingRouter = createTRPCRouter({
       // Merge user input with baseline for performance metrics
       const finalFtp = input.ftp ?? baseline?.ftp;
       const finalThresholdPace =
-        input.threshold_pace_seconds_per_km ??
-        baseline?.threshold_pace_seconds_per_km;
+        input.threshold_pace_seconds_per_km ?? baseline?.threshold_pace_seconds_per_km;
       const finalCss =
-        input.css_seconds_per_hundred_meters ??
-        baseline?.css_seconds_per_hundred_meters;
+        input.css_seconds_per_hundred_meters ?? baseline?.css_seconds_per_hundred_meters;
 
       // Cycling/Triathlon: Derive power curve from FTP
       if (finalFtp) {
@@ -162,9 +156,7 @@ export const onboardingRouter = createTRPCRouter({
 
       // Running/Triathlon: Derive speed curve from threshold pace
       if (finalThresholdPace) {
-        allEfforts.push(
-          ...deriveEffortsForSport("running", finalThresholdPace),
-        );
+        allEfforts.push(...deriveEffortsForSport("running", finalThresholdPace));
       }
 
       // Swimming/Triathlon: Derive swim pace curve from CSS
@@ -192,9 +184,7 @@ export const onboardingRouter = createTRPCRouter({
               "Skipped effort insertion because this environment requires activity_id and no activities exist yet.",
             );
           } else {
-            throw new Error(
-              `Failed to insert efforts: ${effortsError.message}`,
-            );
+            throw new Error(`Failed to insert efforts: ${effortsError.message}`);
           }
         }
       }
@@ -228,68 +218,51 @@ export const onboardingRouter = createTRPCRouter({
    * })
    * // Returns: { estimated_ftp: 193, estimated_max_hr: 190, ... }
    */
-  estimateMetrics: protectedProcedure
-    .input(estimateMetricsInputSchema)
-    .query(async ({ input }) => {
-      const experienceLevel = input.experience_level || "intermediate";
+  estimateMetrics: protectedProcedure.input(estimateMetricsInputSchema).query(async ({ input }) => {
+    const experienceLevel = input.experience_level || "intermediate";
 
-      // Calculate heart rate estimates
-      const estimatedMaxHR = input.max_hr || estimateMaxHRFromAge(input.age);
-      const estimatedRestingHR =
-        input.resting_hr ||
-        (experienceLevel === "beginner"
-          ? input.gender === "male"
-            ? 70
-            : 75
-          : input.gender === "male"
-            ? 60
-            : 65);
+    // Calculate heart rate estimates
+    const estimatedMaxHR = input.max_hr || estimateMaxHRFromAge(input.age);
+    const estimatedRestingHR =
+      input.resting_hr ||
+      (experienceLevel === "beginner"
+        ? input.gender === "male"
+          ? 70
+          : 75
+        : input.gender === "male"
+          ? 60
+          : 65);
 
-      const estimatedLTHR = estimateLTHR(estimatedMaxHR);
-      const estimatedVO2Max = calculateVO2MaxFromHR(
-        estimatedMaxHR,
-        estimatedRestingHR,
-      );
+    const estimatedLTHR = estimateLTHR(estimatedMaxHR);
+    const estimatedVO2Max = calculateVO2MaxFromHR(estimatedMaxHR, estimatedRestingHR);
 
-      // Calculate performance estimates based on sport
-      let estimatedFTP: number | undefined;
-      let estimatedThresholdPace: number | undefined;
-      let estimatedCSS: number | undefined;
+    // Calculate performance estimates based on sport
+    let estimatedFTP: number | undefined;
+    let estimatedThresholdPace: number | undefined;
+    let estimatedCSS: number | undefined;
 
-      // Use "intermediate" as default if "skip" is selected
-      const effectiveExperienceLevel =
-        input.experience_level === "skip"
-          ? "intermediate"
-          : input.experience_level;
+    // Use "intermediate" as default if "skip" is selected
+    const effectiveExperienceLevel =
+      input.experience_level === "skip" ? "intermediate" : input.experience_level;
 
-      estimatedFTP = estimateFTPFromWeight(
-        input.weight_kg,
-        input.gender,
-        effectiveExperienceLevel,
-      );
+    estimatedFTP = estimateFTPFromWeight(input.weight_kg, input.gender, effectiveExperienceLevel);
 
-      estimatedThresholdPace = estimateThresholdPaceFromGender(
-        input.gender,
-        effectiveExperienceLevel,
-      );
+    estimatedThresholdPace = estimateThresholdPaceFromGender(
+      input.gender,
+      effectiveExperienceLevel,
+    );
 
-      estimatedCSS = estimateCSSFromGender(
-        input.gender,
-        effectiveExperienceLevel,
-      );
+    estimatedCSS = estimateCSSFromGender(input.gender, effectiveExperienceLevel);
 
-      return {
-        estimated_max_hr: estimatedMaxHR,
-        estimated_resting_hr: estimatedRestingHR,
-        estimated_lthr: estimatedLTHR,
-        estimated_vo2max: estimatedVO2Max,
-        estimated_ftp: estimatedFTP,
-        estimated_threshold_pace: estimatedThresholdPace,
-        estimated_css: estimatedCSS,
-        confidence:
-          experienceLevel === "beginner"
-            ? ("low" as const)
-            : ("medium" as const),
-      };
-    }),
+    return {
+      estimated_max_hr: estimatedMaxHR,
+      estimated_resting_hr: estimatedRestingHR,
+      estimated_lthr: estimatedLTHR,
+      estimated_vo2max: estimatedVO2Max,
+      estimated_ftp: estimatedFTP,
+      estimated_threshold_pace: estimatedThresholdPace,
+      estimated_css: estimatedCSS,
+      confidence: experienceLevel === "beginner" ? ("low" as const) : ("medium" as const),
+    };
+  }),
 });

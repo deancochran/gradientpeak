@@ -1,8 +1,7 @@
-import * as React from "react";
 import * as Slot from "@rn-primitives/slot";
-import { View, type ViewProps } from "../../lib/react-native";
-
+import * as React from "react";
 import { cn } from "../../lib/cn";
+import { View, type ViewProps } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";
 import { TextClassContext } from "../text/context";
 import { type BadgeTestProps, type BadgeVariant } from "./shared";
@@ -74,10 +73,7 @@ function Badge({
           id,
           role,
           testId,
-        }) as Pick<
-          ViewProps,
-          "accessibilityLabel" | "nativeID" | "role" | "testID"
-        >)}
+        }) as Pick<ViewProps, "accessibilityLabel" | "nativeID" | "role" | "testID">)}
         {...props}
       />
     </TextClassContext.Provider>

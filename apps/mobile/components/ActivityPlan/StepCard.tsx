@@ -1,12 +1,12 @@
-import { Button } from "@repo/ui/components/button";
-import { Icon } from "@repo/ui/components/icon";
-import { Text } from "@repo/ui/components/text";
 import {
-  type PlanStepV2,
   formatDurationV2,
   formatIntensityTarget,
   getStepIntensityColor,
+  type PlanStepV2,
 } from "@repo/core";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";
 import { Copy, Edit3, GripVertical, Trash2 } from "lucide-react-native";
 import { memo } from "react";
@@ -85,40 +85,26 @@ export const StepCard = memo<StepCardProps>(function StepCard({
         {/* Drag Handle */}
         {isDraggable && (
           <View className="mr-3">
-            <Icon
-              as={GripVertical}
-              size={20}
-              className="text-muted-foreground"
-            />
+            <Icon as={GripVertical} size={20} className="text-muted-foreground" />
           </View>
         )}
 
         {/* Color Indicator */}
-        <View
-          className="w-1 h-12 rounded-full mr-3"
-          style={{ backgroundColor: color }}
-        />
+        <View className="w-1 h-12 rounded-full mr-3" style={{ backgroundColor: color }} />
 
         {/* Content */}
         <View className="flex-1">
           <View className="flex-row items-center justify-between mb-1">
             <Text className="font-semibold text-base">{step.name}</Text>
-            <Text className="text-sm text-muted-foreground">
-              {formatDurationV2(step.duration)}
-            </Text>
+            <Text className="text-sm text-muted-foreground">{formatDurationV2(step.duration)}</Text>
           </View>
 
           {step.targets && step.targets.length > 0 && (
-            <Text className="text-sm text-muted-foreground">
-              {formatAllTargets(step.targets)}
-            </Text>
+            <Text className="text-sm text-muted-foreground">{formatAllTargets(step.targets)}</Text>
           )}
 
           {step.notes && (
-            <Text
-              className="text-xs text-muted-foreground mt-1"
-              numberOfLines={1}
-            >
+            <Text className="text-xs text-muted-foreground mt-1" numberOfLines={1}>
               {step.notes}
             </Text>
           )}

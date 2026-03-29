@@ -46,10 +46,7 @@ function Checkbox({
       {...props}
     >
       <CheckboxPrimitive.Indicator
-        className={cn(
-          "bg-primary h-full w-full items-center justify-center",
-          indicatorClassName,
-        )}
+        className={cn("bg-primary h-full w-full items-center justify-center", indicatorClassName)}
       >
         <Icon
           as={Check}

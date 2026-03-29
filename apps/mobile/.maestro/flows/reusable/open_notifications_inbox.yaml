@@ -1,0 +1,8 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- tapOn:
+    id: "notifications-header-button"
+- extendedWaitUntil:
+    visible:
+      id: "notifications-screen"
+    timeout: 10000

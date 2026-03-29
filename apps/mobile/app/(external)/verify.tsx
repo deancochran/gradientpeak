@@ -1,9 +1,11 @@
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { AlertCircle } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
@@ -121,6 +123,7 @@ export default function VerifyScreen() {
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       className="flex-1 bg-background"
+      testID="verify-screen"
     >
       <ScrollView
         contentContainerClassName="flex-grow justify-center p-6"
@@ -148,15 +151,15 @@ export default function VerifyScreen() {
                   label="Verification Code"
                   name="token"
                   placeholder="123456"
-                  className="text-center text-lg tracking-widest"
+                  testId="verification-code-input"
                 />
 
                 {form.formState.errors.root && (
-                  <View className="bg-destructive/15 p-3 rounded-md border border-destructive/25">
-                    <Text className="text-destructive text-center text-sm">
+                  <Alert icon={AlertCircle} variant="destructive">
+                    <AlertDescription className="text-center">
                       {form.formState.errors.root.message}
-                    </Text>
-                  </View>
+                    </AlertDescription>
+                  </Alert>
                 )}
 
                 <Button
@@ -164,6 +167,7 @@ export default function VerifyScreen() {
                   disabled={isVerifying}
                   className="w-full"
                   size="lg"
+                  testID="verify-button"
                 >
                   <Text>{isVerifying ? "Verifying..." : "Verify"}</Text>
                 </Button>
@@ -171,7 +175,13 @@ export default function VerifyScreen() {
             </Form>
 
             <View className="gap-2 pt-2">
-              <Button variant="ghost" onPress={onResend} disabled={isResending} className="w-full">
+              <Button
+                variant="ghost"
+                onPress={onResend}
+                disabled={isResending}
+                className="w-full"
+                testID="resend-code-button"
+              >
                 <Text>{isResending ? "Sending..." : "Resend Code"}</Text>
               </Button>
               {resendMessage && (
@@ -179,6 +189,7 @@ export default function VerifyScreen() {
                   className={`text-center text-xs ${
                     resendMessage.includes("sent") ? "text-success" : "text-destructive"
                   }`}
+                  testID="resend-message"
                 >
                   {resendMessage}
                 </Text>

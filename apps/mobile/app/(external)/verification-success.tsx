@@ -1,10 +1,9 @@
-import { useRouter } from "expo-router";
-import React from "react";
-import { KeyboardAvoidingView, Platform, View } from "react-native";
-
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
+import { useRouter } from "expo-router";
+import React from "react";
+import { KeyboardAvoidingView, Platform, View } from "react-native";
 
 export default function VerificationSuccessScreen() {
   const router = useRouter();
@@ -24,9 +23,7 @@ export default function VerificationSuccessScreen() {
           <CardContent className="p-8 items-center">
             {/* Success Icon */}
             <View className="w-20 h-20 bg-success rounded-full items-center justify-center mb-6">
-              <Text className="text-success-foreground text-3xl font-bold">
-                ✓
-              </Text>
+              <Text className="text-success-foreground text-3xl font-bold">✓</Text>
             </View>
 
             {/* Success Message */}
@@ -38,8 +35,8 @@ export default function VerificationSuccessScreen() {
                 Welcome to GradientPeak
               </Text>
               <Text variant="muted" className="text-center">
-                Your email has been verified successfully. You can now sign in
-                to start your fitness journey.
+                Your email has been verified successfully. You can now sign in to start your fitness
+                journey.
               </Text>
             </View>
 

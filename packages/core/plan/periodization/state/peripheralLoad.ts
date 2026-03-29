@@ -72,14 +72,12 @@ export function calculateMechanicalFatigueScore(input: {
   dailySportLoads: DailySportLoadInput[];
   history?: Array<{ sport_loads: DailySportLoadInput[] }>;
 }): number {
-  const mechanicalSeries = [
-    ...(input.history ?? []),
-    { sport_loads: input.dailySportLoads },
-  ].map((day) =>
-    day.sport_loads.reduce((sum, load) => {
-      const config = getSportModelConfig(load.sport);
-      return sum + load.load * config.mechanical_multiplier;
-    }, 0),
+  const mechanicalSeries = [...(input.history ?? []), { sport_loads: input.dailySportLoads }].map(
+    (day) =>
+      day.sport_loads.reduce((sum, load) => {
+        const config = getSportModelConfig(load.sport);
+        return sum + load.load * config.mechanical_multiplier;
+      }, 0),
   );
 
   return round(averageWindow(mechanicalSeries, 7));

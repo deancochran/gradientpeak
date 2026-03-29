@@ -1,6 +1,6 @@
-import { trpc } from "@/lib/trpc";
 import { format } from "date-fns";
 import { useMemo } from "react";
+import { trpc } from "@/lib/trpc";
 import { useProfileGoals } from "./useProfileGoals";
 import { useProfileSettings } from "./useProfileSettings";
 
@@ -96,10 +96,7 @@ export function useHomeData() {
     const { ctl, atl, tsb, form } = data.currentStatus;
 
     // Map form status to UI props
-    const statusMap: Record<
-      string,
-      { label: string; color: string; percentage: number }
-    > = {
+    const statusMap: Record<string, { label: string; color: string; percentage: number }> = {
       fresh: { label: "Fresh", color: "green", percentage: 90 },
       optimal: { label: "Optimal", color: "blue", percentage: 80 },
       neutral: { label: "Neutral", color: "gray", percentage: 60 },
@@ -138,11 +135,7 @@ export function useHomeData() {
         data.weeklySummary.planned.tss > 0
           ? Math.min(
               100,
-              Math.round(
-                (data.weeklySummary.actual.tss /
-                  data.weeklySummary.planned.tss) *
-                  100,
-              ),
+              Math.round((data.weeklySummary.actual.tss / data.weeklySummary.planned.tss) * 100),
             )
           : 0,
       unit: "TSS",
@@ -163,12 +156,9 @@ export function useHomeData() {
     else if (percentage >= 70) status = "Good";
     else if (percentage < 40) status = "Fatigued";
 
-    const getCtlStatus = (val: number) =>
-      val < 30 ? "Building" : val < 60 ? "Steady" : "Strong";
-    const getAtlStatus = (val: number) =>
-      val > 80 ? "High" : val > 40 ? "Moderate" : "Low";
-    const getTsbStatus = (val: number) =>
-      val > 15 ? "Fresh" : val < -15 ? "Tired" : "Neutral";
+    const getCtlStatus = (val: number) => (val < 30 ? "Building" : val < 60 ? "Steady" : "Strong");
+    const getAtlStatus = (val: number) => (val > 80 ? "High" : val > 40 ? "Moderate" : "Low");
+    const getTsbStatus = (val: number) => (val > 15 ? "Fresh" : val < -15 ? "Tired" : "Neutral");
 
     return {
       percentage: Math.round(percentage),
@@ -182,11 +172,7 @@ export function useHomeData() {
     };
   }, [formStatus]);
 
-  const hasData = !!(
-    data?.activePlan ||
-    data?.todaysActivity ||
-    data?.schedule?.length
-  );
+  const hasData = !!(data?.activePlan || data?.todaysActivity || data?.schedule?.length);
 
   return {
     plan: plan ? { ...plan, targetType: (plan as any).targetType } : null,

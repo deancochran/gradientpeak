@@ -73,8 +73,7 @@ export default function OpenAuthTargetPage() {
           <CardHeader>
             <CardTitle className="text-2xl">Opening GradientPeak...</CardTitle>
             <CardDescription>
-              We are trying to open the app. If it does not open, continue on
-              web.
+              We are trying to open the app. If it does not open, continue on web.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">

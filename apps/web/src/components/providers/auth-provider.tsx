@@ -1,9 +1,9 @@
 "use client";
 
-import { trpc } from "@/lib/trpc/client";
 import { type User } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect } from "react";
+import { trpc } from "@/lib/trpc/client";
 
 type AuthState = {
   user: User | null;
@@ -21,18 +21,19 @@ const AuthContext = createContext<AuthState>({
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const {
-    data: user,
+    data: session,
     isLoading,
     error,
     refetch,
-  } = trpc.auth.getUser.useQuery(undefined, {
+  } = trpc.auth.getSession.useQuery(undefined, {
     retry: false,
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
 
-  const isAuthenticated = !!user && !error;
+  const user = session?.user ?? null;
+  const isAuthenticated = !!user;
 
   // Monitor authentication state changes
   useEffect(() => {

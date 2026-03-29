@@ -1,22 +1,12 @@
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@repo/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
-import { useRouter } from "expo-router";
 import { format } from "date-fns";
-import {
-  Activity,
-  Bike,
-  Dumbbell,
-  Footprints,
-  Waves,
-} from "lucide-react-native";
+import { useRouter } from "expo-router";
+import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 import React from "react";
 import { Pressable, View } from "react-native";
 
@@ -90,26 +80,18 @@ export function ActivityHeader({
 
         <View className="flex-1">
           <Pressable onPress={handleUserPress} disabled={!user.id}>
-            <Text className="text-sm font-semibold text-foreground">
-              {user.username}
-            </Text>
+            <Text className="text-sm font-semibold text-foreground">{user.username}</Text>
           </Pressable>
 
           <View className="flex-row items-center gap-1.5 mt-1">
-            <Icon
-              as={ActivityIcon}
-              size={12}
-              className="text-muted-foreground"
-            />
+            <Icon as={ActivityIcon} size={12} className="text-muted-foreground" />
             <Text className="text-xs text-muted-foreground">
               {format(new Date(activity.startedAt), "MMM d, yyyy • h:mm a")}
             </Text>
             {deviceInfo && (
               <>
                 <Text className="text-xs text-muted-foreground">•</Text>
-                <Text className="text-xs text-muted-foreground">
-                  {deviceInfo}
-                </Text>
+                <Text className="text-xs text-muted-foreground">{deviceInfo}</Text>
               </>
             )}
           </View>
@@ -125,9 +107,7 @@ export function ActivityHeader({
           className="text-base font-semibold mb-2 h-10 px-0 border-0"
         />
       ) : (
-        <Text className="text-base font-semibold text-foreground mb-2">
-          {activity.name}
-        </Text>
+        <Text className="text-base font-semibold text-foreground mb-2">{activity.name}</Text>
       )}
 
       {/* Notes/Description */}

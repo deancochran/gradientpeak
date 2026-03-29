@@ -17,18 +17,14 @@ describe("Dialog web", () => {
         <DialogTrigger>Open plan details</DialogTrigger>
         <DialogContent aria-describedby={undefined}>
           <DialogTitle>Plan details</DialogTitle>
-          <DialogDescription>
-            Review the upcoming block before saving.
-          </DialogDescription>
+          <DialogDescription>Review the upcoming block before saving.</DialogDescription>
           <DialogFooter showCloseButton />
         </DialogContent>
       </Dialog>,
     );
 
     expect(screen.getByRole("dialog", { name: "Plan details" })).toBeVisible();
-    expect(
-      screen.getByText("Review the upcoming block before saving."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Review the upcoming block before saving.")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(2);
   });
 });

@@ -11,7 +11,9 @@ import { DurationInput } from "@repo/ui/components/duration-input";
 import { Input } from "@repo/ui/components/input";
 import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { PaceInput } from "@repo/ui/components/pace-input";
+import { RadioGroup, RadioGroupItem } from "@repo/ui/components/radio-group";
 import { Text } from "@repo/ui/components/text";
+import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
 import React, { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, TouchableOpacity, View } from "react-native";
 
@@ -338,7 +340,13 @@ export function GoalEditorModal({
 
           <View className="gap-2">
             <Text className="text-sm font-medium text-foreground">Goal focus</Text>
-            <View className="gap-2">
+            <RadioGroup
+              value={draft.goalType}
+              onValueChange={(nextValue) => {
+                handleGoalTypeChange(nextValue as GoalEditorGoalType);
+              }}
+              className="gap-2"
+            >
               {GOAL_TYPE_OPTIONS.map((option) => {
                 const isActive = option.value === draft.goalType;
                 return (
@@ -349,12 +357,21 @@ export function GoalEditorModal({
                       isActive ? "border-primary bg-primary/10" : "border-border bg-card"
                     }`}
                   >
-                    <Text className="text-sm font-semibold text-foreground">{option.label}</Text>
-                    <Text className="mt-1 text-xs text-muted-foreground">{option.description}</Text>
+                    <View className="flex-row items-start gap-3">
+                      <RadioGroupItem value={option.value} />
+                      <View className="flex-1">
+                        <Text className="text-sm font-semibold text-foreground">
+                          {option.label}
+                        </Text>
+                        <Text className="mt-1 text-xs text-muted-foreground">
+                          {option.description}
+                        </Text>
+                      </View>
+                    </View>
                   </Pressable>
                 );
               })}
-            </View>
+            </RadioGroup>
           </View>
 
           <View className="gap-2">
@@ -380,13 +397,24 @@ export function GoalEditorModal({
           {supportsActivityChoice(draft.goalType) ? (
             <View className="gap-2">
               <Text className="text-sm font-medium text-foreground">Sport</Text>
-              <View className="flex-row flex-wrap gap-2">
+              <ToggleGroup
+                type="single"
+                value={draft.activityCategory ?? undefined}
+                onValueChange={(nextValue) => {
+                  if (nextValue) {
+                    updateDraft({
+                      activityCategory: nextValue as GoalEditorDraft["activityCategory"],
+                    });
+                  }
+                }}
+                className="flex-row flex-wrap gap-2"
+              >
                 {ACTIVITY_OPTIONS.map((option) => {
                   const isActive = option.value === draft.activityCategory;
                   return (
-                    <Pressable
+                    <ToggleGroupItem
                       key={option.value}
-                      onPress={() => updateDraft({ activityCategory: option.value })}
+                      value={option.value}
                       className={`rounded-full border px-3 py-2 ${
                         isActive ? "border-primary bg-primary" : "border-border bg-background"
                       }`}
@@ -398,10 +426,10 @@ export function GoalEditorModal({
                       >
                         {option.label}
                       </Text>
-                    </Pressable>
+                    </ToggleGroupItem>
                   );
                 })}
-              </View>
+              </ToggleGroup>
             </View>
           ) : null}
 
@@ -414,13 +442,22 @@ export function GoalEditorModal({
               {distancePresets.length > 0 ? (
                 <View className="gap-2">
                   <Text className="text-sm font-medium text-foreground">Suggested distances</Text>
-                  <View className="flex-row flex-wrap gap-2">
+                  <ToggleGroup
+                    type="single"
+                    value={draft.raceDistanceKm == null ? undefined : String(draft.raceDistanceKm)}
+                    onValueChange={(nextValue) => {
+                      if (nextValue) {
+                        updateDraft({ raceDistanceKm: Number(nextValue) });
+                      }
+                    }}
+                    className="flex-row flex-wrap gap-2"
+                  >
                     {distancePresets.map((preset) => {
                       const isActive = nearlyEqual(draft.raceDistanceKm, preset.value);
                       return (
-                        <Pressable
+                        <ToggleGroupItem
                           key={`${draft.activityCategory}-${preset.label}`}
-                          onPress={() => updateDraft({ raceDistanceKm: preset.value })}
+                          value={String(preset.value)}
                           className={`rounded-full border px-3 py-2 ${
                             isActive ? "border-primary bg-primary" : "border-border bg-background"
                           }`}
@@ -432,10 +469,10 @@ export function GoalEditorModal({
                           >
                             {preset.label}
                           </Text>
-                        </Pressable>
+                        </ToggleGroupItem>
                       );
                     })}
-                  </View>
+                  </ToggleGroup>
                 </View>
               ) : null}
 
@@ -461,7 +498,13 @@ export function GoalEditorModal({
               {draft.goalType === "race_performance" ? (
                 <View className="gap-2">
                   <Text className="text-sm font-medium text-foreground">Target style</Text>
-                  <View className="gap-2">
+                  <RadioGroup
+                    value={draft.raceTargetMode ?? "time"}
+                    onValueChange={(nextValue) => {
+                      updateDraft({ raceTargetMode: nextValue as GoalEditorRaceTargetMode });
+                    }}
+                    className="gap-2"
+                  >
                     {RACE_TARGET_MODE_OPTIONS.map((option) => {
                       const isActive = (draft.raceTargetMode ?? "time") === option.value;
                       return (
@@ -472,16 +515,21 @@ export function GoalEditorModal({
                             isActive ? "border-primary bg-primary/10" : "border-border bg-card"
                           }`}
                         >
-                          <Text className="text-sm font-semibold text-foreground">
-                            {option.label}
-                          </Text>
-                          <Text className="mt-1 text-xs text-muted-foreground">
-                            {option.description}
-                          </Text>
+                          <View className="flex-row items-start gap-3">
+                            <RadioGroupItem value={option.value} />
+                            <View className="flex-1">
+                              <Text className="text-sm font-semibold text-foreground">
+                                {option.label}
+                              </Text>
+                              <Text className="mt-1 text-xs text-muted-foreground">
+                                {option.description}
+                              </Text>
+                            </View>
+                          </View>
                         </Pressable>
                       );
                     })}
-                  </View>
+                  </RadioGroup>
                 </View>
               ) : null}
 

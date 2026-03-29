@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { activitiesRouter } from "../activities";
-import { activityPlansRouter } from "../activity_plans";
+import { activityPlansRouter } from "../activity-plans";
 import { eventsRouter } from "../events";
 
 const baseContext = {
@@ -19,17 +19,13 @@ describe("GPS cutover router contracts", () => {
   it("rejects legacy activityLocation filter in activity_plans.list", async () => {
     const caller = activityPlansRouter.createCaller(baseContext);
 
-    await expect(
-      caller.list({ activityLocation: "outdoor" } as any),
-    ).rejects.toThrow();
+    await expect(caller.list({ activityLocation: "outdoor" } as any)).rejects.toThrow();
   });
 
   it("rejects legacy activity_location filter in events.list", async () => {
     const caller = eventsRouter.createCaller(baseContext);
 
-    await expect(
-      caller.list({ activity_location: "outdoor" } as any),
-    ).rejects.toThrow();
+    await expect(caller.list({ activity_location: "outdoor" } as any)).rejects.toThrow();
   });
 
   it("rejects legacy location in activities.create", async () => {

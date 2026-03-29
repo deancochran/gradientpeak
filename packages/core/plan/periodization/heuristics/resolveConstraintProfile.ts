@@ -29,9 +29,7 @@ export interface ResolvedConstraintProfile {
   rationale_codes: string[];
 }
 
-export function resolveConstraintProfile(
-  input: ConstraintProfileInput,
-): ResolvedConstraintProfile {
+export function resolveConstraintProfile(input: ConstraintProfileInput): ResolvedConstraintProfile {
   const defaults = RISK_PROFILE_DEFAULTS[input.optimizationProfile];
   const sportBaseline = getSportModelConfig(input.sport);
   const progressionParameter = applyProgressionPaceModifier(
@@ -62,17 +60,13 @@ export function resolveConstraintProfile(
     sport: input.sport,
     effective_max_weekly_tss_ramp_pct: Math.round(weeklyRamp * 100) / 100,
     effective_max_ctl_ramp_per_week: Math.round(ctlRamp * 100) / 100,
-    effective_acwr_ceiling:
-      Math.round(fatigueToleranceParameter.effective * 1000) / 1000,
+    effective_acwr_ceiling: Math.round(fatigueToleranceParameter.effective * 1000) / 1000,
     effective_post_goal_recovery_days: Math.max(
       defaults.postGoalRecoveryDays,
-      Math.round(
-        input.preferenceProfile.recovery_preferences.post_goal_recovery_days,
-      ),
+      Math.round(input.preferenceProfile.recovery_preferences.post_goal_recovery_days),
     ),
     effective_tsb_floor: -Math.round((5 + weeklyRamp / 2) * 100) / 100,
-    effective_strength_dose_multiplier:
-      Math.round(strengthParameter.effective * 1000) / 1000,
+    effective_strength_dose_multiplier: Math.round(strengthParameter.effective * 1000) / 1000,
     calculated_parameters: {
       progression_pace: progressionParameter,
       systemic_fatigue_tolerance: fatigueToleranceParameter,

@@ -1,9 +1,5 @@
-import { describe, it, expect } from "vitest";
-import {
-  getBaselineProfile,
-  calculateAge,
-  mergeWithBaseline,
-} from "../baseline-profiles";
+import { describe, expect, it } from "vitest";
+import { calculateAge, getBaselineProfile, mergeWithBaseline } from "../baseline-profiles";
 
 describe("getBaselineProfile", () => {
   it("should return null for skip experience level", () => {
@@ -30,13 +26,7 @@ describe("getBaselineProfile", () => {
   });
 
   it("should return baseline profile for intermediate runner", () => {
-    const profile = getBaselineProfile(
-      "intermediate",
-      65,
-      "female",
-      35,
-      "running",
-    );
+    const profile = getBaselineProfile("intermediate", 65, "female", 35, "running");
 
     expect(profile).not.toBeNull();
     expect(profile!.max_hr).toBe(185); // 220 - 35
@@ -47,13 +37,7 @@ describe("getBaselineProfile", () => {
   });
 
   it("should return baseline profile for triathlete with all metrics", () => {
-    const profile = getBaselineProfile(
-      "intermediate",
-      70,
-      "male",
-      30,
-      "triathlon",
-    );
+    const profile = getBaselineProfile("intermediate", 70, "male", 30, "triathlon");
 
     expect(profile).not.toBeNull();
     expect(profile!.ftp).toBeDefined(); // Should have cycling metric
@@ -62,43 +46,17 @@ describe("getBaselineProfile", () => {
   });
 
   it("should have higher FTP for heavier athletes", () => {
-    const lightProfile = getBaselineProfile(
-      "intermediate",
-      60,
-      "male",
-      30,
-      "cycling",
-    );
-    const heavyProfile = getBaselineProfile(
-      "intermediate",
-      80,
-      "male",
-      30,
-      "cycling",
-    );
+    const lightProfile = getBaselineProfile("intermediate", 60, "male", 30, "cycling");
+    const heavyProfile = getBaselineProfile("intermediate", 80, "male", 30, "cycling");
 
     expect(heavyProfile!.ftp).toBeGreaterThan(lightProfile!.ftp!);
   });
 
   it("should have lower resting HR for intermediate vs beginner", () => {
-    const beginnerProfile = getBaselineProfile(
-      "beginner",
-      70,
-      "male",
-      30,
-      "cycling",
-    );
-    const intermediateProfile = getBaselineProfile(
-      "intermediate",
-      70,
-      "male",
-      30,
-      "cycling",
-    );
+    const beginnerProfile = getBaselineProfile("beginner", 70, "male", 30, "cycling");
+    const intermediateProfile = getBaselineProfile("intermediate", 70, "male", 30, "cycling");
 
-    expect(intermediateProfile!.resting_hr).toBeLessThan(
-      beginnerProfile!.resting_hr,
-    );
+    expect(intermediateProfile!.resting_hr).toBeLessThan(beginnerProfile!.resting_hr);
   });
 });
 
@@ -125,13 +83,7 @@ describe("calculateAge", () => {
 
 describe("mergeWithBaseline", () => {
   it("should prioritize user values over baseline", () => {
-    const baseline = getBaselineProfile(
-      "intermediate",
-      70,
-      "male",
-      30,
-      "cycling",
-    );
+    const baseline = getBaselineProfile("intermediate", 70, "male", 30, "cycling");
     const userMetrics = {
       ftp: 300, // User override
     };
@@ -156,13 +108,7 @@ describe("mergeWithBaseline", () => {
   });
 
   it("should fill in missing user values from baseline", () => {
-    const baseline = getBaselineProfile(
-      "intermediate",
-      70,
-      "male",
-      30,
-      "cycling",
-    );
+    const baseline = getBaselineProfile("intermediate", 70, "male", 30, "cycling");
     const userMetrics = {
       ftp: 250, // Only FTP provided
     };

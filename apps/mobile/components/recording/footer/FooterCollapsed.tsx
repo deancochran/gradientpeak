@@ -10,16 +10,12 @@
  * - paused: Resume | Discard | Finish buttons (3-column)
  */
 
+import type { RecordingState } from "@repo/core";
+import type { PublicActivityCategory } from "@repo/supabase";
 import React from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import type {
-  RecordingState
-} from "@repo/core";
-import type {
-  PublicActivityCategory
-} from "@repo/supabase";
 
 import { RecordingControls } from "./RecordingControls";
 

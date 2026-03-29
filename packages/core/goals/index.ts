@@ -1,3 +1,6 @@
-export * from "./goalDraft";
-export * from "./types";
-export * from "./validation";
+export * from "./draft";
+export {
+  type TrainingPlanFormGoalValidationData,
+  trainingPlanFormGoalValidationSchema,
+  validateTrainingPlanFormGoals,
+} from "./validation";

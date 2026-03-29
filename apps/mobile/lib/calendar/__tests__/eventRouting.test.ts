@@ -1,6 +1,6 @@
+import { describe, expect, it } from "vitest";
 import { ROUTES } from "@/lib/constants/routes";
 import { buildEditEventRoute, buildOpenEventRoute } from "../eventRouting";
-import { describe, expect, it } from "vitest";
 
 describe("calendar event routing", () => {
   it("routes planned events to standard event detail", () => {
@@ -28,11 +28,7 @@ describe("calendar event routing", () => {
   });
 
   it("keeps imported events out of editable routes", () => {
-    expect(buildOpenEventRoute({ id: "e-5", event_type: "imported" })).toBe(
-      null,
-    );
-    expect(buildEditEventRoute({ id: "e-5", event_type: "imported" })).toBe(
-      null,
-    );
+    expect(buildOpenEventRoute({ id: "e-5", event_type: "imported" })).toBe(null);
+    expect(buildEditEventRoute({ id: "e-5", event_type: "imported" })).toBe(null);
   });
 });

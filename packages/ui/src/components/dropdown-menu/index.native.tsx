@@ -1,27 +1,22 @@
-import * as React from "react";
 import * as DropdownMenuPrimitive from "@rn-primitives/dropdown-menu";
-import {
-  Check,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-} from "lucide-react-native";
+import { Check, ChevronDown, ChevronRight, ChevronUp } from "lucide-react-native";
+import * as React from "react";
 import {
   Platform,
+  type StyleProp,
   StyleSheet,
   Text,
   type TextProps,
   View,
   type ViewStyle,
-  type StyleProp,
 } from "react-native";
 import { FadeIn } from "react-native-reanimated";
 import { FullWindowOverlay as RNFullWindowOverlay } from "react-native-screens";
 
 import { cn } from "../../lib/cn";
 import { Icon } from "../icon/index.native";
-import { TextClassContext } from "../text/context";
 import { NativeOnlyAnimatedView } from "../native-only-animated-view/index.native";
+import { TextClassContext } from "../text/context";
 import type { DropdownMenuItemVariant } from "./shared";
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
@@ -44,8 +39,7 @@ function DropdownMenuSubTrigger({
     inset?: boolean;
   }) {
   const { open } = DropdownMenuPrimitive.useSubContext();
-  const icon =
-    Platform.OS === "web" ? ChevronRight : open ? ChevronUp : ChevronDown;
+  const icon = Platform.OS === "web" ? ChevronRight : open ? ChevronUp : ChevronDown;
 
   return (
     <TextClassContext.Provider
@@ -67,13 +61,7 @@ function DropdownMenuSubTrigger({
         {...props}
       >
         <>{children}</>
-        <Icon
-          as={icon}
-          className={cn(
-            "text-foreground ml-auto size-4 shrink-0",
-            iconClassName,
-          )}
-        />
+        <Icon as={icon} className={cn("text-foreground ml-auto size-4 shrink-0", iconClassName)} />
       </DropdownMenuPrimitive.SubTrigger>
     </TextClassContext.Provider>
   );
@@ -100,8 +88,7 @@ function DropdownMenuSubContent({
   );
 }
 
-const FullWindowOverlay =
-  Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
+const FullWindowOverlay = Platform.OS === "ios" ? RNFullWindowOverlay : React.Fragment;
 
 function DropdownMenuContent({
   className,
@@ -120,10 +107,7 @@ function DropdownMenuContent({
       ? StyleSheet.absoluteFill
       : StyleSheet.flatten([
           StyleSheet.absoluteFill,
-          overlayStyle as Exclude<
-            StyleProp<ViewStyle>,
-            null | undefined | false
-          >,
+          overlayStyle as Exclude<StyleProp<ViewStyle>, null | undefined | false>,
         ]);
   const resolvedWebOverlayStyle =
     overlayStyle == null || overlayStyle === false ? undefined : overlayStyle;
@@ -132,11 +116,7 @@ function DropdownMenuContent({
     <DropdownMenuPrimitive.Portal hostName={portalHost}>
       <FullWindowOverlay>
         <DropdownMenuPrimitive.Overlay
-          style={
-            Platform.OS === "web"
-              ? resolvedWebOverlayStyle
-              : resolvedNativeOverlayStyle
-          }
+          style={Platform.OS === "web" ? resolvedWebOverlayStyle : resolvedNativeOverlayStyle}
           className={overlayClassName}
         >
           <NativeOnlyAnimatedView entering={FadeIn}>
@@ -178,8 +158,7 @@ function DropdownMenuItem({
     <TextClassContext.Provider
       value={cn(
         "select-none text-sm text-popover-foreground group-active:text-popover-foreground",
-        variant === "destructive" &&
-          "text-destructive group-active:text-destructive",
+        variant === "destructive" && "text-destructive group-active:text-destructive",
       )}
     >
       <DropdownMenuPrimitive.Item
@@ -188,12 +167,10 @@ function DropdownMenuItem({
           Platform.select({
             web: cn(
               "focus:bg-accent focus:text-accent-foreground cursor-default outline-none data-[disabled]:pointer-events-none",
-              variant === "destructive" &&
-                "focus:bg-destructive/10 dark:focus:bg-destructive/20",
+              variant === "destructive" && "focus:bg-destructive/10 dark:focus:bg-destructive/20",
             ),
           }),
-          variant === "destructive" &&
-            "active:bg-destructive/10 dark:active:bg-destructive/20",
+          variant === "destructive" && "active:bg-destructive/10 dark:active:bg-destructive/20",
           props.disabled && "opacity-50",
           inset && "pl-8",
           className,
@@ -298,8 +275,7 @@ function DropdownMenuLabel({
 function DropdownMenuSeparator({
   className,
   ...props
-}: DropdownMenuPrimitive.SeparatorProps &
-  React.RefAttributes<DropdownMenuPrimitive.SeparatorRef>) {
+}: DropdownMenuPrimitive.SeparatorProps & React.RefAttributes<DropdownMenuPrimitive.SeparatorRef>) {
   return (
     <DropdownMenuPrimitive.Separator
       className={cn("bg-border -mx-1 my-1 h-px", className)}
@@ -308,16 +284,10 @@ function DropdownMenuSeparator({
   );
 }
 
-function DropdownMenuShortcut({
-  className,
-  ...props
-}: TextProps & React.RefAttributes<Text>) {
+function DropdownMenuShortcut({ className, ...props }: TextProps & React.RefAttributes<Text>) {
   return (
     <Text
-      className={cn(
-        "text-muted-foreground ml-auto text-xs tracking-widest",
-        className,
-      )}
+      className={cn("text-muted-foreground ml-auto text-xs tracking-widest", className)}
       {...props}
     />
   );

@@ -7,6 +7,7 @@ import {
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { buildActivityDerivedSummaryMap, buildDynamicStressSeries } from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
@@ -233,19 +234,22 @@ export const trendsRouter = createTRPCRouter({
       };
     }
 
+    const { byActivityId: derivedActivityMap, byDate: activitiesByDate } =
+      await buildDynamicStressSeries({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        activities,
+      });
+
     const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
-      ? calculateRollingTrainingQuality(activities)
+      ? calculateRollingTrainingQuality(
+          activities.map((activity) => ({
+            started_at: activity.started_at,
+            tss: derivedActivityMap.get(activity.id)?.tss ?? null,
+            intensity_factor: derivedActivityMap.get(activity.id)?.intensity_factor ?? null,
+          })),
+        )
       : undefined;
-
-    const activitiesByDate = new Map<string, number>();
-
-    // Group activities by date and sum TSS
-    for (const activity of activities) {
-      const dateStr = new Date(activity.started_at).toISOString().split("T")[0];
-      if (!dateStr) continue;
-      const tss = activity.training_stress_score || 0;
-      activitiesByDate.set(dateStr, (activitiesByDate.get(dateStr) || 0) + tss);
-    }
 
     const replayed = replayTrainingLoadByDate({
       dailyTss: buildDailyTssByDateSeries({
@@ -297,7 +301,14 @@ export const trendsRouter = createTRPCRouter({
 
     const workloadWindowStart = new Date(endDate);
     workloadWindowStart.setDate(endDate.getDate() - 27);
-    const workload = buildWorkloadEnvelopes(activities, workloadWindowStart, endDate);
+    const workload = buildWorkloadEnvelopes(
+      activities.map((activity) => ({
+        started_at: activity.started_at,
+        tss: derivedActivityMap.get(activity.id)?.tss ?? null,
+      })),
+      workloadWindowStart,
+      endDate,
+    );
 
     return {
       dataPoints,
@@ -346,6 +357,12 @@ export const trendsRouter = createTRPCRouter({
         return { weeklyData: [] };
       }
 
+      const derivedMap = await buildActivityDerivedSummaryMap({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        activities,
+      });
+
       // Group by week
       type IntensityZone =
         | "recovery"
@@ -366,8 +383,9 @@ export const trendsRouter = createTRPCRouter({
       >();
 
       for (const activity of activities) {
-        const intensityFactor = activity.intensity_factor || null;
-        const tss = activity.training_stress_score || null;
+        const derived = derivedMap.get(activity.id);
+        const intensityFactor = derived?.intensity_factor ?? null;
+        const tss = derived?.tss ?? null;
 
         // Skip activities without both IF and TSS
         if (!intensityFactor || !tss) continue;
@@ -395,9 +413,7 @@ export const trendsRouter = createTRPCRouter({
         }
 
         const week = weeklyData.get(weekKey)!;
-        const intensityFactorNormalized = intensityFactor / 100;
-
-        const zone = getTrainingIntensityZone(intensityFactorNormalized) as IntensityZone;
+        const zone = getTrainingIntensityZone(intensityFactor) as IntensityZone;
         week.zones[zone] += tss;
         week.totalTSS += tss;
       }
@@ -575,9 +591,7 @@ export const trendsRouter = createTRPCRouter({
           query = query.order("avg_power", { ascending: false }).not("avg_power", "is", null);
           break;
         case "tss":
-          query = query
-            .order("training_stress_score", { ascending: false })
-            .not("training_stress_score", "is", null);
+          query = query.order("started_at", { ascending: false });
           break;
       }
 
@@ -600,6 +614,15 @@ export const trendsRouter = createTRPCRouter({
       if (!activities || activities.length === 0) {
         return { performances: [] };
       }
+
+      const derivedMap =
+        input.metric === "tss"
+          ? await buildActivityDerivedSummaryMap({
+              supabase: ctx.supabase,
+              profileId: ctx.session.user.id,
+              activities,
+            })
+          : null;
 
       // Map activities to performances with extracted values
       const allPerformances = activities
@@ -625,7 +648,7 @@ export const trendsRouter = createTRPCRouter({
               unit = "s";
               break;
             case "tss":
-              value = activity.training_stress_score;
+              value = derivedMap?.get(activity.id)?.tss ?? null;
               unit = "TSS";
               break;
           }

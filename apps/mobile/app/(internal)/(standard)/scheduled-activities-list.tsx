@@ -1,3 +1,4 @@
+import { invalidateTrainingPlanQueries } from "@repo/trpc/react";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
@@ -33,7 +34,7 @@ export default function ScheduledScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await refetch();
-    await utils.trainingPlans.invalidate();
+    await invalidateTrainingPlanQueries(utils);
     setRefreshing(false);
   };
 

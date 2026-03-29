@@ -142,12 +142,8 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
 
     expect(result.readiness_delta_diagnostics).toBeDefined();
     expect(result.readiness_delta_diagnostics?.impacts.load.key).toBe("load");
-    expect(result.readiness_delta_diagnostics?.impacts.fatigue.key).toBe(
-      "fatigue",
-    );
-    expect(result.readiness_delta_diagnostics?.impacts.feasibility.key).toBe(
-      "feasibility",
-    );
+    expect(result.readiness_delta_diagnostics?.impacts.fatigue.key).toBe("fatigue");
+    expect(result.readiness_delta_diagnostics?.impacts.feasibility.key).toBe("feasibility");
     expect(result.preview_snapshot_baseline).toEqual({
       readiness_score: 69,
       predicted_load_tss: 430,
@@ -204,9 +200,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
       deps,
     });
 
-    expect(repository.getPriorInferredStateSnapshot).toHaveBeenCalledWith(
-      "profile-1",
-    );
+    expect(repository.getPriorInferredStateSnapshot).toHaveBeenCalledWith("profile-1");
     expect(deps.buildCreationProjectionArtifacts).toHaveBeenCalledWith(
       expect.objectContaining({
         priorInferredSnapshot: expect.objectContaining({
@@ -271,9 +265,9 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
 
     expect(result.conflicts.is_blocking).toBe(true);
     expect(result.conflicts.items[0]?.severity).toBe("blocking");
-    expect(
-      result.override_audit.effective.unresolved_blocking_conflict_codes,
-    ).toContain("required_tss_ramp_exceeds_cap");
+    expect(result.override_audit.effective.unresolved_blocking_conflict_codes).toContain(
+      "required_tss_ramp_exceeds_cap",
+    );
   });
 
   it("marks objective/risk-budget overrides effective in preview audit", async () => {

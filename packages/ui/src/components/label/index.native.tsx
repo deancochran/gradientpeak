@@ -35,9 +35,7 @@ function Label({
   role,
   testId,
   ...props
-}: LabelPrimitive.TextProps &
-  React.RefAttributes<LabelPrimitive.TextRef> &
-  LabelTestProps) {
+}: LabelPrimitive.TextProps & React.RefAttributes<LabelPrimitive.TextRef> & LabelTestProps) {
   return (
     <LabelPrimitive.Root
       className={labelRootClasses({ disabled })}
@@ -47,10 +45,7 @@ function Label({
         id,
         role,
         testId,
-      }) as Pick<
-        LabelPrimitive.RootProps,
-        "accessibilityLabel" | "nativeID" | "role" | "testID"
-      >)}
+      }) as Pick<LabelPrimitive.RootProps, "accessibilityLabel" | "nativeID" | "role" | "testID">)}
       onLongPress={onLongPress}
       onPress={onPress}
       onPressIn={onPressIn}

@@ -1,9 +1,9 @@
+import type { FitnessProgression, TrainingBlock } from "@repo/core";
+import { calculateCTLProjection } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
+import React, { useMemo } from "react";
 import { View } from "react-native";
 import { PlanVsActualChart } from "./PlanVsActualChart";
-import { calculateCTLProjection } from "@repo/core";
-import type { TrainingBlock, FitnessProgression } from "@repo/core";
-import React, { useMemo } from "react";
 
 // Legacy Mesocycle type for backwards compatibility
 type Mesocycle = any;
@@ -74,9 +74,7 @@ export function FitnessProjectionChart(props: FitnessProjectionChartProps) {
         const dateStr = currentDate.toISOString().split("T")[0] || "";
 
         // Find which block this date falls in
-        const block = blocks.find(
-          (b) => dateStr >= b.start_date && dateStr <= b.end_date,
-        );
+        const block = blocks.find((b) => dateStr >= b.start_date && dateStr <= b.end_date);
 
         if (block) {
           // Calculate weekly TSS target
@@ -89,8 +87,7 @@ export function FitnessProjectionChart(props: FitnessProjectionChartProps) {
 
           // Update CTL (exponentially weighted with 42-day time constant)
           const dailyTSS = effectiveTSS / 7;
-          currentCTL =
-            currentCTL + (dailyTSS - currentCTL) * (1 - Math.exp(-1 / 42));
+          currentCTL = currentCTL + (dailyTSS - currentCTL) * (1 - Math.exp(-1 / 42));
         }
 
         projection.push({ date: dateStr, ctl: Math.round(currentCTL) });

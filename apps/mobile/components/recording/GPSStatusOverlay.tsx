@@ -12,15 +12,15 @@
  * - Shows last known position status
  */
 
-import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator } from "react-native";
 import { Text } from "@repo/ui/components/text";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, View } from "react-native";
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
   FadeIn,
   FadeOut,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
 } from "react-native-reanimated";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
@@ -114,14 +114,8 @@ function useGPSStatus(
   return { hasSignal, lastUpdateTime, lastAccuracy };
 }
 
-export function GPSStatusOverlay({
-  service,
-  gpsRecordingEnabled,
-}: GPSStatusOverlayProps) {
-  const { hasSignal, lastUpdateTime, lastAccuracy } = useGPSStatus(
-    service,
-    gpsRecordingEnabled,
-  );
+export function GPSStatusOverlay({ service, gpsRecordingEnabled }: GPSStatusOverlayProps) {
+  const { hasSignal, lastUpdateTime, lastAccuracy } = useGPSStatus(service, gpsRecordingEnabled);
 
   // Only show overlay when GPS recording is enabled and signal is lost
   if (!gpsRecordingEnabled || hasSignal) {
@@ -139,8 +133,7 @@ export function GPSStatusOverlay({
         <ActivityIndicator size="large" className="mb-4" />
         <Text className="text-lg font-semibold mb-2">GPS Searching...</Text>
         <Text className="text-sm text-muted-foreground text-center max-w-xs">
-          Your recording is still active. GPS signal will reconnect
-          automatically.
+          Your recording is still active. GPS signal will reconnect automatically.
         </Text>
         {lastUpdateTime && (
           <Text className="text-xs text-muted-foreground mt-3">

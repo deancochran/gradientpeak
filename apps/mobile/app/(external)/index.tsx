@@ -1,10 +1,9 @@
-import { useRouter } from "expo-router";
-import React from "react";
-import { View } from "react-native";
-
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
+import { useRouter } from "expo-router";
+import React from "react";
+import { View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 export default function WelcomeScreen() {
@@ -91,11 +90,7 @@ export default function WelcomeScreen() {
 
       {/* Footer */}
       <View className="pb-8 items-center" testID="footer-section">
-        <Text
-          variant="muted"
-          className="text-center text-xs"
-          testID="terms-text"
-        >
+        <Text variant="muted" className="text-center text-xs" testID="terms-text">
           By continuing, you agree to our{"\n"}Terms & Privacy Policy
         </Text>
       </View>

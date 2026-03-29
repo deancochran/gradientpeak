@@ -8,11 +8,7 @@
  * - Network state awareness
  */
 
-import {
-  createClient,
-  SupabaseClient,
-  SupabaseClientOptions,
-} from "@supabase/supabase-js";
+import { createClient, SupabaseClient, SupabaseClientOptions } from "@supabase/supabase-js";
 import { File } from "expo-file-system";
 
 export interface UploadProgress {
@@ -91,10 +87,7 @@ export class FitUploader {
   /**
    * Upload a file to a specific presigned URL
    */
-  async uploadToSignedUrl(
-    filePath: string,
-    signedUrl: string,
-  ): Promise<UploadResult> {
+  async uploadToSignedUrl(filePath: string, signedUrl: string): Promise<UploadResult> {
     if (this.uploadState.isUploading) {
       return {
         success: false,
@@ -153,8 +146,7 @@ export class FitUploader {
       throw new Error(this.uploadState.lastError || "Max retries exceeded");
     } catch (error) {
       this.uploadState.isUploading = false;
-      this.uploadState.lastError =
-        error instanceof Error ? error.message : "Unknown error";
+      this.uploadState.lastError = error instanceof Error ? error.message : "Unknown error";
 
       return {
         success: false,
@@ -200,9 +192,7 @@ export class FitUploader {
       const size = file.size ?? 0;
       if (size > MAX_FILE_SIZE) throw new Error("File too large");
 
-      const authHeader = accessToken
-        ? `Bearer ${accessToken}`
-        : `Bearer ${this.supabaseKey}`;
+      const authHeader = accessToken ? `Bearer ${accessToken}` : `Bearer ${this.supabaseKey}`;
 
       for (let attempt = 1; attempt <= this.config.maxRetries + 1; attempt++) {
         this.uploadState.attempts = attempt;
@@ -231,8 +221,7 @@ export class FitUploader {
       throw new Error("Max retries exceeded");
     } catch (error) {
       this.uploadState.isUploading = false;
-      this.uploadState.lastError =
-        error instanceof Error ? error.message : "Unknown error";
+      this.uploadState.lastError = error instanceof Error ? error.message : "Unknown error";
       return {
         success: false,
         error: this.uploadState.lastError,
@@ -261,9 +250,7 @@ export class FitUploader {
       const fileResponse = await fetch(file.uri);
       const blob = await fileResponse.blob();
 
-      console.log(
-        `[FitUploader] Uploading ${blob.size} bytes via Blob to ${url}`,
-      );
+      console.log(`[FitUploader] Uploading ${blob.size} bytes via Blob to ${url}`);
 
       const response = await fetch(url, {
         method: method,
@@ -292,9 +279,7 @@ export class FitUploader {
         attempts: this.uploadState.attempts,
       };
     } catch (error) {
-      throw new Error(
-        `Upload failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      throw new Error(`Upload failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -312,9 +297,7 @@ export class FitUploader {
     const uploadUrl = `${this.supabaseUrl}/storage/v1/object/${storagePath}`;
 
     // Use access token if provided, otherwise fallback to anon key (which may fail for RLS)
-    const authHeader = accessToken
-      ? `Bearer ${accessToken}`
-      : `Bearer ${this.supabaseKey}`;
+    const authHeader = accessToken ? `Bearer ${accessToken}` : `Bearer ${this.supabaseKey}`;
 
     // Note: Use fetch for modern upload
     try {
@@ -404,9 +387,7 @@ export class FitUploader {
             throw result.error;
           }
 
-          const { data } = supabase.storage
-            .from(this.bucketName)
-            .getPublicUrl(fileName);
+          const { data } = supabase.storage.from(this.bucketName).getPublicUrl(fileName);
 
           this.uploadState.isUploading = false;
           this.uploadState.progress = null;
@@ -429,8 +410,7 @@ export class FitUploader {
       throw new Error("Max retries exceeded");
     } catch (error) {
       this.uploadState.isUploading = false;
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       this.uploadState.lastError = errorMessage;
 
       return {
@@ -463,9 +443,7 @@ export class FitUploader {
   async deleteFile(fileName: string): Promise<boolean> {
     try {
       const supabase = this.getSupabaseClient();
-      const result = await supabase.storage
-        .from(this.bucketName)
-        .remove([fileName]);
+      const result = await supabase.storage.from(this.bucketName).remove([fileName]);
       return !result.error;
     } catch (error) {
       console.error("[FitUploader] Failed to delete file:", error);

@@ -2,4 +2,3 @@
 
 export { AddActivityModal } from "./AddActivityModal";
 export * from "./components";
-

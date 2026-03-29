@@ -8,6 +8,7 @@ Detailed, task-relevant project context for lazy loading.
 - `.opencode/` stores supporting instruction assets and repo-local content, not a second runtime config file.
 - The root agent registry in `opencode.json` may reference assets under `.opencode/`, including `.opencode/instructions/` and `.opencode/skills/*/SKILL.md`, while repo-wide always-on rules live in the root `AGENTS.md`.
 - Workflow coordination references live in `.opencode/instructions/workflow-lifecycle.md` and `.opencode/instructions/delegation-contract.md`.
+- Worktrunk workflow reference lives in `.opencode/instructions/worktrunk-reference.md`, while shared hooks live in `.config/wt.toml`.
 
 ## Project Overview
 
@@ -47,6 +48,19 @@ pnpm lint
 pnpm check-types
 pnpm test
 ```
+
+Worktrunk:
+
+```bash
+wt switch --create feature-name
+wt list
+wt merge main
+wt remove
+```
+
+- Standard local worktree root: `~/worktrees/GradientPeak/<branch>`
+- Preferred coordinator branch naming: `spec/<spec-slug>/<lane>`
+- Shared Worktrunk hooks in `.config/wt.toml` run `pnpm install --frozen-lockfile` on `pre-start`, then `pnpm check-types`, `pnpm lint`, and `pnpm test` on `pre-merge`
 
 Mobile:
 

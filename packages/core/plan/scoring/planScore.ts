@@ -40,24 +40,19 @@ export function scorePlanGoals(goals: GoalAssessmentResult[]): PlanScoreResult {
     A:
       tierBuckets.A.length === 0
         ? 0
-        : tierBuckets.A.reduce((sum, value) => sum + value, 0) /
-          tierBuckets.A.length,
+        : tierBuckets.A.reduce((sum, value) => sum + value, 0) / tierBuckets.A.length,
     B:
       tierBuckets.B.length === 0
         ? 0
-        : tierBuckets.B.reduce((sum, value) => sum + value, 0) /
-          tierBuckets.B.length,
+        : tierBuckets.B.reduce((sum, value) => sum + value, 0) / tierBuckets.B.length,
     C:
       tierBuckets.C.length === 0
         ? 0
-        : tierBuckets.C.reduce((sum, value) => sum + value, 0) /
-          tierBuckets.C.length,
+        : tierBuckets.C.reduce((sum, value) => sum + value, 0) / tierBuckets.C.length,
   };
 
   const goalScores = ordered.map((goal) => goal.goal_score_0_1);
-  const priorityWeights = ordered.map((goal) =>
-    mapGoalPriorityToWeight(goal.priority),
-  );
+  const priorityWeights = ordered.map((goal) => mapGoalPriorityToWeight(goal.priority));
   const planScore = weightedMean(goalScores, priorityWeights);
 
   return {

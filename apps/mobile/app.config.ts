@@ -13,11 +13,9 @@ const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
 const SCHEME = "gradientpeak";
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } =
-    getDynamicAppConfig(
-      (process.env.APP_ENV as "development" | "preview" | "production") ||
-        "development",
-    );
+  const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } = getDynamicAppConfig(
+    (process.env.APP_ENV as "development" | "preview" | "production") || "development",
+  );
 
   return {
     ...config,
@@ -40,14 +38,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           "bluetooth-central",
           "remote-notification", // needed for background notifications
         ],
-        NSBluetoothAlwaysUsageDescription:
-          "This app needs Bluetooth to connect to your devices.",
+        NSBluetoothAlwaysUsageDescription: "This app needs Bluetooth to connect to your devices.",
         NSLocationAlwaysAndWhenInUseUsageDescription:
           "This app needs location access to track activities even when the app is in the background.",
-        NSLocationWhenInUseUsageDescription:
-          "This app needs your location to track activities.",
-        NSMotionUsageDescription:
-          "This app needs motion access to track your activity.",
+        NSLocationWhenInUseUsageDescription: "This app needs your location to track activities.",
+        NSMotionUsageDescription: "This app needs motion access to track your activity.",
         NSHealthShareUsageDescription:
           "This app needs access to your health data to sync your workouts and biometrics.",
         NSHealthUpdateUsageDescription:
@@ -103,8 +98,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         projectId: EAS_PROJECT_ID,
       },
       // OAuth and API configuration
-      redirectUri:
-        process.env.EXPO_PUBLIC_REDIRECT_URI || `${scheme}://integrations`,
+      redirectUri: process.env.EXPO_PUBLIC_REDIRECT_URI || `${scheme}://integrations`,
       apiUrl: process.env.EXPO_PUBLIC_API_URL,
     },
     plugins: [
@@ -112,6 +106,15 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-web-browser",
       "expo-build-properties",
       "expo-secure-store",
+      [
+        "expo-dev-client",
+        {
+          launchMode: "most-recent",
+          android: {
+            launchMode: "most-recent",
+          },
+        },
+      ],
       [
         "expo-splash-screen",
         {
@@ -139,8 +142,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         {
           isBackgroundEnabled: true,
           modes: ["peripheral", "central"],
-          bluetoothAlwaysPermission:
-            "Allow $(PRODUCT_NAME) to connect to bluetooth devices",
+          bluetoothAlwaysPermission: "Allow $(PRODUCT_NAME) to connect to bluetooth devices",
         },
       ],
       // [
@@ -158,9 +160,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   };
 };
 
-export const getDynamicAppConfig = (
-  environment: "development" | "preview" | "production",
-) => {
+export const getDynamicAppConfig = (environment: "development" | "preview" | "production") => {
   if (environment === "production") {
     return {
       name: APP_NAME,

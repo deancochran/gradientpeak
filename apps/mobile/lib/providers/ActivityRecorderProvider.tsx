@@ -10,25 +10,15 @@
  * that don't share state.
  */
 
-import type {
-  PublicProfilesRow
-} from "@repo/supabase";
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+import type { PublicProfilesRow } from "@repo/supabase";
+import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import { ActivityRecorderService } from "../services/ActivityRecorder";
 
 interface ActivityRecorderContextValue {
   service: ActivityRecorderService | null;
 }
 
-const ActivityRecorderContext = createContext<
-  ActivityRecorderContextValue | undefined
->(undefined);
+const ActivityRecorderContext = createContext<ActivityRecorderContextValue | undefined>(undefined);
 
 /**
  * Provider that maintains a single, stable ActivityRecorderService instance
@@ -74,10 +64,7 @@ export function ActivityRecorderProvider({
       profileIdRef.current === currentProfileId &&
       currentProfileId !== null
     ) {
-      console.log(
-        "[ActivityRecorderProvider] Reusing service for profile:",
-        currentProfileId,
-      );
+      console.log("[ActivityRecorderProvider] Reusing service for profile:", currentProfileId);
       return serviceRef.current;
     }
 
@@ -95,10 +82,7 @@ export function ActivityRecorderProvider({
 
     // Create new service if profile exists
     if (profile) {
-      console.log(
-        "[ActivityRecorderProvider] Creating new service for profile:",
-        profile.id,
-      );
+      console.log("[ActivityRecorderProvider] Creating new service for profile:", profile.id);
       serviceRef.current = new ActivityRecorderService(profile);
       profileIdRef.current = profile.id;
       return serviceRef.current;
@@ -114,9 +98,7 @@ export function ActivityRecorderProvider({
   useEffect(() => {
     return () => {
       if (serviceRef.current) {
-        console.log(
-          "[ActivityRecorderProvider] Provider unmounting - cleanup service",
-        );
+        console.log("[ActivityRecorderProvider] Provider unmounting - cleanup service");
         serviceRef.current.cleanup();
         serviceRef.current = null;
         profileIdRef.current = null;
@@ -127,9 +109,7 @@ export function ActivityRecorderProvider({
   const value = useMemo(() => ({ service }), [service]);
 
   return (
-    <ActivityRecorderContext.Provider value={value}>
-      {children}
-    </ActivityRecorderContext.Provider>
+    <ActivityRecorderContext.Provider value={value}>{children}</ActivityRecorderContext.Provider>
   );
 }
 

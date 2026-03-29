@@ -1,7 +1,6 @@
 import { deterministicUuidFromSeed } from "../plan/normalizeGoalInput";
 
-const uuidLikePattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuidLikePattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const rfc4122UuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -19,9 +18,7 @@ function canonicalizeLegacyUuid(value: string): string {
   bytes[6] = (byte6 & 0x0f) | 0x40;
   bytes[8] = (byte8 & 0x3f) | 0x80;
 
-  const hex = Array.from(bytes, (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
@@ -65,7 +62,5 @@ export function normalizeLinkedActivityPlanId(activityPlanId: string): string {
     return canonicalizeLegacyUuid(activityPlanId);
   }
 
-  return deterministicUuidFromSeed(
-    `system-activity-template:external:${activityPlanId}`,
-  );
+  return deterministicUuidFromSeed(`system-activity-template:external:${activityPlanId}`);
 }

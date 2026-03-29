@@ -1,4 +1,34 @@
+import type { PublicIntegrationProvider } from "@repo/supabase";
+import { invalidatePostActivityIngestionQueries } from "@repo/trpc/client";
+import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
+import { Input } from "@repo/ui/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@repo/ui/components/select";
+import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
+import { useQueryClient } from "@tanstack/react-query";
+import Constants from "expo-constants";
+import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import {
+  Check,
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  History,
+  Upload,
+} from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -10,18 +40,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
-import { Text } from "@repo/ui/components/text";
-import { Button } from "@repo/ui/components/button";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { getServerConfig } from "@/lib/server-config";
+import { FitUploader } from "@/lib/services/fit/FitUploader";
 import { trpc } from "@/lib/trpc";
-import type { PublicIntegrationProvider } from "@repo/supabase";
-import Constants from "expo-constants";
-import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
-import { Check, ChevronLeft, ChevronRight } from "lucide-react-native";
 
 type IntegrationConfig = {
   provider: PublicIntegrationProvider;
@@ -51,13 +73,37 @@ const INTEGRATIONS: IntegrationConfig[] = [
   },
 ];
 
-function createUuidV4(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
-    const randomValue = Math.floor(Math.random() * 16);
-    const value = char === "x" ? randomValue : (randomValue & 0x3) | 0x8;
-    return value.toString(16);
-  });
+const ACTIVITY_TYPES = [
+  { value: "run", label: "Run" },
+  { value: "bike", label: "Ride" },
+  { value: "swim", label: "Swim" },
+  { value: "strength", label: "Strength" },
+  { value: "other", label: "Other" },
+] as const;
+
+function isFitParseFailureMessage(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("failed to parse fit file") ||
+    normalized.includes("fit decode") ||
+    normalized.includes("fit parser") ||
+    normalized.includes("fit parse") ||
+    normalized.includes("corrupt fit") ||
+    normalized.includes("invalid fit") ||
+    normalized.includes("bar error")
+  );
 }
+
+const createOption = (value: string, label?: string) => ({
+  value,
+  label: label || value,
+});
+
+const buildManualHistoricalImportProvenance = (fileName: string) => ({
+  import_source: "manual_historical" as const,
+  import_file_type: "fit" as const,
+  import_original_file_name: fileName.trim(),
+});
 
 /**
  * Get the mobile redirect URI based on environment
@@ -74,19 +120,24 @@ function getMobileRedirectUri(): string {
 
 export default function IntegrationsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [pendingByProvider, setPendingByProvider] = useState<
     Partial<Record<PublicIntegrationProvider, "connect" | "disconnect">>
   >({});
 
   const utils = trpc.useUtils();
-  const [fitExternalId, setFitExternalId] = useState("");
-  const [fitName, setFitName] = useState("");
-  const [zwoExternalId, setZwoExternalId] = useState("");
-  const [zwoName, setZwoName] = useState("");
-  const [importSummary, setImportSummary] = useState<{
-    provider: "FIT" | "ZWO";
-    action: "created" | "updated";
+  const [historicalName, setHistoricalName] = useState("");
+  const [historicalNotes, setHistoricalNotes] = useState("");
+  const [historicalActivityType, setHistoricalActivityType] = useState<string>("bike");
+  const [selectedFitFile, setSelectedFitFile] = useState<{
     name: string;
+    uri: string;
+    size: number;
+  } | null>(null);
+  const [importSummary, setImportSummary] = useState<{
+    activityId: string;
+    name: string;
+    fileName: string;
   } | null>(null);
 
   // tRPC queries
@@ -103,99 +154,129 @@ export default function IntegrationsScreen() {
     success: "Integration disconnected",
   });
 
-  const importFitMutation = useReliableMutation(
-    trpc.activityPlans.importFromFitTemplate,
-    {
-      invalidate: [utils.activityPlans],
-    },
-  );
+  const getSignedUrlMutation = trpc.fitFiles.getSignedUploadUrl.useMutation();
+  const processFitFileMutation = trpc.fitFiles.processFitFile.useMutation();
 
-  const importZwoMutation = useReliableMutation(
-    trpc.activityPlans.importFromZwoTemplate,
-    {
-      invalidate: [utils.activityPlans],
-    },
-  );
+  const isImporting = getSignedUrlMutation.isPending || processFitFileMutation.isPending;
 
-  const buildImportedStructure = (label: string) => ({
-    version: 2 as const,
-    intervals: [
-      {
-        id: createUuidV4(),
-        name: `${label} Session`,
-        repetitions: 1,
-        steps: [
-          {
-            id: createUuidV4(),
-            name: label,
-            duration: { type: "untilFinished" as const },
-            targets: [],
-          },
-        ],
-      },
-    ],
-  });
-
-  const handleFitImport = async () => {
-    const trimmedName = fitName.trim();
-    const trimmedExternalId = fitExternalId.trim();
-
-    if (!trimmedName || !trimmedExternalId) {
-      Alert.alert(
-        "Missing details",
-        "Enter both FIT template name and file ID.",
-      );
-      return;
-    }
-
+  const handlePickFitFile = async () => {
     try {
-      const result = await importFitMutation.mutateAsync({
-        external_id: trimmedExternalId,
-        name: trimmedName,
-        activity_category: "bike",
-        description: "Imported from FIT",
-        structure: buildImportedStructure(trimmedName),
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["*/*"],
+        copyToCacheDirectory: true,
       });
 
-      setImportSummary({
-        provider: "FIT",
-        action: result.action,
-        name: result.item.name,
+      if (result.canceled || !result.assets[0]) {
+        return;
+      }
+
+      const asset = result.assets[0];
+
+      if (!asset.name.toLowerCase().endsWith(".fit")) {
+        Alert.alert("Unsupported file", "Choose a FIT file ending in .fit.");
+        return;
+      }
+
+      const file = new File(asset.uri);
+      const fileSize = asset.size ?? file.size ?? 0;
+
+      if (fileSize <= 0) {
+        Alert.alert("Unreadable file", "The selected FIT file appears to be empty.");
+        return;
+      }
+
+      setSelectedFitFile({
+        name: asset.name,
+        uri: asset.uri,
+        size: fileSize,
       });
-    } catch {
-      Alert.alert("Import failed", "Could not import FIT template.");
+
+      if (!historicalName.trim()) {
+        setHistoricalName(asset.name.replace(/\.fit$/i, ""));
+      }
+    } catch (error) {
+      console.error("Failed to pick FIT file", error);
+      Alert.alert("File selection failed", "Could not open the FIT file picker.");
     }
   };
 
-  const handleZwoImport = async () => {
-    const trimmedName = zwoName.trim();
-    const trimmedExternalId = zwoExternalId.trim();
+  const handleHistoricalImport = async () => {
+    const trimmedName = historicalName.trim();
 
-    if (!trimmedName || !trimmedExternalId) {
-      Alert.alert(
-        "Missing details",
-        "Enter both ZWO template name and file ID.",
-      );
+    if (!selectedFitFile) {
+      Alert.alert("Missing file", "Choose a FIT file to import.");
+      return;
+    }
+
+    if (!trimmedName) {
+      Alert.alert("Missing activity name", "Enter a name for this imported activity.");
       return;
     }
 
     try {
-      const result = await importZwoMutation.mutateAsync({
-        external_id: trimmedExternalId,
-        name: trimmedName,
-        activity_category: "bike",
-        description: "Imported from ZWO",
-        structure: buildImportedStructure(trimmedName),
+      const signedUrlData = await getSignedUrlMutation.mutateAsync({
+        fileName: selectedFitFile.name,
+        fileSize: selectedFitFile.size,
       });
 
-      setImportSummary({
-        provider: "ZWO",
-        action: result.action,
-        name: result.item.name,
+      const supabaseUrl = getServerConfig().supabaseUrl;
+      const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+      const uploader = new FitUploader(supabaseUrl, supabaseAnonKey, "fit-files");
+
+      const uploadResult = await uploader.uploadToSignedUrl(
+        selectedFitFile.uri,
+        signedUrlData.signedUrl,
+      );
+
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || "Failed to upload FIT file");
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const result = await processFitFileMutation.mutateAsync({
+        fitFilePath: signedUrlData.filePath,
+        name: trimmedName,
+        notes: historicalNotes.trim() || undefined,
+        activityType: historicalActivityType,
+        importProvenance: buildManualHistoricalImportProvenance(selectedFitFile.name),
       });
-    } catch {
-      Alert.alert("Import failed", "Could not import ZWO template.");
+
+      await invalidatePostActivityIngestionQueries(queryClient);
+      await utils.activities.invalidate();
+
+      setImportSummary({
+        activityId: result.activity.id,
+        name: result.activity.name,
+        fileName: selectedFitFile.name,
+      });
+    } catch (error) {
+      console.error("Historical FIT import failed", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+
+      if (message.includes("Only .fit files are supported")) {
+        Alert.alert("Unsupported file", "Only FIT files are supported right now.");
+        return;
+      }
+
+      if (isFitParseFailureMessage(message)) {
+        Alert.alert(
+          "Import failed",
+          "We could not read that FIT file. Try a different export or recording.",
+        );
+        return;
+      }
+
+      Alert.alert(
+        "Import failed",
+        "The FIT activity could not be imported right now. Please try again.",
+      );
     }
+  };
+
+  const handleViewImportedActivity = () => {
+    if (!importSummary) return;
+    router.push(`/activity-detail?id=${importSummary.activityId}` as any);
   };
 
   // Handle deep link and trigger cleanup via refetch
@@ -221,8 +302,7 @@ export default function IntegrationsScreen() {
               errorMessage = "Security validation failed. Please try again.";
               break;
             case "missing_code":
-              errorMessage =
-                "Authorization was not completed. Please try again.";
+              errorMessage = "Authorization was not completed. Please try again.";
               break;
             case "database_error":
               errorMessage = "Failed to save integration. Please try again.";
@@ -268,15 +348,12 @@ export default function IntegrationsScreen() {
 
   // Handle Android back button
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        handleClose();
-        return true; // Prevent default behavior
-      },
-    );
+    const backHandler = BackHandler?.addEventListener?.("hardwareBackPress", () => {
+      handleClose();
+      return true; // Prevent default behavior
+    });
 
-    return () => backHandler.remove();
+    return () => backHandler?.remove?.();
   }, [handleClose]);
 
   const handleConnect = async (provider: PublicIntegrationProvider) => {
@@ -354,19 +431,13 @@ export default function IntegrationsScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="integrations-screen">
       {/* Header */}
       <View className="flex-row items-center px-6 py-4 border-b border-border/50">
-        <Pressable
-          onPress={handleClose}
-          className="p-2 -ml-2"
-          testID="back-button"
-        >
+        <Pressable onPress={handleClose} className="p-2 -ml-2" testID="back-button">
           <Icon as={ChevronLeft} size={24} />
         </Pressable>
-        <Text className="text-xl font-semibold text-foreground ml-4">
-          Integrations
-        </Text>
+        <Text className="text-xl font-semibold text-foreground ml-4">Integrations</Text>
       </View>
 
       {/* Content */}
@@ -377,8 +448,7 @@ export default function IntegrationsScreen() {
       >
         <View className="mb-4">
           <Text className="text-muted-foreground text-base">
-            Connect your fitness platforms to sync planned and completed
-            activities.
+            Connect your fitness platforms and import completed history from FIT files.
           </Text>
           {integrationsLoading ? (
             <Text className="text-xs text-muted-foreground mt-2">
@@ -402,20 +472,15 @@ export default function IntegrationsScreen() {
               }
               disabled={isPending}
               activeOpacity={0.7}
+              testID={`integration-provider-${integration.provider}`}
               className={`flex-row items-center justify-between border rounded-xl px-4 py-3 mb-2 ${
-                connected
-                  ? "border-green-500 bg-green-500/10"
-                  : "border-border bg-card"
+                connected ? "border-green-500 bg-green-500/10" : "border-border bg-card"
               } ${isPending ? "opacity-70" : ""}`}
             >
               <View>
-                <Text className="text-base font-semibold text-foreground">
-                  {integration.name}
-                </Text>
+                <Text className="text-base font-semibold text-foreground">{integration.name}</Text>
                 <Text className="text-xs text-muted-foreground mt-0.5">
-                  {connected
-                    ? "Connected - tap to disconnect"
-                    : "Not connected - tap to connect"}
+                  {connected ? "Connected - tap to disconnect" : "Not connected - tap to connect"}
                 </Text>
               </View>
 
@@ -424,11 +489,7 @@ export default function IntegrationsScreen() {
               ) : connected ? (
                 <Icon as={Check} className="text-green-600" size={20} />
               ) : (
-                <Icon
-                  as={ChevronRight}
-                  className="text-muted-foreground"
-                  size={20}
-                />
+                <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
               )}
             </TouchableOpacity>
           );
@@ -436,72 +497,133 @@ export default function IntegrationsScreen() {
 
         <View className="mt-6">
           <Text className="text-base font-semibold text-foreground mb-2">
-            Workout Template Imports (MVP)
+            Import Activity History
           </Text>
           <Text className="text-xs text-muted-foreground mb-3">
-            Quick-import FIT/ZWO entries into your activity plans.
+            FIT-only for now. Older activities are imported into your normal activity history and
+            may influence training insights.
           </Text>
 
-          <View className="border border-border rounded-xl p-3 bg-card mb-2 gap-2">
-            <Text className="text-sm font-medium text-foreground">
-              FIT Import
-            </Text>
-            <Input
-              value={fitName}
-              onChangeText={setFitName}
-              placeholder="Template name"
-              autoCapitalize="sentences"
-            />
-            <Input
-              value={fitExternalId}
-              onChangeText={setFitExternalId}
-              placeholder="FIT file ID"
-              autoCapitalize="none"
-            />
-            <Button
-              onPress={handleFitImport}
-              disabled={importFitMutation.isPending}
-            >
-              <Text className="text-primary-foreground font-semibold">
-                {importFitMutation.isPending ? "Importing..." : "Import FIT"}
-              </Text>
-            </Button>
-          </View>
+          <View className="border border-border rounded-xl p-4 bg-card gap-3">
+            <View className="flex-row items-start gap-3">
+              <View className="h-10 w-10 rounded-full bg-primary/10 items-center justify-center">
+                <Icon as={History} size={18} className="text-primary" />
+              </View>
+              <View className="flex-1 gap-1">
+                <Text className="text-sm font-medium text-foreground">Completed FIT Activity</Text>
+                <Text className="text-xs text-muted-foreground">
+                  Upload one completed FIT file from your device. Other file formats stay deferred
+                  for a later phase.
+                </Text>
+              </View>
+            </View>
 
-          <View className="border border-border rounded-xl p-3 bg-card gap-2">
-            <Text className="text-sm font-medium text-foreground">
-              ZWO Import
-            </Text>
+            {!selectedFitFile ? (
+              <Button
+                onPress={handlePickFitFile}
+                variant="outline"
+                className="justify-start gap-2"
+                disabled={isImporting}
+                testID="integrations-pick-fit-file-button"
+              >
+                <Upload className="text-foreground" size={18} />
+                <Text>Choose FIT File</Text>
+              </Button>
+            ) : (
+              <View className="border border-border rounded-xl p-3 bg-muted/40 gap-2">
+                <View className="flex-row items-center gap-2">
+                  <FileText className="text-foreground" size={18} />
+                  <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
+                    {selectedFitFile.name}
+                  </Text>
+                  <CheckCircle className="text-green-600" size={18} />
+                </View>
+                <Text className="text-xs text-muted-foreground">
+                  {(selectedFitFile.size / (1024 * 1024)).toFixed(2)} MB
+                </Text>
+                <Button
+                  onPress={handlePickFitFile}
+                  variant="ghost"
+                  className="self-start px-0"
+                  disabled={isImporting}
+                >
+                  <Text className="text-sm text-primary font-medium">Choose a different file</Text>
+                </Button>
+              </View>
+            )}
+
             <Input
-              value={zwoName}
-              onChangeText={setZwoName}
-              placeholder="Template name"
+              value={historicalName}
+              onChangeText={setHistoricalName}
+              placeholder="Activity name"
               autoCapitalize="sentences"
+              testID="integrations-historical-name-input"
             />
-            <Input
-              value={zwoExternalId}
-              onChangeText={setZwoExternalId}
-              placeholder="ZWO file ID"
-              autoCapitalize="none"
+
+            <Select
+              value={createOption(historicalActivityType)}
+              onValueChange={(option: { value: string; label: string } | undefined) => {
+                if (option) setHistoricalActivityType(option.value);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose activity type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {ACTIVITY_TYPES.map((activityType) => (
+                    <SelectItem
+                      key={activityType.value}
+                      value={activityType.value}
+                      label={activityType.label}
+                    />
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+
+            <Textarea
+              value={historicalNotes}
+              onChangeText={setHistoricalNotes}
+              placeholder="Optional notes"
+              className="min-h-[88px]"
+              testID="integrations-historical-notes-input"
             />
+
+            <Text className="text-xs text-muted-foreground">
+              Supported now: `.fit` only. Historical imports keep their original timestamps.
+            </Text>
+
             <Button
-              onPress={handleZwoImport}
-              disabled={importZwoMutation.isPending}
+              onPress={handleHistoricalImport}
+              disabled={isImporting || !selectedFitFile || !historicalName.trim()}
+              testID="integrations-import-fit-button"
             >
               <Text className="text-primary-foreground font-semibold">
-                {importZwoMutation.isPending ? "Importing..." : "Import ZWO"}
+                {isImporting ? "Importing FIT Activity..." : "Import FIT Activity"}
               </Text>
             </Button>
           </View>
 
           {importSummary ? (
-            <View className="mt-3 border border-border rounded-xl p-3 bg-muted/40">
+            <View
+              className="mt-3 border border-border rounded-xl p-3 bg-muted/40"
+              testID="integrations-import-summary"
+            >
               <Text className="text-sm text-foreground font-medium">
-                {importSummary.provider} import {importSummary.action}
+                Historical activity imported
               </Text>
               <Text className="text-xs text-muted-foreground mt-1">
-                {importSummary.name} is now available in your activity plans.
+                {importSummary.name} was created from {importSummary.fileName}.
               </Text>
+              <Button
+                onPress={handleViewImportedActivity}
+                variant="outline"
+                className="mt-3"
+                testID="integrations-view-imported-activity-button"
+              >
+                <Text>View Activity</Text>
+              </Button>
             </View>
           ) : null}
         </View>

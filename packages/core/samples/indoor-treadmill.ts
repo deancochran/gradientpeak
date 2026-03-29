@@ -10,8 +10,7 @@ export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
   id: "8e1f2a3b-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
   version: "2.0",
   name: "Threshold Run Development 1",
-  description:
-    "Indoor treadmill session focusing on threshold heart rate intervals",
+  description: "Indoor treadmill session focusing on threshold heart rate intervals",
   activity_category: "run",
   gps_recording_enabled: false,
   structure: createPlan()
@@ -56,8 +55,7 @@ export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
   id: "9f2a3b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c",
   version: "2.0",
   name: "Threshold Run Development 2",
-  description:
-    "Longer indoor treadmill threshold session with progressive intervals",
+  description: "Longer indoor treadmill threshold session with progressive intervals",
   activity_category: "run",
   gps_recording_enabled: false,
   structure: createPlan()
@@ -211,11 +209,10 @@ export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
     .build(),
 };
 
-export const SAMPLE_TREADMILL_ACTIVITIES: Array<RecordingServiceActivityPlan> =
-  [
-    THRESHOLD_RUN_WORKOUT_1,
-    THRESHOLD_RUN_WORKOUT_2,
-    SPEED_INTERVALS_WORKOUT,
-    EASY_RECOVERY_RUN,
-    HILL_INTERVALS_WORKOUT,
-  ];
+export const SAMPLE_TREADMILL_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
+  THRESHOLD_RUN_WORKOUT_1,
+  THRESHOLD_RUN_WORKOUT_2,
+  SPEED_INTERVALS_WORKOUT,
+  EASY_RECOVERY_RUN,
+  HILL_INTERVALS_WORKOUT,
+];

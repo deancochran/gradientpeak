@@ -1,9 +1,9 @@
 "use client";
 
-import { NotificationsButton } from "@/components/notifications-button";
-import { MessagesButton } from "@/components/messages-button";
-import { UserNav } from "@/components/user-nav";
 import Link from "next/link";
+import { MessagesButton } from "@/components/messages-button";
+import { NotificationsButton } from "@/components/notifications-button";
+import { UserNav } from "@/components/user-nav";
 
 export function DashboardHeader() {
   return (

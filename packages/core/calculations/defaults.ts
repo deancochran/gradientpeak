@@ -31,9 +31,7 @@ export interface PerformanceMetrics {
 /**
  * Merges provided metrics with global defaults
  */
-export function withDefaults(
-  metrics?: PerformanceMetrics,
-): Required<PerformanceMetrics> {
+export function withDefaults(metrics?: PerformanceMetrics): Required<PerformanceMetrics> {
   return {
     ftp: metrics?.ftp ?? GLOBAL_DEFAULTS.ftp,
     thresholdHr: metrics?.thresholdHr ?? GLOBAL_DEFAULTS.thresholdHr,
@@ -41,10 +39,8 @@ export function withDefaults(
     restingHr: metrics?.restingHr ?? GLOBAL_DEFAULTS.restingHr,
     weightKg: metrics?.weightKg ?? GLOBAL_DEFAULTS.weightKg,
     thresholdPaceSecondsPerKm:
-      metrics?.thresholdPaceSecondsPerKm ??
-      GLOBAL_DEFAULTS.thresholdPaceSecondsPerKm,
+      metrics?.thresholdPaceSecondsPerKm ?? GLOBAL_DEFAULTS.thresholdPaceSecondsPerKm,
     cssSecondsPerHundredMeters:
-      metrics?.cssSecondsPerHundredMeters ??
-      GLOBAL_DEFAULTS.cssSecondsPerHundredMeters,
+      metrics?.cssSecondsPerHundredMeters ?? GLOBAL_DEFAULTS.cssSecondsPerHundredMeters,
   };
 }

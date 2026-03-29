@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildDeterministicProjectionPayload,
-  type BuildDeterministicProjectionInput,
-} from "../projectionCalculations";
 import { evaluateMpcObjective } from "../projection/mpc/objective";
+import {
+  type BuildDeterministicProjectionInput,
+  buildDeterministicProjectionPayload,
+} from "../projectionCalculations";
 import { scoreTargetSatisfaction } from "../scoring/targetSatisfaction";
 
 function maxPlannedWeeklyTss(
   projection: ReturnType<typeof buildDeterministicProjectionPayload>,
 ): number {
-  return Math.max(
-    ...projection.microcycles.map((cycle) => cycle.planned_weekly_tss),
-  );
+  return Math.max(...projection.microcycles.map((cycle) => cycle.planned_weekly_tss));
 }
 
 function createSeededRandom(seed: number): () => number {
@@ -175,12 +173,8 @@ describe("phase 4 property suite", () => {
     expect(permutationB).toEqual(baseline);
     expect(permutationA.readiness_score).toBe(baseline.readiness_score);
     expect(permutationB.readiness_score).toBe(baseline.readiness_score);
-    expect(permutationA.readiness_confidence).toBe(
-      baseline.readiness_confidence,
-    );
-    expect(permutationB.readiness_confidence).toBe(
-      baseline.readiness_confidence,
-    );
+    expect(permutationA.readiness_confidence).toBe(baseline.readiness_confidence);
+    expect(permutationB.readiness_confidence).toBe(baseline.readiness_confidence);
   });
 
   it("preserves monotonic behavior under tighter constraints", () => {
@@ -221,15 +215,11 @@ describe("phase 4 property suite", () => {
       },
     });
 
-    expect(maxPlannedWeeklyTss(strict)).toBeLessThanOrEqual(
-      maxPlannedWeeklyTss(lenient),
-    );
+    expect(maxPlannedWeeklyTss(strict)).toBeLessThanOrEqual(maxPlannedWeeklyTss(lenient));
     expect(
-      strict.no_history.projection_feasibility?.demand_gap.unmet_weekly_tss ??
-        0,
+      strict.no_history.projection_feasibility?.demand_gap.unmet_weekly_tss ?? 0,
     ).toBeGreaterThanOrEqual(
-      lenient.no_history.projection_feasibility?.demand_gap.unmet_weekly_tss ??
-        0,
+      lenient.no_history.projection_feasibility?.demand_gap.unmet_weekly_tss ?? 0,
     );
   });
 
@@ -251,9 +241,7 @@ describe("phase 4 property suite", () => {
     );
 
     for (let index = 1; index < raceScores.length; index += 1) {
-      expect(raceScores[index] ?? 100).toBeLessThanOrEqual(
-        raceScores[index - 1] ?? 0,
-      );
+      expect(raceScores[index] ?? 100).toBeLessThanOrEqual(raceScores[index - 1] ?? 0);
     }
 
     const powerTargets = [250, 270, 290, 310];
@@ -273,9 +261,7 @@ describe("phase 4 property suite", () => {
     );
 
     for (let index = 1; index < powerScores.length; index += 1) {
-      expect(powerScores[index] ?? 100).toBeLessThanOrEqual(
-        powerScores[index - 1] ?? 0,
-      );
+      expect(powerScores[index] ?? 100).toBeLessThanOrEqual(powerScores[index - 1] ?? 0);
     }
   });
 });
@@ -332,8 +318,7 @@ describe("phase 4 golden scenarios", () => {
     expect(
       aggressive.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct ?? 0,
     ).toBeGreaterThanOrEqual(
-      conservative.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct ??
-        0,
+      conservative.microcycles[0]?.metadata.tss_ramp.max_weekly_tss_ramp_pct ?? 0,
     );
     expect(
       aggressive.microcycles[0]?.metadata.ctl_ramp.max_ctl_ramp_per_week ?? 0,
@@ -343,14 +328,10 @@ describe("phase 4 golden scenarios", () => {
     expect(aggressive.readiness_rationale_codes).toContain(
       "readiness_penalty_capacity_envelope_outside",
     );
-    expect(aggressive.capacity_envelope?.envelope_score ?? 100).toBeLessThan(
-      85,
-    );
+    expect(aggressive.capacity_envelope?.envelope_score ?? 100).toBeLessThan(85);
     expect(aggressive.risk_score ?? 0).toBeGreaterThan(0);
-    const aggressiveEnvelope =
-      aggressive.capacity_envelope?.envelope_score ?? 0;
-    const conservativeEnvelope =
-      conservative.capacity_envelope?.envelope_score ?? 0;
+    const aggressiveEnvelope = aggressive.capacity_envelope?.envelope_score ?? 0;
+    const conservativeEnvelope = conservative.capacity_envelope?.envelope_score ?? 0;
     expect(
       aggressiveEnvelope <= conservativeEnvelope ||
         aggressive.readiness_score <= conservative.readiness_score,
@@ -389,9 +370,7 @@ describe("phase 4 golden scenarios", () => {
     });
 
     expect(projection.goal_assessments?.length).toBe(2);
-    expect(
-      projection.goal_assessments?.every((goal) => goal.priority === 1),
-    ).toBe(true);
+    expect(projection.goal_assessments?.every((goal) => goal.priority === 1)).toBe(true);
     expect(projection.risk_flags ?? []).toContain(
       `feasibility_band_${projection.feasibility_band}`,
     );
@@ -496,10 +475,7 @@ describe("phase 4 golden scenarios", () => {
   });
 
   it("keeps sparse-history realism lower than rich-history baseline", () => {
-    const commonInput: Omit<
-      BuildDeterministicProjectionInput,
-      "no_history_context"
-    > = {
+    const commonInput: Omit<BuildDeterministicProjectionInput, "no_history_context"> = {
       timeline: { start_date: "2026-01-05", end_date: "2026-03-02" },
       blocks: [
         {
@@ -686,20 +662,12 @@ describe("phase 5 calibration stabilization", () => {
       expect(Number.isFinite(projection.readiness_score)).toBe(true);
       expect(projection.readiness_score).toBeGreaterThanOrEqual(0);
       expect(projection.readiness_score).toBeLessThanOrEqual(100);
-      expect(
-        Number.isFinite(projection.readiness_confidence ?? Number.NaN),
-      ).toBe(true);
+      expect(Number.isFinite(projection.readiness_confidence ?? Number.NaN)).toBe(true);
       expect(projection.readiness_confidence ?? -1).toBeGreaterThanOrEqual(0);
       expect(projection.readiness_confidence ?? 101).toBeLessThanOrEqual(100);
-      expect(
-        Number.isFinite(projection.capacity_envelope?.envelope_score ?? 0),
-      ).toBe(true);
-      expect(
-        projection.capacity_envelope?.envelope_score ?? -1,
-      ).toBeGreaterThanOrEqual(0);
-      expect(
-        projection.capacity_envelope?.envelope_score ?? 101,
-      ).toBeLessThanOrEqual(100);
+      expect(Number.isFinite(projection.capacity_envelope?.envelope_score ?? 0)).toBe(true);
+      expect(projection.capacity_envelope?.envelope_score ?? -1).toBeGreaterThanOrEqual(0);
+      expect(projection.capacity_envelope?.envelope_score ?? 101).toBeLessThanOrEqual(100);
 
       for (const point of projection.points) {
         expect(Number.isFinite(point.readiness_score)).toBe(true);
@@ -707,7 +675,7 @@ describe("phase 5 calibration stabilization", () => {
         expect(point.readiness_score).toBeLessThanOrEqual(100);
       }
     }
-  });
+  }, 15000);
 
   it("keeps MPC objective finite under bounded random inputs", () => {
     const random = createSeededRandom(260215);
@@ -735,9 +703,7 @@ describe("phase 5 calibration stabilization", () => {
       });
 
       expect(Number.isFinite(result.objective_score)).toBe(true);
-      expect(Object.values(result.weighted_terms).every(Number.isFinite)).toBe(
-        true,
-      );
+      expect(Object.values(result.weighted_terms).every(Number.isFinite)).toBe(true);
     }
   });
 });

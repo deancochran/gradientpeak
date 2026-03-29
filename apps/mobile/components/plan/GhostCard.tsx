@@ -1,9 +1,9 @@
+import { Card, CardContent } from "@repo/ui/components/card";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
+import { Plus } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
-import { Card, CardContent } from "@repo/ui/components/card";
-import { Text } from "@repo/ui/components/text";
-import { Icon } from "@repo/ui/components/icon";
-import { Plus } from "lucide-react-native";
 
 interface GhostCardProps {
   onPress: () => void;
@@ -12,7 +12,7 @@ interface GhostCardProps {
 
 export function GhostCard({
   onPress,
-  message = "Nothing scheduled. Tap to plan or find a route."
+  message = "Nothing scheduled. Tap to plan or find a route.",
 }: GhostCardProps) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
@@ -22,9 +22,7 @@ export function GhostCard({
             <View className="w-16 h-16 rounded-full bg-muted items-center justify-center">
               <Icon as={Plus} size={32} className="text-muted-foreground" />
             </View>
-            <Text className="text-center text-muted-foreground text-base">
-              {message}
-            </Text>
+            <Text className="text-center text-muted-foreground text-base">{message}</Text>
           </View>
         </CardContent>
       </Card>

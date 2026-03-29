@@ -10,16 +10,13 @@ import {
 } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import { trpc } from "@/lib/trpc/client";
 import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { trpc } from "@/lib/trpc/client";
 
-export function SignUpForm({
-  className,
-  ...props
-}: React.ComponentPropsWithoutRef<"div">) {
+export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
@@ -101,9 +98,7 @@ export function SignUpForm({
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
               <Button type="submit" disabled={signUpMutation.isPending}>
-                {signUpMutation.isPending
-                  ? "Creating an account..."
-                  : "Sign up"}
+                {signUpMutation.isPending ? "Creating an account..." : "Sign up"}
               </Button>
             </div>
             <div className="mt-4 text-center text-sm">

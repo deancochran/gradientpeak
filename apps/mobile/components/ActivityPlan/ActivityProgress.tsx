@@ -2,12 +2,9 @@
 // Activity Progress Graph (Mini version)
 // ================================
 
+import { type ActivityPlanStructureV2, extractActivityProfileV2 } from "@repo/core";
 import { memo } from "react";
 import { View } from "react-native";
-import {
-  type ActivityPlanStructureV2,
-  extractActivityProfileV2,
-} from "@repo/core";
 
 interface ActivityProgressGraphProps {
   structure: ActivityPlanStructureV2;

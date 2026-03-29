@@ -18,22 +18,17 @@
  * - When focused, zones overlay with absolute positioning
  */
 
-import { View } from "react-native";
-import React, { useMemo } from "react";
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type { PublicActivityCategory } from "@repo/supabase";
+import React, { useMemo } from "react";
+import { View } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
-
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { RecordingErrorBoundary } from "../RecordingErrorBoundary";
+import { shouldShowZoneA } from "./mapGating";
 import { ZoneA } from "./ZoneA";
 import { ZoneB } from "./ZoneB";
 import { ZoneC } from "./ZoneC";
-import { RecordingErrorBoundary } from "../RecordingErrorBoundary";
-import { shouldShowZoneA } from "./mapGating";
 
 export interface RecordingZonesProps {
   service: ActivityRecorderService | null;
@@ -79,16 +74,11 @@ export function RecordingZones({
 
   // Hide regular zones when any zone is focused
   const isAnyZoneFocused =
-    focusState === "zone-a" ||
-    focusState === "zone-b" ||
-    focusState === "zone-c";
+    focusState === "zone-a" || focusState === "zone-b" || focusState === "zone-c";
 
   return (
     /* Zone stack - flexbox layout with gap, no padding */
-    <View
-      className="flex-1 gap-4"
-      style={{ opacity: isAnyZoneFocused ? 0 : 1 }}
-    >
+    <View className="flex-1 gap-4" style={{ opacity: isAnyZoneFocused ? 0 : 1 }}>
       {/* Zone A: Context Layer (Map/Route) */}
       {showZoneA && (
         <AnimatedZoneContainer show={showZoneA} useFlex={true}>
@@ -107,11 +97,7 @@ export function RecordingZones({
       {showZoneB && (
         <AnimatedZoneContainer show={showZoneB} useFlex={true}>
           <RecordingErrorBoundary componentName="Zone B">
-            <ZoneB
-              service={service}
-              hasPlan={hasPlan}
-              isFocused={focusState === "zone-b"}
-            />
+            <ZoneB service={service} hasPlan={hasPlan} isFocused={focusState === "zone-b"} />
           </RecordingErrorBoundary>
         </AnimatedZoneContainer>
       )}
@@ -197,11 +183,7 @@ interface AnimatedZoneContainerProps {
   useFlex?: boolean; // If true, uses flex: 1; if false, sizes based on content
 }
 
-function AnimatedZoneContainer({
-  show,
-  children,
-  useFlex = true,
-}: AnimatedZoneContainerProps) {
+function AnimatedZoneContainer({ show, children, useFlex = true }: AnimatedZoneContainerProps) {
   // Initialize shared values - start from hidden state for mount animation
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);

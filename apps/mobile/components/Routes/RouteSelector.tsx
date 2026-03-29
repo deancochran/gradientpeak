@@ -1,12 +1,6 @@
+import { decodePolyline } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Text } from "@repo/ui/components/text";
-import { trpc } from "@/lib/trpc";
-import { decodePolyline } from "@repo/core";
-import { useRouter } from "expo-router";
-import { MapPin, TrendingUp, Upload, X } from "lucide-react-native";
-import { View } from "react-native";
-import MapView, { Polyline } from "react-native-maps";
 import { Icon } from "@repo/ui/components/icon";
 import {
   Select,
@@ -16,6 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@repo/ui/components/select";
+import { Text } from "@repo/ui/components/text";
+import { useRouter } from "expo-router";
+import { MapPin, TrendingUp, Upload, X } from "lucide-react-native";
+import { View } from "react-native";
+import MapView, { Polyline } from "react-native-maps";
+import { trpc } from "@/lib/trpc";
 
 interface RouteSelectorProps {
   activityCategory: string;
@@ -44,9 +44,7 @@ export function RouteSelector({
 
   // Extract string ID in case it's an object
   const routeId =
-    typeof selectedRouteId === "string"
-      ? selectedRouteId
-      : (selectedRouteId as any)?.value || null;
+    typeof selectedRouteId === "string" ? selectedRouteId : (selectedRouteId as any)?.value || null;
 
   const { data: selectedRoute } = trpc.routes.get.useQuery(
     { id: routeId! },
@@ -70,11 +68,7 @@ export function RouteSelector({
         <View className="flex-row items-center justify-between mb-3">
           <Text className="text-sm font-semibold">Route (Optional)</Text>
           {selectedRouteId && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onPress={() => onSelectRoute(null)}
-            >
+            <Button variant="ghost" size="sm" onPress={() => onSelectRoute(null)}>
               <X size={16} className="text-muted-foreground" />
               <Text className="text-xs ml-1">Clear</Text>
             </Button>
@@ -102,16 +96,11 @@ export function RouteSelector({
               <View className="flex-1">
                 <Select
                   value={
-                    selectedRouteId
-                      ? { value: selectedRouteId, label: selectedRouteId }
-                      : undefined
+                    selectedRouteId ? { value: selectedRouteId, label: selectedRouteId } : undefined
                   }
                   onValueChange={(option) => {
                     // Handle both string and object returns from Select
-                    const routeId =
-                      typeof option === "string"
-                        ? option
-                        : option?.value || null;
+                    const routeId = typeof option === "string" ? option : option?.value || null;
                     onSelectRoute(routeId);
                   }}
                 >
@@ -121,11 +110,7 @@ export function RouteSelector({
                   <SelectContent>
                     <SelectGroup>
                       {routes.map((route) => (
-                        <SelectItem
-                          key={route.id}
-                          value={route.id}
-                          label={route.name}
-                        />
+                        <SelectItem key={route.id} value={route.id} label={route.name} />
                       ))}
                     </SelectGroup>
                   </SelectContent>
@@ -149,10 +134,8 @@ export function RouteSelector({
                       pitchEnabled={false}
                       rotateEnabled={false}
                       initialRegion={{
-                        latitude: decodePolyline(selectedRoute.polyline)[0]
-                          .latitude,
-                        longitude: decodePolyline(selectedRoute.polyline)[0]
-                          .longitude,
+                        latitude: decodePolyline(selectedRoute.polyline)[0].latitude,
+                        longitude: decodePolyline(selectedRoute.polyline)[0].longitude,
                         latitudeDelta: 0.05,
                         longitudeDelta: 0.05,
                       }}
@@ -176,15 +159,12 @@ export function RouteSelector({
                         {formatDistance(selectedRoute.total_distance)}
                       </Text>
                     </View>
-                    {selectedRoute.total_ascent != null &&
-                      selectedRoute.total_ascent > 0 && (
-                        <View className="flex-row items-center gap-1">
-                          <TrendingUp size={14} className="text-green-600" />
-                          <Text className="text-xs">
-                            {selectedRoute.total_ascent}m
-                          </Text>
-                        </View>
-                      )}
+                    {selectedRoute.total_ascent != null && selectedRoute.total_ascent > 0 && (
+                      <View className="flex-row items-center gap-1">
+                        <TrendingUp size={14} className="text-green-600" />
+                        <Text className="text-xs">{selectedRoute.total_ascent}m</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               </View>

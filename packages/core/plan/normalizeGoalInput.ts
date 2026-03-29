@@ -1,14 +1,14 @@
 import { z } from "zod";
 import {
-  trainingGoalSchema,
-  type GoalTargetV2,
-  type TrainingGoal,
-} from "../schemas/training_plan_structure";
-import {
   completionTimeHmsToSecondsSchema,
   distanceKmToMetersSchema,
   paceMmSsToMpsSchema,
 } from "../schemas/form-schemas";
+import {
+  type GoalTargetV2,
+  type TrainingGoal,
+  trainingGoalSchema,
+} from "../schemas/training_plan_structure";
 
 type RacePerformanceTargetInput =
   | {
@@ -113,9 +113,7 @@ export function deterministicUuidFromSeed(seed: string): string {
   bytes[6] = (byte6 & 0x0f) | 0x40;
   bytes[8] = (byte8 & 0x3f) | 0x80;
 
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
@@ -133,9 +131,7 @@ export function normalizeGoalInput(
   options?: NormalizeGoalInputOptions,
 ): TrainingGoal {
   const priority = input.priority ?? 1;
-  const normalizedTargets = input.targets.map((target) =>
-    normalizeGoalTargetInput(target),
-  );
+  const normalizedTargets = input.targets.map((target) => normalizeGoalTargetInput(target));
   const seedParts = [
     options?.idSeed ?? "goal",
     input.id ?? "",
@@ -156,14 +152,10 @@ export function normalizeGoalInput(
   return trainingGoalSchema.parse(candidate);
 }
 
-function normalizeGoalTargetInput(
-  target: GoalInputLike["targets"][number],
-): GoalTargetV2 {
-  const resolvedWeight =
-    "weight" in target ? getPositiveNumber(target.weight) : null;
+function normalizeGoalTargetInput(target: GoalInputLike["targets"][number]): GoalTargetV2 {
+  const resolvedWeight = "weight" in target ? getPositiveNumber(target.weight) : null;
   const normalizedWeight = resolvedWeight === null ? undefined : resolvedWeight;
-  const withWeight =
-    normalizedWeight === undefined ? {} : { weight: normalizedWeight };
+  const withWeight = normalizedWeight === undefined ? {} : { weight: normalizedWeight };
 
   switch (target.target_type) {
     case "race_performance": {
@@ -176,17 +168,11 @@ function normalizeGoalTargetInput(
           : null;
 
       if (activityCategory === null) {
-        throw new Error(
-          "race_performance target requires activity_category (run|bike|swim|other)",
-        );
+        throw new Error("race_performance target requires activity_category (run|bike|swim|other)");
       }
 
-      const directDistance = getPositiveNumber(
-        (target as { distance_m?: number }).distance_m,
-      );
-      const directTime = getPositiveInteger(
-        (target as { target_time_s?: number }).target_time_s,
-      );
+      const directDistance = getPositiveNumber((target as { distance_m?: number }).distance_m);
+      const directTime = getPositiveInteger((target as { target_time_s?: number }).target_time_s);
 
       if (directDistance !== null && directTime !== null) {
         return {
@@ -206,8 +192,7 @@ function normalizeGoalTargetInput(
         "completion_time" in target
           ? completionTimeHmsToSecondsSchema.parse(target.completion_time)
           : directTime;
-      const paceMps =
-        "pace" in target ? paceMmSsToMpsSchema.parse(target.pace) : null;
+      const paceMps = "pace" in target ? paceMmSsToMpsSchema.parse(target.pace) : null;
 
       if (
         distanceMeters !== null &&
@@ -250,8 +235,7 @@ function normalizeGoalTargetInput(
     }
     case "pace_threshold": {
       const pace = "pace" in target ? target.pace : undefined;
-      const testDuration =
-        "test_duration" in target ? target.test_duration : undefined;
+      const testDuration = "test_duration" in target ? target.test_duration : undefined;
 
       const speedMps =
         getPositiveNumber(target.target_speed_mps) ??
@@ -259,9 +243,7 @@ function normalizeGoalTargetInput(
 
       const testDurationSeconds =
         getPositiveInteger(target.test_duration_s) ??
-        (testDuration
-          ? completionTimeHmsToSecondsSchema.parse(testDuration)
-          : null);
+        (testDuration ? completionTimeHmsToSecondsSchema.parse(testDuration) : null);
 
       if (speedMps === null || testDurationSeconds === null) {
         throw new Error(
@@ -278,9 +260,7 @@ function normalizeGoalTargetInput(
           : null;
 
       if (activityCategory === null) {
-        throw new Error(
-          "pace_threshold target requires activity_category (run|bike|swim|other)",
-        );
+        throw new Error("pace_threshold target requires activity_category (run|bike|swim|other)");
       }
 
       return {
@@ -292,15 +272,12 @@ function normalizeGoalTargetInput(
       };
     }
     case "power_threshold": {
-      const testDuration =
-        "test_duration" in target ? target.test_duration : undefined;
+      const testDuration = "test_duration" in target ? target.test_duration : undefined;
 
       const watts = getPositiveNumber(target.target_watts);
       const testDurationSeconds =
         getPositiveInteger(target.test_duration_s) ??
-        (testDuration
-          ? completionTimeHmsToSecondsSchema.parse(testDuration)
-          : null);
+        (testDuration ? completionTimeHmsToSecondsSchema.parse(testDuration) : null);
 
       if (watts === null || testDurationSeconds === null) {
         throw new Error(
@@ -317,9 +294,7 @@ function normalizeGoalTargetInput(
           : null;
 
       if (activityCategory === null) {
-        throw new Error(
-          "power_threshold target requires activity_category (run|bike|swim|other)",
-        );
+        throw new Error("power_threshold target requires activity_category (run|bike|swim|other)");
       }
 
       return {
@@ -375,20 +350,13 @@ export function deriveActivityCategoriesFromGoalTargets(
   }
 
   const order = ["run", "bike", "swim", "strength", "other"];
-  return Array.from(categories).sort(
-    (a, b) => order.indexOf(a) - order.indexOf(b),
-  );
+  return Array.from(categories).sort((a, b) => order.indexOf(a) - order.indexOf(b));
 }
 
 function getPositiveNumber(value: unknown): number | null {
-  const numericValue =
-    typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  const numericValue = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
 
-  if (
-    typeof numericValue !== "number" ||
-    !Number.isFinite(numericValue) ||
-    numericValue <= 0
-  ) {
+  if (typeof numericValue !== "number" || !Number.isFinite(numericValue) || numericValue <= 0) {
     return null;
   }
 
@@ -396,8 +364,7 @@ function getPositiveNumber(value: unknown): number | null {
 }
 
 function getPositiveInteger(value: unknown): number | null {
-  const numericValue =
-    typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  const numericValue = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
 
   if (
     typeof numericValue !== "number" ||

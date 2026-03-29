@@ -3,6 +3,9 @@ import { appRouter, createTRPCContext } from "@repo/trpc/server";
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
+const serverSupabaseUrl =
+  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+
 class OAuthTokenExchangeError extends Error {
   constructor(
     message: string,
@@ -41,10 +44,7 @@ const OAUTH_CONFIGS = {
   },
 };
 
-async function exchangeCodeForTokens(
-  provider: PublicIntegrationProvider,
-  code: string,
-) {
+async function exchangeCodeForTokens(provider: PublicIntegrationProvider, code: string) {
   const config = OAUTH_CONFIGS[provider];
   if (!config) {
     throw new Error(`Unknown provider: ${provider}`);
@@ -98,8 +98,7 @@ async function exchangeCodeForTokens(
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const detail =
-      (typeof errorData?.error_description === "string" &&
-        errorData.error_description) ||
+      (typeof errorData?.error_description === "string" && errorData.error_description) ||
       (typeof errorData?.error === "string" && errorData.error) ||
       (typeof errorData?.message === "string" && errorData.message) ||
       `http_${response.status}`;
@@ -110,10 +109,7 @@ async function exchangeCodeForTokens(
       error: errorData,
       provider,
     });
-    throw new OAuthTokenExchangeError(
-      `Token exchange failed: ${response.status}`,
-      detail,
-    );
+    throw new OAuthTokenExchangeError(`Token exchange failed: ${response.status}`, detail);
   }
 
   return response.json();
@@ -141,7 +137,7 @@ export async function GET(
 
   // Create Supabase client with service role for OAuth operations
   const supabase = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serverSupabaseUrl!,
     process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
     {
       cookies: {
@@ -160,8 +156,7 @@ export async function GET(
 
   // Default fallback redirect for errors
   const fallbackRedirect =
-    process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK ||
-    "gradientpeak://integrations";
+    process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
 
   // Validate OAuth state using tRPC
   if (!state) {
@@ -258,14 +253,9 @@ export async function GET(
     }
 
     // Redirect back to mobile app with success
-    return NextResponse.redirect(
-      `${mobileRedirectUri}?success=true&provider=${provider}`,
-    );
+    return NextResponse.redirect(`${mobileRedirectUri}?success=true&provider=${provider}`);
   } catch (error) {
-    const detail =
-      error instanceof OAuthTokenExchangeError
-        ? error.detail || "unknown"
-        : "unknown";
+    const detail = error instanceof OAuthTokenExchangeError ? error.detail || "unknown" : "unknown";
 
     console.error("OAuth callback error:", {
       provider,

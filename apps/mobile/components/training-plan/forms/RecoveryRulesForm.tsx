@@ -1,3 +1,4 @@
+import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/alert";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { IntegerStepper } from "@repo/ui/components/integer-stepper";
@@ -156,20 +157,13 @@ export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormP
 
       {/* Warning for insufficient rest */}
       {data.min_rest_days_per_week < 1 && data.max_consecutive_days > 5 && (
-        <Card className="bg-amber-500/10 border-amber-500">
-          <CardContent className="p-4 flex-row items-start gap-2">
-            <Icon as={AlertCircle} size={20} className="text-amber-500 mt-0.5" />
-            <View className="flex-1">
-              <Text className="text-amber-500 font-semibold mb-1">
-                Warning: High Risk of Overtraining
-              </Text>
-              <Text className="text-amber-500 text-sm">
-                Your current settings allow very little rest. This significantly increases injury
-                risk and may lead to burnout. Consider adding more rest days.
-              </Text>
-            </View>
-          </CardContent>
-        </Card>
+        <Alert icon={AlertCircle} iconClassName="text-amber-500">
+          <AlertTitle className="text-amber-500">Warning: High Risk of Overtraining</AlertTitle>
+          <AlertDescription className="text-amber-500">
+            Your current settings allow very little rest. This significantly increases injury risk
+            and may lead to burnout. Consider adding more rest days.
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Warning for too much rest */}

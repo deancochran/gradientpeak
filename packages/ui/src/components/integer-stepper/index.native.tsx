@@ -47,6 +47,7 @@ function IntegerStepper({
       ) : null}
       <View className="flex-row items-center gap-2">
         <Button
+          accessibilityLabel={`Decrease ${labelText}`}
           variant="outline"
           size="sm"
           onPress={() => onChange(clampInteger(value - step, min, max))}
@@ -62,6 +63,7 @@ function IntegerStepper({
           keyboardType="numeric"
         />
         <Button
+          accessibilityLabel={`Increase ${labelText}`}
           variant="outline"
           size="sm"
           onPress={() => onChange(clampInteger(value + step, min, max))}

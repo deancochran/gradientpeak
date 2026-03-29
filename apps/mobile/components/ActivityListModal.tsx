@@ -1,16 +1,9 @@
 // gradientpeak/apps/mobile/app/(internal)/(tabs)/trends/components/ActivityListModal.tsx
 
+import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { trpc } from "@/lib/trpc";
-import {
-  Activity,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  X,
-  Zap,
-} from "lucide-react-native";
+import { Activity, Calendar, CheckCircle2, Clock, X, Zap } from "lucide-react-native";
 import {
   ActivityIndicator,
   InteractionManager,
@@ -20,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { trpc } from "@/lib/trpc";
 
 interface ActivityListModalProps {
   visible: boolean;
@@ -60,7 +54,7 @@ export function ActivityListModal({
   // Filter by intensity zone if specified
   const filteredActivities = intensityZone
     ? activities.filter((activity) => {
-        const if_value = activity.intensity_factor || 0;
+        const if_value = activity.derived?.intensity_factor || 0;
         // Map intensity factor to zones
         switch (intensityZone) {
           case "recovery":
@@ -149,14 +143,9 @@ export function ActivityListModal({
           <View className="flex-row items-center justify-between mb-2">
             <View className="flex-1">
               <Text className="text-xl font-bold text-gray-900">{title}</Text>
-              {subtitle && (
-                <Text className="text-sm text-gray-600 mt-1">{subtitle}</Text>
-              )}
+              {subtitle && <Text className="text-sm text-gray-600 mt-1">{subtitle}</Text>}
             </View>
-            <TouchableOpacity
-              onPress={onClose}
-              className="ml-4 p-2 rounded-full bg-gray-100"
-            >
+            <TouchableOpacity onPress={onClose} className="ml-4 p-2 rounded-full bg-gray-100">
               <Icon as={X} size={20} className="text-gray-600" />
             </TouchableOpacity>
           </View>
@@ -172,9 +161,7 @@ export function ActivityListModal({
             {intensityZone && (
               <View className="flex-row items-center gap-1 px-2 py-1 bg-purple-50 rounded">
                 <Icon as={Zap} size={12} className="text-purple-600" />
-                <Text className="text-xs text-purple-600 capitalize">
-                  {intensityZone}
-                </Text>
+                <Text className="text-xs text-purple-600 capitalize">{intensityZone}</Text>
               </View>
             )}
           </View>
@@ -187,18 +174,17 @@ export function ActivityListModal({
             <Text className="text-gray-600 mt-2">Loading activities...</Text>
           </View>
         ) : filteredActivities.length === 0 ? (
-          <View className="flex-1 items-center justify-center p-6">
-            <View className="bg-gray-100 rounded-full p-4 mb-4">
-              <Icon as={Activity} size={32} className="text-gray-400" />
-            </View>
-            <Text className="text-lg font-semibold text-gray-900 mb-2">
-              No Activities Found
-            </Text>
-            <Text className="text-sm text-gray-600 text-center">
-              {intensityZone
-                ? `No activities in the ${intensityZone} zone for this period`
-                : "No activities found for this date range"}
-            </Text>
+          <View className="flex-1 justify-center p-6">
+            <EmptyStateCard
+              icon={Activity}
+              title="No Activities Found"
+              description={
+                intensityZone
+                  ? `No activities in the ${intensityZone} zone for this period`
+                  : "No activities found for this date range"
+              }
+              iconSize={32}
+            />
           </View>
         ) : (
           <ScrollView className="flex-1">
@@ -210,37 +196,25 @@ export function ActivityListModal({
                     <Text className="text-2xl font-bold text-blue-900">
                       {filteredActivities.length}
                     </Text>
-                    <Text className="text-xs text-blue-600 mt-1">
-                      Activities
-                    </Text>
+                    <Text className="text-xs text-blue-600 mt-1">Activities</Text>
                   </View>
                   <View className="w-px h-8 bg-blue-200" />
                   <View className="items-center">
                     <Text className="text-2xl font-bold text-blue-900">
                       {Math.round(
-                        filteredActivities.reduce(
-                          (sum, a) => sum + (a.training_stress_score || 0),
-                          0,
-                        ),
+                        filteredActivities.reduce((sum, a) => sum + (a.derived?.tss || 0), 0),
                       )}
                     </Text>
-                    <Text className="text-xs text-blue-600 mt-1">
-                      Total TSS
-                    </Text>
+                    <Text className="text-xs text-blue-600 mt-1">Total TSS</Text>
                   </View>
                   <View className="w-px h-8 bg-blue-200" />
                   <View className="items-center">
                     <Text className="text-2xl font-bold text-blue-900">
                       {formatDuration(
-                        filteredActivities.reduce(
-                          (sum, a) => sum + (a.duration_seconds || 0),
-                          0,
-                        ),
+                        filteredActivities.reduce((sum, a) => sum + (a.duration_seconds || 0), 0),
                       )}
                     </Text>
-                    <Text className="text-xs text-blue-600 mt-1">
-                      Total Time
-                    </Text>
+                    <Text className="text-xs text-blue-600 mt-1">Total Time</Text>
                   </View>
                 </View>
               </View>
@@ -267,11 +241,7 @@ export function ActivityListModal({
                         </Text>
                       </View>
                       <View className="bg-green-100 rounded-full p-2">
-                        <Icon
-                          as={CheckCircle2}
-                          size={16}
-                          className="text-green-600"
-                        />
+                        <Icon as={CheckCircle2} size={16} className="text-green-600" />
                       </View>
                     </View>
 
@@ -299,24 +269,22 @@ export function ActivityListModal({
                       <Text className="text-gray-400">•</Text>
 
                       <Text className="text-sm text-gray-700">
-                        {Math.round(activity.training_stress_score || 0)} TSS
+                        {Math.round(activity.derived?.tss || 0)} TSS
                       </Text>
 
-                      {activity.intensity_factor && (
+                      {activity.derived?.intensity_factor && (
                         <>
                           <Text className="text-gray-400">•</Text>
                           <View className="flex-row items-center gap-1">
                             <Icon
                               as={Zap}
                               size={14}
-                              className={getIntensityColor(
-                                activity.intensity_factor,
-                              )}
+                              className={getIntensityColor(activity.derived.intensity_factor)}
                             />
                             <Text
-                              className={`text-sm font-medium ${getIntensityColor(activity.intensity_factor)}`}
+                              className={`text-sm font-medium ${getIntensityColor(activity.derived.intensity_factor)}`}
                             >
-                              IF {(activity.intensity_factor || 0).toFixed(2)}
+                              IF {(activity.derived.intensity_factor || 0).toFixed(2)}
                             </Text>
                           </View>
                         </>

@@ -3,9 +3,7 @@ import { Skeleton } from "./index.native";
 
 describe("Skeleton native", () => {
   it("renders the placeholder view", () => {
-    const { getByTestId } = renderNative(
-      <Skeleton testID="loading-skeleton" />,
-    );
+    const { getByTestId } = renderNative(<Skeleton testID="loading-skeleton" />);
 
     expect(getByTestId("loading-skeleton")).toBeTruthy();
   });

@@ -1,0 +1,61 @@
+{
+  "description": "This surface renders shared UI components from @repo/ui using the same fixtures that drive package tests, Storybook, and runtime automation.",
+  "rootTestId": "ui-preview-surface",
+  "scenarios": [
+    {
+      "description": "A shared card with input and save action fixtures.",
+      "key": "accountControls",
+      "selectors": [
+        "profile-card",
+        "auth-email",
+        "settings-save"
+      ],
+      "testId": "ui-preview-scenario-account-controls",
+      "title": "Account controls"
+    },
+    {
+      "description": "A shared tabs scenario with overview, sessions, and notes content.",
+      "key": "planTabs",
+      "selectors": [
+        "settings-tabs",
+        "settings-tabs-trigger-overview",
+        "settings-tabs-trigger-sessions",
+        "settings-tabs-content-overview"
+      ],
+      "testId": "ui-preview-scenario-plan-tabs",
+      "title": "Plan tabs"
+    },
+    {
+      "description": "Shared loading, empty, and error states for runtime smoke coverage.",
+      "key": "feedbackStates",
+      "selectors": [],
+      "testId": "ui-preview-scenario-feedback-states",
+      "title": "Feedback states"
+    },
+    {
+      "description": "Shared form wrappers composed into a realistic multi-field editing flow.",
+      "key": "formFields",
+      "selectors": [
+        "ui-preview-form-username",
+        "ui-preview-form-bio",
+        "ui-preview-form-is-public",
+        "ui-preview-form-sport",
+        "ui-preview-form-submit"
+      ],
+      "testId": "ui-preview-scenario-form-fields",
+      "title": "Form fields"
+    },
+    {
+      "description": "Shared toggles and selectors for consent, channel, workout type, and sport choice.",
+      "key": "selectionControls",
+      "selectors": [
+        "accept-terms-checkbox",
+        "email-notifications-switch",
+        "workout-type-select",
+        "preferred-sport-radio-group"
+      ],
+      "testId": "ui-preview-scenario-selection-controls",
+      "title": "Selection controls"
+    }
+  ]
+}

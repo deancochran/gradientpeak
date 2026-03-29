@@ -1,10 +1,10 @@
-import { Text } from "@repo/ui/components/text";
 import {
   type DurationV2,
+  getStepIntensityColor,
   type IntensityTargetV2,
   type PlanStepV2,
-  getStepIntensityColor,
 } from "@repo/core";
+import { Text } from "@repo/ui/components/text";
 import { Dimensions, ScrollView, TouchableOpacity, View } from "react-native";
 
 interface ActivityStepChartProps {
@@ -72,17 +72,14 @@ function calculateStepWidth(
 ): number {
   if (totalDurationMs === 0) return MIN_STEP_WIDTH;
 
-  const proportionalWidth =
-    (durationMs / totalDurationMs) * (screenWidth * 0.8);
+  const proportionalWidth = (durationMs / totalDurationMs) * (screenWidth * 0.8);
   return Math.max(MIN_STEP_WIDTH, proportionalWidth);
 }
 
 /**
  * Get intensity percentage for height calculation
  */
-function getIntensityPercentage(
-  targets: IntensityTargetV2[] | undefined,
-): number {
+function getIntensityPercentage(targets: IntensityTargetV2[] | undefined): number {
   if (!targets || targets.length === 0) return 0;
 
   const primaryTarget = targets[0];
@@ -159,10 +156,7 @@ export function ActivityStepChart({
   const flattenedSteps = flattenStepsForChart(steps);
 
   // Calculate total duration
-  const totalDurationMs = flattenedSteps.reduce(
-    (sum, step) => sum + step.durationMs,
-    0,
-  );
+  const totalDurationMs = flattenedSteps.reduce((sum, step) => sum + step.durationMs, 0);
 
   if (flattenedSteps.length === 0) {
     return (
@@ -171,9 +165,7 @@ export function ActivityStepChart({
         style={{ height: CHART_HEIGHT }}
       >
         <Text className="text-muted-foreground">No steps added yet</Text>
-        <Text className="text-sm text-muted-foreground mt-1">
-          Tap + to add your first step
-        </Text>
+        <Text className="text-sm text-muted-foreground mt-1">Tap + to add your first step</Text>
       </View>
     );
   }
@@ -190,16 +182,9 @@ export function ActivityStepChart({
         }}
       >
         {flattenedSteps.map((step) => {
-          const width = calculateStepWidth(
-            step.durationMs,
-            totalDurationMs,
-            screenWidth,
-          );
+          const width = calculateStepWidth(step.durationMs, totalDurationMs, screenWidth);
           const intensityPercent = getIntensityPercentage(step.targets);
-          const height = Math.max(
-            40,
-            (intensityPercent / 100) * (CHART_HEIGHT - 40),
-          );
+          const height = Math.max(40, (intensityPercent / 100) * (CHART_HEIGHT - 40));
 
           // Use the helper function from core package
           const color = step.targets?.[0]
@@ -236,27 +221,18 @@ export function ActivityStepChart({
                 {/* Step info */}
                 <View>
                   {step.isFromRepetition && (
-                    <Text
-                      className="text-white text-[10px] font-bold"
-                      numberOfLines={1}
-                    >
+                    <Text className="text-white text-[10px] font-bold" numberOfLines={1}>
                       REP
                     </Text>
                   )}
-                  <Text
-                    className="text-white text-xs font-semibold"
-                    numberOfLines={1}
-                  >
+                  <Text className="text-white text-xs font-semibold" numberOfLines={1}>
                     {step.name}
                   </Text>
                 </View>
 
                 {/* Duration & Target */}
                 <View>
-                  <Text
-                    className="text-white text-[10px] font-medium"
-                    numberOfLines={1}
-                  >
+                  <Text className="text-white text-[10px] font-medium" numberOfLines={1}>
                     {formatDuration(step.duration)}
                   </Text>
                   <Text className="text-white text-[10px]" numberOfLines={1}>
@@ -272,8 +248,7 @@ export function ActivityStepChart({
       {/* X-axis label */}
       <View className="px-4 pb-2 border-t border-border">
         <Text className="text-xs text-muted-foreground text-center">
-          {flattenedSteps.length} steps • {Math.round(totalDurationMs / 60000)}{" "}
-          min total
+          {flattenedSteps.length} steps • {Math.round(totalDurationMs / 60000)} min total
         </Text>
       </View>
     </View>

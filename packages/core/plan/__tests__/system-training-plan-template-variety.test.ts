@@ -52,9 +52,7 @@ describe("system training-plan template variety", () => {
     );
 
     expect(
-      dependencyMap.find(
-        (entry) => entry.template_id === racePaceLongTemplate?.template_id,
-      ),
+      dependencyMap.find((entry) => entry.template_id === racePaceLongTemplate?.template_id),
     ).toMatchObject({
       dependent_plans: [
         {
@@ -66,10 +64,7 @@ describe("system training-plan template variety", () => {
     });
 
     expect(
-      dependencyMap.find(
-        (entry) =>
-          entry.template_id === progressiveLongRideTemplate?.template_id,
-      ),
+      dependencyMap.find((entry) => entry.template_id === progressiveLongRideTemplate?.template_id),
     ).toMatchObject({
       dependent_plans: [
         {

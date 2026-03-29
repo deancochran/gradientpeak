@@ -1,11 +1,6 @@
 "use client";
 
-import { ColumnDef } from "@tanstack/react-table";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@repo/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -16,12 +11,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@repo/ui/components/dropdown-menu";
+import { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 
 export type Athlete = {
   athlete_id: string;
-  profiles: {
+  profile: {
     full_name: string | null;
     avatar_url: string | null;
     username: string | null;
@@ -30,39 +26,32 @@ export type Athlete = {
 
 export const columns: ColumnDef<Athlete>[] = [
   {
-    accessorKey: "profiles.full_name",
+    accessorKey: "profile.full_name",
     header: "Athlete",
     cell: ({ row }) => {
-      const profile = row.original.profiles;
+      const profile = row.original.profile;
       const name = profile?.full_name || profile?.username || "Unknown";
 
       return (
         <div className="flex items-center gap-3">
           <Avatar>
             <AvatarImage src={profile?.avatar_url || ""} />
-            <AvatarFallback>
-              {name.substring(0, 2).toUpperCase()}
-            </AvatarFallback>
+            <AvatarFallback>{name.substring(0, 2).toUpperCase()}</AvatarFallback>
           </Avatar>
           <div className="flex flex-col">
             <span className="font-medium">{name}</span>
-            <span className="text-xs text-muted-foreground">
-              {profile?.username}
-            </span>
+            <span className="text-xs text-muted-foreground">{profile?.username}</span>
           </div>
         </div>
       );
     },
   },
   {
-    accessorKey: "status",
+    accessorKey: "athlete_id",
     header: "Status",
     cell: ({ row }) => {
       return (
-        <Badge
-          variant="outline"
-          className="bg-green-50 text-green-700 border-green-200"
-        >
+        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
           Active
         </Badge>
       );
@@ -84,15 +73,11 @@ export const columns: ColumnDef<Athlete>[] = [
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
             <DropdownMenuItem asChild>
-              <Link href={`/coaching/athlete/${athlete.athlete_id}`}>
-                View Profile
-              </Link>
+              <Link href={`/coaching/athlete/${athlete.athlete_id}`}>View Profile</Link>
             </DropdownMenuItem>
             <DropdownMenuItem>Message</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-600">
-              Remove Athlete
-            </DropdownMenuItem>
+            <DropdownMenuItem className="text-red-600">Remove Athlete</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       );

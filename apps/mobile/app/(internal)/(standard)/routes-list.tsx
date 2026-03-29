@@ -1,19 +1,13 @@
+import { decodePolyline } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
-import { decodePolyline } from "@repo/core";
 import { useRouter } from "expo-router";
-import {
-  MapPin,
-  Plus,
-  Trash2,
-  TrendingDown,
-  TrendingUp,
-} from "lucide-react-native";
+import { MapPin, Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react-native";
 import { Alert, FlatList, Pressable, View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { trpc } from "@/lib/trpc";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Run",
@@ -26,13 +20,12 @@ export default function RoutesLibraryScreen() {
   const router = useRouter();
   const utils = trpc.useUtils();
 
-  const { data, isLoading, fetchNextPage, hasNextPage } =
-    trpc.routes.list.useInfiniteQuery(
-      { limit: 20 },
-      {
-        getNextPageParam: (lastPage) => lastPage.nextCursor,
-      },
-    );
+  const { data, isLoading, fetchNextPage, hasNextPage } = trpc.routes.list.useInfiniteQuery(
+    { limit: 20 },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
 
   const deleteMutation = useReliableMutation(trpc.routes.delete, {
     invalidate: [utils.routes],
@@ -68,6 +61,7 @@ export default function RoutesLibraryScreen() {
       <Pressable
         onPress={() => router.push(`/route-detail?id=${item.id}` as any)}
         className="mb-3"
+        testID={`routes-list-item-${item.id}`}
       >
         <Card>
           <CardContent className="p-0">
@@ -87,11 +81,7 @@ export default function RoutesLibraryScreen() {
                     longitudeDelta: 0.05,
                   }}
                 >
-                  <Polyline
-                    coordinates={coordinates}
-                    strokeColor="#f97316"
-                    strokeWidth={3}
-                  />
+                  <Polyline coordinates={coordinates} strokeColor="#f97316" strokeWidth={3} />
                 </MapView>
               )}
             </View>
@@ -99,10 +89,7 @@ export default function RoutesLibraryScreen() {
             {/* Route Info */}
             <View className="p-4">
               <View className="flex-row items-center justify-between mb-2">
-                <Text
-                  className="text-lg font-semibold flex-1"
-                  numberOfLines={1}
-                >
+                <Text className="text-lg font-semibold flex-1" numberOfLines={1}>
                   {item.name}
                 </Text>
                 <Button
@@ -110,23 +97,21 @@ export default function RoutesLibraryScreen() {
                   size="sm"
                   onPress={() => handleDelete(item.id, item.name)}
                   disabled={deleteMutation.isPending}
+                  testID={`routes-list-delete-${item.id}`}
                 >
                   <Trash2 className="text-destructive" size={18} />
                 </Button>
               </View>
 
               <Text className="text-sm text-muted-foreground mb-3">
-                {ACTIVITY_CATEGORY_LABELS[item.activity_category] ||
-                  item.activity_category}
+                {ACTIVITY_CATEGORY_LABELS[item.activity_category] || item.activity_category}
               </Text>
 
               {/* Stats */}
               <View className="flex-row gap-4">
                 <View className="flex-row items-center gap-1">
                   <MapPin size={16} className="text-muted-foreground" />
-                  <Text className="text-sm">
-                    {formatDistance(item.total_distance)}
-                  </Text>
+                  <Text className="text-sm">{formatDistance(item.total_distance)}</Text>
                 </View>
 
                 {item.total_ascent > 0 && (
@@ -145,10 +130,7 @@ export default function RoutesLibraryScreen() {
               </View>
 
               {item.description && (
-                <Text
-                  className="text-sm text-muted-foreground mt-2"
-                  numberOfLines={2}
-                >
+                <Text className="text-sm text-muted-foreground mt-2" numberOfLines={2}>
                   {item.description}
                 </Text>
               )}
@@ -160,20 +142,27 @@ export default function RoutesLibraryScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="routes-list-screen">
       <FlatList
+        testID="routes-list-content"
         data={routes}
         renderItem={renderRouteCard}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 16 }}
         ListEmptyComponent={
-          <View className="flex-1 items-center justify-center py-12">
+          <View
+            className="flex-1 items-center justify-center py-12"
+            testID="routes-list-empty-state"
+          >
             <MapPin size={64} className="text-muted-foreground mb-4" />
             <Text className="text-xl font-semibold mb-2">No Routes Yet</Text>
             <Text className="text-muted-foreground text-center mb-6">
               Upload your first GPX route to get started
             </Text>
-            <Button onPress={() => router.push("/route-upload" as any)}>
+            <Button
+              onPress={() => router.push("/route-upload" as any)}
+              testID="routes-list-upload-button"
+            >
               <Plus className="text-primary-foreground mr-2" size={20} />
               <Text className="text-primary-foreground">Upload Route</Text>
             </Button>
@@ -195,6 +184,7 @@ export default function RoutesLibraryScreen() {
             size="lg"
             className="rounded-full shadow-lg"
             onPress={() => router.push("/route-upload" as any)}
+            testID="routes-list-fab-upload-button"
           >
             <Plus className="text-primary-foreground" size={24} />
           </Button>

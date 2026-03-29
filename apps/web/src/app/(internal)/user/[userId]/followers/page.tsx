@@ -1,14 +1,15 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
-import { trpc } from "@/lib/trpc/client";
-import { Button } from "@repo/ui/components/button";
+import { invalidateRelationshipQueries } from "@repo/trpc/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { useAuth } from "@/components/providers/auth-provider";
-import { Loader2, UserMinus, UserRound, Lock } from "lucide-react";
+import { Loader2, Lock, UserMinus, UserRound } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useAuth } from "@/components/providers/auth-provider";
+import { trpc } from "@/lib/trpc/client";
 
 export default function FollowersPage() {
   const params = useParams();
@@ -30,16 +31,16 @@ export default function FollowersPage() {
   );
 
   const followMutation = trpc.social.followUser.useMutation({
-    onSuccess: () => {
-      utils.social.getFollowers.invalidate({ user_id: userId });
+    onSuccess: async (_data, variables) => {
+      await invalidateRelationshipQueries(utils, [userId, user?.id, variables.target_user_id]);
       toast.success("Followed user");
     },
     onError: (err) => toast.error(err.message),
   });
 
   const unfollowMutation = trpc.social.unfollowUser.useMutation({
-    onSuccess: () => {
-      utils.social.getFollowers.invalidate({ user_id: userId });
+    onSuccess: async (_data, variables) => {
+      await invalidateRelationshipQueries(utils, [userId, user?.id, variables.target_user_id]);
       toast.success("Unfollowed user");
     },
     onError: (err) => toast.error(err.message),
@@ -101,9 +102,7 @@ export default function FollowersPage() {
           </div>
 
           {users.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              No followers yet
-            </p>
+            <p className="text-muted-foreground text-center py-8">No followers yet</p>
           ) : (
             <div className="space-y-4">
               {users.map(
@@ -134,9 +133,7 @@ export default function FollowersPage() {
                           </AvatarFallback>
                         </Avatar>
                         <div className="text-left">
-                          <div className="font-medium">
-                            {profile.username || "Unknown user"}
-                          </div>
+                          <div className="font-medium">{profile.username || "Unknown user"}</div>
                           {profile.is_public === false && (
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Lock className="h-3 w-3" />
@@ -151,10 +148,7 @@ export default function FollowersPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleToggleFollow(profile.id, true)}
-                          disabled={
-                            followMutation.isPending ||
-                            unfollowMutation.isPending
-                          }
+                          disabled={followMutation.isPending || unfollowMutation.isPending}
                         >
                           <UserMinus className="mr-2 h-4 w-4" />
                           Following
@@ -169,11 +163,7 @@ export default function FollowersPage() {
 
           {hasMore && (
             <div className="mt-4 text-center">
-              <Button
-                variant="outline"
-                onClick={handleLoadMore}
-                disabled={isFetching}
-              >
+              <Button variant="outline" onClick={handleLoadMore} disabled={isFetching}>
                 {isFetching ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

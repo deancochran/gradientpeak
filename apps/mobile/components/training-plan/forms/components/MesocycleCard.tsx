@@ -1,3 +1,4 @@
+import type { Mesocycle, TrainingPhase } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
@@ -5,16 +6,9 @@ import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
-import type { Mesocycle, TrainingPhase } from "@repo/core";
-import {
-  ChevronDown,
-  ChevronUp,
-  Trash2,
-  Activity,
-  Clock,
-} from "lucide-react-native";
+import { Activity, ChevronDown, ChevronUp, Clock, Trash2 } from "lucide-react-native";
 import React, { useState } from "react";
-import { View, Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 
 interface MesocycleCardProps {
   mesocycle: Mesocycle;
@@ -36,12 +30,7 @@ const PHASE_OPTIONS: Array<{
   { value: "maintenance", label: "Maintenance", emoji: "⚙️" },
 ];
 
-export function MesocycleCard({
-  mesocycle,
-  index,
-  onChange,
-  onRemove,
-}: MesocycleCardProps) {
+export function MesocycleCard({ mesocycle, index, onChange, onRemove }: MesocycleCardProps) {
   const [isExpanded, setIsExpanded] = useState(index === 0); // First card expanded by default
 
   const phaseOption = PHASE_OPTIONS.find((p) => p.value === mesocycle.phase);
@@ -49,9 +38,7 @@ export function MesocycleCard({
   // Calculate derived hard intensity (sum must equal 1.0)
   const hardIntensity = Math.max(
     0,
-    1 -
-      mesocycle.intensity_distribution.easy -
-      mesocycle.intensity_distribution.moderate,
+    1 - mesocycle.intensity_distribution.easy - mesocycle.intensity_distribution.moderate,
   );
 
   return (
@@ -65,9 +52,7 @@ export function MesocycleCard({
           <View className="flex-1 pr-4">
             <View className="flex-row items-center gap-2 mb-1">
               <Text className="text-lg">{phaseOption?.emoji}</Text>
-              <Text className="text-base font-semibold text-foreground">
-                {mesocycle.name}
-              </Text>
+              <Text className="text-base font-semibold text-foreground">{mesocycle.name}</Text>
             </View>
             <View className="flex-row items-center gap-4">
               <View className="flex-row items-center gap-1">
@@ -77,14 +62,8 @@ export function MesocycleCard({
                 </Text>
               </View>
               <View className="flex-row items-center gap-1">
-                <Icon
-                  as={Activity}
-                  size={14}
-                  className="text-muted-foreground"
-                />
-                <Text className="text-sm text-muted-foreground">
-                  {phaseOption?.label}
-                </Text>
+                <Icon as={Activity} size={14} className="text-muted-foreground" />
+                <Text className="text-sm text-muted-foreground">{phaseOption?.label}</Text>
               </View>
             </View>
           </View>
@@ -115,12 +94,8 @@ export function MesocycleCard({
                 {PHASE_OPTIONS.map((option) => (
                   <Button
                     key={option.value}
-                    variant={
-                      mesocycle.phase === option.value ? "default" : "outline"
-                    }
-                    onPress={() =>
-                      onChange({ ...mesocycle, phase: option.value })
-                    }
+                    variant={mesocycle.phase === option.value ? "default" : "outline"}
+                    onPress={() => onChange({ ...mesocycle, phase: option.value })}
                     className="justify-start"
                   >
                     <Text
@@ -163,16 +138,12 @@ export function MesocycleCard({
 
             {/* Intensity Distribution */}
             <View className="gap-3">
-              <Label className="text-sm font-medium">
-                Intensity Distribution
-              </Label>
+              <Label className="text-sm font-medium">Intensity Distribution</Label>
 
               {/* Easy */}
               <View className="gap-2">
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-muted-foreground">
-                    Easy/Recovery
-                  </Text>
+                  <Text className="text-xs text-muted-foreground">Easy/Recovery</Text>
                   <Text className="text-xs font-semibold text-primary">
                     {Math.round(mesocycle.intensity_distribution.easy * 100)}%
                   </Text>
@@ -199,14 +170,9 @@ export function MesocycleCard({
               {/* Moderate */}
               <View className="gap-2">
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-muted-foreground">
-                    Moderate/Tempo
-                  </Text>
+                  <Text className="text-xs text-muted-foreground">Moderate/Tempo</Text>
                   <Text className="text-xs font-semibold text-primary">
-                    {Math.round(
-                      mesocycle.intensity_distribution.moderate * 100,
-                    )}
-                    %
+                    {Math.round(mesocycle.intensity_distribution.moderate * 100)}%
                   </Text>
                 </View>
                 <Slider
@@ -231,9 +197,7 @@ export function MesocycleCard({
               {/* Hard (Calculated) */}
               <View className="gap-2">
                 <View className="flex-row justify-between items-center">
-                  <Text className="text-xs text-muted-foreground">
-                    Hard/High-Intensity
-                  </Text>
+                  <Text className="text-xs text-muted-foreground">Hard/High-Intensity</Text>
                   <Text className="text-xs font-semibold text-primary">
                     {Math.round(hardIntensity * 100)}%
                   </Text>
@@ -278,16 +242,10 @@ export function MesocycleCard({
             </View>
 
             {/* Remove Button */}
-            <Button
-              variant="outline"
-              onPress={onRemove}
-              className="border-destructive"
-            >
+            <Button variant="outline" onPress={onRemove} className="border-destructive">
               <View className="flex-row items-center gap-2">
                 <Icon as={Trash2} size={16} className="text-destructive" />
-                <Text className="text-destructive font-semibold">
-                  Remove Phase
-                </Text>
+                <Text className="text-destructive font-semibold">Remove Phase</Text>
               </View>
             </Button>
           </View>

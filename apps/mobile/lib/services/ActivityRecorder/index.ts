@@ -219,6 +219,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === Route State ===
   private _currentRoute: LoadedRoute | null = null;
+  private _routeOverrideId: string | null | undefined = undefined;
   private _routeDistance: number = 0; // Total route distance in meters
   private _currentRouteDistance: number = 0; // User's current distance along route
 
@@ -234,7 +235,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private startTime?: number;
   private pausedTime: number = 0;
   private lastPauseTime?: number;
-  private elapsedTimeInterval?: number;
+  private elapsedTimeInterval?: ReturnType<typeof setInterval> | number;
 
   // === Lap Tracking ===
   private laps: number[] = []; // Array of lap times (moving time in seconds)
@@ -913,7 +914,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       gpsMode: this._gpsRecordingEnabled ? "on" : "off",
       eventId: this._eventId ?? null,
       activityPlanId: this._plan?.id ?? null,
-      routeId: this._plan?.route_id ?? this._currentRoute?.id ?? null,
+      routeId: this.getAttachedRouteId(),
       sourcePreferences: Object.entries(this.getSessionOverrideState().preferredSources).map(
         ([metricFamily, sourceId]) => ({
           metricFamily: metricFamily as MetricFamily,
@@ -1039,7 +1040,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         gpsMode: this._gpsRecordingEnabled ? "on" : "off",
         eventId: this._eventId ?? null,
         activityPlanId: this._plan?.id ?? null,
-        routeId: this._plan?.route_id ?? this._currentRoute?.id ?? null,
+        routeId: this.getAttachedRouteId(),
       },
       profileSnapshot: this.buildProfileSnapshot(),
       devices,
@@ -1067,7 +1068,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     return {
       hasStructure: this.stepCount > 0,
-      hasRoute: Boolean(this._plan?.route_id || this.hasRoute),
+      hasRoute: Boolean(this.getAttachedRouteId()),
       stepCount: this.stepCount,
       requiresManualAdvance: this.planExecution.hasManualAdvanceSteps(),
     };
@@ -1181,6 +1182,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._currentRoute;
   }
 
+  get attachedRouteId(): string | null {
+    return this.getAttachedRouteId();
+  }
+
   get routeDistance(): number {
     return this._routeDistance;
   }
@@ -1192,6 +1197,20 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   get routeProgress(): number {
     if (!this.hasRoute || this._routeDistance === 0) return 0;
     return (this._currentRouteDistance / this._routeDistance) * 100;
+  }
+
+  private getAttachedRouteId(): string | null {
+    if (this._routeOverrideId !== undefined) {
+      return this._routeOverrideId;
+    }
+
+    return this._plan?.route_id ?? this._currentRoute?.id ?? null;
+  }
+
+  private clearCurrentRouteState(): void {
+    this._currentRoute = null;
+    this._routeDistance = 0;
+    this._currentRouteDistance = 0;
   }
 
   /**
@@ -1273,17 +1292,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this._plan = plan;
     this._eventId = eventId;
+    this._routeOverrideId = undefined;
     if (!plan.activity_category) {
       throw new Error("no plan category found");
     }
 
     // Load route if plan has one
     if (plan.route_id) {
+      this.clearCurrentRouteState();
       console.log("[Service] Plan has route, loading route data:", plan.route_id);
       this.loadRoute(plan.route_id).catch((error) => {
         console.error("[Service] Failed to load route:", error);
         // Continue without route - don't fail the whole plan selection
       });
+    } else {
+      this.clearCurrentRouteState();
     }
 
     try {
@@ -1324,12 +1347,51 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this._plan = undefined;
     this._eventId = undefined;
+    this._routeOverrideId = undefined;
     this.planExecution.clear();
-    this._currentRoute = null;
-    this._routeDistance = 0;
-    this._currentRouteDistance = 0;
+    this.clearCurrentRouteState();
 
     this.emit("planCleared");
+    this.publishSessionUpdate();
+  }
+
+  public async attachRoute(routeId: string): Promise<void> {
+    if (!this.ensureMutableSessionIdentity("Route attachment")) {
+      return;
+    }
+
+    if (!routeId) {
+      return;
+    }
+
+    const previousOverrideId = this._routeOverrideId;
+    const previousRoute = this._currentRoute;
+    const previousRouteDistance = this._routeDistance;
+    const previousCurrentRouteDistance = this._currentRouteDistance;
+
+    this._routeOverrideId = routeId;
+    this.clearCurrentRouteState();
+    this.publishSessionUpdate();
+
+    try {
+      await this.loadRoute(routeId);
+    } catch (error) {
+      this._routeOverrideId = previousOverrideId;
+      this._currentRoute = previousRoute;
+      this._routeDistance = previousRouteDistance;
+      this._currentRouteDistance = previousCurrentRouteDistance;
+      this.publishSessionUpdate();
+      throw error;
+    }
+  }
+
+  public detachRoute(): void {
+    if (!this.ensureMutableSessionIdentity("Route detachment")) {
+      return;
+    }
+
+    this._routeOverrideId = null;
+    this.clearCurrentRouteState();
     this.publishSessionUpdate();
   }
 
@@ -1701,7 +1763,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return null; // No plan, no validation needed
     }
 
-    return validatePlanRequirements(this._plan, this.profile);
+    return validatePlanRequirements(this._plan, this.profile, {
+      ftp: this.ftp,
+      thresholdHr: this.thresholdHr,
+      weightKg: this.weightKg,
+    });
   }
 
   // ================================

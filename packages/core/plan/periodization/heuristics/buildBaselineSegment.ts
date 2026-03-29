@@ -1,7 +1,4 @@
-import {
-  referenceTrajectoryPointSchema,
-  type TrajectoryPhase,
-} from "../../../schemas/planning";
+import { referenceTrajectoryPointSchema, type TrajectoryPhase } from "../../../schemas/planning";
 import type { CanonicalSport } from "../../../schemas/sport";
 import { getSportModelConfig } from "../sports";
 
@@ -31,18 +28,13 @@ function diffDays(startDate: string, endDate: string): number {
   return Math.max(
     0,
     Math.round(
-      (Date.parse(`${endDate}T00:00:00.000Z`) -
-        Date.parse(`${startDate}T00:00:00.000Z`)) /
+      (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) /
         86400000,
     ),
   );
 }
 
-function solveDailyTss(
-  currentCtl: number,
-  nextCtl: number,
-  ctlTauDays: number,
-): number {
+function solveDailyTss(currentCtl: number, nextCtl: number, ctlTauDays: number): number {
   return Math.max(0, round(currentCtl + ctlTauDays * (nextCtl - currentCtl)));
 }
 
@@ -57,12 +49,8 @@ export function buildBaselineSegment(input: BuildBaselineSegmentInput) {
 
   for (let index = input.excludeStart ? 1 : 0; index <= totalDays; index += 1) {
     const progress = totalDays === 0 ? 1 : index / totalDays;
-    const ctl = Math.max(
-      0,
-      round(input.startCtl + (input.endCtl - input.startCtl) * progress),
-    );
-    const nextProgress =
-      totalDays === 0 ? 1 : Math.min(1, (index + 1) / totalDays);
+    const ctl = Math.max(0, round(input.startCtl + (input.endCtl - input.startCtl) * progress));
+    const nextProgress = totalDays === 0 ? 1 : Math.min(1, (index + 1) / totalDays);
     const nextCtl = Math.max(
       0,
       round(input.startCtl + (input.endCtl - input.startCtl) * nextProgress),

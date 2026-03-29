@@ -1,10 +1,10 @@
-import type { BuildDeterministicProjectionInput } from "./projectionCalculations";
 import type {
   GoalTargetV2,
   InferredStateSnapshot,
   TrainingPlanCreationConfig,
 } from "../schemas/training_plan_structure";
 import type { NoHistoryAnchorContext } from "./projection/no-history";
+import type { BuildDeterministicProjectionInput } from "./projectionCalculations";
 
 type ExpandedPlanInput = {
   start_date: string;
@@ -27,10 +27,7 @@ type ExpandedPlanInput = {
 
 type ProjectionRelevantCreationConfig = Pick<
   TrainingPlanCreationConfig,
-  | "optimization_profile"
-  | "post_goal_recovery_days"
-  | "behavior_controls_v1"
-  | "calibration"
+  "optimization_profile" | "post_goal_recovery_days" | "behavior_controls_v1" | "calibration"
 >;
 
 export interface BuildProjectionEngineInputShape {
@@ -77,12 +74,9 @@ export function buildProjectionEngineInput(
     no_history_context: input.no_history_context,
     creation_config: input.normalized_creation_config
       ? {
-          optimization_profile:
-            input.normalized_creation_config.optimization_profile,
-          post_goal_recovery_days:
-            input.normalized_creation_config.post_goal_recovery_days,
-          behavior_controls_v1:
-            input.normalized_creation_config.behavior_controls_v1,
+          optimization_profile: input.normalized_creation_config.optimization_profile,
+          post_goal_recovery_days: input.normalized_creation_config.post_goal_recovery_days,
+          behavior_controls_v1: input.normalized_creation_config.behavior_controls_v1,
           calibration: input.normalized_creation_config.calibration,
         }
       : undefined,

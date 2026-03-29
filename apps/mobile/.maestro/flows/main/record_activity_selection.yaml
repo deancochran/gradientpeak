@@ -1,0 +1,23 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  USER_EMAIL: "test@example.com"
+  USER_PASS: "password123"
+---
+- runFlow:
+    file: ../reusable/bootstrap.yaml
+- runFlow:
+    file: ../reusable/login.yaml
+    env:
+      email: "${USER_EMAIL}"
+      password: "${USER_PASS}"
+- tapOn: "Record"
+- extendedWaitUntil:
+    visible:
+      id: "activity-selection-modal"
+    timeout: 10000
+- tapOn:
+    id: "activity-select-bike"
+- extendedWaitUntil:
+    visible:
+      id: "recording-start-button"
+    timeout: 10000

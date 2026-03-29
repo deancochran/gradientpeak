@@ -17,13 +17,11 @@ export function EmptyState({ onCreatePlan }: EmptyStateProps) {
           Welcome to GradientPeak!
         </Text>
         <Text className="text-muted-foreground text-sm text-center mb-4">
-          Start by creating your first training plan to unlock personalized
-          insights and track your progress.
+          Start by creating your first training plan to unlock personalized insights and track your
+          progress.
         </Text>
         <Button onPress={onCreatePlan} className="bg-primary">
-          <Text className="text-primary-foreground font-semibold">
-            Create Training Plan
-          </Text>
+          <Text className="text-primary-foreground font-semibold">Create Training Plan</Text>
         </Button>
       </CardContent>
     </Card>

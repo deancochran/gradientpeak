@@ -5,7 +5,8 @@
  * It provides business logic, calculations, schemas, and utilities.
  *
  * Architecture:
- * - Database types are consumed directly from @repo/supabase
+ * - Prefer package-owned domain schemas and helper types at the public boundary
+ * - Keep database-generated types behind adapters when possible
  * - Business logic, calculations, and utilities are defined here
  * - All exports are organized for easy consumption by consuming packages
  */
@@ -163,13 +164,18 @@ export * from "./constants";
 // These barrel files (index.ts in each directory) handle their own exports
 // and will automatically pick up new files added to their directories
 
+export * from "./activity-analysis"; // Shared dynamic activity analysis contracts/helpers
 export * from "./bluetooth"; // Canonical BLE parsers
+export * from "./coaching"; // Shared coaching roster adapters
 export * from "./contracts"; // Shared API contracts
 export * from "./duration"; // Canonical duration helpers
 export * from "./estimation"; // TSS estimation system
 export * from "./goals"; // Goal draft/payload helpers
 export * from "./load"; // Canonical load-domain helpers
+export * from "./messaging"; // Shared messaging adapters
+export * from "./notifications"; // Shared notification normalization helpers
 export * from "./plan"; // Training plan normalization/expansion helpers
+export * from "./profile"; // Shared profile contracts and adapters
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
 export * from "./sports"; // Canonical sport registry and heuristics
@@ -212,12 +218,15 @@ export type { StandardActivity } from "./types/normalization";
 export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
 export * as CalculationsV2 from "./calculations_v2";
+export * as Coaching from "./coaching";
 export * as Constants from "./constants";
 export * as Duration from "./duration";
 export * as Estimation from "./estimation";
-export * as Estimators from "./estimators";
+export * as Estimators from "./estimators/index";
 export * as Load from "./load";
+export * as Messaging from "./messaging";
 export * as Plan from "./plan";
+export * as Profile from "./profile";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
 export * as Sports from "./sports";

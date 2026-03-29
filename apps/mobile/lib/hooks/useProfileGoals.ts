@@ -1,8 +1,8 @@
-import { useAuthStore } from "@/lib/stores/auth-store";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
-import { trpc } from "@/lib/trpc";
-import { parseProfileGoalRecord, type ProfileGoal } from "@repo/core";
+import { type ProfileGoal, parseProfileGoalRecord } from "@repo/core";
 import { useCallback, useMemo } from "react";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { trpc } from "@/lib/trpc";
+import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 
 const GOALS_PAGE_SIZE = 100;
 
@@ -61,10 +61,7 @@ export function useProfileGoals() {
     }
 
     const eventsById = new Map(
-      (milestoneEventsQuery.data?.items ?? []).map((event) => [
-        event.id,
-        event,
-      ]),
+      (milestoneEventsQuery.data?.items ?? []).map((event) => [event.id, event]),
     );
 
     return query.data.flatMap((goal) => {

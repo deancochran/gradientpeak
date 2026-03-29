@@ -22,14 +22,8 @@ export function interpolateLinearScale(
   return minScale + (maxScale - minScale) * preferenceValue;
 }
 
-export function applyLinearPreferenceModifier(
-  input: LinearModifierInput,
-): CalculatedParameter {
-  const scale = interpolateLinearScale(
-    input.preferenceValue,
-    input.minScale,
-    input.maxScale,
-  );
+export function applyLinearPreferenceModifier(input: LinearModifierInput): CalculatedParameter {
+  const scale = interpolateLinearScale(input.preferenceValue, input.minScale, input.maxScale);
   const scaledValue = input.baseline * scale;
   const clampedValue = Math.min(
     input.maxBound ?? scaledValue,

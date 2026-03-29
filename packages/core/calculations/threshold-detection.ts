@@ -19,10 +19,7 @@ import { calculateBestEffort } from "./best-efforts";
  * @param timestamps - Array of timestamps (seconds).
  * @returns Detected LTHR (bpm) or null if insufficient data.
  */
-export function detectLTHR(
-  hrStream: number[],
-  timestamps: number[],
-): number | null {
+export function detectLTHR(hrStream: number[], timestamps: number[]): number | null {
   if (!hrStream || !timestamps || hrStream.length === 0) {
     return null;
   }

@@ -2,28 +2,21 @@
 // Progress Tracking Display
 // ================================
 
-import { memo } from "react";
-import { View } from "react-native";
 import { type ActivityPlanStructureV2, formatDuration } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import { ActivityProgressGraph } from "./ActivityProgress";
+import { memo } from "react";
+import { View } from "react-native";
 import type { CurrentReadings } from "@/lib/services/ActivityRecorder/types";
+import { ActivityProgressGraph } from "./ActivityProgress";
 
 const ProgressTrackingDisplay = memo<{
   planProgress: any;
   structure: ActivityPlanStructureV2;
   currentMetrics: CurrentReadings;
-}>(function ProgressTrackingDisplay({
-  planProgress,
-  structure,
-  currentMetrics,
-}) {
-  const overallProgress =
-    (planProgress.completedSteps / planProgress.totalSteps) * 100;
+}>(function ProgressTrackingDisplay({ planProgress, structure, currentMetrics }) {
+  const overallProgress = (planProgress.completedSteps / planProgress.totalSteps) * 100;
   const stepProgress =
-    planProgress.duration > 0
-      ? (planProgress.elapsedInStep / planProgress.duration) * 100
-      : 0;
+    planProgress.duration > 0 ? (planProgress.elapsedInStep / planProgress.duration) * 100 : 0;
 
   return (
     <View className="mb-6">
@@ -31,9 +24,7 @@ const ProgressTrackingDisplay = memo<{
       <View className="mb-4">
         <View className="flex-row justify-between items-center mb-2">
           <Text className="text-sm font-medium">Activity Progress</Text>
-          <Text className="text-sm text-muted-foreground">
-            {Math.round(overallProgress)}%
-          </Text>
+          <Text className="text-sm text-muted-foreground">{Math.round(overallProgress)}%</Text>
         </View>
 
         {/* Overall progress bar */}

@@ -1,15 +1,34 @@
 appId: com.deancochran.gradientpeak.dev
-# Reusable Login Flow
-# PARAMS:
-#   - email: The user's email
-#   - password: The user's password
 ---
 - tapOn:
-    id: "email-input"
-- inputText: "${email}"
+    id: "login-button"
+    optional: true
 - tapOn:
-    id: "password-input"
-- inputText: "${password}"
+    id: "sign-in-link-button"
+    optional: true
 - tapOn:
-    id: "sign-in-button"
-- assertVisible: "Plan"
+    id: "back-to-signin-link-button"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "sign-in-screen"
+    timeout: 10000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: "sign-in-screen"
+    commands:
+      - tapOn:
+          id: "email-input"
+      - inputText: "${email}"
+      - tapOn:
+          id: "password-input"
+      - inputText: "${password}"
+      - hideKeyboard
+      - tapOn:
+          id: "sign-in-button"
+      - extendedWaitUntil:
+          visible:
+            id: "tab-button-plan"
+          timeout: 20000

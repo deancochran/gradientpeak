@@ -1,16 +1,12 @@
-import { showErrorAlert } from "@/lib/utils/formErrors";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
+import { showErrorAlert } from "@/lib/utils/formErrors";
 
 /**
  * Configuration for optimistic mutations
  */
-export interface OptimisticMutationConfig<
-  TData,
-  TVariables,
-  TContext = unknown,
-> {
+export interface OptimisticMutationConfig<TData, TVariables, TContext = unknown> {
   /**
    * Query key to update optimistically
    */
@@ -170,9 +166,7 @@ export function useOptimisticMutation<TData, TVariables, TContext = unknown>(
         const previousData = queryClient.getQueryData<TData>(config.queryKey);
 
         // 3. Optimistically update the cache
-        queryClient.setQueryData<TData>(config.queryKey, (old) =>
-          config.updater(old, variables),
-        );
+        queryClient.setQueryData<TData>(config.queryKey, (old) => config.updater(old, variables));
 
         // Create context for callbacks
         context = { previousData } as TContext;
@@ -186,9 +180,7 @@ export function useOptimisticMutation<TData, TVariables, TContext = unknown>(
         // 6. Invalidate related queries
         if (config.invalidateKeys) {
           await Promise.all(
-            config.invalidateKeys.map((key) =>
-              queryClient.invalidateQueries({ queryKey: key }),
-            ),
+            config.invalidateKeys.map((key) => queryClient.invalidateQueries({ queryKey: key })),
           );
         }
 
@@ -209,10 +201,7 @@ export function useOptimisticMutation<TData, TVariables, TContext = unknown>(
 
         // Rollback optimistic update
         if (context && (context as any).previousData !== undefined) {
-          queryClient.setQueryData<TData>(
-            config.queryKey,
-            (context as any).previousData,
-          );
+          queryClient.setQueryData<TData>(config.queryKey, (context as any).previousData);
         }
 
         // Call error handler
@@ -311,9 +300,7 @@ export function useInvalidatingMutation<TData, TVariables>(
 
         // Invalidate queries
         await Promise.all(
-          config.invalidateKeys.map((key) =>
-            queryClient.invalidateQueries({ queryKey: key }),
-          ),
+          config.invalidateKeys.map((key) => queryClient.invalidateQueries({ queryKey: key })),
         );
 
         // Call success handler

@@ -3,15 +3,15 @@
 // ================================
 
 import {
-  PlanStepV2,
   formatDurationCompact,
+  formatTargetValue,
   getStepIntensityColor,
   getTargetDisplayName,
-  formatTargetValue,
+  PlanStepV2,
 } from "@repo/core";
+import { Text } from "@repo/ui/components/text";
 import { memo } from "react";
 import { View } from "react-native";
-import { Text } from "@repo/ui/components/text";
 
 interface StepPreviewCardProps {
   step: PlanStepV2;
@@ -53,16 +53,12 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
       <View className="flex-row justify-between items-start mb-2">
         <View className="flex-1">
           <Text
-            className={`text-sm font-medium ${
-              isUpcoming ? "text-blue-800" : "text-foreground"
-            }`}
+            className={`text-sm font-medium ${isUpcoming ? "text-blue-800" : "text-foreground"}`}
           >
             {step.name}
           </Text>
           {step.description && (
-            <Text className="text-xs text-muted-foreground mt-1">
-              {step.description}
-            </Text>
+            <Text className="text-xs text-muted-foreground mt-1">{step.description}</Text>
           )}
         </View>
 

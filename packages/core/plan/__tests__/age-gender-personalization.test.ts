@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { calculateATL } from "../../calculations";
 import {
   getAgeAdjustedRampRateMultiplier,
+  getGenderAdjustedFatigueTimeMultiplier,
   getGenderAdjustedRecoveryLoadMultiplier,
   getMaxSustainableCTL,
-  getGenderAdjustedFatigueTimeMultiplier,
   getPersonalizedATLTimeConstant,
 } from "../calibration-constants";
 
@@ -45,9 +45,7 @@ describe("age and gender personalization", () => {
 
   it("keeps gender recovery modulation bounded and recovery-only", () => {
     expect(getGenderAdjustedRecoveryLoadMultiplier("male")).toBe(1);
-    expect(getGenderAdjustedRecoveryLoadMultiplier("female")).toBeGreaterThan(
-      1,
-    );
+    expect(getGenderAdjustedRecoveryLoadMultiplier("female")).toBeGreaterThan(1);
     expect(getGenderAdjustedRecoveryLoadMultiplier("female")).toBeLessThan(1.1);
   });
 });

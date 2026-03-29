@@ -21,24 +21,13 @@
  * - Allows "minimize" to return to 'none' state
  */
 
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useCallback,
-  type ReactNode,
-} from "react";
+import React, { createContext, type ReactNode, useCallback, useContext, useState } from "react";
 
 /**
  * Focus Mode State Type
  * Represents which element is currently focused
  */
-export type FocusModeState =
-  | "none"
-  | "zone-a"
-  | "zone-b"
-  | "zone-c"
-  | "footer";
+export type FocusModeState = "none" | "zone-a" | "zone-b" | "zone-c" | "footer";
 
 /**
  * Focus Mode Context Value
@@ -78,24 +67,20 @@ interface FocusModeContextValue {
    */
   focusZoneWithCoordination: (
     zone: "zone-a" | "zone-b" | "zone-c",
-    onCollapseFooter?: () => Promise<void>
+    onCollapseFooter?: () => Promise<void>,
   ) => Promise<void>;
 
   /**
    * Focus footer with coordination (handles zone minimize if needed)
    * @param onClearZoneFocus - Callback to handle zone clear animation (returns Promise)
    */
-  focusFooterWithCoordination: (
-    onClearZoneFocus?: () => Promise<void>
-  ) => Promise<void>;
+  focusFooterWithCoordination: (onClearZoneFocus?: () => Promise<void>) => Promise<void>;
 }
 
 /**
  * Focus Mode Context
  */
-const FocusModeContext = createContext<FocusModeContextValue | undefined>(
-  undefined,
-);
+const FocusModeContext = createContext<FocusModeContextValue | undefined>(undefined);
 
 /**
  * Focus Mode Provider Props
@@ -118,8 +103,7 @@ interface FocusModeProviderProps {
  */
 export function FocusModeProvider({ children }: FocusModeProviderProps) {
   const [focusState, setFocusState] = useState<FocusModeState>("none");
-  const [previousFocusState, setPreviousFocusState] =
-    useState<FocusModeState>("none");
+  const [previousFocusState, setPreviousFocusState] = useState<FocusModeState>("none");
 
   /**
    * Helper to update focus state with previous state tracking
@@ -173,11 +157,7 @@ export function FocusModeProvider({ children }: FocusModeProviderProps) {
    * Check if any zone is currently focused
    */
   const isAnyZoneFocused = useCallback(() => {
-    return (
-      focusState === "zone-a" ||
-      focusState === "zone-b" ||
-      focusState === "zone-c"
-    );
+    return focusState === "zone-a" || focusState === "zone-b" || focusState === "zone-c";
   }, [focusState]);
 
   /**
@@ -195,10 +175,7 @@ export function FocusModeProvider({ children }: FocusModeProviderProps) {
    * If footer is expanded, collapses it first (200ms), then focuses the zone
    */
   const focusZoneWithCoordination = useCallback(
-    async (
-      zone: "zone-a" | "zone-b" | "zone-c",
-      onCollapseFooter?: () => Promise<void>,
-    ) => {
+    async (zone: "zone-a" | "zone-b" | "zone-c", onCollapseFooter?: () => Promise<void>) => {
       // Check if footer is currently focused (expanded)
       if (focusState === "footer" && onCollapseFooter) {
         // Collapse footer first
@@ -221,9 +198,7 @@ export function FocusModeProvider({ children }: FocusModeProviderProps) {
     async (onClearZoneFocus?: () => Promise<void>) => {
       // Check if any zone is currently focused
       const zoneFocused =
-        focusState === "zone-a" ||
-        focusState === "zone-b" ||
-        focusState === "zone-c";
+        focusState === "zone-a" || focusState === "zone-b" || focusState === "zone-c";
 
       if (zoneFocused && onClearZoneFocus) {
         // Clear zone focus first (triggers minimize animation)
@@ -257,11 +232,7 @@ export function FocusModeProvider({ children }: FocusModeProviderProps) {
     focusFooterWithCoordination,
   };
 
-  return (
-    <FocusModeContext.Provider value={value}>
-      {children}
-    </FocusModeContext.Provider>
-  );
+  return <FocusModeContext.Provider value={value}>{children}</FocusModeContext.Provider>;
 }
 
 /**

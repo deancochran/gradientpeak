@@ -12,17 +12,14 @@
  * dragging just reveals more or less of it.
  */
 
-import { useFocusMode } from "@/lib/contexts/FocusModeContext";
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
-import BottomSheet, {
-  BottomSheetBackdrop,
-  SNAP_POINT_TYPE,
-} from "@gorhom/bottom-sheet";
+import BottomSheet, { BottomSheetBackdrop, SNAP_POINT_TYPE } from "@gorhom/bottom-sheet";
 import type { RecordingState } from "@repo/core";
 import type { PublicActivityCategory } from "@repo/supabase";
 import React, { useCallback, useMemo, useRef } from "react";
-import { View, useColorScheme } from "react-native";
+import { useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusMode } from "@/lib/contexts/FocusModeContext";
+import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { FooterExpandedContent } from "./FooterExpandedContent";
 
 export interface RecordingFooterProps {
@@ -77,8 +74,7 @@ export function RecordingFooter({
   onLap,
   onFinish,
 }: RecordingFooterProps) {
-  const { focusState, focusFooter, clearFocus, isAnyZoneFocused } =
-    useFocusMode();
+  const { focusState, focusFooter, clearFocus, isAnyZoneFocused } = useFocusMode();
   const bottomSheetRef = useRef<BottomSheet>(null);
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();

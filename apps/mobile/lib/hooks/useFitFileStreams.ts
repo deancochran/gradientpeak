@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
 import { parseFitFileWithSDK } from "@repo/core";
+import { useCallback, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 
 /**
@@ -35,9 +35,7 @@ export function useFitFileStreams() {
         .download(fitFilePath);
 
       if (downloadError || !fitFile) {
-        throw new Error(
-          downloadError?.message || "Failed to download FIT file",
-        );
+        throw new Error(downloadError?.message || "Failed to download FIT file");
       }
 
       console.log("[useFitFileStreams] Parsing FIT file...");
@@ -48,17 +46,14 @@ export function useFitFileStreams() {
       const parseResult = parseFitFileWithSDK(buffer);
 
       if (!parseResult.summary && parseResult.records.length === 0) {
-        throw new Error(
-          "Failed to parse FIT file - no session or records found",
-        );
+        throw new Error("Failed to parse FIT file - no session or records found");
       }
 
       console.log("[useFitFileStreams] FIT file parsed successfully");
       setStreams(parseResult);
       return parseResult;
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Unknown error loading streams";
+      const errorMessage = err instanceof Error ? err.message : "Unknown error loading streams";
       console.error("[useFitFileStreams] Error:", errorMessage);
       setError(errorMessage);
       return null;

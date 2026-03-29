@@ -1,8 +1,9 @@
 import { Button } from "@repo/ui/components/button";
+import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import React from "react";
-import { View, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 
 interface WizardStepProps {
   /** Current step number (1-based) */
@@ -62,12 +63,7 @@ export function WizardStep({
         </View>
 
         {/* Progress Bar */}
-        <View className="h-2 bg-muted rounded-full overflow-hidden">
-          <View
-            className="h-full bg-primary rounded-full transition-all"
-            style={{ width: `${(currentStep / totalSteps) * 100}%` }}
-          />
-        </View>
+        <Progress value={(currentStep / totalSteps) * 100} className="h-2" />
       </View>
 
       {/* Content */}
@@ -78,12 +74,8 @@ export function WizardStep({
       >
         {/* Header */}
         <View className="mb-6">
-          <Text className="text-2xl font-bold text-foreground mb-2">
-            {title}
-          </Text>
-          {description && (
-            <Text className="text-muted-foreground">{description}</Text>
-          )}
+          <Text className="text-2xl font-bold text-foreground mb-2">{title}</Text>
+          {description && <Text className="text-muted-foreground">{description}</Text>}
         </View>
 
         {/* Step Content */}
@@ -94,12 +86,7 @@ export function WizardStep({
       <View className="border-t border-border bg-card px-4 py-3">
         <View className="flex-row gap-3">
           {showBackButton && onBack && (
-            <Button
-              variant="outline"
-              onPress={onBack}
-              disabled={isSubmitting}
-              className="flex-1"
-            >
+            <Button variant="outline" onPress={onBack} disabled={isSubmitting} className="flex-1">
               <ChevronLeft size={20} className="text-foreground" />
               <Text>Back</Text>
             </Button>
@@ -111,9 +98,7 @@ export function WizardStep({
             className={showBackButton && onBack ? "flex-1" : "w-full"}
           >
             <Text>{nextButtonText || defaultNextText}</Text>
-            {!isLastStep && (
-              <ChevronRight size={20} className="text-primary-foreground" />
-            )}
+            {!isLastStep && <ChevronRight size={20} className="text-primary-foreground" />}
           </Button>
         </View>
       </View>

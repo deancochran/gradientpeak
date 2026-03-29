@@ -549,7 +549,7 @@ export class SensorsManager {
 
   /** Scan for devices */
   private scanCallbacks: ((device: Device) => void)[] = [];
-  private currentScanTimeout: number | null = null;
+  private currentScanTimeout: ReturnType<typeof setTimeout> | number | null = null;
 
   subscribeScan(callback: (device: Device) => void): () => void {
     this.scanCallbacks.push(callback);

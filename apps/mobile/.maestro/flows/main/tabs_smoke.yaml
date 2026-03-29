@@ -1,0 +1,13 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ../reusable/authenticated_home.yaml
+- assertVisible: "Record"
+- assertVisible: "Plan"
+- assertVisible: "Calendar"
+- runFlow:
+    file: ../reusable/open_discover_tab.yaml
+- runFlow:
+    file: ../reusable/open_plan_tab.yaml
+- runFlow:
+    file: ../reusable/open_calendar_tab.yaml

@@ -1157,6 +1157,7 @@ export function SinglePageForm({
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
                 accessibilityLabel={`${tab.label} tab`}
+                testID={`training-plan-tab-${tab.key}`}
                 accessibilityHint={
                   isActive
                     ? `Currently selected. Shows ${tab.label.toLowerCase()} section`
@@ -1208,6 +1209,7 @@ export function SinglePageForm({
                 aria-label="Plan name"
                 placeholder="Enter plan name"
                 value={resolvedPlanMetadata.name}
+                testID="training-plan-name-input"
                 onChangeText={(name) => {
                   handlePlanMetadataChange({
                     ...resolvedPlanMetadata,

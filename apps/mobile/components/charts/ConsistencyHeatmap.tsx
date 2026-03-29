@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import React from "react";
-import { View, ScrollView } from "react-native";
+import { ScrollView, View } from "react-native";
 
 export interface ConsistencyData {
   activityDays: string[]; // Array of dates with activities (YYYY-MM-DD)
@@ -17,11 +17,7 @@ interface ConsistencyHeatmapProps {
   endDate: string;
 }
 
-export function ConsistencyHeatmap({
-  data,
-  startDate,
-  endDate,
-}: ConsistencyHeatmapProps) {
+export function ConsistencyHeatmap({ data, startDate, endDate }: ConsistencyHeatmapProps) {
   const isEmpty = !data || data.activityDays.length === 0;
 
   // Generate calendar grid
@@ -37,9 +33,7 @@ export function ConsistencyHeatmap({
   lastSunday.setDate(end.getDate() + (7 - end.getDay()));
 
   // Generate weeks
-  const weeks: Array<
-    Array<{ date: Date; hasActivity: boolean; isOutOfRange: boolean }>
-  > = [];
+  const weeks: Array<Array<{ date: Date; hasActivity: boolean; isOutOfRange: boolean }>> = [];
   let currentDate = new Date(firstMonday);
 
   while (currentDate <= lastSunday) {
@@ -70,24 +64,17 @@ export function ConsistencyHeatmap({
   const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
 
   // Calculate frequency percentage
-  const frequencyPercentage = isEmpty
-    ? 0
-    : (data.totalActivities / data.totalDays) * 100;
+  const frequencyPercentage = isEmpty ? 0 : (data.totalActivities / data.totalDays) * 100;
 
   return (
     <View className="rounded-lg border bg-card border-border p-4">
-      <Text className="text-base font-semibold text-foreground mb-2">
-        Training Consistency
-      </Text>
+      <Text className="text-base font-semibold text-foreground mb-2">Training Consistency</Text>
 
       {isEmpty ? (
         <View className="py-8 items-center justify-center bg-muted/30 rounded">
-          <Text className="text-muted-foreground text-sm mb-1">
-            No consistency data yet
-          </Text>
+          <Text className="text-muted-foreground text-sm mb-1">No consistency data yet</Text>
           <Text className="text-muted-foreground text-xs text-center px-4">
-            Start recording activities to track your training streaks and
-            consistency
+            Start recording activities to track your training streaks and consistency
           </Text>
         </View>
       ) : (
@@ -95,37 +82,25 @@ export function ConsistencyHeatmap({
           {/* Stats Summary */}
           <View className="flex-row justify-around mb-4 pb-4 border-b border-border">
             <View className="items-center">
-              <Text className="text-xs text-muted-foreground">
-                Current Streak
-              </Text>
-              <Text className="text-2xl font-bold text-foreground">
-                {data.currentStreak}
-              </Text>
+              <Text className="text-xs text-muted-foreground">Current Streak</Text>
+              <Text className="text-2xl font-bold text-foreground">{data.currentStreak}</Text>
               <Text className="text-xs text-muted-foreground">days</Text>
             </View>
             <View className="items-center">
-              <Text className="text-xs text-muted-foreground">
-                Longest Streak
-              </Text>
-              <Text className="text-2xl font-bold text-foreground">
-                {data.longestStreak}
-              </Text>
+              <Text className="text-xs text-muted-foreground">Longest Streak</Text>
+              <Text className="text-2xl font-bold text-foreground">{data.longestStreak}</Text>
               <Text className="text-xs text-muted-foreground">days</Text>
             </View>
             <View className="items-center">
               <Text className="text-xs text-muted-foreground">Weekly Avg</Text>
-              <Text className="text-2xl font-bold text-foreground">
-                {data.weeklyAvg}
-              </Text>
+              <Text className="text-2xl font-bold text-foreground">{data.weeklyAvg}</Text>
               <Text className="text-xs text-muted-foreground">activities</Text>
             </View>
           </View>
 
           {/* Calendar Heatmap */}
           <View className="mb-2">
-            <Text className="text-sm font-medium text-foreground mb-2">
-              Activity Calendar
-            </Text>
+            <Text className="text-sm font-medium text-foreground mb-2">Activity Calendar</Text>
 
             {/* Day labels */}
             <View className="flex-row mb-1 ml-8">
@@ -145,16 +120,11 @@ export function ConsistencyHeatmap({
                     : "";
 
                   return (
-                    <View
-                      key={weekIndex}
-                      className="flex-row items-center mb-1"
-                    >
+                    <View key={weekIndex} className="flex-row items-center mb-1">
                       {/* Month label */}
                       <View className="w-8 mr-1">
                         {weekIndex === 0 || week[0]?.date.getDate() <= 7 ? (
-                          <Text className="text-xs text-muted-foreground">
-                            {monthLabel}
-                          </Text>
+                          <Text className="text-xs text-muted-foreground">{monthLabel}</Text>
                         ) : null}
                       </View>
 
@@ -171,9 +141,7 @@ export function ConsistencyHeatmap({
                           }`}
                         >
                           {day.hasActivity && !day.isOutOfRange && (
-                            <Text className="text-xs text-white font-bold">
-                              ✓
-                            </Text>
+                            <Text className="text-xs text-white font-bold">✓</Text>
                           )}
                         </View>
                       ))}

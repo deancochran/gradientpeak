@@ -581,10 +581,6 @@ create table if not exists public.activities (
     avg_power integer,
     max_power integer,
     normalized_power integer,
-    intensity_factor numeric(4,3),
-    training_stress_score integer,
-    trimp numeric(10,2),
-    trimp_source text check (trimp_source in ('hr', 'power_proxy')),
 
     -- Cadence metrics
     avg_cadence integer,
@@ -599,22 +595,6 @@ create table if not exists public.activities (
     -- Efficiency & Training Effect
     efficiency_factor numeric,
     aerobic_decoupling numeric,
-    training_effect training_effect_label,
-
-    -- Zone times as individual columns (for efficient queries)
-    hr_zone_1_seconds integer,
-    hr_zone_2_seconds integer,
-    hr_zone_3_seconds integer,
-    hr_zone_4_seconds integer,
-    hr_zone_5_seconds integer,
-
-    power_zone_1_seconds integer,
-    power_zone_2_seconds integer,
-    power_zone_3_seconds integer,
-    power_zone_4_seconds integer,
-    power_zone_5_seconds integer,
-    power_zone_6_seconds integer,
-    power_zone_7_seconds integer,
 
 
     -- ============================================================================
@@ -633,6 +613,9 @@ create table if not exists public.activities (
     -- ============================================================================
     fit_file_path text,
     fit_file_size integer,
+    import_source text,
+    import_file_type text,
+    import_original_file_name text,
 
     -- ============================================================================
     -- Extended Metadata (Maps, Laps, Device)
@@ -657,7 +640,16 @@ create table if not exists public.activities (
     -- Constraints
     -- ============================================================================
     constraint chk_times check (finished_at >= started_at),
-    constraint chk_moving_time check (moving_seconds >= 0 and moving_seconds <= duration_seconds)
+    constraint chk_moving_time check (moving_seconds >= 0 and moving_seconds <= duration_seconds),
+    constraint activities_import_source_check check (
+        import_source is null or import_source = 'manual_historical'
+    ),
+    constraint activities_import_file_type_non_empty_check check (
+        import_file_type is null or btrim(import_file_type) <> ''
+    ),
+    constraint activities_import_original_file_name_non_empty_check check (
+        import_original_file_name is null or btrim(import_original_file_name) <> ''
+    )
 );
 
 -- Essential indexes (optimized for common queries)
@@ -681,19 +673,6 @@ create index if not exists idx_activities_external
 create unique index if not exists idx_activities_external_unique
     on public.activities(provider, external_id)
     where external_id is not null and provider is not null;
-
--- Metric column indexes for filtering and sorting
-create index if not exists idx_activities_tss
-    on public.activities(training_stress_score desc)
-    where training_stress_score is not null;
-
-create index if not exists idx_activities_trimp
-    on public.activities(trimp desc)
-    where trimp is not null;
-
-create index if not exists idx_activities_trimp_source
-    on public.activities(trimp_source)
-    where trimp_source is not null;
 
 create index if not exists idx_activities_duration
     on public.activities(duration_seconds desc);
@@ -721,10 +700,6 @@ create index if not exists idx_activities_normalized_power
     on public.activities(normalized_power desc)
     where normalized_power is not null;
 
-create index if not exists idx_activities_intensity_factor
-    on public.activities(intensity_factor desc)
-    where intensity_factor is not null;
-
 create index if not exists idx_activities_avg_cadence
     on public.activities(avg_cadence desc)
     where avg_cadence is not null;
@@ -740,11 +715,6 @@ create index if not exists idx_activities_elevation_gain
 create index if not exists idx_activities_calories
     on public.activities(calories desc)
     where calories is not null;
-
--- Composite indexes for user activity lists
-create index if not exists idx_activities_profile_tss
-    on public.activities(profile_id, training_stress_score desc)
-    where training_stress_score is not null;
 
 create index if not exists idx_activities_profile_duration
     on public.activities(profile_id, duration_seconds desc);

@@ -3,9 +3,9 @@ import {
   getCreateDisabledReason,
   getMinimumGoalGapDays,
   getTopBlockingIssues,
+  validateTrainingPlanForm,
 } from "@repo/core";
 import { describe, expect, it } from "vitest";
-import { validateTrainingPlanForm } from "../validation";
 
 describe("training-plan form validation", () => {
   it("returns no errors for valid minimal form", () => {
