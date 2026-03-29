@@ -10,6 +10,9 @@
 - Avoid leaving both Supabase Auth and Better Auth as co-equal long-term auth systems.
 - Keep shared packages framework-agnostic wherever possible.
 - Biome remains the repo-wide formatter/linter; do not add ESLint or Prettier tooling packages.
+- Prefer direct `packages/api` ownership; do not let `@repo/trpc` become a second long-term API home.
+- Prefer minimal `package.json` scripts; add wrappers only when Turbo or the underlying tool cannot express the workflow cleanly.
+- Keep generated build/test/runtime artifacts ignored by default.
 
 ## Open
 
@@ -19,6 +22,7 @@
 - [ ] Decide whether `packages/trpc` is renamed directly to `packages/api` or bridged temporarily.
 - [ ] Decide whether `packages/supabase` remains under `packages/` as infra-only or moves to a clearer infra location.
 - [ ] Document the desired steady-state import boundaries between app, API, auth, DB, UI, and core layers.
+- [ ] Define the package-manifest policy for root/apps/packages so scripts stay minimal and mostly task-shaped.
 - [ ] Record the explicit template exclusions: no ESLint tooling package, no Prettier tooling package, no long-term Next.js target.
 - [x] Create `migration-matrix.md` for package-by-package ownership mapping.
 - [x] Create `web-route-map.md`, `auth-behavior-matrix.md`, and `db-ownership-matrix.md`.
@@ -36,6 +40,8 @@
 - [ ] Inventory all current `packages/typescript-config` consumers.
 - [ ] Inventory all current Tailwind config, theme token, and styling config locations.
 - [ ] Inventory any `packages/ui` exports or web assumptions that depend on Next.js behavior.
+- [ ] Inventory custom scripts and shell wrappers that can be removed once tooling and package ownership are cleaned up.
+- [ ] Inventory generated build/test/runtime folders and reports that should be ignored repo-wide.
 - [ ] Record inventory results into `migration-matrix.md`.
 - [ ] Record web findings into `web-route-map.md`.
 - [ ] Record auth findings into `auth-behavior-matrix.md`.
@@ -88,6 +94,7 @@
 - [ ] Define the final tRPC context shape.
 - [ ] Define the final router ownership for auth-adjacent behavior.
 - [ ] Define the import migration plan for web and mobile clients if package naming changes.
+- [ ] Define the retirement step that fully folds `@repo/trpc` into `packages/api` and removes the compatibility shell.
 - [ ] Update `migration-matrix.md` with final API package and bridge decisions.
 
 ### Phase 6 - Web App Migration
@@ -122,12 +129,13 @@
 ### Phase 7 - Tooling Realignment
 
 - [ ] Move shared TS config from `packages/typescript-config` to `tooling/typescript`.
-- [ ] Add `tooling/tailwind` as the shared web styling configuration home.
+- [ ] Add `tooling/tailwind` as the shared web styling configuration home for config plus theme tokens.
 - [ ] Update consuming packages/apps to extend tooling configs from `tooling/`.
 - [ ] Keep Biome as the only shared lint/format workflow.
 - [ ] Inventory all current TypeScript config consumers and all current Tailwind/theme config locations.
 - [ ] Define the migration plan for each TS config consumer.
 - [ ] Define the migration plan for each Tailwind/theme config consumer.
+- [ ] Reduce package-level scripts to essential entrypoints only and remove wrappers that no longer add value.
 - [ ] Define any `packages/ui` updates needed to consume the new tooling layout cleanly.
 - [ ] Update `migration-matrix.md` with final tooling and shared-package ownership decisions.
 - [ ] Reconcile all artifacts so package boundaries match across the spec set.
@@ -145,6 +153,7 @@
 - [ ] Define the final removal criteria for Supabase-Auth-first router logic.
 - [ ] Define the final removal criteria for Supabase-generated relational type ownership.
 - [ ] Define the final import-path cleanup required after package renames or bridges are removed.
+- [ ] Define the final repo-hygiene rules for generated folders, reports, caches, and local runtime outputs.
 - [ ] Define the final validation gate for declaring the replatform complete.
 - [ ] Create and complete `cutover-checklist.md`.
 - [ ] Resolve or explicitly defer every item in `decision-log.md`.
@@ -157,6 +166,7 @@
 - [ ] Validate that the final web runtime no longer depends on Next.js-only APIs.
 - [ ] Validate that `packages/core` remains DB-independent and framework-independent after the design is executed.
 - [ ] Validate that `packages/ui` works with Expo and TanStack Start without relying on Next-only behavior.
+- [ ] Validate that generated build/test/runtime outputs remain out of version control after the new tooling and web runtime land.
 
 ## Completed Summary
 
@@ -168,3 +178,4 @@
 - [x] Created the first `packages/api` bridge around shared context ownership, normalized auth-session consumption, and initial `packages/db` validation/type imports while preserving `@repo/trpc` compatibility for existing app callers.
 - [x] Replaced the mobile bearer-only request-header helper with a cookie-first auth transport scaffold backed by SecureStore, relaxed mobile auth-user refresh to work without a Supabase access token, and isolated Supabase deep-link token parsing behind an explicit legacy bridge helper.
 - [x] Moved mobile sign-up and verification UX onto the Better Auth Expo client, replacing the Supabase OTP screen with resend-email plus session-refresh behavior and aligning email-change callbacks with Expo deep links.
+- [x] Refined the architecture spec to make `packages/api` the only long-term tRPC home, to centralize Tailwind themes in `tooling/tailwind`, and to add explicit script-minimization plus generated-artifact hygiene requirements.

@@ -8,11 +8,12 @@ Goal: define the intended steady-state package boundaries before code migration 
 2. Decide whether `packages/trpc` will be renamed to `packages/api` immediately or via compatibility phase.
 3. Decide whether `packages/supabase` stays as an infra package or moves to a clearer infra location.
 4. Define the exact responsibilities of `packages/auth`, `packages/db`, `packages/core`, and `packages/ui`.
-5. Record explicit exclusions from the upstream template: no ESLint tooling package, no Prettier tooling package, no long-term Next.js web target.
-6. Define the steady-state package ownership table and temporary bridge packages, if any.
-7. Create the package-by-package migration matrix artifact.
-8. Create the web route/surface map, auth behavior matrix, and DB ownership matrix artifacts.
-9. Create dependency order, risk/blocker, and decision log artifacts.
+5. Define the package-manifest philosophy: keep scripts minimal, prefer Turbo task inference and tool-native defaults, and use wrappers only where they add real value.
+6. Record explicit exclusions from the upstream template: no ESLint tooling package, no Prettier tooling package, no long-term Next.js web target.
+7. Define the steady-state package ownership table and temporary bridge packages, if any.
+8. Create the package-by-package migration matrix artifact.
+9. Create the web route/surface map, auth behavior matrix, and DB ownership matrix artifacts.
+10. Create dependency order, risk/blocker, and decision log artifacts.
 
 Exit criteria:
 
@@ -30,10 +31,12 @@ Goal: produce a full migration inventory before changing package ownership.
 4. Inventory all `packages/typescript-config` consumers.
 5. Inventory all Tailwind config, theme tokens, and styling config duplication across apps and packages.
 6. Inventory all `packages/ui` exports or assumptions tied specifically to the Next.js runtime.
-7. Inventory all DB write/query paths in the API layer that must move from Supabase client semantics to Drizzle.
-8. Record the results in the migration matrix artifact.
-9. Record route, auth, and DB findings in their dedicated artifacts.
-10. Update the dependency, risk, and decision artifacts as findings narrow the solution space.
+7. Inventory custom scripts, shell wrappers, and duplicated task entrypoints that can disappear once the new tooling/package boundaries are in place.
+8. Inventory generated build/test/runtime folders and reports that should be ignored repo-wide before and after TanStack Start lands.
+9. Inventory all DB write/query paths in the API layer that must move from Supabase client semantics to Drizzle.
+10. Record the results in the migration matrix artifact.
+11. Record route, auth, and DB findings in their dedicated artifacts.
+12. Update the dependency, risk, and decision artifacts as findings narrow the solution space.
 
 Exit criteria:
 
@@ -94,7 +97,8 @@ Goal: keep tRPC as the shared API contract while moving it off direct Supabase A
 3. Identify procedures that can stay unchanged versus procedures that must be rewritten for Drizzle or Better Auth.
 4. Define how web and mobile clients consume the package during and after the rename.
 5. Define the retirement plan for router-owned auth behavior once Better Auth is live.
-6. Update the migration matrix with final API package ownership and bridge decisions.
+6. Define the retirement plan that fully empties and removes the temporary `@repo/trpc` bridge once `packages/api` owns all shared tRPC responsibilities.
+7. Update the migration matrix with final API package ownership and bridge decisions.
 
 Exit criteria:
 
@@ -130,13 +134,14 @@ Goal: align shared UI, Tailwind, and TypeScript config with the new architecture
 1. Move shared TS config to `tooling/typescript`.
 2. Create `tooling/tailwind` for shared theme/config ownership.
 3. Remove assumptions that web config must live under `packages/`.
-4. Keep Biome as the only shared lint/format toolchain.
-5. Keep `packages/core` intact and ensure no DB/auth runtime concerns leak into it.
-6. Define the changes required for `packages/ui` to support TanStack Start web cleanly.
-7. Define the migration steps for all packages/apps that currently consume `packages/typescript-config`.
-8. Update the migration matrix with final tooling ownership decisions.
-9. Verify the matrices still reflect final shared package boundaries.
-10. Confirm dependency order still matches the final plan.
+4. Reduce package-level scripts to essential entrypoints only, with routine flows running through Turbo or direct tool commands.
+5. Keep Biome as the only shared lint/format toolchain.
+6. Keep `packages/core` intact and ensure no DB/auth runtime concerns leak into it.
+7. Define the changes required for `packages/ui` to support TanStack Start web cleanly.
+8. Define the migration steps for all packages/apps that currently consume `packages/typescript-config`.
+9. Update the migration matrix with final tooling ownership decisions.
+10. Verify the matrices still reflect final shared package boundaries.
+11. Confirm dependency order still matches the final plan.
 
 Exit criteria:
 
@@ -153,9 +158,10 @@ Goal: define the final completion steps so the repo has one clear target archite
 3. Define the retirement criteria for Next.js web code.
 4. Define the retirement criteria for Supabase-Auth-first router logic.
 5. Define the retirement criteria for Supabase-generated relational type ownership.
-6. Define the final validation gates required before the architecture is considered complete.
-7. Create the final cutover checklist artifact.
-8. Resolve or explicitly defer every remaining item in the decision log.
+6. Define the final repo-hygiene rules for generated outputs, reports, caches, and other machine-local artifacts.
+7. Define the final validation gates required before the architecture is considered complete.
+8. Create the final cutover checklist artifact.
+9. Resolve or explicitly defer every remaining item in the decision log.
 
 Exit criteria:
 

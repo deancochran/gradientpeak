@@ -10,7 +10,8 @@ This matrix maps each major current package or app area to its target owner, mig
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `apps/web` | Next.js web app | `apps/web` | TanStack Start web app | routes, providers, SSR helpers, auth bootstrap, `/api/trpc`, `/api/auth` | product UI/features | temporary coexistence with legacy Next code if needed | remove Next runtime code and Next-only helpers |
 | `apps/mobile` | Expo app | `apps/mobile` | Expo app | auth bootstrap integration, API client imports, any shared package import changes | Expo Router app structure | compatibility imports if API/auth package names change | remove old auth/bootstrap assumptions tied to Supabase Auth |
-| `packages/trpc` | shared tRPC package | `packages/api` or bridged `packages/trpc` | shared API package | context, auth integration, DB integration, package name | router composition concepts, procedure shapes where still valid | `packages/api` now owns shared context while `@repo/trpc` remains the compatibility surface for existing router/client imports | retire old package name if final name becomes `packages/api` |
+| `packages/trpc` | shared tRPC package | `packages/api` with temporary `packages/trpc` bridge | shared API package | context, auth integration, DB integration, package name | router composition concepts, procedure shapes where still valid | `packages/api` now owns shared context while `@repo/trpc` remains the compatibility surface for existing router/client imports | retire the compatibility package after all consumers move to `packages/api` |
+| repo manifests + ignore rules | mixed script wrappers and partial generated-output coverage | lean manifests plus repo-wide generated-artifact hygiene | workflow/task surface | custom wrappers that no longer add value, missing ignore rules for generated outputs | essential task names and intentional checked-in manifests | short-lived bridges only where tools require explicit entrypoints | remove obsolete wrapper scripts and keep generated outputs out of git |
 | `packages/supabase` | Supabase CLI, SQL migrations, generated types, generated schemas, seeds | retained infra package or `infra/supabase` | Supabase platform-only package | relational schema ownership, app-facing types, app-facing validation, DB seed ownership | CLI config, storage, functions, local stack config | temporary parallel existence while Drizzle becomes authoritative | retire relational source-of-truth role |
 | `packages/typescript-config` | shared TS config | `tooling/typescript` | shared TS config tooling | config files, package/app references, docs | config content patterns that still fit | re-export or copied config during transition if needed | retire package-based TS config location |
 | `packages/ui` | shared cross-platform UI | `packages/ui` | shared cross-platform UI | web runtime assumptions, Tailwind/tooling references, any Next-only assumptions | cross-platform component ownership | temporary compatibility wrappers if web setup changes | retire Next-specific assumptions |
@@ -47,7 +48,7 @@ This matrix maps each major current package or app area to its target owner, mig
 
 | Category | Current owner/path | Future owner/path | Action | Notes |
 | --- | --- | --- | --- | --- |
-| Package name | `packages/trpc` | `packages/api` preferred | decide then migrate | compatibility bridge may be needed |
+| Package name | `packages/trpc` | `packages/api` | migrate then retire bridge | no long-term dual package ownership |
 | Context | Supabase-client session lookup | `packages/api` normalized auth session + optional DB context | in progress | initial bridge consumes `packages/auth` session contracts first, with temporary Supabase session fallback for unchanged callers |
 | Auth router behavior | `trpc.auth` wraps Supabase Auth | auth behavior moves to `packages/auth` where appropriate | reduce/refactor | some auth-adjacent procedures may remain if still API-oriented |
 | Domain routers | current router files | same package boundary | keep/adapt | update DB access layer from Supabase client to Drizzle |
@@ -116,11 +117,19 @@ This matrix maps each major current package or app area to its target owner, mig
 | Shared Tailwind/theme config | duplicated or app-local setup | root tooling package | centralize | supports web and shared UI styling needs |
 | Theme tokens | current mixed ownership | shared tooling ownership | centralize | align with `packages/ui` consumption |
 
+### Repo manifests + ignore rules
+
+| Category | Current role | Future role | Action | Notes |
+| --- | --- | --- | --- | --- |
+| Root/app/package scripts | mixed direct commands plus convenience wrappers | lean task entrypoints only | reduce | prefer Turbo tasks and tool-native commands where possible |
+| Generated output ignore rules | partial coverage focused on current frameworks | repo-wide generated artifact policy | expand | include TanStack Start-era caches, reports, build outputs, and machine-local runtime folders |
+
 ## Temporary Bridge Policy
 
 - `packages/api` should become the steady-state owner first through shared context and package exports, while `packages/trpc` stays as the temporary compatibility package until app imports move.
 - `packages/typescript-config` may temporarily point consumers to `tooling/typescript` during migration, but should not remain the permanent home.
 - `packages/supabase` may temporarily coexist with `packages/db`, but only with an explicit plan to remove relational source-of-truth ownership from it.
+- wrapper scripts should only survive where a tool requires an explicit entrypoint or the repo truly benefits from a stable alias.
 - no permanent dual ownership is allowed for auth or relational schema.
 
 ## Final Retirement Matrix
@@ -132,3 +141,4 @@ This matrix maps each major current package or app area to its target owner, mig
 | Supabase-generated relational type ownership | Drizzle is authoritative and consumers are migrated | retire as primary app contract |
 | `packages/typescript-config` as config home | all consumers use `tooling/typescript` | remove or leave only a short-lived compatibility shim |
 | temporary `packages/trpc` bridge if final name is `packages/api` | all consumers import final API package | remove compatibility bridge |
+| obsolete wrapper scripts and partial ignore rules | tooling/task graph is simplified and generated outputs are covered | remove wrappers and lock repo hygiene rules |

@@ -9,6 +9,7 @@ This checklist defines the final gates required before the replatform can be con
 - [ ] `apps/web` runs on TanStack Start in the final web path
 - [ ] no long-term Next.js runtime code remains in the canonical web app path
 - [ ] the API is exposed through the final tRPC package boundary
+- [ ] `packages/api` is the only long-term tRPC package home and the `@repo/trpc` bridge is removed or empty with a dated retirement step
 - [ ] `packages/auth` is the long-term owner of auth runtime behavior
 - [ ] `packages/db` is the long-term owner of relational schema, migrations, and DB access
 - [ ] `packages/core` remains DB-independent and runtime-agnostic
@@ -16,6 +17,7 @@ This checklist defines the final gates required before the replatform can be con
 - [ ] shared TS config is owned by `tooling/typescript`
 - [ ] shared Tailwind config is owned by `tooling/tailwind`
 - [ ] Biome remains the only repo-wide lint/format toolchain
+- [ ] package manifests stay lean and only keep scripts that provide real entrypoint value
 
 ## Migration Completion Gates
 
@@ -25,6 +27,7 @@ This checklist defines the final gates required before the replatform can be con
 - [ ] all current Supabase client DB query paths in the API layer have a Drizzle migration decision
 - [ ] all `packages/typescript-config` consumers have moved or have an explicit short-term bridge
 - [ ] all Tailwind/theme config locations have moved or have an explicit short-term bridge
+- [ ] all generated build/test/runtime folders and reports have a repo-wide ignore decision
 
 ## Cleanup Gates
 
@@ -33,6 +36,7 @@ This checklist defines the final gates required before the replatform can be con
 - [ ] old Next.js-specific auth/bootstrap helpers are removed
 - [ ] old Supabase-Auth-first router code is removed or intentionally minimized to API-adjacent behavior only
 - [ ] final package import paths are updated across apps and packages
+- [ ] generated test/build/runtime outputs are ignored repo-wide, including TanStack Start-era outputs
 
 ## Validation Gates
 

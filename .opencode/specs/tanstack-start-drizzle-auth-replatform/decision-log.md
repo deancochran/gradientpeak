@@ -22,9 +22,12 @@ Record the key architecture choices that must be settled for the replatform.
 | Shared domain package | keep `packages/core` |
 | Shared UI package | keep `packages/ui` |
 | Shared tooling | `tooling/typescript` and `tooling/tailwind` |
+| Tailwind tooling scope | `tooling/tailwind` owns shared Tailwind presets plus theme tokens used by web and shared UI |
 | Lint/format | Biome only |
+| Package manifest philosophy | keep `package.json` files lean; prefer Turbo tasks and tool-native defaults over wrapper scripts except where explicit entrypoints are required |
 | Exclusions | no ESLint package, no Prettier package, no long-term Next.js target |
 | API package final name | steady-state `packages/api`, with temporary `@repo/trpc` bridge during migration |
+| API package convergence | `packages/api` is the only long-term tRPC package home; `@repo/trpc` is compatibility-only and should be emptied then removed |
 | Supabase package final home during migration | keep `packages/supabase` in place for now as infra-only |
 | Drizzle migration strategy | create a fresh Drizzle baseline from the current schema; do not preserve legacy Supabase SQL as the executable migration chain |
 | DB validation strategy | expose Drizzle-derived Zod schemas from `packages/db` |
@@ -37,6 +40,7 @@ Record the key architecture choices that must be settled for the replatform.
 | Initial mobile auth scaffold | mobile request auth now prefers a SecureStore-backed cookie header cache, auth-user refresh no longer requires a Supabase access token, and Supabase callback token parsing is isolated as a temporary bridge helper |
 | Mobile verification UX | use Better Auth link-based verification on Expo, with app-side resend plus session refresh/polling instead of a Supabase OTP entry screen |
 | Initial API migration boundary | create `packages/api` now for shared context and boundary ownership, keep `@repo/trpc` as the compatibility package while routers and clients migrate incrementally |
+| Generated artifact policy | ignore generated test, report, cache, build, and machine-local runtime outputs repo-wide; only keep intentional source config and reviewable fixtures/manifests tracked |
 
 ## Completion Condition
 

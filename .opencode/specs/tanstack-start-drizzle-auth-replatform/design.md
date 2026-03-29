@@ -7,14 +7,15 @@ Define the target architecture for moving GradientPeak toward the `t3-oss/create
 Target steady state:
 
 - `apps/web` uses TanStack Start, not Next.js.
-- the shared API remains tRPC-first.
+- the shared API remains tRPC-first and converges on `packages/api` as its only long-term package home.
 - `packages/db` owns Drizzle ORM, relational schema, and migrations.
 - Supabase remains the backing Postgres and platform provider.
 - `packages/auth` owns Better Auth.
 - `packages/core` remains the home for pure domain logic.
 - `packages/ui` remains the shared UI package.
-- shared config lives in `tooling/typescript` and `tooling/tailwind`.
+- shared config and theme tokens live in `tooling/typescript` and `tooling/tailwind`.
 - Biome remains the only repo-wide lint/format toolchain.
+- package manifests stay lean by preferring Turbo tasks and tool-native defaults over wrapper scripts wherever possible.
 
 ## Explicit Target Choices
 
@@ -25,7 +26,7 @@ Target steady state:
 - Auth framework: Better Auth in `packages/auth`
 - Shared domain: keep `packages/core`
 - Shared UI: keep `packages/ui`
-- Shared tooling: `tooling/typescript` and `tooling/tailwind`
+- Shared tooling: `tooling/typescript` and `tooling/tailwind` for config plus shared Tailwind themes/tokens
 - Lint/format: Biome only
 
 ## Explicit Non-Goals
@@ -35,6 +36,7 @@ Target steady state:
 - no shared Prettier package
 - no long-term Supabase Auth primary role
 - no long-term Supabase-generated relational types as the main app data contract
+- no long-term split where both `packages/api` and `packages/trpc` act as real API homes
 - no wholesale copy of the upstream T3 Turbo template
 
 ## Why This Spec Exists
@@ -68,6 +70,7 @@ Target steady state:
 - shared TS config lives in `packages/typescript-config`
 - shared Tailwind tooling is not yet centralized in `tooling/`
 - Biome is already the formatter/linter
+- package manifests still include convenience scripts and shell wrappers that should shrink during the replatform
 
 ### Shared Packages
 
@@ -94,6 +97,15 @@ infra/ or packages/
 ```
 
 ## Architecture Differences To Resolve
+
+### Repo hygiene and manifests
+
+- Current: generated test/build/runtime outputs are handled inconsistently across tools and future TanStack Start outputs are not yet part of the target architecture definition.
+- Current: root and package `package.json` files still carry convenience scripts that can hide the real task graph.
+- Target: generated test/build/runtime outputs stay out of git by default, including framework caches, reports, and machine-local artifacts.
+- Target: `package.json` files stay minimal, with scripts kept only where a tool requires an explicit entrypoint or a repo-wide alias is materially useful.
+- Target: Turbo task names and shared tooling packages carry the routine workflow instead of bespoke shell wrappers where possible.
+- Must migrate: repo-wide ignore coverage for TanStack Start and other generated outputs, a script inventory for root/app/package manifests, and wrapper-script removal where direct Turbo/tool commands are sufficient.
 
 ### Auth
 
