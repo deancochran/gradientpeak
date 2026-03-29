@@ -1,13 +1,38 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Session, User } from "@supabase/supabase-js";
+import type { AuthSession, AuthUser } from "@repo/auth/session";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { getAuthClient } from "@/lib/auth/auth-client";
+import { clearCachedAuthCookieHeader } from "@/lib/auth/secure-session-cache";
 import { initializeServerConfig } from "@/lib/server-config";
-import { supabase } from "@/lib/supabase/client";
+
+function normalizeAuthSession(data: any): AuthSession | null {
+  if (!data?.user?.id || !data?.user?.email) {
+    return null;
+  }
+
+  return {
+    sessionId: String(
+      data.session?.id ?? `${data.user.id}:${data.session?.expiresAt ?? "session"}`,
+    ),
+    user: {
+      id: String(data.user.id),
+      email: String(data.user.email),
+      emailVerified: Boolean(data.user.emailVerified),
+    },
+    transport: "cookie",
+    expiresAt:
+      typeof data.session?.expiresAt === "string"
+        ? data.session.expiresAt
+        : data.session?.expiresAt instanceof Date
+          ? data.session.expiresAt.toISOString()
+          : undefined,
+  };
+}
 
 export interface AuthState {
-  session: Session | null;
-  user: User | null;
+  session: AuthSession | null;
+  user: AuthUser | null;
   profile: any | null; // Profile data from tRPC (synced from useAuth hook)
   userStatus: "verified" | "unverified" | null;
   onboardingStatus: boolean | null;
@@ -16,8 +41,8 @@ export interface AuthState {
   error: Error | null;
   _listenerRegistered: boolean; // Internal flag, not persisted
 
-  setSession: (session: Session | null) => void;
-  setUser: (user: User | null) => void;
+  setSession: (session: AuthSession | null) => void;
+  setUser: (user: AuthUser | null) => void;
   setProfile: (profile: any | null) => void;
   setUserStatus: (status: "verified" | "unverified" | null) => void;
   setOnboardingStatus: (status: boolean | null) => void;
@@ -26,14 +51,15 @@ export interface AuthState {
   setError: (error: Error | null) => void;
 
   initialize: () => Promise<void>;
+  refreshSession: () => Promise<void>;
   clearSession: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      session: null as Session | null,
-      user: null as User | null,
+      session: null as AuthSession | null,
+      user: null as AuthUser | null,
       profile: null as any | null,
       userStatus: null as "verified" | "unverified" | null,
       onboardingStatus: null as boolean | null,
@@ -42,7 +68,7 @@ export const useAuthStore = create<AuthState>()(
       error: null as Error | null,
       _listenerRegistered: false as boolean,
 
-      setSession: (session: Session | null) => {
+      setSession: (session: AuthSession | null) => {
         console.log("🔄 Auth Store: setSession called", {
           hasSession: !!session,
           hasUser: !!session?.user,
@@ -65,13 +91,25 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      setUser: (user: User | null) => set({ user }),
+      setUser: (user: AuthUser | null) => set({ user }),
       setProfile: (profile: any | null) => set({ profile }),
       setUserStatus: (userStatus) => set({ userStatus }),
       setOnboardingStatus: (onboardingStatus) => set({ onboardingStatus }),
       setLoading: (loading: boolean) => set({ loading }),
       setReady: (ready: boolean) => set({ ready }),
       setError: (error: Error | null) => set({ error }),
+
+      refreshSession: async () => {
+        const authClient = getAuthClient();
+        const { data, error } = await authClient.getSession();
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        const session = normalizeAuthSession(data);
+        get().setSession(session);
+      },
 
       initialize: async () => {
         console.log("🔄 Initializing auth store...");
@@ -86,11 +124,10 @@ export const useAuthStore = create<AuthState>()(
           await initializeServerConfig();
           set({ loading: true, error: null });
 
-          console.log("🔄 Calling supabase.auth.getSession()");
-          const {
-            data: { session },
-            error,
-          } = await supabase.auth.getSession();
+          console.log("🔄 Calling authClient.getSession()");
+          const authClient = getAuthClient();
+          const { data, error } = await authClient.getSession();
+          const session = normalizeAuthSession(data);
 
           console.log("✅ Got session response:", {
             session: !!session,
@@ -98,32 +135,10 @@ export const useAuthStore = create<AuthState>()(
           });
 
           if (error) {
-            // Check for invalid refresh token error
-            // Supabase returns this when the refresh token is expired or invalid
-            const isRefreshTokenError =
-              error.message &&
-              (error.message.includes("Invalid Refresh Token") ||
-                error.message.includes("refresh_token_not_found"));
-
-            if (isRefreshTokenError) {
-              console.warn("⚠️ Invalid refresh token, clearing session to force re-login");
-              // Clear session and return ready state without error
-              set({
-                session: null,
-                user: null,
-                loading: false,
-                ready: true,
-                error: null,
-              });
-              // Also make sure to sign out from supabase to clean up
-              await supabase.auth.signOut().catch(() => {});
-              return;
-            }
-
             console.error("❌ Auth Store init error:", error);
             // Still mark as ready even on error so the app doesn't hang
             set({
-              error,
+              error: new Error(error.message),
               loading: false,
               ready: true,
               session: null,
@@ -135,20 +150,7 @@ export const useAuthStore = create<AuthState>()(
           console.log("🔄 Setting session", { hasSession: !!session });
           get().setSession(session);
 
-          // Set up auth listener once per store instance
-          if (!currentState._listenerRegistered) {
-            console.log("🔄 Setting up auth state change listener");
-
-            supabase.auth.onAuthStateChange((event, session) => {
-              console.log("🔄 Auth state changed:", event, !!session);
-              const state = get();
-              state.setSession(session);
-            });
-
-            set({ _listenerRegistered: true });
-          } else {
-            console.log("✅ Auth listener already set up, skipping");
-          }
+          set({ _listenerRegistered: true });
 
           console.log("✅ Auth store session loaded, finishing initialization...");
         } catch (err) {
@@ -171,8 +173,9 @@ export const useAuthStore = create<AuthState>()(
       clearSession: async () => {
         console.log("🔄 Clearing session...");
         try {
-          // Sign out from Supabase
-          await supabase.auth.signOut();
+          await clearCachedAuthCookieHeader();
+
+          await getAuthClient().signOut();
 
           // Clear local state
           set({
@@ -188,6 +191,7 @@ export const useAuthStore = create<AuthState>()(
           console.log("✅ Session cleared successfully");
         } catch (error) {
           console.error("❌ Error clearing session:", error);
+          await clearCachedAuthCookieHeader();
           // Force clear local state even if Supabase signOut fails
           set({
             session: null,

@@ -1,39 +1,25 @@
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
+import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { z } from "zod";
+import { getAuthClient } from "@/lib/auth/auth-client";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { supabase } from "@/lib/supabase/client";
-
-const verifySchema = z.object({
-  token: z.string().length(6, "Code must be 6 digits").regex(/^\d+$/, "Must be numbers only"),
-});
-
-type VerifyFields = z.infer<typeof verifySchema>;
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function VerifyScreen() {
   const router = useRouter();
   const { email } = useLocalSearchParams<{ email: string }>();
   const { isEmailVerified } = useAuth();
-  const [isVerifying, setIsVerifying] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
 
-  const form = useZodForm({
-    schema: verifySchema,
-    defaultValues: {
-      token: "",
-    },
-  });
-
-  // Auto-redirect when email becomes verified (via OTP or external link)
+  // Auto-redirect when email becomes verified (via email link or background refresh)
   useEffect(() => {
     if (isEmailVerified) {
       console.log("✅ Email verified, redirecting to app...");
@@ -44,50 +30,51 @@ export default function VerifyScreen() {
   // Auto-Polling for external verification (e.g. desktop link click)
   useEffect(() => {
     const interval = setInterval(async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        const authClient = getAuthClient();
+        const { data, error } = await authClient.getSession();
 
-      if (user && user.email_confirmed_at) {
-        console.log("✅ Email verified via external link, refreshing session...");
-        // Refresh session to update the auth store
-        // This will trigger the useEffect above via isEmailVerified
-        await supabase.auth.refreshSession();
+        if (!error && data?.user?.emailVerified) {
+          console.log("✅ Email verified via external link, refreshing session...");
+          await useAuthStore.getState().refreshSession();
+        }
+      } catch (error) {
+        console.warn("Failed to refresh verification state", error);
       }
     }, 3000);
 
     return () => clearInterval(interval);
   }, []);
 
-  const onVerify = async (data: VerifyFields) => {
+  const refreshVerificationState = async () => {
     if (!email) {
-      form.setError("root", {
-        message: "Email not found. Please try signing up again.",
-      });
+      setResendMessage("Email not found. Please try signing up again.");
       return;
     }
 
-    setIsVerifying(true);
+    setIsRefreshing(true);
+    setResendMessage(null);
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        email,
-        token: data.token,
-        type: "email",
-      });
+      const authClient = getAuthClient();
+      const { data, error } = await authClient.getSession();
 
       if (error) {
-        console.log("Verify error:", error);
-        form.setError("root", { message: error.message });
+        setResendMessage(error.message || "Unable to refresh your verification status.");
+        return;
+      }
+
+      if (data?.user?.emailVerified) {
+        await useAuthStore.getState().refreshSession();
       } else {
-        console.log("✅ Email verified via OTP");
-        // verifyOtp automatically updates the session with email_confirmed_at
-        // The useEffect above will handle the redirect
+        setResendMessage(
+          "We have not seen a verified session yet. Open the email link, then try again.",
+        );
       }
     } catch (err) {
-      console.log("Unexpected verify error:", err);
-      form.setError("root", { message: "An unexpected error occurred" });
+      console.log("Unexpected verify refresh error:", err);
+      setResendMessage("An unexpected error occurred");
     } finally {
-      setIsVerifying(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -97,27 +84,23 @@ export default function VerifyScreen() {
     setIsResending(true);
     setResendMessage(null);
     try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
+      const authClient = getAuthClient();
+      const { error } = await authClient.sendVerificationEmail({
         email,
+        callbackURL: Linking.createURL("/(external)/verification-success"),
       });
 
       if (error) {
-        setResendMessage(error.message || "Failed to resend code");
+        setResendMessage(error.message || "Failed to resend email");
       } else {
-        setResendMessage("Verification code sent!");
+        setResendMessage("Verification email sent!");
       }
     } catch (err) {
-      setResendMessage("Failed to resend code");
+      setResendMessage("Failed to resend email");
     } finally {
       setIsResending(false);
     }
   };
-
-  const submitForm = useZodFormSubmit({
-    form,
-    onSubmit: onVerify,
-  });
 
   return (
     <KeyboardAvoidingView
@@ -138,41 +121,38 @@ export default function VerifyScreen() {
               </Text>
             </CardTitle>
             <Text variant="muted" className="text-center">
-              Enter the 6-digit code sent to {email || "your email"}
+              Open the verification link sent to {email || "your email"}, then come back here.
             </Text>
           </CardHeader>
 
           <CardContent className="gap-6">
-            <Form {...form}>
-              <View className="gap-4">
-                <FormTextField
-                  control={form.control}
-                  keyboardType="number-pad"
-                  label="Verification Code"
-                  name="token"
-                  placeholder="123456"
-                  testId="verification-code-input"
-                />
+            <View className="gap-4">
+              <Text variant="muted" className="text-center text-sm">
+                You can confirm the link from this device or another one. We&apos;ll refresh your
+                account as soon as the verification completes.
+              </Text>
 
-                {form.formState.errors.root && (
-                  <Alert icon={AlertCircle} variant="destructive">
-                    <AlertDescription className="text-center">
-                      {form.formState.errors.root.message}
-                    </AlertDescription>
-                  </Alert>
-                )}
+              <Button
+                onPress={refreshVerificationState}
+                disabled={isRefreshing}
+                className="w-full"
+                size="lg"
+                testID="verify-button"
+              >
+                <Text>{isRefreshing ? "Checking..." : "I&apos;ve Verified My Email"}</Text>
+              </Button>
 
-                <Button
-                  onPress={submitForm.handleSubmit}
-                  disabled={isVerifying}
-                  className="w-full"
-                  size="lg"
-                  testID="verify-button"
+              {resendMessage && (
+                <Alert
+                  icon={AlertCircle}
+                  variant={resendMessage.includes("sent") ? "default" : "destructive"}
                 >
-                  <Text>{isVerifying ? "Verifying..." : "Verify"}</Text>
-                </Button>
-              </View>
-            </Form>
+                  <AlertDescription className="text-center" testID="resend-message">
+                    {resendMessage}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </View>
 
             <View className="gap-2 pt-2">
               <Button
@@ -182,18 +162,8 @@ export default function VerifyScreen() {
                 className="w-full"
                 testID="resend-code-button"
               >
-                <Text>{isResending ? "Sending..." : "Resend Code"}</Text>
+                <Text>{isResending ? "Sending..." : "Resend Email"}</Text>
               </Button>
-              {resendMessage && (
-                <Text
-                  className={`text-center text-xs ${
-                    resendMessage.includes("sent") ? "text-success" : "text-destructive"
-                  }`}
-                  testID="resend-message"
-                >
-                  {resendMessage}
-                </Text>
-              )}
             </View>
           </CardContent>
         </Card>

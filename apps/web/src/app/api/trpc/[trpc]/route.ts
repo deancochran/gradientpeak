@@ -1,8 +1,9 @@
 import { Database } from "@repo/supabase";
-import { appRouter, createTRPCContext } from "@repo/trpc/server";
+import { appRouter } from "@repo/trpc/server";
 import { createServerClient } from "@supabase/ssr";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { cookies, headers } from "next/headers";
+import { createWebTrpcContext } from "@/lib/trpc/context";
 
 export const GET = handler;
 export const POST = handler;
@@ -46,10 +47,6 @@ async function handler(request: Request) {
     endpoint: "/api/trpc",
     req: request,
     router: appRouter,
-    createContext: () =>
-      createTRPCContext({
-        headers: headersList,
-        supabase,
-      }),
+    createContext: () => createWebTrpcContext({ headers: headersList, supabase }),
   });
 }

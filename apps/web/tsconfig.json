@@ -14,6 +14,13 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
+      "@repo/api": ["../../packages/api/index.ts"],
+      "@repo/api/*": ["../../packages/api/src/*"],
+      "@repo/auth": ["../../packages/auth/index.ts"],
+      "@repo/auth/account-deletion": ["../../packages/auth/src/contracts/account-deletion.ts"],
+      "@repo/auth/callbacks": ["../../packages/auth/src/contracts/callbacks.ts"],
+      "@repo/auth/env": ["../../packages/auth/src/runtime/env.ts"],
+      "@repo/auth/session": ["../../packages/auth/src/contracts/session.ts"],
       "@repo/core": ["../../packages/core/index.ts"]
     },
     "incremental": true,

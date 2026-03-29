@@ -6,9 +6,9 @@ import {
 } from "@repo/trpc/react";
 import { loggerLink } from "@trpc/client";
 import { Platform } from "react-native";
+import { getAuthHeaders } from "@/lib/auth/request-auth";
 import { getMobileDeviceKind, logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getServerConfig } from "@/lib/server-config";
-import { getAuthHeaders } from "@/lib/supabase/auth-headers";
 
 export { trpc };
 
@@ -84,8 +84,8 @@ export const getApiUrl = () => {
   return url;
 };
 
-function createMobileHeaders() {
-  const authHeaders = getAuthHeaders();
+async function createMobileHeaders() {
+  const authHeaders = await getAuthHeaders();
   authHeaders.set("x-client-type", "mobile");
   authHeaders.set("x-trpc-source", "react-native");
   authHeaders.set("x-mobile-platform", Platform.OS);

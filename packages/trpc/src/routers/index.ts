@@ -1,7 +1,6 @@
 // packages/trpc/src/routers/index.ts
 import { createTRPCRouter } from "../trpc";
 import {
-  authRouter,
   onboardingRouter,
   profileMetricsRouter,
   profileSettingsRouter,
@@ -20,7 +19,6 @@ import {
 } from "./social/index";
 
 export const appRouter = createTRPCRouter({
-  auth: authRouter,
   coaching: coachingRouter,
   profiles: profilesRouter,
   analytics: analyticsRouter,

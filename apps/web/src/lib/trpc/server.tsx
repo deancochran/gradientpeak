@@ -1,10 +1,11 @@
-import { type AppRouter, appRouter, createQueryClient, createTRPCContext } from "@repo/trpc/server";
+import { type AppRouter, appRouter, createQueryClient } from "@repo/trpc/server";
 import { type DehydratedState, dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import type { TRPCQueryOptions } from "@trpc/tanstack-react-query";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { headers } from "next/headers";
 import { cache } from "react";
 import { createClient } from "../supabase/server";
+import { createWebTrpcContext } from "./context";
 
 /**
  * This wraps the `createTRPCContext` helper and provides the required context for the tRPC API when
@@ -14,10 +15,7 @@ const createContext = cache(async () => {
   const heads = new Headers(await headers());
   heads.set("x-trpc-source", "rsc");
   const supabase = await createClient();
-  return createTRPCContext({
-    headers: heads,
-    supabase,
-  });
+  return createWebTrpcContext({ headers: heads, supabase });
 });
 
 const getQueryClient = cache(createQueryClient);

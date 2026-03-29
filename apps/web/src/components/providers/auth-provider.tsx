@@ -1,36 +1,26 @@
 "use client";
 
-import { type User } from "@supabase/supabase-js";
+import type { AuthUser } from "@repo/auth/session";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { authClient } from "@/lib/auth-client";
 
 type AuthState = {
-  user: User | null;
+  user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  refreshSession: () => void;
+  refreshSession: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState>({
   user: null,
   isLoading: true,
   isAuthenticated: false,
-  refreshSession: () => {},
+  refreshSession: async () => {},
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const {
-    data: session,
-    isLoading,
-    error,
-    refetch,
-  } = trpc.auth.getSession.useQuery(undefined, {
-    retry: false,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-  });
+  const { data: session, isPending: isLoading, error, refetch } = authClient.useSession();
 
   const user = session?.user ?? null;
   const isAuthenticated = !!user;
@@ -43,8 +33,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [isLoading, error]);
 
-  const refreshSession = () => {
-    void refetch();
+  const refreshSession = async () => {
+    await refetch();
   };
 
   return (
@@ -64,7 +54,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useSession must be used within a AuthProvider");
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };

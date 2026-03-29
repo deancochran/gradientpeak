@@ -6,11 +6,13 @@ import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
+import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Clock, Edit3, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { getAuthClient } from "@/lib/auth/auth-client";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -68,66 +70,10 @@ function UserDetailScreen() {
 
   const [isEmailUpdateVisible, setIsEmailUpdateVisible] = useState(false);
   const [newEmail, setNewEmail] = useState("");
-  const [emailPassword, setEmailPassword] = useState("");
   const [isPasswordChangeVisible, setIsPasswordChangeVisible] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  const signOutMutation = trpc.auth.signOut.useMutation({
-    onSuccess: async () => {
-      await authStore.clearSession();
-      utils.profiles.invalidate();
-      router.replace("/(external)/sign-in" as any);
-    },
-    onError: (mutationError) => {
-      Alert.alert("Error", mutationError.message || "Failed to sign out");
-    },
-  });
-
-  const deleteAccountMutation = trpc.auth.deleteAccount.useMutation({
-    onSuccess: async () => {
-      await authStore.clearSession();
-      utils.profiles.invalidate();
-      router.replace("/(external)/sign-in" as any);
-
-      setTimeout(() => {
-        Alert.alert("Account Deleted", "Your account has been successfully deleted.");
-      }, 500);
-    },
-    onError: (mutationError) => {
-      Alert.alert(
-        "Error",
-        mutationError.message || "Failed to delete account. Please contact support.",
-      );
-    },
-  });
-
-  const updateEmailMutation = trpc.auth.updateEmail.useMutation({
-    onSuccess: (data) => {
-      void utils.auth.getUser.invalidate();
-      Alert.alert("Verification Sent", data.message);
-      setIsEmailUpdateVisible(false);
-      setNewEmail("");
-      setEmailPassword("");
-    },
-    onError: (mutationError) => {
-      Alert.alert("Error", mutationError.message || "Failed to update email");
-    },
-  });
-
-  const updatePasswordMutation = trpc.auth.updatePassword.useMutation({
-    onSuccess: () => {
-      Alert.alert("Password Updated", "Your password has been successfully changed.");
-      setIsPasswordChangeVisible(false);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-    },
-    onError: (mutationError) => {
-      Alert.alert("Error", mutationError.message || "Failed to update password");
-    },
-  });
 
   const followMutation = trpc.social.followUser.useMutation({
     onSuccess: async () => invalidateRelationshipQueries(utils, [targetUserId, user?.id]),
@@ -154,7 +100,16 @@ function UserDetailScreen() {
       {
         text: "Sign Out",
         style: "destructive",
-        onPress: () => signOutMutation.mutate(),
+        onPress: async () => {
+          const { error } = await getAuthClient().signOut();
+          if (error) {
+            Alert.alert("Error", error.message || "Failed to sign out");
+            return;
+          }
+          await authStore.clearSession();
+          utils.profiles.invalidate();
+          router.replace("/(external)/sign-in" as any);
+        },
       },
     ]);
   };
@@ -177,7 +132,22 @@ function UserDetailScreen() {
                 {
                   text: "Yes, Delete My Account",
                   style: "destructive",
-                  onPress: () => deleteAccountMutation.mutate(),
+                  onPress: async () => {
+                    const { error } = await getAuthClient().deleteUser();
+                    if (error) {
+                      Alert.alert(
+                        "Error",
+                        error.message || "Failed to delete account. Please contact support.",
+                      );
+                      return;
+                    }
+                    await authStore.clearSession();
+                    utils.profiles.invalidate();
+                    router.replace("/(external)/sign-in" as any);
+                    setTimeout(() => {
+                      Alert.alert("Account Deleted", "Your account has been successfully deleted.");
+                    }, 500);
+                  },
                 },
               ],
             );
@@ -192,17 +162,24 @@ function UserDetailScreen() {
       Alert.alert("Error", "Please enter a new email address");
       return;
     }
-    if (!emailPassword.trim()) {
-      Alert.alert("Error", "Please enter your password to confirm");
-      return;
-    }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(newEmail)) {
       Alert.alert("Error", "Please enter a valid email address");
       return;
     }
 
-    updateEmailMutation.mutate({ newEmail, password: emailPassword });
+    void getAuthClient()
+      .changeEmail({ newEmail, callbackURL: Linking.createURL("/") })
+      .then(({ error }) => {
+        if (error) {
+          Alert.alert("Error", error.message || "Failed to update email");
+          return;
+        }
+
+        Alert.alert("Verification Sent", "Check your new email to finish the change.");
+        setIsEmailUpdateVisible(false);
+        setNewEmail("");
+      });
   };
 
   const handleUpdatePassword = () => {
@@ -227,7 +204,20 @@ function UserDetailScreen() {
       return;
     }
 
-    updatePasswordMutation.mutate({ currentPassword, newPassword });
+    void getAuthClient()
+      .changePassword({ currentPassword, newPassword })
+      .then(({ error }) => {
+        if (error) {
+          Alert.alert("Error", error.message || "Failed to update password");
+          return;
+        }
+
+        Alert.alert("Password Updated", "Your password has been successfully changed.");
+        setIsPasswordChangeVisible(false);
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      });
   };
 
   if (!targetUserId) {
@@ -560,8 +550,8 @@ function UserDetailScreen() {
               <View className="bg-card p-4 rounded-lg border border-border mb-4">
                 <Text className="text-sm font-medium mb-3">Update Email Address</Text>
                 <Text className="text-xs text-muted-foreground mb-3">
-                  You&apos;ll need to verify both your current and new email addresses to complete
-                  this change.
+                  We&apos;ll send a confirmation link to your new email address. Open it on any
+                  device to finish the change.
                 </Text>
                 <Input
                   value={newEmail}
@@ -572,23 +562,8 @@ function UserDetailScreen() {
                   className="mb-3"
                   testID="account-email-input"
                 />
-                <Input
-                  value={emailPassword}
-                  onChangeText={setEmailPassword}
-                  placeholder="Enter your password to confirm"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  className="mb-3"
-                  testID="account-email-password-input"
-                />
-                <Button
-                  onPress={handleUpdateEmail}
-                  disabled={updateEmailMutation.isPending}
-                  testID="account-email-submit-button"
-                >
-                  <Text>
-                    {updateEmailMutation.isPending ? "Sending..." : "Send Verification Emails"}
-                  </Text>
+                <Button onPress={handleUpdateEmail} testID="account-email-submit-button">
+                  <Text>Send Verification Email</Text>
                 </Button>
               </View>
             )}
@@ -633,14 +608,8 @@ function UserDetailScreen() {
                   className="mb-3"
                   testID="account-confirm-password-input"
                 />
-                <Button
-                  onPress={handleUpdatePassword}
-                  disabled={updatePasswordMutation.isPending}
-                  testID="account-password-submit-button"
-                >
-                  <Text>
-                    {updatePasswordMutation.isPending ? "Updating..." : "Update Password"}
-                  </Text>
+                <Button onPress={handleUpdatePassword} testID="account-password-submit-button">
+                  <Text>Update Password</Text>
                 </Button>
               </View>
             )}
@@ -686,10 +655,9 @@ function UserDetailScreen() {
               type="button"
               label="Sign Out"
               description="Sign out of your account"
-              buttonLabel={signOutMutation.isPending ? "Signing out..." : "Sign Out"}
+              buttonLabel="Sign Out"
               variant="destructive"
               onPress={handleSignOut}
-              disabled={signOutMutation.isPending}
               testID="sign-out"
             />
 
@@ -697,10 +665,9 @@ function UserDetailScreen() {
               type="button"
               label="Delete Account"
               description="Permanently delete your account and all data"
-              buttonLabel={deleteAccountMutation.isPending ? "Deleting..." : "Delete"}
+              buttonLabel="Delete"
               variant="destructive"
               onPress={handleDeleteAccount}
-              disabled={deleteAccountMutation.isPending}
               testID="delete-account"
             />
           </SettingsGroup>

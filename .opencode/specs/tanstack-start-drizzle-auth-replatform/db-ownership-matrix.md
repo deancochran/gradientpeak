@@ -34,9 +34,15 @@ Map current Supabase-owned relational concerns to their future Drizzle or infra 
 
 ## Decisions Still Required
 
-- how to convert or supersede existing SQL migration history
 - whether any generated Supabase types remain needed for non-relational/provider-specific areas
 - where DB-facing validation belongs when logic overlaps with `packages/core`
+
+## Locked Constraints
+
+- `packages/db` becomes the single relational source of truth through Drizzle.
+- Existing Supabase SQL history is not preserved as the executable migration chain; Drizzle starts from a fresh baseline representing the current schema.
+- `packages/db` should expose Drizzle-derived Zod schemas to preserve the current generated-schema developer experience.
+- `packages/supabase` stays in place during migration, but only for platform and infra concerns.
 
 ## Completion Condition For This Artifact
 

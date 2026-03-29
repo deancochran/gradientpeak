@@ -9,8 +9,8 @@ import { AlertCircle } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
+import { getAuthClient } from "@/lib/auth/auth-client";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { supabase } from "@/lib/supabase/client";
 
 const resetPasswordSchema = z
   .object({
@@ -30,9 +30,9 @@ type ResetPasswordFields = z.infer<typeof resetPasswordSchema>;
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
-  const { access_token, refresh_token } = useLocalSearchParams();
+  const params = useLocalSearchParams();
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionSet, setSessionSet] = useState(false);
+  const resetToken = typeof params.token === "string" ? params.token : null;
 
   const form = useZodForm({
     schema: resetPasswordSchema,
@@ -43,63 +43,12 @@ export default function ResetPasswordScreen() {
   });
 
   useEffect(() => {
-    // Set the session from the deep link tokens
-    const setSessionFromTokens = async () => {
-      console.log("🔗 Password reset callback received:", {
-        hasAccessToken: !!access_token,
-        hasRefreshToken: !!refresh_token,
-      });
-
-      if (access_token && refresh_token) {
-        try {
-          logMobileAction("auth.resetPasswordCallback", "attempt", {
-            hasAccessToken: true,
-            hasRefreshToken: true,
-          });
-          console.log("🔑 Setting session from reset password tokens...");
-          const { error } = await supabase.auth.setSession({
-            access_token: access_token as string,
-            refresh_token: refresh_token as string,
-          });
-
-          if (error) {
-            logMobileAction("auth.resetPasswordCallback", "failure", { error: error.message });
-            console.error("❌ Session error:", error.message);
-            Alert.alert(
-              "Invalid Link",
-              "This password reset link is invalid or has expired. Please request a new one.",
-              [
-                {
-                  text: "OK",
-                  onPress: () => router.replace("/(external)/forgot-password"),
-                },
-              ],
-            );
-            return;
-          }
-
-          console.log("✅ Session set successfully for password reset");
-          logMobileAction("auth.resetPasswordCallback", "success", {});
-          setSessionSet(true);
-        } catch (err) {
-          logMobileAction("auth.resetPasswordCallback", "failure", {
-            error: err instanceof Error ? err.message : String(err),
-          });
-          console.error("💥 Error setting session:", err);
-          Alert.alert("Error", "Something went wrong. Please try again.", [
-            {
-              text: "OK",
-              onPress: () => router.replace("/(external)/forgot-password"),
-            },
-          ]);
-        }
-      } else {
+    const validateToken = async () => {
+      if (!resetToken) {
         logMobileAction("auth.resetPasswordCallback", "failure", {
-          hasAccessToken: !!access_token,
-          hasRefreshToken: !!refresh_token,
           error: "missing_tokens",
         });
-        console.warn("⚠️ No tokens found in reset password callback");
+        console.warn("⚠️ No Better Auth reset token found in reset password callback");
         Alert.alert(
           "Invalid Link",
           "This password reset link is invalid. Please request a new one.",
@@ -113,13 +62,13 @@ export default function ResetPasswordScreen() {
       }
     };
 
-    setSessionFromTokens();
-  }, [access_token, refresh_token, router]);
+    void validateToken();
+  }, [resetToken, router]);
 
   const onUpdatePassword = async (data: ResetPasswordFields) => {
-    if (!sessionSet) {
+    if (!resetToken) {
       form.setError("root", {
-        message: "Session not ready. Please try again.",
+        message: "Reset link is invalid. Please request a new one.",
       });
       return;
     }
@@ -129,8 +78,10 @@ export default function ResetPasswordScreen() {
     try {
       logMobileAction("auth.updatePassword", "attempt", {});
       console.log("🔄 Updating password...");
-      const { error } = await supabase.auth.updateUser({
-        password: data.password,
+      const authClient = getAuthClient();
+      const { error } = await authClient.resetPassword({
+        newPassword: data.password,
+        token: resetToken,
       });
 
       if (error) {
@@ -142,9 +93,6 @@ export default function ResetPasswordScreen() {
 
       console.log("✅ Password updated successfully");
       logMobileAction("auth.updatePassword", "success", {});
-
-      // Force sign-out for security
-      await supabase.auth.signOut();
 
       Alert.alert(
         "Password Updated",
@@ -245,7 +193,7 @@ export default function ResetPasswordScreen() {
               variant="default"
               size="lg"
               onPress={submitForm.handleSubmit}
-              disabled={isLoading || !sessionSet}
+              disabled={isLoading || !resetToken}
               testID="update-password-button"
               className="w-full"
             >

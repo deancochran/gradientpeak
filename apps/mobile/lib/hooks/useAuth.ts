@@ -2,8 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppState } from "react-native";
+import { getAuthClient } from "@/lib/auth/auth-client";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { supabase } from "@/lib/supabase/client";
 import { trpc } from "../trpc";
 
 /**
@@ -24,10 +24,10 @@ export const useAuth = () => {
   // This is more reliable than the RPC for initial email verification
   const isEmailVerified = useMemo(() => {
     if (!user) return false;
-    return !!user.email_confirmed_at;
+    return !!user.emailVerified;
   }, [user]);
 
-  // Source of truth for verification is Supabase's email_confirmed_at.
+  // Source of truth for verification is Better Auth's emailVerified flag.
   const userStatus = useMemo(() => {
     if (!isAuthenticated) return null;
     return isEmailVerified ? ("verified" as const) : ("unverified" as const);
@@ -51,38 +51,17 @@ export const useAuth = () => {
     },
   );
 
-  // Keep auth user data fresh (email, verification status, metadata changes)
-  const authUserQuery = trpc.auth.getUser.useQuery(undefined, {
-    enabled: ready && isAuthenticated && !!session?.access_token,
-    staleTime: 0,
-    refetchOnMount: "always",
-    retry: false,
-  });
-  const { refetch: refetchAuthUser } = authUserQuery;
-
-  useEffect(() => {
-    if (!authUserQuery.data) return;
-
-    if (
-      store.user?.email !== authUserQuery.data.email ||
-      store.user?.email_confirmed_at !== authUserQuery.data.email_confirmed_at
-    ) {
-      store.setUser(authUserQuery.data);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUserQuery.data]);
-
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active" && isAuthenticated) {
-        void refetchAuthUser();
+        void store.refreshSession();
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [isAuthenticated, refetchAuthUser]);
+  }, [isAuthenticated, store]);
 
   // FIX: Sync profile from tRPC to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
@@ -122,8 +101,8 @@ export const useAuth = () => {
   // FIX: Delete account - stable callback
   const deleteAccount = useCallback(async () => {
     try {
-      const { error } = await supabase.rpc("delete_own_account");
-      if (error) throw error;
+      const { error } = await getAuthClient().deleteUser();
+      if (error) throw new Error(error.message);
       await useAuthStore.getState().clearSession();
     } catch (e) {
       console.error("Error deleting account:", e);
@@ -177,8 +156,8 @@ export const useAuth = () => {
     profileLoading: profileQuery.isLoading,
     profileError: profileQuery.error,
     refreshProfile: profileQuery.refetch,
-    authUserLoading: authUserQuery.isLoading,
-    authUserError: authUserQuery.error,
+    authUserLoading: false,
+    authUserError: null,
 
     // Combined loading state
     isFullyLoaded: store.ready && !store.loading,

@@ -1,6 +1,6 @@
 import { calculateCriticalPower, calculateSeasonBestCurve } from "@repo/core/calculations";
 import { BestEffortSchema } from "@repo/core/schemas/activity_efforts";
-import { publicActivityCategorySchema } from "@repo/supabase";
+import { publicActivityCategorySchema } from "@repo/db";
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 

@@ -10,7 +10,7 @@ This matrix maps each major current package or app area to its target owner, mig
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `apps/web` | Next.js web app | `apps/web` | TanStack Start web app | routes, providers, SSR helpers, auth bootstrap, `/api/trpc`, `/api/auth` | product UI/features | temporary coexistence with legacy Next code if needed | remove Next runtime code and Next-only helpers |
 | `apps/mobile` | Expo app | `apps/mobile` | Expo app | auth bootstrap integration, API client imports, any shared package import changes | Expo Router app structure | compatibility imports if API/auth package names change | remove old auth/bootstrap assumptions tied to Supabase Auth |
-| `packages/trpc` | shared tRPC package | `packages/api` or bridged `packages/trpc` | shared API package | context, auth integration, DB integration, package name | router composition concepts, procedure shapes where still valid | package alias/bridge if rename is delayed | retire old package name if final name becomes `packages/api` |
+| `packages/trpc` | shared tRPC package | `packages/api` or bridged `packages/trpc` | shared API package | context, auth integration, DB integration, package name | router composition concepts, procedure shapes where still valid | `packages/api` now owns shared context while `@repo/trpc` remains the compatibility surface for existing router/client imports | retire old package name if final name becomes `packages/api` |
 | `packages/supabase` | Supabase CLI, SQL migrations, generated types, generated schemas, seeds | retained infra package or `infra/supabase` | Supabase platform-only package | relational schema ownership, app-facing types, app-facing validation, DB seed ownership | CLI config, storage, functions, local stack config | temporary parallel existence while Drizzle becomes authoritative | retire relational source-of-truth role |
 | `packages/typescript-config` | shared TS config | `tooling/typescript` | shared TS config tooling | config files, package/app references, docs | config content patterns that still fit | re-export or copied config during transition if needed | retire package-based TS config location |
 | `packages/ui` | shared cross-platform UI | `packages/ui` | shared cross-platform UI | web runtime assumptions, Tailwind/tooling references, any Next-only assumptions | cross-platform component ownership | temporary compatibility wrappers if web setup changes | retire Next-specific assumptions |
@@ -33,17 +33,22 @@ This matrix maps each major current package or app area to its target owner, mig
 
 | Category | Current owner/path | Future owner/path | Action | Notes |
 | --- | --- | --- | --- | --- |
-| Auth bootstrap | mobile session flow aligned with Supabase Auth | mobile session flow aligned with Better Auth | migrate | preserve Expo-first behavior |
+| Auth bootstrap | mobile session flow aligned with Supabase Auth | mobile session flow aligned with Better Auth Expo integration | migrate | use SecureStore-backed session/cookie caching and preserve Expo-first behavior |
 | API client types | `@repo/trpc` | `@repo/api` or temporary bridge | adapt | avoid breaking mobile while rename is in flight |
 | Shared contracts | `@repo/core`, `@repo/ui` | same | keep | core and UI stay first-class |
 | Web dependency leakage | limited today | none allowed | enforce | mobile must not import TanStack/Next runtime code |
+| Authenticated request transport | `Authorization: Bearer <supabase access token>` | manual `Cookie` header from Better Auth Expo client cache | migrate | keep bearer only as a short-lived bridge if required |
+| Auth transport scaffold | `lib/supabase/auth-headers.ts` bearer-only helper | `lib/auth/request-auth.ts` cookie-first helper + SecureStore cache | in progress | landed low-risk prep: cookie header cache now wins, bearer remains bridge-only fallback |
+| Callback token handling | direct Supabase token parsing in screens | trusted Better Auth callback with bridge-only legacy token handling during migration | in progress | legacy Supabase token parsing is now isolated in `lib/auth/legacy-supabase-bridge.ts` |
+| Verification + sign-up UX | Supabase sign-up plus OTP verification/resend screens | Better Auth Expo sign-up plus link-first verification/resend flow | in progress | sign-up and verify now use `authClient`; callback handling still needs final cleanup once web/auth email senders are fully wired |
+| Account-management email change | relative callback and password-confirm UI shaped by Supabase Auth | Better Auth change-email flow with mobile deep-link callback | in progress | mobile account management now deep-links back into Expo and drops the stale local password-confirm step |
 
 ### `packages/trpc` -> `packages/api`
 
 | Category | Current owner/path | Future owner/path | Action | Notes |
 | --- | --- | --- | --- | --- |
 | Package name | `packages/trpc` | `packages/api` preferred | decide then migrate | compatibility bridge may be needed |
-| Context | Supabase-client session lookup | Better Auth session + Drizzle DB context | rewrite | one of the most important cut lines |
+| Context | Supabase-client session lookup | `packages/api` normalized auth session + optional DB context | in progress | initial bridge consumes `packages/auth` session contracts first, with temporary Supabase session fallback for unchanged callers |
 | Auth router behavior | `trpc.auth` wraps Supabase Auth | auth behavior moves to `packages/auth` where appropriate | reduce/refactor | some auth-adjacent procedures may remain if still API-oriented |
 | Domain routers | current router files | same package boundary | keep/adapt | update DB access layer from Supabase client to Drizzle |
 | Client typing | current tRPC client exports | same concept under final package name | keep | keep shared mobile + web API typing |
@@ -74,11 +79,12 @@ This matrix maps each major current package or app area to its target owner, mig
 
 | Category | Future owner/path | Responsibility | Source migration | Notes |
 | --- | --- | --- | --- | --- |
-| Auth runtime | `packages/auth/src/index.ts` or equivalent | Better Auth server config | from `trpc.auth` + web auth glue | primary auth boundary |
-| Providers/plugins | `packages/auth/src/providers/*` or equivalent | web/mobile auth plugins | new or adapted | Expo compatibility matters |
-| Session helpers | `packages/auth/src/session/*` or equivalent | session lookup, cookie helpers | from current Supabase session logic | shared by web and API |
+| Auth runtime | `packages/auth/src/index.ts` or equivalent | Better Auth server config | from `trpc.auth` + web auth glue | primary auth boundary; current slice starts with contracts and env parsing |
+| Providers/plugins | `packages/auth/src/providers/*` or equivalent | web/mobile auth plugins | new or adapted | Expo compatibility matters; keep first-party auth email/password-first |
+| Session helpers | `packages/auth/src/session/*` or equivalent | session lookup, cookie helpers | from current Supabase session logic | shared by web and API; mobile keeps bearer transport with Better Auth as issuer |
 | CLI/schema generation | `packages/auth/scripts/*` or equivalent | Better Auth generation if used | new | should feed `packages/db` |
-| Deep-link/callback logic | package helpers + web route integration | verification/reset/mobile callback rules | from current auth redirect handling | must be audited before cutover |
+| Deep-link/callback logic | package helpers + web route integration | verification/reset/mobile callback rules | from current auth redirect handling | must be audited before cutover; web-first callback then safe redirect |
+| Account deletion contract | `packages/auth/src/contracts/account-deletion.ts` or equivalent | auth removal plus app-specific cleanup orchestration | from current auth mutation and mobile delete-account RPC behavior | no blind hard-delete |
 
 ### `packages/ui`
 
@@ -112,7 +118,7 @@ This matrix maps each major current package or app area to its target owner, mig
 
 ## Temporary Bridge Policy
 
-- `packages/trpc` may temporarily re-export from `packages/api` if a rename is chosen later than the API refactor.
+- `packages/api` should become the steady-state owner first through shared context and package exports, while `packages/trpc` stays as the temporary compatibility package until app imports move.
 - `packages/typescript-config` may temporarily point consumers to `tooling/typescript` during migration, but should not remain the permanent home.
 - `packages/supabase` may temporarily coexist with `packages/db`, but only with an explicit plan to remove relational source-of-truth ownership from it.
 - no permanent dual ownership is allowed for auth or relational schema.

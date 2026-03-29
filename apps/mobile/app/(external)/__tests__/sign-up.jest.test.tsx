@@ -3,7 +3,12 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-n
 
 const pushMock = jest.fn();
 const replaceMock = jest.fn();
-const signUpMock = jest.fn();
+const signUpEmailMock = jest.fn();
+
+jest.mock("expo-linking", () => ({
+  __esModule: true,
+  createURL: jest.fn(() => "gradientpeak://verification-success"),
+}));
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -41,13 +46,13 @@ jest.mock("@/lib/stores/auth-store", () => ({
   },
 }));
 
-jest.mock("@/lib/supabase/client", () => ({
+jest.mock("@/lib/auth/auth-client", () => ({
   __esModule: true,
-  supabase: {
-    auth: {
-      signUp: (...args: any[]) => signUpMock(...args),
+  getAuthClient: () => ({
+    signUp: {
+      email: (...args: any[]) => signUpEmailMock(...args),
     },
-  },
+  }),
 }));
 
 jest.mock("@repo/ui/components/alert", () => {
@@ -156,7 +161,7 @@ const SignUpScreen = require("../sign-up").default;
 describe("sign-up screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    signUpMock.mockResolvedValue({ error: null });
+    signUpEmailMock.mockResolvedValue({ error: null });
   });
 
   it("routes to verify after successful sign up", async () => {
@@ -168,9 +173,11 @@ describe("sign-up screen", () => {
     fireEvent.press(screen.getByTestId("sign-up-button"));
 
     await waitFor(() => {
-      expect(signUpMock).toHaveBeenCalledWith(
+      expect(signUpEmailMock).toHaveBeenCalledWith(
         expect.objectContaining({
+          callbackURL: "gradientpeak://verification-success",
           email: "athlete@example.com",
+          name: "athlete",
           password: "Password123",
         }),
       );
@@ -182,7 +189,7 @@ describe("sign-up screen", () => {
   });
 
   it("maps duplicate-email errors onto the email field", async () => {
-    signUpMock.mockResolvedValue({ error: { message: "User already registered" } });
+    signUpEmailMock.mockResolvedValue({ error: { message: "User already registered" } });
 
     renderNative(<SignUpScreen />);
 

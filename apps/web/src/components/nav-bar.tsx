@@ -12,19 +12,17 @@ import { House, LogOut, Settings } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { trpc } from "@/lib/trpc/client";
+import { authClient } from "@/lib/auth-client";
 import { CurrentUserAvatar } from "./current-user-avatar";
 import { useAuth } from "./providers/auth-provider";
 
 const Navbar = () => {
   const router = useRouter();
   const { isAuthenticated, refreshSession } = useAuth();
-  const signOutMutation = trpc.auth.signOut.useMutation();
   const logout = async () => {
     try {
-      await signOutMutation.mutateAsync();
-      // Refresh session to clear user data
-      refreshSession();
+      await authClient.signOut();
+      await refreshSession();
       router.push("/auth/login");
     } catch (error) {
       console.error("Logout failed:", error);

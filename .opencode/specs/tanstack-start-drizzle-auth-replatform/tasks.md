@@ -65,11 +65,13 @@
 - [ ] Introduce `packages/auth` built on Better Auth.
 - [ ] Define web and Expo auth provider/plugin requirements.
 - [ ] Replace router-owned auth mutations with package-owned auth primitives where appropriate.
-- [ ] Refactor API context/session resolution to consume Better Auth session state.
+- [x] Refactor API context/session resolution to consume Better Auth session state.
 - [ ] Audit account creation, sign-in, sign-out, password reset, email verification, account deletion, and deep-link flows before cutover.
 - [ ] Inventory every current `trpc.auth` procedure and map it to Better Auth ownership, compatibility, or removal.
 - [ ] Define the Better Auth session/cookie strategy for TanStack Start web.
 - [ ] Define the Better Auth mobile session/bootstrap strategy for Expo.
+- [ ] Keep first-party auth email/password-first; keep Strava/Wahoo/Garmin/TrainingPeaks/Zwift as non-identity provider integrations.
+- [ ] Define account deletion orchestration as auth removal plus app-specific cleanup policy.
 - [ ] Define redirect and callback handling for verification and reset flows.
 - [ ] Define whether any compatibility layer is needed while old auth callers are still being removed.
 - [ ] Update `migration-matrix.md` with final auth ownership decisions.
@@ -79,10 +81,10 @@
 ### Phase 5 - API Package
 
 - [ ] Refactor the tRPC package so it depends on `packages/auth` and `packages/db` rather than direct Supabase Auth patterns.
-- [ ] Keep framework-specific request handling out of shared API package code.
+- [x] Keep framework-specific request handling out of shared API package code.
 - [ ] Preserve shared input/output typing for both web and mobile clients.
 - [ ] Re-check any procedures that currently depend on Supabase client semantics.
-- [ ] Decide whether the steady-state package name is `packages/api` while keeping `packages/trpc` as a temporary bridge only.
+- [x] Decide whether the steady-state package name is `packages/api` while keeping `packages/trpc` as a temporary bridge only.
 - [ ] Define the final tRPC context shape.
 - [ ] Define the final router ownership for auth-adjacent behavior.
 - [ ] Define the import migration plan for web and mobile clients if package naming changes.
@@ -102,6 +104,20 @@
 - [ ] Update `migration-matrix.md` with final web migration and retirement decisions.
 - [ ] Update `web-route-map.md` with final web route and endpoint decisions.
 - [ ] Update `decision-log.md` with final web cutover decisions.
+
+### Phase 6b - Mobile Auth Migration
+
+- [x] Inventory all current mobile Supabase-auth-first bootstrap, store, and hook usage.
+- [x] Allow mobile inventory and scaffolding work to begin before API cutover, but hold final integration until `packages/auth` and `packages/api` contracts are stable.
+- [ ] Replace Supabase-auth-first mobile bootstrap with Better Auth-compatible first-party auth flow.
+- [ ] Keep provider integrations separate from first-party auth identity.
+- [x] Lock the Better Auth mobile session shape around the Expo integration, SecureStore-backed cookie/session caching, and manual `Cookie` header injection for authenticated API calls.
+- [x] Update the migration artifacts with the current mobile auth ownership and bootstrap decisions.
+- [x] Add the initial Better Auth Expo client scaffold in `apps/mobile/lib/auth/auth-client.ts` so the app can transition away from direct Supabase sign-in/bootstrap calls.
+- [x] Switch the first mobile sign-in, callback, and reset-password flows from direct Supabase calls to the Better Auth Expo client.
+- [x] Land a low-risk mobile auth transport scaffold that prefers SecureStore-backed cookie headers for authenticated API/tRPC requests while isolating Supabase bearer/deep-link token handling as a temporary bridge.
+- [x] Switch the mobile sign-up and verification screens from Supabase auth calls and OTP entry to the Better Auth Expo client plus link-first verification UX.
+- [x] Remove the stale Supabase-style password-confirm and relative callback assumptions from the mobile email-change account-management flow.
 
 ### Phase 7 - Tooling Realignment
 
@@ -148,3 +164,7 @@
 - [x] Audited the current repo's Next.js web app, `packages/trpc`, `packages/supabase`, `packages/typescript-config`, and `packages/ui` against that target model.
 - [x] Captured the desired architecture direction: TanStack Start web, dedicated Better Auth package, dedicated Drizzle DB package, retained tRPC API layer, preserved `packages/core`, and root-level `tooling/` for TypeScript and Tailwind.
 - [x] Added the supporting planning artifacts: package migration matrix, web route map, auth behavior matrix, DB ownership matrix, dependency order matrix, risk/blocker matrix, decision log, and cutover checklist.
+- [x] Locked the current migration strategy: fresh Drizzle baseline plus Drizzle-Zod outputs, Better Auth as the full first-party auth replacement, `packages/api` as the final API package name with a temporary `@repo/trpc` bridge, `packages/supabase` staying in place for now as infra-only, provider integrations staying separate from login identity, and lowest-risk migration first.
+- [x] Created the first `packages/api` bridge around shared context ownership, normalized auth-session consumption, and initial `packages/db` validation/type imports while preserving `@repo/trpc` compatibility for existing app callers.
+- [x] Replaced the mobile bearer-only request-header helper with a cookie-first auth transport scaffold backed by SecureStore, relaxed mobile auth-user refresh to work without a Supabase access token, and isolated Supabase deep-link token parsing behind an explicit legacy bridge helper.
+- [x] Moved mobile sign-up and verification UX onto the Better Auth Expo client, replacing the Supabase OTP screen with resend-email plus session-refresh behavior and aligning email-change callbacks with Expo deep links.

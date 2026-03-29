@@ -4,7 +4,7 @@
  * Wahoo integration activity type semantics.
  */
 
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 
 export type ActivityCategory = PublicActivityCategory;
 export type ActivityType = ActivityCategory;

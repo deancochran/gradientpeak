@@ -2,18 +2,19 @@ import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
-import { supabase } from "@/lib/supabase/client";
+import { getAuthClient } from "@/lib/auth/auth-client";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function AuthCallbackScreen() {
   const router = useRouter();
-  const { access_token, refresh_token, error, error_description } = useLocalSearchParams();
+  const params = useLocalSearchParams();
+  const { error, error_description, token } = params;
 
   useEffect(() => {
     const handleCallback = async () => {
       try {
         console.log("🔗 Auth callback received:", {
-          hasAccessToken: !!access_token,
-          hasRefreshToken: !!refresh_token,
+          hasToken: !!token,
           error: error ? String(error) : null,
         });
 
@@ -23,28 +24,25 @@ export default function AuthCallbackScreen() {
           return;
         }
 
-        if (access_token && refresh_token) {
-          console.log("🔑 Setting session from callback tokens...");
-          const { data, error: sessionError } = await supabase.auth.setSession({
-            access_token: access_token as string,
-            refresh_token: refresh_token as string,
+        if (typeof token === "string" && token.length > 0) {
+          console.log("🔑 Verifying email with Better Auth token...");
+          const authClient = getAuthClient();
+          const { error: verifyError } = await authClient.verifyEmail({
+            query: { token },
           });
 
-          if (sessionError) {
-            console.error("❌ Session error:", sessionError.message);
+          if (verifyError) {
+            console.error("❌ Verification error:", verifyError.message);
             router.replace("/(external)/sign-in");
             return;
           }
 
-          console.log("✅ Session set successfully, user verified:", data.user?.email);
-
-          // Success! User is now verified and signed in
-          // Give a brief moment for auth state to propagate
+          await useAuthStore.getState().refreshSession();
           setTimeout(() => {
-            router.replace("/");
+            router.replace("/" as any);
           }, 500);
         } else {
-          console.warn("⚠️ No tokens found in callback, redirecting to sign-in");
+          console.warn("⚠️ No Better Auth verification token found, redirecting to sign-in");
           router.replace("/(external)/sign-in");
         }
       } catch (err) {
@@ -54,7 +52,7 @@ export default function AuthCallbackScreen() {
     };
 
     handleCallback();
-  }, [access_token, refresh_token, error, error_description, router, supabase]);
+  }, [error, error_description, params, router, token]);
 
   return (
     <View className="flex-1 bg-background justify-center items-center p-6">

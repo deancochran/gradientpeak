@@ -1,32 +1,21 @@
 # @repo/trpc
 
-A unified tRPC API package for the GradientPeak monorepo, providing type-safe backend services for both the Next.js web app and Expo mobile app.
+A unified tRPC bridge package for the GradientPeak monorepo, providing shared type-safe API exports for the current web and mobile apps while `@repo/api` becomes the steady-state API home.
 
 ## Overview
 
-This package implements a comprehensive tRPC router architecture that serves as the single source of truth for all API operations in GradientPeak. It replaces fragmented backend logic with a centralized, type-safe API built on Supabase.
+This package re-exports and hosts the shared tRPC surface used by GradientPeak clients. Auth lifecycle operations no longer live under `trpc.auth`; first-party auth now flows through `@repo/auth` and `/api/auth`, while domain routers continue to use shared tRPC procedures.
 
 ## Architecture
 
 ### Core Components
 
-- **Context** (`src/context.ts`): Provides Supabase client instances for both Next.js and Expo environments
+- **Context** (`src/context.ts`): Re-exports the shared API context from `@repo/api/context`
 - **Procedures**: Two types of procedures are available:
-  - `publicProcedure`: For endpoints that don't require authentication (auth operations)
+  - `publicProcedure`: For endpoints that don't require authentication
   - `protectedProcedure`: For authenticated endpoints (automatically validates user sessions)
 
 ### Available Routers
-
-#### 🔐 Auth Router (`auth`)
-
-Handles all authentication operations:
-
-- `signUp`: Create new user accounts
-- `signInWithPassword`: Authenticate users
-- `signOut`: Invalidate user sessions
-- `getUser`: Get current authenticated user
-- `sendPasswordResetEmail`: Send password reset emails
-- `updatePassword`: Update user passwords
 
 #### 👤 Profiles Router (`profiles`)
 
@@ -74,15 +63,14 @@ Secure file upload/download operations:
 
 ## Usage Examples
 
-### Public Procedure (Authentication)
+### Public Procedure
 
 ```typescript
 import { trpc } from './trpc-client';
 
-// Sign in a user
-const result = await trpc.auth.signInWithPassword.mutate({
-  email: 'user@example.com',
-  password: 'securepassword'
+// Validate an OAuth state during an integration callback
+const storedState = await trpc.integrations.validateOAuthState.query({
+  state: 'oauth-state-token'
 });
 ```
 
@@ -112,7 +100,7 @@ const activity = await trpc.activities.create.mutate({
 
 The `protectedProcedure` middleware automatically:
 
-1. Validates the user session via `supabase.auth.getUser()`
+1. Verifies that `ctx.session.user` exists after shared context resolution
 2. Throws `UNAUTHORIZED` errors for invalid sessions
 3. Adds the authenticated user to the procedure context
 
@@ -145,14 +133,14 @@ The API uses standardized tRPC error codes:
 
 ## Integration
 
-### Next.js Web App
+### Web App
 
 ```typescript
 import { createTRPCClient } from '@trpc/client';
 import { AppRouter } from '@repo/trpc';
 
 const trpc = createTRPCClient<AppRouter>({
-  // Next.js configuration
+  // Web configuration
 });
 ```
 
@@ -191,4 +179,3 @@ npm test
 - `@repo/supabase`: Supabase database types and utilities
 - `@repo/core`: Shared business logic and Zod schemas
 - `zod`: Runtime type validation
-- `next`: Next.js integration utilities

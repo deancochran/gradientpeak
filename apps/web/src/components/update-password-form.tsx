@@ -11,34 +11,43 @@ import {
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { authClient } from "@/lib/auth-client";
 
 export function UpdatePasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
   const router = useRouter();
-
-  const updatePasswordMutation = trpc.auth.updatePassword.useMutation({
-    onSuccess: () => {
-      router.push("/");
-    },
-    onError: (error) => {
-      setError(error.message);
-    },
-  });
+  const searchParams = useSearchParams();
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     try {
-      await updatePasswordMutation.mutateAsync({
+      const token = searchParams.get("token");
+
+      if (!token) {
+        throw new Error("Password reset token is missing or invalid.");
+      }
+
+      setIsPending(true);
+      const { error } = await authClient.resetPassword({
         newPassword: password,
+        token,
       });
-    } catch {
-      // Error handling is done in mutation onError
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      router.push("/auth/login");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to update password");
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -64,8 +73,8 @@ export function UpdatePasswordForm({ className, ...props }: React.ComponentProps
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" disabled={updatePasswordMutation.isPending}>
-                {updatePasswordMutation.isPending ? "Saving..." : "Save new password"}
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Saving..." : "Save new password"}
               </Button>
             </div>
           </form>

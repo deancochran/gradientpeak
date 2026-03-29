@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createServerCaller } from "@/lib/trpc/server";
+import { auth } from "@/lib/auth";
 
 const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://sign-in";
 
@@ -80,17 +80,17 @@ const getSafeFallbackTarget = (request: NextRequest, fallbackParam: string | nul
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
+  const token = searchParams.get("token");
   const token_hash = searchParams.get("token_hash");
-  const type = searchParams.get("type");
   const next = getSafeRedirectTarget(searchParams.get("next"));
   const fallback = getSafeFallbackTarget(request, searchParams.get("fallback"));
 
-  if (token_hash && type) {
+  if (token) {
     try {
-      const trpc = await createServerCaller();
-      await trpc.auth.verifyOtp({
-        type,
-        token_hash,
+      await auth.api.verifyEmail({
+        query: {
+          token,
+        },
       });
     } catch (error: unknown) {
       // redirect the user to an error page with some instructions
@@ -108,6 +108,9 @@ export async function GET(request: NextRequest) {
 
   // redirect the user to an error page with some instructions
   const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-  errorUrl.searchParams.set("error", "No token hash or type");
+  errorUrl.searchParams.set(
+    "error",
+    token_hash ? "Legacy verification tokens are no longer supported" : "No verification token",
+  );
   return NextResponse.redirect(errorUrl);
 }

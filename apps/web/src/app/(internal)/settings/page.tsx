@@ -1,6 +1,5 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   getProfileQuickUpdateDefaults,
   normalizeProfileSettingsView,
@@ -33,10 +32,11 @@ import { Label } from "@repo/ui/components/label";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { type Resolver, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth } from "@/components/providers/auth-provider";
+import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/lib/trpc/client";
 
 const webProfileSettingsSchema = profileQuickUpdateSchema.pick({
@@ -48,6 +48,34 @@ type WebProfileSettingsFormData = Pick<
   z.output<typeof webProfileSettingsSchema>,
   "username" | "is_public"
 >;
+
+const webProfileSettingsResolver = (async (values: WebProfileSettingsFormData) => {
+  const result = webProfileSettingsSchema.safeParse(values);
+
+  if (result.success) {
+    return {
+      values: result.data as WebProfileSettingsFormData,
+      errors: {},
+    };
+  }
+
+  const { fieldErrors } = z.flattenError(result.error);
+
+  return {
+    values: {} as never,
+    errors: Object.fromEntries(
+      Object.entries(fieldErrors).flatMap(([key, messages]) => {
+        const message = messages?.[0];
+
+        if (!message) {
+          return [];
+        }
+
+        return [[key, { type: "custom", message }]];
+      }),
+    ),
+  };
+}) as Resolver<WebProfileSettingsFormData>;
 
 export default function SettingsPage() {
   // Auth and Profile data
@@ -71,41 +99,20 @@ export default function SettingsPage() {
       toast.error("Failed to update profile");
     },
   });
-  const signOutMutation = trpc.auth.signOut.useMutation({
-    onSuccess: () => {
-      refreshSession();
-      router.push("/auth/login");
-      toast.success("Signed out successfully");
-    },
-    onError: (error) => {
-      console.error("Error signing out:", error);
-      toast.error("Failed to sign out");
-    },
-  });
-  const deleteAccountMutation = trpc.auth.deleteAccount.useMutation({
-    onSuccess: () => {
-      refreshSession();
-      router.push("/auth/login");
-      toast.success("Account deleted successfully");
-    },
-    onError: (error) => {
-      console.error("Error deleting account:", error);
-      toast.error("Failed to delete account");
-    },
-  });
   const createSignedUploadUrlMutation = trpc.storage.createSignedUploadUrl.useMutation();
   // Local state
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const loading = authLoading || profileLoading;
 
   // Hooks
   const router = useRouter();
 
-  const form = useForm<z.input<typeof webProfileSettingsSchema>, any, WebProfileSettingsFormData>({
-    resolver: zodResolver(webProfileSettingsSchema),
+  const form = useForm<WebProfileSettingsFormData>({
+    resolver: webProfileSettingsResolver,
     defaultValues: {
       username: "",
       is_public: false,
@@ -116,10 +123,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (profile) {
       const defaults = getProfileQuickUpdateDefaults(normalizeProfileSettingsView(profile));
-      form.reset({
-        username: defaults.username,
-        is_public: defaults.is_public,
-      });
+      form.reset(defaults as WebProfileSettingsFormData);
     }
   }, [profile, form]);
 
@@ -234,11 +238,32 @@ export default function SettingsPage() {
 
     setDeleting(true);
     try {
-      await deleteAccountMutation.mutateAsync();
-    } catch {
-      // Error handling is done in mutation onError
+      const { error } = await authClient.deleteUser();
+      if (error) throw new Error(error.message);
+      await refreshSession();
+      router.push("/auth/login");
+      toast.success("Account deleted successfully");
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to delete account");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      const { error } = await authClient.signOut();
+      if (error) throw new Error(error.message);
+      await refreshSession();
+      router.push("/auth/login");
+      toast.success("Signed out successfully");
+    } catch (error) {
+      console.error("Error signing out:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to sign out");
+    } finally {
+      setSigningOut(false);
     }
   };
 
@@ -368,8 +393,8 @@ export default function SettingsPage() {
               <div>
                 <Label className="text-sm font-medium">Email Verified</Label>
                 <div className="flex items-center gap-2 mt-1">
-                  <Badge variant={user?.email_confirmed_at ? "default" : "secondary"}>
-                    {user?.email_confirmed_at ? "Verified" : "Unverified"}
+                  <Badge variant={user?.emailVerified ? "default" : "secondary"}>
+                    {user?.emailVerified ? "Verified" : "Unverified"}
                   </Badge>
                 </div>
               </div>
@@ -395,11 +420,11 @@ export default function SettingsPage() {
             <div className="flex flex-col sm:flex-row gap-4">
               <Button
                 variant="outline"
-                onClick={() => signOutMutation.mutate()}
-                disabled={signOutMutation.isPending}
+                onClick={() => void handleSignOut()}
+                disabled={signingOut}
                 className="flex-1"
               >
-                {signOutMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {signingOut && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Sign Out
               </Button>
 

@@ -2,7 +2,13 @@ import React from "react";
 import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
-const resendMock = jest.fn();
+const getSessionMock = jest.fn();
+const sendVerificationEmailMock = jest.fn();
+
+jest.mock("expo-linking", () => ({
+  __esModule: true,
+  createURL: jest.fn(() => "gradientpeak://verification-success"),
+}));
 
 const authState = {
   isEmailVerified: false,
@@ -19,16 +25,19 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => authState,
 }));
 
-jest.mock("@/lib/supabase/client", () => ({
+jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  supabase: {
-    auth: {
-      getUser: jest.fn(async () => ({ data: { user: null } })),
-      refreshSession: jest.fn(async () => undefined),
-      resend: (...args: any[]) => resendMock(...args),
-      verifyOtp: jest.fn(async () => ({ error: null })),
-    },
+  useAuthStore: {
+    getState: () => ({ refreshSession: jest.fn(async () => undefined) }),
   },
+}));
+
+jest.mock("@/lib/auth/auth-client", () => ({
+  __esModule: true,
+  getAuthClient: () => ({
+    getSession: (...args: any[]) => getSessionMock(...args),
+    sendVerificationEmail: (...args: any[]) => sendVerificationEmailMock(...args),
+  }),
 }));
 
 jest.mock("@repo/ui/components/alert", () => {
@@ -70,54 +79,10 @@ jest.mock("@repo/ui/components/card", () => {
   };
 });
 
-jest.mock("@repo/ui/components/form", () => ({
-  __esModule: true,
-  Form: ({ children }: any) => children,
-  FormTextField: ({ control, name, placeholder, testId }: any) =>
-    React.createElement("TextInput", {
-      placeholder,
-      testID: testId ?? name,
-      value: control.values[name] ?? "",
-      onChangeText: (nextValue: string) => control.setValue(name, nextValue),
-    }),
-}));
-
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: ({ children, ...props }: any) => React.createElement("Text", props, children),
 }));
-
-jest.mock("@repo/ui/hooks", () => {
-  const React = require("react");
-
-  return {
-    __esModule: true,
-    useZodForm: () => {
-      const [values, setValues] = React.useState({ token: "" });
-      const [errors, setErrors] = React.useState({} as Record<string, { message: string }>);
-
-      return {
-        control: {
-          values,
-          setValue: (name: string, value: string) => {
-            setValues((current: typeof values) => ({ ...current, [name]: value }));
-          },
-        },
-        formState: { errors },
-        setError: (name: string, error: { message: string }) => {
-          setErrors((current: Record<string, { message: string }>) => ({
-            ...current,
-            [name]: error,
-          }));
-        },
-        handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
-      };
-    },
-    useZodFormSubmit: ({ form, onSubmit }: any) => ({
-      handleSubmit: form.handleSubmit(onSubmit),
-    }),
-  };
-});
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
@@ -138,7 +103,8 @@ describe("verify screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     authState.isEmailVerified = false;
-    resendMock.mockResolvedValue({ error: null });
+    getSessionMock.mockResolvedValue({ data: { user: { emailVerified: false } }, error: null });
+    sendVerificationEmailMock.mockResolvedValue({ error: null });
   });
 
   afterEach(() => {
@@ -151,8 +117,11 @@ describe("verify screen", () => {
     fireEvent.press(screen.getByTestId("resend-code-button"));
 
     await waitFor(() => {
-      expect(resendMock).toHaveBeenCalledWith({ type: "signup", email: "athlete@example.com" });
-      expect(screen.getByTestId("resend-message").props.children).toBe("Verification code sent!");
+      expect(sendVerificationEmailMock).toHaveBeenCalledWith({
+        email: "athlete@example.com",
+        callbackURL: "gradientpeak://verification-success",
+      });
+      expect(screen.getByTestId("resend-message").props.children).toBe("Verification email sent!");
     });
   });
 

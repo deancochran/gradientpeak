@@ -4,12 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import { getAuthClient } from "@/lib/auth/auth-client";
 import {
   AuthRequestTimeoutError,
   getAuthRequestTimeoutMessage,
@@ -19,7 +21,6 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { supabase } from "@/lib/supabase/client";
 
 const signInSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -29,16 +30,6 @@ const signInSchema = z.object({
 });
 
 type SignInFields = z.infer<typeof signInSchema>;
-
-const mapSupabaseErrorToFormField = (error: string) => {
-  if (error.includes("email") || error.includes("Email")) {
-    return "email";
-  }
-  if (error.includes("password") || error.includes("Password")) {
-    return "password";
-  }
-  return "root";
-};
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -79,10 +70,12 @@ export default function SignInScreen() {
 
       logMobileAction("auth.signIn", "attempt", { email: data.email });
 
+      const authClient = getAuthClient();
       const { error } = await withAuthRequestTimeout(
-        supabase.auth.signInWithPassword({
+        authClient.signIn.email({
           email: data.email,
           password: data.password,
+          callbackURL: Linking.createURL("/(external)/verification-success"),
         }),
       );
 
@@ -105,10 +98,10 @@ export default function SignInScreen() {
         }
       }
       if (!error) {
+        await useAuthStore.getState().refreshSession();
         logMobileAction("auth.signIn", "success", { email: data.email });
+        router.replace("/" as any);
       }
-      // On success, the `onAuthStateChange` listener in the auth store
-      // will handle the session and trigger a redirect automatically.
     } catch (err) {
       logMobileAction("auth.signIn", "failure", {
         email: data.email,

@@ -14,23 +14,15 @@ import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { authClient } from "@/lib/auth-client";
 
 export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeatPassword, setRepeatPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
   const router = useRouter();
-
-  const signUpMutation = trpc.auth.signUp.useMutation({
-    onSuccess: () => {
-      router.push("/auth/sign-up-success");
-    },
-    onError: (error) => {
-      setError(error.message);
-    },
-  });
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,12 +34,24 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
     }
 
     try {
-      await signUpMutation.mutateAsync({
+      setIsPending(true);
+
+      const { error } = await authClient.signUp.email({
         email,
         password,
+        name: email.split("@")[0] || "GradientPeak User",
+        callbackURL: "/auth/sign-up-success",
       });
-    } catch {
-      // Error handling is done in mutation onError
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      router.push("/auth/sign-up-success");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to create account");
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -97,8 +101,8 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" disabled={signUpMutation.isPending}>
-                {signUpMutation.isPending ? "Creating an account..." : "Sign up"}
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Creating an account..." : "Sign up"}
               </Button>
             </div>
             <div className="mt-4 text-center text-sm">
