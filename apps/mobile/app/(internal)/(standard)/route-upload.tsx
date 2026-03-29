@@ -103,7 +103,7 @@ export default function UploadRouteScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="route-upload-screen">
       <ScrollView className="flex-1 p-4">
         <View className="gap-6">
           {/* File Picker */}
@@ -115,6 +115,7 @@ export default function UploadRouteScreen() {
                   onPress={handlePickFile}
                   variant="outline"
                   className="w-full justify-start gap-2"
+                  testID="route-upload-pick-file-button"
                 >
                   <Upload className="text-foreground" size={20} />
                   <Text>Choose GPX File</Text>
@@ -126,7 +127,12 @@ export default function UploadRouteScreen() {
                     {selectedFile.name}
                   </Text>
                   <CheckCircle className="text-green-500" size={20} />
-                  <Button onPress={handlePickFile} variant="ghost" size="sm">
+                  <Button
+                    onPress={handlePickFile}
+                    variant="ghost"
+                    size="sm"
+                    testID="route-upload-change-file-button"
+                  >
                     <Text className="text-xs">Change</Text>
                   </Button>
                 </View>
@@ -147,6 +153,7 @@ export default function UploadRouteScreen() {
                   onChangeText={setName}
                   placeholder="e.g., Morning Hill Climb"
                   maxLength={100}
+                  testID="route-upload-name-input"
                 />
               </View>
 
@@ -209,6 +216,7 @@ export default function UploadRouteScreen() {
             className="flex-1"
             onPress={() => router.back()}
             disabled={uploadMutation.isPending}
+            testID="route-upload-cancel-button"
           >
             <Text>Cancel</Text>
           </Button>
@@ -216,6 +224,7 @@ export default function UploadRouteScreen() {
             className="flex-1"
             onPress={handleUpload}
             disabled={uploadMutation.isPending || !selectedFile || !name.trim()}
+            testID="route-upload-submit-button"
           >
             <Text className="text-primary-foreground">
               {uploadMutation.isPending ? "Uploading..." : "Upload Route"}

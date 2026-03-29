@@ -15,9 +15,9 @@ appId: com.deancochran.gradientpeak.dev
     timeout: 10000
 - extendedWaitUntil:
     visible:
-      text: "Today"
+      id: "calendar-mode-switcher"
     timeout: 15000
 - extendedWaitUntil:
     visible:
-      text: "Create"
+      id: "create-event-entry"
     timeout: 15000

@@ -1209,6 +1209,7 @@ export function SinglePageForm({
                 aria-label="Plan name"
                 placeholder="Enter plan name"
                 value={resolvedPlanMetadata.name}
+                testID="training-plan-name-input"
                 onChangeText={(name) => {
                   handlePlanMetadataChange({
                     ...resolvedPlanMetadata,

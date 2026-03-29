@@ -186,4 +186,40 @@ describe("onboarding screen", () => {
 
     expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
   });
+
+  it("lets users skip the signup onboarding flow after the intro", async () => {
+    renderNative(<OnboardingScreen />);
+
+    fireEvent.press(screen.getByText("Next"));
+
+    expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(false);
+
+    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+
+    fireEvent.press(screen.getByText("Finish"));
+
+    await waitFor(() => {
+      expect(completeOnboardingMutationMock).toHaveBeenCalledWith({
+        css_seconds_per_hundred_meters: undefined,
+        dob: undefined,
+        experience_level: "skip",
+        ftp: undefined,
+        gender: undefined,
+        max_hr: undefined,
+        resting_hr: undefined,
+        lthr: undefined,
+        threshold_pace_seconds_per_km: undefined,
+        vo2max: undefined,
+        weight_kg: undefined,
+      });
+      expect(completeOnboardingMock).toHaveBeenCalled();
+      expect(replaceMock).toHaveBeenCalledWith("/");
+    });
+  });
 });

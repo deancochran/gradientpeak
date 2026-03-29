@@ -34,6 +34,12 @@ Set the vars your flow needs before running Maestro:
 
 Use `apps/mobile/.maestro/fixtures.env.example` as the template.
 
+## Flow catalog
+
+- `apps/mobile/.maestro/FLOW_CATALOG.md` maps `apps/mobile/docs/INTERACTION_INVENTORY.md` to Maestro flow files.
+- `apps/mobile/.maestro/COVERAGE_MATRIX.md` tracks inventory area -> flow ownership -> validation status.
+- Some newer journey files are intentionally unvalidated scaffolds so coverage can be expanded before running the full suite.
+
 ## Notes
 
 - `pretest:e2e` and `pretest:e2e:flow` run `generate:maestro` automatically.

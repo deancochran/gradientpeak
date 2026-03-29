@@ -132,6 +132,11 @@ export function FooterExpandedContent({
     router.push("/record/plan");
   };
 
+  const handleRoutePress = () => {
+    console.log("[FooterExpanded] Navigating to route picker");
+    router.push("/record/route");
+  };
+
   const handleSensorsPress = () => {
     console.log("[FooterExpanded] Navigating to sensors");
     router.push("/record/sensors");
@@ -195,6 +200,7 @@ export function FooterExpandedContent({
             value={activeCategory.replace(/_/g, " ")}
             icon={<Gauge size={16} color="#71717a" />}
             onPress={!isRecordingStarted ? handleActivityPress : undefined}
+            testID="record-activity-summary-button"
           />
           <SummaryRow
             label="Mode"
@@ -212,17 +218,21 @@ export function FooterExpandedContent({
               )
             }
             onPress={!isRecordingStarted ? handleGpsToggle : undefined}
+            testID="record-gps-summary-button"
           />
           <SummaryRow
             label="Plan"
             value={activeHasPlan ? "Attached" : "None"}
             icon={<ArrowUpRight size={16} color="#71717a" />}
             onPress={!isRecordingStarted ? handlePlanPress : undefined}
+            testID="record-plan-summary-button"
           />
           <SummaryRow
             label="Route"
             value={activeHasRoute ? "Attached via plan" : "None"}
             icon={<Route size={16} color="#71717a" />}
+            onPress={!isRecordingStarted ? handleRoutePress : undefined}
+            testID="record-route-summary-button"
           />
           {!isRecordingStarted && (
             <SummaryRow
@@ -230,6 +240,7 @@ export function FooterExpandedContent({
               value="Connect or review"
               icon={<WifiOff size={16} color="#71717a" />}
               onPress={handleSensorsPress}
+              testID="record-sensors-summary-button"
             />
           )}
         </SectionCard>
@@ -367,15 +378,17 @@ interface SummaryRowProps {
   value: string;
   icon: React.ReactNode;
   onPress?: () => void;
+  testID?: string;
 }
 
-function SummaryRow({ label, value, icon, onPress }: SummaryRowProps) {
+function SummaryRow({ label, value, icon, onPress, testID }: SummaryRowProps) {
   const Container = onPress ? Pressable : View;
 
   return (
     <Container
       {...(onPress ? { onPress } : {})}
       className="flex-row items-center justify-between rounded-xl border border-border bg-background px-3 py-3"
+      testID={testID}
     >
       <View className="flex-row items-center gap-3">
         <View className="rounded-full bg-muted p-2">{icon}</View>

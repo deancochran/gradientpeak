@@ -29,8 +29,15 @@ Use stable seeded data for mutation-heavy Maestro flows.
 - `SIGNUP_EMAIL` (optional when intentionally reusing a sign-up account)
 - `SIGNUP_PASSWORD`
 - `TARGET_USERNAME`
+- `TARGET_USER_ID`
 - `SHARED_TRAINING_PLAN_NAME`
 - `SHARED_ACTIVITY_PLAN_NAME`
+- `SHARED_ROUTE_NAME`
+- `PLANNED_ACTIVITY_NAME`
+- `REQUIRED_METRICS_PLAN_NAME`
+- `SCHEDULED_EVENT_TITLE`
+- `ACTIVITY_COMMENT_TEXT`
+- `HISTORICAL_ACTIVITY_NAME`
 - `PLAN_ANCHOR_DATE`
 - `DM_SENDER_EMAIL`
 - `DM_SENDER_PASS`
@@ -50,9 +57,12 @@ For multi-device scenarios, prefer actor-specific env overlays instead of reusin
 - one public profile discoverable by username
 - one activity plan that can be duplicated and scheduled
 - one training plan that can be duplicated and scheduled
+- one saved route discoverable by name
 - one scheduled planned event that can be rescheduled and deleted
 - one custom event that can be edited and deleted
+- one planned workout whose start path warns about missing profile metrics, so continue-without-metrics can be exercised
 - one goal so Plan tab chart updates are visible after scheduling changes
+- optional historical FIT sample file and seeded import-ready integration account
 - optional direct-message conversation and unread notification state for social lanes
 
 ## Why this matters

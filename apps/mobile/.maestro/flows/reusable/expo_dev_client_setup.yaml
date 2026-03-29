@@ -8,6 +8,11 @@ appId: com.deancochran.gradientpeak.dev
       - tapOn: "${EXPO_DEV_SERVER_LABEL}"
 - runFlow:
     when:
+      visible: "http://10.0.2.2:8081"
+    commands:
+      - tapOn: "http://10.0.2.2:8081"
+- runFlow:
+    when:
       visible: "Got It"
     commands:
       - tapOn: "Got It"

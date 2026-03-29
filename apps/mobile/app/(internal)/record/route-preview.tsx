@@ -69,7 +69,10 @@ export default function RoutePreviewScreen() {
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-background px-6">
+      <View
+        className="flex-1 items-center justify-center bg-background px-6"
+        testID="route-preview-loading"
+      >
         <Text>Loading route preview...</Text>
       </View>
     );
@@ -77,7 +80,10 @@ export default function RoutePreviewScreen() {
 
   if (!route) {
     return (
-      <View className="flex-1 items-center justify-center bg-background px-6">
+      <View
+        className="flex-1 items-center justify-center bg-background px-6"
+        testID="route-preview-not-found"
+      >
         <Text className="text-lg font-semibold">Route not found</Text>
         <Text className="mt-2 text-center text-muted-foreground">
           This route is no longer available for selection.
@@ -90,7 +96,7 @@ export default function RoutePreviewScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="route-preview-screen">
       <View className="h-72 bg-muted">
         {coordinates.length > 0 ? (
           <MapView
@@ -148,10 +154,18 @@ export default function RoutePreviewScreen() {
         </Card>
 
         <View className="mt-auto gap-3 pb-4">
-          <Button onPress={handleAttach} disabled={isSetupLocked}>
+          <Button
+            onPress={handleAttach}
+            disabled={isSetupLocked}
+            testID="route-preview-attach-button"
+          >
             <Text>{isAttached ? "Reattach Route" : "Attach Route"}</Text>
           </Button>
-          <Button variant="outline" onPress={() => router.back()}>
+          <Button
+            variant="outline"
+            onPress={() => router.back()}
+            testID="route-preview-cancel-button"
+          >
             <Text>Cancel</Text>
           </Button>
         </View>

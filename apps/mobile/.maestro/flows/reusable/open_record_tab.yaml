@@ -1,0 +1,10 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ./reset_to_home.yaml
+- tapOn:
+    id: "tab-button-record"
+- extendedWaitUntil:
+    visible:
+      id: "activity-selection-modal"
+    timeout: 10000

@@ -1,7 +1,7 @@
 appId: com.deancochran.gradientpeak.dev
 env:
   INVALID_EMAIL: "gradientpeak.maestro.invalid@example.com"
-  INVALID_PASSWORD: "Password123"
+  INVALID_PASSWORD: "password123"
 ---
 - runFlow:
     file: ../../reusable/bootstrap.yaml

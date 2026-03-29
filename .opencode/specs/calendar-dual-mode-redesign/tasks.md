@@ -13,17 +13,17 @@
 
 ### Phase 1 - Foundation And Architecture
 
-- [ ] Audit `apps/mobile/app/(internal)/(tabs)/calendar.tsx` and identify which week-specific assumptions must be removed.
-- [ ] Audit `apps/mobile/lib/trpc/scheduleQueryOptions.ts` and `apps/mobile/lib/scheduling/refreshScheduleViews.ts` for query-window and refresh-context changes.
-- [ ] Define the shared calendar state contract for `mode`, `activeDate`, `visibleAnchor`, selected event, and sheet state.
-- [ ] Define exact mode-switch rules for `day -> month`, `month -> day`, and `Today` actions.
-- [ ] Decide how calendar context should persist across tab switches and refreshes.
-- [ ] Define the windowed data-fetching/cache strategy for infinite day and month rendering.
-- [ ] Define the normalized event-by-date data shape shared by day and month renderers.
-- [ ] Decide whether day and month views share one scroller abstraction or use separate renderers.
-- [ ] Decide whether to extract shared calendar view-model helpers from `apps/mobile/app/(internal)/(tabs)/calendar.tsx`.
-- [ ] If extraction is needed, define target helper/component file boundaries under `apps/mobile/lib/calendar/*` and `apps/mobile/components/calendar/*`.
-- [ ] Document which current UI elements are removed in the redesign: week strip, previous/next controls, gap cards, and large empty-state helper blocks.
+- [x] Audit `apps/mobile/app/(internal)/(tabs)/calendar.tsx` and identify which week-specific assumptions must be removed.
+- [x] Audit `apps/mobile/lib/trpc/scheduleQueryOptions.ts` and `apps/mobile/lib/scheduling/refreshScheduleViews.ts` for query-window and refresh-context changes.
+- [x] Define the shared calendar state contract for `mode`, `activeDate`, `visibleAnchor`, selected event, and sheet state.
+- [x] Define exact mode-switch rules for `day -> month`, `month -> day`, and `Today` actions.
+- [x] Decide how calendar context should persist across tab switches and refreshes.
+- [x] Define the windowed data-fetching/cache strategy for infinite day and month rendering.
+- [x] Define the normalized event-by-date data shape shared by day and month renderers.
+- [x] Decide whether day and month views share one scroller abstraction or use separate renderers.
+- [x] Decide whether to extract shared calendar view-model helpers from `apps/mobile/app/(internal)/(tabs)/calendar.tsx`.
+- [x] If extraction is needed, define target helper/component file boundaries under `apps/mobile/lib/calendar/*` and `apps/mobile/components/calendar/*`.
+- [x] Document which current UI elements are removed in the redesign: week strip, previous/next controls, gap cards, and large empty-state helper blocks.
 
 ### Phase 2 - Dual-Mode Browsing
 
@@ -90,3 +90,7 @@
 
 - Reviewed the current mobile calendar architecture and confirmed that the existing week-strip agenda is not a clean extension point for the desired product vision.
 - Captured a new spec for a simpler dual-mode calendar centered on infinite day and month browsing, bottom-sheet-driven actions, richer event cards, and a phased drag-and-drop follow-up.
+- Prepared the implementation foundation: the current `calendar.tsx` is a 1600+ line coordinator tightly coupled to week-strip state, the schedule-query helper is still generic, and refresh logic does not preserve any calendar-specific context yet.
+- Locked the implementation direction for Phase 1: `day` becomes the default mode, `Today` resets `activeDate` to today and snaps `visibleAnchor` to the current mode boundary, day/month use separate renderers backed by one normalized event-by-date map, and calendar context should persist in a small zustand + AsyncStorage store.
+- Defined the extraction boundaries for implementation: keep `apps/mobile/app/(internal)/(tabs)/calendar.tsx` as the screen coordinator, move date math / anchor rules / query-range builders into `apps/mobile/lib/calendar/*`, and move the mode switcher, header shell, day list, month list, event card, and bottom-sheet surfaces into `apps/mobile/components/calendar/*`.
+- Documented the first UI removals required by the redesign: the week strip, previous/next week controls, gap cards, large helper empty states, and route-first event tap behavior should all be removed or demoted behind the new compact shell and sheet-first interaction model.

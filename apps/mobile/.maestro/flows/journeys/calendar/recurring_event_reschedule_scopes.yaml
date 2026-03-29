@@ -1,0 +1,36 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  STANDARD_USER_EMAIL: "test@example.com"
+  STANDARD_USER_PASS: "password123"
+  SCHEDULED_EVENT_TITLE: "Long Run"
+---
+- runFlow:
+    file: ../../reusable/authenticated_home.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+- runFlow:
+    file: ../../reusable/open_calendar_tab.yaml
+- tapOn: "${SCHEDULED_EVENT_TITLE}"
+- tapOn:
+    id: "calendar-preview-open-detail"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "event-detail-reschedule-button"
+    timeout: 10000
+- tapOn:
+    id: "event-detail-reschedule-button"
+- extendedWaitUntil:
+    visible:
+      id: "schedule-modal"
+    timeout: 10000
+- assertVisible:
+    id: "scheduled-date-button"
+- assertVisible:
+    id: "schedule-submit-button"
+- tapOn:
+    id: "schedule-submit-button"
+- assertVisible: "Recurring Schedule"
+- assertVisible: "This and future events"
+- tapOn: "Cancel"

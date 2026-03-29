@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "run-s dev:supabase dev:functions",
+    "dev:e2e": "run-s dev:supabase dev:functions",
     "dev:supabase": "supabase start",
     "stop:supabase": "supabase stop",
     "dev:functions": "supabase functions serve",

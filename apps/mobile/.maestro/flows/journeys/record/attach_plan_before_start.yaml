@@ -1,0 +1,34 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  STANDARD_USER_EMAIL: "test@example.com"
+  STANDARD_USER_PASS: "password123"
+  PLANNED_ACTIVITY_NAME: "Tempo Builder"
+---
+- runFlow:
+    file: ../../reusable/authenticated_home.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+- runFlow:
+    file: ../../reusable/open_record_tab.yaml
+- tapOn:
+    id: "activity-select-run"
+- extendedWaitUntil:
+    visible:
+      id: "record-screen-ready"
+    timeout: 10000
+- tapOn: "Plan"
+- extendedWaitUntil:
+    visible:
+      id: "record-plan-screen"
+    timeout: 10000
+- tapOn:
+    id: "record-plan-search-input"
+- inputText: "${PLANNED_ACTIVITY_NAME}"
+- tapOn: "${PLANNED_ACTIVITY_NAME}"
+- extendedWaitUntil:
+    visible:
+      id: "record-screen-ready"
+    timeout: 10000
+- assertVisible:
+    id: "recording-start-button"

@@ -304,6 +304,7 @@
       "provider-integrations": "allow",
       "documentation": "allow",
       "brainstorming": "allow",
+      "worktrunk": "allow",
       "explaining-code": "allow",
       "managing-context-window": "allow"
     }

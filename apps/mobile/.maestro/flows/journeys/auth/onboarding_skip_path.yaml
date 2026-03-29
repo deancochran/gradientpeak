@@ -6,10 +6,38 @@ env:
 - runFlow:
     file: ../../reusable/bootstrap.yaml
 - runFlow:
-    file: ../../reusable/login.yaml
-    env:
-      email: "${ONBOARDING_USER_EMAIL}"
-      password: "${ONBOARDING_USER_PASS}"
+    when:
+      visible: "Discover"
+    commands:
+      - tapOn:
+          id: "app-header-avatar-button"
+      - extendedWaitUntil:
+          visible:
+            id: "user-detail-screen"
+          timeout: 10000
+      - tapOn:
+          id: "sign-out"
+      - tapOn:
+          text: "Sign Out"
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: "sign-in-screen"
+          timeout: 10000
+- runFlow:
+    when:
+      visible:
+        id: "sign-in-screen"
+    commands:
+      - tapOn:
+          id: "email-input"
+      - inputText: "${ONBOARDING_USER_EMAIL}"
+      - tapOn:
+          id: "password-input"
+      - inputText: "${ONBOARDING_USER_PASS}"
+      - hideKeyboard
+      - tapOn:
+          id: "sign-in-button"
 - extendedWaitUntil:
     visible:
       id: "onboarding-screen"

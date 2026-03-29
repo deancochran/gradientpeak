@@ -1,3 +1,12 @@
 appId: com.deancochran.gradientpeak.dev
 ---
 - runFlow: expo_dev_client_setup.yaml
+- extendedWaitUntil:
+    visible:
+      id: "sign-in-screen"
+    timeout: 20000
+    optional: true
+- extendedWaitUntil:
+    visible: "Discover"
+    timeout: 20000
+    optional: true

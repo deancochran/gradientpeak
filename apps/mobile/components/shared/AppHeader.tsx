@@ -52,6 +52,7 @@ export function AppHeader({ showGreeting = true, title }: AppHeaderProps) {
           onPress={handleAvatarPress}
           className="w-10 h-10 rounded-full overflow-hidden ml-2"
           activeOpacity={0.7}
+          testID="app-header-avatar-button"
         >
           <Avatar alt={profile?.username || "User"} className="w-10 h-10">
             {avatarUri ? <AvatarImage source={{ uri: avatarUri }} key={avatarUri} /> : null}

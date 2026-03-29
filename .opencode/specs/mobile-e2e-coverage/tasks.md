@@ -30,6 +30,8 @@
 
 - [ ] Targeted mobile typecheck after anchor additions.
 - [ ] Focused Maestro flow runs for the first expanded journey batch.
+- [ ] Validate the new flow-catalog scaffolds and prune any selectors that do not survive runtime.
+- [ ] Validate the new coverage-matrix scaffolds for account settings, route upload, recurring reschedule, FIT import, goal entry, and route-based recording.
 
 ## Completed Summary
 
@@ -38,3 +40,5 @@
 - Added a second anchor pass across training plans list, activities list, activity detail, routes list/detail, profile edit, training preferences, and integrations; targeted mobile typecheck passed again.
 - Added reusable profile-opening flow scaffolding plus first-pass screen-entry and journey flows for plans, activities, routes, profile edit, integrations, training preferences, and sign-out without requiring full-suite execution during build-out.
 - Hardened the first plan/profile flow set into more realistic journeys, including training-plan scheduling from Discover, activity-plan scheduling entry, direct messaging from profile via reusable profile openers, and integrations import-entry coverage.
+- Expanded the Maestro flow catalog so the interaction inventory now has explicit files for discover detail opens, activity-detail social actions, notifications read-all, scheduled-event-to-record handoff, quick-start pause/resume/finish, and pre-start plan attachment scaffolding.
+- Added a coverage matrix plus another scaffold wave for account settings, activity efforts, route upload entry, goal entry, recurring-event reschedule entry, route-based recording preview, and historical FIT import so most major inventory domains now have a named Maestro file.

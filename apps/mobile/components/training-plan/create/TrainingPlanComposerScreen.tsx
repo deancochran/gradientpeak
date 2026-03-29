@@ -1040,7 +1040,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="training-plan-composer-screen">
       <Stack.Screen
         options={{
           title: isEditMode ? "Edit Training Plan" : "Create Training Plan",
@@ -1051,6 +1051,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
                 void form.handleSubmit(handleSave)();
               }}
               disabled={!canCreatePlan}
+              testID="training-plan-save-button"
               hitSlop={8}
               className={canCreatePlan ? "opacity-100" : "opacity-50"}
               accessibilityRole="button"

@@ -570,6 +570,7 @@ function UserDetailScreen() {
                   autoCapitalize="none"
                   keyboardType="email-address"
                   className="mb-3"
+                  testID="account-email-input"
                 />
                 <Input
                   value={emailPassword}
@@ -578,8 +579,13 @@ function UserDetailScreen() {
                   secureTextEntry
                   autoCapitalize="none"
                   className="mb-3"
+                  testID="account-email-password-input"
                 />
-                <Button onPress={handleUpdateEmail} disabled={updateEmailMutation.isPending}>
+                <Button
+                  onPress={handleUpdateEmail}
+                  disabled={updateEmailMutation.isPending}
+                  testID="account-email-submit-button"
+                >
                   <Text>
                     {updateEmailMutation.isPending ? "Sending..." : "Send Verification Emails"}
                   </Text>
@@ -607,6 +613,7 @@ function UserDetailScreen() {
                   secureTextEntry
                   autoCapitalize="none"
                   className="mb-3"
+                  testID="account-current-password-input"
                 />
                 <Input
                   value={newPassword}
@@ -615,6 +622,7 @@ function UserDetailScreen() {
                   secureTextEntry
                   autoCapitalize="none"
                   className="mb-3"
+                  testID="account-new-password-input"
                 />
                 <Input
                   value={confirmPassword}
@@ -623,8 +631,13 @@ function UserDetailScreen() {
                   secureTextEntry
                   autoCapitalize="none"
                   className="mb-3"
+                  testID="account-confirm-password-input"
                 />
-                <Button onPress={handleUpdatePassword} disabled={updatePasswordMutation.isPending}>
+                <Button
+                  onPress={handleUpdatePassword}
+                  disabled={updatePasswordMutation.isPending}
+                  testID="account-password-submit-button"
+                >
                   <Text>
                     {updatePasswordMutation.isPending ? "Updating..." : "Update Password"}
                   </Text>

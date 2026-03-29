@@ -3,6 +3,12 @@ appId: com.deancochran.gradientpeak.dev
 - tapOn:
     id: "login-button"
     optional: true
+- tapOn:
+    id: "sign-in-link-button"
+    optional: true
+- tapOn:
+    id: "back-to-signin-link-button"
+    optional: true
 - extendedWaitUntil:
     visible:
       id: "sign-in-screen"

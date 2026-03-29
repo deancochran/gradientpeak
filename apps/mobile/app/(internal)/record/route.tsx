@@ -102,7 +102,7 @@ export default function RoutePickerPage() {
   }, [routesList, searchQuery, categoryFilter]);
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="record-route-screen">
       <ScrollView className="flex-1 px-4 pt-4">
         {/* Search Input */}
         <View className="mb-3">
@@ -118,6 +118,7 @@ export default function RoutePickerPage() {
               value={searchQuery}
               onChangeText={setSearchQuery}
               className="pl-10"
+              testID="record-route-search-input"
             />
           </View>
         </View>
@@ -131,6 +132,7 @@ export default function RoutePickerPage() {
                   key={option.value}
                   onPress={() => setCategoryFilter(option.value)}
                   className="px-3 py-2 rounded-full border border-border"
+                  testID={`record-route-filter-${option.value}`}
                   style={{
                     backgroundColor:
                       categoryFilter === option.value ? "rgb(34, 197, 94)" : undefined,
@@ -174,6 +176,7 @@ export default function RoutePickerPage() {
           <Pressable
             onPress={handleDetach}
             className="bg-card p-4 rounded-lg border border-border mb-3"
+            testID="record-route-detach-button"
           >
             <View className="flex-row items-center justify-between">
               <View className="flex-1">
@@ -247,6 +250,7 @@ function RouteListItem({ route, isSelected, disabled = false, onPress }: RouteLi
       onPress={onPress}
       disabled={disabled}
       className="bg-card p-4 rounded-lg border border-border"
+      testID={`record-route-item-${route.id}`}
       style={{
         borderColor: isSelected ? "rgb(34, 197, 94)" : undefined,
         borderWidth: isSelected ? 2 : 1,

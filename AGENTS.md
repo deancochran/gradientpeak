@@ -104,6 +104,7 @@ Compaction rules:
 - Prefer small, focused diffs that match existing patterns.
 - Never duplicate business logic that belongs in `@repo/core`.
 - Keep `@repo/core` database-independent.
+- For local parallel agent work, prefer Worktrunk-managed worktrees under `~/worktrees/GradientPeak/<branch>` and keep the coordinator in the primary repo checkout.
 - For shared UI work in `packages/ui`, prefer a TDD flow of `fixtures.ts` -> story -> `play` interaction -> package test as needed -> preview scenario/manifests -> runtime E2E only for app integration boundaries.
 - Treat generated selector and preview manifests as the source of truth for cross-runtime preview smoke assertions; avoid hand-maintained app-local selector copies.
 - Use the smallest relevant skill set instead of expanding always-on instructions.
@@ -123,10 +124,12 @@ Load only the skills needed for the current task:
 - `provider-integrations` for OAuth callbacks, token sync, webhooks, and external provider mapping.
 - `testing` for test ownership, runner choice, and coverage patterns.
 - `documentation` for JSDoc, README, and maintenance docs.
+- `worktrunk` for git worktree orchestration, hooks, path templates, and parallel agent session workflows.
 
 ## Validation
 
 - Start with focused package checks.
+- When using Worktrunk, expect shared project hooks in `.config/wt.toml` to run `pnpm install --frozen-lockfile` on worktree creation and `pnpm check-types`, `pnpm lint`, and `pnpm test` before merge unless hooks are explicitly skipped.
 - Preferred full validation before handoff or commit:
 
 ```bash
@@ -158,3 +161,4 @@ When work is incomplete:
 Read `.opencode/instructions/project-reference.md` only when you need detailed architecture, commands, stack versions, file locations, or domain-specific gotchas.
 Read `.opencode/instructions/workflow-lifecycle.md` when coordinating complex multi-step work.
 Read `.opencode/instructions/delegation-contract.md` when you need the standard task packet, return packet, or checkpoint template.
+Read `.opencode/instructions/worktrunk-reference.md` when provisioning, troubleshooting, or standardizing Worktrunk-based agent workflows.
