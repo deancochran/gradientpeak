@@ -46,9 +46,9 @@ Use stable seeded data for mutation-heavy Maestro flows.
 
 See `apps/mobile/.maestro/fixtures.env.example` for the expected shape.
 
-The repo runners auto-load `apps/mobile/.maestro/fixtures.env` if present. Multi-actor matrices can stack actor-specific overlays like `apps/mobile/.maestro/actors/sender.env` and `apps/mobile/.maestro/actors/receiver.env` on top.
+The repo runners auto-load `apps/mobile/.maestro/fixtures.env` if present. Multi-actor matrices can also use actor-specific overlays like `apps/mobile/.maestro/actors/sender.env` and `apps/mobile/.maestro/actors/receiver.env`.
 
-When you run Maestro through the repo scripts, sign-up flows auto-generate a unique `SIGNUP_EMAIL` if you leave it unset.
+When you run Maestro through `apps/mobile/scripts/maestro-local.sh` and the repo wrappers around it, sign-up flows auto-generate a unique `SIGNUP_EMAIL` if you leave it unset.
 
 For multi-device scenarios, prefer actor-specific env overlays instead of reusing one mutable social account.
 

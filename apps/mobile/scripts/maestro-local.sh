@@ -18,6 +18,14 @@ fi
 
 dev_server_url="${EXPO_DEV_SERVER_URL:-http://localhost:8081}"
 dev_server_label="${EXPO_DEV_SERVER_LABEL:-http://localhost:8081}"
+signup_email="${SIGNUP_EMAIL:-}"
+
+if [ -z "$signup_email" ]; then
+  signup_prefix="${MAESTRO_SIGNUP_EMAIL_PREFIX:-gradientpeak.maestro}"
+  signup_domain="${MAESTRO_SIGNUP_EMAIL_DOMAIN:-example.com}"
+  signup_email="${signup_prefix}+$(date -u +%Y%m%d%H%M%S)-$$@${signup_domain}"
+fi
+
 dev_server_url_encoded="$(python - "$dev_server_url" <<'PY'
 import sys
 from urllib.parse import quote
@@ -39,6 +47,7 @@ exec maestro test \
   -e STANDARD_USER_PASS="${STANDARD_USER_PASS:-}" \
   -e ONBOARDING_USER_EMAIL="${ONBOARDING_USER_EMAIL:-}" \
   -e ONBOARDING_USER_PASS="${ONBOARDING_USER_PASS:-}" \
+  -e SIGNUP_EMAIL="$signup_email" \
   -e SIGNUP_PASSWORD="${SIGNUP_PASSWORD:-}" \
   -e TARGET_USERNAME="${TARGET_USERNAME:-}" \
   --debug-output .maestro/artifacts/debug \

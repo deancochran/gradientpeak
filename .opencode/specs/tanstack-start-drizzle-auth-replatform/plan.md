@@ -1,5 +1,7 @@
 # Plan
 
+Execution mode for this plan lives in `orchestration-plan.md`.
+
 ## Phase 1 - Target Architecture Alignment
 
 Goal: define the intended steady-state package boundaries before code migration begins.

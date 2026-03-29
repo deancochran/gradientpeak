@@ -170,12 +170,10 @@
 
 ## Completed Summary
 
-- [x] Analyzed `t3-oss/create-t3-turbo` as the reference architecture for Expo + TanStack Start + tRPC + Better Auth + Drizzle + Supabase.
-- [x] Audited the current repo's Next.js web app, `packages/trpc`, `packages/supabase`, `packages/typescript-config`, and `packages/ui` against that target model.
-- [x] Captured the desired architecture direction: TanStack Start web, dedicated Better Auth package, dedicated Drizzle DB package, retained tRPC API layer, preserved `packages/core`, and root-level `tooling/` for TypeScript and Tailwind.
-- [x] Added the supporting planning artifacts: package migration matrix, web route map, auth behavior matrix, DB ownership matrix, dependency order matrix, risk/blocker matrix, decision log, and cutover checklist.
-- [x] Locked the current migration strategy: fresh Drizzle baseline plus Drizzle-Zod outputs, Better Auth as the full first-party auth replacement, `packages/api` as the final API package name with a temporary `@repo/trpc` bridge, `packages/supabase` staying in place for now as infra-only, provider integrations staying separate from login identity, and lowest-risk migration first.
-- [x] Created the first `packages/api` bridge around shared context ownership, normalized auth-session consumption, and initial `packages/db` validation/type imports while preserving `@repo/trpc` compatibility for existing app callers.
-- [x] Replaced the mobile bearer-only request-header helper with a cookie-first auth transport scaffold backed by SecureStore, relaxed mobile auth-user refresh to work without a Supabase access token, and isolated Supabase deep-link token parsing behind an explicit legacy bridge helper.
-- [x] Moved mobile sign-up and verification UX onto the Better Auth Expo client, replacing the Supabase OTP screen with resend-email plus session-refresh behavior and aligning email-change callbacks with Expo deep links.
-- [x] Refined the architecture spec to make `packages/api` the only long-term tRPC home, to centralize Tailwind themes in `tooling/tailwind`, and to add explicit script-minimization plus generated-artifact hygiene requirements.
+- [x] Locked the steady-state architecture around TanStack Start web, Better Auth, Drizzle, `packages/api`, retained `packages/core`/`packages/ui`, root `tooling/`, minimal scripts, and explicit generated-artifact hygiene.
+- [x] Created the core planning artifacts: migration, route, auth, DB, dependency, risk, decision, cutover, and orchestration documents.
+- [x] Landed the first package-boundary prep for `packages/api`, Better Auth mobile transport/client scaffolding, and related contract cleanup.
+- [x] Defined the multi-worktree execution model in `orchestration-plan.md`, including lane ownership, merge order, nested coordinator rules, and root-conductor cadence.
+- [x] Added ready-to-send lane task packets plus Wave 0 and Wave 1 conductor checklists, including the `wt switch --create ...` command set for all planned worktrees.
+- [x] Provisioned the `foundation`, `db`, `auth`, `api`, `web`, `mobile`, `tooling`, and `fan-in` Worktrunk branches/worktrees under `~/worktrees/GradientPeak/` and used lane coordinators to validate Wave 0 release readiness.
+- [x] Advanced Wave 1 and early Wave 2 in lane worktrees: `packages/db` now has clearer schema/client/validation surfaces and an explicit infra-only `packages/supabase` boundary, `packages/auth` now owns shared session/callback/client helpers, and `packages/api` now carries a clearer additive auth context while `packages/trpc` stays compatibility-only.
