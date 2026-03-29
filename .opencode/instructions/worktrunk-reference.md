@@ -23,7 +23,7 @@ Focused guidance for using Worktrunk in this repository.
 Preferred local layout:
 
 ```toml
-[projects."github.com/deancochran/GradientPeak"]
+[projects."github.com/deancochran/gradientpeak"]
 worktree-path = "~/worktrees/{{ repo }}/{{ branch | sanitize }}"
 ```
 
@@ -54,6 +54,36 @@ wt config show --full
 4. Use `wt list` to monitor active worktrees and branch state.
 5. Validate within the worker worktree.
 6. Merge or remove finished worktrees with Worktrunk commands.
+
+For root-coordinator web sessions such as OpenCode Web or OpenChamber:
+
+- keep planning, review, and fan-in in `~/GradientPeak`
+- create one worker worktree per bounded task
+- give each worker explicit ownership, non-ownership, and verification instructions
+- prefer separate worktrees for UI, API, database, and test-heavy tasks when the boundaries are clean
+- if database changes are involved, give schema ownership to a dedicated worktree and sequence API/UI branches behind that contract
+
+## Coordinator Branch Naming
+
+Use this default pattern for coordinator-created worker branches:
+
+```text
+spec/<spec-slug>/<lane>
+```
+
+Where:
+
+- `<spec-slug>` is the active spec folder or short feature slug
+- `<lane>` is one bounded concern such as `db`, `api`, `ui`, `test`, `docs`, or `qa`
+
+Examples:
+
+- `spec/calendar-dual-mode/db`
+- `spec/calendar-dual-mode/api`
+- `spec/calendar-dual-mode/ui`
+- `spec/calendar-dual-mode/test`
+
+This naming keeps worktrees grouped by spec, makes merge order easier to reason about, and works well with Worktrunk path sanitization.
 
 If the worktree is launched from an IDE with multi-root support, add the created worktree as another root rather than digging through hidden folders.
 

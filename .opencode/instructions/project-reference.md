@@ -59,6 +59,7 @@ wt remove
 ```
 
 - Standard local worktree root: `~/worktrees/GradientPeak/<branch>`
+- Preferred coordinator branch naming: `spec/<spec-slug>/<lane>`
 - Shared Worktrunk hooks in `.config/wt.toml` run `pnpm install --frozen-lockfile` on `pre-start`, then `pnpm check-types`, `pnpm lint`, and `pnpm test` on `pre-merge`
 
 Mobile:

@@ -8,6 +8,9 @@ Use this reference when packaging work for a subagent or recording the result of
 Objective:
 - What this worker must achieve.
 
+Branch Or Worktree:
+- Target branch name and worktree path, or say coordinator-owned if the worker should not provision it.
+
 Scope:
 - Exact files, directories, or decision boundary.
 
@@ -48,6 +51,9 @@ Decisions Taken:
 Files Touched Or Proposed:
 - Exact paths changed or recommended.
 
+Worktree Or Branch Used:
+- Exact branch and worktree path used for the task.
+
 Verification Run:
 - Commands run, checks performed, or why no verification was possible.
 
@@ -86,3 +92,4 @@ Next Recommended Action:
 - Prefer file references over repeated prose.
 - Include prior checkpoints only when they materially affect the task.
 - Do not push coordinator-only responsibilities onto delegated workers.
+- For parallel execution, state file ownership boundaries explicitly and name files or areas the worker must not touch.

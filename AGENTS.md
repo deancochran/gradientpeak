@@ -37,9 +37,12 @@ Lifecycle rules:
 - The coordinator owns task selection, delegation decisions, fan-in synthesis, verification sufficiency, and final handoff.
 - Delegation is the default for medium or high complexity work when research, validation, or implementation slices can be bounded clearly.
 - Parallel fan-out is allowed only when work units have low-conflict boundaries, a clear integration surface, and an explicit fan-in owner.
+- In root-coordinator web sessions, define the split first, then assign one worktree per bounded task with explicit file ownership, non-ownership, and verification instructions.
 - Do not finish a session without writing truthful progress, blockers, validation status, and the next action into repo memory.
 
 ## Delegation Contract
+
+For parallel worktree orchestration from the root coordinator, every delegated task should also name the target branch or worktree and state whether the worker is allowed to create it or should assume it already exists.
 
 Every delegated task should include:
 
@@ -62,6 +65,8 @@ Every delegated result should return:
 - verification run,
 - unresolved risks,
 - exact next step if incomplete.
+
+When work is executed in a dedicated worktree, include the worktree path or branch in the return packet so fan-in can review and merge the correct branch.
 
 ## Context Routing And Memory
 
@@ -105,6 +110,7 @@ Compaction rules:
 - Never duplicate business logic that belongs in `@repo/core`.
 - Keep `@repo/core` database-independent.
 - For local parallel agent work, prefer Worktrunk-managed worktrees under `~/worktrees/GradientPeak/<branch>` and keep the coordinator in the primary repo checkout.
+- For coordinator-created worker branches, use `spec/<spec-slug>/<lane>` as the default naming convention, where `<lane>` is a bounded slice like `db`, `api`, `ui`, `test`, `docs`, or `qa`.
 - For shared UI work in `packages/ui`, prefer a TDD flow of `fixtures.ts` -> story -> `play` interaction -> package test as needed -> preview scenario/manifests -> runtime E2E only for app integration boundaries.
 - Treat generated selector and preview manifests as the source of truth for cross-runtime preview smoke assertions; avoid hand-maintained app-local selector copies.
 - Use the smallest relevant skill set instead of expanding always-on instructions.
@@ -125,6 +131,13 @@ Load only the skills needed for the current task:
 - `testing` for test ownership, runner choice, and coverage patterns.
 - `documentation` for JSDoc, README, and maintenance docs.
 - `worktrunk` for git worktree orchestration, hooks, path templates, and parallel agent session workflows.
+
+Branch naming examples:
+
+- `spec/calendar-dual-mode/db`
+- `spec/calendar-dual-mode/api`
+- `spec/calendar-dual-mode/ui`
+- `spec/calendar-dual-mode/test`
 
 ## Validation
 
