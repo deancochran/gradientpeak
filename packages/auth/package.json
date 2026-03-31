@@ -1,0 +1,38 @@
+{
+  "name": "@repo/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./operations": "./src/contracts/operations.ts",
+    "./session": "./src/contracts/session.ts",
+    "./callbacks": "./src/contracts/callbacks.ts",
+    "./account-deletion": "./src/contracts/account-deletion.ts",
+    "./env": "./src/runtime/env.ts",
+    "./server": "./src/runtime/server.ts",
+    "./client-shared": "./src/client/shared.ts",
+    "./web-client": "./src/client/web.ts",
+    "./expo-client": "./src/client/expo.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@repo/db": "workspace:*",
+    "@better-auth/drizzle-adapter": "^1.3.10",
+    "@better-auth/expo": "^1.3.10",
+    "better-auth": "^1.3.10",
+    "drizzle-orm": "^0.44.7",
+    "pg": "^8.16.3",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5",
+    "typescript": "^5.5.2"
+  }
+}

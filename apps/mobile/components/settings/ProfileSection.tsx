@@ -13,7 +13,7 @@ import { useZodForm } from "@repo/ui/hooks";
 import { useState } from "react";
 import { View } from "react-native";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 interface ProfileSectionProps {
   profile: {
@@ -27,9 +27,9 @@ interface ProfileSectionProps {
 
 export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const updateProfileMutation = useReliableMutation(trpc.profiles.update, {
+  const updateProfileMutation = useReliableMutation(api.profiles.update, {
     invalidate: [utils.profiles, utils.trainingPlans],
     success: "Profile updated!",
     onSuccess: async () => {

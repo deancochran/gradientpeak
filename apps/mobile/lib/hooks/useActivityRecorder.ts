@@ -15,7 +15,7 @@
  */
 
 import type { RecordingServiceActivityPlan } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/db";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 import {

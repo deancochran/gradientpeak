@@ -9,7 +9,7 @@ import { useState } from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { getActivityConfig } from "@/lib/constants/activities";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 // ============================================
 // TYPES
@@ -113,7 +113,7 @@ export function ActivityPlanCard({
   const [isLiked, setIsLiked] = useState(activity.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(activity.likes_count ?? 0);
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
       // Revert optimistic update on error
       setIsLiked(activity.has_liked ?? false);

@@ -108,9 +108,9 @@ jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
   refreshScheduleViews: jest.fn(async () => undefined),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       activityPlans: {
         list: { invalidate: jest.fn() },

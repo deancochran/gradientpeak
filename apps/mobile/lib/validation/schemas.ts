@@ -9,8 +9,6 @@
  */
 
 // Re-export all form schemas from core
-// Legacy aliases for backwards compatibility
-// These are deprecated and should be updated to use the core names
 export {
   type ActivityPlanCreateFormData,
   type ActivityPlanUpdateFormData,

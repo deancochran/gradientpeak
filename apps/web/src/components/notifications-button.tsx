@@ -1,7 +1,7 @@
 "use client";
 
 import { getNotificationViewModel, normalizeNotificationListItem } from "@repo/core";
-import { invalidateNotificationQueries } from "@repo/trpc/react";
+import { invalidateNotificationQueries } from "@repo/api/react";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -14,12 +14,12 @@ import {
 } from "@repo/ui/components/dropdown-menu";
 import { Bell } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export function NotificationsButton() {
   const router = useRouter();
-  const { data: unreadCount = 0 } = trpc.notifications.getUnreadCount.useQuery();
-  const { data: notifications = [] } = trpc.notifications.getRecent.useQuery({
+  const { data: unreadCount = 0 } = api.notifications.getUnreadCount.useQuery();
+  const { data: notifications = [] } = api.notifications.getRecent.useQuery({
     limit: 5,
   });
   const normalizedNotifications = notifications
@@ -30,9 +30,9 @@ export function NotificationsButton() {
       ): notification is NonNullable<ReturnType<typeof normalizeNotificationListItem>> =>
         notification !== null,
     );
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const markReadMutation = trpc.notifications.markRead.useMutation({
+  const markReadMutation = api.notifications.markRead.useMutation({
     onSuccess: async () => invalidateNotificationQueries(utils),
   });
 

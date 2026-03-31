@@ -8,23 +8,23 @@ import { AlertCircle, ArrowLeft, Calendar, GripVertical, Save } from "lucide-rea
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 import { normalizeDate } from "@/lib/utils/plan/dateGrouping";
 
 export default function WorkoutsReorder() {
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   // Get all planned activities
   const {
     data: plannedActivitiesData,
     isLoading,
     refetch,
-  } = trpc.events.list.useQuery({
+  } = api.events.list.useQuery({
     limit: 100,
   });
 
-  const updateMutation = trpc.events.update.useMutation({
+  const updateMutation = api.events.update.useMutation({
     onSuccess: () => {
       utils.events.invalidate();
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { invalidateRelationshipQueries } from "@repo/trpc/react";
+import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -23,14 +23,14 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useAuth } from "@/components/providers/auth-provider";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export default function UserProfilePage() {
   const params = useParams();
   const router = useRouter();
   const userId = params.userId as string;
   const { user } = useAuth();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const isSelf = user?.id === userId;
 
@@ -38,9 +38,9 @@ export default function UserProfilePage() {
     data: profile,
     isLoading,
     error,
-  } = trpc.profiles.getPublicById.useQuery({ id: userId }, { enabled: !!userId });
+  } = api.profiles.getPublicById.useQuery({ id: userId }, { enabled: !!userId });
 
-  const followMutation = trpc.social.followUser.useMutation({
+  const followMutation = api.social.followUser.useMutation({
     onSuccess: async () => {
       await invalidateRelationshipQueries(utils, [userId, user?.id]);
       toast.success("Follow request sent");
@@ -48,7 +48,7 @@ export default function UserProfilePage() {
     onError: (err) => toast.error(err.message),
   });
 
-  const unfollowMutation = trpc.social.unfollowUser.useMutation({
+  const unfollowMutation = api.social.unfollowUser.useMutation({
     onSuccess: async () => {
       await invalidateRelationshipQueries(utils, [userId, user?.id]);
       toast.success("Unfollowed user");
@@ -56,7 +56,7 @@ export default function UserProfilePage() {
     onError: (err) => toast.error(err.message),
   });
 
-  const messageMutation = trpc.messaging.getOrCreateDM.useMutation({
+  const messageMutation = api.messaging.getOrCreateDM.useMutation({
     onSuccess: (data) => {
       router.push(`/messages`);
     },

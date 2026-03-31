@@ -1,4 +1,4 @@
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
 /**

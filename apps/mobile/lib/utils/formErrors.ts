@@ -70,11 +70,11 @@ export function getErrorMessage(error: unknown): string {
     else return "An unexpected error occurred";
   }
 
-  // Handle tRPC/API errors with shape
+  // Handle API/API errors with shape
   if (typeof error === "object" && error !== null) {
     const err = error as any;
 
-    // tRPC error format
+    // API error format
     if (err.data?.code && ERROR_MESSAGE_MAP[err.data.code]) {
       return ERROR_MESSAGE_MAP[err.data.code];
     }

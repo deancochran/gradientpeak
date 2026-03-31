@@ -157,9 +157,9 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
   useTrainingPlanSnapshot: () => snapshotState,
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       profileSettings: {
         getForProfile: {

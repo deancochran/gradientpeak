@@ -98,9 +98,9 @@ jest.mock("@/lib/stores/theme-store", () => ({
   useTheme: () => ({ theme: "light", setTheme: jest.fn() }),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       profiles: { invalidate: jest.fn() },
       auth: { getUser: { invalidate: jest.fn() } },

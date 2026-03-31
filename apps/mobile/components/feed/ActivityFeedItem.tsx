@@ -9,7 +9,7 @@ import { Clock, Heart, MapPin, MessageCircle, TrendingUp, Zap } from "lucide-rea
 import { useCallback, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 // ============================================
 // TYPES
@@ -69,7 +69,7 @@ export function ActivityFeedItem({
 
   const activityConfig = getActivityCategoryConfig(activity.type);
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onSuccess: (data) => {
       setIsLiked(data.liked);
       setLikesCount((prev) => (data.liked ? prev + 1 : prev - 1));

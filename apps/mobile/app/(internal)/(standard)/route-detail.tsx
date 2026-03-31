@@ -9,7 +9,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Outdoor Run",
@@ -21,12 +21,12 @@ const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
 export default function RouteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const mapRef = useRef<MapView>(null);
 
-  const { data: route, isLoading } = trpc.routes.get.useQuery({ id: id! }, { enabled: !!id });
+  const { data: route, isLoading } = api.routes.get.useQuery({ id: id! }, { enabled: !!id });
 
-  const deleteMutation = useReliableMutation(trpc.routes.delete, {
+  const deleteMutation = useReliableMutation(api.routes.delete, {
     invalidate: [utils.routes],
     success: "Route deleted successfully",
     onSuccess: () => router.back(),
@@ -36,7 +36,7 @@ export default function RouteDetailScreen() {
   const [isLiked, setIsLiked] = useState(route?.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(route?.has_liked ? 1 : 0);
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
       setIsLiked(route?.has_liked ?? false);
       setLikesCount(route?.has_liked ? 1 : 0);

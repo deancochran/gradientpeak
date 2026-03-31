@@ -52,8 +52,8 @@ import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGu
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
-import { trpc } from "@/lib/trpc";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
+import { api } from "@/lib/api";
+import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
 type EventCreateType = "planned" | "rest_day" | "race_target" | "custom";
@@ -190,7 +190,7 @@ function CalendarScreen() {
     data: activitiesData,
     isLoading: loadingEvents,
     refetch: refetchActivities,
-  } = trpc.events.list.useQuery(
+  } = api.events.list.useQuery(
     {
       date_from: rangeStart,
       date_to: rangeEnd,
@@ -200,7 +200,7 @@ function CalendarScreen() {
     scheduleAwareReadQueryOptions,
   );
 
-  const deleteEventMutation = trpc.events.delete.useMutation({
+  const deleteEventMutation = api.events.delete.useMutation({
     onSuccess: async () => {
       if (!isMountedRef.current) return;
       closeSheetsAndTransientState();
@@ -212,7 +212,7 @@ function CalendarScreen() {
     },
   });
 
-  const createEventMutation = trpc.events.create.useMutation({
+  const createEventMutation = api.events.create.useMutation({
     onSuccess: async () => {
       if (!isMountedRef.current) return;
       resetManualCreateState();
@@ -220,7 +220,7 @@ function CalendarScreen() {
     },
   });
 
-  const moveEventMutation = trpc.events.update.useMutation({
+  const moveEventMutation = api.events.update.useMutation({
     onSuccess: async () => {
       if (!isMountedRef.current) return;
       closeSheetsAndTransientState();
@@ -495,6 +495,8 @@ function CalendarScreen() {
       all_day: manualAllDay,
       timezone: "UTC",
       notes: manualNotes.trim() || undefined,
+      lifecycle: { status: "scheduled" },
+      read_only: false,
     });
   }, [
     createEventMutation,

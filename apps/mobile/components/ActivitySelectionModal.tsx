@@ -44,7 +44,7 @@
  */
 
 import { getActivityDisplayName } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupIcon, ToggleGroupItem } from "@repo/ui/components/toggle-group";

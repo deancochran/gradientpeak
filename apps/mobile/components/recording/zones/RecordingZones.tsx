@@ -18,7 +18,7 @@
  * - When focused, zones overlay with absolute positioning
  */
 
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import React, { useMemo } from "react";
 import { View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";

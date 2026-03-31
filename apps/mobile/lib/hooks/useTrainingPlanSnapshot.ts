@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
-import { trpc } from "@/lib/trpc";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
+import { api } from "@/lib/api";
+import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { useProfileGoals } from "./useProfileGoals";
 import { useProfileSettings } from "./useProfileSettings";
 
@@ -99,7 +99,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     isError: isPlanError,
     error: planError,
     refetch: refetchPlan,
-  } = trpc.trainingPlans.get.useQuery(
+  } = api.trainingPlans.get.useQuery(
     planId ? { id: planId } : undefined,
     scheduleAwareReadQueryOptions,
   );
@@ -118,7 +118,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     isError: isStatusError,
     error: statusError,
     refetch: refetchStatus,
-  } = trpc.trainingPlans.getCurrentStatus.useQuery(undefined, {
+  } = api.trainingPlans.getCurrentStatus.useQuery(undefined, {
     enabled: !!planSnapshot,
     ...scheduleAwareReadQueryOptions,
   });
@@ -209,7 +209,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     isError: isInsightTimelineError,
     error: insightTimelineError,
     refetch: refetchInsightTimeline,
-  } = trpc.trainingPlans.getInsightTimeline.useQuery(
+  } = api.trainingPlans.getInsightTimeline.useQuery(
     {
       ...(planSnapshot?.id ? { training_plan_id: planSnapshot.id } : {}),
       start_date: timelineWindow.start_date,
@@ -228,7 +228,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     isError: isActualCurveError,
     error: actualCurveError,
     refetch: refetchActualCurve,
-  } = trpc.trainingPlans.getActualCurve.useQuery(actualCurveRange, {
+  } = api.trainingPlans.getActualCurve.useQuery(actualCurveRange, {
     enabled: !!planSnapshot,
     ...scheduleAwareReadQueryOptions,
   });
@@ -239,7 +239,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     isError: isIdealCurveError,
     error: idealCurveError,
     refetch: refetchIdealCurve,
-  } = trpc.trainingPlans.getIdealCurve.useQuery(
+  } = api.trainingPlans.getIdealCurve.useQuery(
     {
       id: planSnapshot?.id || "",
       ...idealCurveRange,
@@ -256,7 +256,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     isError: isWeeklySummariesError,
     error: weeklySummariesError,
     refetch: refetchWeeklySummaries,
-  } = trpc.trainingPlans.getWeeklySummary.useQuery(
+  } = api.trainingPlans.getWeeklySummary.useQuery(
     {
       training_plan_id: planSnapshot?.id || "",
       weeks_back: weeklySummariesWeeksBack,

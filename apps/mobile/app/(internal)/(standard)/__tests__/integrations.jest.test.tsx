@@ -103,9 +103,9 @@ jest.mock("@/lib/services/fit/FitUploader", () => ({
   })),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       activities: {
         invalidate: invalidateActivitiesMock,
@@ -145,7 +145,7 @@ jest.mock("@/lib/trpc", () => ({
   },
 }));
 
-jest.mock("@repo/trpc/client", () => ({
+jest.mock("@repo/api/client", () => ({
   __esModule: true,
   invalidatePostActivityIngestionQueries: invalidatePostActivityIngestionQueriesMock,
 }));

@@ -1,7 +1,7 @@
 "use client";
 
 import { getConversationDisplayName, getConversationPreviewText } from "@repo/core";
-import { invalidateConversationQueries } from "@repo/trpc/react";
+import { invalidateConversationQueries } from "@repo/api/react";
 import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
@@ -16,22 +16,22 @@ import { cn } from "@repo/ui/lib/cn";
 import { Send } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export default function MessagesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { user } = useAuth();
-  const { data: conversations = [] } = trpc.messaging.getConversations.useQuery();
+  const { data: conversations = [] } = api.messaging.getConversations.useQuery();
 
-  const { data: messages = [] } = trpc.messaging.getMessages.useQuery(
+  const { data: messages = [] } = api.messaging.getMessages.useQuery(
     { conversation_id: selectedId! },
     { enabled: !!selectedId, refetchInterval: 5000 },
   );
 
   const [inputText, setInputText] = useState("");
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const sendMessageMutation = trpc.messaging.sendMessage.useMutation({
+  const sendMessageMutation = api.messaging.sendMessage.useMutation({
     onSuccess: async () => {
       setInputText("");
       await invalidateConversationQueries(utils, selectedId!);

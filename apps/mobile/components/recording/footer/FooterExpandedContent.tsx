@@ -9,7 +9,7 @@
  */
 
 import type { MetricFamily, RecordingState } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import { Badge } from "@repo/ui/components/badge";
 import { Text } from "@repo/ui/components/text";
 import { router } from "expo-router";

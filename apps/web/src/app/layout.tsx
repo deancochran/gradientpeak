@@ -4,7 +4,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import "@/globals.css";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { TRPCReactProvider } from "@/lib/trpc/client";
+import { ApiReactProvider } from "@/lib/api/client";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,12 +35,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <TRPCReactProvider>
+          <ApiReactProvider>
             <AuthProvider>
               <Navbar />
               {children}
             </AuthProvider>
-          </TRPCReactProvider>
+          </ApiReactProvider>
         </ThemeProvider>
       </body>
     </html>

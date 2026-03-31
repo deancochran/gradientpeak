@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react-native";
 import React, { useState } from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 function FollowingScreen() {
   const router = useRouter();
@@ -20,7 +20,7 @@ function FollowingScreen() {
     data: followingData,
     isLoading,
     isFetching,
-  } = trpc.social.getFollowing.useQuery(
+  } = api.social.getFollowing.useQuery(
     { user_id: targetUserId, limit, offset: page * limit },
     { enabled: !!targetUserId },
   );

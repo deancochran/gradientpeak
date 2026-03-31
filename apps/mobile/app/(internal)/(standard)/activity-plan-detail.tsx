@@ -6,7 +6,7 @@ import {
   getStepIntensityColor,
   IntervalStepV2,
 } from "@repo/core";
-import { invalidateActivityPlanQueries, invalidateTrainingPlanQueries } from "@repo/trpc/react";
+import { invalidateActivityPlanQueries, invalidateTrainingPlanQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Switch } from "@repo/ui/components/switch";
@@ -39,7 +39,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 
 function isValidUuid(value: string): boolean {
@@ -61,13 +61,13 @@ export default function ActivityPlanDetailPage() {
   const [isPublic, setIsPublic] = useState(false);
   const scheduleActionHandledRef = React.useRef<string | null>(null);
 
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
     onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
   });
 
   // Fetch plan from database if planId is provided
-  const { data: fetchedPlan, isLoading: loadingPlan } = trpc.activityPlans.getById.useQuery(
+  const { data: fetchedPlan, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
     { id: planId! },
     { enabled: !!planId },
   );
@@ -77,7 +77,7 @@ export default function ActivityPlanDetailPage() {
     data: plannedActivity,
     error: plannedActivityError,
     isLoading: loadingPlannedActivity,
-  } = trpc.events.getById.useQuery({ id: eventId! }, { enabled: !!eventId && !isRedirecting });
+  } = api.events.getById.useQuery({ id: eventId! }, { enabled: !!eventId && !isRedirecting });
 
   React.useEffect(() => {
     redirectOnNotFound(plannedActivityError);
@@ -85,7 +85,7 @@ export default function ActivityPlanDetailPage() {
 
   // Fetch route if plan has one
   const routeId = fetchedPlan?.route_id || plannedActivity?.activity_plan?.route_id;
-  const { data: route } = trpc.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
 
   // Parse activity plan from params
   // This can be either a template from discover page, a database activity_plan record, or from a planned activity
@@ -236,7 +236,7 @@ export default function ActivityPlanDetailPage() {
 
   const duplicateActionRef = React.useRef<"copy" | "schedule" | null>(null);
 
-  const duplicatePlanMutation = trpc.activityPlans.duplicate.useMutation({
+  const duplicatePlanMutation = api.activityPlans.duplicate.useMutation({
     onSuccess: async (duplicatedPlan) => {
       const duplicateAction = duplicateActionRef.current;
       duplicateActionRef.current = null;
@@ -285,7 +285,7 @@ export default function ActivityPlanDetailPage() {
   };
 
   // Delete mutation
-  const deleteMutation = trpc.activityPlans.delete.useMutation({
+  const deleteMutation = api.activityPlans.delete.useMutation({
     onSuccess: async () => {
       await invalidateActivityPlanQueries(utils);
 
@@ -306,7 +306,7 @@ export default function ActivityPlanDetailPage() {
   });
 
   // Privacy update mutation
-  const updatePrivacyMutation = trpc.activityPlans.update.useMutation({
+  const updatePrivacyMutation = api.activityPlans.update.useMutation({
     onSuccess: async () => {
       await invalidateActivityPlanQueries(utils, {
         planId,
@@ -330,7 +330,7 @@ export default function ActivityPlanDetailPage() {
     });
   };
 
-  const removeScheduleMutation = trpc.events.delete.useMutation({
+  const removeScheduleMutation = api.events.delete.useMutation({
     onSuccess: async () => {
       beginRedirect();
       setShowScheduleModal(false);
@@ -391,7 +391,7 @@ export default function ActivityPlanDetailPage() {
     return uuidRegex.test(id);
   };
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
       setIsLiked(activityPlan?.has_liked ?? false);
       setLikesCount(activityPlan?.likes_count ?? 0);
@@ -426,7 +426,7 @@ export default function ActivityPlanDetailPage() {
   const isCommentEntityIdValid = isValidUuid(commentEntityId);
 
   // Fetch comments
-  const { data: commentsData, refetch: refetchComments } = trpc.social.getComments.useQuery(
+  const { data: commentsData, refetch: refetchComments } = api.social.getComments.useQuery(
     isCommentEntityIdValid
       ? {
           entity_id: commentEntityId,
@@ -436,7 +436,7 @@ export default function ActivityPlanDetailPage() {
   );
 
   // Add comment mutation
-  const addCommentMutation = trpc.social.addComment.useMutation({
+  const addCommentMutation = api.social.addComment.useMutation({
     onSuccess: () => {
       setNewComment("");
       refetchComments();

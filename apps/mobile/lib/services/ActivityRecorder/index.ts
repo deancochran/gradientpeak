@@ -29,7 +29,7 @@ import {
   RecordingServiceActivityPlan,
   resolveMetricSources as resolveCoreMetricSources,
 } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/db";
 import { EventEmitter } from "expo";
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
@@ -1402,11 +1402,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     try {
       console.log("[Service] Loading route:", routeId);
 
-      // Import vanilla trpc client (for use outside React components)
-      const { getVanillaTrpcClient } = await import("@/lib/trpc");
+      // Import vanilla api client (for use outside React components)
+      const { getVanillaApiClient } = await import("@/lib/api");
 
       // Load full route with coordinates
-      const route = await getVanillaTrpcClient().routes.loadFull.query({
+      const route = await getVanillaApiClient().routes.loadFull.query({
         id: routeId,
       });
 

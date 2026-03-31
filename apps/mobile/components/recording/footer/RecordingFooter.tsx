@@ -14,7 +14,7 @@
 
 import BottomSheet, { BottomSheetBackdrop, SNAP_POINT_TYPE } from "@gorhom/bottom-sheet";
 import type { RecordingState } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import React, { useCallback, useMemo, useRef } from "react";
 import { useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

@@ -1,20 +1,19 @@
-import { type AppRouter, appRouter, createQueryClient, createTRPCContext } from "@repo/trpc/server";
+import { type AppRouter, appRouter, createApiContext, createQueryClient } from "@repo/api/server";
 import { type DehydratedState, dehydrate, HydrationBoundary } from "@tanstack/react-query";
-import type { TRPCQueryOptions } from "@trpc/tanstack-react-query";
-import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
+import type { TRPCQueryOptions as ApiQueryOptions } from "@trpc/tanstack-react-query";
+import { createTRPCOptionsProxy as createApiOptionsProxy } from "@trpc/tanstack-react-query";
 import { headers } from "next/headers";
 import { cache } from "react";
 import { createClient } from "../supabase/server";
 
 /**
- * This wraps the `createTRPCContext` helper and provides the required context for the tRPC API when
- * handling a tRPC call from a React Server Component.
+ * This wraps `createApiContext` with the request state needed for server-rendered API queries.
  */
 const createContext = cache(async () => {
   const heads = new Headers(await headers());
-  heads.set("x-trpc-source", "rsc");
+  heads.set("x-api-source", "rsc");
   const supabase = await createClient();
-  return createTRPCContext({
+  return createApiContext({
     headers: heads,
     supabase,
   });
@@ -22,7 +21,7 @@ const createContext = cache(async () => {
 
 const getQueryClient = cache(createQueryClient);
 
-export const trpc = createTRPCOptionsProxy<AppRouter>({
+export const api = createApiOptionsProxy<AppRouter>({
   router: appRouter,
   ctx: createContext,
   queryClient: getQueryClient,
@@ -44,7 +43,7 @@ export function HydrateClient({ children, state }: HydrateClientProps) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function prefetch<T extends ReturnType<TRPCQueryOptions<any>>>(queryOptions: T) {
+export function prefetch<T extends ReturnType<ApiQueryOptions<any>>>(queryOptions: T) {
   const queryClient = getQueryClient();
   if (queryOptions.queryKey[1]?.type === "infinite") {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

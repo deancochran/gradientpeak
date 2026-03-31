@@ -152,7 +152,7 @@ pnpm check-types && pnpm lint && pnpm test
 Coverage targets:
 
 - `@repo/core`: 100%
-- `@repo/trpc`: 80%
+- `@repo/api`: 80%
 - `apps/mobile`: 60%
 - `apps/web`: 60%
 

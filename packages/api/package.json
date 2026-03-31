@@ -1,0 +1,35 @@
+{
+  "name": "@repo/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./client": "./src/client.ts",
+    "./context": "./src/context.ts",
+    "./react": "./src/react.ts",
+    "./server": "./src/server.ts",
+    "./webhooks": "./src/webhooks.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "@repo/auth": "workspace:*",
+    "@repo/db": "workspace:*",
+    "@repo/core": "workspace:*",
+    "@repo/supabase": "workspace:*",
+    "@tanstack/react-query": "^5.90.5",
+    "@trpc/client": "^11.16.0",
+    "@trpc/react-query": "^11.16.0",
+    "@trpc/server": "^11.16.0",
+    "@supabase/supabase-js": "^2.57.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.2"
+  }
+}

@@ -1,5 +1,5 @@
 import type { ActivityPayload, RecordingState } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -33,7 +33,7 @@ import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 // Helper function to resolve power target
 function resolvePowerTarget(target: any, profile: any): number | null {
@@ -75,7 +75,7 @@ function RecordScreen() {
     useAllPermissionsGranted();
 
   // Fetch smart initialization data (derived metrics)
-  const { data: zones } = trpc.profiles.getZones.useQuery(undefined, {
+  const { data: zones } = api.profiles.getZones.useQuery(undefined, {
     enabled: !!user && !!service,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });

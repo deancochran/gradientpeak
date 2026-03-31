@@ -19,7 +19,7 @@ import { useMemo, useState } from "react";
 import { Alert, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 type HealthKitPermissions = {
   permissions: {
@@ -368,7 +368,7 @@ const CssStep = ({ data, updateData }: StepProps) => (
 
 const IntegrationsStep = ({ data, updateData }: StepProps) => {
   const [connected, setConnected] = useState<string[]>([]);
-  const getAuthUrlMutation = trpc.integrations.getAuthUrl.useMutation();
+  const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
 
   const handleConnect = async (provider: string) => {
     if (provider === "Apple Health") {
@@ -572,8 +572,8 @@ export default function OnboardingScreen() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { completeOnboarding } = useAuth();
-  const { data: profile } = trpc.profiles.get.useQuery();
-  const completeOnboardingMutation = trpc.onboarding.completeOnboarding.useMutation();
+  const { data: profile } = api.profiles.get.useQuery();
+  const completeOnboardingMutation = api.onboarding.completeOnboarding.useMutation();
 
   const updateData = (updates: Partial<OnboardingData>) => {
     setData((prev) => ({ ...prev, ...updates }));

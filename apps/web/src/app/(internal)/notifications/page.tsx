@@ -5,7 +5,7 @@ import {
   getUnreadNotificationIds,
   normalizeNotificationListItem,
 } from "@repo/core";
-import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/trpc/react";
+import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -20,10 +20,10 @@ import { cn } from "@repo/ui/lib/cn";
 import { Bell, Mail, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export default function NotificationsPage() {
-  const { data: notifications = [], isLoading } = trpc.notifications.getRecent.useQuery({
+  const { data: notifications = [], isLoading } = api.notifications.getRecent.useQuery({
     limit: 50,
   });
   const normalizedNotifications = notifications
@@ -34,9 +34,9 @@ export default function NotificationsPage() {
       ): notification is NonNullable<ReturnType<typeof normalizeNotificationListItem>> =>
         notification !== null,
     );
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const markReadMutation = trpc.notifications.markRead.useMutation({
+  const markReadMutation = api.notifications.markRead.useMutation({
     onSuccess: async () => invalidateNotificationQueries(utils),
   });
 
@@ -46,10 +46,10 @@ export default function NotificationsPage() {
     notification: (typeof normalizedNotifications)[number];
   }) => {
     const [handled, setHandled] = useState(false);
-    const itemUtils = trpc.useUtils();
+    const itemUtils = api.useUtils();
     const item = getNotificationViewModel(notification);
 
-    const acceptMutation = trpc.social.acceptFollowRequest.useMutation({
+    const acceptMutation = api.social.acceptFollowRequest.useMutation({
       onSuccess: async () => {
         toast.success("Follow request accepted");
         setHandled(true);
@@ -61,7 +61,7 @@ export default function NotificationsPage() {
       onError: (err) => toast.error(err.message),
     });
 
-    const rejectMutation = trpc.social.rejectFollowRequest.useMutation({
+    const rejectMutation = api.social.rejectFollowRequest.useMutation({
       onSuccess: async () => {
         toast.success("Follow request rejected");
         setHandled(true);

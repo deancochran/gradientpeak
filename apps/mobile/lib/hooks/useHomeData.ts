@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { useMemo } from "react";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 import { useProfileGoals } from "./useProfileGoals";
 import { useProfileSettings } from "./useProfileSettings";
 
@@ -11,7 +11,7 @@ import { useProfileSettings } from "./useProfileSettings";
  * Adapted to provide data for the Home Screen UI.
  */
 export function useHomeData() {
-  const { data, isLoading, refetch } = trpc.home.getDashboard.useQuery({
+  const { data, isLoading, refetch } = api.home.getDashboard.useQuery({
     days: 7,
   });
   const profileGoals = useProfileGoals();

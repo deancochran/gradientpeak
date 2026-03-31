@@ -13,7 +13,7 @@
  * - Recording continues in background
  */
 
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
@@ -25,7 +25,7 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 const CATEGORY_OPTIONS: {
   value: PublicActivityCategory | "all";
@@ -50,7 +50,7 @@ export default function RoutePickerPage() {
   const [categoryFilter, setCategoryFilter] = useState<PublicActivityCategory | "all">("all");
 
   // Fetch routes (no category filter in query since we filter client-side)
-  const { data: routes, isLoading } = trpc.routes.list.useInfiniteQuery(
+  const { data: routes, isLoading } = api.routes.list.useInfiniteQuery(
     {
       limit: 100,
     },

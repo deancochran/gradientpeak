@@ -10,7 +10,7 @@
  * that don't share state.
  */
 
-import type { PublicProfilesRow } from "@repo/supabase";
+import type { PublicProfilesRow } from "@repo/db";
 import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import { ActivityRecorderService } from "../services/ActivityRecorder";
 

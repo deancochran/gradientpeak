@@ -97,7 +97,7 @@ import {
 import { z } from "zod";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
 
 type PlannedActivityScheduleFormInput = z.input<typeof plannedActivityScheduleFormSchema>;
@@ -219,10 +219,10 @@ export function ScheduleActivityModal({
 
   // Fetch existing activity if editing
   const { data: existingActivity, isLoading: loadingExistingActivity } =
-    trpc.events.getById.useQuery({ id: eventId! }, { enabled: isEditMode && visible });
+    api.events.getById.useQuery({ id: eventId! }, { enabled: isEditMode && visible });
 
   // Fetch plan details (only if we have an ID, not a template)
-  const { data: planDetails, isLoading: loadingPlan } = trpc.activityPlans.getById.useQuery(
+  const { data: planDetails, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
     { id: currentActivityPlanId },
     { enabled: !!currentActivityPlanId && visible && !isTemplate },
   );
@@ -235,7 +235,7 @@ export function ScheduleActivityModal({
     data: validation,
     isLoading: validationLoading,
     error: validationError,
-  } = trpc.events.validateConstraints.useQuery(
+  } = api.events.validateConstraints.useQuery(
     {
       training_plan_id: trainingPlanId!,
       scheduled_date: scheduledDateForApi,
@@ -286,7 +286,7 @@ export function ScheduleActivityModal({
   const queryClient = useQueryClient();
   const existingActivityIsRecurring = isRecurringEvent(existingActivity);
 
-  const createMutation = trpc.events.create.useMutation({
+  const createMutation = api.events.create.useMutation({
     onSuccess: async () => {
       await refreshScheduleWithCallbacks({
         queryClient,
@@ -299,7 +299,7 @@ export function ScheduleActivityModal({
     },
   });
 
-  const updateMutation = trpc.events.update.useMutation({
+  const updateMutation = api.events.update.useMutation({
     onSuccess: async () => {
       await refreshScheduleWithCallbacks({
         queryClient,

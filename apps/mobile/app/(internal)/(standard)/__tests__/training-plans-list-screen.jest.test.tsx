@@ -60,9 +60,9 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     trainingPlans: {
       list: {
         useQuery: () => ({

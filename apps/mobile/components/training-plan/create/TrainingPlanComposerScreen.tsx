@@ -57,7 +57,7 @@ import {
   shouldIgnorePreviewResponse,
 } from "@/lib/training-plan-form/previewRequestState";
 import { mapTrainingPlanSaveError } from "@/lib/training-plan-form/saveErrorMapping";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 export type TrainingPlanComposerModeContract =
   | {
@@ -297,7 +297,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
 
   const isEditMode = contract.mode === "edit";
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const defaultTargetDate = useMemo(() => {
     const date = new Date();
@@ -367,7 +367,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
   const initializedFormDefaultsRef = useRef<TrainingPlanFormData | null>(null);
   const initializedConfigDefaultsRef = useRef<TrainingPlanConfigFormData | null>(null);
 
-  const editPlanQuery = trpc.trainingPlans.get.useQuery(
+  const editPlanQuery = api.trainingPlans.get.useQuery(
     isEditMode ? { id: contract.planId } : undefined,
     {
       enabled: isEditMode,
@@ -389,14 +389,14 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     featureFlags.trainingPlanCreateConfigMvp && hasBlockingIssues && !allowBlockingIssueOverride;
   const canCreatePlan = !isCreating && !isCreateBlockedByPolicy;
 
-  const suggestionsQuery = trpc.trainingPlans.getCreationSuggestions.useQuery(undefined, {
+  const suggestionsQuery = api.trainingPlans.getCreationSuggestions.useQuery(undefined, {
     refetchOnWindowFocus: false,
     enabled: featureFlags.trainingPlanCreateConfigMvp && !isEditMode,
   });
   const getCreationSuggestionsQuery = utils.client.trainingPlans.getCreationSuggestions.query;
   type CreationSuggestionsResponse = Awaited<ReturnType<typeof getCreationSuggestionsQuery>>;
 
-  const createPlanMutation = useReliableMutation(trpc.trainingPlans.createFromCreationConfig, {
+  const createPlanMutation = useReliableMutation(api.trainingPlans.createFromCreationConfig, {
     invalidate: [utils.trainingPlans],
     onError: (error) => {
       const mapped = mapTrainingPlanSaveError(error);
@@ -405,7 +405,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     },
   });
 
-  const updatePlanMutation = useReliableMutation(trpc.trainingPlans.updateFromCreationConfig, {
+  const updatePlanMutation = useReliableMutation(api.trainingPlans.updateFromCreationConfig, {
     invalidate: [utils.trainingPlans],
     onError: (error) => {
       const mapped = mapTrainingPlanSaveError(error);
@@ -414,7 +414,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     },
   });
 
-  const updatePlanMetadataMutation = useReliableMutation(trpc.trainingPlans.update, {
+  const updatePlanMetadataMutation = useReliableMutation(api.trainingPlans.update, {
     invalidate: [utils.trainingPlans],
     onError: (error) => {
       Alert.alert("Error", error.message || "Failed to update training plan.", [{ text: "OK" }]);

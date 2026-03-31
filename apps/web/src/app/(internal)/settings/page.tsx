@@ -37,7 +37,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth } from "@/components/providers/auth-provider";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 const webProfileSettingsSchema = profileQuickUpdateSchema.pick({
   username: true,
@@ -56,12 +56,12 @@ export default function SettingsPage() {
     data: profile,
     isLoading: profileLoading,
     refetch: refetchProfile,
-  } = trpc.profiles.get.useQuery(undefined, {
+  } = api.profiles.get.useQuery(undefined, {
     enabled: !!user,
   });
 
   // Mutations
-  const updateProfileMutation = trpc.profiles.update.useMutation({
+  const updateProfileMutation = api.profiles.update.useMutation({
     onSuccess: () => {
       refetchProfile();
       toast.success("Profile updated successfully");
@@ -71,7 +71,7 @@ export default function SettingsPage() {
       toast.error("Failed to update profile");
     },
   });
-  const signOutMutation = trpc.auth.signOut.useMutation({
+  const signOutMutation = api.auth.signOut.useMutation({
     onSuccess: () => {
       refreshSession();
       router.push("/auth/login");
@@ -82,7 +82,7 @@ export default function SettingsPage() {
       toast.error("Failed to sign out");
     },
   });
-  const deleteAccountMutation = trpc.auth.deleteAccount.useMutation({
+  const deleteAccountMutation = api.auth.deleteAccount.useMutation({
     onSuccess: () => {
       refreshSession();
       router.push("/auth/login");
@@ -93,7 +93,7 @@ export default function SettingsPage() {
       toast.error("Failed to delete account");
     },
   });
-  const createSignedUploadUrlMutation = trpc.storage.createSignedUploadUrl.useMutation();
+  const createSignedUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
   // Local state
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -105,7 +105,9 @@ export default function SettingsPage() {
   const router = useRouter();
 
   const form = useForm<z.input<typeof webProfileSettingsSchema>, any, WebProfileSettingsFormData>({
-    resolver: zodResolver(webProfileSettingsSchema),
+    resolver: zodResolver(
+      webProfileSettingsSchema as unknown as Parameters<typeof zodResolver>[0],
+    ) as any,
     defaultValues: {
       username: "",
       is_public: false,
@@ -124,7 +126,7 @@ export default function SettingsPage() {
   }, [profile, form]);
 
   // Get avatar URL when profile has avatar_url
-  const { data: avatarUrlData } = trpc.storage.getSignedUrl.useQuery(
+  const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
     { filePath: profile?.avatar_url || "" },
     {
       enabled: !!profile?.avatar_url,
@@ -368,8 +370,8 @@ export default function SettingsPage() {
               <div>
                 <Label className="text-sm font-medium">Email Verified</Label>
                 <div className="flex items-center gap-2 mt-1">
-                  <Badge variant={user?.email_confirmed_at ? "default" : "secondary"}>
-                    {user?.email_confirmed_at ? "Verified" : "Unverified"}
+                  <Badge variant={user?.emailVerified ? "default" : "secondary"}>
+                    {user?.emailVerified ? "Verified" : "Unverified"}
                   </Badge>
                 </div>
               </div>

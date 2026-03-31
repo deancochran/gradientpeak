@@ -1,5 +1,5 @@
-import type { PublicIntegrationProvider } from "@repo/supabase";
-import { invalidatePostActivityIngestionQueries } from "@repo/trpc/client";
+import type { PublicIntegrationProvider } from "@repo/db";
+import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
@@ -43,7 +43,7 @@ import {
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { getServerConfig } from "@/lib/server-config";
 import { FitUploader } from "@/lib/services/fit/FitUploader";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 type IntegrationConfig = {
   provider: PublicIntegrationProvider;
@@ -125,7 +125,7 @@ export default function IntegrationsScreen() {
     Partial<Record<PublicIntegrationProvider, "connect" | "disconnect">>
   >({});
 
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const [historicalName, setHistoricalName] = useState("");
   const [historicalNotes, setHistoricalNotes] = useState("");
   const [historicalActivityType, setHistoricalActivityType] = useState<string>("bike");
@@ -140,22 +140,22 @@ export default function IntegrationsScreen() {
     fileName: string;
   } | null>(null);
 
-  // tRPC queries
+  // API queries
   const {
     data: integrations,
     refetch,
     isLoading: integrationsLoading,
-  } = trpc.integrations.list.useQuery();
-  const getAuthUrlMutation = useReliableMutation(trpc.integrations.getAuthUrl, {
+  } = api.integrations.list.useQuery();
+  const getAuthUrlMutation = useReliableMutation(api.integrations.getAuthUrl, {
     silent: true, // No success message for auth URL generation
   });
-  const disconnectMutation = useReliableMutation(trpc.integrations.disconnect, {
+  const disconnectMutation = useReliableMutation(api.integrations.disconnect, {
     invalidate: [utils.integrations],
     success: "Integration disconnected",
   });
 
-  const getSignedUrlMutation = trpc.fitFiles.getSignedUploadUrl.useMutation();
-  const processFitFileMutation = trpc.fitFiles.processFitFile.useMutation();
+  const getSignedUrlMutation = api.fitFiles.getSignedUploadUrl.useMutation();
+  const processFitFileMutation = api.fitFiles.processFitFile.useMutation();
 
   const isImporting = getSignedUrlMutation.isPending || processFitFileMutation.isPending;
 

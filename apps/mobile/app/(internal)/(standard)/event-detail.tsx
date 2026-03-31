@@ -22,8 +22,8 @@ import {
   refreshScheduleWithCallbacks,
 } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { trpc } from "@/lib/trpc";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
+import { api } from "@/lib/api";
+import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { getActivityBgClass, getActivityColor } from "@/lib/utils/plan/colors";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
@@ -90,7 +90,7 @@ export default function EventDetailScreen() {
     error,
     isLoading,
     refetch,
-  } = trpc.events.getById.useQuery(
+  } = api.events.getById.useQuery(
     { id: eventId },
     {
       ...scheduleAwareReadQueryOptions,
@@ -126,7 +126,7 @@ export default function EventDetailScreen() {
     );
   }, [event, startsInEditMode]);
 
-  const updateMutation = trpc.events.update.useMutation({
+  const updateMutation = api.events.update.useMutation({
     onSuccess: async () => {
       await refreshScheduleWithCallbacks({
         queryClient,
@@ -136,7 +136,7 @@ export default function EventDetailScreen() {
     },
   });
 
-  const deleteMutation = trpc.events.delete.useMutation({
+  const deleteMutation = api.events.delete.useMutation({
     onSuccess: async () => {
       await refreshScheduleViews(queryClient, "eventDeletionMutation");
       beginRedirect();

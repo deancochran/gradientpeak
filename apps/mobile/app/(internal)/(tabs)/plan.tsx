@@ -8,7 +8,7 @@ import {
   formatGoalTypeLabel,
   getGoalObjectiveSummary,
 } from "@repo/core";
-import { invalidateGoalQueries } from "@repo/trpc/react";
+import { invalidateGoalQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
@@ -25,8 +25,8 @@ import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
-import { trpc } from "@/lib/trpc";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
+import { api } from "@/lib/api";
+import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 
 function getDateKey(value: Date) {
   return value.toISOString().split("T")[0] ?? "";
@@ -117,14 +117,14 @@ function getWeekEnd(weekStart: Date) {
 
 function PlanDashboardScreen() {
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const [refreshing, setRefreshing] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [showGoalModal, setShowGoalModal] = useState(false);
 
   const { data: activePlan, refetch: refetchActivePlan } =
-    trpc.trainingPlans.getActivePlan.useQuery(undefined, scheduleAwareReadQueryOptions);
-  const { data: ownPlans } = trpc.trainingPlans.list.useQuery(
+    api.trainingPlans.getActivePlan.useQuery(undefined, scheduleAwareReadQueryOptions);
+  const { data: ownPlans } = api.trainingPlans.list.useQuery(
     {
       includeOwnOnly: true,
       includeSystemTemplates: false,
@@ -147,7 +147,7 @@ function PlanDashboardScreen() {
     return getDateKey(end);
   }, [today]);
 
-  const upcomingPlannedEventsQuery = trpc.events.list.useQuery(
+  const upcomingPlannedEventsQuery = api.events.list.useQuery(
     {
       include_adhoc: false,
       date_from: todayKey,
@@ -157,7 +157,7 @@ function PlanDashboardScreen() {
     scheduleAwareReadQueryOptions,
   );
 
-  const recentPlannedEventsQuery = trpc.events.list.useQuery(
+  const recentPlannedEventsQuery = api.events.list.useQuery(
     {
       include_adhoc: false,
       date_from: recentWindowStart,
@@ -171,7 +171,7 @@ function PlanDashboardScreen() {
   const goals = useProfileGoals();
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
 
-  const createGoalMutation = trpc.goals.create.useMutation({
+  const createGoalMutation = api.goals.create.useMutation({
     onSuccess: async () => {
       await Promise.all([invalidateGoalQueries(utils), goals.refetch()]);
       setShowGoalModal(false);
@@ -179,7 +179,7 @@ function PlanDashboardScreen() {
     },
   });
 
-  const updateGoalMutation = trpc.goals.update.useMutation({
+  const updateGoalMutation = api.goals.update.useMutation({
     onSuccess: async () => {
       await Promise.all([
         invalidateGoalQueries(utils, { includeEventDetail: true }),
@@ -189,8 +189,8 @@ function PlanDashboardScreen() {
       setEditingGoalId(null);
     },
   });
-  const createMilestoneEventMutation = trpc.events.create.useMutation();
-  const updateMilestoneEventMutation = trpc.events.update.useMutation();
+  const createMilestoneEventMutation = api.events.create.useMutation();
+  const updateMilestoneEventMutation = api.events.update.useMutation();
 
   const draftGoal = useMemo(() => {
     if (!editingGoalId) {
@@ -683,12 +683,14 @@ function PlanDashboardScreen() {
       const resolvedMilestoneEventId = milestoneEventId
         ? milestoneEventId
         : (
-            await createMilestoneEventMutation.mutateAsync(
-              buildMilestoneEventCreateInput({
+            await createMilestoneEventMutation.mutateAsync({
+              ...buildMilestoneEventCreateInput({
                 draft,
                 trainingPlanId: activePlan?.id ?? null,
               }),
-            )
+              lifecycle: { status: "scheduled" },
+              read_only: false,
+            })
           ).id;
 
       if (milestoneEventId) {

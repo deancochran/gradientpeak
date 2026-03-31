@@ -13,14 +13,14 @@ import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export function UpdatePasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const updatePasswordMutation = trpc.auth.updatePassword.useMutation({
+  const updatePasswordMutation = api.auth.updatePassword.useMutation({
     onSuccess: () => {
       router.push("/");
     },

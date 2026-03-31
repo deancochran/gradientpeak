@@ -28,7 +28,7 @@ import { StructureIntervalSheet } from "@/components/activity-plan/structure/Str
 import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 export type ActivityPlanComposerModeContract =
   | {
@@ -98,9 +98,9 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     setStructure,
   } = useActivityPlanCreationStore();
 
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const uploadRouteMutation = trpc.routes.upload.useMutation({
+  const uploadRouteMutation = api.routes.upload.useMutation({
     onSuccess: (data) => {
       setRouteId(data.id);
       setIsUploadingRoute(false);
@@ -195,7 +195,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     return interval?.steps.find((item) => item.id === editingStepId);
   }, [editingIntervalId, editingStepId, intervals]);
 
-  const routeQuery = trpc.routes.get.useQuery({ id: form.routeId! }, { enabled: !!form.routeId });
+  const routeQuery = api.routes.get.useQuery({ id: form.routeId! }, { enabled: !!form.routeId });
 
   const structureStats = useMemo(() => {
     if (intervals.length === 0) {

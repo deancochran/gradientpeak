@@ -22,7 +22,7 @@ import { FlatList, ScrollView, TouchableOpacity, View } from "react-native";
 import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { ROUTES } from "@/lib/constants/routes";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 const TABS = [
   { id: "activityPlans", label: "Activity Plans", icon: Activity },
@@ -180,7 +180,7 @@ export default function DiscoverPage() {
   const selectedCategory =
     CATEGORIES.find((category) => category.id === selectedCategoryId) ?? null;
 
-  const activityPlansInfiniteQuery = trpc.activityPlans.list.useInfiniteQuery(
+  const activityPlansInfiniteQuery = api.activityPlans.list.useInfiniteQuery(
     {
       includeSystemTemplates: true,
       includeOwnOnly: false,
@@ -193,11 +193,11 @@ export default function DiscoverPage() {
     },
   );
 
-  const trainingPlansQuery = trpc.trainingPlans.listTemplates.useQuery({
+  const trainingPlansQuery = api.trainingPlans.listTemplates.useQuery({
     search: debouncedSearch || undefined,
   });
 
-  const routesInfiniteQuery = trpc.routes.list.useInfiniteQuery(
+  const routesInfiniteQuery = api.routes.list.useInfiniteQuery(
     {
       search: debouncedSearch || undefined,
       limit: 20,
@@ -207,7 +207,7 @@ export default function DiscoverPage() {
     },
   );
 
-  const usersQuery = trpc.social.searchUsers.useQuery({
+  const usersQuery = api.social.searchUsers.useQuery({
     query: debouncedSearch || undefined,
     limit: 20,
     offset: 0,

@@ -141,9 +141,9 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
   activitySelectionStore: activitySelectionStoreMock,
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     profiles: {
       getZones: {
         useQuery: () => ({ data: { profile: null } }),

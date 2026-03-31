@@ -124,9 +124,9 @@ jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
   refreshScheduleViews: jest.fn(async () => undefined),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     events: {
       getById: { useQuery: () => ({ data: existingActivityData, isLoading: false }) },
       validateConstraints: {

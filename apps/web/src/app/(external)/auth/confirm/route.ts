@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createServerCaller } from "@/lib/trpc/server";
+import { createServerCaller } from "@/lib/api/server";
 
 const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://sign-in";
 
@@ -87,8 +87,8 @@ export async function GET(request: NextRequest) {
 
   if (token_hash && type) {
     try {
-      const trpc = await createServerCaller();
-      await trpc.auth.verifyOtp({
+      const api = await createServerCaller();
+      await api.auth.verifyOtp({
         type,
         token_hash,
       });

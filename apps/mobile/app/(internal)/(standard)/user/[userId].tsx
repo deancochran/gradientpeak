@@ -1,4 +1,4 @@
-import { invalidateRelationshipQueries } from "@repo/trpc/react";
+import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
@@ -15,7 +15,7 @@ import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 function calculateAge(dob: string | null | undefined): number | null {
   if (!dob) return null;
@@ -37,7 +37,7 @@ function UserDetailScreen() {
   const { user, profile } = useAuth();
   const authStore = useAuthStore();
   const { theme, setTheme } = useTheme();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const targetUserId = typeof userId === "string" ? userId : "";
   const isOwnProfile = !!user?.id && user?.id === targetUserId;
@@ -47,7 +47,7 @@ function UserDetailScreen() {
     data: targetProfile,
     isLoading,
     error,
-  } = trpc.profiles.getPublicById.useQuery(
+  } = api.profiles.getPublicById.useQuery(
     { id: targetUserId },
     { enabled: targetUserId.length > 0 },
   );
@@ -74,7 +74,7 @@ function UserDetailScreen() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const signOutMutation = trpc.auth.signOut.useMutation({
+  const signOutMutation = api.auth.signOut.useMutation({
     onSuccess: async () => {
       await authStore.clearSession();
       utils.profiles.invalidate();
@@ -85,7 +85,7 @@ function UserDetailScreen() {
     },
   });
 
-  const deleteAccountMutation = trpc.auth.deleteAccount.useMutation({
+  const deleteAccountMutation = api.auth.deleteAccount.useMutation({
     onSuccess: async () => {
       await authStore.clearSession();
       utils.profiles.invalidate();
@@ -103,7 +103,7 @@ function UserDetailScreen() {
     },
   });
 
-  const updateEmailMutation = trpc.auth.updateEmail.useMutation({
+  const updateEmailMutation = api.auth.updateEmail.useMutation({
     onSuccess: (data) => {
       void utils.auth.getUser.invalidate();
       Alert.alert("Verification Sent", data.message);
@@ -116,7 +116,7 @@ function UserDetailScreen() {
     },
   });
 
-  const updatePasswordMutation = trpc.auth.updatePassword.useMutation({
+  const updatePasswordMutation = api.auth.updatePassword.useMutation({
     onSuccess: () => {
       Alert.alert("Password Updated", "Your password has been successfully changed.");
       setIsPasswordChangeVisible(false);
@@ -129,17 +129,17 @@ function UserDetailScreen() {
     },
   });
 
-  const followMutation = trpc.social.followUser.useMutation({
+  const followMutation = api.social.followUser.useMutation({
     onSuccess: async () => invalidateRelationshipQueries(utils, [targetUserId, user?.id]),
     onError: (err) => Alert.alert("Error", err.message || "Failed to follow"),
   });
 
-  const unfollowMutation = trpc.social.unfollowUser.useMutation({
+  const unfollowMutation = api.social.unfollowUser.useMutation({
     onSuccess: async () => invalidateRelationshipQueries(utils, [targetUserId, user?.id]),
     onError: (err) => Alert.alert("Error", err.message || "Failed to unfollow"),
   });
 
-  const messageMutation = trpc.messaging.getOrCreateDM.useMutation({
+  const messageMutation = api.messaging.getOrCreateDM.useMutation({
     onSuccess: (data) => {
       if (data && "id" in data) {
         router.push(`/messages/${(data as any).id}` as any);

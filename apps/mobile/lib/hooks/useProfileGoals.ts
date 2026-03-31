@@ -1,8 +1,8 @@
 import { type ProfileGoal, parseProfileGoalRecord } from "@repo/core";
 import { useCallback, useMemo } from "react";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { trpc } from "@/lib/trpc";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
+import { api } from "@/lib/api";
+import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 
 const GOALS_PAGE_SIZE = 100;
 
@@ -17,7 +17,7 @@ function toDateKey(value: Date) {
 export function useProfileGoals() {
   const profileId = useAuthStore((state) => state.profile?.id ?? null);
 
-  const query = trpc.goals.list.useQuery(
+  const query = api.goals.list.useQuery(
     {
       profile_id: profileId ?? "",
       limit: GOALS_PAGE_SIZE,
@@ -41,9 +41,9 @@ export function useProfileGoals() {
       date_to: toDateKey(end),
     };
   }, [today]);
-  const milestoneEventsQuery = trpc.events.list.useQuery(
+  const milestoneEventsQuery = api.events.list.useQuery(
     {
-      event_types: ["custom", "race_target", "race"],
+      event_types: ["custom", "race_target"],
       include_adhoc: true,
       date_from: milestoneWindow.date_from,
       date_to: milestoneWindow.date_to,

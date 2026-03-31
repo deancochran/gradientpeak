@@ -1,11 +1,11 @@
-import { createQueryClient } from "@repo/trpc/react";
+import { createQueryClient } from "@repo/api/react";
 import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import * as Network from "expo-network";
 import * as React from "react";
 import { Alert, AppState, Platform } from "react-native";
 import { useServerConfig } from "../server-config";
 import { useAuthStore } from "../stores/auth-store";
-import { createTRPCClient, trpc } from "../trpc";
+import { createApiClient, api } from "../api";
 
 const queryClient = createQueryClient();
 
@@ -32,6 +32,9 @@ const handleGlobalError = (error: unknown) => {
 
 export const setupNetworkListener = () => {
   const unsubscribe = onlineManager.setEventListener((setOnline) => {
+    void Network.getNetworkStateAsync().then((state) => {
+      setOnline(Boolean(state.isConnected));
+    });
     const subscription = Network.addNetworkStateListener((state) => {
       setOnline(!!state.isConnected);
     });
@@ -54,7 +57,7 @@ export const setupFocusManager = () => {
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const { version } = useServerConfig();
-  const trpcClient = React.useMemo(() => createTRPCClient(), [version]);
+  const apiClient = React.useMemo(() => createApiClient(), [version]);
 
   React.useEffect(() => {
     queryClient.clear();
@@ -99,8 +102,8 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+    <api.Provider client={apiClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </trpc.Provider>
+    </api.Provider>
   );
 }

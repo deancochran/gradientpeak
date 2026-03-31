@@ -1,7 +1,7 @@
 import { Skeleton } from "@repo/ui/components/skeleton";
 import { useCallback, useState } from "react";
 import { FlatList, RefreshControl, Text, View } from "react-native";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 import { ActivityFeedItem, FeedActivityItem } from "./ActivityFeedItem";
 import { FeedEmptyState } from "./FeedEmptyState";
 
@@ -20,7 +20,7 @@ export function FeedList({ onCommentPress }: FeedListProps) {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = trpc.feed.getFeed.useInfiniteQuery(
+  } = api.feed.getFeed.useInfiniteQuery(
     { limit: 20 },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,

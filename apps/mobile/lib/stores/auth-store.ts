@@ -1,14 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Session, User } from "@supabase/supabase-js";
+import type { AuthSession, AuthUser } from "@repo/auth";
+import { normalizeGradientPeakAuthClientSession } from "@repo/auth";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { initializeServerConfig } from "@/lib/server-config";
 import { supabase } from "@/lib/supabase/client";
 
 export interface AuthState {
-  session: Session | null;
-  user: User | null;
-  profile: any | null; // Profile data from tRPC (synced from useAuth hook)
+  session: AuthSession | null;
+  user: AuthUser | null;
+  profile: any | null; // Profile data from API (synced from useAuth hook)
   userStatus: "verified" | "unverified" | null;
   onboardingStatus: boolean | null;
   loading: boolean;
@@ -16,8 +17,8 @@ export interface AuthState {
   error: Error | null;
   _listenerRegistered: boolean; // Internal flag, not persisted
 
-  setSession: (session: Session | null) => void;
-  setUser: (user: User | null) => void;
+  setSession: (session: AuthSession | null) => void;
+  setUser: (user: AuthUser | null) => void;
   setProfile: (profile: any | null) => void;
   setUserStatus: (status: "verified" | "unverified" | null) => void;
   setOnboardingStatus: (status: boolean | null) => void;
@@ -32,8 +33,8 @@ export interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      session: null as Session | null,
-      user: null as User | null,
+      session: null as AuthSession | null,
+      user: null as AuthUser | null,
       profile: null as any | null,
       userStatus: null as "verified" | "unverified" | null,
       onboardingStatus: null as boolean | null,
@@ -42,7 +43,7 @@ export const useAuthStore = create<AuthState>()(
       error: null as Error | null,
       _listenerRegistered: false as boolean,
 
-      setSession: (session: Session | null) => {
+      setSession: (session: AuthSession | null) => {
         console.log("🔄 Auth Store: setSession called", {
           hasSession: !!session,
           hasUser: !!session?.user,
@@ -65,7 +66,7 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      setUser: (user: User | null) => set({ user }),
+      setUser: (user: AuthUser | null) => set({ user }),
       setProfile: (profile: any | null) => set({ profile }),
       setUserStatus: (userStatus) => set({ userStatus }),
       setOnboardingStatus: (onboardingStatus) => set({ onboardingStatus }),
@@ -133,7 +134,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           console.log("🔄 Setting session", { hasSession: !!session });
-          get().setSession(session);
+          get().setSession(normalizeGradientPeakAuthClientSession(session));
 
           // Set up auth listener once per store instance
           if (!currentState._listenerRegistered) {
@@ -142,7 +143,7 @@ export const useAuthStore = create<AuthState>()(
             supabase.auth.onAuthStateChange((event, session) => {
               console.log("🔄 Auth state changed:", event, !!session);
               const state = get();
-              state.setSession(session);
+              state.setSession(normalizeGradientPeakAuthClientSession(session));
             });
 
             set({ _listenerRegistered: true });

@@ -4,17 +4,17 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export function CurrentUserAvatar() {
   const { user } = useAuth();
-  const { data: profile } = trpc.profiles.get.useQuery(undefined, {
+  const { data: profile } = api.profiles.get.useQuery(undefined, {
     enabled: !!user,
   });
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Get signed URL for avatar
-  const { data: avatarData } = trpc.storage.getSignedUrl.useQuery(
+  const { data: avatarData } = api.storage.getSignedUrl.useQuery(
     { filePath: profile?.avatar_url || "" },
     {
       enabled: !!profile?.avatar_url,

@@ -1,11 +1,11 @@
 "use client";
 
-import { createQueryClient, createTRPCBatchLink, createTRPCUrl, trpc } from "@repo/trpc/react";
+import { api, createApiBatchLink, createApiUrl, createQueryClient } from "@repo/api/react";
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 
-export { trpc };
+export { api };
 
 let clientQueryClientSingleton: QueryClient | undefined = undefined;
 const getQueryClient = () => {
@@ -25,19 +25,19 @@ function getBaseUrl() {
 
 function createWebHeaders() {
   const headers = new Headers();
-  headers.set("x-trpc-source", "nextjs");
+  headers.set("x-api-source", "nextjs");
   headers.set("x-client-type", "web");
   return headers;
 }
 
-export function TRPCReactProvider(props: { children: React.ReactNode }) {
+export function ApiReactProvider(props: { children: React.ReactNode }) {
   const queryClient = getQueryClient();
 
-  const [trpcClient] = useState(() =>
-    trpc.createClient({
+  const [apiClient] = useState(() =>
+    api.createClient({
       links: [
-        createTRPCBatchLink({
-          url: createTRPCUrl(getBaseUrl()),
+        createApiBatchLink({
+          url: createApiUrl(getBaseUrl()),
           headers: createWebHeaders,
         }),
       ],
@@ -46,9 +46,9 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <api.Provider client={apiClient} queryClient={queryClient}>
         {props.children}
-      </trpc.Provider>
+      </api.Provider>
     </QueryClientProvider>
   );
 }

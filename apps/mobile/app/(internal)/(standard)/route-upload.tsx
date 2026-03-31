@@ -18,7 +18,7 @@ import { CheckCircle, FileText, Upload } from "lucide-react-native";
 import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 const ACTIVITY_CATEGORIES = [
   { value: "run", label: "Run" },
@@ -44,9 +44,9 @@ export default function UploadRouteScreen() {
     content: string;
   } | null>(null);
 
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const uploadMutation = useReliableMutation(trpc.routes.upload, {
+  const uploadMutation = useReliableMutation(api.routes.upload, {
     invalidate: [utils.routes],
     success: "Route uploaded successfully!",
     onSuccess: () => router.back(),

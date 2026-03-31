@@ -204,7 +204,7 @@ function isNetworkError(error: unknown): boolean {
  * Maps to React Hook Form structure
  */
 function extractFieldErrors(error: any): Record<string, string> | null {
-  // Handle tRPC/API validation errors
+  // Handle API/API validation errors
   if (error?.data?.zodError?.fieldErrors) {
     return error.data.zodError.fieldErrors;
   }
@@ -399,22 +399,22 @@ export function useFormMutation<TData = unknown, TVariables = unknown, TError = 
 // ============================================================================
 
 /**
- * Simplified version for tRPC mutations
- * Automatically handles tRPC-specific error formats
+ * Simplified version for API mutations
+ * Automatically handles API-specific error formats
  *
  * @example
- * const { mutate, isLoading } = useTRPCFormMutation({
- *   mutation: trpc.activities.create,
+ * const { mutate, isLoading } = useAPIFormMutation({
+ *   mutation: api.activities.create,
  *   invalidateQueries: [['activities']],
  *   successMessage: 'Created!',
  * });
  */
-export function useTRPCFormMutation<TData = unknown, TVariables = unknown>(
+export function useAPIFormMutation<TData = unknown, TVariables = unknown>(
   config: Omit<UseFormMutationConfig<TData, TVariables>, "mutationFn"> & {
     mutation: { useMutation: () => any };
   },
 ) {
-  // This is a placeholder - in real usage, you'd integrate with tRPC's useMutation
+  // This is a placeholder - in real usage, you'd integrate with API's useMutation
   // For now, just forward to useFormMutation
-  throw new Error("Use useFormMutation directly with tRPC mutation functions");
+  throw new Error("Use useFormMutation directly with API mutation functions");
 }

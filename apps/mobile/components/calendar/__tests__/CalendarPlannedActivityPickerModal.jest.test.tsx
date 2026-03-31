@@ -40,9 +40,9 @@ jest.mock("lucide-react-native", () => ({
 
 const { CalendarPlannedActivityPickerModal } = require("../CalendarPlannedActivityPickerModal");
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     activityPlans: {
       list: {
         useQuery: () => ({

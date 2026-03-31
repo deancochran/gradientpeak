@@ -3,7 +3,7 @@ import {
   getUnreadNotificationIds,
   normalizeNotificationListItem,
 } from "@repo/core";
-import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/trpc/react";
+import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/api/react";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
@@ -12,7 +12,7 @@ import { Stack, useRouter } from "expo-router";
 import { Bell, Mail, UserPlus } from "lucide-react-native";
 import React from "react";
 import { FlatList, Pressable, View } from "react-native";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 function NotificationItem({
   notification,
@@ -109,8 +109,8 @@ function NotificationItem({
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const utils = trpc.useUtils();
-  const { data: notifications = [], isLoading } = trpc.notifications.getRecent.useQuery({
+  const utils = api.useUtils();
+  const { data: notifications = [], isLoading } = api.notifications.getRecent.useQuery({
     limit: 20,
   });
   const normalizedNotifications = notifications
@@ -122,11 +122,11 @@ export default function NotificationsScreen() {
         notification !== null,
     );
 
-  const markReadMutation = trpc.notifications.markRead.useMutation({
+  const markReadMutation = api.notifications.markRead.useMutation({
     onSuccess: async () => invalidateNotificationQueries(utils),
   });
 
-  const acceptFollowMutation = trpc.social.acceptFollowRequest.useMutation({
+  const acceptFollowMutation = api.social.acceptFollowRequest.useMutation({
     onMutate: async ({ follower_id }) => {
       // Cancel any outgoing refetches
       await utils.notifications.getRecent.cancel();
@@ -155,7 +155,7 @@ export default function NotificationsScreen() {
     },
   });
 
-  const rejectFollowMutation = trpc.social.rejectFollowRequest.useMutation({
+  const rejectFollowMutation = api.social.rejectFollowRequest.useMutation({
     onMutate: async ({ follower_id }) => {
       // Cancel any outgoing refetches
       await utils.notifications.getRecent.cancel();

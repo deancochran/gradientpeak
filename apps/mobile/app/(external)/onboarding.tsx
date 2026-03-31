@@ -18,7 +18,7 @@ import { router } from "expo-router";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react-native";
 import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 interface OnboardingData {
   dob: string | null;
@@ -59,9 +59,9 @@ export default function OnboardingScreen() {
   const [data, setData] = useState<OnboardingData>(INITIAL_DATA);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { data: profile } = trpc.profiles.get.useQuery();
-  const createProfileMetricsMutation = trpc.profileMetrics.create.useMutation();
-  const updateProfileMutation = trpc.profiles.update.useMutation();
+  const { data: profile } = api.profiles.get.useQuery();
+  const createProfileMetricsMutation = api.profileMetrics.create.useMutation();
+  const updateProfileMutation = api.profiles.update.useMutation();
 
   const totalSteps = 4;
 

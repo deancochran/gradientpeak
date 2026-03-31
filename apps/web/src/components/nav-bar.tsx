@@ -12,14 +12,14 @@ import { House, LogOut, Settings } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 import { CurrentUserAvatar } from "./current-user-avatar";
 import { useAuth } from "./providers/auth-provider";
 
 const Navbar = () => {
   const router = useRouter();
   const { isAuthenticated, refreshSession } = useAuth();
-  const signOutMutation = trpc.auth.signOut.useMutation();
+  const signOutMutation = api.auth.signOut.useMutation();
   const logout = async () => {
     try {
       await signOutMutation.mutateAsync();

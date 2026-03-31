@@ -14,7 +14,12 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@repo/core": ["../../packages/core/index.ts"]
+      "@repo/core": ["../../packages/core/index.ts"],
+      "@repo/api": ["../../packages/api/index.ts"],
+      "@repo/api/*": ["../../packages/api/src/*"],
+      "@repo/auth": ["../../packages/auth/index.ts"],
+      "@repo/auth/*": ["../../packages/auth/src/*"],
+      "@repo/db": ["../../packages/db/index.ts"]
     },
     "incremental": true,
     "target": "ES2017",

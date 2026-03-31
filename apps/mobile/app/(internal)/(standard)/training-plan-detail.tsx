@@ -1,4 +1,4 @@
-import { invalidateTrainingPlanQueries } from "@repo/trpc/react";
+import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { DateInput as DateField } from "@repo/ui/components/date-input";
@@ -49,8 +49,8 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
-import { trpc } from "@/lib/trpc";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
+import { api } from "@/lib/api";
+import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 
 function isValidUuid(value: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -247,7 +247,7 @@ export default function TrainingPlanOverview() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const { id, nextStep, activityId } = useLocalSearchParams<{
     id?: string;
     nextStep?: string;
@@ -257,11 +257,11 @@ export default function TrainingPlanOverview() {
   const isSystemTemplateId = id?.startsWith("00000000-0000-0000-0000-00000000") ? true : false;
 
   const { data: templatePlan, isLoading: isLoadingTemplate } =
-    trpc.trainingPlans.getTemplate.useQuery(isSystemTemplateId && id ? { id } : skipToken, {
+    api.trainingPlans.getTemplate.useQuery(isSystemTemplateId && id ? { id } : skipToken, {
       enabled: isSystemTemplateId && !!id,
     });
 
-  const { data: rawActivePlan } = trpc.trainingPlans.getActivePlan.useQuery(
+  const { data: rawActivePlan } = api.trainingPlans.getActivePlan.useQuery(
     undefined,
     scheduleAwareReadQueryOptions,
   );
@@ -301,7 +301,7 @@ export default function TrainingPlanOverview() {
     router.replace(ROUTES.PLAN.INDEX as any);
   }, [activePlan?.id, router]);
 
-  const duplicatePlanMutation = trpc.trainingPlans.duplicate.useMutation({
+  const duplicatePlanMutation = api.trainingPlans.duplicate.useMutation({
     onSuccess: async (result: { id: string }) => {
       await invalidateTrainingPlanQueries(utils);
       Alert.alert("Duplicated", "Training plan added to your plans.", [
@@ -316,7 +316,7 @@ export default function TrainingPlanOverview() {
     },
   });
 
-  const applyTemplateMutation = trpc.trainingPlans.applyTemplate.useMutation({
+  const applyTemplateMutation = api.trainingPlans.applyTemplate.useMutation({
     onSuccess: async (result) => {
       await refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation");
       const successActions = [] as Array<{
@@ -364,7 +364,7 @@ export default function TrainingPlanOverview() {
     },
   });
 
-  const deletePlanMutation = useReliableMutation(trpc.trainingPlans.delete, {
+  const deletePlanMutation = useReliableMutation(api.trainingPlans.delete, {
     invalidate: [utils.trainingPlans],
     onSuccess: () => {
       Alert.alert("Plan Deleted", "Your training plan has been deleted", [
@@ -384,7 +384,7 @@ export default function TrainingPlanOverview() {
     setIsPublic(plan?.template_visibility === "public");
   }, [plan?.template_visibility]);
 
-  const updateVisibilityMutation = trpc.trainingPlans.update.useMutation({
+  const updateVisibilityMutation = api.trainingPlans.update.useMutation({
     onSuccess: async () => invalidateTrainingPlanQueries(utils),
     onError: (error) => {
       setIsPublic(plan?.template_visibility === "public");
@@ -413,7 +413,7 @@ export default function TrainingPlanOverview() {
     data: activityPlansData,
     isLoading: isLoadingActivityPlans,
     refetch: refetchActivityPlans,
-  } = trpc.activityPlans.list.useQuery(
+  } = api.activityPlans.list.useQuery(
     {
       ownerScope: "own",
       limit: 100,
@@ -440,7 +440,7 @@ export default function TrainingPlanOverview() {
   );
 
   const { data: linkedActivityPlansData, isLoading: isLoadingLinkedPlans } =
-    trpc.activityPlans.getManyByIds.useQuery(
+    api.activityPlans.getManyByIds.useQuery(
       linkedActivityPlanIds.length > 0
         ? {
             ids: linkedActivityPlanIds,
@@ -451,7 +451,7 @@ export default function TrainingPlanOverview() {
       },
     );
 
-  const updatePlanStructureMutation = trpc.trainingPlans.update.useMutation({
+  const updatePlanStructureMutation = api.trainingPlans.update.useMutation({
     onSuccess: async () => {
       await Promise.all([invalidateTrainingPlanQueries(utils), snapshot.refetchAll()]);
       Alert.alert("Session updated", "Training plan structure was saved.");
@@ -463,7 +463,7 @@ export default function TrainingPlanOverview() {
     },
   });
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
       setIsLiked(plan?.has_liked ?? false);
       setLikesCount(plan?.likes_count ?? 0);

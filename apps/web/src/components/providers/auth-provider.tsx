@@ -1,12 +1,12 @@
 "use client";
 
-import { type User } from "@supabase/supabase-js";
+import type { AuthUser } from "@repo/auth";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 type AuthState = {
-  user: User | null;
+  user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   refreshSession: () => void;
@@ -25,7 +25,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     isLoading,
     error,
     refetch,
-  } = trpc.auth.getSession.useQuery(undefined, {
+  } = api.auth.getSession.useQuery(undefined, {
     retry: false,
     staleTime: 0,
     refetchOnMount: "always",

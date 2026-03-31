@@ -1,21 +1,21 @@
-// auth-hooks.ts - Separate file for auth hooks that use tRPC
+// auth-hooks.ts - Separate file for auth hooks that use API
 
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppState } from "react-native";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
-import { trpc } from "../trpc";
+import { api } from "../api";
 
 /**
  * useAuth - Primary auth hook with unified state management
  *
- * Combines Zustand store (session, user) with tRPC query (profile).
+ * Combines Zustand store (session, user) with API query (profile).
  * Profile data is synced to store to maintain single source of truth.
  */
 
 export const useAuth = () => {
   const store = useAuthStore();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const { session, user, ready, loading } = store;
 
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
@@ -24,7 +24,7 @@ export const useAuth = () => {
   // This is more reliable than the RPC for initial email verification
   const isEmailVerified = useMemo(() => {
     if (!user) return false;
-    return !!user.email_confirmed_at;
+    return !!user.emailVerified;
   }, [user]);
 
   // Source of truth for verification is Supabase's email_confirmed_at.
@@ -41,8 +41,8 @@ export const useAuth = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, loading]); // Only depend on primitive values
 
-  // Use tRPC query for profile data - this gives you caching, refetching, etc.
-  const profileQuery = trpc.profiles.get.useQuery(
+  // Use API query for profile data - this gives you caching, refetching, etc.
+  const profileQuery = api.profiles.get.useQuery(
     undefined, // or whatever parameters your profile query needs
     {
       enabled: ready && !!user && isAuthenticated, // Only fetch if auth store is ready and user is authenticated
@@ -52,8 +52,8 @@ export const useAuth = () => {
   );
 
   // Keep auth user data fresh (email, verification status, metadata changes)
-  const authUserQuery = trpc.auth.getUser.useQuery(undefined, {
-    enabled: ready && isAuthenticated && !!session?.access_token,
+  const authUserQuery = api.auth.getUser.useQuery(undefined, {
+    enabled: ready && isAuthenticated && !!session?.bearerToken,
     staleTime: 0,
     refetchOnMount: "always",
     retry: false,
@@ -65,7 +65,7 @@ export const useAuth = () => {
 
     if (
       store.user?.email !== authUserQuery.data.email ||
-      store.user?.email_confirmed_at !== authUserQuery.data.email_confirmed_at
+      store.user?.emailVerified !== authUserQuery.data.emailVerified
     ) {
       store.setUser(authUserQuery.data);
     }
@@ -84,7 +84,7 @@ export const useAuth = () => {
     };
   }, [isAuthenticated, refetchAuthUser]);
 
-  // FIX: Sync profile from tRPC to store - use ref to track if we've already synced this data
+  // FIX: Sync profile from API to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
   const lastSyncedOnboarded = useRef<boolean | null>(null);
 
@@ -135,7 +135,7 @@ export const useAuth = () => {
   const completeOnboarding = useCallback(async () => {
     if (!user) return;
     try {
-      // Note: The DB update is now handled by the completeOnboarding TRPC mutation.
+      // Note: The DB update is now handled by the completeOnboarding API mutation.
       // This function simply updates the local store to reflect the change immediately
       // and prevent navigation loops while the profile query re-fetches.
       const currentStore = useAuthStore.getState();
@@ -159,7 +159,7 @@ export const useAuth = () => {
     // Auth state from Zustand (single source of truth)
     user,
     session,
-    profile: store.profile, // Now from store (synced from tRPC)
+    profile: store.profile, // Now from store (synced from API)
     // Use computed email verification status for more reliable routing
     userStatus,
     onboardingStatus: store.onboardingStatus,

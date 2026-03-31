@@ -1,6 +1,6 @@
 "use client";
 
-import { invalidateRelationshipQueries } from "@repo/trpc/react";
+import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
@@ -9,14 +9,14 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/providers/auth-provider";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export default function FollowingPage() {
   const params = useParams();
   const router = useRouter();
   const userId = params.userId as string;
   const { user } = useAuth();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const [page, setPage] = useState(0);
   const limit = 20;
@@ -25,12 +25,12 @@ export default function FollowingPage() {
     data: followingData,
     isLoading,
     isFetching,
-  } = trpc.social.getFollowing.useQuery(
+  } = api.social.getFollowing.useQuery(
     { user_id: userId, limit, offset: page * limit },
     { enabled: !!userId },
   );
 
-  const unfollowMutation = trpc.social.unfollowUser.useMutation({
+  const unfollowMutation = api.social.unfollowUser.useMutation({
     onSuccess: async (_data, variables) => {
       await invalidateRelationshipQueries(utils, [userId, user?.id, variables.target_user_id]);
       toast.success("Unfollowed user");

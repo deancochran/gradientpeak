@@ -27,7 +27,7 @@
  * ```
  */
 
-import { invalidatePostActivityIngestionQueries, queryKeys } from "@repo/trpc/client";
+import { invalidatePostActivityIngestionQueries, queryKeys } from "@repo/api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { getServerConfig } from "@/lib/server-config";
@@ -38,7 +38,7 @@ import {
   loadPendingFinalizedArtifact,
 } from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
 import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/types";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 // import * as FileSystem from "expo-file-system"; // Removed as we use File class now
 
 import {
@@ -55,7 +55,7 @@ import {
   calculateTotalWork,
   calculateVariabilityIndex,
 } from "@repo/core";
-import type { PublicActivitiesInsert } from "@repo/supabase";
+import type { PublicActivitiesCreate } from "@repo/db";
 import { useCallback, useEffect, useReducer } from "react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { FitUploader } from "@/lib/services/fit/FitUploader";
@@ -69,7 +69,7 @@ type SubmissionPhase = "loading" | "ready" | "uploading" | "success" | "error";
 interface SubmissionState {
   phase: SubmissionPhase;
   artifact: RecordingSessionArtifact | null;
-  activity: PublicActivitiesInsert | null;
+  activity: PublicActivitiesCreate | null;
   error: string | null;
   hasStreams: boolean;
 }
@@ -78,7 +78,7 @@ type Action =
   | {
       type: "READY";
       artifact: RecordingSessionArtifact;
-      activity: PublicActivitiesInsert;
+      activity: PublicActivitiesCreate;
       hasStreams: boolean;
     }
   | {
@@ -262,13 +262,13 @@ function buildActivityFromArtifact(args: {
   artifact: RecordingSessionArtifact;
   profileId: string;
   calculatedMetrics?: ReturnType<typeof calculateActivityMetrics> | null;
-}): PublicActivitiesInsert {
+}): PublicActivitiesCreate {
   const { artifact, profileId, calculatedMetrics } = args;
 
   return {
     profile_id: profileId,
-    started_at: artifact.snapshot.identity.startedAt,
-    finished_at: artifact.completedAt,
+    started_at: new Date(artifact.snapshot.identity.startedAt),
+    finished_at: new Date(artifact.completedAt),
     name: buildDefaultActivityName(artifact),
     type: artifact.snapshot.activity.category,
     duration_seconds: artifact.finalStats.durationSeconds,
@@ -402,7 +402,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     dispatch({ type: "UPDATE", updates });
   }, []);
 
-  const processFitFileMutation = trpc.fitFiles.processFitFile.useMutation({
+  const processFitFileMutation = api.fitFiles.processFitFile.useMutation({
     onSuccess: async (data) => {
       await invalidatePostActivityIngestionQueries(queryClient);
 
@@ -419,7 +419,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     },
   });
 
-  const getSignedUrlMutation = trpc.fitFiles.getSignedUploadUrl.useMutation();
+  const getSignedUrlMutation = api.fitFiles.getSignedUploadUrl.useMutation();
 
   // ================================
   // Single Upload Attempt (No Automatic Retry)
@@ -493,7 +493,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
         // 3. Process the uploaded file
         console.log(
-          "[useActivitySubmission] Calling tRPC processFitFile with path:",
+          "[useActivitySubmission] Calling API processFitFile with path:",
           signedUrlData.filePath,
         );
 

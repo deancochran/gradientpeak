@@ -1,18 +1,18 @@
 import {
-  createTRPCBatchLink,
-  createTRPCUrl,
-  createVanillaTRPCClient,
-  trpc,
-} from "@repo/trpc/react";
-import { loggerLink } from "@trpc/client";
+  api,
+  createApiBatchLink,
+  createApiUrl,
+  createVanillaApiClient,
+  loggerLink,
+} from "@repo/api/react";
 import { Platform } from "react-native";
 import { getMobileDeviceKind, logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getServerConfig } from "@/lib/server-config";
 import { getAuthHeaders } from "@/lib/supabase/auth-headers";
 
-export { trpc };
+export { api };
 
-const TRPC_REQUEST_TIMEOUT_MS = 30000;
+const API_REQUEST_TIMEOUT_MS = 30000;
 
 function getActionName(input: RequestInfo | URL) {
   const rawUrl =
@@ -33,7 +33,7 @@ function getActionName(input: RequestInfo | URL) {
 
 const fetchWithTimeout: typeof fetch = async (input, init) => {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TRPC_REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
   const action = getActionName(input);
   const method = init?.method ?? "GET";
 
@@ -49,7 +49,7 @@ const fetchWithTimeout: typeof fetch = async (input, init) => {
   }
 
   try {
-    logMobileAction(action, "attempt", { channel: "trpc", method });
+    logMobileAction(action, "attempt", { channel: "api", method });
 
     const response = await fetch(input, {
       ...init,
@@ -57,7 +57,7 @@ const fetchWithTimeout: typeof fetch = async (input, init) => {
     });
 
     logMobileAction(action, response.ok ? "success" : "failure", {
-      channel: "trpc",
+      channel: "api",
       method,
       status: response.status,
       ok: response.ok,
@@ -66,7 +66,7 @@ const fetchWithTimeout: typeof fetch = async (input, init) => {
     return response;
   } catch (error) {
     logMobileAction(action, "failure", {
-      channel: "trpc",
+      channel: "api",
       method,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -79,45 +79,45 @@ const fetchWithTimeout: typeof fetch = async (input, init) => {
 
 export const getApiUrl = () => {
   const baseUrl = getServerConfig().apiUrl;
-  const url = createTRPCUrl(baseUrl);
-  console.log("🔗 tRPC URL:", url);
+  const url = createApiUrl(baseUrl);
+  console.log("🔗 API URL:", url);
   return url;
 };
 
 function createMobileHeaders() {
   const authHeaders = getAuthHeaders();
   authHeaders.set("x-client-type", "mobile");
-  authHeaders.set("x-trpc-source", "react-native");
+  authHeaders.set("x-api-source", "react-native");
   authHeaders.set("x-mobile-platform", Platform.OS);
   authHeaders.set("x-mobile-device-kind", getMobileDeviceKind());
   return authHeaders;
 }
 
-let vanillaTrpcClient: ReturnType<typeof createVanillaTRPCClient> | null = null;
-let vanillaTrpcUrl = "";
+let vanillaApiClient: ReturnType<typeof createVanillaApiClient> | null = null;
+let vanillaApiUrl = "";
 
-export function getVanillaTrpcClient() {
+export function getVanillaApiClient() {
   const currentUrl = getApiUrl();
-  if (!vanillaTrpcClient || vanillaTrpcUrl !== currentUrl) {
-    vanillaTrpcClient = createVanillaTRPCClient({
+  if (!vanillaApiClient || vanillaApiUrl !== currentUrl) {
+    vanillaApiClient = createVanillaApiClient({
       url: currentUrl,
       fetch: fetchWithTimeout,
       headers: createMobileHeaders,
     });
-    vanillaTrpcUrl = currentUrl;
+    vanillaApiUrl = currentUrl;
   }
 
-  return vanillaTrpcClient;
+  return vanillaApiClient;
 }
 
-export function createTRPCClient() {
-  return trpc.createClient({
+export function createApiClient() {
+  return api.createClient({
     links: [
       loggerLink({
         enabled: (opts) => __DEV__ || (opts.direction === "down" && opts.result instanceof Error),
         colorMode: "none",
       }),
-      createTRPCBatchLink({
+      createApiBatchLink({
         url: getApiUrl(),
         fetch: fetchWithTimeout,
         headers: createMobileHeaders,

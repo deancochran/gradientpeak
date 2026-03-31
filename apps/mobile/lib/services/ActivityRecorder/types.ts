@@ -16,7 +16,7 @@ import {
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
 } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/db";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
 /**

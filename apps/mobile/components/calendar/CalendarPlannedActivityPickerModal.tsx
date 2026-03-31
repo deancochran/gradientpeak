@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { ChevronRight, Clock3, Heart, Search, Sparkles } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, ScrollView, TouchableOpacity, View } from "react-native";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 type ActivityPlanListItem = {
   id: string;
@@ -186,7 +186,7 @@ export function CalendarPlannedActivityPickerModal({
     isLoading,
     error,
     refetch,
-  } = trpc.activityPlans.list.useQuery(
+  } = api.activityPlans.list.useQuery(
     {
       ownerScope: "own",
       limit: 100,

@@ -1,4 +1,4 @@
-import { invalidateTrainingPlanQueries } from "@repo/trpc/react";
+import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
@@ -9,20 +9,20 @@ import React, { useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityList } from "@/components/plan/calendar/ActivityList";
 import { ROUTES } from "@/lib/constants/routes";
-import { trpc } from "@/lib/trpc";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
+import { api } from "@/lib/api";
+import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 
 export default function ScheduledScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   // Query all scheduled activities
   const {
     data: scheduledData,
     isLoading,
     refetch,
-  } = trpc.events.list.useQuery(
+  } = api.events.list.useQuery(
     {
       limit: 100, // Get all activities for scheduling view
     },

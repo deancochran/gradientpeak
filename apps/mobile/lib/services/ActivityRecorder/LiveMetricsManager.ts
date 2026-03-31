@@ -13,7 +13,7 @@
  */
 
 import { GLOBAL_DEFAULTS, type PerformanceMetrics } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
+import type { PublicActivityCategory, PublicProfilesRow } from "@repo/db";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";

@@ -14,15 +14,15 @@ import { Activity, Plus, Timer, Trash2, Zap } from "lucide-react-native";
 import React from "react";
 import { Alert, FlatList, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 function ActivityEffortsList() {
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const { data: efforts, isLoading, error } = trpc.activityEfforts.getForProfile.useQuery();
+  const { data: efforts, isLoading, error } = api.activityEfforts.getForProfile.useQuery();
 
-  const deleteMutation = trpc.activityEfforts.delete.useMutation({
+  const deleteMutation = api.activityEfforts.delete.useMutation({
     onSuccess: () => {
       utils.activityEfforts.getForProfile.invalidate();
     },

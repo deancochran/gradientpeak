@@ -132,9 +132,9 @@ jest.mock("lucide-react-native", () => ({
   Zap: "Zap",
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       events: {
         list: { invalidate: jest.fn() },

@@ -48,9 +48,9 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ completeOnboarding: completeOnboardingMock }),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     profiles: {
       get: {
         useQuery: () => ({ data: { id: "profile-1" } }),

@@ -6,7 +6,7 @@ import {
   type PlanValidationResult,
   validatePlanRequirements as validateCorePlanRequirements,
 } from "@repo/core/plan";
-import type { PublicProfilesRow } from "@repo/supabase";
+import type { PublicProfilesRow } from "@repo/db";
 
 export type {
   MissingMetric,

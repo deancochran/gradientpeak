@@ -4,8 +4,8 @@ export const getAuthHeaders = () => {
   const session = useAuthStore.getState().session;
   const headers = new Headers();
 
-  if (session?.access_token) {
-    headers.set("Authorization", `Bearer ${session.access_token}`);
+  if (session?.bearerToken) {
+    headers.set("Authorization", `Bearer ${session.bearerToken}`);
   }
 
   return headers;

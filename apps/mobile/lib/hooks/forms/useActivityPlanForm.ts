@@ -1,10 +1,10 @@
 import { type ActivityPlanCreateFormData, activityPlanCreateFormSchema } from "@repo/core";
-import { invalidateActivityPlanQueries } from "@repo/trpc/react";
+import { invalidateActivityPlanQueries } from "@repo/api/react";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
 import { Alert } from "react-native";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 import { getErrorMessage, showErrorAlert } from "@/lib/utils/formErrors";
 
 export type ActivityPlanFormData = ActivityPlanCreateFormData;
@@ -19,11 +19,11 @@ interface UseActivityPlanFormOptions {
 
 /**
  * Hook for managing activity plan creation and editing forms
- * Integrates with Zustand store and tRPC mutations
+ * Integrates with Zustand store and API mutations
  */
 export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   // Get form state from Zustand store
   const {
@@ -44,13 +44,13 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const isEditMode = !!options.planId;
 
   // Load existing plan for editing
-  const { data: existingPlan, isLoading: isLoadingPlan } = trpc.activityPlans.getById.useQuery(
+  const { data: existingPlan, isLoading: isLoadingPlan } = api.activityPlans.getById.useQuery(
     { id: options.planId! },
     { enabled: isEditMode },
   );
 
   // Create mutation
-  const createMutation = trpc.activityPlans.create.useMutation({
+  const createMutation = api.activityPlans.create.useMutation({
     onSuccess: async (data) => {
       await invalidateActivityPlanQueries(utils);
 
@@ -73,7 +73,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   });
 
   // Update mutation
-  const updateMutation = trpc.activityPlans.update.useMutation({
+  const updateMutation = api.activityPlans.update.useMutation({
     onSuccess: async (data) => {
       await invalidateActivityPlanQueries(utils, {
         planId: options.planId,

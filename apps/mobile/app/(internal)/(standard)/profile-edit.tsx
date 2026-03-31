@@ -38,7 +38,7 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { supabase } from "@/lib/supabase/client";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 const profileEditSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").nullable(),
@@ -58,10 +58,10 @@ function ProfileEditScreen() {
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
   const [avatarUploadLoading, setAvatarUploadLoading] = useState(false);
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   // Fetch estimated FTP
-  const { data: estimatedFTP } = trpc.analytics.predictPerformance.useQuery({
+  const { data: estimatedFTP } = api.analytics.predictPerformance.useQuery({
     activity_category: "bike",
     effort_type: "power",
     duration: 3600, // 1 hour for FTP
@@ -71,12 +71,12 @@ function ProfileEditScreen() {
   const [now] = useState(() => new Date());
 
   // Fetch LTHR from profile metrics
-  const { data: lthrMetric } = trpc.profileMetrics.getAtDate.useQuery({
+  const { data: lthrMetric } = api.profileMetrics.getAtDate.useQuery({
     metric_type: "lthr",
     date: now,
   });
 
-  const updateProfileMutation = useReliableMutation(trpc.profiles.update, {
+  const updateProfileMutation = useReliableMutation(api.profiles.update, {
     invalidate: [utils.profiles],
     success: "Profile updated successfully!",
     onSuccess: async () => {

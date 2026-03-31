@@ -5,12 +5,12 @@ import { Button } from "@repo/ui/components/button";
 import { Plus } from "lucide-react";
 import Link from "next/link";
 import { DataTable } from "@/components/ui/data-table";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 import type { Athlete } from "./columns";
 import { columns } from "./columns";
 
 export default function CoachingPage() {
-  const { data: roster = [], isLoading } = trpc.coaching.getRoster.useQuery();
+  const { data: roster = [], isLoading } = api.coaching.getRoster.useQuery();
   const tableRows: Athlete[] = roster.map((row: CoachRosterEntry) => ({
     athlete_id: row.athlete_id,
     profile: row.profile,

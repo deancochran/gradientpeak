@@ -1,4 +1,4 @@
-import { invalidateConversationQueries, invalidateMessagingInboxQueries } from "@repo/trpc/react";
+import { invalidateConversationQueries, invalidateMessagingInboxQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
@@ -9,7 +9,7 @@ import React, { useState } from "react";
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 function MessageBubble({
   text,
@@ -53,16 +53,16 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [inputText, setInputText] = useState("");
   const insets = useSafeAreaInsets();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const { user } = useAuth();
 
-  const { data: messages = [], isLoading } = trpc.messaging.getMessages.useQuery(
+  const { data: messages = [], isLoading } = api.messaging.getMessages.useQuery(
     { conversation_id: id },
     { refetchInterval: 5000 },
   );
 
   // Mark messages as read when viewing the conversation
-  const markAsReadMutation = trpc.messaging.markAsRead.useMutation({
+  const markAsReadMutation = api.messaging.markAsRead.useMutation({
     onSuccess: async () => invalidateMessagingInboxQueries(utils),
   });
 
@@ -73,7 +73,7 @@ export default function ChatScreen() {
     }
   }, [id]);
 
-  const sendMessageMutation = trpc.messaging.sendMessage.useMutation({
+  const sendMessageMutation = api.messaging.sendMessage.useMutation({
     onSuccess: async () => {
       setInputText("");
       await invalidateConversationQueries(utils, id);

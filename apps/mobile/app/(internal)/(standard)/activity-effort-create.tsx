@@ -15,7 +15,7 @@ import { Alert, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { useFormMutation } from "@/lib/hooks/useFormMutation";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 const effortSchema = z.object({
   activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
@@ -43,7 +43,7 @@ function ActivityEffortCreate() {
     },
   });
 
-  const createMutation = trpc.activityEfforts.create.useMutation();
+  const createMutation = api.activityEfforts.create.useMutation();
 
   const mutation = useFormMutation({
     mutationFn: async (data: FormValues) => {

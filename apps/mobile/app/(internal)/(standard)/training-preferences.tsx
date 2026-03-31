@@ -11,7 +11,7 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 type PreferencesTabKey =
   | "schedule"
@@ -97,8 +97,8 @@ function deriveProjectionPreview(
 }
 
 export default function TrainingPreferencesScreen() {
-  const utils = trpc.useUtils();
-  const activePlanQuery = trpc.trainingPlans.getActivePlan.useQuery();
+  const utils = api.useUtils();
+  const activePlanQuery = api.trainingPlans.getActivePlan.useQuery();
   const activePlan = activePlanQuery.data;
   const settingsQuery = useProfileSettings();
   const [activeTab, setActiveTab] = useState<PreferencesTabKey>("schedule");
@@ -112,7 +112,7 @@ export default function TrainingPreferencesScreen() {
     setDraft(settingsQuery.settings);
   }, [settingsQuery.settings]);
 
-  const upsertMutation = trpc.profileSettings.upsert.useMutation({
+  const upsertMutation = api.profileSettings.upsert.useMutation({
     onSuccess: async () => {
       await Promise.all([
         utils.profileSettings.getForProfile.invalidate(),

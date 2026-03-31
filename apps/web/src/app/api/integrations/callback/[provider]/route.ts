@@ -1,5 +1,6 @@
-import type { Database, PublicIntegrationProvider } from "@repo/supabase";
-import { appRouter, createTRPCContext } from "@repo/trpc/server";
+import type { Database } from "@repo/supabase";
+import type { PublicIntegrationProvider } from "@repo/db";
+import { appRouter, createApiContext } from "@repo/api/server";
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -148,7 +149,7 @@ export async function GET(
   );
 
   // Create tRPC context and caller
-  const ctx = await createTRPCContext({
+  const ctx = await createApiContext({
     headers: request.headers,
     supabase,
   });

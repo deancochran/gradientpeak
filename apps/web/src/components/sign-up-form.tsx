@@ -14,7 +14,7 @@ import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("");
@@ -23,7 +23,7 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const signUpMutation = trpc.auth.signUp.useMutation({
+  const signUpMutation = api.auth.signUp.useMutation({
     onSuccess: () => {
       router.push("/auth/sign-up-success");
     },

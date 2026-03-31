@@ -1,0 +1,56 @@
+import { Schemas } from "@repo/core";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import { createTRPCRouter, protectedProcedure } from "../trpc";
+
+export const notificationsRouter = createTRPCRouter({
+  getRecent: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(20) }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase
+        .from("notifications")
+        .select("*")
+        .eq("profile_id", ctx.session.user.id)
+        .order("created_at", { ascending: false })
+        .limit(input.limit);
+
+      if (error)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message,
+        });
+      return data;
+    }),
+
+  getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
+    const { count, error } = await ctx.supabase
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("profile_id", ctx.session.user.id)
+      .eq("is_read", false);
+
+    if (error)
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: error.message,
+      });
+    return count || 0;
+  }),
+
+  markRead: protectedProcedure
+    .input(Schemas.MarkNotificationReadSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .in("id", input.notification_ids)
+        .eq("profile_id", ctx.session.user.id); // Security check
+
+      if (error)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: error.message,
+        });
+      return { success: true };
+    }),
+});

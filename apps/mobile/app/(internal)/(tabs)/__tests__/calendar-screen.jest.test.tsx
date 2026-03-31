@@ -198,9 +198,9 @@ jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
   refreshScheduleWithCallbacks: (input: any) => refreshScheduleWithCallbacksMock(input),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     events: {
       list: {
         useQuery: () => ({

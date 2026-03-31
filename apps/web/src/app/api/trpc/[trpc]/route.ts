@@ -1,7 +1,7 @@
-import { Database } from "@repo/supabase";
-import { appRouter, createTRPCContext } from "@repo/trpc/server";
+import { appRouter, createApiContext } from "@repo/api/server";
+import type { Database } from "@repo/supabase";
 import { createServerClient } from "@supabase/ssr";
-import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { fetchRequestHandler as fetchApiRequestHandler } from "@trpc/server/adapters/fetch";
 import { cookies, headers } from "next/headers";
 
 export const GET = handler;
@@ -17,7 +17,7 @@ async function handler(request: Request) {
   // Create a Supabase client with SERVICE ROLE KEY for full database access
   // This is safe because:
   // 1. Service role key is only used server-side (never exposed to client)
-  // 2. tRPC protectedProcedure middleware validates authentication
+  // 2. API auth middleware validates authentication
   // 3. All queries explicitly filter by ctx.session.user.id
   const supabase = createServerClient<Database>(
     serverSupabaseUrl!,
@@ -42,12 +42,12 @@ async function handler(request: Request) {
     },
   );
 
-  return fetchRequestHandler({
+  return fetchApiRequestHandler({
     endpoint: "/api/trpc",
     req: request,
     router: appRouter,
     createContext: () =>
-      createTRPCContext({
+      createApiContext({
         headers: headersList,
         supabase,
       }),

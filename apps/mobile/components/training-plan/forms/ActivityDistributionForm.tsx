@@ -1,4 +1,4 @@
-import { publicActivityCategorySchema } from "@repo/supabase";
+import { publicActivityCategorySchema } from "@repo/db";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";

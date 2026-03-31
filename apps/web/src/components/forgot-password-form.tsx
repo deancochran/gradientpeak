@@ -13,14 +13,14 @@ import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useState } from "react";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 export function ForgotPasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const resetPasswordMutation = trpc.auth.sendPasswordResetEmail.useMutation({
+  const resetPasswordMutation = api.auth.sendPasswordResetEmail.useMutation({
     onSuccess: () => {
       setSuccess(true);
       setError(null);

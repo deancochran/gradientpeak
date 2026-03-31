@@ -10,7 +10,7 @@
  * Note: GPS recording is controlled via the GPS toggle button in the footer
  */
 
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";

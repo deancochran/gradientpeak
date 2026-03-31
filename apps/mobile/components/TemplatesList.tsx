@@ -1,5 +1,5 @@
 import { ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { PublicActivityCategory } from "@repo/db";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";

@@ -63,9 +63,9 @@ const snapshotMocks = {
   })) as jest.Mock,
 };
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     trainingPlans: {
       get: { useQuery: (...args: any[]) => snapshotMocks.getPlanQuery(...args) },
       getCurrentStatus: {

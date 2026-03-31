@@ -14,7 +14,7 @@ import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 import { useAuth } from "./providers/auth-provider";
 export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("");
@@ -22,7 +22,7 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { refreshSession } = useAuth();
-  const signInMutation = trpc.auth.signInWithPassword.useMutation();
+  const signInMutation = api.auth.signInWithPassword.useMutation();
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);

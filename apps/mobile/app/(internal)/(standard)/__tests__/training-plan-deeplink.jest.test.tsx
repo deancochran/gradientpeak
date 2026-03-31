@@ -73,9 +73,9 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ profile: { id: "test-profile-id" } }),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       client: {
         trainingPlans: {
