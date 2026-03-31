@@ -7,7 +7,7 @@ on:
     paths:
       - "apps/web/**"
       - "packages/core/**"
-      - "packages/trpc/**"
+      - "packages/api/**"
       - "packages/supabase/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/publish-container.yml"
