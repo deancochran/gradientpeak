@@ -8,7 +8,7 @@ This checklist defines the final gates required before the replatform can be con
 
 - [ ] `apps/web` runs on TanStack Start in the final web path
 - [ ] no long-term Next.js runtime code remains in the canonical web app path
-- [ ] the API is exposed through the final tRPC package boundary
+- [ ] the API is exposed through `packages/api` as the only shared API package boundary
 - [ ] `packages/auth` is the long-term owner of auth runtime behavior
 - [ ] `packages/db` is the long-term owner of relational schema, migrations, and DB access
 - [ ] `packages/core` remains DB-independent and runtime-agnostic
@@ -29,6 +29,7 @@ This checklist defines the final gates required before the replatform can be con
 ## Cleanup Gates
 
 - [ ] temporary package bridges are removed or have a dated retirement step
+- [ ] `packages/trpc` is retired as a tracked package and all consumers use `@repo/api`
 - [ ] Supabase no longer owns the relational source of truth
 - [ ] old Next.js-specific auth/bootstrap helpers are removed
 - [ ] old Supabase-Auth-first router code is removed or intentionally minimized to API-adjacent behavior only

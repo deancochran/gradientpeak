@@ -10,7 +10,7 @@ This matrix maps each major current package or app area to its target owner, mig
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `apps/web` | Next.js web app | `apps/web` | TanStack Start web app | routes, providers, SSR helpers, auth bootstrap, `/api/trpc`, `/api/auth` | product UI/features | temporary coexistence with legacy Next code if needed | remove Next runtime code and Next-only helpers |
 | `apps/mobile` | Expo app | `apps/mobile` | Expo app | auth bootstrap integration, API client imports, any shared package import changes | Expo Router app structure | compatibility imports if API/auth package names change | remove old auth/bootstrap assumptions tied to Supabase Auth |
-| `packages/trpc` | shared tRPC package | `packages/api` or bridged `packages/trpc` | shared API package | context, auth integration, DB integration, package name | router composition concepts, procedure shapes where still valid | package alias/bridge if rename is delayed | retire old package name if final name becomes `packages/api` |
+| `packages/trpc` | shared tRPC package | `packages/api` | shared API package | context, auth integration, DB integration, package name | router composition concepts, procedure shapes where still valid | short-lived bridge only if required for cutover | retire old package entirely |
 | `packages/supabase` | Supabase CLI, SQL migrations, generated types, generated schemas, seeds | retained infra package or `infra/supabase` | Supabase platform-only package | relational schema ownership, app-facing types, app-facing validation, DB seed ownership | CLI config, storage, functions, local stack config | temporary parallel existence while Drizzle becomes authoritative | retire relational source-of-truth role |
 | `packages/typescript-config` | shared TS config | `tooling/typescript` | shared TS config tooling | config files, package/app references, docs | config content patterns that still fit | re-export or copied config during transition if needed | retire package-based TS config location |
 | `packages/ui` | shared cross-platform UI | `packages/ui` | shared cross-platform UI | web runtime assumptions, Tailwind/tooling references, any Next-only assumptions | cross-platform component ownership | temporary compatibility wrappers if web setup changes | retire Next-specific assumptions |
@@ -42,7 +42,7 @@ This matrix maps each major current package or app area to its target owner, mig
 
 | Category | Current owner/path | Future owner/path | Action | Notes |
 | --- | --- | --- | --- | --- |
-| Package name | `packages/trpc` | `packages/api` preferred | decide then migrate | compatibility bridge may be needed |
+| Package name | `packages/trpc` | `packages/api` | migrate and retire old name | compatibility bridge must be temporary only |
 | Context | Supabase-client session lookup | Better Auth session + Drizzle DB context | rewrite | one of the most important cut lines |
 | Auth router behavior | `trpc.auth` wraps Supabase Auth | auth behavior moves to `packages/auth` where appropriate | reduce/refactor | some auth-adjacent procedures may remain if still API-oriented |
 | Domain routers | current router files | same package boundary | keep/adapt | update DB access layer from Supabase client to Drizzle |

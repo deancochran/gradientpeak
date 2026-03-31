@@ -4,10 +4,10 @@
 
 Define the target architecture for moving GradientPeak toward the `t3-oss/create-t3-turbo` model while keeping the repo's own preferences and constraints.
 
-Target steady state:
+Target steady state and end goal for the repository:
 
 - `apps/web` uses TanStack Start, not Next.js.
-- the shared API remains tRPC-first.
+- the shared API remains tRPC-first and is owned by `packages/api`.
 - `packages/db` owns Drizzle ORM, relational schema, and migrations.
 - Supabase remains the backing Postgres and platform provider.
 - `packages/auth` owns Better Auth.
@@ -15,6 +15,38 @@ Target steady state:
 - `packages/ui` remains the shared UI package.
 - shared config lives in `tooling/typescript` and `tooling/tailwind`.
 - Biome remains the only repo-wide lint/format toolchain.
+
+## End-State Architecture
+
+This is the intended final architecture, not a temporary midpoint:
+
+- `apps/web`
+  - TanStack Start is the only long-term web framework.
+  - framework-specific request handling, route loaders/actions, and auth/bootstrap wiring stay inside the app.
+  - the web app mounts the shared API and auth surfaces without leaking framework-specific runtime code into shared packages.
+- `apps/mobile`
+  - Expo remains first-class.
+  - mobile consumes `@repo/api`, `@repo/auth`, `@repo/core`, and `@repo/ui` without importing web runtime code.
+- `packages/api`
+  - the only shared API package.
+  - owns tRPC routers, procedures, context, query client helpers, and shared web/mobile client helpers.
+  - depends on `packages/auth` for session/auth resolution and `packages/db` for relational persistence.
+  - does not own auth runtime behavior and does not depend on app-framework runtime code.
+- `packages/auth`
+  - the only long-term auth runtime package.
+  - owns Better Auth configuration, providers/plugins, session contracts, callback handling, and server/client auth helpers.
+- `packages/db`
+  - the only long-term relational source of truth.
+  - owns Drizzle schema, relations, client, migrations, seeds, and DB-derived validation/type helpers.
+- `packages/core`
+  - remains pure and database-independent.
+  - owns calculations, domain schemas/contracts, planning logic, and business rules shared by apps and API.
+- `packages/ui`
+  - remains the shared component package.
+  - supports Expo and the web app without framework-specific assumptions leaking into shared exports.
+- Supabase
+  - remains infrastructure/platform only.
+  - provides hosted Postgres and related platform services, but not the primary app data contract or auth runtime.
 
 ## Explicit Target Choices
 
@@ -54,9 +86,9 @@ Target steady state:
 
 ### API
 
-- the typed API lives in `packages/trpc`
-- auth context is created from Supabase client session lookup
-- `packages/trpc/src/routers/auth.ts` wraps Supabase Auth operations directly
+- the typed API currently lives in `packages/trpc`
+- auth context is currently created from Supabase client session lookup
+- `packages/trpc/src/routers/auth.ts` currently wraps Supabase Auth operations directly
 
 ### Database
 
@@ -185,7 +217,7 @@ What must migrate:
 
 ## Package Responsibilities
 
-- `apps/web`: TanStack Start routes, providers, and mounted `/api/trpc` + `/api/auth`
+- `apps/web`: TanStack Start routes, providers, and mounted shared API + auth endpoints
 - `packages/api`: tRPC router composition, procedures, error formatting, and auth-aware context
 - `packages/auth`: Better Auth runtime config, providers/plugins, session helpers, and Drizzle adapter wiring
 - `packages/db`: Drizzle schema, relations, client, migrations, seeds, and DB-facing validation helpers
@@ -209,7 +241,7 @@ What must migrate:
 This objective is complete only when:
 
 - `apps/web` runs on TanStack Start and no longer depends on Next.js runtime APIs
-- the shared API is served through a dedicated tRPC package boundary
+- the shared API is served through `packages/api` as the only public shared API package boundary
 - Better Auth is the single long-term auth system and is owned by `packages/auth`
 - Drizzle is the single long-term relational schema/query owner and is owned by `packages/db`
 - Supabase is reduced to the backing database/platform role
@@ -218,6 +250,7 @@ This objective is complete only when:
 - shared TS config lives in `tooling/typescript`
 - shared Tailwind config lives in `tooling/tailwind`
 - Biome remains the only repo-wide lint/format toolchain
+- `packages/trpc` no longer exists as a long-term package; any temporary bridge is retired
 - the old Next.js path, the old Supabase-Auth-first path, and the old Supabase-generated-relational-types-first path are all removed or reduced to temporary shims with a defined retirement step
 
 ## Final Cutover Requirements
