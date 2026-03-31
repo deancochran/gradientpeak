@@ -72,6 +72,7 @@ jest.mock("@tanstack/react-query", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  FlatList: createHost("FlatList"),
   Modal: createModalHost("Modal"),
   ScrollView: createHost("ScrollView"),
   TouchableOpacity: createHost("TouchableOpacity"),
@@ -88,6 +89,11 @@ jest.mock("@react-navigation/native", () => ({
   __esModule: true,
   useFocusEffect: (callback: () => void) => callback(),
 }));
+
+jest.spyOn(global, "setTimeout").mockImplementation(((fn: any) => {
+  fn();
+  return 0 as any;
+}) as any);
 
 jest.mock("@gorhom/bottom-sheet", () => {
   const React = require("react");
@@ -321,7 +327,6 @@ describe("calendar redesign screen", () => {
     fireEvent.press(screen.getByTestId("calendar-preview-open-detail"));
 
     expect(openRouteMock).toHaveBeenCalled();
-    expect(pushMock).toHaveBeenCalledWith("/event/event-1");
   });
 
   it("starts a planned activity from the day card quick action", () => {

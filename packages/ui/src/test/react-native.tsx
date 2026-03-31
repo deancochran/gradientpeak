@@ -8,6 +8,31 @@ const createHost = (type: string) =>
 export const Modal = createHost("Modal");
 export const ActivityIndicator = createHost("ActivityIndicator");
 export const KeyboardAvoidingView = createHost("KeyboardAvoidingView");
+export const FlatList = ({
+  data = [],
+  ListHeaderComponent,
+  renderItem,
+  horizontal,
+  ...props
+}: any) =>
+  React.createElement(
+    "FlatList",
+    props,
+    React.createElement(
+      React.Fragment,
+      null,
+      ListHeaderComponent ?? null,
+      data
+        .slice(horizontal ? 0 : undefined)
+        .map((item: any, index: number) =>
+          React.createElement(
+            React.Fragment,
+            { key: item?.id ?? item?.key ?? String(index) },
+            renderItem?.({ item, index }) ?? null,
+          ),
+        ),
+    ),
+  );
 export const Pressable = createHost("Pressable");
 export const RefreshControl = createHost("RefreshControl");
 export const ScrollView = createHost("ScrollView");
