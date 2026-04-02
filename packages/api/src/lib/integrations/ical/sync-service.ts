@@ -1,18 +1,35 @@
-import type { Database } from "@repo/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
+type ExistingFeedEvent = {
+  id: string;
+  external_calendar_id: string | null;
+  external_event_id: string | null;
+  occurrence_key: string;
+};
+
+interface IcalFeedRepository {
+  getExistingFeedEvents(input: { profileId: string; feedId: string }): Promise<ExistingFeedEvent[]>;
+  listFeedRows(profileId: string): Promise<
+    Array<{
+      integration_account_id: string | null;
+      external_calendar_id: string | null;
+      updated_at: string | null;
+    }>
+  >;
+  listImportedEventIds(input: { profileId: string; feedId: string }): Promise<string[]>;
+  removeImportedEvents(input: { profileId: string; feedId: string; ids: string[] }): Promise<void>;
+  upsertImportedEvent(input: {
+    profileId: string;
+    feedId: string;
+    feedUrl: string;
+    event: NormalizedIcalEvent;
+  }): Promise<void>;
+}
+
 import { type NormalizedIcalEvent, normalizeIcalEvent, parseIcalEvents } from "./parser";
 
 type EventIdentity = {
   externalCalendarId: string;
   externalEventId: string;
   occurrenceKey: string;
-};
-
-type ExistingFeedEvent = {
-  id: string;
-  external_calendar_id: string | null;
-  external_event_id: string | null;
-  occurrence_key: string;
 };
 
 export class IcalSyncError extends Error {
@@ -51,7 +68,7 @@ function normalizeFeedUrl(url: string): string {
 }
 
 export class IcalSyncService {
-  constructor(private readonly supabase: SupabaseClient<Database>) {}
+  constructor(private readonly repository: IcalFeedRepository) {}
 
   async syncFeed(input: {
     profileId: string;
@@ -126,17 +143,11 @@ export class IcalSyncService {
       .map((existing) => existing.id);
 
     if (staleEventIds.length > 0) {
-      const { error } = await this.supabase
-        .from("events")
-        .delete()
-        .eq("profile_id", input.profileId)
-        .eq("source_provider", "ical")
-        .eq("integration_account_id", input.feedId)
-        .in("id", staleEventIds);
-
-      if (error) {
-        throw new IcalSyncError("Failed to remove stale imported events", "INTERNAL_SERVER_ERROR");
-      }
+      await this.repository.removeImportedEvents({
+        profileId: input.profileId,
+        feedId: input.feedId,
+        ids: staleEventIds,
+      });
     }
 
     return {
@@ -151,16 +162,7 @@ export class IcalSyncService {
   }
 
   async listFeeds(profileId: string): Promise<IcalFeedListItem[]> {
-    const { data, error } = await this.supabase
-      .from("events")
-      .select("integration_account_id, external_calendar_id, updated_at")
-      .eq("profile_id", profileId)
-      .eq("source_provider", "ical")
-      .eq("event_type", "imported");
-
-    if (error) {
-      throw new IcalSyncError("Failed to load iCal feeds", "INTERNAL_SERVER_ERROR");
-    }
+    const data = await this.repository.listFeedRows(profileId);
 
     const grouped = new Map<string, IcalFeedListItem>();
 
@@ -211,35 +213,17 @@ export class IcalSyncService {
       };
     }
 
-    const { data: existing, error: existingError } = await this.supabase
-      .from("events")
-      .select("id")
-      .eq("profile_id", input.profileId)
-      .eq("source_provider", "ical")
-      .eq("integration_account_id", input.feedId)
-      .eq("event_type", "imported");
-
-    if (existingError) {
-      throw new IcalSyncError(
-        "Failed to load imported events for removal",
-        "INTERNAL_SERVER_ERROR",
-      );
-    }
-
-    const ids = (existing ?? []).map((row) => row.id);
+    const ids = await this.repository.listImportedEventIds({
+      profileId: input.profileId,
+      feedId: input.feedId,
+    });
 
     if (ids.length > 0) {
-      const { error } = await this.supabase
-        .from("events")
-        .delete()
-        .eq("profile_id", input.profileId)
-        .eq("source_provider", "ical")
-        .eq("integration_account_id", input.feedId)
-        .in("id", ids);
-
-      if (error) {
-        throw new IcalSyncError("Failed to remove imported events", "INTERNAL_SERVER_ERROR");
-      }
+      await this.repository.removeImportedEvents({
+        profileId: input.profileId,
+        feedId: input.feedId,
+        ids,
+      });
     }
 
     return {
@@ -268,19 +252,7 @@ export class IcalSyncService {
     profileId: string;
     feedId: string;
   }): Promise<ExistingFeedEvent[]> {
-    const { data, error } = await this.supabase
-      .from("events")
-      .select("id, external_calendar_id, external_event_id, occurrence_key")
-      .eq("profile_id", input.profileId)
-      .eq("source_provider", "ical")
-      .eq("integration_account_id", input.feedId)
-      .eq("event_type", "imported");
-
-    if (error) {
-      throw new IcalSyncError("Failed to load existing imported events", "INTERNAL_SERVER_ERROR");
-    }
-
-    return data ?? [];
+    return this.repository.getExistingFeedEvents(input);
   }
 
   private async upsertEvent(input: {
@@ -289,32 +261,6 @@ export class IcalSyncService {
     feedUrl: string;
     event: NormalizedIcalEvent;
   }): Promise<void> {
-    const payload: Database["public"]["Tables"]["events"]["Insert"] = {
-      profile_id: input.profileId,
-      event_type: "imported",
-      title: input.event.title,
-      description: input.event.description,
-      all_day: input.event.allDay,
-      timezone: input.event.timezone || "UTC",
-      starts_at: input.event.startsAt,
-      ends_at: input.event.endsAt,
-      status: input.event.status,
-      source_provider: "ical",
-      integration_account_id: input.feedId,
-      external_calendar_id: input.feedUrl,
-      external_event_id: input.event.externalEventId,
-      occurrence_key: input.event.occurrenceKey,
-      recurrence_rule: input.event.recurrenceRule,
-      recurrence_timezone: input.event.recurrenceTimezone,
-    };
-
-    const { error } = await this.supabase.from("events").upsert(payload, {
-      onConflict:
-        "profile_id,source_provider,integration_account_id,external_calendar_id,external_event_id,occurrence_key",
-    });
-
-    if (error) {
-      throw new IcalSyncError("Failed to upsert imported event", "INTERNAL_SERVER_ERROR");
-    }
+    await this.repository.upsertImportedEvent(input);
   }
 }

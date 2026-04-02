@@ -6,11 +6,25 @@ import {
   plannedActivityCreateSchema,
   plannedActivityUpdateSchema,
 } from "@repo/core";
-import type { Database } from "@repo/supabase";
+import type {
+  PublicActivityCategory,
+  PublicActivityPlansRow,
+  PublicEffortType,
+  PublicEventStatus,
+  PublicEventType,
+  PublicProfileMetricType,
+} from "@repo/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { getRequiredDb } from "../db";
+import {
+  createEventCompletionRepository,
+  createEventReadRepository,
+  createEventWriteRepository,
+  createWahooRepository,
+} from "../infrastructure/repositories";
+import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlan, addEstimationToPlans } from "../utils/estimation-helpers";
 
@@ -21,6 +35,31 @@ type EventLifecycleStatus =
   | "skipped"
   | "rescheduled"
   | "expired";
+
+function getWahooSyncService(ctx: any) {
+  return new WahooSyncService({
+    repository: createWahooRepository({ db: getRequiredDb(ctx) }),
+    storage: createWahooRouteStorage({
+      async downloadRouteGpx(filePath) {
+        const { data, error } = await ctx.supabase.storage.from("routes").download(filePath);
+        if (error || !data) return null;
+        return data.text();
+      },
+    }),
+  });
+}
+
+function getEventCompletionRepository(ctx: { session: { user: { id: string } } }) {
+  return createEventCompletionRepository(getRequiredDb(ctx as any));
+}
+
+function getEventWriteRepository(ctx: { session: { user: { id: string } } }) {
+  return createEventWriteRepository(getRequiredDb(ctx as any));
+}
+
+function getEventReadRepository(ctx: { session: { user: { id: string } } }) {
+  return createEventReadRepository(getRequiredDb(ctx as any));
+}
 
 type EventStatusContext = {
   completedByDate: Set<string>;
@@ -34,9 +73,9 @@ type InsightRefreshHint = {
   refresh_key: string;
 };
 
-type ActivityPlanRecord = Database["public"]["Tables"]["activity_plans"]["Row"];
+type ActivityPlanRecord = PublicActivityPlansRow;
 
-type DbEventType = Database["public"]["Enums"]["event_type"];
+type DbEventType = PublicEventType;
 type CoreEventType = z.infer<typeof eventTypeInputSchema>;
 type EventMutationScope = z.infer<typeof eventMutationScopeSchema>;
 type LegacyPlannedCreateInput = z.infer<typeof plannedActivityCreateSchema>;
@@ -112,14 +151,31 @@ type PlannedEventRecord = {
   occurrence_key: string;
   original_starts_at: string | null;
   notes: string | null;
-  status: Database["public"]["Enums"]["event_status"];
+  status: PublicEventStatus;
   linked_activity_id: string | null;
   created_at: string;
   updated_at: string;
   starts_at: string;
   ends_at: string | null;
+  activity_plan: ActivityPlanRecord[] | null;
+};
+
+type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
+  T,
+  "event_type" | "activity_plan"
+> & {
+  scheduled_date: string;
+  event_type: CoreEventType;
+  legacy_event_type: DbEventType;
   activity_plan: ActivityPlanRecord | null;
 };
+
+function flattenActivityPlanRelation(
+  activityPlan: PlannedEventRecord["activity_plan"] | ActivityPlanRecord | null | undefined,
+): ActivityPlanRecord | null {
+  if (Array.isArray(activityPlan)) return activityPlan[0] ?? null;
+  return activityPlan ?? null;
+}
 
 const validateConstraintsSchema = z
   .object({
@@ -253,32 +309,20 @@ function hasInstantChanged(
   return normalizeInstantForComparison(nextValue) !== normalizeInstantForComparison(currentValue);
 }
 
-function mapEvent<T extends PlannedEventRecord>(
-  event: T,
-): Omit<T, "event_type"> & {
-  scheduled_date: string;
-  event_type: CoreEventType;
-  legacy_event_type: DbEventType;
-} {
+function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
   const legacyEventType = (event.event_type ?? plannedEventType) as DbEventType;
+  const activityPlan = flattenActivityPlanRelation(event.activity_plan);
 
   return {
     ...event,
+    activity_plan: activityPlan,
     event_type: toCoreEventType(legacyEventType),
     legacy_event_type: legacyEventType,
     scheduled_date: toDateKey(event.starts_at),
   };
 }
 
-function mapEvents<T extends PlannedEventRecord>(
-  events: T[] | null,
-): Array<
-  Omit<T, "event_type"> & {
-    scheduled_date: string;
-    event_type: CoreEventType;
-    legacy_event_type: DbEventType;
-  }
-> {
+function mapEvents<T extends PlannedEventRecord>(events: T[] | null): Array<MappedEvent<T>> {
   return (events || []).map((event) => mapEvent(event));
 }
 
@@ -350,7 +394,7 @@ async function addEventLifecycleStatus<
   },
 >(
   events: T[],
-  ctx: { supabase: SupabaseClient<Database>; profileId: string },
+  ctx: { repository: ReturnType<typeof createEventReadRepository>; profileId: string },
 ): Promise<Array<T & { status: EventLifecycleStatus }>> {
   if (events.length === 0) return [];
 
@@ -369,24 +413,16 @@ async function addEventLifecycleStatus<
   maxDate.setDate(maxDate.getDate() + 1);
   const maxDateExclusive = maxDate.toISOString().split("T")[0] || maxDateKey;
 
-  const { data: completedActivities, error } = await ctx.supabase
-    .from("activities")
-    .select("started_at, activity_plan_id")
-    .eq("profile_id", ctx.profileId)
-    .gte("started_at", minDateKey)
-    .lt("started_at", maxDateExclusive);
-
-  if (error) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: error.message,
-    });
-  }
+  const completedActivities = await ctx.repository.listCompletedActivitiesInRange({
+    profileId: ctx.profileId,
+    startedAtGte: minDateKey,
+    startedAtLt: maxDateExclusive,
+  });
 
   const completedByDate = new Set<string>();
   const completedByDateAndPlan = new Set<string>();
 
-  (completedActivities || []).forEach((activity: any) => {
+  completedActivities.forEach((activity: any) => {
     const dateKey = toDateKey(activity.started_at);
     completedByDate.add(dateKey);
 
@@ -466,7 +502,7 @@ function toPersistableEventStatus(
         status: "scheduled" | "completed" | "cancelled" | "deleted";
       }
     | undefined,
-): Database["public"]["Enums"]["event_status"] {
+): PublicEventStatus {
   const status = lifecycle?.status ?? "scheduled";
 
   if (status === "deleted") {
@@ -507,52 +543,55 @@ function applyScopeFilters(
   return query.eq("series_id", seriesId);
 }
 
-type ReconciliationEventCandidate = Pick<
-  Database["public"]["Tables"]["events"]["Row"],
-  | "id"
-  | "starts_at"
-  | "activity_plan_id"
-  | "training_plan_id"
-  | "status"
-  | "linked_activity_id"
-  | "event_type"
->;
+type ReconciliationEventCandidate = {
+  id: string;
+  starts_at: string;
+  activity_plan_id: string | null;
+  training_plan_id: string | null;
+  status: PublicEventStatus;
+  linked_activity_id: string | null;
+  event_type: DbEventType;
+};
 
-type ReconciliationActivityCandidate = Pick<
-  Database["public"]["Tables"]["activities"]["Row"],
-  "id" | "started_at" | "activity_plan_id"
->;
+type ReconciliationActivityCandidate = {
+  id: string;
+  started_at: string;
+  activity_plan_id: string | null;
+};
 
 function compareActivitiesForReconciliation(
   a: ReconciliationActivityCandidate,
   b: ReconciliationActivityCandidate,
 ): number {
-  const aMs = Date.parse(a.started_at);
-  const bMs = Date.parse(b.started_at);
+  const aStartedAt = typeof a.started_at == "string" ? a.started_at : "";
+  const bStartedAt = typeof b.started_at == "string" ? b.started_at : "";
+  const aId = typeof a.id == "string" ? a.id : "";
+  const bId = typeof b.id == "string" ? b.id : "";
+  const aMs = Date.parse(aStartedAt);
+  const bMs = Date.parse(bStartedAt);
 
   if (!Number.isNaN(aMs) && !Number.isNaN(bMs) && aMs !== bMs) {
     return bMs - aMs;
   }
 
-  if (a.started_at !== b.started_at) {
-    return b.started_at.localeCompare(a.started_at);
+  if (aStartedAt !== bStartedAt) {
+    return bStartedAt.localeCompare(aStartedAt);
   }
 
-  return a.id.localeCompare(b.id);
+  return aId.localeCompare(bId);
 }
 
 export const eventsRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const { data, error } = await ctx.supabase
-        .from("events")
-        .select(plannedEventSelect)
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const eventReadRepository = getEventReadRepository(ctx);
+      const data = await eventReadRepository.getOwnedEventById({
+        eventId: input.id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (error || !data) {
+      if (!data) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Event not found",
@@ -564,7 +603,7 @@ export const eventsRouter = createTRPCRouter({
       if (event.activity_plan) {
         const planWithEstimation = await addEstimationToPlan(
           event.activity_plan,
-          ctx.supabase,
+          eventReadRepository,
           ctx.session.user.id,
         );
         return {
@@ -577,23 +616,17 @@ export const eventsRouter = createTRPCRouter({
     }),
 
   getToday: protectedProcedure.query(async ({ ctx }) => {
+    const eventReadRepository = getEventReadRepository(ctx);
     const today = toDateKey(new Date().toISOString());
     const tomorrow = toDateKey(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
 
-    const { data, error } = await ctx.supabase
-      .from("events")
-      .select(plannedEventSelect)
-      .eq("profile_id", ctx.session.user.id)
-      .gte("starts_at", toDayStartIso(today))
-      .lt("starts_at", toDayStartIso(tomorrow))
-      .order("starts_at", { ascending: true });
-
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
+    const data = await eventReadRepository.listOwnedEvents({
+      profileId: ctx.session.user.id,
+      dateFrom: toDayStartIso(today),
+      dateTo: toDayStartIso(tomorrow),
+      includeAdhoc: true,
+      limit: 500,
+    });
 
     const events = mapEvents(data as PlannedEventRecord[] | null);
 
@@ -604,7 +637,7 @@ export const eventsRouter = createTRPCRouter({
 
       const plansWithEstimation = await addEstimationToPlans(
         plans,
-        ctx.supabase,
+        eventReadRepository,
         ctx.session.user.id,
       );
 
@@ -619,6 +652,7 @@ export const eventsRouter = createTRPCRouter({
   }),
 
   getWeekCount: protectedProcedure.query(async ({ ctx }) => {
+    const eventReadRepository = getEventReadRepository(ctx);
     const now = new Date();
     const utcDay = now.getUTCDay();
     const startOfWeekUtc = new Date(
@@ -629,24 +663,15 @@ export const eventsRouter = createTRPCRouter({
     const endOfWeekUtc = new Date(startOfWeekUtc);
     endOfWeekUtc.setUTCDate(startOfWeekUtc.getUTCDate() + 7);
 
-    const { count, error } = await ctx.supabase
-      .from("events")
-      .select("*", { count: "exact", head: true })
-      .eq("profile_id", ctx.session.user.id)
-      .gte("starts_at", startOfWeekUtc.toISOString())
-      .lt("starts_at", endOfWeekUtc.toISOString());
-
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
-
-    return count || 0;
+    return eventReadRepository.countOwnedEventsInRange({
+      profileId: ctx.session.user.id,
+      startsAtGte: startOfWeekUtc.toISOString(),
+      startsAtLt: endOfWeekUtc.toISOString(),
+    });
   }),
 
   create: protectedProcedure.input(eventCreateInputSchema).mutation(async ({ ctx, input }) => {
+    const eventWriteRepository = getEventWriteRepository(ctx);
     const legacyInput = "scheduled_date" in input ? (input as LegacyPlannedCreateInput) : null;
     const normalizedEventType: CoreEventType = (input.event_type ?? "planned") as CoreEventType;
 
@@ -676,14 +701,12 @@ export const eventsRouter = createTRPCRouter({
     }
 
     if (input.activity_plan_id) {
-      const { data: activityPlan, error: planError } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("id", input.activity_plan_id)
-        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`)
-        .single();
+      const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
+        activityPlanId: input.activity_plan_id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (planError || !activityPlan) {
+      if (!activityPlan) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Activity plan not found or not accessible",
@@ -695,14 +718,12 @@ export const eventsRouter = createTRPCRouter({
       "training_plan_id" in input ? (input.training_plan_id ?? null) : (null as string | null);
 
     if (trainingPlanId) {
-      const { data: trainingPlan, error: trainingPlanError } = await ctx.supabase
-        .from("training_plans")
-        .select("id")
-        .eq("id", trainingPlanId)
-        .eq("profile_id", ctx.session.user.id)
-        .maybeSingle();
+      const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
+        profileId: ctx.session.user.id,
+        trainingPlanId,
+      });
 
-      if (trainingPlanError || !trainingPlan) {
+      if (!trainingPlan) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Training plan not found or not accessible",
@@ -726,49 +747,44 @@ export const eventsRouter = createTRPCRouter({
     const description = "description" in input ? (input.description ?? null) : null;
     const sourceProvider = "source" in input ? (input.source?.provider ?? null) : null;
 
-    const { data, error } = await ctx.supabase
-      .from("events")
-      .insert({
-        profile_id: ctx.session.user.id,
-        event_type: toDbEventType(normalizedEventType),
+    let data;
+    try {
+      data = await eventWriteRepository.createOwnedEvent({
+        profileId: ctx.session.user.id,
+        eventType: toDbEventType(normalizedEventType),
         title,
-        all_day: allDay,
+        allDay,
         timezone,
-        starts_at: startsAt,
-        ends_at: endsAt,
+        startsAt,
+        endsAt,
         status,
-        activity_plan_id:
+        activityPlanId:
           normalizedEventType === "rest_day" ? null : (input.activity_plan_id ?? null),
-        training_plan_id: trainingPlanId,
+        trainingPlanId,
         notes: input.notes ?? null,
         description,
-        recurrence_rule: recurrence?.rule ?? null,
-        recurrence_timezone: recurrence?.timezone ?? null,
-        source_provider: sourceProvider,
-      } as any)
-      .select(plannedEventSelect)
-      .single();
-
-    if (error || !data)
+        recurrenceRule: recurrence?.rule ?? null,
+        recurrenceTimezone: recurrence?.timezone ?? null,
+        sourceProvider,
+      });
+    } catch (error) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: error?.message ?? "Failed to create event",
+        message: error instanceof Error ? error.message : "Failed to create event",
       });
+    }
 
     const event = mapEvent(data as PlannedEventRecord);
 
     let wahooSyncResult: { success: boolean; error?: string } | null = null;
     if (event.legacy_event_type === plannedEventType) {
       try {
-        const { data: integration } = await ctx.supabase
-          .from("integrations")
-          .select("provider")
-          .eq("profile_id", ctx.session.user.id)
-          .eq("provider", "wahoo")
-          .single();
+        const integration = await createWahooRepository({
+          db: getRequiredDb(ctx),
+        }).findWahooIntegrationByProfileId(ctx.session.user.id);
 
         if (integration) {
-          const syncService = new WahooSyncService(ctx.supabase);
+          const syncService = getWahooSyncService(ctx);
           const result = await syncService.syncEvent(event.id, ctx.session.user.id);
           wahooSyncResult = { success: result.success, error: result.error };
         }
@@ -795,13 +811,13 @@ export const eventsRouter = createTRPCRouter({
   update: protectedProcedure.input(eventUpdateInputSchema).mutation(async ({ ctx, input }) => {
     const id = input.id;
     const scope = input.scope ?? "single";
+    const eventWriteRepository = getEventWriteRepository(ctx);
+    const completionRepository = getEventCompletionRepository(ctx);
 
-    const { data: existing } = await ctx.supabase
-      .from("events")
-      .select(plannedEventSelect)
-      .eq("id", id)
-      .eq("profile_id", ctx.session.user.id)
-      .single();
+    const existing = await completionRepository.getOwnedEventForCompletion({
+      eventId: id,
+      profileId: ctx.session.user.id,
+    });
 
     if (!existing) {
       throw new TRPCError({
@@ -861,14 +877,12 @@ export const eventsRouter = createTRPCRouter({
     }
 
     if (typeof patchAny.activity_plan_id === "string") {
-      const { data: activityPlan, error: planError } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("id", patchAny.activity_plan_id)
-        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`)
-        .single();
+      const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
+        activityPlanId: patchAny.activity_plan_id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (planError || !activityPlan) {
+      if (!activityPlan) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Activity plan not found or not accessible",
@@ -877,14 +891,12 @@ export const eventsRouter = createTRPCRouter({
     }
 
     if (typeof patchAny.training_plan_id === "string") {
-      const { data: trainingPlan, error: trainingPlanError } = await ctx.supabase
-        .from("training_plans")
-        .select("id")
-        .eq("id", patchAny.training_plan_id)
-        .eq("profile_id", ctx.session.user.id)
-        .maybeSingle();
+      const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
+        profileId: ctx.session.user.id,
+        trainingPlanId: patchAny.training_plan_id,
+      });
 
-      if (trainingPlanError || !trainingPlan) {
+      if (!trainingPlan) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Training plan not found or not accessible",
@@ -892,7 +904,7 @@ export const eventsRouter = createTRPCRouter({
       }
     }
 
-    const eventUpdates: Database["public"]["Tables"]["events"]["Update"] = {
+    const eventUpdates: Record<string, unknown> = {
       ...(patchAny.event_type !== undefined
         ? { event_type: toDbEventType(patchAny.event_type as CoreEventType) }
         : {}),
@@ -951,21 +963,21 @@ export const eventsRouter = createTRPCRouter({
       eventUpdates.activity_plan_id = null;
     }
 
-    let updateQuery = ctx.supabase
-      .from("events")
-      .update(eventUpdates)
-      .eq("profile_id", ctx.session.user.id);
-    updateQuery = applyScopeFilters(updateQuery, existingEvent, scope);
-
-    const { data, error } = await updateQuery.select(plannedEventSelect);
-
-    if (error || !data)
+    let updatedRows;
+    try {
+      updatedRows = (await eventWriteRepository.updateOwnedEventsForScope({
+        anchorEvent: existingEvent,
+        eventUpdates,
+        profileId: ctx.session.user.id,
+        scope,
+      })) as PlannedEventRecord[];
+    } catch (error) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: error?.message ?? "Failed to update event",
+        message: error instanceof Error ? error.message : "Failed to update event",
       });
+    }
 
-    const updatedRows = data as PlannedEventRecord[];
     if (updatedRows.length === 0) {
       throw new TRPCError({
         code: "NOT_FOUND",
@@ -985,15 +997,12 @@ export const eventsRouter = createTRPCRouter({
     let wahooSyncResult: { success: boolean; error?: string } | null = null;
     if (event.legacy_event_type === plannedEventType) {
       try {
-        const { data: integration } = await ctx.supabase
-          .from("integrations")
-          .select("provider")
-          .eq("profile_id", ctx.session.user.id)
-          .eq("provider", "wahoo")
-          .single();
+        const integration = await createWahooRepository({
+          db: getRequiredDb(ctx),
+        }).findWahooIntegrationByProfileId(ctx.session.user.id);
 
         if (integration) {
-          const syncService = new WahooSyncService(ctx.supabase);
+          const syncService = getWahooSyncService(ctx);
           const result = await syncService.syncEvent(id, ctx.session.user.id);
           wahooSyncResult = { success: result.success, error: result.error };
         }
@@ -1021,12 +1030,11 @@ export const eventsRouter = createTRPCRouter({
   }),
 
   delete: protectedProcedure.input(eventDeleteInputSchema).mutation(async ({ ctx, input }) => {
-    const { data: existing } = await ctx.supabase
-      .from("events")
-      .select(plannedEventSelect)
-      .eq("id", input.id)
-      .eq("profile_id", ctx.session.user.id)
-      .single();
+    const completionRepository = getEventCompletionRepository(ctx);
+    const existing = await completionRepository.getOwnedEventForCompletion({
+      eventId: input.id,
+      profileId: ctx.session.user.id,
+    });
 
     if (!existing) {
       throw new TRPCError({
@@ -1046,31 +1054,27 @@ export const eventsRouter = createTRPCRouter({
 
     const scope = input.scope ?? "single";
 
-    let scopedSelectQuery = ctx.supabase
-      .from("events")
-      .select(plannedEventSelect)
-      .eq("profile_id", ctx.session.user.id);
-    scopedSelectQuery = applyScopeFilters(scopedSelectQuery, existingEvent, scope);
-
-    const { data: scopedRows, error: scopedRowsError } = await scopedSelectQuery;
-    if (scopedRowsError) {
+    let rowsToDelete;
+    try {
+      rowsToDelete = await completionRepository.listOwnedEventsForDeleteScope({
+        anchorEvent: existingEvent,
+        profileId: ctx.session.user.id,
+        scope,
+      });
+    } catch (error) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: scopedRowsError.message,
+        message: error instanceof Error ? error.message : "Failed to scope events for delete",
       });
     }
-    const rowsToDelete = (scopedRows as PlannedEventRecord[] | null) ?? [];
 
     try {
-      const { data: integration } = await ctx.supabase
-        .from("integrations")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("provider", "wahoo")
-        .single();
+      const integration = await createWahooRepository({
+        db: getRequiredDb(ctx),
+      }).findWahooIntegrationByProfileId(ctx.session.user.id);
 
       if (integration) {
-        const syncService = new WahooSyncService(ctx.supabase);
+        const syncService = getWahooSyncService(ctx);
         for (const row of rowsToDelete) {
           if (row.event_type !== plannedEventType) continue;
           await syncService.unsyncEvent(row.id, ctx.session.user.id);
@@ -1080,12 +1084,18 @@ export const eventsRouter = createTRPCRouter({
       console.error("Failed to auto-unsync from Wahoo:", error);
     }
 
-    let deleteQuery = ctx.supabase.from("events").delete().eq("profile_id", ctx.session.user.id);
-    deleteQuery = applyScopeFilters(deleteQuery, existingEvent, scope);
-
-    const { error } = await deleteQuery;
-
-    if (error) throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+    try {
+      await completionRepository.deleteOwnedEventsForScope({
+        anchorEvent: existingEvent,
+        profileId: ctx.session.user.id,
+        scope,
+      });
+    } catch (error) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: error instanceof Error ? error.message : "Failed to delete events",
+      });
+    }
 
     return {
       success: true,
@@ -1103,14 +1113,13 @@ export const eventsRouter = createTRPCRouter({
   linkCompletion: protectedProcedure
     .input(eventLinkCompletionInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { data: existingEventRow, error: existingEventError } = await ctx.supabase
-        .from("events")
-        .select(plannedEventSelect)
-        .eq("id", input.event_id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const completionRepository = getEventCompletionRepository(ctx);
+      const existingEventRow = await completionRepository.getOwnedEventForCompletion({
+        eventId: input.event_id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (existingEventError || !existingEventRow) {
+      if (!existingEventRow) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Event not found",
@@ -1126,21 +1135,19 @@ export const eventsRouter = createTRPCRouter({
         });
       }
 
-      const { data: activity, error: activityError } = await ctx.supabase
-        .from("activities")
-        .select("id")
-        .eq("id", input.activity_id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const activity = await completionRepository.getOwnedActivityForCompletion({
+        activityId: input.activity_id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (activityError || !activity) {
+      if (!activity) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Completed activity not found",
         });
       }
 
-      const eventUpdates: Database["public"]["Tables"]["events"]["Update"] = {
+      const eventUpdates: Record<string, unknown> = {
         // TODO(events-router): Once dedicated completion lifecycle columns
         // (completed_activity_id/completed_at) are available in the events
         // table, migrate this canonical linkage to those fields.
@@ -1148,18 +1155,17 @@ export const eventsRouter = createTRPCRouter({
         status: "completed",
       };
 
-      const { data: linkedEventRow, error: linkError } = await ctx.supabase
-        .from("events")
-        .update(eventUpdates)
-        .eq("id", input.event_id)
-        .eq("profile_id", ctx.session.user.id)
-        .select(plannedEventSelect)
-        .single();
+      const linkedEventRow = await completionRepository.updateEventCompletionLink({
+        eventId: input.event_id,
+        profileId: ctx.session.user.id,
+        linkedActivityId: input.activity_id,
+        status: "completed",
+      });
 
-      if (linkError || !linkedEventRow) {
+      if (!linkedEventRow) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: linkError?.message ?? "Failed to link completed activity",
+          message: "Failed to link completed activity",
         });
       }
 
@@ -1178,14 +1184,13 @@ export const eventsRouter = createTRPCRouter({
   unlinkCompletion: protectedProcedure
     .input(eventUnlinkCompletionInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { data: existingEventRow, error: existingEventError } = await ctx.supabase
-        .from("events")
-        .select(plannedEventSelect)
-        .eq("id", input.event_id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const completionRepository = getEventCompletionRepository(ctx);
+      const existingEventRow = await completionRepository.getOwnedEventForCompletion({
+        eventId: input.event_id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (existingEventError || !existingEventRow) {
+      if (!existingEventRow) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Event not found",
@@ -1201,23 +1206,22 @@ export const eventsRouter = createTRPCRouter({
         });
       }
 
-      const eventUpdates: Database["public"]["Tables"]["events"]["Update"] = {
+      const eventUpdates: Record<string, unknown> = {
         linked_activity_id: null,
         status: existingEvent.status === "completed" ? "scheduled" : existingEvent.status,
       };
 
-      const { data: unlinkedEventRow, error: unlinkError } = await ctx.supabase
-        .from("events")
-        .update(eventUpdates)
-        .eq("id", input.event_id)
-        .eq("profile_id", ctx.session.user.id)
-        .select(plannedEventSelect)
-        .single();
+      const unlinkedEventRow = await completionRepository.updateEventCompletionLink({
+        eventId: input.event_id,
+        profileId: ctx.session.user.id,
+        linkedActivityId: null,
+        status: eventUpdates.status as PublicEventStatus,
+      });
 
-      if (unlinkError || !unlinkedEventRow) {
+      if (!unlinkedEventRow) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: unlinkError?.message ?? "Failed to unlink completed activity",
+          message: "Failed to unlink completed activity",
         });
       }
 
@@ -1236,6 +1240,7 @@ export const eventsRouter = createTRPCRouter({
   reconcileHistoricalCompletions: protectedProcedure
     .input(reconcileHistoricalCompletionsInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const completionRepository = getEventCompletionRepository(ctx);
       const now = new Date();
       const todayDateKey = toDateKey(now.toISOString());
 
@@ -1281,29 +1286,12 @@ export const eventsRouter = createTRPCRouter({
         };
       }
 
-      const { data: eventsToReconcile, error: eventsError } = await ctx.supabase
-        .from("events")
-        .select(
-          "id, starts_at, activity_plan_id, training_plan_id, status, linked_activity_id, event_type",
-        )
-        .eq("profile_id", ctx.session.user.id)
-        .in("event_type", [plannedEventType, "race"])
-        .is("linked_activity_id", null)
-        .neq("status", "cancelled")
-        .gte("starts_at", dateFromInclusiveIso)
-        .lt("starts_at", dateToExclusiveIso)
-        .order("starts_at", { ascending: true })
-        .order("id", { ascending: true })
-        .limit(input.limit);
-
-      if (eventsError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: eventsError.message,
-        });
-      }
-
-      const scannedEvents = (eventsToReconcile as ReconciliationEventCandidate[] | null) ?? [];
+      const scannedEvents = await completionRepository.listHistoricalEventsForReconciliation({
+        profileId: ctx.session.user.id,
+        dateFromInclusiveIso,
+        dateToExclusiveIso,
+        limit: input.limit,
+      });
 
       if (scannedEvents.length === 0) {
         return {
@@ -1330,23 +1318,11 @@ export const eventsRouter = createTRPCRouter({
         };
       }
 
-      const { data: candidateActivities, error: activitiesError } = await ctx.supabase
-        .from("activities")
-        .select("id, started_at, activity_plan_id")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", dateFromInclusiveIso)
-        .lt("started_at", dateToExclusiveIso)
-        .order("started_at", { ascending: false })
-        .order("id", { ascending: true });
-
-      if (activitiesError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: activitiesError.message,
-        });
-      }
-
-      const activities = (candidateActivities as ReconciliationActivityCandidate[] | null) ?? [];
+      const activities = await completionRepository.listHistoricalActivitiesForReconciliation({
+        profileId: ctx.session.user.id,
+        dateFromInclusiveIso,
+        dateToExclusiveIso,
+      });
 
       const activitiesByDate = new Map<string, ReconciliationActivityCandidate[]>();
       const activitiesByDateAndPlan = new Map<string, ReconciliationActivityCandidate[]>();
@@ -1401,20 +1377,13 @@ export const eventsRouter = createTRPCRouter({
           continue;
         }
 
-        const { data: updatedEvent, error: updateError } = await ctx.supabase
-          .from("events")
-          .update({
-            linked_activity_id: candidate.id,
-            status: "completed",
-          })
-          .eq("id", event.id)
-          .eq("profile_id", ctx.session.user.id)
-          .is("linked_activity_id", null)
-          .neq("status", "cancelled")
-          .select("id, training_plan_id, starts_at, updated_at")
-          .maybeSingle();
+        const updatedEvent = await completionRepository.linkHistoricalCompletionIfEligible({
+          activityId: candidate.id,
+          eventId: event.id,
+          profileId: ctx.session.user.id,
+        });
 
-        if (updateError || !updatedEvent) {
+        if (!updatedEvent) {
           skippedEventIds.push(event.id);
           continue;
         }
@@ -1461,55 +1430,33 @@ export const eventsRouter = createTRPCRouter({
     }),
 
   list: protectedProcedure.input(eventListSchema).query(async ({ ctx, input }) => {
+    const eventReadRepository = getEventReadRepository(ctx);
     const limit = input.limit;
-
-    let query = ctx.supabase
-      .from("events")
-      .select(plannedEventSelect)
-      .eq("profile_id", ctx.session.user.id)
-      .order("starts_at", { ascending: true })
-      .order("id", { ascending: true })
-      .limit(limit + 1);
-
-    if (input.event_types && input.event_types.length > 0) {
-      const mappedTypes = [
-        ...new Set(input.event_types.map((eventType) => toDbEventType(eventType))),
-      ];
-      query = query.in("event_type", mappedTypes);
-    }
-
-    if (input.cursor) {
-      const [cursorDate, cursorId] = input.cursor.split("_");
-      if (cursorDate && cursorId) {
-        const cursorStartsAt = toCanonicalInstantIso(cursorDate);
-        query = query.or(
-          `starts_at.gt.${cursorStartsAt},and(starts_at.eq.${cursorStartsAt},id.gt.${cursorId})`,
-        );
-      }
-    }
-
-    if (input.training_plan_id) {
-      query = query.eq("training_plan_id", input.training_plan_id);
-    } else if (!input.include_adhoc) {
-      query = query.not("training_plan_id", "is", null);
-    }
-
-    if (input.activity_plan_id) {
-      query = query.eq("activity_plan_id", input.activity_plan_id);
-    }
-
-    if (input.date_from) query = query.gte("starts_at", toDayStartIso(input.date_from));
-    if (input.date_to) query = query.lt("starts_at", toNextDayStartIso(input.date_to));
-    if (input.activity_category) {
-      query = query.eq("activity_plan.activity_category", input.activity_category);
-    }
-    const { data, error } = await query;
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
+    const [cursorDate, cursorId] = input.cursor ? input.cursor.split("_") : [];
+    const data = await eventReadRepository.listOwnedEvents({
+      profileId: ctx.session.user.id,
+      limit: limit + 1,
+      includeAdhoc: input.include_adhoc,
+      trainingPlanId: input.training_plan_id,
+      activityPlanId: input.activity_plan_id,
+      activityCategory: input.activity_category as
+        | "run"
+        | "bike"
+        | "swim"
+        | "strength"
+        | "other"
+        | undefined,
+      dateFrom: input.date_from ? toDayStartIso(input.date_from) : undefined,
+      dateTo: input.date_to ? toNextDayStartIso(input.date_to) : undefined,
+      eventTypes:
+        input.event_types && input.event_types.length > 0
+          ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
+          : undefined,
+      cursor:
+        cursorDate && cursorId
+          ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
+          : undefined,
+    });
 
     const rows = data ?? [];
     const hasMore = rows.length > limit;
@@ -1527,7 +1474,7 @@ export const eventsRouter = createTRPCRouter({
     if (itemsWithPlans.length > 0) {
       const plansWithEstimation = await addEstimationToPlans(
         itemsWithPlans.map((event) => event.activity_plan),
-        ctx.supabase,
+        eventReadRepository,
         ctx.session.user.id,
       );
 
@@ -1549,7 +1496,7 @@ export const eventsRouter = createTRPCRouter({
     }
 
     const itemsWithStatus = await addEventLifecycleStatus(itemsWithEstimation, {
-      supabase: ctx.supabase,
+      repository: eventReadRepository,
       profileId: ctx.session.user.id,
     });
 
@@ -1562,33 +1509,31 @@ export const eventsRouter = createTRPCRouter({
   validateConstraints: protectedProcedure
     .input(validateConstraintsSchema)
     .query(async ({ ctx, input }) => {
-      const { data: plan, error: planError } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.training_plan_id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const eventReadRepository = getEventReadRepository(ctx);
+      const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+      const validateInputs = await eventReadRepository.getValidateConstraintsInputs({
+        profileId: ctx.session.user.id,
+        trainingPlanId: input.training_plan_id,
+        activityPlanId: input.activity_plan_id,
+        effortCutoffIso: cutoffDate,
+      });
 
-      if (planError || !plan) {
+      if (!validateInputs.trainingPlan) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Training plan not found",
         });
       }
 
-      const { data: activityPlan, error: activityPlanError } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("id", input.activity_plan_id)
-        .or(`profile_id.eq.${ctx.session.user.id},is_system_template.eq.true`)
-        .single();
-
-      if (activityPlanError || !activityPlan) {
+      if (!validateInputs.activityPlan) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Activity plan not found",
         });
       }
+
+      const plan = validateInputs.trainingPlan;
+      const activityPlan = validateInputs.activityPlan;
 
       const structure = plan.structure as {
         target_weekly_tss_max?: number;
@@ -1605,62 +1550,32 @@ export const eventsRouter = createTRPCRouter({
       const endOfWeek = new Date(startOfWeek);
       endOfWeek.setDate(startOfWeek.getDate() + 7);
 
-      const { data: plannedThisWeek } = await ctx.supabase
-        .from("events")
-        .select(plannedEventSelect)
-        .eq("profile_id", ctx.session.user.id)
-        .eq("event_type", plannedEventType)
-        .gte("starts_at", startOfWeek.toISOString().split("T")[0] || "")
-        .lt("starts_at", endOfWeek.toISOString().split("T")[0] || "");
+      const plannedThisWeek = await eventReadRepository.listOwnedEvents({
+        profileId: ctx.session.user.id,
+        eventTypes: [plannedEventType],
+        includeAdhoc: true,
+        dateFrom: startOfWeek.toISOString().split("T")[0] || "",
+        dateTo: endOfWeek.toISOString().split("T")[0] || "",
+        limit: 500,
+      });
 
       const plannedThisWeekMapped = mapEvents(plannedThisWeek as PlannedEventRecord[] | null);
 
-      const { data: profile } = await ctx.supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", ctx.session.user.id)
-        .single();
+      const ftpValue = validateInputs.best20mPower?.value
+        ? Math.round(validateInputs.best20mPower.value * 0.95)
+        : undefined;
 
-      const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-      const { data: best20m } = await ctx.supabase
-        .from("activity_efforts")
-        .select("value")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("activity_category", "bike")
-        .eq("effort_type", "power")
-        .eq("duration_seconds", 1200)
-        .gte("recorded_at", cutoffDate)
-        .order("value", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const ftpValue = best20m?.value ? Math.round(best20m.value * 0.95) : undefined;
-
-      const { data: lthrMetric } = await ctx.supabase
-        .from("profile_metrics")
-        .select("value")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("metric_type", "lthr")
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const lthrValue = lthrMetric?.value ? Number(lthrMetric.value) : undefined;
-
-      const { data: weightMetric } = await ctx.supabase
-        .from("profile_metrics")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("metric_type", "weight_kg")
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const lthrValue = validateInputs.lthrMetric?.value
+        ? Number(validateInputs.lthrMetric.value)
+        : undefined;
 
       const userMetrics = {
         ftp: ftpValue,
         threshold_hr: lthrValue,
-        weight_kg: weightMetric?.value,
-        dob: profile?.dob,
+        weight_kg: validateInputs.weightMetric?.value
+          ? Number(validateInputs.weightMetric.value)
+          : undefined,
+        dob: validateInputs.profile?.dob,
       };
 
       const { estimateActivity, buildEstimationContext } = await import("@repo/core");
@@ -1711,17 +1626,14 @@ export const eventsRouter = createTRPCRouter({
       const threeDaysAfter = new Date(scheduledDate);
       threeDaysAfter.setDate(scheduledDate.getDate() + 3);
 
-      const { data: nearbyActivities } = await ctx.supabase
-        .from("events")
-        .select("starts_at")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("event_type", plannedEventType)
-        .gte("starts_at", threeDaysBefore.toISOString().split("T")[0] || "")
-        .lte("starts_at", threeDaysAfter.toISOString().split("T")[0] || "")
-        .order("starts_at", { ascending: true });
+      const nearbyActivities = await eventReadRepository.listPlannedEventDatesInRange({
+        profileId: ctx.session.user.id,
+        startsAtGte: threeDaysBefore.toISOString().split("T")[0] || "",
+        startsAtLte: threeDaysAfter.toISOString().split("T")[0] || "",
+      });
 
       const allDates = [
-        ...(nearbyActivities || []).map((a: any) => toDateKey(a.starts_at)),
+        ...nearbyActivities.map((a: any) => toDateKey(a.starts_at)),
         input.scheduled_date,
       ].sort();
 
@@ -1811,21 +1723,14 @@ export const eventsRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { data, error } = await ctx.supabase
-        .from("events")
-        .select(plannedEventSelect)
-        .eq("profile_id", ctx.session.user.id)
-        .gte("starts_at", toDayStartIso(input.weekStart))
-        .lt("starts_at", toNextDayStartIso(input.weekEnd))
-        .order("starts_at", { ascending: true })
-        .order("id", { ascending: true });
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      const eventReadRepository = getEventReadRepository(ctx);
+      const data = await eventReadRepository.listOwnedEvents({
+        profileId: ctx.session.user.id,
+        dateFrom: toDayStartIso(input.weekStart),
+        dateTo: toNextDayStartIso(input.weekEnd),
+        includeAdhoc: true,
+        limit: 500,
+      });
 
       const events = mapEvents(data as PlannedEventRecord[] | null);
       if (events.length > 0) {
@@ -1835,7 +1740,7 @@ export const eventsRouter = createTRPCRouter({
 
         const plansWithEstimation = await addEstimationToPlans(
           plans,
-          ctx.supabase,
+          eventReadRepository,
           ctx.session.user.id,
         );
 
@@ -1846,7 +1751,7 @@ export const eventsRouter = createTRPCRouter({
         }));
 
         const itemsWithStatus = await addEventLifecycleStatus(itemsWithEstimation, {
-          supabase: ctx.supabase,
+          repository: eventReadRepository,
           profileId: ctx.session.user.id,
         });
 
@@ -1854,7 +1759,7 @@ export const eventsRouter = createTRPCRouter({
       }
 
       const itemsWithStatus = await addEventLifecycleStatus(events, {
-        supabase: ctx.supabase,
+        repository: eventReadRepository,
         profileId: ctx.session.user.id,
       });
 

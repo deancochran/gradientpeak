@@ -6,7 +6,7 @@ import {
   type PlanValidationResult,
   validatePlanRequirements as validateCorePlanRequirements,
 } from "@repo/core/plan";
-import type { PublicProfilesRow } from "@repo/db";
+import type { RecorderProfileRef } from "./types";
 
 export type {
   MissingMetric,
@@ -17,7 +17,7 @@ export type { PlanValidationMessage, PlanValidationMetrics, PlanValidationResult
 
 export function validatePlanRequirements(
   plan: RecordingServiceActivityPlan,
-  _profile: PublicProfilesRow,
+  _profile: RecorderProfileRef,
   metrics?: PlanValidationMetrics,
 ): PlanValidationResult {
   return validateCorePlanRequirements(plan, metrics);

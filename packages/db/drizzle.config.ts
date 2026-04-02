@@ -1,17 +1,17 @@
-import { defineConfig } from "drizzle-kit";
+import type { Config } from "drizzle-kit";
 
-import { resolveDatabaseUrl } from "./src/client";
+const databaseUrl =
+  process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? process.env.SUPABASE_DB_URL;
 
-const localSupabaseUrl = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+if (!databaseUrl) {
+  throw new Error("Missing POSTGRES_URL");
+}
 
-const databaseUrl = process.env.DATABASE_URL ?? process.env.SUPABASE_DB_URL ?? localSupabaseUrl;
+const nonPoolingUrl = databaseUrl.replace(":6543", ":5432");
 
-export default defineConfig({
-  schema: "./src/schema/index.ts",
-  out: "./drizzle",
+export default {
+  schema: "./src/schema.ts",
   dialect: "postgresql",
-  dbCredentials: {
-    url: resolveDatabaseUrl({ DATABASE_URL: databaseUrl }),
-  },
-  strict: true,
-});
+  dbCredentials: { url: nonPoolingUrl },
+  casing: "snake_case",
+} satisfies Config;

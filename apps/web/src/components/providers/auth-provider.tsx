@@ -1,9 +1,9 @@
 "use client";
 
-import type { AuthUser } from "@repo/auth";
+import type { AuthUser } from "@repo/auth/session";
 import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect } from "react";
-import { api } from "@/lib/api/client";
+import { authClient, normalizeWebAuthSession } from "@/lib/auth/client";
 
 type AuthState = {
   user: AuthUser | null;
@@ -20,28 +20,20 @@ const AuthContext = createContext<AuthState>({
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const {
-    data: session,
-    isLoading,
-    error,
-    refetch,
-  } = api.auth.getSession.useQuery(undefined, {
-    retry: false,
-    staleTime: 0,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-  });
+  const { data, isPending, error, refetch } = authClient.useSession();
+
+  const session = normalizeWebAuthSession(data);
 
   const user = session?.user ?? null;
   const isAuthenticated = !!user;
 
   // Monitor authentication state changes
   useEffect(() => {
-    if (!isLoading && error) {
+    if (!isPending && error) {
       // User is not authenticated, could redirect here if needed
       console.log("Authentication lost:", error.message);
     }
-  }, [isLoading, error]);
+  }, [isPending, error]);
 
   const refreshSession = () => {
     void refetch();
@@ -51,7 +43,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     <AuthContext.Provider
       value={{
         user: user || null,
-        isLoading,
+        isLoading: isPending,
         isAuthenticated,
         refreshSession,
       }}

@@ -1,8 +1,7 @@
 import type { ActivityDerivedMetrics, ActivityListDerivedSummary } from "@repo/core";
-import type { Database } from "@repo/supabase";
+import type { ActivityRow, PublicActivityPlansRow } from "@repo/db";
 
-type ActivityRow = Database["public"]["Tables"]["activities"]["Row"];
-type ActivityPlanRow = Database["public"]["Tables"]["activity_plans"]["Row"];
+type ActivityPlanRow = PublicActivityPlansRow;
 
 export function mapActivityToDerivedResponse(input: {
   activity: ActivityRow & {

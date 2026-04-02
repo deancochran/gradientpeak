@@ -9,7 +9,7 @@
  * - Preparing metrics by merging user input with baseline
  */
 
-import type { Database } from "@repo/supabase";
+import type { PublicActivityPlansRow, PublicEventStatus, PublicEventType, PublicProfileMetricType, PublicActivityCategory, PublicEffortType } from "@repo/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // These specific calculation modules are new and might not be in the main exports yet
@@ -96,9 +96,9 @@ interface BaselineProfile {
   source: string;
 }
 
-type ProfileMetricType = Database["public"]["Enums"]["profile_metric_type"];
-type ActivityCategory = Database["public"]["Enums"]["activity_category"];
-type EffortType = Database["public"]["Enums"]["effort_type"];
+type ProfileMetricType = PublicProfileMetricType;
+type ActivityCategory = PublicActivityCategory;
+type EffortType = PublicEffortType;
 
 /**
  * Batch insert profile metrics with consistent formatting.
@@ -112,7 +112,7 @@ type EffortType = Database["public"]["Enums"]["effort_type"];
  * @returns Insert result
  */
 export async function batchInsertProfileMetrics(
-  supabase: SupabaseClient<Database>,
+  supabase: SupabaseClient,
   profileId: string,
   metrics: Array<{
     metric_type: ProfileMetricType;
@@ -150,7 +150,7 @@ export async function batchInsertProfileMetrics(
  * @returns Insert result
  */
 export async function batchInsertActivityEfforts(
-  supabase: SupabaseClient<Database>,
+  supabase: SupabaseClient,
   profileId: string,
   efforts: DerivedEffort[],
   source: string = "onboarding",

@@ -3,10 +3,40 @@
  * Processes webhook events and imports completed activities from Wahoo
  */
 
-import type { Database } from "@repo/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { type ActivityType, fromActivityType } from "./activity-type-utils";
 import type { WahooWorkoutSummary } from "./client";
+
+interface WahooRepository {
+  createImportedActivity(input: {
+    activityPlanId: string | null;
+    avgCadence: number | null;
+    avgHeartRate: number | null;
+    avgPower: number | null;
+    avgSpeedMps: number | null;
+    calories: number | null;
+    distanceMeters: number;
+    durationSeconds: number;
+    elevationGainMeters: number | null;
+    externalId: string;
+    finishedAt: string;
+    fitFilePath: string | null;
+    fitFileSize: number | null;
+    movingSeconds: number;
+    name: string;
+    normalizedPower: number | null;
+    profileId: string;
+    provider: "wahoo";
+    startedAt: string;
+    type: string;
+  }): Promise<{ id: string }>;
+  findImportedActivityByExternalId(externalId: string): Promise<{ id: string } | null>;
+  findLinkedPlannedEventId(input: {
+    externalWorkoutId: string;
+    profileId: string;
+  }): Promise<string | null>;
+  findWahooIntegrationByExternalId(externalId: string): Promise<{ profileId: string } | null>;
+  getEventActivityPlanId(input: { eventId: string; profileId: string }): Promise<string | null>;
+}
 
 // Wahoo workout type mapping to GradientPeak activity categories
 const WAHOO_WORKOUT_TYPE_MAP: Record<number, ActivityType> = {
@@ -26,8 +56,17 @@ export interface ImportResult {
   reason?: string;
 }
 
+export interface WahooActivityImportFitFileStorage {
+  uploadFitFile(input: { bytes: Uint8Array; contentType: string; path: string }): Promise<void>;
+}
+
 export class WahooActivityImporter {
-  constructor(private supabase: SupabaseClient<Database>) {}
+  constructor(
+    private readonly deps: {
+      fitFileStorage: WahooActivityImportFitFileStorage;
+      repository: WahooRepository;
+    },
+  ) {}
 
   /**
    * Import a completed workout summary from Wahoo webhook
@@ -40,15 +79,12 @@ export class WahooActivityImporter {
   ): Promise<ImportResult> {
     try {
       // 1. Find user by external_id
-      const { data: integration, error: integrationError } = await this.supabase
-        .from("integrations")
-        .select("profile_id")
-        .eq("provider", "wahoo")
-        .eq("external_id", wahooUserId.toString())
-        .single();
+      const integration = await this.deps.repository.findWahooIntegrationByExternalId(
+        wahooUserId.toString(),
+      );
 
-      if (integrationError || !integration) {
-        console.error(`No integration found for Wahoo user ${wahooUserId}`, integrationError);
+      if (!integration) {
+        console.error(`No integration found for Wahoo user ${wahooUserId}`);
         return {
           success: false,
           error: `No integration found for Wahoo user ${wahooUserId}`,
@@ -56,12 +92,9 @@ export class WahooActivityImporter {
       }
 
       // 2. Check for duplicate (unique constraint on provider + external_id)
-      const { data: existing } = await this.supabase
-        .from("activities")
-        .select("id")
-        .eq("provider", "wahoo")
-        .eq("external_id", summary.id.toString())
-        .single();
+      const existing = await this.deps.repository.findImportedActivityByExternalId(
+        summary.id.toString(),
+      );
 
       if (existing) {
         console.log(`Activity ${summary.id} already imported, skipping`);
@@ -77,16 +110,12 @@ export class WahooActivityImporter {
       // Note: This queries synced_events which links events to external workouts
       // The external_id column stores the Wahoo workout ID
       const linkedWorkoutId = summary.workout_id ?? summary.workout?.id ?? null;
-
-      const { data: syncedActivity } = linkedWorkoutId
-        ? await (this.supabase as any)
-            .from("synced_events")
-            .select("event_id")
-            .eq("provider", "wahoo")
-            .eq("external_id", linkedWorkoutId.toString())
-            .eq("profile_id", integration.profile_id)
-            .single()
-        : { data: null };
+      const linkedEventId = linkedWorkoutId
+        ? await this.deps.repository.findLinkedPlannedEventId({
+            profileId: integration.profileId,
+            externalWorkoutId: linkedWorkoutId.toString(),
+          })
+        : null;
 
       // 4. Fetch the workout to get activity type
       // Note: In a real implementation, you'd fetch this from Wahoo API
@@ -96,7 +125,7 @@ export class WahooActivityImporter {
 
       const fitFile = await this.downloadAndStoreFitFile(
         summary.file?.url,
-        integration.profile_id,
+        integration.profileId,
         summary.id,
       );
 
@@ -110,66 +139,59 @@ export class WahooActivityImporter {
 
       // 4a. If we have an event_id, get the associated activity_plan_id
       let activityPlanId: string | null = null;
-      if (syncedActivity?.event_id) {
-        const { data: plannedActivity } = await this.supabase
-          .from("events")
-          .select("activity_plan_id")
-          .eq("id", syncedActivity.event_id)
-          .eq("event_type", "planned_activity")
-          .eq("profile_id", integration.profile_id)
-          .single();
-
-        activityPlanId = plannedActivity?.activity_plan_id || null;
+      if (linkedEventId) {
+        activityPlanId =
+          (await this.deps.repository.getEventActivityPlanId({
+            eventId: linkedEventId,
+            profileId: integration.profileId,
+          })) ?? null;
       }
 
       const activity = {
-        profile_id: integration.profile_id,
+        profileId: integration.profileId,
         provider: "wahoo" as const,
-        external_id: summary.id.toString(),
-        activity_plan_id: activityPlanId, // Use activity_plan_id instead of planned_activity_id
+        externalId: summary.id.toString(),
+        activityPlanId,
 
         // Timestamps
-        started_at: startedAt,
-        finished_at: finishedAt,
+        startedAt,
+        finishedAt,
 
         // Activity type (new schema)
         type: category,
         name: `${category} Activity`,
 
         // Core metrics
-        distance_meters: toInteger(summary.distance_accum),
-        duration_seconds: toInteger(summary.duration_total_accum),
-        moving_seconds: toInteger(summary.duration_active_accum),
+        distanceMeters: toInteger(summary.distance_accum),
+        durationSeconds: toInteger(summary.duration_total_accum),
+        movingSeconds: toInteger(summary.duration_active_accum),
 
         // Additional metrics mapped to concrete DB columns
-        elevation_gain_meters: toInteger(summary.ascent_accum),
+        elevationGainMeters: toInteger(summary.ascent_accum),
         calories: toInteger(summary.calories_accum),
-        avg_power: toNullableNumber(summary.power_avg),
-        normalized_power: toNullableNumber(summary.power_bike_np_last),
-        avg_heart_rate: toNullableInteger(summary.heart_rate_avg),
-        avg_cadence: toNullableInteger(summary.cadence_avg),
-        avg_speed_mps: toNullableNumber(summary.speed_avg),
-        fit_file_path: fitFile?.path ?? null,
-        fit_file_size: fitFile?.size ?? null,
+        avgPower: toNullableNumber(summary.power_avg),
+        normalizedPower: toNullableNumber(summary.power_bike_np_last),
+        avgHeartRate: toNullableInteger(summary.heart_rate_avg),
+        avgCadence: toNullableInteger(summary.cadence_avg),
+        avgSpeedMps: toNullableNumber(summary.speed_avg),
+        fitFilePath: fitFile?.path ?? null,
+        fitFileSize: fitFile?.size ?? null,
       };
 
       // 7. Create activity
-      const { data: newActivity, error: insertError } = await this.supabase
-        .from("activities")
-        .insert(activity)
-        .select("id")
-        .single();
-
-      if (insertError) {
+      let newActivity;
+      try {
+        newActivity = await this.deps.repository.createImportedActivity(activity);
+      } catch (insertError) {
         console.error("Failed to import Wahoo activity:", insertError);
         return {
           success: false,
-          error: `Database error: ${insertError.message}`,
+          error: `Database error: ${insertError instanceof Error ? insertError.message : String(insertError)}`,
         };
       }
 
       console.log(
-        `Successfully imported Wahoo activity ${summary.id} as ${newActivity.id} for user ${integration.profile_id}`,
+        `Successfully imported Wahoo activity ${summary.id} as ${newActivity.id} for user ${integration.profileId}`,
       );
 
       return {
@@ -224,16 +246,15 @@ export class WahooActivityImporter {
       const bytes = new Uint8Array(arrayBuffer);
       const fitPath = `${profileId}/wahoo-${workoutSummaryId}.fit`;
 
-      const { error: uploadError } = await this.supabase.storage
-        .from("fit-files")
-        .upload(fitPath, bytes, {
+      try {
+        await this.deps.fitFileStorage.uploadFitFile({
+          bytes,
           contentType: "application/octet-stream",
-          upsert: false,
+          path: fitPath,
         });
-
-      if (uploadError) {
+      } catch (uploadError) {
         console.warn(
-          `Failed to store Wahoo FIT file for summary ${workoutSummaryId}: ${uploadError.message}`,
+          `Failed to store Wahoo FIT file for summary ${workoutSummaryId}: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`,
         );
         return null;
       }
@@ -261,6 +282,12 @@ export class WahooActivityImporter {
   }
 }
 
+export function createWahooImportFitFileStorage(
+  storageClient: Pick<WahooActivityImportFitFileStorage, "uploadFitFile">,
+): WahooActivityImportFitFileStorage {
+  return storageClient;
+}
+
 function toNumber(value: number | string | null | undefined): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -284,9 +311,9 @@ function toNullableInteger(value: number | string | null | undefined): number | 
   return parsed === null ? null : Math.round(parsed);
 }
 
-/**
- * Create an activity importer instance
- */
-export function createActivityImporter(supabase: SupabaseClient<Database>): WahooActivityImporter {
-  return new WahooActivityImporter(supabase);
+export function createActivityImporter(deps: {
+  fitFileStorage: WahooActivityImportFitFileStorage;
+  repository: WahooRepository;
+}) {
+  return new WahooActivityImporter(deps);
 }

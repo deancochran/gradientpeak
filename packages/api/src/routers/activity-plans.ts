@@ -5,6 +5,8 @@ import {
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
+import { createEventReadRepository } from "../infrastructure/repositories";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   addEstimationToPlan,
@@ -36,6 +38,10 @@ const getManyActivityPlansByIdsSchema = z
 // Helper to validate V2 structure only
 function validateStructure(structure: unknown): void {
   activityPlanStructureSchemaV2.parse(structure);
+}
+
+function getEstimationStore(ctx: { session: { user: { id: string } } }) {
+  return createEventReadRepository(getRequiredDb(ctx as any));
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.extend({
@@ -93,6 +99,7 @@ export const activityPlansRouter = createTRPCRouter({
   // List activity plans
   // ------------------------------
   list: protectedProcedure.input(listActivityPlansSchema).query(async ({ ctx, input }) => {
+    const estimationStore = getEstimationStore(ctx);
     const limit = input.limit;
 
     let query = ctx.supabase
@@ -166,7 +173,7 @@ export const activityPlansRouter = createTRPCRouter({
     // Add dynamic TSS estimation to each plan
     const itemsWithEstimation = await addEstimationToPlans(
       items,
-      ctx.supabase,
+      estimationStore,
       ctx.session.user.id,
     );
 
@@ -207,6 +214,7 @@ export const activityPlansRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
+      const estimationStore = getEstimationStore(ctx);
       const userId = ctx.session.user.id;
 
       // First, get the plan by ID
@@ -246,7 +254,7 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       // Add dynamic TSS estimation
-      const planWithEstimation = await addEstimationToPlan(plan, ctx.supabase, userId);
+      const planWithEstimation = await addEstimationToPlan(plan, estimationStore, userId);
 
       const { data: likeData } = await (ctx.supabase as any)
         .from("likes")
@@ -265,6 +273,7 @@ export const activityPlansRouter = createTRPCRouter({
   getManyByIds: protectedProcedure
     .input(getManyActivityPlansByIdsSchema)
     .query(async ({ ctx, input }) => {
+      const estimationStore = getEstimationStore(ctx);
       const userId = ctx.session.user.id;
       const ids = Array.from(new Set(input.ids));
 
@@ -284,7 +293,7 @@ export const activityPlansRouter = createTRPCRouter({
       const planById = new Map((plans ?? []).map((plan: any) => [plan.id, plan]));
       const orderedPlans = ids.map((id) => planById.get(id)).filter((plan): plan is any => !!plan);
 
-      const itemsWithEstimation = await addEstimationToPlans(orderedPlans, ctx.supabase, userId);
+      const itemsWithEstimation = await addEstimationToPlans(orderedPlans, estimationStore, userId);
 
       const planIds = itemsWithEstimation.map((plan: any) => plan.id);
       let userLikes: string[] = [];
@@ -331,6 +340,7 @@ export const activityPlansRouter = createTRPCRouter({
   // Create new activity plan
   // ------------------------------
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
+    const estimationStore = getEstimationStore(ctx);
     // Validate the V2 structure before saving to database
     try {
       validateStructure(input.structure);
@@ -376,7 +386,11 @@ export const activityPlansRouter = createTRPCRouter({
     }
 
     // Add dynamic TSS estimation to created plan
-    const planWithEstimation = await addEstimationToPlan(data, ctx.supabase, ctx.session.user.id);
+    const planWithEstimation = await addEstimationToPlan(
+      data,
+      estimationStore,
+      ctx.session.user.id,
+    );
 
     return withIdentityFields(planWithEstimation as any);
   }),
@@ -387,6 +401,7 @@ export const activityPlansRouter = createTRPCRouter({
   update: protectedProcedure
     .input(updateActivityPlanWithIdInput)
     .mutation(async ({ ctx, input }) => {
+      const estimationStore = getEstimationStore(ctx);
       const { id, ...updates } = input;
 
       // Check ownership
@@ -454,7 +469,11 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       // Add dynamic TSS estimation to updated plan
-      const planWithEstimation = await addEstimationToPlan(data, ctx.supabase, ctx.session.user.id);
+      const planWithEstimation = await addEstimationToPlan(
+        data,
+        estimationStore,
+        ctx.session.user.id,
+      );
 
       return withIdentityFields(planWithEstimation as any);
     }),
@@ -510,6 +529,7 @@ export const activityPlansRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const estimationStore = getEstimationStore(ctx);
       // Get the original plan
       const { data: originalPlan, error: fetchError } = await ctx.supabase
         .from("activity_plans")
@@ -579,7 +599,11 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       // Add dynamic TSS estimation to duplicated plan
-      const planWithEstimation = await addEstimationToPlan(data, ctx.supabase, ctx.session.user.id);
+      const planWithEstimation = await addEstimationToPlan(
+        data,
+        estimationStore,
+        ctx.session.user.id,
+      );
 
       return withIdentityFields(planWithEstimation as any);
     }),
@@ -587,6 +611,7 @@ export const activityPlansRouter = createTRPCRouter({
   importFromFitTemplate: protectedProcedure
     .input(importedTemplateInput)
     .mutation(async ({ ctx, input }) => {
+      const estimationStore = getEstimationStore(ctx);
       const provider = "fit";
       const externalId = input.external_id.trim();
 
@@ -632,7 +657,7 @@ export const activityPlansRouter = createTRPCRouter({
       try {
         withEstimation = await addEstimationToPlan(
           persisted.data,
-          ctx.supabase,
+          estimationStore,
           ctx.session.user.id,
         );
       } catch (estimationError) {
@@ -648,6 +673,7 @@ export const activityPlansRouter = createTRPCRouter({
   importFromZwoTemplate: protectedProcedure
     .input(importedTemplateInput)
     .mutation(async ({ ctx, input }) => {
+      const estimationStore = getEstimationStore(ctx);
       const provider = "zwo";
       const externalId = input.external_id.trim();
 
@@ -693,7 +719,7 @@ export const activityPlansRouter = createTRPCRouter({
       try {
         withEstimation = await addEstimationToPlan(
           persisted.data,
-          ctx.supabase,
+          estimationStore,
           ctx.session.user.id,
         );
       } catch (estimationError) {

@@ -10,7 +10,7 @@
  * Note: GPS recording is controlled via the GPS toggle button in the footer
  */
 
-import type { PublicActivityCategory } from "@repo/db";
+import type { RecordingActivityCategory } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -22,7 +22,7 @@ import { useActivityStatus } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 
 const ACTIVITY_CATEGORIES: {
-  value: PublicActivityCategory;
+  value: RecordingActivityCategory;
   label: string;
   icon: any;
 }[] = [
@@ -41,7 +41,7 @@ export default function ActivitySelectionScreen() {
   const hasPlan = service?.hasPlan ?? false;
 
   const [selectedCategory, setSelectedCategory] =
-    useState<PublicActivityCategory>(activityCategory);
+    useState<RecordingActivityCategory>(activityCategory);
 
   const handleSave = () => {
     if (!service) return;

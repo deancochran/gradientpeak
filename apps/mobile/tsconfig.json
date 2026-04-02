@@ -8,7 +8,11 @@
       "@repo/core": ["../../packages/core/index.ts"],
       "@repo/api": ["../../packages/api/index.ts"],
       "@repo/api/*": ["../../packages/api/src/*"],
-      "@repo/auth": ["../../packages/auth/index.ts"],
+      "@repo/auth/client": ["../../packages/auth/src/client.ts"],
+      "@repo/auth/client/*": ["../../packages/auth/src/client/*"],
+      "@repo/auth/server": ["../../packages/auth/src/server.ts"],
+      "@repo/auth/session": ["../../packages/auth/src/contracts/session.ts"],
+      "@repo/auth/callbacks": ["../../packages/auth/src/contracts/callbacks.ts"],
       "@repo/auth/*": ["../../packages/auth/src/*"],
       "@repo/db": ["../../packages/db/index.ts"]
     }

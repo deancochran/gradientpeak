@@ -4,8 +4,14 @@
  */
 
 import type { ActivityPlanStructureV2 } from "@repo/core";
-import type { Database } from "@repo/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  PublicActivityCategory,
+  PublicActivityPlansRow,
+  PublicEffortType,
+  PublicEventStatus,
+  PublicEventType,
+  PublicProfileMetricType,
+} from "@repo/db";
 import { toActivityType, toWahooWorkoutTypeId } from "./activity-type-utils";
 import { createWahooClient, supportsRoutes } from "./client";
 import {
@@ -24,6 +30,84 @@ import {
 
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
 
+interface WahooRepository {
+  createSyncedEvent(input: {
+    eventId: string;
+    externalId: string;
+    profileId: string;
+    provider: "wahoo";
+    syncedAt: string;
+    updatedAt: string;
+  }): Promise<void>;
+  deleteSyncedEvent(id: string): Promise<void>;
+  findWahooIntegrationByProfileId(profileId: string): Promise<{
+    accessToken: string;
+    externalId: string;
+    profileId: string;
+    refreshToken: string | null;
+  } | null>;
+  getPlannedEventForSync(input: { eventId: string; profileId: string }): Promise<{
+    activityPlan: {
+      activityCategory: string;
+      description: string | null;
+      id: string;
+      name: string;
+      routeId: string | null;
+      structure: unknown;
+      updatedAt: string;
+    } | null;
+    id: string;
+    startsAt: string;
+  } | null>;
+  getProfileSyncMetrics(
+    profileId: string,
+  ): Promise<{ ftp: number | null; thresholdHr: number | null } | null>;
+  getRouteForSync(input: { profileId: string; routeId: string }): Promise<{
+    activityCategory: string;
+    description: string | null;
+    filePath: string;
+    id: string;
+    name: string;
+    totalAscent: number | null;
+    totalDescent: number | null;
+    totalDistance: number;
+  } | null>;
+  getSyncedEvent(input: {
+    eventId: string;
+    profileId: string;
+    provider: "wahoo";
+  }): Promise<{ externalId: string; id: string; updatedAt: string | null } | null>;
+  listEventSyncs(input: { eventId: string; profileId: string }): Promise<
+    Array<{
+      externalId: string;
+      id: string;
+      provider: string;
+      syncedAt: string | null;
+      updatedAt: string | null;
+    }>
+  >;
+  updateSyncedEvent(input: { externalId?: string; id: string; updatedAt: string }): Promise<void>;
+}
+
+type WahooActivityPlan = Pick<
+  PublicActivityPlansRow,
+  "id" | "name" | "description" | "activity_category" | "structure" | "updated_at" | "route_id"
+>;
+
+type WahooActivityPlanRelation = WahooActivityPlan | WahooActivityPlan[] | null;
+
+type WahooPlannedEvent = {
+  id: string;
+  starts_at: string;
+  activity_plan: WahooActivityPlan;
+};
+
+function normalizeActivityPlanRelation(
+  relation: WahooActivityPlanRelation,
+): WahooActivityPlan | null {
+  return Array.isArray(relation) ? (relation[0] ?? null) : relation;
+}
+
 export interface SyncResult {
   success: boolean;
   action: SyncAction;
@@ -32,11 +116,26 @@ export interface SyncResult {
   error?: string;
 }
 
-export class WahooSyncService {
-  constructor(private supabase: SupabaseClient<Database>) {}
+export interface WahooSyncStorage {
+  downloadRouteGpx(filePath: string): Promise<string | null>;
+}
 
-  private syncedEventsTable() {
-    return (this.supabase as any).from("synced_events");
+export function createWahooRouteStorage(
+  storageClient: Pick<WahooSyncStorage, "downloadRouteGpx">,
+): WahooSyncStorage {
+  return storageClient;
+}
+
+export class WahooSyncService {
+  constructor(
+    private readonly deps: {
+      repository: WahooRepository;
+      storage: WahooSyncStorage;
+    },
+  ) {}
+
+  private get repository() {
+    return this.deps.repository;
   }
 
   /**
@@ -46,29 +145,9 @@ export class WahooSyncService {
   async syncEvent(eventId: string, profileId: string): Promise<SyncResult> {
     try {
       // 1. Fetch planned-activity event with all related data
-      const { data: planned, error: plannedError } = await this.supabase
-        .from("events")
-        .select(
-          `
-          id,
-          starts_at,
-          activity_plan:activity_plans (
-            id,
-            name,
-            description,
-            activity_category,
-            structure,
-            updated_at,
-            route_id
-          )
-        `,
-        )
-        .eq("id", eventId)
-        .eq("profile_id", profileId)
-        .eq("event_type", "planned_activity")
-        .single();
+      const planned = await this.repository.getPlannedEventForSync({ eventId, profileId });
 
-      if (plannedError || !planned) {
+      if (!planned) {
         return {
           success: false,
           action: "no_change",
@@ -76,22 +155,31 @@ export class WahooSyncService {
         };
       }
 
+      const activityPlan = normalizeActivityPlanRelation(
+        planned.activityPlan as WahooActivityPlanRelation,
+      );
+
+      if (!activityPlan) {
+        return {
+          success: false,
+          action: "no_change",
+          error: "Activity plan not found for this planned activity event.",
+        };
+      }
+
+      const normalizedPlanned: WahooPlannedEvent = {
+        id: planned.id,
+        starts_at: planned.startsAt,
+        activity_plan: activityPlan,
+      };
+
       // 2. Fetch user's profile for FTP and threshold HR
-      const { data: profile } = await this.supabase
-        .from("profiles")
-        .select("ftp, threshold_hr")
-        .eq("id", profileId)
-        .single();
+      const profile = await this.repository.getProfileSyncMetrics(profileId);
 
       // 3. Fetch Wahoo integration
-      const { data: integration, error: integrationError } = await this.supabase
-        .from("integrations")
-        .select("access_token, refresh_token")
-        .eq("profile_id", profileId)
-        .eq("provider", "wahoo")
-        .single();
+      const integration = await this.repository.findWahooIntegrationByProfileId(profileId);
 
-      if (integrationError || !integration) {
+      if (!integration) {
         return {
           success: false,
           action: "no_change",
@@ -100,15 +188,7 @@ export class WahooSyncService {
       }
 
       // 4. Convert activity category to activity type
-      if (!planned.activity_plan) {
-        return {
-          success: false,
-          action: "no_change",
-          error: "Activity plan not found for this planned activity event.",
-        };
-      }
-
-      const activityType = toActivityType(planned.activity_plan.activity_category);
+      const activityType = toActivityType(activityPlan.activity_category);
 
       if (!isActivityTypeSupportedByWahoo(activityType)) {
         return {
@@ -121,48 +201,29 @@ export class WahooSyncService {
       // 4b. Fetch route data if route_id is present
       let routeData: RouteFileData | null = null;
       let gpxContent: string | null = null;
-      const routeId = planned.activity_plan.route_id;
+      const routeId = activityPlan.route_id;
 
       if (routeId) {
-        const { data: route, error: routeError } = await this.supabase
-          .from("activity_routes")
-          .select(
-            `
-            id,
-            name,
-            description,
-            file_path,
-            total_distance,
-            total_ascent,
-            total_descent,
-            activity_category
-          `,
-          )
-          .eq("id", routeId)
-          .eq("profile_id", profileId)
-          .single();
+        const route = await this.repository.getRouteForSync({ profileId, routeId });
 
-        if (!routeError && route) {
-          // Load GPX file from storage
-          const { data: fileData, error: storageError } = await this.supabase.storage
-            .from("routes")
-            .download(route.file_path);
+        if (route) {
+          const routeGpx = await this.deps.storage.downloadRouteGpx(route.filePath);
 
-          if (!storageError && fileData) {
+          if (routeGpx) {
             try {
-              gpxContent = await fileData.text();
+              gpxContent = routeGpx;
 
               // Extract start coordinates from GPX
               const startCoords = extractStartCoordinates(gpxContent);
 
               routeData = {
-                filePath: route.file_path,
+                filePath: route.filePath,
                 name: route.name,
                 description: route.description ?? undefined,
-                activityType: toActivityType(route.activity_category),
-                totalDistance: route.total_distance,
-                totalAscent: route.total_ascent ?? undefined,
-                totalDescent: route.total_descent ?? undefined,
+                activityType: toActivityType(route.activityCategory as PublicActivityCategory),
+                totalDistance: route.totalDistance,
+                totalAscent: route.totalAscent ?? undefined,
+                totalDescent: route.totalDescent ?? undefined,
                 startLat: startCoords?.latitude,
                 startLng: startCoords?.longitude,
               };
@@ -175,20 +236,19 @@ export class WahooSyncService {
       }
 
       // 5. Check if already synced
-      const { data: existingSync } = await this.syncedEventsTable()
-        .select("id, external_id, updated_at")
-        .eq("event_id", eventId)
-        .eq("provider", "wahoo")
-        .eq("profile_id", profileId)
-        .single();
+      const existingSync = await this.repository.getSyncedEvent({
+        eventId,
+        profileId,
+        provider: "wahoo",
+      });
 
       const wahooClient = createWahooClient({
-        accessToken: integration.access_token,
-        refreshToken: integration.refresh_token || undefined,
+        accessToken: integration.accessToken,
+        refreshToken: integration.refreshToken || undefined,
       });
 
       // 6. Validate compatibility
-      const structure = planned.activity_plan.structure as ActivityPlanStructureV2;
+      const structure = activityPlan.structure as ActivityPlanStructureV2;
       const validation = validateWahooCompatibility(structure);
 
       if (!validation.compatible) {
@@ -204,7 +264,7 @@ export class WahooSyncService {
       if (!existingSync) {
         // New sync - create plan and workout
         return await this.createNewSync(
-          planned,
+          normalizedPlanned,
           structure,
           profile,
           wahooClient,
@@ -217,7 +277,7 @@ export class WahooSyncService {
       } else {
         // Update existing sync
         return await this.updateExistingSync(
-          planned,
+          normalizedPlanned,
           existingSync,
           structure,
           profile,
@@ -241,7 +301,7 @@ export class WahooSyncService {
    * Create a new sync (first time syncing this planned activity)
    */
   private async createNewSync(
-    planned: any,
+    planned: WahooPlannedEvent,
     structure: ActivityPlanStructureV2,
     profile: any,
     wahooClient: any,
@@ -308,7 +368,7 @@ export class WahooSyncService {
       activityType: activityType as any,
       hasRoute: Boolean(routeData),
       name: planned.activity_plan.name,
-      description: planned.activity_plan.description,
+      description: planned.activity_plan.description ?? undefined,
       ftp: profile?.ftp || undefined,
       threshold_hr: profile?.threshold_hr || undefined,
     });
@@ -380,13 +440,13 @@ export class WahooSyncService {
     console.log(`[Wahoo Sync] Workout created successfully with ID: ${workout.id}`);
 
     // Store sync record (only workout_id, not plan_id)
-    await this.syncedEventsTable().insert({
-      profile_id: profileId,
-      event_id: planned.id,
+    await this.repository.createSyncedEvent({
+      profileId,
+      eventId: planned.id,
       provider: "wahoo",
-      external_id: workout.id.toString(),
-      synced_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      externalId: workout.id.toString(),
+      syncedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     });
 
     return {
@@ -402,7 +462,7 @@ export class WahooSyncService {
    * Determines if metadata only changed or if structure changed
    */
   private async updateExistingSync(
-    planned: any,
+    planned: WahooPlannedEvent,
     existingSync: any,
     structure: ActivityPlanStructureV2,
     profile: any,
@@ -413,26 +473,27 @@ export class WahooSyncService {
   ): Promise<SyncResult> {
     // Determine what changed by comparing timestamps or hashing structure
     const activityPlanUpdatedAt = new Date(planned.activity_plan.updated_at).getTime();
-    const syncUpdatedAt = new Date(existingSync.updated_at).getTime();
+    const syncUpdatedAt = new Date(existingSync.updatedAt ?? 0).getTime();
     const structureChanged = activityPlanUpdatedAt > syncUpdatedAt;
 
     if (!structureChanged) {
       // Only metadata might have changed (name or date)
       // Update the workout
-      await wahooClient.updateWorkout(existingSync.external_id, {
+      await wahooClient.updateWorkout(existingSync.externalId, {
         name: planned.activity_plan.name,
         scheduledDate: new Date(planned.starts_at).toISOString(),
       });
 
       // Update sync record timestamp
-      await this.syncedEventsTable()
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", existingSync.id);
+      await this.repository.updateSyncedEvent({
+        id: existingSync.id,
+        updatedAt: new Date().toISOString(),
+      });
 
       return {
         success: true,
         action: "updated",
-        workoutId: existingSync.external_id,
+        workoutId: existingSync.externalId,
         warnings,
       };
     } else {
@@ -442,7 +503,7 @@ export class WahooSyncService {
         activityType: activityType as any,
         hasRoute: Boolean(planned.activity_plan.route_id),
         name: planned.activity_plan.name,
-        description: planned.activity_plan.description,
+        description: planned.activity_plan.description ?? undefined,
         ftp: profile?.ftp || undefined,
         threshold_hr: profile?.threshold_hr || undefined,
       });
@@ -451,7 +512,7 @@ export class WahooSyncService {
       const plan = await wahooClient.createPlan({
         structure: wahooPlan,
         name: planned.activity_plan.name,
-        description: planned.activity_plan.description,
+        description: planned.activity_plan.description ?? undefined,
         activityType: activityType as any,
         externalId: planned.activity_plan.id,
       });
@@ -483,19 +544,18 @@ export class WahooSyncService {
 
       // Delete old workout
       try {
-        await wahooClient.deleteWorkout(existingSync.external_id);
+        await wahooClient.deleteWorkout(existingSync.externalId);
       } catch (error) {
         // Log but don't fail if old workout can't be deleted
         console.warn("Failed to delete old Wahoo workout:", error);
       }
 
       // Update sync record with new workout ID
-      await this.syncedEventsTable()
-        .update({
-          external_id: workout.id.toString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", existingSync.id);
+      await this.repository.updateSyncedEvent({
+        id: existingSync.id,
+        externalId: workout.id.toString(),
+        updatedAt: new Date().toISOString(),
+      });
 
       return {
         success: true,
@@ -512,14 +572,13 @@ export class WahooSyncService {
   async unsyncEvent(eventId: string, profileId: string): Promise<SyncResult> {
     try {
       // 1. Fetch sync record
-      const { data: sync, error: syncError } = await this.syncedEventsTable()
-        .select("id, external_id")
-        .eq("event_id", eventId)
-        .eq("provider", "wahoo")
-        .eq("profile_id", profileId)
-        .single();
+      const sync = await this.repository.getSyncedEvent({
+        eventId,
+        profileId,
+        provider: "wahoo",
+      });
 
-      if (syncError || !sync) {
+      if (!sync) {
         return {
           success: false,
           action: "no_change",
@@ -528,14 +587,9 @@ export class WahooSyncService {
       }
 
       // 2. Fetch Wahoo integration
-      const { data: integration, error: integrationError } = await this.supabase
-        .from("integrations")
-        .select("access_token, refresh_token")
-        .eq("profile_id", profileId)
-        .eq("provider", "wahoo")
-        .single();
+      const integration = await this.repository.findWahooIntegrationByProfileId(profileId);
 
-      if (integrationError || !integration) {
+      if (!integration) {
         return {
           success: false,
           action: "no_change",
@@ -545,19 +599,19 @@ export class WahooSyncService {
 
       // 3. Delete workout from Wahoo
       const wahooClient = createWahooClient({
-        accessToken: integration.access_token,
-        refreshToken: integration.refresh_token || undefined,
+        accessToken: integration.accessToken,
+        refreshToken: integration.refreshToken || undefined,
       });
 
       try {
-        await wahooClient.deleteWorkout(sync.external_id);
+        await wahooClient.deleteWorkout(sync.externalId);
       } catch (error) {
         console.warn("Failed to delete Wahoo workout:", error);
         // Continue to delete sync record even if Wahoo delete fails
       }
 
       // 4. Delete sync record
-      await this.syncedEventsTable().delete().eq("id", sync.id);
+      await this.repository.deleteSyncedEvent(sync.id);
 
       return {
         success: true,
@@ -577,25 +631,13 @@ export class WahooSyncService {
    * Get sync status for an event
    */
   async getEventSyncStatus(eventId: string, profileId: string): Promise<any> {
-    const { data } = await this.syncedEventsTable()
-      .select("*")
-      .eq("event_id", eventId)
-      .eq("provider", "wahoo")
-      .eq("profile_id", profileId)
-      .single();
-
-    return data;
+    return this.repository.getSyncedEvent({ eventId, profileId, provider: "wahoo" });
   }
 
   /**
    * Get all syncs for an event (all providers)
    */
   async getAllEventSyncs(eventId: string, profileId: string): Promise<any[]> {
-    const { data } = await this.syncedEventsTable()
-      .select("*")
-      .eq("event_id", eventId)
-      .eq("profile_id", profileId);
-
-    return data || [];
+    return this.repository.listEventSyncs({ eventId, profileId });
   }
 }

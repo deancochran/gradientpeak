@@ -4,8 +4,6 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./components": "./src/components/index.ts",
     "./components/icon": {
       "react-native": "./src/components/icon/index.native.tsx",
       "default": "./src/components/icon/index.web.tsx"

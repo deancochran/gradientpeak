@@ -1,5 +1,4 @@
-import { getActivityDisplayName } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/db";
+import { getActivityDisplayName, type RecordingActivityCategory } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -8,12 +7,12 @@ import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 
 interface InlineActivitySelectorProps {
-  onActivitySelect: (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => void;
+  onActivitySelect: (category: RecordingActivityCategory, gpsRecordingEnabled: boolean) => void;
 }
 
 // Simplified activity configurations for inline selector
 const QUICK_ACTIVITIES: {
-  category: PublicActivityCategory;
+  category: RecordingActivityCategory;
   icon: any;
   color: string;
 }[] = [
@@ -25,7 +24,7 @@ const QUICK_ACTIVITIES: {
 ];
 
 export function InlineActivitySelector({ onActivitySelect }: InlineActivitySelectorProps) {
-  const [selectedCategory, setSelectedCategory] = useState<PublicActivityCategory | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<RecordingActivityCategory | null>(null);
   const [gpsRecordingEnabled, setGpsRecordingEnabled] = useState<boolean | null>(null);
 
   const handleGpsSelect = (nextGpsRecordingEnabled: boolean) => {

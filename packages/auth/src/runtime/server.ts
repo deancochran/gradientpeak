@@ -12,7 +12,8 @@ import {
   inferAuthSessionTransport,
   normalizeAuthSession,
 } from "../contracts/session";
-import { parseAuthRuntimeEnv } from "./env";
+import { authRuntimeEnvSchema, parseAuthRuntimeEnv } from "./env";
+import { createAuthMailer, type SendAuthEmailInput } from "./mailer";
 
 export interface CreateGradientPeakAuthOptions {
   appUrl: string;
@@ -46,15 +47,6 @@ function createTrustedOrigins(appUrl: string, mobileScheme: string, trustedOrigi
   );
 }
 
-function createNoopEmailSender(kind: string) {
-  return async ({ user, url }: { user: { email: string }; url: string }) => {
-    console.warn(`[auth] ${kind} email sender not configured`, {
-      email: user.email,
-      url,
-    });
-  };
-}
-
 function createDeleteCleanupHook() {
   return async (user: { id: string; email: string }) => {
     console.warn("[auth] delete-user cleanup hook not configured", {
@@ -77,7 +69,28 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     loginPath: "/auth/login",
     webCallbackPath: "/auth/confirm",
     mobileCallbackPath: "callback",
+    emailMode: authRuntimeEnvSchema.shape.emailMode.parse(process.env.AUTH_EMAIL_MODE ?? "log"),
+    emailFrom: process.env.AUTH_EMAIL_FROM,
+    emailReplyTo: process.env.AUTH_EMAIL_REPLY_TO,
+    smtpHost: process.env.AUTH_SMTP_HOST,
+    smtpPort: process.env.AUTH_SMTP_PORT ? Number(process.env.AUTH_SMTP_PORT) : undefined,
+    smtpUser: process.env.AUTH_SMTP_USER,
+    smtpPass: process.env.AUTH_SMTP_PASS,
+    smtpSecure:
+      process.env.AUTH_SMTP_SECURE == null ? undefined : process.env.AUTH_SMTP_SECURE === "true",
   });
+
+  const mailer = createAuthMailer(env);
+
+  const sendAuthEmail = (input: SendAuthEmailInput) => {
+    void mailer.send(input).catch((error) => {
+      console.error("[auth-email] failed", {
+        kind: input.kind,
+        to: input.to,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
 
   const db = drizzle(getPool(options.databaseUrl), {
     schema: createAdapterSchema(),
@@ -94,15 +107,37 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
-      sendResetPassword: createNoopEmailSender("reset-password"),
+      sendResetPassword: async ({ user, url }) => {
+        sendAuthEmail({
+          kind: "reset-password",
+          to: user.email,
+          actionUrl: url,
+          userEmail: user.email,
+        });
+      },
     },
     emailVerification: {
-      sendVerificationEmail: createNoopEmailSender("verification"),
+      sendVerificationEmail: async ({ user, url }) => {
+        sendAuthEmail({
+          kind: "verification",
+          to: user.email,
+          actionUrl: url,
+          userEmail: user.email,
+        });
+      },
     },
     user: {
       changeEmail: {
         enabled: true,
-        sendChangeEmailConfirmation: createNoopEmailSender("change-email"),
+        sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+          sendAuthEmail({
+            kind: "change-email-confirmation",
+            to: user.email,
+            actionUrl: url,
+            userEmail: user.email,
+            newEmail,
+          });
+        },
       },
       deleteUser: {
         enabled: true,

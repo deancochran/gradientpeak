@@ -13,8 +13,13 @@
  * - Subscribe to 'workout_summary' events
  */
 
-import type { Database } from "@repo/supabase";
-import { createActivityImporter } from "@repo/api/webhooks";
+import {
+  createActivityImporter,
+  createWahooImportFitFileStorage,
+  createWahooRepository,
+} from "@repo/api/webhooks";
+import type { DbSupabaseDatabase } from "@repo/db";
+import { db } from "@repo/db/client";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -166,14 +171,29 @@ async function processWorkoutSummary(
   }
 
   try {
-    // Create Supabase client with service role for webhook processing
-    const supabase = createClient<Database>(
+    const supabase = createClient<DbSupabaseDatabase>(
       serverSupabaseUrl!,
       process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
     );
 
-    // Import the activity
-    const importer = createActivityImporter(supabase);
+    const importer = createActivityImporter({
+      repository: createWahooRepository({ db }),
+      fitFileStorage: createWahooImportFitFileStorage({
+        async uploadFitFile(input) {
+          const { error } = await supabase.storage
+            .from("fit-files")
+            .upload(input.path, input.bytes, {
+              contentType: input.contentType,
+              upsert: false,
+            });
+
+          if (error) {
+            throw error;
+          }
+        },
+      }),
+    });
+
     const result = await importer.importWorkoutSummary(wahooUserId, summary);
 
     if (result.success) {

@@ -14,29 +14,37 @@ import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { api } from "@/lib/api";
+import { authClient } from "@/lib/auth/client";
 import { useAuth } from "./providers/auth-provider";
 export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
   const router = useRouter();
   const { refreshSession } = useAuth();
-  const signInMutation = api.auth.signInWithPassword.useMutation();
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsPending(true);
 
     try {
-      await signInMutation.mutateAsync({ email, password });
+      const result = await authClient.signIn.email({
+        email,
+        password,
+      });
 
-      // Refresh the session to get the updated user data
-      refreshSession();
+      if (result.error) {
+        throw result.error;
+      }
 
-      // Navigate to the internal page
+      await refreshSession();
+      router.refresh();
       router.push("/");
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred");
+    } finally {
+      setIsPending(false);
     }
   };
   return (
@@ -81,12 +89,8 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button
-                disabled={signInMutation.isPending}
-                testId="login-submit-button"
-                type="submit"
-              >
-                {signInMutation.isPending ? "Logging in..." : "Login"}
+              <Button disabled={isPending} testId="login-submit-button" type="submit">
+                {isPending ? "Logging in..." : "Login"}
               </Button>
             </div>
             <div className="mt-4 text-center text-sm">

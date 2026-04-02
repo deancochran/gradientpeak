@@ -10,6 +10,7 @@ import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import { authClient, refreshMobileAuthSession } from "@/lib/auth/client";
 import {
   AuthRequestTimeoutError,
   getAuthRequestTimeoutMessage,
@@ -19,7 +20,6 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { supabase } from "@/lib/supabase/client";
 
 const signInSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -29,16 +29,6 @@ const signInSchema = z.object({
 });
 
 type SignInFields = z.infer<typeof signInSchema>;
-
-const mapSupabaseErrorToFormField = (error: string) => {
-  if (error.includes("email") || error.includes("Email")) {
-    return "email";
-  }
-  if (error.includes("password") || error.includes("Password")) {
-    return "password";
-  }
-  return "root";
-};
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -79,12 +69,13 @@ export default function SignInScreen() {
 
       logMobileAction("auth.signIn", "attempt", { email: data.email });
 
-      const { error } = await withAuthRequestTimeout(
-        supabase.auth.signInWithPassword({
+      const result = await withAuthRequestTimeout(
+        authClient.signIn.email({
           email: data.email,
           password: data.password,
         }),
       );
+      const error = result.error;
 
       if (error) {
         logMobileAction("auth.signIn", "failure", { email: data.email, error: error.message });
@@ -92,11 +83,6 @@ export default function SignInScreen() {
         if (error.message?.includes("Invalid login credentials")) {
           form.setError("root", {
             message: "Invalid email or password. Please try again.",
-          });
-        } else if (error.message?.includes("Email not confirmed")) {
-          router.push({
-            pathname: "/(external)/verify",
-            params: { email: data.email },
           });
         } else {
           form.setError("root", {
@@ -106,6 +92,7 @@ export default function SignInScreen() {
       }
       if (!error) {
         logMobileAction("auth.signIn", "success", { email: data.email });
+        await refreshMobileAuthSession();
       }
       // On success, the `onAuthStateChange` listener in the auth store
       // will handle the session and trigger a redirect automatically.

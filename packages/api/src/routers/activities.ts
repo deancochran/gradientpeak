@@ -8,6 +8,8 @@ import {
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
+import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import {
   buildActivityDerivedSummaryMap,
   mapActivityToDerivedResponse,
@@ -81,7 +83,7 @@ export const activitiesRouter = createTRPCRouter({
       if (error) throw new Error(error.message);
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         activities: data || [],
       });
@@ -167,7 +169,7 @@ export const activitiesRouter = createTRPCRouter({
       if (error) throw new Error(error.message);
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         activities: data || [],
       });
@@ -317,7 +319,7 @@ export const activitiesRouter = createTRPCRouter({
         .maybeSingle();
 
       const context = await resolveActivityContextAsOf({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: data.profile_id,
         activityTimestamp: data.finished_at,
       });

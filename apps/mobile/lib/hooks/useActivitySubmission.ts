@@ -30,6 +30,7 @@
 import { invalidatePostActivityIngestionQueries, queryKeys } from "@repo/api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
+import { api } from "@/lib/api";
 import { getServerConfig } from "@/lib/server-config";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
@@ -38,7 +39,6 @@ import {
   loadPendingFinalizedArtifact,
 } from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
 import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/types";
-import { api } from "@/lib/api";
 // import * as FileSystem from "expo-file-system"; // Removed as we use File class now
 
 import {
@@ -55,8 +55,8 @@ import {
   calculateTotalWork,
   calculateVariabilityIndex,
 } from "@repo/core";
-import type { PublicActivitiesCreate } from "@repo/db";
 import { useCallback, useEffect, useReducer } from "react";
+import type { PreparedRecordedActivityDraft } from "@/lib/contracts/activity-submission";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { FitUploader } from "@/lib/services/fit/FitUploader";
 
@@ -69,7 +69,7 @@ type SubmissionPhase = "loading" | "ready" | "uploading" | "success" | "error";
 interface SubmissionState {
   phase: SubmissionPhase;
   artifact: RecordingSessionArtifact | null;
-  activity: PublicActivitiesCreate | null;
+  activity: PreparedRecordedActivityDraft | null;
   error: string | null;
   hasStreams: boolean;
 }
@@ -78,7 +78,7 @@ type Action =
   | {
       type: "READY";
       artifact: RecordingSessionArtifact;
-      activity: PublicActivitiesCreate;
+      activity: PreparedRecordedActivityDraft;
       hasStreams: boolean;
     }
   | {
@@ -262,32 +262,48 @@ function buildActivityFromArtifact(args: {
   artifact: RecordingSessionArtifact;
   profileId: string;
   calculatedMetrics?: ReturnType<typeof calculateActivityMetrics> | null;
-}): PublicActivitiesCreate {
+}): PreparedRecordedActivityDraft {
   const { artifact, profileId, calculatedMetrics } = args;
 
   return {
-    profile_id: profileId,
-    started_at: new Date(artifact.snapshot.identity.startedAt),
-    finished_at: new Date(artifact.completedAt),
+    profileId,
+    startedAt: new Date(artifact.snapshot.identity.startedAt),
+    finishedAt: new Date(artifact.completedAt),
     name: buildDefaultActivityName(artifact),
-    type: artifact.snapshot.activity.category,
-    duration_seconds: artifact.finalStats.durationSeconds,
-    moving_seconds: artifact.finalStats.movingSeconds,
-    distance_meters: Math.round(artifact.finalStats.distanceMeters),
-    avg_power: calculatedMetrics?.metrics.avg_power as number | undefined,
-    max_power: calculatedMetrics?.metrics.max_power as number | undefined,
-    normalized_power: calculatedMetrics?.metrics.normalized_power as number | undefined,
-    avg_heart_rate: calculatedMetrics?.metrics.avg_hr as number | undefined,
-    max_heart_rate: calculatedMetrics?.metrics.max_hr as number | undefined,
-    avg_cadence: calculatedMetrics?.metrics.avg_cadence as number | undefined,
-    max_cadence: calculatedMetrics?.metrics.max_cadence as number | undefined,
-    avg_speed_mps: calculatedMetrics?.metrics.avg_speed as number | undefined,
-    max_speed_mps: calculatedMetrics?.metrics.max_speed as number | undefined,
+    activityType: artifact.snapshot.activity.category,
+    durationSeconds: artifact.finalStats.durationSeconds,
+    movingSeconds: artifact.finalStats.movingSeconds,
+    distanceMeters: Math.round(artifact.finalStats.distanceMeters),
+    avgPower: calculatedMetrics?.metrics.avg_power as number | undefined,
+    maxPower: calculatedMetrics?.metrics.max_power as number | undefined,
+    normalizedPower: calculatedMetrics?.metrics.normalized_power as number | undefined,
+    avgHeartRate: calculatedMetrics?.metrics.avg_hr as number | undefined,
+    maxHeartRate: calculatedMetrics?.metrics.max_hr as number | undefined,
+    avgCadence: calculatedMetrics?.metrics.avg_cadence as number | undefined,
+    maxCadence: calculatedMetrics?.metrics.max_cadence as number | undefined,
+    avgSpeedMps: calculatedMetrics?.metrics.avg_speed as number | undefined,
+    maxSpeedMps: calculatedMetrics?.metrics.max_speed as number | undefined,
     calories:
       (calculatedMetrics?.metrics.calories as number | undefined) ?? artifact.finalStats.calories,
-    elevation_gain_meters: calculatedMetrics?.metrics.total_ascent as number | undefined,
-    elevation_loss_meters: calculatedMetrics?.metrics.total_descent as number | undefined,
-    activity_plan_id: artifact.snapshot.activity.activityPlanId,
+    elevationGainMeters: calculatedMetrics?.metrics.total_ascent as number | undefined,
+    elevationLossMeters: calculatedMetrics?.metrics.total_descent as number | undefined,
+    activityPlanId: artifact.snapshot.activity.activityPlanId,
+  };
+}
+
+type ProcessFitFileSubmission = {
+  activityType: PreparedRecordedActivityDraft["activityType"];
+  name: string;
+  notes?: string;
+};
+
+function toProcessFitFileSubmission(
+  activity: PreparedRecordedActivityDraft,
+): ProcessFitFileSubmission {
+  return {
+    activityType: activity.activityType,
+    name: activity.name,
+    notes: activity.notes ?? undefined,
   };
 }
 
@@ -426,15 +442,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   // ================================
 
   const submitOnce = useCallback(
-    async (
-      artifact: RecordingSessionArtifact,
-      activity: {
-        name?: string;
-        notes?: string;
-        type: string;
-        [key: string]: any;
-      },
-    ) => {
+    async (artifact: RecordingSessionArtifact, activity: PreparedRecordedActivityDraft) => {
       try {
         console.log(`[useActivitySubmission] Uploading FIT file:`, artifact.fitFilePath);
 
@@ -499,9 +507,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
         const result = await processFitFileMutation.mutateAsync({
           fitFilePath: signedUrlData.filePath,
-          name: activity.name || "Untitled Activity",
-          notes: activity.notes || undefined,
-          activityType: activity.type,
+          ...toProcessFitFileSubmission(activity),
         });
 
         if (!result.success) {
@@ -568,7 +574,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       if (state.artifact.fitFilePath) {
         await submitOnce(state.artifact, {
           ...state.activity,
-          notes: state.activity.notes || undefined,
+          notes: state.activity.notes ?? undefined,
         });
         return true;
       } else {

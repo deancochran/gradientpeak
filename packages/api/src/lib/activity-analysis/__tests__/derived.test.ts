@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildActivityDerivedSummaryMap } from "../derived";
 
-function createSupabaseMock() {
+function createStoreMock() {
   const efforts = [
     {
       recorded_at: "2025-01-01T00:00:00.000Z",
@@ -20,65 +20,34 @@ function createSupabaseMock() {
   ];
 
   return {
-    from(table: string) {
-      const filters: Record<string, unknown> = {};
-
-      const builder: any = {
-        select: () => builder,
-        eq: (column: string, value: unknown) => {
-          filters[column] = value;
-          return builder;
-        },
-        lte: (column: string, value: unknown) => {
-          filters[column] = value;
-          return builder;
-        },
-        in: () => builder,
-        order: () => builder,
-        limit: async () => ({ data: resolveTable(table, filters), error: null }),
-        maybeSingle: async () => {
-          const rows = resolveTable(table, filters);
-          return { data: rows[0] ?? null, error: null };
-        },
-        then: (onFulfilled: (value: { data: unknown[]; error: null }) => unknown) =>
-          Promise.resolve({ data: resolveTable(table, filters), error: null }).then(onFulfilled),
+    async getContextSnapshot(input: { asOf: Date }) {
+      const cutoff = input.asOf.toISOString();
+      return {
+        profile: { dob: null, gender: null },
+        profileMetrics: [],
+        recentEfforts: efforts
+          .filter((effort) => effort.recorded_at <= cutoff)
+          .sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))
+          .map((effort) => ({
+            ...effort,
+            recorded_at: new Date(effort.recorded_at),
+          })),
       };
-
-      return builder;
     },
   };
-
-  function resolveTable(table: string, filters: Record<string, unknown>) {
-    if (table === "profiles") {
-      return [{ dob: null, gender: null }];
-    }
-
-    if (table === "profile_metrics") {
-      return [];
-    }
-
-    if (table === "activity_efforts") {
-      const cutoff = typeof filters.recorded_at === "string" ? filters.recorded_at : undefined;
-      return efforts
-        .filter((effort) => !cutoff || effort.recorded_at <= cutoff)
-        .sort((a, b) => b.recorded_at.localeCompare(a.recorded_at));
-    }
-
-    return [];
-  }
 }
 
 describe("buildActivityDerivedSummaryMap", () => {
   it("uses only as-of efforts for each activity", async () => {
     const derivedMap = await buildActivityDerivedSummaryMap({
-      supabase: createSupabaseMock() as any,
+      store: createStoreMock() as any,
       profileId: "profile-1",
       activities: [
         {
           id: "older-activity",
           type: "bike",
-          started_at: "2025-02-01T09:00:00.000Z",
-          finished_at: "2025-02-01T10:00:00.000Z",
+          started_at: new Date("2025-02-01T09:00:00.000Z"),
+          finished_at: new Date("2025-02-01T10:00:00.000Z"),
           duration_seconds: 3600,
           moving_seconds: 3600,
           distance_meters: 40000,
@@ -95,8 +64,8 @@ describe("buildActivityDerivedSummaryMap", () => {
         {
           id: "later-activity",
           type: "bike",
-          started_at: "2025-04-01T09:00:00.000Z",
-          finished_at: "2025-04-01T10:00:00.000Z",
+          started_at: new Date("2025-04-01T09:00:00.000Z"),
+          finished_at: new Date("2025-04-01T10:00:00.000Z"),
           duration_seconds: 3600,
           moving_seconds: 3600,
           distance_meters: 40000,
@@ -116,25 +85,25 @@ describe("buildActivityDerivedSummaryMap", () => {
     expect(derivedMap.get("older-activity")).toMatchObject({
       intensity_factor: 1.32,
       tss: 174,
-      computed_as_of: "2025-02-01T10:00:00.000Z",
+      computed_as_of: new Date("2025-02-01T10:00:00.000Z"),
     });
     expect(derivedMap.get("later-activity")).toMatchObject({
       intensity_factor: 0.88,
       tss: 77,
-      computed_as_of: "2025-04-01T10:00:00.000Z",
+      computed_as_of: new Date("2025-04-01T10:00:00.000Z"),
     });
   });
 
   it("lets later dynamic reads incorporate older backfilled history without rewriting later rows", async () => {
     const derivedMap = await buildActivityDerivedSummaryMap({
-      supabase: createSupabaseMock() as any,
+      store: createStoreMock() as any,
       profileId: "profile-1",
       activities: [
         {
           id: "historical-import",
           type: "bike",
-          started_at: "2025-02-01T09:00:00.000Z",
-          finished_at: "2025-02-01T10:00:00.000Z",
+          started_at: new Date("2025-02-01T09:00:00.000Z"),
+          finished_at: new Date("2025-02-01T10:00:00.000Z"),
           duration_seconds: 3600,
           moving_seconds: 3600,
           distance_meters: 40000,
@@ -151,8 +120,8 @@ describe("buildActivityDerivedSummaryMap", () => {
         {
           id: "existing-later-activity",
           type: "bike",
-          started_at: "2025-04-01T09:00:00.000Z",
-          finished_at: "2025-04-01T10:00:00.000Z",
+          started_at: new Date("2025-04-01T09:00:00.000Z"),
+          finished_at: new Date("2025-04-01T10:00:00.000Z"),
           duration_seconds: 3600,
           moving_seconds: 3600,
           distance_meters: 40000,
@@ -172,12 +141,12 @@ describe("buildActivityDerivedSummaryMap", () => {
     expect(derivedMap.get("historical-import")).toMatchObject({
       intensity_factor: 1.32,
       tss: 174,
-      computed_as_of: "2025-02-01T10:00:00.000Z",
+      computed_as_of: new Date("2025-02-01T10:00:00.000Z"),
     });
     expect(derivedMap.get("existing-later-activity")).toMatchObject({
       intensity_factor: 0.88,
       tss: 77,
-      computed_as_of: "2025-04-01T10:00:00.000Z",
+      computed_as_of: new Date("2025-04-01T10:00:00.000Z"),
     });
   });
 });

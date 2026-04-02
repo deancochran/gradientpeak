@@ -10,9 +10,9 @@
  * that don't share state.
  */
 
-import type { PublicProfilesRow } from "@repo/db";
 import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import { ActivityRecorderService } from "../services/ActivityRecorder";
+import type { RecorderProfileRef } from "../services/ActivityRecorder/types";
 
 interface ActivityRecorderContextValue {
   service: ActivityRecorderService | null;
@@ -48,7 +48,7 @@ export function ActivityRecorderProvider({
   profile,
 }: {
   children: React.ReactNode;
-  profile: PublicProfilesRow | null;
+  profile: RecorderProfileRef | null;
 }) {
   // Use refs to maintain service instance across renders
   const serviceRef = useRef<ActivityRecorderService | null>(null);

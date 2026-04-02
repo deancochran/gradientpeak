@@ -10,6 +10,7 @@ import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import { authClient, getEmailVerificationCallbackUrl } from "@/lib/auth/client";
 import {
   AuthRequestTimeoutError,
   getAuthRequestTimeoutMessage,
@@ -19,7 +20,6 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { supabase } from "@/lib/supabase/client";
 
 const signUpSchema = z
   .object({
@@ -37,16 +37,6 @@ const signUpSchema = z
   });
 
 type SignUpFields = z.infer<typeof signUpSchema>;
-
-const mapSupabaseErrorToFormField = (error: string) => {
-  if (error.includes("email") || error.includes("Email")) {
-    return "email";
-  }
-  if (error.includes("password") || error.includes("Password")) {
-    return "password";
-  }
-  return "root";
-};
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -83,16 +73,15 @@ export default function SignUpScreen() {
 
       logMobileAction("auth.signUp", "attempt", { email: data.email });
 
-      const { error } = await withAuthRequestTimeout(
-        supabase.auth.signUp({
+      const result = await withAuthRequestTimeout(
+        authClient.signUp.email({
           email: data.email,
           password: data.password,
-          options: {
-            // For mobile apps, we don't set emailRedirectTo here.
-            // Local and production auth should both keep verify-first behavior.
-          },
+          name: data.email.split("@")[0] || data.email,
+          callbackURL: getEmailVerificationCallbackUrl(),
         }),
       );
+      const error = result.error;
 
       if (error) {
         logMobileAction("auth.signUp", "failure", { email: data.email, error: error.message });

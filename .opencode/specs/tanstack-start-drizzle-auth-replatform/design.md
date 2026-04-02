@@ -2,261 +2,232 @@
 
 ## Objective
 
-Define the target architecture for moving GradientPeak toward the `t3-oss/create-t3-turbo` model while keeping the repo's own preferences and constraints.
+Move GradientPeak to the intended T3 Turbo-style architecture while preserving repo-specific choices:
 
-Target steady state and end goal for the repository:
-
-- `apps/web` uses TanStack Start, not Next.js.
-- the shared API remains tRPC-first and is owned by `packages/api`.
-- `packages/db` owns Drizzle ORM, relational schema, and migrations.
-- Supabase remains the backing Postgres and platform provider.
+- `apps/web` moves toward TanStack Start ownership and away from long-term Next.js runtime coupling.
+- `packages/api` remains the shared tRPC API boundary.
+- `packages/db` becomes the single relational source of truth via Drizzle.
 - `packages/auth` owns Better Auth.
-- `packages/core` remains the home for pure domain logic.
-- `packages/ui` remains the shared UI package.
-- shared config lives in `tooling/typescript` and `tooling/tailwind`.
-- Biome remains the only repo-wide lint/format toolchain.
+- `packages/core` stays pure and DB-independent.
+- `packages/ui` stays shared and framework-agnostic.
+- Supabase is reduced to platform and infra concerns only.
+- Biome remains the only repo-wide lint/format tool.
 
-## End-State Architecture
-
-This is the intended final architecture, not a temporary midpoint:
+## Target End State
 
 - `apps/web`
-  - TanStack Start is the only long-term web framework.
-  - framework-specific request handling, route loaders/actions, and auth/bootstrap wiring stay inside the app.
-  - the web app mounts the shared API and auth surfaces without leaking framework-specific runtime code into shared packages.
+  - owns framework-specific web runtime code only
+  - mounts shared auth and API endpoints
+  - does not carry shared relational contract ownership
 - `apps/mobile`
-  - Expo remains first-class.
-  - mobile consumes `@repo/api`, `@repo/auth`, `@repo/core`, and `@repo/ui` without importing web runtime code.
+  - remains first-class Expo
+  - consumes `@repo/api`, `@repo/auth`, `@repo/core`, and `@repo/ui`
+  - keeps Supabase usage isolated to explicit platform adapters if still needed
 - `packages/api`
-  - the only shared API package.
-  - owns tRPC routers, procedures, context, query client helpers, and shared web/mobile client helpers.
-  - depends on `packages/auth` for session/auth resolution and `packages/db` for relational persistence.
-  - does not own auth runtime behavior and does not depend on app-framework runtime code.
+  - owns routers, context, API clients, and server helpers
+  - depends on `packages/auth` for session/auth resolution
+  - depends on `packages/db` or narrow repositories for persistence
+  - does not own auth runtime behavior
 - `packages/auth`
-  - the only long-term auth runtime package.
-  - owns Better Auth configuration, providers/plugins, session contracts, callback handling, and server/client auth helpers.
+  - owns Better Auth runtime, clients, callback/session contracts, and mailer behavior
 - `packages/db`
-  - the only long-term relational source of truth.
-  - owns Drizzle schema, relations, client, migrations, seeds, and DB-derived validation/type helpers.
+  - owns Drizzle schema, relations, migrations, seeds, and DB-facing validation helpers
 - `packages/core`
-  - remains pure and database-independent.
-  - owns calculations, domain schemas/contracts, planning logic, and business rules shared by apps and API.
+  - owns pure domain logic, schemas, and calculations
 - `packages/ui`
-  - remains the shared component package.
-  - supports Expo and the web app without framework-specific assumptions leaking into shared exports.
-- Supabase
-  - remains infrastructure/platform only.
-  - provides hosted Postgres and related platform services, but not the primary app data contract or auth runtime.
-
-## Explicit Target Choices
-
-- Web framework: TanStack Start in `apps/web`
-- API framework: tRPC in a dedicated API package
-- DB ORM: Drizzle ORM in `packages/db`
-- DB platform: Supabase Postgres
-- Auth framework: Better Auth in `packages/auth`
-- Shared domain: keep `packages/core`
-- Shared UI: keep `packages/ui`
-- Shared tooling: `tooling/typescript` and `tooling/tailwind`
-- Lint/format: Biome only
-
-## Explicit Non-Goals
-
-- no long-term Next.js target
-- no shared ESLint package
-- no shared Prettier package
-- no long-term Supabase Auth primary role
-- no long-term Supabase-generated relational types as the main app data contract
-- no wholesale copy of the upstream T3 Turbo template
-
-## Why This Spec Exists
-
-- the current repo already has a strong monorepo split, but web, auth, and database ownership still reflect Next.js and Supabase Auth decisions
-- `create-t3-turbo` shows a cleaner split between app, API, auth, DB, and tooling
-- the repo should adopt the parts that fit: TanStack Start, Better Auth, Drizzle, shared Tailwind/TS tooling
-- the repo should reject the parts that do not fit: ESLint and Prettier tooling packages
+  - owns shared UI primitives/components for mobile and web
+- `packages/supabase`
+  - owns only infra/platform concerns such as CLI config, policies, functions, storage, and local stack support
 
 ## Current State Summary
 
-### Web
+What is already materially aligned:
 
-- `apps/web` is a Next.js 15 app
-- it uses Next SSR helpers and Next route handlers
-- web auth state is driven by `trpc.auth.*` procedures plus Supabase session behavior
+- Better Auth now owns most live auth flows for web and mobile.
+- `packages/db` is already the relational owner for many domains.
+- `packages/api` has active Drizzle repository seams for integrations, Wahoo, iCal, activity-analysis, training plans, and much of `events.ts`.
+- `packages/core` and `packages/ui` are already close to final ownership.
+- Web and mobile are no longer broadly dependent on shared Supabase-generated relational contracts.
 
-### API
+What still materially diverges:
 
-- the typed API currently lives in `packages/trpc`
-- auth context is currently created from Supabase client session lookup
-- `packages/trpc/src/routers/auth.ts` currently wraps Supabase Auth operations directly
+- `packages/api` still carries the largest remaining `ctx.supabase` / `SupabaseClient` bridge surface.
+- `packages/db` is not yet the sole migration/schema authority.
+- `packages/supabase` still retains some historical relational ownership shape even though runtime ownership has narrowed.
+- `apps/web` still has a thinner-but-real server-side Supabase bridge and significant Next runtime coupling.
+- `apps/mobile` is much closer, but still needs final auth/session and cleanup verification.
 
-### Database
+## Architecture Review Checkpoint
 
-- `packages/supabase` owns Supabase CLI config, SQL migrations, generated DB types, generated schemas, and some seed scripts
-- Drizzle is not the current source of truth
+The repo is closer to the desired package ownership model than to requiring a full rewrite.
 
-### Tooling
+- The heaviest remaining migration effort is in `packages/api`.
+- The next most important effort is promoting `packages/db` to sole relational authority.
+- The web bridge cleanup is meaningful, but smaller than the backend seam cleanup.
+- Mobile is mostly cleanup/verification work rather than deep architectural rework.
+- A full TanStack Start cutover is optional after the backend/package cleanup; it is not the highest-ROI next move unless the framework change itself is strategic.
 
-- shared TS config lives in `packages/typescript-config`
-- shared Tailwind tooling is not yet centralized in `tooling/`
-- Biome is already the formatter/linter
+## Remaining Scope By Area
 
-### Shared Packages
+- `packages/api`: large
+- `packages/db`: medium-large
+- `packages/supabase`: medium
+- `apps/web`: medium-large
+- `apps/mobile`: medium
+- `packages/auth`: medium
+- `packages/core`: small
+- `packages/ui`: small
 
-- `packages/core` is already a valuable DB-independent package and must stay that way
-- `packages/ui` is already shared across web and mobile and should remain framework-agnostic
+## Recommended Implementation Phases
 
-## Target Repository Shape
+### Phase A - Foundation Hardening
 
-```text
-apps/
-  mobile/
-  web/                  # TanStack Start app
-packages/
-  api/                  # tRPC routers, context, procedures
-  auth/                 # Better Auth runtime and helpers
-  core/                 # pure business logic, DB-independent
-  db/                   # Drizzle schema, client, migrations, seeds
-  ui/                   # shared UI package
-tooling/
-  tailwind/
-  typescript/
-infra/ or packages/
-  supabase/             # optional: Supabase CLI config, storage, functions, local stack
-```
+Goal: stabilize schema and package seams before final cutover work.
 
-## Architecture Differences To Resolve
+Includes:
 
-### Auth
+- finish Drizzle schema/default/unique parity
+- keep `packages/db`, `packages/auth`, and `packages/api` green
+- lock `ctx.db` as the default API seam and prevent new `ctx.supabase` growth
 
-Current:
+Effort: 3-5 engineering days
+Risk: medium
 
-- Supabase Auth is primary
-- auth behavior lives in `trpc.auth`
-- tRPC context resolves session from Supabase client behavior
+### Phase B - Mid-Scope API Domain Cutovers
 
-Target:
+Goal: finish the highest-value backend seam migrations outside the planning domain.
 
-- Better Auth is primary and lives in `packages/auth`
-- tRPC consumes auth session state instead of owning auth runtime behavior
-- auth tables are persisted through Better Auth's Drizzle adapter into Supabase Postgres
+Includes:
 
-What must migrate:
+- finish remaining `events.ts` read/list cleanup
+- finish provider service migration for Wahoo/iCal
+- finish activity-analysis cutover cleanup
 
-- sign-up, sign-in, sign-out
-- session lookup and refresh
-- password reset
-- email verification
-- account deletion
-- web cookies and mobile bootstrap/deep-link behavior
+Effort: 4-6 engineering days
+Risk: medium-high
 
-### DB and types
+### Phase C - Planning Domain Migration
 
-Current:
+Goal: migrate the planning/training-plan domain off Supabase-era query semantics.
 
-- relational typing is Supabase-generated-first
-- SQL migrations live under `packages/supabase`
-- API queries lean on Supabase client semantics
+Includes:
 
-Target:
+- `packages/api/src/routers/planning/training-plans/base.ts`
+- related use cases, repositories, and utilities
+- removal of lingering `SupabaseClient` planning helpers
 
-- Drizzle is the relational source of truth in `packages/db`
-- Drizzle owns schema, relations, client, seeds, and migrations
-- Supabase remains the backing platform only
-- app contracts become Drizzle-first and tRPC-first, with `superjson` preserving richer value types like `Date`
+Effort: 6-9 engineering days
+Risk: high
 
-What must migrate:
+### Phase D - Final API Sweep
 
-- relational schema ownership
-- migration ownership
-- DB client creation
-- DB seeds and DB utilities
-- app-facing DB types and validation helpers
-- query/mutation paths in the API layer
+Goal: remove the remaining API bridge and retire Supabase as a normal API runtime dependency.
 
-### Web framework
+Includes:
 
-Current:
+- migrate remaining routers/helpers such as `feed`, `profiles`, and residual utility seams
+- remove `ctx.supabase` from API context
+- remove `@supabase/supabase-js` from `packages/api` if no longer needed
 
-- web uses Next.js App Router and route handlers
-- web runtime depends on `next/*` APIs
+Effort: 3-5 engineering days
+Risk: medium-high
 
-Target:
+### Phase E - Web Bridge And Infra Cleanup
 
-- web uses TanStack Start routes, loaders/actions, and server endpoints
-- web hosts `/api/trpc` and `/api/auth`
-- framework-specific runtime code stays inside `apps/web`
+Goal: finish the app-local bridge cleanup after the API no longer depends on it.
 
-What must migrate:
+Includes:
 
-- routes and layouts
-- SSR and request helpers
-- auth/bootstrap providers
-- tRPC web integration
-- any Next-only UI assumptions
+- remove the `/api/trpc` service-role Supabase bridge
+- keep only narrow storage/webhook adapters where explicitly justified
+- finish `packages/supabase` as infra-only ownership
 
-### Tooling and shared packages
+Effort: 2-4 engineering days
+Risk: medium
 
-Current:
+### Optional Phase F - Full Web Framework Cutover
 
-- shared TS config lives in `packages/typescript-config`
-- shared Tailwind config is not centralized
+Goal: move the web runtime fully from Next.js ownership to TanStack Start ownership.
 
-Target:
+Includes:
 
-- shared TS config moves to `tooling/typescript`
-- shared Tailwind config moves to `tooling/tailwind`
-- `packages/core` stays DB-independent
-- `packages/ui` stays shared and web-framework-agnostic
+- new runtime entrypoints and route shell
+- hosting `/api/trpc`, `/api/auth`, callbacks, and webhooks in the final runtime
+- replacing the long tail of Next-specific runtime usage
 
-What must migrate:
+Effort:
 
-- TS config consumers
-- Tailwind/theme consumers
-- `packages/ui` web assumptions tied to Next.js
+- additional 7-10 web-only engineering days for a focused cutover
+- practical total often lands at 14-20 days including adjacent runtime/auth cleanup
 
-## Package Responsibilities
+Risk: high
 
-- `apps/web`: TanStack Start routes, providers, and mounted shared API + auth endpoints
-- `packages/api`: tRPC router composition, procedures, error formatting, and auth-aware context
-- `packages/auth`: Better Auth runtime config, providers/plugins, session helpers, and Drizzle adapter wiring
-- `packages/db`: Drizzle schema, relations, client, migrations, seeds, and DB-facing validation helpers
-- `packages/core`: domain logic, calculations, contracts, and DB-independent schemas
-- `packages/ui`: shared UI primitives and components for mobile and web
-- retained Supabase infra: CLI config, storage, functions, and local stack concerns only
+## Effort Summary
 
-## Information That Must Be Audited
+### Architecture Completion Without Full Web Framework Rewrite
 
-- all current imports of `@repo/supabase` types, schemas, and helpers
-- all current imports of Next-only APIs in `apps/web` and any shared packages
-- all current auth procedures in `packages/trpc/src/routers/auth.ts`
-- all current session creation and lookup paths in `packages/trpc/src/context.ts` and web/mobile auth code
-- all current API DB write/query paths that rely on Supabase client semantics
-- all package consumers of `packages/typescript-config`
-- all Tailwind/theme config locations that should converge into `tooling/tailwind`
-- all `packages/ui` exports or assumptions tied to the current web runtime
+Includes Phases A-E.
+
+- Total estimate: 18-29 engineering days
+
+### Architecture Completion Plus Full TanStack Start Web Cutover
+
+Includes Phases A-F.
+
+- Total estimate: 28-45 engineering days
+
+## Pricing Guidance
+
+Use senior implementation pricing, because this is migration, integration, and risk-heavy work rather than isolated feature delivery.
+
+Illustrative day-rate bands:
+
+- $800/day
+- $1,000/day
+- $1,250/day
+- $1,500/day
+
+Estimated implementation pricing:
+
+### Option 1 - Architecture Completion Only
+
+- 18-29 days
+- at $800/day: about $14.4k-$23.2k
+- at $1,000/day: about $18k-$29k
+- at $1,250/day: about $22.5k-$36.25k
+- at $1,500/day: about $27k-$43.5k
+
+### Option 2 - Architecture Completion Plus Full Web Framework Cutover
+
+- 28-45 days
+- at $800/day: about $22.4k-$36k
+- at $1,000/day: about $28k-$45k
+- at $1,250/day: about $35k-$56.25k
+- at $1,500/day: about $42k-$67.5k
+
+## Recommendation
+
+Recommended delivery order:
+
+1. finish API seam cleanup
+2. make `packages/db` the sole relational authority
+3. reduce `packages/supabase` to infra-only in practice
+4. remove the web `/api/trpc` Supabase bridge
+5. reassess whether a full TanStack Start cutover still offers enough value
+
+Recommended commercial approach:
+
+- treat Phases A-E as the primary implementation contract
+- treat Phase F as a follow-on option after backend and bridge cleanup stabilize
 
 ## Completion Definition
 
-This objective is complete only when:
+This replatform is complete when:
 
-- `apps/web` runs on TanStack Start and no longer depends on Next.js runtime APIs
-- the shared API is served through `packages/api` as the only public shared API package boundary
-- Better Auth is the single long-term auth system and is owned by `packages/auth`
-- Drizzle is the single long-term relational schema/query owner and is owned by `packages/db`
-- Supabase is reduced to the backing database/platform role
-- `packages/core` remains intact and DB-independent
-- `packages/ui` works with Expo and TanStack Start without Next-specific assumptions
-- shared TS config lives in `tooling/typescript`
-- shared Tailwind config lives in `tooling/tailwind`
-- Biome remains the only repo-wide lint/format toolchain
-- `packages/trpc` no longer exists as a long-term package; any temporary bridge is retired
-- the old Next.js path, the old Supabase-Auth-first path, and the old Supabase-generated-relational-types-first path are all removed or reduced to temporary shims with a defined retirement step
-
-## Final Cutover Requirements
-
-- retire Next.js-only web runtime code after TanStack Start fully owns the web app
-- retire Supabase-Auth-first router logic after Better Auth fully owns auth behavior
-- retire relational schema ownership from `packages/supabase` after `packages/db` is authoritative
-- update imports so apps/packages consume final package names rather than temporary bridges
-- verify mobile still authenticates and talks to the shared API without importing web-only runtime code
+- `packages/api` no longer depends on `ctx.supabase` as a normal runtime seam
+- `packages/db` is the sole relational schema/migration authority
+- `packages/auth` is the sole long-term auth owner
+- `packages/supabase` is infra-only
+- web and mobile consume shared packages without shared Supabase relational contract leakage
+- `packages/core` remains DB-independent
+- `packages/ui` remains shared and framework-agnostic

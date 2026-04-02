@@ -18,6 +18,13 @@ export const integrationProviderEnum = pgEnum("integration_provider", [
   "zwift",
 ]);
 
+export const likeEntityTypeEnum = pgEnum("like_entity_type", [
+  "activity",
+  "activity_plan",
+  "training_plan",
+  "route",
+]);
+
 export const eventStatusEnum = pgEnum("event_status", ["scheduled", "completed", "cancelled"]);
 
 export const eventTypeEnum = pgEnum("event_type", [

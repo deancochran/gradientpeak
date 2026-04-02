@@ -10,7 +10,7 @@ import {
   type TrainingPlanCreationConfig,
   trainingPlanCalibrationConfigSchema,
 } from "@repo/core";
-import type { Json } from "@repo/supabase";
+import type { JsonValue } from "@repo/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -317,7 +317,7 @@ export async function updateFromCreationConfigUseCase<
     .update({
       name: expandedPlan.name,
       description: expandedPlan.description ?? null,
-      structure: structureWithId as Json,
+      structure: structureWithId as JsonValue,
     })
     .eq("id", existingPlan.id)
     .eq("profile_id", input.profileId)

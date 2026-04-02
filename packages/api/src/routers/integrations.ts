@@ -1,15 +1,41 @@
-import type {
-  PublicIntegrationProvider,
-  PublicIntegrationsInsert,
-  PublicIntegrationsRow,
-  PublicIntegrationsUpdate,
-} from "@repo/db";
-
+import type { IntegrationRow, PublicIntegrationProvider, PublicIntegrationsRow } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import type { Context } from "../context";
+import { getRequiredDb } from "../db";
+import {
+  createIcalFeedRepository,
+  createIntegrationsRepositories,
+  createWahooRepository,
+} from "../infrastructure/repositories";
 import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
-import { WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
+
+function getIntegrationsRepositories(ctx: Context) {
+  return createIntegrationsRepositories(getRequiredDb(ctx));
+}
+
+function getIcalSyncService(ctx: Context) {
+  return new IcalSyncService(
+    createIcalFeedRepository({
+      db: getRequiredDb(ctx),
+    }),
+  );
+}
+
+function getWahooSyncService(ctx: Context) {
+  return new WahooSyncService({
+    repository: createWahooRepository({ db: getRequiredDb(ctx) }),
+    storage: createWahooRouteStorage({
+      async downloadRouteGpx(filePath) {
+        const { data, error } = await ctx.supabase.storage.from("routes").download(filePath);
+        if (error || !data) return null;
+        return data.text();
+      },
+    }),
+  });
+}
 
 // Input schemas using supazod types
 const providerSchema = z.enum(["strava", "wahoo", "trainingpeaks", "garmin", "zwift"]);
@@ -30,36 +56,25 @@ const refreshTokenInputSchema = z.object({
 export const integrationsRouter = createTRPCRouter({
   // List all integrations for current user
   list: protectedProcedure.query(async ({ ctx }) => {
-    // Clean up expired states for this user when fetching integrations
-    await ctx.supabase
-      .from("oauth_states")
-      .delete()
-      .eq("profile_id", ctx.session.user.id)
-      .lt("expires_at", new Date().toISOString());
+    const repositories = getIntegrationsRepositories(ctx);
 
-    const { data, error } = await ctx.supabase
-      .from("integrations")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id);
+    await repositories.oauthStates.deleteExpired({
+      profileId: ctx.session.user.id,
+      now: new Date(),
+    });
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
-
-    return data as PublicIntegrationsRow[];
+    return repositories.integrations.listByProfileId(ctx.session.user.id);
   }),
 
   // Get OAuth authorization URL
   getAuthUrl: protectedProcedure.input(getAuthUrlInputSchema).mutation(async ({ ctx, input }) => {
-    // Clean up any expired states for this user before creating a new one
-    await ctx.supabase
-      .from("oauth_states")
-      .delete()
-      .eq("profile_id", ctx.session.user.id)
-      .lt("expires_at", new Date().toISOString());
+    const repositories = getIntegrationsRepositories(ctx);
+    const now = new Date();
+
+    await repositories.oauthStates.deleteExpired({
+      profileId: ctx.session.user.id,
+      now,
+    });
 
     // Generate secure state token
     const state = crypto.randomUUID();
@@ -68,10 +83,13 @@ export const integrationsRouter = createTRPCRouter({
     const callbackUrl = getCallbackUrl(input.provider);
 
     // Store state with user ID and mobile redirect URI
-    await storeOAuthState(state, {
-      userId: ctx.session.user.id,
+    await repositories.oauthStates.create({
+      state,
+      profileId: ctx.session.user.id,
       provider: input.provider,
       mobileRedirectUri: input.redirectUri || getDefaultMobileRedirect(),
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
     });
 
     // Build OAuth URL based on provider
@@ -93,18 +111,12 @@ export const integrationsRouter = createTRPCRouter({
 
   // Disconnect integration
   disconnect: protectedProcedure.input(disconnectInputSchema).mutation(async ({ ctx, input }) => {
-    const { error } = await ctx.supabase
-      .from("integrations")
-      .delete()
-      .eq("profile_id", ctx.session.user.id)
-      .eq("provider", input.provider);
+    const repositories = getIntegrationsRepositories(ctx);
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
+    await repositories.integrations.deleteByProfileIdAndProvider({
+      profileId: ctx.session.user.id,
+      provider: input.provider,
+    });
 
     return { success: true };
   }),
@@ -113,15 +125,13 @@ export const integrationsRouter = createTRPCRouter({
   refreshToken: protectedProcedure
     .input(refreshTokenInputSchema)
     .mutation(async ({ ctx, input }) => {
-      // Get existing integration
-      const { data: integration, error: fetchError } = await ctx.supabase
-        .from("integrations")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("provider", input.provider)
-        .single();
+      const repositories = getIntegrationsRepositories(ctx);
+      const integration = await repositories.integrations.findByProfileIdAndProvider({
+        profileId: ctx.session.user.id,
+        provider: input.provider,
+      });
 
-      if (fetchError || !integration) {
+      if (!integration) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Integration not found",
@@ -138,24 +148,19 @@ export const integrationsRouter = createTRPCRouter({
       // Refresh token with provider
       const newTokens = await refreshProviderToken(input.provider, integration.refresh_token);
 
-      const updateData: PublicIntegrationsUpdate = {
+      const updateData = {
         access_token: newTokens.access_token,
         refresh_token: newTokens.refresh_token,
         expires_at: newTokens.expires_at,
       };
 
-      const { error: updateError } = await ctx.supabase
-        .from("integrations")
-        .update(updateData)
-        .eq("profile_id", ctx.session.user.id)
-        .eq("provider", input.provider);
-
-      if (updateError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: updateError.message,
-        });
-      }
+      await repositories.integrations.updateTokensByProfileIdAndProvider({
+        profileId: ctx.session.user.id,
+        provider: input.provider,
+        accessToken: updateData.access_token,
+        refreshToken: updateData.refresh_token ?? null,
+        expiresAt: updateData.expires_at ? new Date(updateData.expires_at) : null,
+      });
 
       return { success: true };
     }),
@@ -170,45 +175,19 @@ export const integrationsRouter = createTRPCRouter({
         .optional(),
     )
     .mutation(async ({ ctx, input }) => {
-      // Build query for expired states
-      let query = ctx.supabase.from("oauth_states").delete();
-
-      // If userId provided, only cleanup for that user
-      if (input?.userId) {
-        query = query.eq("profile_id", input.userId);
-      }
-
-      // Delete expired OAuth states
-      const { error: deleteError, count } = await query.lt("expires_at", new Date().toISOString());
-
-      if (deleteError) {
-        console.error("Failed to cleanup expired OAuth states:", deleteError);
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to cleanup expired states",
-        });
-      }
-
-      // Also cleanup very old states (failsafe for states without proper expiry)
-      let oldQuery = ctx.supabase.from("oauth_states").delete();
-
-      // If userId provided, only cleanup for that user
-      if (input?.userId) {
-        oldQuery = oldQuery.eq("profile_id", input.userId);
-      }
-
-      const { error: oldDeleteError, count: oldCount } = await oldQuery.lt(
-        "created_at",
-        new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      ); // 24 hours
-
-      if (oldDeleteError) {
-        console.error("Failed to cleanup old OAuth states:", oldDeleteError);
-      }
+      const repositories = getIntegrationsRepositories(ctx);
+      const expiredCount = await repositories.oauthStates.deleteExpired({
+        profileId: input?.userId,
+        now: new Date(),
+      });
+      const oldCount = await repositories.oauthStates.deleteCreatedBefore({
+        profileId: input?.userId,
+        before: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      });
 
       return {
         success: true,
-        cleaned: (count || 0) + (oldCount || 0),
+        cleaned: expiredCount + oldCount,
       };
     }),
 
@@ -220,18 +199,17 @@ export const integrationsRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      // Clean up expired states while we're here
-      await ctx.supabase.from("oauth_states").delete().lt("expires_at", new Date().toISOString());
+      const repositories = getIntegrationsRepositories(ctx);
+      const now = new Date();
 
-      // Retrieve the OAuth state
-      const { data, error } = await ctx.supabase
-        .from("oauth_states")
-        .select("*")
-        .eq("state", input.state)
-        .gt("expires_at", new Date().toISOString())
-        .single();
+      await repositories.oauthStates.deleteExpired({ now });
 
-      if (error || !data) {
+      const data = await repositories.oauthStates.findValidByState({
+        state: input.state,
+        now,
+      });
+
+      if (!data) {
         return null;
       }
 
@@ -239,7 +217,7 @@ export const integrationsRouter = createTRPCRouter({
         userId: data.profile_id,
         provider: data.provider as PublicIntegrationProvider,
         mobileRedirectUri: data.mobile_redirect_uri,
-        createdAt: data.created_at,
+        createdAt: data.created_at.toISOString(),
       };
     }),
 
@@ -258,32 +236,20 @@ export const integrationsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const integrationData: PublicIntegrationsInsert = {
-        profile_id: input.userId,
+      const repositories = getIntegrationsRepositories(ctx);
+
+      await repositories.integrations.upsertByProfileIdAndProvider({
+        profileId: input.userId,
         provider: input.provider,
-        external_id: input.externalId,
-        access_token: input.accessToken,
-        refresh_token: input.refreshToken,
-        expires_at: input.expiresAt,
+        externalId: input.externalId,
+        accessToken: input.accessToken,
+        refreshToken: input.refreshToken,
+        expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
         scope: input.scope,
-      };
-
-      // Store the integration
-      const { error: insertError } = await ctx.supabase
-        .from("integrations")
-        .upsert(integrationData, {
-          onConflict: "profile_id,provider",
-        });
-
-      if (insertError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to store integration",
-        });
-      }
+      });
 
       // Clean up the OAuth state after successful storage
-      await ctx.supabase.from("oauth_states").delete().eq("state", input.state);
+      await repositories.oauthStates.deleteByState(input.state);
 
       return { success: true };
     }),
@@ -296,7 +262,9 @@ export const integrationsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await ctx.supabase.from("oauth_states").delete().eq("state", input.state);
+      const repositories = getIntegrationsRepositories(ctx);
+
+      await repositories.oauthStates.deleteByState(input.state);
 
       return { success: true };
     }),
@@ -313,7 +281,7 @@ export const integrationsRouter = createTRPCRouter({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const syncService = new IcalSyncService(ctx.supabase);
+        const syncService = getIcalSyncService(ctx);
         const feedId = crypto.randomUUID();
 
         try {
@@ -338,7 +306,7 @@ export const integrationsRouter = createTRPCRouter({
       }),
 
     listFeeds: protectedProcedure.input(z.object({})).query(async ({ ctx }) => {
-      const syncService = new IcalSyncService(ctx.supabase);
+      const syncService = getIcalSyncService(ctx);
 
       try {
         return await syncService.listFeeds(ctx.session.user.id);
@@ -365,7 +333,7 @@ export const integrationsRouter = createTRPCRouter({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const syncService = new IcalSyncService(ctx.supabase);
+        const syncService = getIcalSyncService(ctx);
 
         try {
           return await syncService.syncFeed({
@@ -396,7 +364,7 @@ export const integrationsRouter = createTRPCRouter({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const syncService = new IcalSyncService(ctx.supabase);
+        const syncService = getIcalSyncService(ctx);
 
         try {
           return await syncService.removeFeed({
@@ -433,7 +401,7 @@ export const integrationsRouter = createTRPCRouter({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const syncService = new WahooSyncService(ctx.supabase);
+        const syncService = getWahooSyncService(ctx);
         const result = await syncService.syncEvent(input.eventId, ctx.session.user.id);
 
         if (!result.success) {
@@ -454,7 +422,7 @@ export const integrationsRouter = createTRPCRouter({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const syncService = new WahooSyncService(ctx.supabase);
+        const syncService = getWahooSyncService(ctx);
         const result = await syncService.unsyncEvent(input.eventId, ctx.session.user.id);
 
         if (!result.success) {
@@ -475,7 +443,7 @@ export const integrationsRouter = createTRPCRouter({
         }),
       )
       .query(async ({ ctx, input }) => {
-        const syncService = new WahooSyncService(ctx.supabase);
+        const syncService = getWahooSyncService(ctx);
         const status = await syncService.getEventSyncStatus(input.eventId, ctx.session.user.id);
 
         return status;
@@ -489,7 +457,7 @@ export const integrationsRouter = createTRPCRouter({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const syncService = new WahooSyncService(ctx.supabase);
+        const syncService = getWahooSyncService(ctx);
 
         console.log(`[Wahoo Test Sync] Starting test sync for event: ${input.eventId}`);
 
@@ -585,35 +553,6 @@ function buildOAuthUrl(
   });
 
   return `${config.authUrl}?${params.toString()}`;
-}
-
-async function storeOAuthState(
-  state: string,
-  data: {
-    userId: string;
-    provider: PublicIntegrationProvider;
-    mobileRedirectUri: string;
-  },
-): Promise<void> {
-  // Create a Supabase client with service role key for server operations
-  const { createClient } = await import("@supabase/supabase-js");
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
-  );
-
-  const { error } = await supabase.from("oauth_states").insert({
-    state,
-    profile_id: data.userId,
-    provider: data.provider,
-    mobile_redirect_uri: data.mobileRedirectUri,
-    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes
-  });
-
-  if (error) {
-    console.error("Failed to store OAuth state:", error);
-    throw new Error("Failed to store OAuth state");
-  }
 }
 
 async function refreshProviderToken(

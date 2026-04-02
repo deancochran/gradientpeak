@@ -72,7 +72,12 @@ import {
   previewCreationConfigUseCase,
   updateFromCreationConfigUseCase,
 } from "../../../application/training-plan";
-import { createSupabaseTrainingPlanRepository } from "../../../infrastructure";
+import { getRequiredDb } from "../../../db";
+import { createTrainingPlanRepository } from "../../../infrastructure";
+import {
+  createActivityAnalysisStore,
+  createEventReadRepository,
+} from "../../../infrastructure/repositories";
 import {
   buildActivityDerivedSummaryMap,
   buildDynamicStressSeries,
@@ -1904,6 +1909,7 @@ function mapProjectionMicrocyclesToIdealTssByDate(
 
 async function deriveInsightTimelineProjectionIdealTssByDate(input: {
   supabase: SupabaseClient;
+  store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   startDate: string;
 }): Promise<{
@@ -1998,11 +2004,13 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
 
     const profileContext = await deriveProfileAwareCreationContext({
       supabase: input.supabase,
+      store: input.store,
       profileId: input.profileId,
     });
 
     const creationConfig = await evaluateCreationConfig({
       supabase: input.supabase,
+      store: input.store,
       profileId: input.profileId,
       creationInput,
     });
@@ -2070,7 +2078,12 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
   }
 }
 
-async function estimateCurrentCtl(supabase: SupabaseClient, profileId: string): Promise<number> {
+async function estimateCurrentCtl(input: {
+  supabase: SupabaseClient;
+  store: ReturnType<typeof createActivityAnalysisStore>;
+  profileId: string;
+}): Promise<number> {
+  const { supabase, store, profileId } = input;
   const asOf = new Date();
   const since = new Date(asOf);
   since.setDate(since.getDate() - 90);
@@ -2089,9 +2102,9 @@ async function estimateCurrentCtl(supabase: SupabaseClient, profileId: string): 
   }
 
   const derivedMap = await buildActivityDerivedSummaryMap({
-    supabase,
+    store,
     profileId,
-    activities: data,
+    activities: data.map(normalizeActivitySummaryRow),
   });
 
   const bootstrap = computeLoadBootstrapState({
@@ -2104,6 +2117,16 @@ async function estimateCurrentCtl(supabase: SupabaseClient, profileId: string): 
   });
 
   return bootstrap.starting_ctl;
+}
+
+function normalizeActivitySummaryRow(activity: Record<string, any>) {
+  return {
+    ...activity,
+    started_at:
+      activity.started_at instanceof Date ? activity.started_at : new Date(activity.started_at),
+    finished_at:
+      activity.finished_at instanceof Date ? activity.finished_at : new Date(activity.finished_at),
+  } as Parameters<typeof buildActivityDerivedSummaryMap>[0]["activities"][number];
 }
 
 const goalSnapshotSchema = z.object({
@@ -2365,6 +2388,7 @@ function enforceCreationConfigFeatureEnabled(): void {
 
 export async function deriveProfileAwareCreationContext(input: {
   supabase: SupabaseClient;
+  store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   asOfIso?: string;
 }) {
@@ -2437,9 +2461,9 @@ export async function deriveProfileAwareCreationContext(input: {
 
   const activityRows = activitiesResult.error ? [] : (activitiesResult.data ?? []);
   const activityDerivedMap = await buildActivityDerivedSummaryMap({
-    supabase: input.supabase,
+    store: input.store,
     profileId: input.profileId,
-    activities: activityRows,
+    activities: activityRows.map(normalizeActivitySummaryRow),
   });
 
   const completedActivities = activityRows.map((activity: any) => ({
@@ -2670,6 +2694,7 @@ function mergeConfirmedSuggestions(input: {
 
 async function evaluateCreationConfig(input: {
   supabase: SupabaseClient;
+  store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
   asOfIso?: string;
@@ -2683,6 +2708,7 @@ async function evaluateCreationConfig(input: {
     baselineFitnessOverride,
   } = await deriveProfileAwareCreationContext({
     supabase: input.supabase,
+    store: input.store,
     profileId: input.profileId,
     asOfIso: input.asOfIso,
   });
@@ -2911,10 +2937,12 @@ async function withProfileTrainingSettingsDefaults(input: {
 
 export async function getPlanTabProjectionService({
   supabase,
+  store,
   profileId,
   input,
 }: {
   supabase: SupabaseClient;
+  store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   input: {
     training_plan_id?: string;
@@ -2995,7 +3023,7 @@ export async function getPlanTabProjectionService({
       ? validatePlanFeasibility(parsedStructure.data).warnings
       : [];
 
-  const estimatedCurrentCtl = await estimateCurrentCtl(supabase, profileId);
+  const estimatedCurrentCtl = await estimateCurrentCtl({ supabase, store, profileId });
 
   const targetCtlAtPeak =
     parsedStructure.success && parsedStructure.data.plan_type === "periodized"
@@ -3072,9 +3100,9 @@ export async function getPlanTabProjectionService({
     .lt("started_at", endExclusive.toISOString());
 
   const actualDerivedMap = await buildActivityDerivedSummaryMap({
-    supabase,
+    store,
     profileId,
-    activities: actualActivities || [],
+    activities: (actualActivities || []).map(normalizeActivitySummaryRow),
   });
 
   const actualByDate = new Map<string, number>();
@@ -3087,6 +3115,7 @@ export async function getPlanTabProjectionService({
 
   const projectionGoalContext = await deriveInsightTimelineProjectionIdealTssByDate({
     supabase,
+    store,
     profileId,
     startDate: input.start_date,
   });
@@ -3523,7 +3552,12 @@ export const trainingPlansRouter = createTRPCRouter({
   getFeasibilityPreview: protectedProcedure
     .input(minimalTrainingPlanCreateSchema)
     .query(async ({ ctx, input }) => {
-      const estimatedCurrentCtl = await estimateCurrentCtl(ctx.supabase, ctx.session.user.id);
+      const store = createActivityAnalysisStore(getRequiredDb(ctx));
+      const estimatedCurrentCtl = await estimateCurrentCtl({
+        supabase: ctx.supabase,
+        store,
+        profileId: ctx.session.user.id,
+      });
       const expandedPlan = buildExpandedPlanFromMinimalGoal(input, {
         startingCtl: estimatedCurrentCtl,
       });
@@ -3624,7 +3658,11 @@ export const trainingPlansRouter = createTRPCRouter({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
         params: input,
-        deriveProfileAwareCreationContext,
+        deriveProfileAwareCreationContext: (params) =>
+          deriveProfileAwareCreationContext({
+            ...params,
+            store: createActivityAnalysisStore(getRequiredDb(ctx)),
+          }),
       });
     }),
 
@@ -3634,6 +3672,7 @@ export const trainingPlansRouter = createTRPCRouter({
   previewCreationConfig: protectedProcedure
     .input(previewCreationConfigRouterInputSchema)
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const creationInputWithProfileDefaults = await withProfileTrainingSettingsDefaults({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
@@ -3641,17 +3680,21 @@ export const trainingPlansRouter = createTRPCRouter({
       });
 
       const result = await previewCreationConfigUseCase({
-        supabase: ctx.supabase,
         profileId: ctx.session.user.id,
+        supabase: ctx.supabase,
         params: {
           ...input,
           creation_input: creationInputWithProfileDefaults,
         },
-        repository: createSupabaseTrainingPlanRepository(ctx.supabase),
+        repository: createTrainingPlanRepository(db),
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
-          evaluateCreationConfig,
+          evaluateCreationConfig: (params) =>
+            evaluateCreationConfig({
+              ...params,
+              store: createActivityAnalysisStore(getRequiredDb(ctx)),
+            }),
           buildCreationProjectionArtifacts,
           buildCreationPreviewSnapshotToken,
           deriveProjectionDrivenConflicts,
@@ -3668,6 +3711,7 @@ export const trainingPlansRouter = createTRPCRouter({
   createFromCreationConfig: protectedProcedure
     .input(createFromCreationConfigRouterInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const creationInputWithProfileDefaults = await withProfileTrainingSettingsDefaults({
         supabase: ctx.supabase,
         profileId: ctx.session.user.id,
@@ -3675,17 +3719,21 @@ export const trainingPlansRouter = createTRPCRouter({
       });
 
       return createFromCreationConfigUseCase({
-        supabase: ctx.supabase,
         profileId: ctx.session.user.id,
+        supabase: ctx.supabase,
         params: {
           ...input,
           creation_input: creationInputWithProfileDefaults,
         },
-        repository: createSupabaseTrainingPlanRepository(ctx.supabase),
+        repository: createTrainingPlanRepository(db),
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
-          evaluateCreationConfig,
+          evaluateCreationConfig: (params) =>
+            evaluateCreationConfig({
+              ...params,
+              store: createActivityAnalysisStore(getRequiredDb(ctx)),
+            }),
           buildCreationProjectionArtifacts,
           buildCreationPreviewSnapshotToken,
           deriveProjectionDrivenConflicts,
@@ -3707,8 +3755,8 @@ export const trainingPlansRouter = createTRPCRouter({
       });
 
       return updateFromCreationConfigUseCase({
-        supabase: ctx.supabase,
         profileId: ctx.session.user.id,
+        supabase: ctx.supabase,
         params: {
           ...input,
           creation_input: creationInputWithProfileDefaults,
@@ -3716,7 +3764,11 @@ export const trainingPlansRouter = createTRPCRouter({
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
-          evaluateCreationConfig,
+          evaluateCreationConfig: (params) =>
+            evaluateCreationConfig({
+              ...params,
+              store: createActivityAnalysisStore(getRequiredDb(ctx)),
+            }),
           buildCreationProjectionArtifacts,
           buildCreationPreviewSnapshotToken,
           deriveProjectionDrivenConflicts,
@@ -3733,7 +3785,12 @@ export const trainingPlansRouter = createTRPCRouter({
   createFromMinimalGoal: protectedProcedure
     .input(minimalTrainingPlanCreateSchema)
     .mutation(async ({ ctx, input }) => {
-      const estimatedCurrentCtl = await estimateCurrentCtl(ctx.supabase, ctx.session.user.id);
+      const store = createActivityAnalysisStore(getRequiredDb(ctx));
+      const estimatedCurrentCtl = await estimateCurrentCtl({
+        supabase: ctx.supabase,
+        store,
+        profileId: ctx.session.user.id,
+      });
       const expandedPlan = buildExpandedPlanFromMinimalGoal(input, {
         startingCtl: estimatedCurrentCtl,
       });
@@ -3783,6 +3840,7 @@ export const trainingPlansRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       return getPlanTabProjectionService({
         supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         input,
       });
@@ -4051,7 +4109,7 @@ export const trainingPlansRouter = createTRPCRouter({
     }
 
     const derivedActivityMap = await buildActivityDerivedSummaryMap({
-      supabase: ctx.supabase,
+      store: createActivityAnalysisStore(getRequiredDb(ctx)),
       profileId: ctx.session.user.id,
       activities: activities || [],
     });
@@ -4083,7 +4141,7 @@ export const trainingPlansRouter = createTRPCRouter({
       .lt("started_at", endOfWeek.toISOString());
 
     const weekActivitiesDerivedMap = await buildActivityDerivedSummaryMap({
-      supabase: ctx.supabase,
+      store: createActivityAnalysisStore(getRequiredDb(ctx)),
       profileId: ctx.session.user.id,
       activities: weekActivities || [],
     });
@@ -4279,7 +4337,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       if (actualCurve && actualCurve.length > 0) {
         const actualCurveDerivedMap = await buildActivityDerivedSummaryMap({
-          supabase: ctx.supabase,
+          store: createActivityAnalysisStore(getRequiredDb(ctx)),
           profileId: ctx.session.user.id,
           activities: actualCurve,
         });
@@ -4404,7 +4462,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       if (baselineActivities && baselineActivities.length > 0) {
         const baselineDerivedMap = await buildActivityDerivedSummaryMap({
-          supabase: ctx.supabase,
+          store: createActivityAnalysisStore(getRequiredDb(ctx)),
           profileId: ctx.session.user.id,
           activities: baselineActivities,
         });
@@ -4437,7 +4495,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       const { byActivityId: actualDerivedMap, byDate: activitiesByDate } =
         await buildDynamicStressSeries({
-          supabase: ctx.supabase,
+          store: createActivityAnalysisStore(getRequiredDb(ctx)),
           profileId: ctx.session.user.id,
           activities: activities || [],
         });
@@ -4634,7 +4692,7 @@ export const trainingPlansRouter = createTRPCRouter({
         .lte("started_at", today.toISOString());
 
       const completedDerivedMap = await buildActivityDerivedSummaryMap({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         activities: completedActivities || [],
       });
@@ -4756,7 +4814,7 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         activities: activities || [],
       });
@@ -4909,7 +4967,7 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         activities: activities || [],
       });
@@ -5027,7 +5085,7 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         activities: allActivities || [],
       });

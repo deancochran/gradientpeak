@@ -69,6 +69,13 @@ describe("getPlanTabProjectionService", () => {
 
     const result = await getPlanTabProjectionService({
       supabase: mockSupabase as any,
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       profileId: "user-1",
       input: {
         training_plan_id: "plan-1",

@@ -1,10 +1,11 @@
 import { type AppRouter, appRouter, createApiContext, createQueryClient } from "@repo/api/server";
+import { resolveAuthSession } from "@repo/auth/server";
+import { db } from "@repo/db/client";
 import { type DehydratedState, dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import type { TRPCQueryOptions as ApiQueryOptions } from "@trpc/tanstack-react-query";
 import { createTRPCOptionsProxy as createApiOptionsProxy } from "@trpc/tanstack-react-query";
 import { headers } from "next/headers";
 import { cache } from "react";
-import { createClient } from "../supabase/server";
 
 /**
  * This wraps `createApiContext` with the request state needed for server-rendered API queries.
@@ -12,10 +13,12 @@ import { createClient } from "../supabase/server";
 const createContext = cache(async () => {
   const heads = new Headers(await headers());
   heads.set("x-api-source", "rsc");
-  const supabase = await createClient();
   return createApiContext({
     headers: heads,
-    supabase,
+    auth: {
+      resolveSession: resolveAuthSession,
+    },
+    db,
   });
 });
 

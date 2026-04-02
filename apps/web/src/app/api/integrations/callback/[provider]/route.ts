@@ -1,11 +1,8 @@
-import type { Database } from "@repo/supabase";
-import type { PublicIntegrationProvider } from "@repo/db";
 import { appRouter, createApiContext } from "@repo/api/server";
-import { createServerClient } from "@supabase/ssr";
+import { resolveAuthSession } from "@repo/auth/server";
+import type { PublicIntegrationProvider } from "@repo/db";
+import { db } from "@repo/db/client";
 import { NextRequest, NextResponse } from "next/server";
-
-const serverSupabaseUrl =
-  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 class OAuthTokenExchangeError extends Error {
   constructor(
@@ -136,22 +133,13 @@ export async function GET(
     error: error || "none",
   });
 
-  // Create Supabase client with service role for OAuth operations
-  const supabase = createServerClient<Database>(
-    serverSupabaseUrl!,
-    process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
-    {
-      cookies: {
-        getAll: () => [],
-        setAll: () => {},
-      },
-    },
-  );
-
   // Create tRPC context and caller
   const ctx = await createApiContext({
     headers: request.headers,
-    supabase,
+    auth: {
+      resolveSession: resolveAuthSession,
+    },
+    db,
   });
   const caller = appRouter.createCaller(ctx);
 

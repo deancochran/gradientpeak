@@ -1,26 +1,19 @@
+import type { DbSupabaseDatabase } from "@repo/db";
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 
 const serverSupabaseUrl =
   process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 
-export async function createClient() {
-  const cookieStore = await cookies();
+const serviceRoleKey = process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY;
 
-  return createServerClient(serverSupabaseUrl!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll(cookiesToSet) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
-        } catch {
-          // The `setAll` method was called from a Server Component.
-          // This can be ignored if you have middleware refreshing
-          // user sessions.
-        }
-      },
-    },
-  });
+type SupabaseClientOptions = NonNullable<
+  Parameters<typeof createServerClient<DbSupabaseDatabase>>[2]
+>;
+
+function createServerSupabaseClient(key: string, options: SupabaseClientOptions) {
+  return createServerClient<DbSupabaseDatabase>(serverSupabaseUrl!, key, options);
+}
+
+export function createServiceRoleClient(options: SupabaseClientOptions) {
+  return createServerSupabaseClient(serviceRoleKey!, options);
 }

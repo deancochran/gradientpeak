@@ -21,7 +21,8 @@
       "@repo/api": ["./index.ts"],
       "@repo/api/*": ["./src/*"],
       "@repo/db": ["../db/index.ts"],
-      "@repo/auth": ["../auth/index.ts"],
+      "@repo/auth/server": ["../auth/src/server.ts"],
+      "@repo/auth/session": ["../auth/src/contracts/session.ts"],
       "@repo/auth/*": ["../auth/src/*"]
     }
   }

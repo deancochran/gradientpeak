@@ -38,6 +38,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth } from "@/components/providers/auth-provider";
 import { api } from "@/lib/api/client";
+import { authClient } from "@/lib/auth/client";
 
 const webProfileSettingsSchema = profileQuickUpdateSchema.pick({
   username: true,
@@ -71,34 +72,12 @@ export default function SettingsPage() {
       toast.error("Failed to update profile");
     },
   });
-  const signOutMutation = api.auth.signOut.useMutation({
-    onSuccess: () => {
-      refreshSession();
-      router.push("/auth/login");
-      toast.success("Signed out successfully");
-    },
-    onError: (error) => {
-      console.error("Error signing out:", error);
-      toast.error("Failed to sign out");
-    },
-  });
-  const deleteAccountMutation = api.auth.deleteAccount.useMutation({
-    onSuccess: () => {
-      refreshSession();
-      router.push("/auth/login");
-      toast.success("Account deleted successfully");
-    },
-    onError: (error) => {
-      console.error("Error deleting account:", error);
-      toast.error("Failed to delete account");
-    },
-  });
   const createSignedUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
   // Local state
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const loading = authLoading || profileLoading;
 
   // Hooks
@@ -231,16 +210,24 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    if (!user) return;
-
-    setDeleting(true);
+  const handleSignOut = async () => {
+    setSigningOut(true);
     try {
-      await deleteAccountMutation.mutateAsync();
-    } catch {
-      // Error handling is done in mutation onError
+      const result = await authClient.signOut();
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      await refreshSession();
+      router.refresh();
+      router.push("/auth/login");
+      toast.success("Signed out successfully");
+    } catch (error) {
+      console.error("Error signing out:", error);
+      toast.error("Failed to sign out");
     } finally {
-      setDeleting(false);
+      setSigningOut(false);
     }
   };
 
@@ -397,38 +384,33 @@ export default function SettingsPage() {
             <div className="flex flex-col sm:flex-row gap-4">
               <Button
                 variant="outline"
-                onClick={() => signOutMutation.mutate()}
-                disabled={signOutMutation.isPending}
+                onClick={handleSignOut}
+                disabled={signingOut}
                 className="flex-1"
               >
-                {signOutMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {signingOut && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Sign Out
               </Button>
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive" disabled={deleting} className="flex-1">
+                  <Button variant="destructive" className="flex-1">
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete Account
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogTitle>Account deletion is temporarily unavailable</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This action cannot be undone. This will permanently delete your account and
-                      remove all your data from our servers.
+                      We are finishing our authentication migration. If you need your account
+                      removed right now, please contact support and we will handle it manually.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDeleteAccount}
-                      disabled={deleting}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Delete Account
+                    <AlertDialogAction disabled className="bg-destructive">
+                      Delete Account Unavailable
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

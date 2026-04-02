@@ -18,7 +18,6 @@
  * - Bottom sheet uses containerStyle.zIndex to stay on top
  */
 
-import type {} from "@repo/db";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import type { LocationObject } from "expo-location";

@@ -1,9 +1,8 @@
 import { type ActivityListDerivedSummary, analyzeActivityDerivedMetrics } from "@repo/core";
-import type { Database } from "@repo/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ActivityRow } from "@repo/db";
+import type { ActivityAnalysisStore } from "../../repositories";
 import { resolveActivityContextAsOf } from "./context";
 
-type ActivityRow = Database["public"]["Tables"]["activities"]["Row"];
 type ActivitySummaryRow = Pick<
   ActivityRow,
   | "id"
@@ -25,15 +24,15 @@ type ActivitySummaryRow = Pick<
 >;
 
 export async function buildActivityDerivedSummaryMap(input: {
-  supabase: SupabaseClient<Database>;
+  store: ActivityAnalysisStore;
   profileId: string;
   activities: ActivitySummaryRow[];
 }): Promise<Map<string, ActivityListDerivedSummary>> {
-  const { supabase, profileId, activities } = input;
+  const { store, profileId, activities } = input;
   const derivedEntries = await Promise.all(
     activities.map(async (activity) => {
       const context = await resolveActivityContextAsOf({
-        supabase,
+        store,
         profileId,
         activityTimestamp: activity.finished_at,
       });
@@ -42,8 +41,8 @@ export async function buildActivityDerivedSummaryMap(input: {
         activity: {
           id: activity.id,
           type: activity.type,
-          started_at: activity.started_at,
-          finished_at: activity.finished_at,
+          started_at: activity.started_at.toISOString(),
+          finished_at: activity.finished_at.toISOString(),
           duration_seconds: activity.duration_seconds,
           moving_seconds: activity.moving_seconds,
           distance_meters: activity.distance_meters,
@@ -75,7 +74,7 @@ export async function buildActivityDerivedSummaryMap(input: {
 }
 
 export async function buildDynamicStressSeries(input: {
-  supabase: SupabaseClient<Database>;
+  store: ActivityAnalysisStore;
   profileId: string;
   activities: ActivitySummaryRow[];
 }): Promise<{
@@ -86,7 +85,7 @@ export async function buildDynamicStressSeries(input: {
   const byDate = new Map<string, number>();
 
   for (const activity of input.activities) {
-    const dateKey = activity.started_at.split("T")[0];
+    const dateKey = activity.started_at.toISOString().split("T")[0];
     if (!dateKey) continue;
     const tss = byActivityId.get(activity.id)?.tss ?? 0;
     byDate.set(dateKey, (byDate.get(dateKey) ?? 0) + tss);

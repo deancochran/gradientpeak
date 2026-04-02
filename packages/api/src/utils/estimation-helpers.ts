@@ -5,6 +5,95 @@
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
 import type { PublicActivityPlansRow, PublicActivityRoutesRow } from "@repo/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { EventReadRepository } from "../repositories";
+
+type EstimationReadStore = {
+  getEstimationInputs: EventReadRepository["getEstimationInputs"];
+};
+
+async function getEstimationProfileInputsFromStore(store: EstimationReadStore, userId: string) {
+  const data = await store.getEstimationInputs({
+    effortCutoffIso: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+    profileId: userId,
+    routeIds: [],
+  });
+
+  let weightKg: number | null = null;
+  let restingHr: number | null = null;
+  let maxHr: number | null = null;
+  let lthr: number | null = null;
+
+  const bikePower20mEffort = data.efforts
+    .filter(
+      (effort) =>
+        effort.effort_type === "power" &&
+        effort.activity_category === "bike" &&
+        effort.duration_seconds === 1200,
+    )
+    .sort((a, b) => b.value - a.value)[0];
+
+  const runSpeed20mEffort = data.efforts
+    .filter(
+      (effort) =>
+        effort.effort_type === "speed" &&
+        effort.activity_category === "run" &&
+        effort.duration_seconds === 1200,
+    )
+    .sort((a, b) => b.value - a.value)[0];
+
+  const ftp = bikePower20mEffort ? Math.round(bikePower20mEffort.value * 0.95) : null;
+
+  let thresholdPaceSecondsPerKm: number | null = null;
+  if (runSpeed20mEffort && runSpeed20mEffort.value > 0) {
+    if (runSpeed20mEffort.unit === "meters_per_second") {
+      thresholdPaceSecondsPerKm = Math.round(1000 / runSpeed20mEffort.value);
+    } else if (runSpeed20mEffort.unit === "km_per_hour") {
+      thresholdPaceSecondsPerKm = Math.round(3600 / runSpeed20mEffort.value);
+    }
+  }
+
+  for (const metric of data.metrics) {
+    if (metric.metric_type === "weight_kg" && weightKg === null) {
+      weightKg = Number(metric.value);
+      continue;
+    }
+    if (metric.metric_type === "resting_hr" && restingHr === null) {
+      restingHr = Number(metric.value);
+      continue;
+    }
+    if (metric.metric_type === "max_hr" && maxHr === null) {
+      maxHr = Number(metric.value);
+      continue;
+    }
+    if (metric.metric_type === "lthr" && lthr === null) {
+      lthr = Number(metric.value);
+      continue;
+    }
+  }
+
+  return {
+    ftp,
+    dob: data.profile?.dob ?? null,
+    max_hr: maxHr,
+    threshold_hr: lthr,
+    resting_hr: restingHr,
+    weight_kg: weightKg,
+    threshold_pace_seconds_per_km: thresholdPaceSecondsPerKm,
+  };
+}
+
+async function getRoutesMapFromStore(
+  store: EstimationReadStore,
+  userId: string,
+  routeIds: string[],
+) {
+  const data = await store.getEstimationInputs({
+    effortCutoffIso: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+    profileId: userId,
+    routeIds,
+  });
+  return new Map(data.routes.map((route) => [route.id, route]));
+}
 
 async function getEstimationProfileInputs(
   supabase: SupabaseClient,
@@ -130,20 +219,27 @@ export interface ActivityPlanWithEstimation {
  */
 export async function addEstimationToPlan(
   plan: PublicActivityPlansRow,
-  supabase: SupabaseClient,
+  input: SupabaseClient | EstimationReadStore,
   userId: string,
 ): Promise<ActivityPlanWithEstimation> {
-  const profile = await getEstimationProfileInputs(supabase, userId);
+  const profile =
+    "from" in input
+      ? await getEstimationProfileInputs(input, userId)
+      : await getEstimationProfileInputsFromStore(input, userId);
 
   // Fetch route if referenced
   let route: any = undefined;
   if (plan.route_id) {
-    const { data: routeData } = await supabase
-      .from("activity_routes")
-      .select("distance_meters:total_distance, total_ascent, total_descent")
-      .eq("id", plan.route_id)
-      .single();
-    route = routeData;
+    if ("from" in input) {
+      const { data: routeData } = await input
+        .from("activity_routes")
+        .select("distance_meters:total_distance, total_ascent, total_descent")
+        .eq("id", plan.route_id)
+        .single();
+      route = routeData;
+    } else {
+      route = (await getRoutesMapFromStore(input, userId, [plan.route_id])).get(plan.route_id);
+    }
   }
 
   // Build estimation context
@@ -252,7 +348,7 @@ export async function computePlanMetrics(
  */
 export async function addEstimationToPlans(
   plans: Array<PublicActivityPlansRow | null | undefined>,
-  supabase: SupabaseClient,
+  input: SupabaseClient | EstimationReadStore,
   userId: string,
 ): Promise<ActivityPlanWithEstimation[]> {
   const normalizedPlans = plans.filter(
@@ -261,24 +357,32 @@ export async function addEstimationToPlans(
 
   if (normalizedPlans.length === 0) return [];
 
-  const profile = await getEstimationProfileInputs(supabase, userId);
+  const profile =
+    "from" in input
+      ? await getEstimationProfileInputs(input, userId)
+      : await getEstimationProfileInputsFromStore(input, userId);
 
   // Collect all route IDs
   const routeIds = normalizedPlans
     .filter((p) => p.route_id)
     .map((p) => p.route_id)
+    .filter((id): id is string => !!id)
     .filter((id, index, self) => self.indexOf(id) === index); // Unique
 
   // Fetch all routes at once
   let routesMap = new Map<string, any>();
   if (routeIds.length > 0) {
-    const { data: routes } = await supabase
-      .from("activity_routes")
-      .select("id, distance_meters:total_distance, total_ascent, total_descent")
-      .in("id", routeIds);
+    if ("from" in input) {
+      const { data: routes } = await input
+        .from("activity_routes")
+        .select("id, distance_meters:total_distance, total_ascent, total_descent")
+        .in("id", routeIds);
 
-    if (routes) {
-      routesMap = new Map(routes.map((r) => [r.id, r]));
+      if (routes) {
+        routesMap = new Map(routes.map((r) => [r.id, r]));
+      }
+    } else {
+      routesMap = await getRoutesMapFromStore(input, userId, routeIds);
     }
   }
 

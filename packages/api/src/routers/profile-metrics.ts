@@ -5,13 +5,20 @@
  * Used for weight-adjusted TSS calculations and recovery tracking.
  */
 
+import { randomUUID } from "node:crypto";
 import {
   createProfileMetricInputSchema,
   profileMetricTypeSchema,
   updateProfileMetricInputSchema,
 } from "@repo/core/schemas/profile-metrics";
+import { type ProfileMetricInsert, profileMetrics } from "@repo/db";
+import { TRPCError } from "@trpc/server";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+
+type ProfileMetricCreateValues = ProfileMetricInsert;
 
 export const profileMetricsRouter = createTRPCRouter({
   /**
@@ -29,34 +36,25 @@ export const profileMetricsRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { supabase, session } = ctx;
+      const db = getRequiredDb(ctx);
 
-      let query = supabase
-        .from("profile_metrics")
-        .select("*", { count: "exact" })
-        .eq("profile_id", session.user.id)
-        .order("recorded_at", { ascending: false })
-        .range(input.offset, input.offset + input.limit - 1);
+      const conditions = [eq(profileMetrics.profile_id, ctx.session.user.id)];
 
-      if (input.metric_type) {
-        query = query.eq("metric_type", input.metric_type);
-      }
+      if (input.metric_type) conditions.push(eq(profileMetrics.metric_type, input.metric_type));
+      if (input.start_date) conditions.push(gte(profileMetrics.recorded_at, input.start_date));
+      if (input.end_date) conditions.push(lte(profileMetrics.recorded_at, input.end_date));
 
-      if (input.start_date) {
-        query = query.gte("recorded_at", input.start_date.toISOString());
-      }
-
-      if (input.end_date) {
-        query = query.lte("recorded_at", input.end_date.toISOString());
-      }
-
-      const { data, error, count } = await query;
-
-      if (error) throw new Error(error.message);
+      const data = await db
+        .select()
+        .from(profileMetrics)
+        .where(and(...conditions))
+        .orderBy(desc(profileMetrics.recorded_at))
+        .limit(input.limit)
+        .offset(input.offset);
 
       return {
         items: data || [],
-        total: count || 0,
+        total: data.length,
       };
     }),
 
@@ -74,21 +72,22 @@ export const profileMetricsRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { supabase, session } = ctx;
+      const db = getRequiredDb(ctx);
 
-      // Find closest metric at or before date
-      const { data, error } = await supabase
-        .from("profile_metrics")
-        .select("*")
-        .eq("profile_id", session.user.id)
-        .eq("metric_type", input.metric_type)
-        .lte("recorded_at", input.date.toISOString())
-        .order("recorded_at", { ascending: false })
+      const [data] = await db
+        .select()
+        .from(profileMetrics)
+        .where(
+          and(
+            eq(profileMetrics.profile_id, ctx.session.user.id),
+            eq(profileMetrics.metric_type, input.metric_type),
+            lte(profileMetrics.recorded_at, input.date),
+          ),
+        )
+        .orderBy(desc(profileMetrics.recorded_at))
         .limit(1);
 
-      if (error) throw new Error(error.message);
-
-      return data?.[0] || null;
+      return data || null;
     }),
 
   /**
@@ -97,18 +96,17 @@ export const profileMetricsRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const { supabase, session } = ctx;
+      const db = getRequiredDb(ctx);
 
-      const { data, error } = await supabase
-        .from("profile_metrics")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", session.user.id)
-        .single();
+      const [data] = await db
+        .select()
+        .from(profileMetrics)
+        .where(
+          and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
+        )
+        .limit(1);
 
-      if (error) throw new Error(error.message);
-
-      return data;
+      return data ?? null;
     }),
 
   /**
@@ -117,27 +115,29 @@ export const profileMetricsRouter = createTRPCRouter({
   create: protectedProcedure
     .input(createProfileMetricInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { supabase, session } = ctx;
+      const db = getRequiredDb(ctx);
 
-      if (input.profile_id !== session.user.id) {
-        throw new Error("Unauthorized: Cannot create metrics for other profiles");
+      if (input.profile_id !== ctx.session.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Cannot create metrics for other profiles",
+        });
       }
 
-      const { data, error } = await supabase
-        .from("profile_metrics")
-        .insert({
+      const [data] = await db
+        .insert(profileMetrics)
+        .values({
+          id: randomUUID(),
           profile_id: input.profile_id,
           metric_type: input.metric_type,
-          value: input.value,
+          value: String(input.value),
           unit: input.unit,
           reference_activity_id: input.reference_activity_id || null,
           notes: input.notes || null,
-          recorded_at: input.recorded_at || new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (error) throw new Error(error.message);
+          created_at: new Date(),
+          recorded_at: new Date(input.recorded_at || new Date().toISOString()),
+        } satisfies ProfileMetricCreateValues)
+        .returning();
 
       return data;
     }),
@@ -148,22 +148,20 @@ export const profileMetricsRouter = createTRPCRouter({
   update: protectedProcedure
     .input(updateProfileMetricInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { supabase, session } = ctx;
+      const db = getRequiredDb(ctx);
 
-      const { data, error } = await supabase
-        .from("profile_metrics")
-        .update({
-          value: input.value,
+      const [data] = await db
+        .update(profileMetrics)
+        .set({
+          value: input.value !== undefined ? String(input.value) : undefined,
           unit: input.unit,
           notes: input.notes,
-          recorded_at: input.recorded_at,
+          recorded_at: input.recorded_at ? new Date(input.recorded_at) : undefined,
         })
-        .eq("id", input.id)
-        .eq("profile_id", session.user.id)
-        .select()
-        .single();
-
-      if (error) throw new Error(error.message);
+        .where(
+          and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
+        )
+        .returning();
 
       return data;
     }),
@@ -174,15 +172,13 @@ export const profileMetricsRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const { supabase, session } = ctx;
+      const db = getRequiredDb(ctx);
 
-      const { error } = await supabase
-        .from("profile_metrics")
-        .delete()
-        .eq("id", input.id)
-        .eq("profile_id", session.user.id);
-
-      if (error) throw new Error(error.message);
+      await db
+        .delete(profileMetrics)
+        .where(
+          and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
+        );
 
       return { success: true };
     }),

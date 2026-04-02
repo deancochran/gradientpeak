@@ -35,10 +35,10 @@ import {
 } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { supabase } from "@/lib/supabase/client";
-import { api } from "@/lib/api";
 
 const profileEditSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").nullable(),
@@ -395,11 +395,14 @@ function ProfileEditScreen() {
                 <View>
                   <Text className="text-sm font-medium mb-1">Threshold HR</Text>
                   <View className="bg-muted p-3 rounded-md">
-                    <Text className="text-foreground">
-                      {lthrMetric?.value
-                        ? `${Math.round(lthrMetric.value)} bpm`
-                        : "Not detected yet"}
-                    </Text>
+                    {(() => {
+                      const lthrValue = lthrMetric?.value == null ? null : Number(lthrMetric.value);
+                      return (
+                        <Text className="text-foreground">
+                          {lthrValue != null ? `${Math.round(lthrValue)} bpm` : "Not detected yet"}
+                        </Text>
+                      );
+                    })()}
                     <Text className="text-xs text-muted-foreground mt-1">
                       Read-only estimate from your strongest recent 20-minute heart rate effort.
                     </Text>

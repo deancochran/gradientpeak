@@ -11,21 +11,35 @@ import {
   DropdownMenuTrigger,
 } from "@repo/ui/components/dropdown-menu";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
-import { api } from "@/lib/api/client";
+import { authClient } from "@/lib/auth/client";
 
 export function UserNav() {
   const { user, refreshSession } = useAuth();
   const router = useRouter();
+  const [isPending, setIsPending] = useState(false);
   const avatarUrl = undefined;
   const displayName = user?.email ?? "User";
 
-  const signOutMutation = api.auth.signOut.useMutation({
-    onSuccess: () => {
-      refreshSession();
+  const handleSignOut = async () => {
+    setIsPending(true);
+    try {
+      const result = await authClient.signOut();
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      await refreshSession();
+      router.refresh();
       router.push("/auth/login");
-    },
-  });
+    } catch (error) {
+      console.error("Logout failed:", error);
+    } finally {
+      setIsPending(false);
+    }
+  };
 
   return (
     <DropdownMenu>
@@ -45,7 +59,9 @@ export function UserNav() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => signOutMutation.mutate()}>Log out</DropdownMenuItem>
+        <DropdownMenuItem disabled={isPending} onClick={handleSignOut}>
+          Log out
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

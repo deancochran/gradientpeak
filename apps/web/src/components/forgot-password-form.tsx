@@ -13,33 +13,35 @@ import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useState } from "react";
-import { api } from "@/lib/api/client";
+import { authClient, toAbsoluteWebUrl } from "@/lib/auth/client";
 
 export function ForgotPasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-
-  const resetPasswordMutation = api.auth.sendPasswordResetEmail.useMutation({
-    onSuccess: () => {
-      setSuccess(true);
-      setError(null);
-    },
-    onError: (error) => {
-      setError(error.message);
-    },
-  });
+  const [isPending, setIsPending] = useState(false);
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsPending(true);
 
     try {
-      await resetPasswordMutation.mutateAsync({
+      const result = await authClient.requestPasswordReset({
         email,
+        redirectTo: toAbsoluteWebUrl("/auth/update-password"),
       });
-    } catch {
-      // Error handling is done in mutation onError
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      setSuccess(true);
+      setError(null);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "An error occurred");
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -81,8 +83,8 @@ export function ForgotPasswordForm({ className, ...props }: React.ComponentProps
                   />
                 </div>
                 {error && <p className="text-sm text-red-500">{error}</p>}
-                <Button type="submit" disabled={resetPasswordMutation.isPending}>
-                  {resetPasswordMutation.isPending ? "Sending..." : "Send reset email"}
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? "Sending..." : "Send reset email"}
                 </Button>
               </div>
               <div className="mt-4 text-center text-sm">

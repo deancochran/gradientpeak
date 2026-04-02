@@ -154,6 +154,13 @@ describe("training plan projection fallbacks", () => {
         activities: { data: [], error: null },
       }) as any,
       profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       input: {
         training_plan_id: "11111111-1111-4111-8111-111111111111",
         start_date: "2026-01-01",
@@ -197,6 +204,13 @@ describe("training plan projection fallbacks", () => {
         activities: { data: [], error: null },
       }) as any,
       profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       input: {
         start_date: "2026-01-01",
         end_date: "2026-01-03",
@@ -255,6 +269,13 @@ describe("training plan projection fallbacks", () => {
         activities: { data: [], error: null },
       }) as any,
       profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       input: {
         training_plan_id: "11111111-1111-4111-8111-111111111111",
         start_date: "2026-01-01",
@@ -326,6 +347,13 @@ describe("training plan projection fallbacks", () => {
         profile_metrics: { data: [], error: null },
       }) as any,
       profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       input: {
         training_plan_id: "11111111-1111-4111-8111-111111111111",
         start_date: "2026-01-01",
@@ -388,6 +416,13 @@ describe("training plan projection fallbacks", () => {
         },
       }) as any,
       profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       input: {
         training_plan_id: "11111111-1111-4111-8111-111111111111",
         start_date: "2026-01-01",
@@ -417,6 +452,13 @@ describe("training plan projection fallbacks", () => {
         },
       }) as any,
       profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       input: {
         training_plan_id: "11111111-1111-4111-8111-111111111111",
         start_date: "2026-01-01",
@@ -487,6 +529,13 @@ describe("training plan projection fallbacks", () => {
         profile_metrics: { data: [], error: null },
       }) as any,
       profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       input: {
         training_plan_id: "11111111-1111-4111-8111-111111111111",
         start_date: "2026-01-01",
@@ -546,6 +595,13 @@ describe("training plan projection fallbacks", () => {
         profile_metrics: { data: [], error: null },
       }) as any,
       profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
       input: {
         training_plan_id: "11111111-1111-4111-8111-111111111111",
         start_date: "2026-01-01",

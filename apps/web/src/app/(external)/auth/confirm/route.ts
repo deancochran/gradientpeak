@@ -1,5 +1,4 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { createServerCaller } from "@/lib/api/server";
 
 const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://sign-in";
 
@@ -80,34 +79,37 @@ const getSafeFallbackTarget = (request: NextRequest, fallbackParam: string | nul
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const token_hash = searchParams.get("token_hash");
-  const type = searchParams.get("type");
+  const error = searchParams.get("error");
   const next = getSafeRedirectTarget(searchParams.get("next"));
   const fallback = getSafeFallbackTarget(request, searchParams.get("fallback"));
 
-  if (token_hash && type) {
-    try {
-      const api = await createServerCaller();
-      await api.auth.verifyOtp({
-        type,
-        token_hash,
-      });
-    } catch (error: unknown) {
-      // redirect the user to an error page with some instructions
-      const message = error instanceof Error ? error.message : "Verification failed";
-      const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-      errorUrl.searchParams.set("error", message);
-      return NextResponse.redirect(errorUrl);
-    }
+  if (error) {
+    const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
+    errorUrl.searchParams.set("error", error);
+    return NextResponse.redirect(errorUrl);
+  }
 
+  if (searchParams.get("token") || searchParams.get("intent")) {
     const openUrl = new URL("/auth/open", getPublicWebAppUrl(request));
     openUrl.searchParams.set("next", next);
     openUrl.searchParams.set("fallback", fallback);
     return NextResponse.redirect(openUrl);
   }
 
+  const hasLegacySupabaseOtpParams =
+    Boolean(searchParams.get("token_hash")) || Boolean(searchParams.get("type"));
+
+  if (hasLegacySupabaseOtpParams) {
+    const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
+    errorUrl.searchParams.set(
+      "error",
+      "This verification link uses the retired Supabase OTP flow. Request a new email and try again.",
+    );
+    return NextResponse.redirect(errorUrl);
+  }
+
   // redirect the user to an error page with some instructions
   const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-  errorUrl.searchParams.set("error", "No token hash or type");
+  errorUrl.searchParams.set("error", "Missing auth callback parameters");
   return NextResponse.redirect(errorUrl);
 }

@@ -12,22 +12,29 @@ import { House, LogOut, Settings } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api/client";
+import { useState } from "react";
+import { authClient } from "@/lib/auth/client";
 import { CurrentUserAvatar } from "./current-user-avatar";
 import { useAuth } from "./providers/auth-provider";
 
 const Navbar = () => {
   const router = useRouter();
   const { isAuthenticated, refreshSession } = useAuth();
-  const signOutMutation = api.auth.signOut.useMutation();
+  const [isPending, setIsPending] = useState(false);
   const logout = async () => {
+    setIsPending(true);
     try {
-      await signOutMutation.mutateAsync();
-      // Refresh session to clear user data
-      refreshSession();
+      const result = await authClient.signOut();
+      if (result.error) {
+        throw result.error;
+      }
+      await refreshSession();
+      router.refresh();
       router.push("/auth/login");
     } catch (error) {
       console.error("Logout failed:", error);
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -80,6 +87,7 @@ const Navbar = () => {
                 <DropdownMenuItem asChild>
                   <Button
                     onClick={logout}
+                    disabled={isPending}
                     variant="ghost"
                     className="w-full justify-start cursor-pointer"
                   >

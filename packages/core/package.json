@@ -57,7 +57,6 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "@repo/supabase": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/jest": "^29.5.0",
     "@types/mapbox__polyline": "^1.0.5",

@@ -77,8 +77,8 @@ export function ActivityListModal({
       })
     : activities;
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+  const formatDate = (value: string | Date) => {
+    const date = value instanceof Date ? value : new Date(value);
     return date.toLocaleDateString("en-US", {
       weekday: "short",
       month: "short",

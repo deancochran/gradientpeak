@@ -1,10 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { AuthSession, AuthUser } from "@repo/auth";
-import { normalizeGradientPeakAuthClientSession } from "@repo/auth";
+import type { AuthSession, AuthUser } from "@repo/auth/session";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import {
+  getMobileAuthSession,
+  signOutMobileAuth,
+  subscribeToMobileAuthSession,
+} from "@/lib/auth/client";
 import { initializeServerConfig } from "@/lib/server-config";
-import { supabase } from "@/lib/supabase/client";
+
+let authUnsubscribe: (() => void) | null = null;
 
 export interface AuthState {
   session: AuthSession | null;
@@ -15,8 +20,6 @@ export interface AuthState {
   loading: boolean;
   ready: boolean; // Replaces hydrated && initialized
   error: Error | null;
-  _listenerRegistered: boolean; // Internal flag, not persisted
-
   setSession: (session: AuthSession | null) => void;
   setUser: (user: AuthUser | null) => void;
   setProfile: (profile: any | null) => void;
@@ -41,8 +44,6 @@ export const useAuthStore = create<AuthState>()(
       loading: true as boolean,
       ready: false as boolean,
       error: null as Error | null,
-      _listenerRegistered: false as boolean,
-
       setSession: (session: AuthSession | null) => {
         console.log("🔄 Auth Store: setSession called", {
           hasSession: !!session,
@@ -87,66 +88,17 @@ export const useAuthStore = create<AuthState>()(
           await initializeServerConfig();
           set({ loading: true, error: null });
 
-          console.log("🔄 Calling supabase.auth.getSession()");
-          const {
-            data: { session },
-            error,
-          } = await supabase.auth.getSession();
-
-          console.log("✅ Got session response:", {
-            session: !!session,
-            error: !!error,
-          });
-
-          if (error) {
-            // Check for invalid refresh token error
-            // Supabase returns this when the refresh token is expired or invalid
-            const isRefreshTokenError =
-              error.message &&
-              (error.message.includes("Invalid Refresh Token") ||
-                error.message.includes("refresh_token_not_found"));
-
-            if (isRefreshTokenError) {
-              console.warn("⚠️ Invalid refresh token, clearing session to force re-login");
-              // Clear session and return ready state without error
-              set({
-                session: null,
-                user: null,
-                loading: false,
-                ready: true,
-                error: null,
-              });
-              // Also make sure to sign out from supabase to clean up
-              await supabase.auth.signOut().catch(() => {});
-              return;
-            }
-
-            console.error("❌ Auth Store init error:", error);
-            // Still mark as ready even on error so the app doesn't hang
-            set({
-              error,
-              loading: false,
-              ready: true,
-              session: null,
-              user: null,
-            });
-            return;
-          }
+          const session = await getMobileAuthSession();
 
           console.log("🔄 Setting session", { hasSession: !!session });
-          get().setSession(normalizeGradientPeakAuthClientSession(session));
+          get().setSession(session);
 
-          // Set up auth listener once per store instance
-          if (!currentState._listenerRegistered) {
+          if (!authUnsubscribe) {
             console.log("🔄 Setting up auth state change listener");
-
-            supabase.auth.onAuthStateChange((event, session) => {
-              console.log("🔄 Auth state changed:", event, !!session);
+            authUnsubscribe = subscribeToMobileAuthSession((session) => {
               const state = get();
-              state.setSession(normalizeGradientPeakAuthClientSession(session));
+              state.setSession(session);
             });
-
-            set({ _listenerRegistered: true });
           } else {
             console.log("✅ Auth listener already set up, skipping");
           }
@@ -172,10 +124,8 @@ export const useAuthStore = create<AuthState>()(
       clearSession: async () => {
         console.log("🔄 Clearing session...");
         try {
-          // Sign out from Supabase
-          await supabase.auth.signOut();
+          await signOutMobileAuth().catch(() => {});
 
-          // Clear local state
           set({
             session: null,
             user: null,
@@ -211,7 +161,7 @@ export const useAuthStore = create<AuthState>()(
         profile: state.profile,
         userStatus: state.userStatus,
         onboardingStatus: state.onboardingStatus,
-        // Don't persist: loading, ready, error, _listenerRegistered
+        // Don't persist: loading, ready, error
         // These should always start fresh on app startup
       }),
       onRehydrateStorage: () => async (state, error) => {

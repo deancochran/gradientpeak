@@ -1,63 +1,48 @@
 import type { ActivityAnalysisContext } from "@repo/core";
-import type { Database } from "@repo/supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
-
-type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+import type { ActivityAnalysisStore } from "../../repositories";
 
 type ResolveActivityContextAsOfInput = {
-  supabase: SupabaseClient<Database>;
+  store: ActivityAnalysisStore;
   profileId: string;
-  activityTimestamp: string;
+  activityTimestamp: string | Date;
 };
 
 export async function resolveActivityContextAsOf(
   input: ResolveActivityContextAsOfInput,
 ): Promise<ActivityAnalysisContext> {
-  const { supabase, profileId, activityTimestamp } = input;
-
-  const [{ data: profile }, { data: metrics }, { data: efforts }] = await Promise.all([
-    supabase.from("profiles").select("dob, gender").eq("id", profileId).maybeSingle(),
-    supabase
-      .from("profile_metrics")
-      .select("metric_type, value, recorded_at")
-      .eq("profile_id", profileId)
-      .lte("recorded_at", activityTimestamp)
-      .in("metric_type", ["weight_kg", "resting_hr", "max_hr", "lthr"])
-      .order("recorded_at", { ascending: false }),
-    supabase
-      .from("activity_efforts")
-      .select("recorded_at, effort_type, duration_seconds, value, activity_category")
-      .eq("profile_id", profileId)
-      .lte("recorded_at", activityTimestamp)
-      .in("effort_type", ["power", "speed"])
-      .order("recorded_at", { ascending: false })
-      .limit(50),
-  ]);
+  const { store, profileId, activityTimestamp } = input;
+  const asOf = activityTimestamp instanceof Date ? activityTimestamp : new Date(activityTimestamp);
+  const snapshot = await store.getContextSnapshot({ asOf, profileId });
 
   const profileMetrics: ActivityAnalysisContext["profileMetrics"] = {};
+  const typedMetrics = snapshot.profileMetrics;
+  const typedEfforts = snapshot.recentEfforts;
 
-  for (const metric of metrics ?? []) {
+  for (const metric of typedMetrics) {
+    const metricValue = toNumber(metric.value);
+    if (metricValue == null) continue;
+
     if (metric.metric_type === "weight_kg" && profileMetrics.weight_kg == null) {
-      profileMetrics.weight_kg = metric.value;
+      profileMetrics.weight_kg = metricValue;
       continue;
     }
 
     if (metric.metric_type === "resting_hr" && profileMetrics.resting_hr == null) {
-      profileMetrics.resting_hr = metric.value;
+      profileMetrics.resting_hr = metricValue;
       continue;
     }
 
     if (metric.metric_type === "max_hr" && profileMetrics.max_hr == null) {
-      profileMetrics.max_hr = metric.value;
+      profileMetrics.max_hr = metricValue;
       continue;
     }
 
     if (metric.metric_type === "lthr" && profileMetrics.lthr == null) {
-      profileMetrics.lthr = metric.value;
+      profileMetrics.lthr = metricValue;
     }
   }
 
-  const bikePower20mEffort = (efforts ?? []).find(
+  const bikePower20mEffort = typedEfforts.find(
     (effort) =>
       effort.effort_type === "power" &&
       effort.activity_category === "bike" &&
@@ -66,28 +51,41 @@ export async function resolveActivityContextAsOf(
 
   profileMetrics.ftp = bikePower20mEffort ? Math.round(bikePower20mEffort.value * 0.95) : null;
 
+  const activityTimestampIso = asOf.toISOString();
+
   return {
     profileMetrics,
-    recentEfforts: (efforts ?? []).map((effort) => ({
-      recorded_at: effort.recorded_at,
+    recentEfforts: typedEfforts.map((effort) => ({
+      recorded_at: toIsoString(effort.recorded_at) ?? activityTimestampIso,
       effort_type: effort.effort_type,
       duration_seconds: effort.duration_seconds,
       value: effort.value,
       activity_category: effort.activity_category,
     })),
     profile: {
-      dob: profile?.dob ?? null,
-      gender: normalizeGender(profile?.gender ?? null),
+      dob: toIsoString(snapshot.profile.dob ?? null),
+      gender: normalizeGender(snapshot.profile.gender ?? null),
     },
   };
 }
 
 function normalizeGender(
-  value: ProfileRow["gender"] | null,
+  value: ActivityAnalysisContext["profile"]["gender"],
 ): ActivityAnalysisContext["profile"]["gender"] {
   if (value === "male" || value === "female" || value === "other") {
     return value;
   }
 
   return null;
+}
+
+function toIsoString(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function toNumber(value: string | number | null | undefined): number | null {
+  if (value == null) return null;
+  const normalized = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
 }

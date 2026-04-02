@@ -7,6 +7,8 @@ import {
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
+import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap, buildDynamicStressSeries } from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -236,7 +238,7 @@ export const trendsRouter = createTRPCRouter({
 
     const { byActivityId: derivedActivityMap, byDate: activitiesByDate } =
       await buildDynamicStressSeries({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         activities,
       });
@@ -358,7 +360,7 @@ export const trendsRouter = createTRPCRouter({
       }
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: ctx.session.user.id,
         activities,
       });
@@ -618,7 +620,7 @@ export const trendsRouter = createTRPCRouter({
       const derivedMap =
         input.metric === "tss"
           ? await buildActivityDerivedSummaryMap({
-              supabase: ctx.supabase,
+              store: createActivityAnalysisStore(getRequiredDb(ctx)),
               profileId: ctx.session.user.id,
               activities,
             })

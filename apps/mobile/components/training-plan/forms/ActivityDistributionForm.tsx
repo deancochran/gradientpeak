@@ -1,4 +1,4 @@
-import { publicActivityCategorySchema } from "@repo/db";
+import type { CanonicalSport } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
@@ -8,15 +8,15 @@ import { Text } from "@repo/ui/components/text";
 import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 
-type PublicActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
+type ActivityCategory = CanonicalSport;
 
 interface ActivityDistributionFormProps {
-  data: Record<PublicActivityCategory, number> | null;
-  onChange: (distribution: Record<PublicActivityCategory, number>) => void;
+  data: Record<ActivityCategory, number> | null;
+  onChange: (distribution: Record<ActivityCategory, number>) => void;
   errors: Record<string, string>;
 }
 
-const ACTIVITY_LABELS: Record<PublicActivityCategory, string> = {
+const ACTIVITY_LABELS: Record<ActivityCategory, string> = {
   run: "Running",
   bike: "Cycling",
   swim: "Swimming",
@@ -24,7 +24,7 @@ const ACTIVITY_LABELS: Record<PublicActivityCategory, string> = {
   other: "Other Activities",
 };
 
-const ACTIVITY_EMOJIS: Record<PublicActivityCategory, string> = {
+const ACTIVITY_EMOJIS: Record<ActivityCategory, string> = {
   run: "🏃",
   bike: "🚴",
   swim: "🏊",
@@ -38,8 +38,8 @@ export function ActivityDistributionForm({
   errors,
 }: ActivityDistributionFormProps) {
   const [isMultiSport, setIsMultiSport] = useState(false);
-  const [primaryActivity, setPrimaryActivity] = useState<PublicActivityCategory>("run");
-  const [distribution, setDistribution] = useState<Record<PublicActivityCategory, number>>({
+  const [primaryActivity, setPrimaryActivity] = useState<ActivityCategory>("run");
+  const [distribution, setDistribution] = useState<Record<ActivityCategory, number>>({
     run: 0,
     bike: 0,
     swim: 0,
@@ -50,7 +50,7 @@ export function ActivityDistributionForm({
   // Initialize from data prop
   useEffect(() => {
     if (data) {
-      const categories = Object.keys(data) as PublicActivityCategory[];
+      const categories = Object.keys(data) as ActivityCategory[];
       if (categories.length === 1 && data[categories[0]] === 1) {
         // Single-sport mode
         setIsMultiSport(false);
@@ -71,11 +71,11 @@ export function ActivityDistributionForm({
     setIsMultiSport(enabled);
     if (!enabled) {
       // Switch to single-sport mode
-      const newDist = { [primaryActivity]: 1.0 } as Record<PublicActivityCategory, number>;
+      const newDist = { [primaryActivity]: 1.0 } as Record<ActivityCategory, number>;
       onChange(newDist);
     } else {
       // Switch to multi-sport mode with balanced distribution
-      const balanced: Record<PublicActivityCategory, number> = {
+      const balanced: Record<ActivityCategory, number> = {
         run: 0.4,
         bike: 0.3,
         swim: 0.15,
@@ -88,14 +88,14 @@ export function ActivityDistributionForm({
   };
 
   // Handle primary activity selection (single-sport)
-  const handlePrimaryActivityChange = (activity: PublicActivityCategory) => {
+  const handlePrimaryActivityChange = (activity: ActivityCategory) => {
     setPrimaryActivity(activity);
-    const newDist = { [activity]: 1.0 } as Record<PublicActivityCategory, number>;
+    const newDist = { [activity]: 1.0 } as Record<ActivityCategory, number>;
     onChange(newDist);
   };
 
   // Handle slider change (multi-sport)
-  const handleSliderChange = (category: PublicActivityCategory, value: number) => {
+  const handleSliderChange = (category: ActivityCategory, value: number) => {
     const newDist = {
       ...distribution,
       [category]: value,
@@ -146,7 +146,7 @@ export function ActivityDistributionForm({
         <View className="gap-3">
           <Label className="text-base font-semibold">Primary Activity</Label>
           <View className="gap-2">
-            {(Object.keys(ACTIVITY_LABELS) as PublicActivityCategory[]).map((activity) => (
+            {(Object.keys(ACTIVITY_LABELS) as ActivityCategory[]).map((activity) => (
               <Button
                 key={activity}
                 variant={primaryActivity === activity ? "default" : "outline"}
@@ -172,7 +172,7 @@ export function ActivityDistributionForm({
       {isMultiSport && (
         <>
           <View className="gap-4">
-            {(Object.keys(ACTIVITY_LABELS) as PublicActivityCategory[]).map((activity) => (
+            {(Object.keys(ACTIVITY_LABELS) as ActivityCategory[]).map((activity) => (
               <View key={activity} className="gap-2">
                 <View className="flex-row justify-between items-center">
                   <Label className="text-sm font-medium">

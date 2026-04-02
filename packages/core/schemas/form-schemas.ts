@@ -2,7 +2,7 @@
  * Form Validation Schemas
  *
  * Comprehensive form validation schemas for the mobile and web applications.
- * These schemas extend and build upon the supazod database schemas, adding
+ * These schemas extend and build upon package-owned database-aligned shapes, adding
  * form-specific validation rules, preprocessing, and user-friendly error messages.
  *
  * @module form-schemas
@@ -544,12 +544,12 @@ export const optionalActivityNotesSchema = z
 /**
  * Activity Submission Form Schema
  * Used when submitting a recorded activity
- * Picks relevant fields from supazod insert schema and adds form-specific validations
+ * Picks relevant fields from the shared insert shape and adds form-specific validations
  *
  * Fields:
- * - name: required, 1-100 characters (from supazod: required string)
- * - notes: optional, max 5000 characters (from supazod: optional nullable string)
- * - is_private: optional boolean, defaults to false (from supazod: optional boolean)
+ * - name: required, 1-100 characters
+ * - notes: optional, max 5000 characters
+ * - is_private: optional boolean, defaults to false
  */
 export const activitySubmissionFormSchema = activityInsertShapeSchema
   .pick({
@@ -562,7 +562,7 @@ export const activitySubmissionFormSchema = activityInsertShapeSchema
     name: activityNameSchema,
     // Override notes with length limit
     notes: optionalActivityNotesSchema,
-    // Keep is_private as-is from supazod (optional boolean)
+    // Keep is_private optional in the shared insert shape
   });
 
 export type ActivitySubmissionFormData = z.infer<typeof activitySubmissionFormSchema>;
@@ -688,9 +688,9 @@ export const activityCategorySchema = canonicalSportSchema;
 /**
  * Activity Plan Create Form Schema
  * Used when creating a new activity plan
- * Extends supazod insert schema with form-specific validations
+ * Extends the shared insert shape with form-specific validations
  *
- * Fields from supazod:
+ * Fields from the shared insert shape:
  * - name: required string (enhanced: 1-100 chars)
  * - description: required string (enhanced: max 1000 chars)
  * - notes: optional nullable string (enhanced: max 2000 chars)

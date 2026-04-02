@@ -11,34 +11,41 @@ import {
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { api } from "@/lib/api/client";
+import { authClient } from "@/lib/auth/client";
 
 export function UpdatePasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
   const router = useRouter();
-
-  const updatePasswordMutation = api.auth.updatePassword.useMutation({
-    onSuccess: () => {
-      router.push("/");
-    },
-    onError: (error) => {
-      setError(error.message);
-    },
-  });
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token");
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
+    if (!token) {
+      setError("Missing or invalid reset token");
+      return;
+    }
+
+    setIsPending(true);
+
     try {
-      await updatePasswordMutation.mutateAsync({
+      const result = await authClient.resetPassword({
         newPassword: password,
       });
-    } catch {
-      // Error handling is done in mutation onError
+      if (result.error) {
+        throw result.error;
+      }
+      router.push("/");
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "An error occurred");
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -64,8 +71,8 @@ export function UpdatePasswordForm({ className, ...props }: React.ComponentProps
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" disabled={updatePasswordMutation.isPending}>
-                {updatePasswordMutation.isPending ? "Saving..." : "Save new password"}
+              <Button type="submit" disabled={isPending || !token}>
+                {isPending ? "Saving..." : "Save new password"}
               </Button>
             </div>
           </form>

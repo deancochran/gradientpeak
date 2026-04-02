@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
+import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -169,7 +171,7 @@ export const feedRouter = createTRPCRouter({
       }
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        supabase: ctx.supabase,
+        store: createActivityAnalysisStore(getRequiredDb(ctx)),
         profileId: userId,
         activities: (activities || []) as any,
       });

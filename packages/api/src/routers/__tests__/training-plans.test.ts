@@ -256,6 +256,13 @@ describe("deriveProfileAwareCreationContext", () => {
     await expect(
       deriveProfileAwareCreationContext({
         supabase: supabase as any,
+        store: {
+          getContextSnapshot: async () => ({
+            profile: { dob: null, gender: null },
+            profileMetrics: [],
+            recentEfforts: [],
+          }),
+        },
         profileId: "profile-123",
       }),
     ).resolves.toMatchObject({

@@ -3,8 +3,7 @@ import {
   type AuthSessionLookupInput,
   createAuthSessionLookupInputFromHeaders,
 } from "@repo/auth/session";
-import type { DbClientLike } from "@repo/db/client";
-import type { Database as SupabaseDatabase } from "@repo/supabase";
+import type { DrizzleDbClient } from "@repo/db/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type ApiSessionResolver = (input: AuthSessionLookupInput) => Promise<AuthSession | null>;
@@ -21,11 +20,17 @@ export interface CreateApiContextOptions {
     session?: AuthSession | null;
     resolveSession?: ApiSessionResolver;
   };
-  db?: DbClientLike;
-  supabase?: SupabaseClient<SupabaseDatabase>;
+  db?: DrizzleDbClient;
+  supabase?: SupabaseClient;
 }
 
 export type Context = ApiContext;
+
+/**
+ * Temporary bridge during the API DB cutover.
+ * New code should rely on `ctx.db` and auth session state instead.
+ */
+export type LegacySupabaseContext = Pick<ApiContext, "supabase">;
 
 export async function createApiContext(opts: CreateApiContextOptions) {
   const authLookupInput = createAuthSessionLookupInputFromHeaders(opts.headers);
@@ -46,7 +51,7 @@ export async function createApiContext(opts: CreateApiContextOptions) {
     db: opts.db,
     headers: opts.headers,
     session: authSession,
-    supabase: opts.supabase as SupabaseClient<SupabaseDatabase>,
+    supabase: opts.supabase as SupabaseClient,
     trpcSource: opts.headers.get("x-api-source") || "server",
   };
 }

@@ -103,16 +103,9 @@ jest.mock("@/lib/api", () => ({
   api: {
     useUtils: () => ({
       profiles: { invalidate: jest.fn() },
-      auth: { getUser: { invalidate: jest.fn() } },
     }),
     profiles: {
       getPublicById: { useQuery: () => profileQueryState },
-    },
-    auth: {
-      signOut: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
-      deleteAccount: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
-      updateEmail: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
-      updatePassword: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
     social: {
       followUser: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },

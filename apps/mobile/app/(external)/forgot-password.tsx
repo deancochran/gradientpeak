@@ -8,6 +8,7 @@ import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
+import { authClient, getPasswordResetCallbackUrl } from "@/lib/auth/client";
 import {
   AuthRequestTimeoutError,
   getAuthRequestTimeoutMessage,
@@ -17,7 +18,6 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { supabase } from "@/lib/supabase/client";
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -64,11 +64,13 @@ export default function ForgotPasswordScreen() {
 
       logMobileAction("auth.resetPasswordForEmail", "attempt", { email: data.email });
 
-      const { error } = await withAuthRequestTimeout(
-        supabase.auth.resetPasswordForEmail(data.email, {
-          redirectTo: `${process.env.EXPO_PUBLIC_APP_URL}/(external)/reset-password`,
+      const result = await withAuthRequestTimeout(
+        authClient.requestPasswordReset({
+          email: data.email,
+          redirectTo: getPasswordResetCallbackUrl(),
         }),
       );
+      const error = result.error;
 
       if (error) {
         logMobileAction("auth.resetPasswordForEmail", "failure", {

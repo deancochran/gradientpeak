@@ -1,4 +1,3 @@
-import type { PublicIntegrationProvider } from "@repo/db";
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
@@ -40,13 +39,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { api } from "@/lib/api";
+import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { getServerConfig } from "@/lib/server-config";
 import { FitUploader } from "@/lib/services/fit/FitUploader";
-import { api } from "@/lib/api";
 
 type IntegrationConfig = {
-  provider: PublicIntegrationProvider;
+  provider: IntegrationProvider;
   name: string;
 };
 
@@ -122,7 +122,7 @@ export default function IntegrationsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [pendingByProvider, setPendingByProvider] = useState<
-    Partial<Record<PublicIntegrationProvider, "connect" | "disconnect">>
+    Partial<Record<IntegrationProvider, "connect" | "disconnect">>
   >({});
 
   const utils = api.useUtils();
@@ -356,7 +356,7 @@ export default function IntegrationsScreen() {
     return () => backHandler?.remove?.();
   }, [handleClose]);
 
-  const handleConnect = async (provider: PublicIntegrationProvider) => {
+  const handleConnect = async (provider: IntegrationProvider) => {
     setPendingByProvider((prev) => ({ ...prev, [provider]: "connect" }));
 
     try {
@@ -389,7 +389,7 @@ export default function IntegrationsScreen() {
     }
   };
 
-  const handleDisconnect = async (provider: PublicIntegrationProvider) => {
+  const handleDisconnect = async (provider: IntegrationProvider) => {
     Alert.alert(
       "Disconnect Integration",
       `Are you sure you want to disconnect from ${getProviderDisplayName(provider)}?`,
@@ -422,11 +422,11 @@ export default function IntegrationsScreen() {
     );
   };
 
-  const isConnected = (provider: PublicIntegrationProvider) => {
+  const isConnected = (provider: IntegrationProvider) => {
     return integrations?.some((i) => i.provider === provider);
   };
 
-  const getProviderDisplayName = (provider: PublicIntegrationProvider) => {
+  const getProviderDisplayName = (provider: IntegrationProvider) => {
     return INTEGRATIONS.find((i) => i.provider === provider)?.name || provider;
   };
 

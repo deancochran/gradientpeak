@@ -2,6 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppState } from "react-native";
+import { updateMobileEmail } from "@/lib/auth/account-management";
+import { refreshMobileAuthSession } from "@/lib/auth/client";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { supabase } from "@/lib/supabase/client";
 import { api } from "../api";
@@ -51,38 +53,17 @@ export const useAuth = () => {
     },
   );
 
-  // Keep auth user data fresh (email, verification status, metadata changes)
-  const authUserQuery = api.auth.getUser.useQuery(undefined, {
-    enabled: ready && isAuthenticated && !!session?.bearerToken,
-    staleTime: 0,
-    refetchOnMount: "always",
-    retry: false,
-  });
-  const { refetch: refetchAuthUser } = authUserQuery;
-
-  useEffect(() => {
-    if (!authUserQuery.data) return;
-
-    if (
-      store.user?.email !== authUserQuery.data.email ||
-      store.user?.emailVerified !== authUserQuery.data.emailVerified
-    ) {
-      store.setUser(authUserQuery.data);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUserQuery.data]);
-
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active" && isAuthenticated) {
-        void refetchAuthUser();
+        void refreshMobileAuthSession();
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [isAuthenticated, refetchAuthUser]);
+  }, [isAuthenticated]);
 
   // FIX: Sync profile from API to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
@@ -131,6 +112,47 @@ export const useAuth = () => {
     }
   }, []); // No dependencies needed
 
+  const updatePassword = useCallback(
+    async (input: { currentPassword?: string; newPassword: string }) => {
+      if (!user?.email) {
+        throw new Error("No authenticated user found");
+      }
+
+      if (input.currentPassword) {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: input.currentPassword,
+        });
+
+        if (signInError) {
+          throw new Error("Current password is incorrect");
+        }
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password: input.newPassword,
+      });
+
+      if (error) {
+        throw error;
+      }
+    },
+    [user?.email],
+  );
+
+  const canUpdateEmail = true;
+  const updateEmailUnavailableReason = null;
+
+  const updateEmail = useCallback(async (input: { newEmail: string; password: string }) => {
+    const result = await updateMobileEmail(input);
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    return result;
+  }, []);
+
   // FIX: Complete onboarding - stable callback
   const completeOnboarding = useCallback(async () => {
     if (!user) return;
@@ -171,14 +193,18 @@ export const useAuth = () => {
 
     // Actions
     deleteAccount,
+    updateEmail,
+    updatePassword,
     completeOnboarding,
+    canUpdateEmail,
+    updateEmailUnavailableReason,
 
     // Profile query status (for loading/error states)
     profileLoading: profileQuery.isLoading,
     profileError: profileQuery.error,
     refreshProfile: profileQuery.refetch,
-    authUserLoading: authUserQuery.isLoading,
-    authUserError: authUserQuery.error,
+    authUserLoading: false,
+    authUserError: null,
 
     // Combined loading state
     isFullyLoaded: store.ready && !store.loading,

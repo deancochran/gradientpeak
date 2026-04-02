@@ -9,8 +9,9 @@ import { AlertCircle } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
+import { authClient, signOutMobileAuth } from "@/lib/auth/client";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { supabase } from "@/lib/supabase/client";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 const resetPasswordSchema = z
   .object({
@@ -30,9 +31,8 @@ type ResetPasswordFields = z.infer<typeof resetPasswordSchema>;
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
-  const { access_token, refresh_token } = useLocalSearchParams();
+  const { token } = useLocalSearchParams<{ token?: string }>();
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionSet, setSessionSet] = useState(false);
 
   const form = useZodForm({
     schema: resetPasswordSchema,
@@ -43,83 +43,17 @@ export default function ResetPasswordScreen() {
   });
 
   useEffect(() => {
-    // Set the session from the deep link tokens
-    const setSessionFromTokens = async () => {
-      console.log("🔗 Password reset callback received:", {
-        hasAccessToken: !!access_token,
-        hasRefreshToken: !!refresh_token,
-      });
+    if (token) return;
 
-      if (access_token && refresh_token) {
-        try {
-          logMobileAction("auth.resetPasswordCallback", "attempt", {
-            hasAccessToken: true,
-            hasRefreshToken: true,
-          });
-          console.log("🔑 Setting session from reset password tokens...");
-          const { error } = await supabase.auth.setSession({
-            access_token: access_token as string,
-            refresh_token: refresh_token as string,
-          });
-
-          if (error) {
-            logMobileAction("auth.resetPasswordCallback", "failure", { error: error.message });
-            console.error("❌ Session error:", error.message);
-            Alert.alert(
-              "Invalid Link",
-              "This password reset link is invalid or has expired. Please request a new one.",
-              [
-                {
-                  text: "OK",
-                  onPress: () => router.replace("/(external)/forgot-password"),
-                },
-              ],
-            );
-            return;
-          }
-
-          console.log("✅ Session set successfully for password reset");
-          logMobileAction("auth.resetPasswordCallback", "success", {});
-          setSessionSet(true);
-        } catch (err) {
-          logMobileAction("auth.resetPasswordCallback", "failure", {
-            error: err instanceof Error ? err.message : String(err),
-          });
-          console.error("💥 Error setting session:", err);
-          Alert.alert("Error", "Something went wrong. Please try again.", [
-            {
-              text: "OK",
-              onPress: () => router.replace("/(external)/forgot-password"),
-            },
-          ]);
-        }
-      } else {
-        logMobileAction("auth.resetPasswordCallback", "failure", {
-          hasAccessToken: !!access_token,
-          hasRefreshToken: !!refresh_token,
-          error: "missing_tokens",
-        });
-        console.warn("⚠️ No tokens found in reset password callback");
-        Alert.alert(
-          "Invalid Link",
-          "This password reset link is invalid. Please request a new one.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.replace("/(external)/forgot-password"),
-            },
-          ],
-        );
-      }
-    };
-
-    setSessionFromTokens();
-  }, [access_token, refresh_token, router]);
+    Alert.alert("Invalid Link", "This password reset link is invalid. Please request a new one.", [
+      { text: "OK", onPress: () => router.replace("/(external)/forgot-password") },
+    ]);
+  }, [router, token]);
 
   const onUpdatePassword = async (data: ResetPasswordFields) => {
-    if (!sessionSet) {
+    if (!token) {
       form.setError("root", {
-        message: "Session not ready. Please try again.",
+        message: "Reset token not found. Please request a new reset email.",
       });
       return;
     }
@@ -128,23 +62,21 @@ export default function ResetPasswordScreen() {
 
     try {
       logMobileAction("auth.updatePassword", "attempt", {});
-      console.log("🔄 Updating password...");
-      const { error } = await supabase.auth.updateUser({
-        password: data.password,
+      const result = await authClient.resetPassword({
+        newPassword: data.password,
+        token: String(token),
       });
 
-      if (error) {
-        logMobileAction("auth.updatePassword", "failure", { error: error.message });
-        console.error("❌ Password update error:", error.message);
-        form.setError("root", { message: error.message });
+      if (result.error) {
+        logMobileAction("auth.updatePassword", "failure", { error: result.error.message });
+        form.setError("root", { message: result.error.message });
         return;
       }
 
-      console.log("✅ Password updated successfully");
       logMobileAction("auth.updatePassword", "success", {});
 
-      // Force sign-out for security
-      await supabase.auth.signOut();
+      await signOutMobileAuth().catch(() => {});
+      await useAuthStore.getState().clearSession();
 
       Alert.alert(
         "Password Updated",
@@ -155,7 +87,6 @@ export default function ResetPasswordScreen() {
       logMobileAction("auth.updatePassword", "failure", {
         error: err instanceof Error ? err.message : String(err),
       });
-      console.error("💥 Unexpected password update error:", err);
       form.setError("root", { message: "An unexpected error occurred" });
     } finally {
       setIsLoading(false);
@@ -191,10 +122,8 @@ export default function ResetPasswordScreen() {
           </CardHeader>
 
           <CardContent className="gap-6">
-            {/* Form */}
             <Form {...form}>
               <View className="gap-4" testID="reset-password-form">
-                {/* Password Input */}
                 <FormTextField
                   control={form.control}
                   label="New Password"
@@ -219,7 +148,6 @@ export default function ResetPasswordScreen() {
                   </Text>
                 </View>
 
-                {/* Confirm Password Input */}
                 <FormTextField
                   control={form.control}
                   label="Confirm Password"
@@ -229,7 +157,6 @@ export default function ResetPasswordScreen() {
                   testId="confirm-password-input"
                 />
 
-                {/* Root Error */}
                 {form.formState.errors.root && (
                   <UiAlert icon={AlertCircle} variant="destructive" testID="form-error">
                     <AlertDescription className="text-center">
@@ -240,22 +167,20 @@ export default function ResetPasswordScreen() {
               </View>
             </Form>
 
-            {/* Update Password Button */}
             <Button
               variant="default"
               size="lg"
               onPress={submitForm.handleSubmit}
-              disabled={isLoading || !sessionSet}
+              disabled={isLoading || !token}
               testID="update-password-button"
               className="w-full"
             >
               <Text>{isLoading ? "Updating Password..." : "Update Password"}</Text>
             </Button>
 
-            {/* Help Text */}
             <View className="pt-4" testID="help-container">
               <Text variant="muted" className="text-center text-xs">
-                After updating your password, you will be automatically signed in
+                After updating your password, you will need to sign in again.
               </Text>
             </View>
           </CardContent>

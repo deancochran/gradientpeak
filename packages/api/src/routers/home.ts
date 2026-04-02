@@ -2,6 +2,11 @@ import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@r
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
+import {
+  createActivityAnalysisStore,
+  createEventReadRepository,
+} from "../infrastructure/repositories";
 import { buildDynamicStressSeries } from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -26,6 +31,7 @@ export const homeRouter = createTRPCRouter({
     .input(upcomingDaysSchema.optional())
     .query(async ({ ctx, input }) => {
       const upcomingDays = input?.days || 7;
+      const estimationStore = createEventReadRepository(getRequiredDb(ctx));
       const userId = ctx.session.user.id;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -150,7 +156,7 @@ export const homeRouter = createTRPCRouter({
 
       const { byActivityId: derivedActivityMap, byDate: tssByDate } =
         await buildDynamicStressSeries({
-          supabase: ctx.supabase,
+          store: createActivityAnalysisStore(getRequiredDb(ctx)),
           profileId: userId,
           activities: activities || [],
         });
@@ -205,7 +211,7 @@ export const homeRouter = createTRPCRouter({
           .filter((p): p is NonNullable<typeof p> => !!p);
 
         if (plans.length > 0) {
-          const plansWithEstimation = await addEstimationToPlans(plans, ctx.supabase, userId);
+          const plansWithEstimation = await addEstimationToPlans(plans, estimationStore, userId);
           const plansMap = new Map(plansWithEstimation.map((p: any) => [p.id, p]));
 
           activitiesWithEstimations = activitiesWithEstimations.map((pa: any) => ({
@@ -463,7 +469,7 @@ export const homeRouter = createTRPCRouter({
         if (futurePlans.length > 0) {
           const futurePlansWithEstimation = await addEstimationToPlans(
             futurePlans,
-            ctx.supabase,
+            estimationStore,
             userId,
           );
           const futurePlansMap = new Map(futurePlansWithEstimation.map((p: any) => [p.id, p]));

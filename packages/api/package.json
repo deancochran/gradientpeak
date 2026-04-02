@@ -22,12 +22,10 @@
     "@repo/auth": "workspace:*",
     "@repo/db": "workspace:*",
     "@repo/core": "workspace:*",
-    "@repo/supabase": "workspace:*",
     "@tanstack/react-query": "^5.90.5",
     "@trpc/client": "^11.16.0",
     "@trpc/react-query": "^11.16.0",
-    "@trpc/server": "^11.16.0",
-    "@supabase/supabase-js": "^2.57.4"
+    "@trpc/server": "^11.16.0"
   },
   "devDependencies": {
     "typescript": "^5.5.2"

@@ -1,23 +1,21 @@
-import { TRPCError } from "@trpc/server";
+import { randomUUID } from "node:crypto";
+import { type ActivityEffortInsert, activityEfforts } from "@repo/db";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+
+type ActivityEffortCreateValues = ActivityEffortInsert;
 
 export const activityEffortsRouter = createTRPCRouter({
   getForProfile: protectedProcedure.query(async ({ ctx }) => {
-    const { data, error } = await ctx.supabase
-      .from("activity_efforts")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .order("recorded_at", { ascending: false });
+    const db = getRequiredDb(ctx);
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
-
-    return data;
+    return await db
+      .select()
+      .from(activityEfforts)
+      .where(eq(activityEfforts.profile_id, ctx.session.user.id))
+      .orderBy(desc(activityEfforts.recorded_at));
   }),
 
   create: protectedProcedure
@@ -34,21 +32,18 @@ export const activityEffortsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const { data, error } = await ctx.supabase
-        .from("activity_efforts")
-        .insert({
-          ...input,
-          profile_id: ctx.session.user.id,
-        })
-        .select()
-        .single();
+      const db = getRequiredDb(ctx);
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      const [data] = await db
+        .insert(activityEfforts)
+        .values({
+          id: randomUUID(),
+          ...input,
+          created_at: new Date(),
+          profile_id: ctx.session.user.id,
+          recorded_at: new Date(input.recorded_at),
+        } satisfies ActivityEffortCreateValues)
+        .returning();
 
       return data;
     }),
@@ -60,18 +55,16 @@ export const activityEffortsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const { error } = await ctx.supabase
-        .from("activity_efforts")
-        .delete()
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id);
+      const db = getRequiredDb(ctx);
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      await db
+        .delete(activityEfforts)
+        .where(
+          and(
+            eq(activityEfforts.id, input.id),
+            eq(activityEfforts.profile_id, ctx.session.user.id),
+          ),
+        );
 
       return { success: true, deletedId: input.id };
     }),

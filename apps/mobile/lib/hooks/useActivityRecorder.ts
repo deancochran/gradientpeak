@@ -14,8 +14,7 @@
  * ```
  */
 
-import type { RecordingServiceActivityPlan } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/db";
+import type { RecordingActivityCategory, RecordingServiceActivityPlan } from "@repo/core";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 import {
@@ -26,6 +25,7 @@ import {
 import type { ConnectedSensor } from "@/lib/services/ActivityRecorder/sensors";
 import type {
   CurrentReadings,
+  RecorderProfileRef,
   RecordingSessionSnapshot,
   RecordingSessionView,
   SessionStats,
@@ -54,7 +54,7 @@ export interface RecorderActions {
   finish: () => Promise<void>;
 
   // Activity selection
-  selectActivity: (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => void;
+  selectActivity: (category: RecordingActivityCategory, gpsRecordingEnabled: boolean) => void;
 
   // Device management
   startScan: () => Promise<void>; // Event-based scanning
@@ -124,7 +124,7 @@ export const RECORDER_HOOK_COMPATIBILITY_PLAN = {
  * ```
  */
 export function useActivityRecorder(
-  profile: PublicProfilesRow | null,
+  profile: RecorderProfileRef | null,
 ): ActivityRecorderService | null {
   const service = useMemo(() => {
     if (!profile) return null;
@@ -468,7 +468,7 @@ export function useLapTime(service: ActivityRecorderService | null): number {
  */
 export function useActivityStatus(service: ActivityRecorderService | null): {
   gpsRecordingEnabled: boolean;
-  activityCategory: PublicActivityCategory;
+  activityCategory: RecordingActivityCategory;
 } {
   const snapshot = useSessionSnapshot(service);
 
@@ -635,7 +635,7 @@ export function useRecorderActions(service: ActivityRecorderService | null): Rec
 
   // Activity selection
   const selectActivity = useCallback(
-    (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => {
+    (category: RecordingActivityCategory, gpsRecordingEnabled: boolean) => {
       if (!service) return;
       service.selectUnplannedActivity(category, gpsRecordingEnabled);
     },

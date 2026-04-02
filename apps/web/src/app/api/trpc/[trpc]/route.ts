@@ -1,14 +1,12 @@
 import { appRouter, createApiContext } from "@repo/api/server";
-import type { Database } from "@repo/supabase";
-import { createServerClient } from "@supabase/ssr";
+import { resolveAuthSession } from "@repo/auth/server";
+import { db } from "@repo/db/client";
 import { fetchRequestHandler as fetchApiRequestHandler } from "@trpc/server/adapters/fetch";
 import { cookies, headers } from "next/headers";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 
 export const GET = handler;
 export const POST = handler;
-
-const serverSupabaseUrl =
-  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 async function handler(request: Request) {
   const headersList = await headers();
@@ -19,36 +17,33 @@ async function handler(request: Request) {
   // 1. Service role key is only used server-side (never exposed to client)
   // 2. API auth middleware validates authentication
   // 3. All queries explicitly filter by ctx.session.user.id
-  const supabase = createServerClient<Database>(
-    serverSupabaseUrl!,
-    process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            );
-          } catch {
-            // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-          }
-        },
+  const supabase = createServiceRoleClient({
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+        } catch {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored in Server Components; web auth is resolved via Better Auth.
+        }
       },
     },
-  );
+  });
 
   return fetchApiRequestHandler({
     endpoint: "/api/trpc",
     req: request,
     router: appRouter,
-    createContext: () =>
+    createContext: async () =>
       createApiContext({
         headers: headersList,
+        auth: {
+          resolveSession: resolveAuthSession,
+        },
+        db,
         supabase,
       }),
   });

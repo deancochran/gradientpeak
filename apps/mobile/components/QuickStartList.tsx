@@ -1,5 +1,4 @@
-import { getActivityDisplayName } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/db";
+import { getActivityDisplayName, type RecordingActivityCategory } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -7,12 +6,12 @@ import { Activity, Bike, ChevronRight, Dumbbell, Footprints, Waves } from "lucid
 import { View } from "react-native";
 
 interface QuickStartListProps {
-  onActivitySelect: (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => void;
+  onActivitySelect: (category: RecordingActivityCategory, gpsRecordingEnabled: boolean) => void;
 }
 
 // Activity configurations
 const ACTIVITY_CONFIGS: {
-  category: PublicActivityCategory;
+  category: RecordingActivityCategory;
   gpsRecordingEnabled: boolean;
   icon: any;
   color: string;
