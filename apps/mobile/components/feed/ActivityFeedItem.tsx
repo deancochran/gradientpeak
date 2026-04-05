@@ -8,8 +8,8 @@ import { useRouter } from "expo-router";
 import { Clock, Heart, MapPin, MessageCircle, TrendingUp, Zap } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
-import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { api } from "@/lib/api";
+import { getActivityCategoryConfig } from "@/lib/constants/activities";
 
 // ============================================
 // TYPES

@@ -1,3 +1,4 @@
+import { invalidateGoalQueries } from "@repo/api/react";
 import {
   buildGoalDraftFromGoal,
   buildGoalUpdatePayload,
@@ -11,7 +12,6 @@ import {
   getGoalObjectiveSummary,
   parseProfileGoalRecord,
 } from "@repo/core";
-import { invalidateGoalQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
@@ -118,9 +118,11 @@ export default function GoalDetailScreen() {
       const milestoneEventId = goalRecord.milestone_event_id
         ? goalRecord.milestone_event_id
         : (
-            await createMilestoneEventMutation.mutateAsync(
-              ({ ...buildMilestoneEventCreateInput({ draft }), lifecycle: { status: "scheduled" }, read_only: false }),
-            )
+            await createMilestoneEventMutation.mutateAsync({
+              ...buildMilestoneEventCreateInput({ draft }),
+              lifecycle: { status: "scheduled" },
+              read_only: false,
+            })
           ).id;
 
       if (goalRecord.milestone_event_id) {

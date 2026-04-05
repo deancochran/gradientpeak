@@ -36,8 +36,8 @@ import {
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import { StreamChart } from "@/components/activity/charts/StreamChart";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/hooks/useAuth";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 // Re-defining interface from StreamChart as it's not exported

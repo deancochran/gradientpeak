@@ -5,8 +5,8 @@ import { useRouter } from "expo-router";
 import { Calendar, Heart } from "lucide-react-native";
 import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
-import { ROUTES } from "@/lib/constants/routes";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
 
 interface TrainingPlanListItemProps {
   plan: {

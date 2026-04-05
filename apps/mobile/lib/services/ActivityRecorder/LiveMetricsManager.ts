@@ -12,7 +12,11 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
-import { GLOBAL_DEFAULTS, type PerformanceMetrics, type RecordingActivityCategory } from "@repo/core";
+import {
+  GLOBAL_DEFAULTS,
+  type PerformanceMetrics,
+  type RecordingActivityCategory,
+} from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";

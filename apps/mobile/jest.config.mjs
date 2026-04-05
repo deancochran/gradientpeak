@@ -17,7 +17,9 @@ export default {
     customExportConditions: ["react-native"],
   },
   testMatch: ["<rootDir>/**/*.jest.test.ts", "<rootDir>/**/*.jest.test.tsx"],
-  transformIgnorePatterns: ["node_modules/(?!(superjson|copy-anything|is-what)/)"],
+  transformIgnorePatterns: [
+    "node_modules/(?!(superjson|copy-anything|is-what|expo(nent)?|@expo|expo-modules-core|expo-asset|expo-file-system|expo-linking|expo-constants|expo-font|expo-crypto|expo-router|react-native|react-native-css-interop|nativewind|@react-native|@react-navigation)/)",
+  ],
   transform: {
     "^.+\\.(t|j)sx?$": [
       "@swc/jest",

@@ -1,7 +1,7 @@
 "use client";
 
-import { getConversationDisplayName, getConversationPreviewText } from "@repo/core";
 import { invalidateConversationQueries } from "@repo/api/react";
+import { getConversationDisplayName, getConversationPreviewText } from "@repo/core";
 import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";

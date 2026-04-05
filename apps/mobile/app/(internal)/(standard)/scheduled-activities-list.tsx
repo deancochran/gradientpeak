@@ -8,9 +8,9 @@ import { Calendar, Plus } from "lucide-react-native";
 import React, { useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityList } from "@/components/plan/calendar/ActivityList";
-import { ROUTES } from "@/lib/constants/routes";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
+import { ROUTES } from "@/lib/constants/routes";
 
 export default function ScheduledScreen() {
   const router = useRouter();

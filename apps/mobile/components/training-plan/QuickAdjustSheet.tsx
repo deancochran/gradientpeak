@@ -7,10 +7,10 @@ import { useRouter } from "expo-router";
 import { Settings2, Sparkles, X } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
-import { api } from "@/lib/api";
 
 interface QuickAdjustSheetProps {
   visible: boolean;

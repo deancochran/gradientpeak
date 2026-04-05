@@ -8,8 +8,8 @@ import { Calendar, CheckCircle2, Heart } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
-import { getActivityConfig } from "@/lib/constants/activities";
 import { api } from "@/lib/api";
+import { getActivityConfig } from "@/lib/constants/activities";
 
 // ============================================
 // TYPES

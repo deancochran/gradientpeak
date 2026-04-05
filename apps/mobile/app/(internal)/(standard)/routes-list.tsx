@@ -6,8 +6,8 @@ import { useRouter } from "expo-router";
 import { MapPin, Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react-native";
 import { Alert, FlatList, Pressable, View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { api } from "@/lib/api";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Run",

@@ -1,8 +1,8 @@
 import { type ProfileGoal, parseProfileGoalRecord } from "@repo/core";
 import { useCallback, useMemo } from "react";
-import { useAuthStore } from "@/lib/stores/auth-store";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 const GOALS_PAGE_SIZE = 100;
 

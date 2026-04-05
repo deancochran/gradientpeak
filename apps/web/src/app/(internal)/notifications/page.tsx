@@ -1,11 +1,11 @@
 "use client";
 
+import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/api/react";
 import {
   getNotificationViewModel,
   getUnreadNotificationIds,
   normalizeNotificationListItem,
 } from "@repo/core";
-import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,

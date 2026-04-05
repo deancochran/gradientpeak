@@ -253,13 +253,6 @@ export const homeRouter = createTRPCRouter({
           activities,
         });
 
-      const { byActivityId: derivedActivityMap, byDate: tssByDate } =
-        await buildDynamicStressSeries({
-          supabase: ctx.supabase,
-          profileId: userId,
-          activities: activities || [],
-        });
-
       const rollingTrainingQuality =
         featureFlags.personalizationTrainingQuality && activities.length > 0
           ? calculateRollingTrainingQuality(

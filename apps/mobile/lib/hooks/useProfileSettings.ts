@@ -5,8 +5,8 @@ import {
   profileTrainingSettingsRecordSchema,
 } from "@repo/core";
 import { useCallback, useMemo } from "react";
-import { useAuthStore } from "@/lib/stores/auth-store";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 const DEFAULT_PROFILE_SETTINGS: AthleteTrainingSettings = defaultAthletePreferenceProfile;
 

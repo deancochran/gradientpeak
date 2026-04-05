@@ -5,11 +5,6 @@ import {
   profileQuickUpdateSchema,
 } from "@repo/core";
 import {
-  getProfileQuickUpdateDefaults,
-  normalizeProfileSettingsView,
-  profileQuickUpdateSchema,
-} from "@repo/core";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -37,7 +32,6 @@ import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { type Resolver, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -232,22 +226,6 @@ export default function SettingsPage() {
     } catch (error) {
       console.error("Error signing out:", error);
       toast.error("Failed to sign out");
-    } finally {
-      setSigningOut(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    try {
-      const { error } = await authClient.signOut();
-      if (error) throw new Error(error.message);
-      await refreshSession();
-      router.push("/auth/login");
-      toast.success("Signed out successfully");
-    } catch (error) {
-      console.error("Error signing out:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to sign out");
     } finally {
       setSigningOut(false);
     }

@@ -9,8 +9,8 @@ import { ChevronRight, Eye, EyeOff, Plus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { ROUTES } from "@/lib/constants/routes";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
 
 function TrainingPlansListScreen() {
   const router = useRouter();

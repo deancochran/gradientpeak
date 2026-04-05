@@ -22,6 +22,7 @@ import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { useServerConfig } from "@/lib/server-config";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function SignInScreen() {
   const router = useRouter();
@@ -76,15 +77,11 @@ export default function SignInScreen() {
         setAuthFormError(form, mappedError.error);
         return;
       }
-      if (!error) {
-        logMobileAction("auth.signIn", "success", { email: data.email });
-        await refreshMobileAuthSession();
-      }
-      if (!error) {
-        await useAuthStore.getState().refreshSession();
-        logMobileAction("auth.signIn", "success", { email: data.email });
-        router.replace("/" as any);
-      }
+
+      logMobileAction("auth.signIn", "success", { email: data.email });
+      await refreshMobileAuthSession();
+      await useAuthStore.getState().refreshSession();
+      router.replace("/" as any);
     } catch (err) {
       logMobileAction("auth.signIn", "failure", {
         email: data.email,

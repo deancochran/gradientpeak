@@ -23,9 +23,9 @@ import {
   type MetricSourceSelection,
   type MetricSourceType,
   type PerformanceMetrics,
+  type RecordingActivityCategory,
   RecordingConfigResolver,
   type RecordingConfiguration,
-  type RecordingActivityCategory,
   type RecordingLaunchIntent,
   RecordingServiceActivityPlan,
   resolveMetricSources as resolveCoreMetricSources,
@@ -55,6 +55,7 @@ import { type ConnectedSensor, SensorsManager } from "./sensors";
 import { RecordingSessionController } from "./sessionController";
 import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
 import {
+  type RecorderProfileRef,
   type RecordingMetadata,
   type RecordingPlanView,
   type RecordingRuntimeSourceState,
@@ -65,7 +66,6 @@ import {
   type RecordingSessionView,
   type RecordingSourceChangeEvent,
   type RecordingTrainerView,
-  type RecorderProfileRef,
   SensorReading,
 } from "./types";
 

@@ -1,9 +1,9 @@
+import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/api/react";
 import {
   getNotificationViewModel,
   getUnreadNotificationIds,
   normalizeNotificationListItem,
 } from "@repo/core";
-import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/api/react";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
