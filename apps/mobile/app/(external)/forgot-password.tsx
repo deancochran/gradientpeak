@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";

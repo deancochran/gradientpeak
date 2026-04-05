@@ -2,6 +2,7 @@ import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
+import { RadioGroup, RadioGroupItem } from "@repo/ui/components/radio-group";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
@@ -701,5 +702,13 @@ export default function TrainingPlanOverview() {
         )}
       </View>
     </ScrollView>
+  );
+}
+
+function TrainingPlanDetailChip({ label }: { label: string }) {
+  return (
+    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+      <Text className="text-xs font-medium capitalize text-foreground">{label}</Text>
+    </View>
   );
 }

@@ -1,5 +1,6 @@
 import { buildMobileCallbackUrl } from "@repo/auth/callbacks";
 import { type NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 
 const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://sign-in";
 

@@ -140,6 +140,8 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@swc/core": "^1.13.12",
+    "@swc/jest": "^0.2.39",
     "@babel/core": "^7.28.5",
     "@expo/metro-config": "~54.0.8",
     "@repo/typescript-config": "workspace:*",

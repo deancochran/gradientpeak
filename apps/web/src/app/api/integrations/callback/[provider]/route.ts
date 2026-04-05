@@ -4,6 +4,9 @@ import type { PublicIntegrationProvider } from "@repo/db";
 import { db } from "@repo/db/client";
 import { NextRequest, NextResponse } from "next/server";
 
+const serverSupabaseUrl =
+  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+
 class OAuthTokenExchangeError extends Error {
   constructor(
     message: string,

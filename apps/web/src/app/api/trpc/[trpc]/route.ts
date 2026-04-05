@@ -7,6 +7,9 @@ import { headers } from "next/headers";
 export const GET = handler;
 export const POST = handler;
 
+const serverSupabaseUrl =
+  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+
 async function handler(request: Request) {
   const headersList = await headers();
 

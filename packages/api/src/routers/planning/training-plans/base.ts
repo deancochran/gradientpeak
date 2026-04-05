@@ -3665,6 +3665,12 @@ export async function getPlanTabProjectionService({
     activities: (actualActivities || []).map(normalizeActivitySummaryRow),
   });
 
+  const actualDerivedMap = await buildActivityDerivedSummaryMap({
+    supabase,
+    profileId,
+    activities: actualActivities || [],
+  });
+
   const actualByDate = new Map<string, number>();
   for (const activity of actualActivities || []) {
     if (!activity.started_at) continue;
@@ -4628,6 +4634,12 @@ export const trainingPlansRouter = createTRPCRouter({
       activities: weekActivities,
     });
 
+    const weekActivitiesDerivedMap = await buildActivityDerivedSummaryMap({
+      supabase: ctx.supabase,
+      profileId: ctx.session.user.id,
+      activities: weekActivities || [],
+    });
+
     const completedWeeklyTSS =
       weekActivities.reduce(
         (sum: number, act: { id: string }) =>
@@ -5200,6 +5212,12 @@ export const trainingPlansRouter = createTRPCRouter({
         activities: completedActivities,
       });
 
+      const completedDerivedMap = await buildActivityDerivedSummaryMap({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        activities: completedActivities || [],
+      });
+
       // Group by week
       const weekSummaries = [];
       for (let i = input.weeks_back - 1; i >= 0; i--) {
@@ -5471,6 +5489,12 @@ export const trainingPlansRouter = createTRPCRouter({
         activities,
       });
 
+      const derivedMap = await buildActivityDerivedSummaryMap({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        activities: activities || [],
+      });
+
       // Group by week
       type IntensityZone =
         | "recovery"
@@ -5594,6 +5618,18 @@ export const trainingPlansRouter = createTRPCRouter({
       const activities = allActivities.filter(
         (a: any) => (derivedMap.get(a.id)?.intensity_factor || 0) >= 0.85,
       );
+
+      const derivedMap = await buildActivityDerivedSummaryMap({
+        supabase: ctx.supabase,
+        profileId: ctx.session.user.id,
+        activities: allActivities || [],
+      });
+
+      // Filter activities with IF >= 0.85
+      const activities =
+        allActivities?.filter((a) => {
+          return (derivedMap.get(a.id)?.intensity_factor || 0) >= 0.85;
+        }) || [];
 
       const violations: Array<{
         activity1: {

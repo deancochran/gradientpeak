@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
+import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React from "react";
@@ -79,8 +80,11 @@ export default function SignInScreen() {
         logMobileAction("auth.signIn", "success", { email: data.email });
         await refreshMobileAuthSession();
       }
-      // On success, the `onAuthStateChange` listener in the auth store
-      // will handle the session and trigger a redirect automatically.
+      if (!error) {
+        await useAuthStore.getState().refreshSession();
+        logMobileAction("auth.signIn", "success", { email: data.email });
+        router.replace("/" as any);
+      }
     } catch (err) {
       logMobileAction("auth.signIn", "failure", {
         email: data.email,

@@ -32,7 +32,7 @@ export const useAuth = () => {
     return !!user.emailVerified;
   }, [user]);
 
-  // Source of truth for verification is Supabase's email_confirmed_at.
+  // Source of truth for verification is Better Auth's emailVerified flag.
   const userStatus = useMemo(() => {
     if (!isAuthenticated) return null;
     return isEmailVerified ? ("verified" as const) : ("unverified" as const);

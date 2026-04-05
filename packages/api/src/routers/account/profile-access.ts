@@ -13,6 +13,7 @@ export async function assertProfileAccess({
   profileId,
 }: AssertProfileAccessParams): Promise<void> {
   const requesterId = ctx.session?.user?.id;
+  const supabase = ctx.supabase as any;
 
   if (!requesterId) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
