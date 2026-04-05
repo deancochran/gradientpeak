@@ -102,18 +102,14 @@ packages/*/lib/
 *.tsbuildinfo
 .aider*
 
-# OpenCode - ignore temporary/state files but allow config
-.opencode/temp/
-.opencode/state/
-.opencode/logs/
+# OpenCode / local coordinator config
+.opencode/
+opencode.json
+
+# Local config
+.config/
 
 # Claude Code
 .claude/
 
-# Allow these to be tracked (valuable project assets):
-# OpenCode:
-# - .opencode/agents/ (agent definitions)
-# - .opencode/skills/ (reusable skills)
-# - .opencode/commands/ (custom commands)
-# - opencode.json (agent config)
-# - CLAUDE.md (project documentation)
+# CLAUDE.md may still be tracked as project documentation.
