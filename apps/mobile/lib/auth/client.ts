@@ -1,5 +1,9 @@
 import type { AuthCallbackIntent } from "@repo/auth/callbacks";
-import { buildAuthCallbackUrls, mobileCallbackPayloadSchema } from "@repo/auth/callbacks";
+import {
+  buildAuthCallbackUrls,
+  buildMobileCallbackUrl,
+  mobileCallbackPayloadSchema,
+} from "@repo/auth/callbacks";
 import {
   normalizeGradientPeakAuthClientSession,
   resolveGradientPeakAuthBaseUrl,
@@ -8,27 +12,37 @@ import { createGradientPeakExpoAuthClient } from "@repo/auth/client/expo";
 import type { AuthSession } from "@repo/auth/session";
 import * as SecureStore from "expo-secure-store";
 import { getAppScheme } from "@/lib/hooks/useAppScheme";
-import { getServerConfig } from "@/lib/server-config";
+import { getServerConfig, subscribeServerConfig } from "@/lib/server-config";
 
 type SessionListener = (session: AuthSession | null) => void;
 
 const listeners = new Set<SessionListener>();
 
-const authClient = createGradientPeakExpoAuthClient({
-  baseURL: resolveGradientPeakAuthBaseUrl({
-    appBaseUrl: getServerConfig().apiUrl,
-  }),
-  scheme: getAppScheme(),
-  storage: {
-    getItemAsync: SecureStore.getItemAsync,
-    setItemAsync: SecureStore.setItemAsync,
-    deleteItemAsync: SecureStore.deleteItemAsync,
-  },
-});
+function createMobileAuthClient() {
+  return createGradientPeakExpoAuthClient({
+    baseURL: resolveGradientPeakAuthBaseUrl({
+      appBaseUrl: getServerConfig().apiUrl,
+    }),
+    scheme: getAppScheme(),
+    storage: {
+      getItem: SecureStore.getItem,
+      setItem: SecureStore.setItem,
+    },
+  });
+}
 
-export { authClient };
+export let authClient = createMobileAuthClient();
 
 let unsubscribe: (() => void) | null = null;
+
+subscribeServerConfig(() => {
+  authClient = createMobileAuthClient();
+  if (unsubscribe) {
+    unsubscribe();
+    unsubscribe = null;
+  }
+  void emitCurrentSession();
+});
 
 function normalizeSession(session: unknown) {
   return normalizeGradientPeakAuthClientSession(session as any, "bearer");
@@ -67,12 +81,28 @@ function getMobileCallbackUrl(intent: AuthCallbackIntent) {
   ).callbackUrl;
 }
 
+export function buildMobileDeepLinkCallback(input: {
+  intent: AuthCallbackIntent;
+  token?: string;
+  code?: string;
+  error?: string;
+}) {
+  return buildMobileCallbackUrl(input, {
+    mobileScheme: getAppScheme(),
+    mobileCallbackPath: "callback",
+  });
+}
+
 export function getEmailVerificationCallbackUrl() {
   return getMobileCallbackUrl("email-verification");
 }
 
 export function getPasswordResetCallbackUrl() {
   return getMobileCallbackUrl("password-reset");
+}
+
+export function getPostSignInCallbackUrl() {
+  return getMobileCallbackUrl("post-sign-in");
 }
 
 export function parseMobileAuthCallback(input: Record<string, unknown>) {

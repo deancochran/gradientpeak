@@ -14,9 +14,11 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
+import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 
 // Initialize Sentry error tracking for production
@@ -88,7 +90,9 @@ function AppShell() {
 }
 
 export default function RootLayout() {
-  console.log("RootLayout loaded");
+  const { initialized } = useServerConfig();
+  const authReady = useAuthStore((state) => state.ready);
+  const initializeAuth = useAuthStore((state) => state.initialize);
 
   // Clean up any orphaned recording files on app startup
   React.useEffect(() => {
@@ -99,10 +103,17 @@ export default function RootLayout() {
     GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
       console.warn("Failed to cleanup orphaned FIT recordings:", error);
     });
-
-    // Note: Sentry is initialized at module level above to catch early errors
-    console.log("App initialization complete - Sentry active in production");
   }, []);
+
+  React.useEffect(() => {
+    void initializeServerConfig();
+  }, []);
+
+  React.useEffect(() => {
+    if (initialized && !authReady) {
+      void initializeAuth();
+    }
+  }, [authReady, initializeAuth, initialized]);
 
   return (
     <QueryProvider>

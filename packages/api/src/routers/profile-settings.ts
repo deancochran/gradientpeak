@@ -4,10 +4,77 @@ import {
   defaultAthletePreferenceProfile,
   profileTrainingSettingsRecordSchema,
 } from "@repo/core";
+import { type ProfileTrainingSettingsRow, profileTrainingSettings } from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { assertProfileAccess } from "./account/profile-access";
+
+type DbClient = ReturnType<typeof getRequiredDb>;
+
+type ProfileTrainingSettingsSqlRow = Pick<
+  ProfileTrainingSettingsRow,
+  "profile_id" | "settings" | "updated_at"
+>;
+
+function getSqlRows<T>(result: unknown) {
+  return ((result as { rows?: T[] }).rows ?? []) as T[];
+}
+
+function normalizeProfileSettingsRow(row: ProfileTrainingSettingsSqlRow) {
+  return {
+    ...row,
+    updated_at:
+      row.updated_at instanceof Date
+        ? row.updated_at.toISOString()
+        : typeof row.updated_at === "string"
+          ? row.updated_at
+          : undefined,
+  };
+}
+
+async function getProfileTrainingSettingsRow(db: DbClient, profileId: string) {
+  const [row] = await db
+    .select({
+      profile_id: profileTrainingSettings.profile_id,
+      settings: profileTrainingSettings.settings,
+      updated_at: profileTrainingSettings.updated_at,
+    })
+    .from(profileTrainingSettings)
+    .where(eq(profileTrainingSettings.profile_id, profileId))
+    .limit(1);
+
+  return (row as ProfileTrainingSettingsSqlRow | undefined) ?? null;
+}
+
+async function upsertProfileTrainingSettingsRow(
+  db: DbClient,
+  input: { profile_id: string; settings: z.infer<typeof athleteTrainingSettingsSchema> },
+) {
+  const [row] = await db
+    .insert(profileTrainingSettings)
+    .values({
+      profile_id: input.profile_id,
+      settings: input.settings,
+      updated_at: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: profileTrainingSettings.profile_id,
+      set: {
+        settings: input.settings,
+        updated_at: new Date(),
+      },
+    })
+    .returning({
+      profile_id: profileTrainingSettings.profile_id,
+      settings: profileTrainingSettings.settings,
+      updated_at: profileTrainingSettings.updated_at,
+    });
+
+  return (row as ProfileTrainingSettingsSqlRow | undefined) ?? null;
+}
 
 function coerceLegacyProfileSettings(settings: unknown) {
   if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
@@ -114,29 +181,20 @@ export const profileSettingsRouter = createTRPCRouter({
   getForProfile: protectedProcedure
     .input(profileSettingsInputSchema)
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+
       await assertProfileAccess({
         ctx,
         profileId: input.profile_id,
       });
 
-      const { data, error } = await ctx.supabase
-        .from("profile_training_settings")
-        .select("*")
-        .eq("profile_id", input.profile_id)
-        .maybeSingle();
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch profile settings",
-        });
-      }
+      const data = await getProfileTrainingSettingsRow(db, input.profile_id);
 
       if (!data) {
         return null;
       }
 
-      const parsed = parseProfileSettingsRecord(data);
+      const parsed = parseProfileSettingsRecord(normalizeProfileSettingsRow(data));
 
       if (!parsed.success) {
         throw new TRPCError({
@@ -151,31 +209,23 @@ export const profileSettingsRouter = createTRPCRouter({
   upsert: protectedProcedure
     .input(profileSettingsUpsertInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+
       await assertProfileAccess({
         ctx,
         profileId: input.profile_id,
       });
 
-      const { data, error } = await ctx.supabase
-        .from("profile_training_settings")
-        .upsert(
-          {
-            profile_id: input.profile_id,
-            settings: input.settings,
-          },
-          { onConflict: "profile_id" },
-        )
-        .select("*")
-        .single();
+      const data = await upsertProfileTrainingSettingsRow(db, input);
 
-      if (error || !data) {
+      if (!data) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to upsert profile settings",
         });
       }
 
-      const parsed = parseProfileSettingsRecord(data);
+      const parsed = parseProfileSettingsRecord(normalizeProfileSettingsRow(data));
 
       if (!parsed.success) {
         throw new TRPCError({

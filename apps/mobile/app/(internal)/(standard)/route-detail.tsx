@@ -8,8 +8,8 @@ import { Calendar, Heart, MapPin, Trash2, TrendingDown, TrendingUp } from "lucid
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { api } from "@/lib/api";
+import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Outdoor Run",
@@ -68,7 +68,10 @@ export default function RouteDetailScreen() {
     }
   }, [route?.has_liked]);
 
-  const coordinates = useMemo(() => (route ? decodePolyline(route.polyline) : []), [route]);
+  const coordinates = useMemo(
+    () => (route?.polyline ? decodePolyline(route.polyline) : []),
+    [route],
+  );
 
   const handleDelete = () => {
     if (!route) return;
@@ -202,7 +205,7 @@ export default function RouteDetailScreen() {
             <View className="flex-row flex-wrap gap-2">
               <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                 <Text className="text-xs font-medium text-foreground">
-                  {formatDistance(route.total_distance)}
+                  {formatDistance(route.total_distance ?? 0)}
                 </Text>
               </View>
               {route.total_ascent != null && route.total_ascent > 0 ? (
@@ -231,7 +234,7 @@ export default function RouteDetailScreen() {
                     <MapPin size={20} className="text-muted-foreground" />
                     <Text className="text-muted-foreground">Distance</Text>
                   </View>
-                  <Text className="font-semibold">{formatDistance(route.total_distance)}</Text>
+                  <Text className="font-semibold">{formatDistance(route.total_distance ?? 0)}</Text>
                 </View>
 
                 {route.total_ascent != null && route.total_ascent > 0 && (

@@ -3,6 +3,7 @@ export { CalendarDayList } from "./CalendarDayList";
 export { CalendarEventCard } from "./CalendarEventCard";
 export { CalendarEventPreviewSheet } from "./CalendarEventPreviewSheet";
 export { CalendarHeader } from "./CalendarHeader";
+export { CalendarManualCreateModal } from "./CalendarManualCreateModal";
 export { CalendarModeSwitcher } from "./CalendarModeSwitcher";
 export { CalendarMonthList } from "./CalendarMonthList";
 export { CalendarPlannedActivityPickerModal } from "./CalendarPlannedActivityPickerModal";

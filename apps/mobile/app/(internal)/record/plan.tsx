@@ -14,8 +14,11 @@
  */
 
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
-import type { RecordingServiceActivityPlan } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/db";
+import {
+  type ActivityCategory,
+  activityPlanStructureSchemaV2,
+  type RecordingServiceActivityPlan,
+} from "@repo/core";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
@@ -32,7 +35,7 @@ type RouterOutputs = inferRouterOutputs<AppRouter>;
 type PlannedActivity = RouterOutputs["events"]["getToday"][number];
 
 const CATEGORY_OPTIONS: {
-  value: PublicActivityCategory | "all";
+  value: ActivityCategory | "all";
   label: string;
 }[] = [
   { value: "all", label: "All Categories" },
@@ -50,7 +53,7 @@ export default function PlanPickerPage() {
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<PublicActivityCategory | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<ActivityCategory | "all">("all");
 
   // Fetch today's planned events
   const { data: plannedActivities, isLoading } = api.events.getToday.useQuery();
@@ -102,11 +105,14 @@ export default function PlanPickerPage() {
         return false;
       }
 
+      const parsedStructure = activityPlanStructureSchemaV2.parse(planData.structure);
+
       const selectedPlan: RecordingServiceActivityPlan = {
         name: planData.name,
-        description: planData.description ?? undefined,
-        structure: planData.structure,
-        activity_category: planData.activity_category || service.selectedActivityCategory,
+        description: planData.description ?? "",
+        structure: parsedStructure,
+        activity_category:
+          (planData.activity_category as ActivityCategory) || service.selectedActivityCategory,
         route_id: planData.route_id ?? null,
       };
 

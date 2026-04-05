@@ -5,12 +5,22 @@ import {
   activityEfforts,
   activityPlans,
   activityRoutes,
+  coachesAthletes,
+  coachingInvitations,
+  comments,
+  conversationParticipants,
+  conversations,
   events,
+  follows,
   integrations,
   likes,
+  messages,
+  notifications,
   oauthStates,
+  profileGoals,
   profileMetrics,
   profiles,
+  profileTrainingSettings,
   syncedEvents,
   trainingPlans,
 } from "./tables";
@@ -19,11 +29,29 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   activities: many(activities),
   activityPlans: many(activityPlans),
   activityRoutes: many(activityRoutes),
+  coachingInvitationsReceived: many(coachingInvitations, {
+    relationName: "coachingInvitationAthlete",
+  }),
+  coachingInvitationsSent: many(coachingInvitations, {
+    relationName: "coachingInvitationCoach",
+  }),
+  coachedAthleteLinks: many(coachesAthletes, { relationName: "coachAthleteCoach" }),
+  coachLink: many(coachesAthletes, { relationName: "coachAthleteAthlete" }),
+  conversationParticipants: many(conversationParticipants),
+  conversationsStarted: many(messages, { relationName: "messageSender" }),
   events: many(events),
   integrations: many(integrations),
   likes: many(likes),
+  messages: many(messages, { relationName: "messageSender" }),
+  comments: many(comments),
+  outgoingFollows: many(follows, { relationName: "follower" }),
+  incomingFollows: many(follows, { relationName: "following" }),
+  notificationsReceived: many(notifications, { relationName: "notificationRecipient" }),
+  notificationsTriggered: many(notifications, { relationName: "notificationActor" }),
   oauthStates: many(oauthStates),
+  profileGoals: many(profileGoals),
   profileMetrics: many(profileMetrics),
+  profileTrainingSettings: many(profileTrainingSettings),
   syncedEvents: many(syncedEvents),
   trainingPlans: many(trainingPlans),
 }));
@@ -119,6 +147,24 @@ export const profileMetricsRelations = relations(profileMetrics, ({ one }) => ({
   }),
 }));
 
+export const profileTrainingSettingsRelations = relations(profileTrainingSettings, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [profileTrainingSettings.profile_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const profileGoalsRelations = relations(profileGoals, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [profileGoals.profile_id],
+    references: [profiles.id],
+  }),
+  milestoneEvent: one(events, {
+    fields: [profileGoals.milestone_event_id],
+    references: [events.id],
+  }),
+}));
+
 export const oauthStatesRelations = relations(oauthStates, ({ one }) => ({
   profile: one(profiles, {
     fields: [oauthStates.profile_id],
@@ -144,6 +190,93 @@ export const likesRelations = relations(likes, ({ one }) => ({
   }),
 }));
 
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  recipient: one(profiles, {
+    relationName: "notificationRecipient",
+    fields: [notifications.user_id],
+    references: [profiles.id],
+  }),
+  actor: one(profiles, {
+    relationName: "notificationActor",
+    fields: [notifications.actor_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const coachingInvitationsRelations = relations(coachingInvitations, ({ one }) => ({
+  athlete: one(profiles, {
+    relationName: "coachingInvitationAthlete",
+    fields: [coachingInvitations.athlete_id],
+    references: [profiles.id],
+  }),
+  coach: one(profiles, {
+    relationName: "coachingInvitationCoach",
+    fields: [coachingInvitations.coach_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const coachesAthletesRelations = relations(coachesAthletes, ({ one }) => ({
+  coach: one(profiles, {
+    relationName: "coachAthleteCoach",
+    fields: [coachesAthletes.coach_id],
+    references: [profiles.id],
+  }),
+  athlete: one(profiles, {
+    relationName: "coachAthleteAthlete",
+    fields: [coachesAthletes.athlete_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const conversationsRelations = relations(conversations, ({ many }) => ({
+  participants: many(conversationParticipants),
+  messages: many(messages),
+}));
+
+export const conversationParticipantsRelations = relations(conversationParticipants, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [conversationParticipants.conversation_id],
+    references: [conversations.id],
+  }),
+  user: one(profiles, {
+    fields: [conversationParticipants.user_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [messages.conversation_id],
+    references: [conversations.id],
+  }),
+  sender: one(profiles, {
+    relationName: "messageSender",
+    fields: [messages.sender_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const followsRelations = relations(follows, ({ one }) => ({
+  follower: one(profiles, {
+    relationName: "follower",
+    fields: [follows.follower_id],
+    references: [profiles.id],
+  }),
+  following: one(profiles, {
+    relationName: "following",
+    fields: [follows.following_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const commentsRelations = relations(comments, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [comments.profile_id],
+    references: [profiles.id],
+  }),
+}));
+
 export const relationsSchema = {
   profilesRelations,
   activityRoutesRelations,
@@ -153,8 +286,18 @@ export const relationsSchema = {
   activitiesRelations,
   activityEffortsRelations,
   integrationsRelations,
+  profileTrainingSettingsRelations,
+  profileGoalsRelations,
   profileMetricsRelations,
   oauthStatesRelations,
   syncedEventsRelations,
   likesRelations,
+  notificationsRelations,
+  coachingInvitationsRelations,
+  coachesAthletesRelations,
+  conversationsRelations,
+  conversationParticipantsRelations,
+  messagesRelations,
+  followsRelations,
+  commentsRelations,
 };

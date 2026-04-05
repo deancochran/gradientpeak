@@ -23,6 +23,7 @@ coverage/**/*
 
 # Turbo
 .turbo/
+.tmp/
 
 # Vercel
 .vercel/
@@ -60,8 +61,13 @@ android/
 
 
 # Supabase generated stuff
+supabase/.temp/
+supabase/.branches/
 packages/supabase/.temp/
 packages/supabase/.branches/
+
+# Worktree artifacts
+.worktrees/
 # ------------------------------
 # Logs & Debug
 # ------------------------------
@@ -93,6 +99,7 @@ packages/*/lib/
 .vscode/
 .idea/
 *.log
+*.tsbuildinfo
 .aider*
 
 # OpenCode - ignore temporary/state files but allow config

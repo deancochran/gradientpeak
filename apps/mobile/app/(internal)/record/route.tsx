@@ -13,7 +13,7 @@
  * - Recording continues in background
  */
 
-import type { PublicActivityCategory } from "@repo/db";
+import type { ActivityCategory } from "@repo/core";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
@@ -22,13 +22,13 @@ import { router } from "expo-router";
 import { Check, Route, Search } from "lucide-react-native";
 import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { api } from "@/lib/api";
 import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import { api } from "@/lib/api";
 
 const CATEGORY_OPTIONS: {
-  value: PublicActivityCategory | "all";
+  value: ActivityCategory | "all";
   label: string;
 }[] = [
   { value: "all", label: "All Categories" },
@@ -47,7 +47,7 @@ export default function RoutePickerPage() {
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<PublicActivityCategory | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<ActivityCategory | "all">("all");
 
   // Fetch routes (no category filter in query since we filter client-side)
   const { data: routes, isLoading } = api.routes.list.useInfiniteQuery(

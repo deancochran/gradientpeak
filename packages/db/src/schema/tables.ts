@@ -5,6 +5,7 @@ import {
   jsonb,
   numeric,
   pgTable,
+  primaryKey,
   real,
   serial,
   text,
@@ -15,12 +16,14 @@ import {
 
 import {
   activityCategoryEnum,
+  coachingInvitationStatusEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
   genderEnum,
   integrationProviderEnum,
   likeEntityTypeEnum,
+  notificationTypeEnum,
   profileMetricTypeEnum,
 } from "./enums";
 
@@ -31,10 +34,14 @@ export const profiles = pgTable("profiles", {
   updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
   email: text("email"),
   full_name: text("full_name"),
+  username: text("username"),
   avatar_url: text("avatar_url"),
   bio: text("bio"),
   dob: timestamp("dob", { withTimezone: true, mode: "date" }),
   gender: genderEnum("gender"),
+  language: text("language"),
+  preferred_units: text("preferred_units", { enum: ["metric", "imperial"] }),
+  onboarded: boolean("onboarded"),
   is_public: boolean("is_public").notNull(),
 });
 
@@ -92,16 +99,19 @@ export const activityPlans = pgTable("activity_plans", {
 
 export const trainingPlans = pgTable("training_plans", {
   id: uuid("id").primaryKey(),
+  idx: integer("idx"),
   created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
   updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
-  profile_id: uuid("profile_id")
-    .notNull()
-    .references(() => profiles.id),
+  profile_id: uuid("profile_id").references(() => profiles.id),
   name: text("name").notNull(),
   description: text("description"),
   structure: jsonb("structure"),
   template_visibility: text("template_visibility"),
-  is_public: boolean("is_public"),
+  is_public: boolean("is_public").notNull(),
+  is_system_template: boolean("is_system_template").notNull(),
+  sessions_per_week_target: integer("sessions_per_week_target"),
+  duration_hours: numeric("duration_hours", { precision: 12, scale: 2 }),
+  likes_count: integer("likes_count"),
 });
 
 export const events = pgTable("events", {
@@ -258,6 +268,37 @@ export const profileMetrics = pgTable("profile_metrics", {
   value: numeric("value", { precision: 12, scale: 4 }).notNull(),
 });
 
+export const profileTrainingSettings = pgTable("profile_training_settings", {
+  profile_id: uuid("profile_id")
+    .primaryKey()
+    .references(() => profiles.id),
+  settings: jsonb("settings").notNull(),
+  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+});
+
+export const profileGoals = pgTable(
+  "profile_goals",
+  {
+    id: uuid("id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id),
+    milestone_event_id: uuid("milestone_event_id")
+      .notNull()
+      .references(() => events.id),
+    title: text("title").notNull(),
+    priority: integer("priority").notNull(),
+    activity_category: text("activity_category"),
+    target_payload: jsonb("target_payload"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    index("idx_profile_goals_profile_id").on(table.profile_id),
+    index("idx_profile_goals_milestone_event_id").on(table.milestone_event_id),
+  ],
+);
+
 export const oauthStates = pgTable(
   "oauth_states",
   {
@@ -296,6 +337,136 @@ export const syncedEvents = pgTable("synced_events", {
   external_id: text("external_id").notNull(),
 });
 
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey(),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id),
+    actor_id: uuid("actor_id")
+      .notNull()
+      .references(() => profiles.id),
+    type: notificationTypeEnum("type").notNull(),
+    entity_id: uuid("entity_id"),
+    read_at: timestamp("read_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    index("idx_notifications_user_id").on(table.user_id),
+    index("idx_notifications_read_at").on(table.read_at),
+  ],
+);
+
+export const coachingInvitations = pgTable(
+  "coaching_invitations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    athlete_id: uuid("athlete_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    coach_id: uuid("coach_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    status: coachingInvitationStatusEnum("status").notNull().default("pending"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("coaching_invitations_athlete_id_coach_id_unique").on(table.athlete_id, table.coach_id),
+    index("idx_coaching_invitations_athlete_id").on(table.athlete_id),
+    index("idx_coaching_invitations_coach_id").on(table.coach_id),
+  ],
+);
+
+export const coachesAthletes = pgTable(
+  "coaches_athletes",
+  {
+    coach_id: uuid("coach_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    athlete_id: uuid("athlete_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.coach_id, table.athlete_id] }),
+    unique("coaches_athletes_athlete_id_unique").on(table.athlete_id),
+  ],
+);
+
+export const conversations = pgTable("conversations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  is_group: boolean("is_group").notNull().default(false),
+  group_name: text("group_name"),
+  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+  last_message_at: timestamp("last_message_at", { withTimezone: true, mode: "date" })
+    .defaultNow()
+    .notNull(),
+});
+
+export const conversationParticipants = pgTable(
+  "conversation_participants",
+  {
+    conversation_id: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    user_id: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.conversation_id, table.user_id] })],
+);
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversation_id: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    sender_id: uuid("sender_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    deleted_at: timestamp("deleted_at", { withTimezone: true, mode: "date" }),
+    read_at: timestamp("read_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [index("idx_messages_conversation_id").on(table.conversation_id)],
+);
+
+export const follows = pgTable(
+  "follows",
+  {
+    follower_id: uuid("follower_id")
+      .notNull()
+      .references(() => profiles.id),
+    following_id: uuid("following_id")
+      .notNull()
+      .references(() => profiles.id),
+    status: text("status", { enum: ["pending", "accepted"] }).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.follower_id, table.following_id] }),
+    index("idx_follows_following_id").on(table.following_id),
+  ],
+);
+
 export const likes = pgTable("likes", {
   id: uuid("id").primaryKey(),
   created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
@@ -305,3 +476,23 @@ export const likes = pgTable("likes", {
   entity_id: uuid("entity_id").notNull(),
   entity_type: likeEntityTypeEnum("entity_type").notNull(),
 });
+
+export const comments = pgTable(
+  "comments",
+  {
+    id: uuid("id").primaryKey(),
+    profile_id: uuid("profile_id").references(() => profiles.id),
+    entity_type: text("entity_type", {
+      enum: ["activity", "training_plan", "activity_plan", "route"],
+    }).notNull(),
+    entity_id: uuid("entity_id").notNull(),
+    content: text("content").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    index("idx_comments_entity").on(table.entity_type, table.entity_id),
+    index("idx_comments_profile_id").on(table.profile_id, table.created_at),
+    index("idx_comments_created_at").on(table.created_at),
+  ],
+);

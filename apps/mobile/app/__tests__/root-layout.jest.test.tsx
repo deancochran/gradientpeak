@@ -115,7 +115,12 @@ jest.mock("@/lib/services/sentry", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: any) => selector({ clearSession: jest.fn(async () => undefined) }),
+  useAuthStore: (selector: any) =>
+    selector({
+      clearSession: jest.fn(async () => undefined),
+      initialize: jest.fn(async () => undefined),
+      ready: true,
+    }),
 }));
 
 jest.mock("@/lib/stores/theme-store", () => ({

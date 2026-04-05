@@ -85,6 +85,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Calendar, ChevronDown, ChevronUp, Clock, TrendingUp, X } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
+import type { UseFormReturn } from "react-hook-form";
 import {
   ActivityIndicator,
   Alert,
@@ -96,8 +97,9 @@ import {
 } from "react-native";
 import { z } from "zod";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
-import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
 import { api } from "@/lib/api";
+import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
+import { applyServerFormErrors, getErrorMessage } from "@/lib/utils/formErrors";
 import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
 
 type PlannedActivityScheduleFormInput = z.input<typeof plannedActivityScheduleFormSchema>;
@@ -156,6 +158,53 @@ function toPickerDate(value: string | null | undefined): Date {
 
 function alertSuccess(message: string) {
   Alert.alert("Success", message);
+}
+
+function setRootFormError(
+  form: Partial<Pick<UseFormReturn<PlannedActivityScheduleFormOutput>, "setError">>,
+  error: unknown,
+  fallbackMessage: string,
+) {
+  if (
+    form.setError &&
+    applyServerFormErrors(
+      form as Pick<UseFormReturn<PlannedActivityScheduleFormOutput>, "setError">,
+      error,
+    )
+  ) {
+    return;
+  }
+
+  form.setError?.("root", {
+    type: "server",
+    message: getErrorMessage(error) || fallbackMessage,
+  });
+}
+
+function clearRootFormError(
+  form: Partial<Pick<UseFormReturn<PlannedActivityScheduleFormOutput>, "clearErrors">>,
+) {
+  form.clearErrors?.("root");
+}
+
+async function runMutation<TInput>(
+  mutation: {
+    mutateAsync?: (input: TInput) => Promise<unknown>;
+    mutate?: (input: TInput) => void;
+  },
+  input: TInput,
+) {
+  if (mutation.mutateAsync) {
+    await mutation.mutateAsync(input);
+    return;
+  }
+
+  if (mutation.mutate) {
+    mutation.mutate(input);
+    return;
+  }
+
+  throw new Error("Mutation is unavailable");
 }
 
 function buildAllDayStartIso(value: Date) {
@@ -286,47 +335,44 @@ export function ScheduleActivityModal({
   const queryClient = useQueryClient();
   const existingActivityIsRecurring = isRecurringEvent(existingActivity);
 
-  const createMutation = api.events.create.useMutation({
-    onSuccess: async () => {
-      await refreshScheduleWithCallbacks({
-        queryClient,
-        callbacks: onSuccess ? [onSuccess] : [],
-      });
-      onClose();
-      setTimeout(() => {
-        alertSuccess("Activity scheduled!");
-      }, 300);
-    },
-  });
+  const createMutation = api.events.create.useMutation();
 
-  const updateMutation = api.events.update.useMutation({
-    onSuccess: async () => {
-      await refreshScheduleWithCallbacks({
-        queryClient,
-        callbacks: onSuccess ? [onSuccess] : [],
-      });
-      onClose();
-      setTimeout(() => {
-        alertSuccess("Activity updated!");
-      }, 300);
-    },
-  });
+  const updateMutation = api.events.update.useMutation();
 
-  const submitEditWithScope = (
+  const handleMutationSuccess = async (message: string) => {
+    await refreshScheduleWithCallbacks({
+      queryClient,
+      callbacks: onSuccess ? [onSuccess] : [],
+    });
+    onClose();
+    setTimeout(() => {
+      alertSuccess(message);
+    }, 300);
+  };
+
+  const submitEditWithScope = async (
     data: PlannedActivityScheduleFormOutput,
     scope: "single" | "future" | "series",
   ) => {
-    updateMutation.mutate({
-      id: eventId!,
-      scope,
-      patch: {
-        activity_plan_id: data.activity_plan_id,
-        notes: data.notes || null,
-        all_day: allDay,
-        timezone: "UTC",
-        starts_at: allDay ? buildAllDayStartIso(startsAt) : startsAt.toISOString(),
-      },
-    });
+    clearRootFormError(form);
+
+    try {
+      await runMutation(updateMutation, {
+        id: eventId!,
+        scope,
+        patch: {
+          activity_plan_id: data.activity_plan_id,
+          notes: data.notes || null,
+          all_day: allDay,
+          timezone: "UTC",
+          starts_at: allDay ? buildAllDayStartIso(startsAt) : startsAt.toISOString(),
+        },
+      });
+
+      await handleMutationSuccess("Activity updated!");
+    } catch (error) {
+      setRootFormError(form, error, "Failed to update activity. Please try again.");
+    }
   };
 
   const promptForEditScope = (onSelect: (scope: "single" | "future" | "series") => void) => {
@@ -338,21 +384,32 @@ export function ScheduleActivityModal({
     ]);
   };
 
-  const onSubmit = (data: PlannedActivityScheduleFormOutput) => {
+  const onSubmit = async (data: PlannedActivityScheduleFormOutput) => {
     if (isEditMode) {
       if (existingActivityIsRecurring && !editScope) {
-        promptForEditScope((scope) => submitEditWithScope(data, scope));
+        promptForEditScope((scope) => {
+          void submitEditWithScope(data, scope);
+        });
         return;
       }
 
-      submitEditWithScope(data, editScope ?? "single");
-    } else {
-      createMutation.mutate({
+      await submitEditWithScope(data, editScope ?? "single");
+      return;
+    }
+
+    clearRootFormError(form);
+
+    try {
+      await runMutation(createMutation, {
         activity_plan_id: data.activity_plan_id,
         scheduled_date: data.scheduled_date,
         notes: data.notes || undefined,
         training_plan_id: data.training_plan_id || undefined,
       });
+
+      await handleMutationSuccess("Activity scheduled!");
+    } catch (error) {
+      setRootFormError(form, error, "Failed to schedule activity. Please try again.");
     }
   };
 
@@ -382,7 +439,9 @@ export function ScheduleActivityModal({
     return iconMap[type] || "🏋️";
   };
 
-  const isSubmitting = createMutation.isPending || updateMutation.isPending;
+  const isSubmitting =
+    submitForm.isSubmitting || createMutation.isPending || updateMutation.isPending;
+  const rootErrorMessage = form.formState?.errors.root?.message;
   const isLoading = (loadingPlan && !isTemplate) || loadingExistingActivity;
   const isValidationPending = !!trainingPlanId && validationLoading && !validation;
   const canSchedule =
@@ -699,17 +758,14 @@ export function ScheduleActivityModal({
                     </Text>
                   </View>
                 ) : null}
-                {(createMutation.error || updateMutation.error) && (
+                {rootErrorMessage ? (
                   <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
                     <Text className="text-destructive font-medium">
                       Failed to {isEditMode ? "update" : "schedule"} activity
                     </Text>
-                    <Text className="text-destructive/80 text-sm mt-1">
-                      {(createMutation.error || updateMutation.error)?.message ||
-                        "Please try again"}
-                    </Text>
+                    <Text className="text-destructive/80 text-sm mt-1">{rootErrorMessage}</Text>
                   </View>
-                )}
+                ) : null}
               </>
             ) : (
               <View className="py-8 items-center">
@@ -733,7 +789,7 @@ export function ScheduleActivityModal({
             </Button>
             <Button
               onPress={submitForm.handleSubmit}
-              disabled={!canSchedule || submitForm.isSubmitting}
+              disabled={!canSchedule || isSubmitting}
               className="flex-1"
               testID="schedule-submit-button"
             >

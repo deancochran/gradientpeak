@@ -106,23 +106,38 @@ Scope:
 - Shift secondary actions out of the always-visible layout.
 - Make event cards more useful at a glance.
 - Keep existing create/edit/update flows usable while the new sheet layer is introduced.
+- Remove explicit calendar rest-day creation in favor of inferred rest-day UI states.
 
 Implementation detail:
 
 1. Add a Gorhom bottom sheet for calendar actions.
 2. Add an event preview/detail bottom sheet opened from day-mode event taps.
 3. Define shared sheet states and transitions so actions, preview, and follow-up flows do not conflict.
-4. Reduce always-visible action buttons to the minimum necessary.
-5. Redesign event cards to prioritize real event content, especially planned activity details.
-6. Make planned activity cards show title, intensity, duration, and one to two lines of useful description when available.
-7. Keep imported events readable but clearly read-only.
-8. Keep advanced edit/detail flows reachable without making them the default interaction path.
+4. Narrow `calendar-actions` to planned activity, race target, and custom event creation only; remove explicit rest-day creation and sheet-level jump-to-today.
+5. Treat “rest day” as a derived day state: a date is rest when it has no scheduled `planned` event, even if other non-planned events exist.
+6. Redesign day-mode empty states so dates without planned activities render a calm inferred rest-day treatment instead of a synthetic `rest_day` event card.
+7. Reduce always-visible action buttons to the minimum necessary.
+8. Redesign event cards to prioritize real event content, especially planned activity details.
+9. Make planned activity cards show title, intensity, duration, and one to two lines of useful description when available.
+10. Keep imported events readable but clearly read-only.
+11. Keep advanced edit/detail flows reachable without making them the default interaction path.
+
+Concrete migration sequence:
+
+1. Lock the product rule: “rest day” means no scheduled `planned` event on that date.
+2. Remove rest-day creation affordances from the mobile calendar surface.
+3. Add inferred rest-day rendering in day-mode empty states and related summaries.
+4. Block new `rest_day` writes in shared event contracts and API mutations.
+5. Stop materializing `rest_day` rows from plan structures.
+6. Transition legacy `rest_day` rows with a compatibility pass: prefer filtering them from calendar reads while keeping read safety until a cleanup migration is ready.
+7. Update verification helpers that currently count explicit `rest_day` rows so they infer rest from missing planned sessions instead.
 
 Primary decisions required:
 
 - what actions live in `calendar-actions` versus `event-preview`
 - which event mutations can happen directly from the sheet
 - when to route to full detail instead of expanding the sheet surface
+- how legacy persisted `rest_day` rows should be handled during transition
 
 Deliverables:
 
@@ -140,6 +155,10 @@ File-by-file implementation targets:
 - `apps/mobile/app/(internal)/(standard)/event-detail.tsx`: remain the advanced detail/edit fallback and align with any new sheet-first entry behavior.
 - `apps/mobile/app/(internal)/(tabs)/__tests__/calendar-screen.jest.test.tsx`: add bottom-sheet and event-card interaction coverage.
 - `apps/mobile/components/__tests__/ScheduleActivityModal.jest.test.tsx`: confirm advanced scheduling/reschedule handoff still works after the sheet-first redesign.
+- `packages/core/schemas/planned_activity.ts`: remove `rest_day` from editable event creation/update contracts once compatibility handling is in place.
+- `packages/api/src/routers/events.ts`: stop allowing new `rest_day` creates/updates, filter or normalize legacy `rest_day` rows during the transition, and keep rest-day validation tied to absence of planned activity.
+- `packages/core/plan/materializePlanToEvents.ts`: stop emitting explicit `rest_day` materialized events from plan structures.
+- `packages/core/plan/verification/*`: replace explicit `rest_day` counting with inferred rest derived from dates without planned sessions.
 
 Exit criteria:
 
@@ -148,6 +167,8 @@ Exit criteria:
 - event cards surface richer content without growing visually noisy
 - the default calendar shell shows fewer visible controls than the current screen
 - imported/read-only behavior remains clear and safe
+- no new explicit `rest_day` calendar events can be created from UI or API flows
+- a date with zero planned activities renders as rest without depending on a persisted `rest_day` row
 
 ## Phase 4 - Drag And Drop Rescheduling
 

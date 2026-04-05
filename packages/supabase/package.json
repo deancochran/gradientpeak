@@ -3,9 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "run-s dev:supabase dev:functions",
     "dev:e2e": "run-s dev:supabase dev:functions",
     "dev:supabase": "supabase start",
+    "self-host": "run-s dev:supabase dev:functions",
     "stop:supabase": "supabase stop",
     "dev:functions": "supabase functions serve",
     "functions:deploy": "supabase functions deploy",

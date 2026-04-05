@@ -5,6 +5,7 @@
  * Integrates with the analyze-fit-file edge function.
  */
 
+import { randomUUID } from "node:crypto";
 import type { StandardActivity } from "@repo/core";
 import { parseFitFileWithSDK } from "@repo/core";
 import {
@@ -19,10 +20,16 @@ import {
   detectLTHR,
   estimateVO2Max,
 } from "@repo/core/calculations";
+import { activities, activityEfforts, profileMetrics } from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, desc, eq, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
+import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { fetchActivityTemperature } from "../utils/weather";
+
+const storageService = getApiStorageService();
 
 const FIT_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
 const FIT_FILE_TYPES = [".fit"];
@@ -63,10 +70,202 @@ const processFitFileInput = z.object({
   importProvenance: manualHistoricalImportProvenanceSchema.optional(),
 });
 
-function subtractDays(date: Date, days: number): Date {
-  const next = new Date(date);
-  next.setUTCDate(next.getUTCDate() - days);
-  return next;
+type DbClient = ReturnType<typeof getRequiredDb>;
+
+function toNumberOrNull(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+async function getLatestProfileMetricValue(
+  db: DbClient,
+  input: {
+    profileId: string;
+    metricType: "lthr" | "max_hr" | "resting_hr";
+    recordedAtLte: Date;
+  },
+): Promise<number | null> {
+  const row = await db
+    .select({ value: profileMetrics.value })
+    .from(profileMetrics)
+    .where(
+      and(
+        eq(profileMetrics.profile_id, input.profileId),
+        eq(profileMetrics.metric_type, input.metricType),
+        lte(profileMetrics.recorded_at, input.recordedAtLte),
+      ),
+    )
+    .orderBy(desc(profileMetrics.recorded_at))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+
+  return toNumberOrNull(row?.value);
+}
+
+async function createActivityRecord(
+  db: DbClient,
+  input: {
+    profileId: string;
+    name: string;
+    notes: string | null;
+    activityType: string;
+    startedAt: Date;
+    finishedAt: Date;
+    durationSeconds: number;
+    movingSeconds: number;
+    distanceMeters: number;
+    fitFilePath: string;
+    fitFileSize: number;
+    importSource: string | null;
+    importFileType: string | null;
+    importOriginalFileName: string | null;
+    calories: number | null;
+    elevationGainMeters: number | null;
+    avgHeartRate: number | null;
+    maxHeartRate: number | null;
+    avgPower: number | null;
+    maxPower: number | null;
+    normalizedPower: number | null;
+    avgCadence: number | null;
+    maxCadence: number | null;
+    avgSpeedMps: number | null;
+    maxSpeedMps: number | null;
+    normalizedSpeedMps: number | null;
+    normalizedGradedSpeedMps: number | null;
+    efficiencyFactor: number | null;
+    aerobicDecoupling: number | null;
+    avgTemperature: number | null;
+  },
+) {
+  const activityId = randomUUID();
+
+  await db.execute(sql`
+    insert into activities (
+      id,
+      profile_id,
+      name,
+      notes,
+      type,
+      is_private,
+      started_at,
+      finished_at,
+      duration_seconds,
+      moving_seconds,
+      distance_meters,
+      fit_file_path,
+      fit_file_size,
+      import_source,
+      import_file_type,
+      import_original_file_name,
+      calories,
+      elevation_gain_meters,
+      avg_heart_rate,
+      max_heart_rate,
+      avg_power,
+      max_power,
+      normalized_power,
+      avg_cadence,
+      max_cadence,
+      avg_speed_mps,
+      max_speed_mps,
+      normalized_speed_mps,
+      normalized_graded_speed_mps,
+      efficiency_factor,
+      aerobic_decoupling,
+      avg_temperature,
+      created_at,
+      updated_at
+    ) values (
+      ${activityId}::uuid,
+      ${input.profileId}::uuid,
+      ${input.name},
+      ${input.notes},
+      ${input.activityType},
+      ${true},
+      ${input.startedAt},
+      ${input.finishedAt},
+      ${input.durationSeconds},
+      ${input.movingSeconds},
+      ${input.distanceMeters},
+      ${input.fitFilePath},
+      ${input.fitFileSize},
+      ${input.importSource},
+      ${input.importFileType},
+      ${input.importOriginalFileName},
+      ${input.calories},
+      ${input.elevationGainMeters},
+      ${input.avgHeartRate},
+      ${input.maxHeartRate},
+      ${input.avgPower},
+      ${input.maxPower},
+      ${input.normalizedPower},
+      ${input.avgCadence},
+      ${input.maxCadence},
+      ${input.avgSpeedMps},
+      ${input.maxSpeedMps},
+      ${input.normalizedSpeedMps},
+      ${input.normalizedGradedSpeedMps},
+      ${input.efficiencyFactor},
+      ${input.aerobicDecoupling},
+      ${input.avgTemperature},
+      now(),
+      now()
+    )
+  `);
+
+  return db.query.activities.findFirst({
+    where: eq(activities.id, activityId),
+  });
+}
+
+async function canAccessActivityStreams(db: DbClient, activityId: string, userId: string) {
+  const activity = await db.query.activities.findFirst({
+    columns: {
+      profile_id: true,
+      is_private: true,
+    },
+    where: eq(activities.id, activityId),
+  });
+
+  if (!activity) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+  }
+
+  if (activity.profile_id === userId || !activity.is_private) {
+    return;
+  }
+
+  const followResult = await db.execute(sql<{ has_access: boolean }>`
+    select exists(
+      select 1
+      from follows
+      where follower_id = ${userId}::uuid
+        and following_id = ${activity.profile_id}::uuid
+        and status = 'accepted'
+    ) as has_access
+  `);
+
+  if (!followResult.rows[0]?.has_access) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Access denied: You can only access your own activities or public activities from users you follow",
+    });
+  }
+}
+
+function serializeActivityDates<T extends Record<string, unknown>>(activity: T): T {
+  const copy = { ...activity } as Record<string, unknown>;
+
+  for (const key of ["created_at", "updated_at", "started_at", "finished_at"]) {
+    const value = copy[key];
+    if (value instanceof Date) {
+      copy[key] = value.toISOString();
+    }
+  }
+
+  return copy as T;
 }
 
 export const fitFilesRouter = createTRPCRouter({
@@ -84,7 +283,7 @@ export const fitFilesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { fileName, fileSize } = input;
       const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+      const supabase = storageService;
 
       if (!userId) {
         throw new Error("User not authenticated");
@@ -128,7 +327,8 @@ export const fitFilesRouter = createTRPCRouter({
   processFitFile: protectedProcedure.input(processFitFileInput).mutation(async ({ ctx, input }) => {
     const { fitFilePath, name, notes, activityType, importProvenance } = input;
     const userId = ctx.session?.user?.id;
-    const supabase = ctx.supabase;
+    const supabase = storageService;
+    const db = getRequiredDb(ctx);
 
     if (!userId) {
       throw new TRPCError({
@@ -314,50 +514,6 @@ export const fitFilesRouter = createTRPCRouter({
       // }
 
       // ========================================================================
-      // New: Calculate Swim Metrics
-      // ========================================================================
-      let avgSwolf: number | null = null;
-      const totalStrokes = summary.totalStrokes || null;
-      const poolLength = summary.poolLength || null;
-
-      if (
-        activityType === "swim" &&
-        summary.totalDistance &&
-        summary.totalTime &&
-        totalStrokes &&
-        poolLength
-      ) {
-        // SWOLF = Time + Strokes per length
-        // Avg SWOLF = (Total Time + Total Strokes) / (Total Distance / Pool Length)
-        const numLengths = summary.totalDistance / poolLength;
-        if (numLengths > 0) {
-          avgSwolf = (summary.totalTime + totalStrokes) / Math.round(numLengths);
-          avgSwolf = Math.round(avgSwolf * 10) / 10; // Round to 1 decimal
-        }
-      }
-
-      // Calculate pace stream from speed stream
-      const paceStream: number[] = [];
-      if (speedStream.length > 0) {
-        for (const speed of speedStream) {
-          if (speed > 0) {
-            if (activityType === "swim") {
-              // Swim pace: seconds per 100m
-              paceStream.push(100 / speed);
-            } else if (activityType === "run") {
-              // Run pace: seconds per km
-              paceStream.push(1000 / speed);
-            } else {
-              // Default to seconds per km for other activities
-              paceStream.push(1000 / speed);
-            }
-          } else {
-            paceStream.push(0);
-          }
-        }
-      }
-
-      // ========================================================================
       // T-308: Fetch User Performance Metrics (with Cold Start Defaults)
       // ========================================================================
 
@@ -365,71 +521,33 @@ export const fitFilesRouter = createTRPCRouter({
       // Instead, we should use the new analytics router logic or just defaults for now.
       // For TSS calculation, we need FTP and LTHR.
 
-      const activityCompletedAtIso = new Date(startTime.getTime() + duration * 1000).toISOString();
-
-      // Fetch LTHR from profile_metrics as of the imported activity timestamp
-      const { data: lthrMetric } = await supabase
-        .from("profile_metrics")
-        .select("value")
-        .eq("profile_id", userId)
-        .eq("metric_type", "lthr")
-        .lte("recorded_at", activityCompletedAtIso)
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const activityCompletedAt = new Date(startTime.getTime() + duration * 1000);
+      const activityCompletedAtIso = activityCompletedAt.toISOString();
 
       // Cold Start: Default to 170bpm if no LTHR found
-      const lthr = lthrMetric?.value ? Number(lthrMetric.value) : 170;
-
-      // Fetch Max HR
-      const { data: maxHRMetric } = await supabase
-        .from("profile_metrics")
-        .select("value")
-        .eq("profile_id", userId)
-        .eq("metric_type", "max_hr")
-        .lte("recorded_at", activityCompletedAtIso)
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const lthr =
+        (await getLatestProfileMetricValue(db, {
+          profileId: userId,
+          metricType: "lthr",
+          recordedAtLte: activityCompletedAt,
+        })) ?? 170;
 
       // Cold Start: Default to 190bpm if no Max HR found
-      const maxHR = maxHeartRate || (maxHRMetric?.value ? Number(maxHRMetric.value) : 190);
+      const maxHR =
+        maxHeartRate ??
+        (await getLatestProfileMetricValue(db, {
+          profileId: userId,
+          metricType: "max_hr",
+          recordedAtLte: activityCompletedAt,
+        })) ??
+        190;
 
-      // Fetch Resting HR
-      const { data: restingHRMetric } = await supabase
-        .from("profile_metrics")
-        .select("value")
-        .eq("profile_id", userId)
-        .eq("metric_type", "resting_hr")
-        .lte("recorded_at", activityCompletedAtIso)
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const restingHR = restingHRMetric?.value ? Number(restingHRMetric.value) : 60; // Default 60
-
-      // For FTP, we ideally want to calculate it dynamically, but that's expensive here.
-      // For now, let's use a default or try to fetch a cached value if we had one.
-      // Since we removed the logs table, we'll default to 200W for now,
-      // or we could implement a quick lookup of the best 20m power from activity_efforts
-      // and estimate it (0.95 * 20m).
-
-      // Quick estimation of FTP from recent history (last 90 days)
-      const cutoffDate = subtractDays(new Date(activityCompletedAtIso), 90).toISOString();
-      const { data: best20m } = await supabase
-        .from("activity_efforts")
-        .select("value")
-        .eq("profile_id", userId)
-        .eq("activity_category", "bike")
-        .eq("effort_type", "power")
-        .eq("duration_seconds", 1200)
-        .gte("recorded_at", cutoffDate)
-        .lte("recorded_at", activityCompletedAtIso)
-        .order("value", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const ftp = best20m?.value ? Math.round(best20m.value * 0.95) : 200;
+      const restingHR =
+        (await getLatestProfileMetricValue(db, {
+          profileId: userId,
+          metricType: "resting_hr",
+          recordedAtLte: activityCompletedAt,
+        })) ?? 60;
 
       let normalizedPower: number | undefined;
       // Preserve activity-local derived metrics that remain durable.
@@ -527,60 +645,6 @@ export const fitFilesRouter = createTRPCRouter({
       // ========================================================================
       const endTime = new Date(activityCompletedAtIso);
 
-      const activityData = {
-        profile_id: userId,
-        name,
-        notes: notes || null,
-        type: activityType,
-        is_private: true,
-        started_at: startTime.toISOString(),
-        finished_at: endTime.toISOString(),
-        duration_seconds: Math.round(duration),
-        moving_seconds: Math.round(duration), // Could be calculated from speed stream
-        distance_meters: Math.round(distance),
-
-        // FIT file metadata
-        fit_file_path: fitFilePath,
-        fit_file_size: fitFile.size,
-        import_source: importProvenance?.import_source ?? null,
-        import_file_type: importProvenance?.import_file_type ?? null,
-        import_original_file_name: importProvenance?.import_original_file_name ?? null,
-
-        // Basic metrics
-        calories: calories ? Math.round(calories) : null,
-        elevation_gain_meters: elevationGain ? Math.round(elevationGain) : null,
-
-        // Heart rate metrics
-        avg_heart_rate: avgHeartRate ? Math.round(avgHeartRate) : null,
-        max_heart_rate: maxHeartRate ? Math.round(maxHeartRate) : null,
-
-        // Power metrics
-        avg_power: avgPower ? Math.round(avgPower) : null,
-        max_power: maxPower ? Math.round(maxPower) : null,
-        normalized_power: normalizedPower ? Math.round(normalizedPower) : null,
-
-        // Cadence metrics
-        avg_cadence: avgCadence ? Math.round(avgCadence) : null,
-        max_cadence: maxCadence ? Math.round(maxCadence) : null,
-
-        // Speed metrics
-        avg_speed_mps: summary.avgSpeed ?? (distance && duration ? distance / duration : null),
-        max_speed_mps: summary.maxSpeed ?? null,
-        normalized_speed_mps: normalizedSpeed || null,
-        normalized_graded_speed_mps: normalizedGradedSpeed || null,
-
-        // Efficiency & Training Effect
-        efficiency_factor: efficiencyFactor || null,
-        aerobic_decoupling: aerobicDecoupling || null,
-        avg_temperature: avgTemperature ? Math.round(avgTemperature) : null,
-
-        // ========================================================================
-        // Extended Metadata (only fields that exist in current schema)
-        // Note: polyline, map_bounds, laps, total_strokes, pool_length, avg_swolf,
-        // device_manufacturer, device_product will be added in future migration
-        // ========================================================================
-      };
-
       console.log("[processFitFile] Attempting to insert activity record:", {
         profile_id: userId,
         name,
@@ -590,20 +654,45 @@ export const fitFilesRouter = createTRPCRouter({
         fit_file_path: fitFilePath,
       });
 
-      const { data: createdActivity, error: insertError } = await supabase
-        .from("activities")
-        .insert(activityData)
-        .select()
-        .single();
-
-      if (insertError || !createdActivity) {
+      let createdActivity;
+      try {
+        createdActivity = await createActivityRecord(db, {
+          profileId: userId,
+          name,
+          notes: notes || null,
+          activityType,
+          startedAt: startTime,
+          finishedAt: endTime,
+          durationSeconds: Math.round(duration),
+          movingSeconds: Math.round(duration),
+          distanceMeters: Math.round(distance),
+          fitFilePath,
+          fitFileSize: fitFile.size,
+          importSource: importProvenance?.import_source ?? null,
+          importFileType: importProvenance?.import_file_type ?? null,
+          importOriginalFileName: importProvenance?.import_original_file_name ?? null,
+          calories: calories ? Math.round(calories) : null,
+          elevationGainMeters: elevationGain ? Math.round(elevationGain) : null,
+          avgHeartRate: avgHeartRate ? Math.round(avgHeartRate) : null,
+          maxHeartRate: maxHeartRate ? Math.round(maxHeartRate) : null,
+          avgPower: avgPower ? Math.round(avgPower) : null,
+          maxPower: maxPower ? Math.round(maxPower) : null,
+          normalizedPower: normalizedPower ? Math.round(normalizedPower) : null,
+          avgCadence: avgCadence ? Math.round(avgCadence) : null,
+          maxCadence: maxCadence ? Math.round(maxCadence) : null,
+          avgSpeedMps: summary.avgSpeed ?? (distance && duration ? distance / duration : null),
+          maxSpeedMps: summary.maxSpeed ?? null,
+          normalizedSpeedMps: normalizedSpeed || null,
+          normalizedGradedSpeedMps: normalizedGradedSpeed || null,
+          efficiencyFactor: efficiencyFactor || null,
+          aerobicDecoupling: aerobicDecoupling || null,
+          avgTemperature: avgTemperature ? Math.round(avgTemperature) : null,
+        });
+      } catch (insertError) {
         // T-316: Cleanup uploaded file on failure
         console.error("[processFitFile] Failed to insert activity record:", {
           error: insertError,
-          errorMessage: insertError?.message,
-          errorDetails: insertError?.details,
-          errorHint: insertError?.hint,
-          errorCode: insertError?.code,
+          errorMessage: (insertError as Error | undefined)?.message,
           activityData: {
             profile_id: userId,
             name,
@@ -619,8 +708,17 @@ export const fitFilesRouter = createTRPCRouter({
 
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to create activity record: ${insertError?.message || "Unknown error"}. Details: ${insertError?.details || "None"}. Hint: ${insertError?.hint || "None"}`,
+          message: `Failed to create activity record: ${(insertError as Error | undefined)?.message || "Unknown error"}`,
           cause: insertError,
+        });
+      }
+
+      if (!createdActivity) {
+        await supabase.storage.from("fit-files").remove([fitFilePath]);
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to load created activity record",
         });
       }
 
@@ -681,10 +779,25 @@ export const fitFilesRouter = createTRPCRouter({
 
       // Bulk insert efforts
       if (effortsToInsert.length > 0) {
-        const { error: effortsError } = await supabase
-          .from("activity_efforts")
-          .insert(effortsToInsert);
-        if (effortsError) {
+        try {
+          await db.insert(activityEfforts).values(
+            effortsToInsert.map((effort) => ({
+              id: randomUUID(),
+              created_at: new Date(),
+              updated_at: new Date(),
+              activity_id: createdActivity.id,
+              profile_id: userId,
+              recorded_at: new Date(activityCompletedAtIso),
+              activity_category:
+                effort.activity_category as typeof activityEfforts.$inferInsert.activity_category,
+              effort_type: effort.effort_type,
+              duration_seconds: effort.duration_seconds,
+              start_offset: effort.start_offset,
+              unit: effort.unit,
+              value: effort.value,
+            })),
+          );
+        } catch (effortsError) {
           console.error("Failed to insert best efforts:", effortsError);
         }
       }
@@ -693,26 +806,26 @@ export const fitFilesRouter = createTRPCRouter({
       if (hrStream.length > 0) {
         const detectedLTHR = detectLTHR(hrStream, timestamps);
         if (detectedLTHR && detectedLTHR > lthr) {
-          // Update profile_metrics
-          await supabase.from("profile_metrics").insert({
+          await db.insert(profileMetrics).values({
+            id: randomUUID(),
+            created_at: new Date(),
             profile_id: userId,
             metric_type: "lthr",
-            value: detectedLTHR,
+            value: String(detectedLTHR),
             unit: "bpm",
-            recorded_at: activityCompletedAtIso,
+            recorded_at: new Date(activityCompletedAtIso),
           });
         }
       }
 
       // 3. Estimate VO2 Max
       if (maxHeartRate && restingHR) {
-        const estimatedVO2 = estimateVO2Max(maxHeartRate, restingHR);
-        // We could log this or notify
+        void estimateVO2Max(maxHeartRate, restingHR);
       }
 
       return {
         success: true,
-        activity: createdActivity,
+        activity: serializeActivityDates(createdActivity),
       };
     } catch (error) {
       // T-316: Handle errors with proper TRPCError types
@@ -757,9 +870,9 @@ export const fitFilesRouter = createTRPCRouter({
    * Upload a FIT file to Supabase Storage
    */
   uploadFitFile: protectedProcedure.input(uploadFitFileInput).mutation(async ({ ctx, input }) => {
-    const { fileName, fileSize, fileType, fileData } = input;
+    const { fileName, fileSize, fileData } = input;
     const userId = ctx.session?.user?.id;
-    const supabase = ctx.supabase;
+    const supabase = storageService;
 
     if (!userId) {
       throw new Error("User not authenticated");
@@ -782,7 +895,7 @@ export const fitFilesRouter = createTRPCRouter({
       const filePath = `${userId}/${Date.now()}-${fileName}`;
 
       // Upload to storage
-      const { data, error } = await supabase.storage.from("fit-files").upload(filePath, bytes, {
+      const { error } = await supabase.storage.from("fit-files").upload(filePath, bytes, {
         contentType: "application/octet-stream",
         upsert: false,
       });
@@ -808,7 +921,7 @@ export const fitFilesRouter = createTRPCRouter({
   analyzeFitFile: protectedProcedure.input(analyzeFitFileInput).mutation(async ({ ctx, input }) => {
     const { activityId, filePath, bucketName } = input;
     const userId = ctx.session?.user?.id;
-    const supabase = ctx.supabase;
+    const supabase = storageService;
 
     if (!userId) {
       throw new Error("User not authenticated");
@@ -844,7 +957,7 @@ export const fitFilesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { activityId } = input;
       const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+      const db = getRequiredDb(ctx);
 
       if (!userId) {
         throw new Error("User not authenticated");
@@ -853,15 +966,18 @@ export const fitFilesRouter = createTRPCRouter({
       // Note: This will work once the migration is applied
       // For now, return a placeholder response
       try {
-        const { data, error } = await supabase
-          .from("activities")
-          .select("id, name, type, started_at")
-          .eq("id", activityId)
-          .eq("profile_id", userId)
-          .single();
+        const activity = await db.query.activities.findFirst({
+          columns: {
+            id: true,
+            name: true,
+            type: true,
+            started_at: true,
+          },
+          where: and(eq(activities.id, activityId), eq(activities.profile_id, userId)),
+        });
 
-        if (error) {
-          throw new Error(`Failed to get activity: ${error.message}`);
+        if (!activity) {
+          throw new Error("Failed to get activity");
         }
 
         return {
@@ -870,7 +986,7 @@ export const fitFilesRouter = createTRPCRouter({
           fileSize: null, // Placeholder
           version: null, // Placeholder
           updatedAt: null, // Placeholder
-          activity: data, // Basic activity info
+          activity: serializeActivityDates(activity), // Basic activity info
         };
       } catch (error) {
         console.error("FIT file status error:", error);
@@ -891,41 +1007,36 @@ export const fitFilesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { pageSize, cursor } = input;
       const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+      const db = getRequiredDb(ctx);
 
       if (!userId) {
         throw new Error("User not authenticated");
       }
 
       try {
-        let query = supabase
-          .from("activities")
-          .select(
-            `
-            id,
-            name,
-            type,
-            started_at,
-            created_at
-          `,
-          )
-          .eq("profile_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(pageSize);
+        const conditions = [eq(activities.profile_id, userId), isNotNull(activities.fit_file_path)];
 
         if (cursor) {
-          query = query.gt("created_at", cursor);
+          conditions.push(lt(activities.created_at, new Date(cursor)));
         }
 
-        const { data, error } = await query;
-
-        if (error) {
-          throw new Error(`Failed to list activities: ${error.message}`);
-        }
+        const data = await db
+          .select({
+            id: activities.id,
+            name: activities.name,
+            type: activities.type,
+            started_at: activities.started_at,
+            created_at: activities.created_at,
+          })
+          .from(activities)
+          .where(and(...conditions))
+          .orderBy(desc(activities.created_at))
+          .limit(pageSize);
 
         return {
-          files: data || [],
-          nextCursor: data?.length === pageSize ? data[data.length - 1]?.created_at : null,
+          files: data.map((file) => serializeActivityDates(file)),
+          nextCursor:
+            data.length === pageSize ? data[data.length - 1]?.created_at.toISOString() : null,
         };
       } catch (error) {
         console.error("List FIT files error:", error);
@@ -946,7 +1057,7 @@ export const fitFilesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { filePath, expiresIn } = input;
       const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+      const supabase = storageService;
 
       if (!userId) {
         throw new Error("User not authenticated");
@@ -989,7 +1100,7 @@ export const fitFilesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { filePath } = input;
       const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+      const supabase = storageService;
 
       if (!userId) {
         throw new Error("User not authenticated");
@@ -1029,7 +1140,8 @@ export const fitFilesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const { fitFilePath, activityId } = input;
       const userId = ctx.session?.user?.id;
-      const supabase = ctx.supabase;
+      const supabase = storageService;
+      const db = getRequiredDb(ctx);
 
       if (!userId) {
         throw new Error("User not authenticated");
@@ -1038,40 +1150,7 @@ export const fitFilesRouter = createTRPCRouter({
       try {
         // If activityId is provided, use proper database-driven authorization
         if (activityId) {
-          // Query the activity to determine access rights
-          const { data: activity, error: activityError } = await supabase
-            .from("activities")
-            .select("profile_id, is_private")
-            .eq("id", activityId)
-            .single();
-
-          if (activityError || !activity) {
-            throw new Error("Activity not found");
-          }
-
-          // Determine access rights based on database relationships
-          const isActivityOwner = activity.profile_id === userId;
-
-          if (isActivityOwner) {
-            // User owns this activity - allow full access
-          } else if (!activity.is_private) {
-            // Activity is public - allow access
-          } else {
-            // Activity is private - check follow relationship
-            const { data: followData } = await (supabase as any)
-              .from("follows")
-              .select("follower_id")
-              .eq("follower_id", userId)
-              .eq("following_id", activity.profile_id)
-              .eq("status", "accepted")
-              .maybeSingle();
-
-            if (!followData) {
-              throw new Error(
-                "Access denied: You can only access your own activities or public activities from users you follow",
-              );
-            }
-          }
+          await canAccessActivityStreams(db, activityId, userId);
         } else {
           // Fallback: legacy behavior - check file path ownership directly
           const cleanPath = fitFilePath.trim();
@@ -1111,6 +1190,10 @@ export const fitFilesRouter = createTRPCRouter({
           summary: parsedData.summary,
         };
       } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
         console.error("Get streams error:", error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",

@@ -1,6 +1,8 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { expo } from "@better-auth/expo";
+import { resolveDatabaseUrl } from "@repo/db/client";
 import * as appSchema from "@repo/db/schema";
+import { compare, hash } from "bcryptjs";
 import { betterAuth } from "better-auth";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -98,6 +100,11 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
 
   return betterAuth({
     ...(options.secret ? { secret: options.secret } : {}),
+    advanced: {
+      database: {
+        generateId: () => crypto.randomUUID(),
+      },
+    },
     baseURL: env.appUrl,
     database: drizzleAdapter(db, {
       provider: "pg",
@@ -107,6 +114,10 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
+      password: {
+        hash: async (password) => hash(password, 10),
+        verify: async ({ hash: passwordHash, password }) => compare(password, passwordHash),
+      },
       sendResetPassword: async ({ user, url }) => {
         sendAuthEmail({
           kind: "reset-password",
@@ -153,8 +164,7 @@ export function getGradientPeakAuth() {
   if (!authSingleton) {
     authSingleton = createGradientPeakAuth({
       appUrl: process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-      databaseUrl:
-        process.env.DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+      databaseUrl: resolveDatabaseUrl(process.env),
       secret: process.env.BETTER_AUTH_SECRET,
       mobileScheme: process.env.EXPO_PUBLIC_APP_SCHEME ?? process.env.APP_SCHEME ?? "gradientpeak",
     });

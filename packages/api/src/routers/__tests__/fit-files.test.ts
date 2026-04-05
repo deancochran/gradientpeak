@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   parseFitFileWithSDK: vi.fn(),
@@ -12,6 +12,17 @@ const mocks = vi.hoisted(() => ({
   detectLTHR: vi.fn(),
   estimateVO2Max: vi.fn(),
   fetchActivityTemperature: vi.fn(),
+  storage: {
+    createSignedUploadUrl: vi.fn(),
+    upload: vi.fn(),
+    download: vi.fn(),
+    remove: vi.fn(),
+    createSignedUrl: vi.fn(),
+  },
+  functionsInvoke: vi.fn(),
+  db: {
+    current: null as any,
+  },
 }));
 
 vi.mock("@repo/core", () => ({
@@ -35,133 +46,173 @@ vi.mock("../../utils/weather", () => ({
   fetchActivityTemperature: mocks.fetchActivityTemperature,
 }));
 
+vi.mock("../../storage-service", () => ({
+  getApiStorageService: () => ({
+    storage: {
+      from: () => ({
+        createSignedUploadUrl: mocks.storage.createSignedUploadUrl,
+        upload: mocks.storage.upload,
+        download: mocks.storage.download,
+        remove: mocks.storage.remove,
+        createSignedUrl: mocks.storage.createSignedUrl,
+      }),
+    },
+    functions: {
+      invoke: mocks.functionsInvoke,
+    },
+  }),
+}));
+
+vi.mock("../../db", () => ({
+  getRequiredDb: () => mocks.db.current,
+}));
+
 import { fitFilesRouter } from "../fit-files";
 
-type QueryResult = {
-  data: any;
-  error: { message?: string; details?: string; hint?: string; code?: string } | null;
+type MockDbPlan = {
+  selectResults?: unknown[][];
+  findFirstResults?: unknown[];
+  executeResults?: unknown[];
 };
 
-type QueryPlan = Record<string, QueryResult | QueryResult[]>;
+function createBlob(contents = "fit bytes") {
+  return new Blob([contents], { type: "application/octet-stream" });
+}
 
-type TerminalCall = {
-  table: string;
-  terminal: "single" | "maybeSingle" | "then";
-  filters: Array<{ type: string; args: unknown[] }>;
-};
-
-function createSupabaseMock(queryPlan: QueryPlan = {}) {
-  const counters = new Map<string, number>();
-  const terminalCalls: TerminalCall[] = [];
-  const inserts: Array<{ table: string; values: unknown }> = [];
-  const storageRemovals: string[][] = [];
-
-  const nextResult = (key: string): QueryResult => {
-    const entry = queryPlan[key];
-    if (!entry) return { data: null, error: null };
-    if (!Array.isArray(entry)) return entry;
-
-    const index = counters.get(key) ?? 0;
-    counters.set(key, index + 1);
-    return entry[index] ?? entry[entry.length - 1] ?? { data: null, error: null };
+function createDbMock(plan: MockDbPlan = {}) {
+  const selectResults = [...(plan.selectResults ?? [])];
+  const findFirstResults = [...(plan.findFirstResults ?? [])];
+  const executeResults = [...(plan.executeResults ?? [])];
+  const callLog = {
+    executeCalls: [] as unknown[],
+    findFirstCalls: [] as unknown[],
+    insertCalls: [] as Array<{ table: unknown; values: unknown }>,
+    selectCalls: [] as unknown[],
   };
 
-  const from = (table: string) => {
-    const filters: Array<{ type: string; args: unknown[] }> = [];
-
-    const builder: any = {
-      select: () => builder,
-      eq: (...args: unknown[]) => {
-        filters.push({ type: "eq", args });
-        return builder;
-      },
-      gte: (...args: unknown[]) => {
-        filters.push({ type: "gte", args });
-        return builder;
-      },
-      lte: (...args: unknown[]) => {
-        filters.push({ type: "lte", args });
-        return builder;
-      },
-      order: (...args: unknown[]) => {
-        filters.push({ type: "order", args });
-        return builder;
-      },
-      limit: (...args: unknown[]) => {
-        filters.push({ type: "limit", args });
-        return builder;
-      },
-      insert: (values: unknown) => {
-        inserts.push({ table, values });
-        return builder;
-      },
-      maybeSingle: () => {
-        terminalCalls.push({ table, terminal: "maybeSingle", filters: [...filters] });
-        return Promise.resolve(nextResult(`${table}:maybeSingle`));
-      },
-      single: () => {
-        terminalCalls.push({ table, terminal: "single", filters: [...filters] });
-        return Promise.resolve(nextResult(`${table}:single`));
-      },
-      then: (onFulfilled: (value: QueryResult) => unknown) => {
-        terminalCalls.push({ table, terminal: "then", filters: [...filters] });
-        return Promise.resolve(nextResult(`${table}:then`)).then(onFulfilled);
-      },
-    };
-
-    return builder;
+  const builder: any = {
+    from: vi.fn(() => builder),
+    where: vi.fn((...args: unknown[]) => {
+      callLog.selectCalls.push({ type: "where", args });
+      return builder;
+    }),
+    orderBy: vi.fn((...args: unknown[]) => {
+      callLog.selectCalls.push({ type: "orderBy", args });
+      return builder;
+    }),
+    limit: vi.fn((...args: unknown[]) => {
+      callLog.selectCalls.push({ type: "limit", args });
+      return builder;
+    }),
+    then: (onFulfilled: (rows: unknown[]) => unknown) =>
+      Promise.resolve(selectResults.shift() ?? []).then(onFulfilled),
   };
 
-  return {
-    supabase: {
-      from,
-      storage: {
-        from: () => ({
-          createSignedUploadUrl: vi.fn(async (filePath: string) => ({
-            data: { signedUrl: "https://example.test/upload", token: "token", path: filePath },
-            error: null,
-          })),
-          download: vi.fn(async () => ({
-            data: new Blob(["fit bytes"], { type: "application/octet-stream" }),
-            error: null,
-          })),
-          remove: vi.fn(async (paths: string[]) => {
-            storageRemovals.push(paths);
-            return { data: null, error: null };
-          }),
+  const db = {
+    execute: vi.fn(async (query: unknown) => {
+      callLog.executeCalls.push(query);
+      return (executeResults.shift() as { rows?: unknown[] } | undefined) ?? { rows: [] };
+    }),
+    insert: vi.fn((table: unknown) => ({
+      values: vi.fn(async (values: unknown) => {
+        callLog.insertCalls.push({ table, values });
+        return values;
+      }),
+    })),
+    query: {
+      activities: {
+        findFirst: vi.fn(async (args: unknown) => {
+          callLog.findFirstCalls.push(args);
+          return findFirstResults.shift() ?? null;
         }),
       },
     },
-    terminalCalls,
-    inserts,
-    storageRemovals,
+    select: vi.fn((fields: unknown) => {
+      callLog.selectCalls.push({ type: "select", fields });
+      return builder;
+    }),
   };
+
+  return { callLog, db };
 }
 
-function createCaller(queryPlan?: QueryPlan) {
-  const { supabase, terminalCalls, inserts, storageRemovals } = createSupabaseMock(queryPlan);
+function createCaller(options?: { db?: unknown; userId?: string }) {
+  mocks.db.current = options?.db ?? null;
 
-  const caller = fitFilesRouter.createCaller({
-    supabase: supabase as any,
-    session: { user: { id: "11111111-1111-4111-8111-111111111111" } },
+  return fitFilesRouter.createCaller({
+    session: { user: { id: options?.userId ?? "11111111-1111-4111-8111-111111111111" } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
   } as any);
-
-  return { caller, terminalCalls, inserts, storageRemovals };
 }
 
+beforeEach(() => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
+  mocks.db.current = null;
+
+  mocks.storage.createSignedUploadUrl.mockImplementation(async (path: string) => ({
+    data: { path, signedUrl: `https://upload.test/${path}`, token: "upload-token" },
+    error: null,
+  }));
+  mocks.storage.upload.mockResolvedValue({ error: null });
+  mocks.storage.download.mockResolvedValue({ data: createBlob(), error: null });
+  mocks.storage.remove.mockResolvedValue({ data: null, error: null });
+  mocks.storage.createSignedUrl.mockImplementation(async (path: string, expiresIn: number) => ({
+    data: {
+      signedUrl: `https://download.test/${path}`,
+      expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+    },
+    error: null,
+  }));
+  mocks.functionsInvoke.mockResolvedValue({ data: { queued: true }, error: null });
+
+  mocks.calculateBestEfforts.mockReturnValue([{ duration: 1200, value: 300, startIndex: 0 }]);
+  mocks.calculateDecouplingFromStreams.mockReturnValue(0.03);
+  mocks.calculateEfficiencyFactor.mockReturnValue(1.55);
+  mocks.calculateGradedSpeedStream.mockReturnValue([4.5, 4.7]);
+  mocks.calculateNGP.mockReturnValue(4.6);
+  mocks.calculateNormalizedPower.mockReturnValue(250);
+  mocks.calculateNormalizedSpeed.mockReturnValue(11.1);
+  mocks.detectLTHR.mockReturnValue(175);
+  mocks.estimateVO2Max.mockReturnValue(52);
+  mocks.fetchActivityTemperature.mockResolvedValue(null);
+});
+
 describe("fitFilesRouter", () => {
-  it("exposes the signed upload and process procedures", () => {
-    expect(fitFilesRouter._def.procedures.getSignedUploadUrl).toBeDefined();
-    expect(fitFilesRouter._def.procedures.processFitFile).toBeDefined();
+  it("creates signed upload URLs for FIT uploads", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+
+    const caller = createCaller();
+    const result = await caller.getSignedUploadUrl({ fileName: "ride.fit", fileSize: 1234 });
+
+    expect(mocks.storage.createSignedUploadUrl).toHaveBeenCalledWith(
+      "activities/11111111-1111-4111-8111-111111111111/uploads/1775217600000_ride.fit",
+    );
+    expect(result).toMatchObject({
+      filePath: "activities/11111111-1111-4111-8111-111111111111/uploads/1775217600000_ride.fit",
+      token: "upload-token",
+    });
   });
 
-  it("uses as-of historical context and completion timestamps during FIT import", async () => {
+  it("processes FIT uploads through ctx.db and records derived side effects", async () => {
     const startTime = new Date("2025-05-10T10:00:00.000Z");
-    const finishedAt = "2025-05-10T11:00:00.000Z";
-    const cutoffAt = "2025-02-09T11:00:00.000Z";
+    const finishedAt = new Date("2025-05-10T11:00:00.000Z");
+    const createdActivity = {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      name: "Morning Ride",
+      started_at: startTime,
+      finished_at: finishedAt,
+      created_at: startTime,
+      updated_at: finishedAt,
+    };
+    const { db, callLog } = createDbMock({
+      selectResults: [[{ value: "168" }], [{ value: "188" }], [{ value: "52" }]],
+      findFirstResults: [createdActivity],
+      executeResults: [{ rows: [] }],
+    });
 
     mocks.parseFitFileWithSDK.mockReturnValue({
       metadata: { type: "cycling", startTime },
@@ -180,14 +231,7 @@ describe("fitFilesRouter", () => {
         maxSpeed: 18.1,
       },
       records: [
-        {
-          timestamp: startTime,
-          power: 230,
-          heartRate: 160,
-          cadence: 86,
-          altitude: 120,
-          speed: 11,
-        },
+        { timestamp: startTime, power: 230, heartRate: 160, cadence: 86, altitude: 120, speed: 11 },
         {
           timestamp: new Date("2025-05-10T10:20:00.000Z"),
           power: 245,
@@ -198,32 +242,10 @@ describe("fitFilesRouter", () => {
         },
       ],
       laps: [],
+      lengths: [],
     });
 
-    mocks.calculateNormalizedPower.mockReturnValue(250);
-    mocks.calculateNormalizedSpeed.mockReturnValue(11.1);
-    mocks.calculateEfficiencyFactor.mockReturnValue(1.55);
-    mocks.calculateDecouplingFromStreams.mockReturnValue(0.03);
-    mocks.calculateBestEfforts.mockReturnValue([{ duration: 1200, value: 300, startIndex: 0 }]);
-    mocks.detectLTHR.mockReturnValue(175);
-    mocks.estimateVO2Max.mockReturnValue(52);
-    mocks.fetchActivityTemperature.mockResolvedValue(null);
-
-    const { caller, terminalCalls, inserts, storageRemovals } = createCaller({
-      "profile_metrics:maybeSingle": [
-        { data: { value: 168 }, error: null },
-        { data: { value: 188 }, error: null },
-        { data: { value: 52 }, error: null },
-      ],
-      "activity_efforts:maybeSingle": { data: { value: 315 }, error: null },
-      "activities:single": {
-        data: { id: "activity-1", started_at: startTime.toISOString(), finished_at: finishedAt },
-        error: null,
-      },
-      "activity_efforts:then": { data: null, error: null },
-      "profile_metrics:then": { data: null, error: null },
-    });
-
+    const caller = createCaller({ db });
     const result = await caller.processFitFile({
       fitFilePath: "activities/user/uploads/123_history.fit",
       name: "Morning Ride",
@@ -236,54 +258,204 @@ describe("fitFilesRouter", () => {
       },
     });
 
-    expect(result.success).toBe(true);
-    expect(storageRemovals).toEqual([]);
-
-    const profileMetricQueries = terminalCalls.filter(
-      (call) => call.table === "profile_metrics" && call.terminal === "maybeSingle",
-    );
-    expect(profileMetricQueries).toHaveLength(3);
-    for (const call of profileMetricQueries) {
-      expect(call.filters).toContainEqual({
-        type: "lte",
-        args: ["recorded_at", finishedAt],
-      });
-    }
-
-    const ftpContextQuery = terminalCalls.find(
-      (call) => call.table === "activity_efforts" && call.terminal === "maybeSingle",
-    );
-    expect(ftpContextQuery?.filters).toContainEqual({
-      type: "gte",
-      args: ["recorded_at", cutoffAt],
+    expect(result).toMatchObject({
+      success: true,
+      activity: {
+        id: createdActivity.id,
+        started_at: startTime.toISOString(),
+        finished_at: finishedAt.toISOString(),
+      },
     });
-    expect(ftpContextQuery?.filters).toContainEqual({
-      type: "lte",
-      args: ["recorded_at", finishedAt],
-    });
-
-    const effortsInsert = inserts.find((entry) => entry.table === "activity_efforts");
-    expect(effortsInsert).toBeDefined();
-    expect((effortsInsert?.values as Array<{ recorded_at: string }>)[0]?.recorded_at).toBe(
-      finishedAt,
+    expect(callLog.executeCalls).toHaveLength(1);
+    expect(callLog.insertCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          values: expect.arrayContaining([
+            expect.objectContaining({
+              activity_id: createdActivity.id,
+              effort_type: "power",
+              profile_id: "11111111-1111-4111-8111-111111111111",
+              recorded_at: finishedAt,
+            }),
+          ]),
+        }),
+        expect.objectContaining({
+          values: expect.objectContaining({
+            metric_type: "lthr",
+            recorded_at: finishedAt,
+            value: "175",
+          }),
+        }),
+      ]),
     );
+    expect(mocks.storage.remove).not.toHaveBeenCalled();
+  });
 
-    const profileMetricInsert = inserts.find(
-      (entry) => entry.table === "profile_metrics" && !Array.isArray(entry.values),
-    );
-    expect(profileMetricInsert?.values).toMatchObject({
-      metric_type: "lthr",
-      recorded_at: finishedAt,
-      value: 175,
-    });
-
-    const activityInsert = inserts.find((entry) => entry.table === "activities");
-    expect(activityInsert?.values).toMatchObject({
-      import_source: "manual_historical",
-      import_file_type: "fit",
-      import_original_file_name: "morning-ride.fit",
+  it("uploads FIT file bytes to storage", async () => {
+    const caller = createCaller();
+    const result = await caller.uploadFitFile({
+      fileName: "ride.fit",
+      fileSize: 4,
+      fileType: "ride.fit",
+      fileData: Buffer.from("test").toString("base64"),
     });
 
-    expect(inserts.some((entry) => entry.table === "notifications")).toBe(false);
+    expect(mocks.storage.upload).toHaveBeenCalledTimes(1);
+    const [filePath, bytes, options] = mocks.storage.upload.mock.calls[0] ?? [];
+    expect(filePath).toMatch(/^11111111-1111-4111-8111-111111111111\//);
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(options).toMatchObject({ contentType: "application/octet-stream", upsert: false });
+    expect(result).toMatchObject({ success: true, size: 4 });
+  });
+
+  it("invokes the analyze-fit-file edge function", async () => {
+    const caller = createCaller();
+    const activityId = "22222222-2222-4222-8222-222222222222";
+
+    const result = await caller.analyzeFitFile({
+      activityId,
+      filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+      bucketName: "fit-files",
+    });
+
+    expect(mocks.functionsInvoke).toHaveBeenCalledWith("analyze-fit-file", {
+      body: {
+        activityId,
+        bucketName: "fit-files",
+        filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+      },
+    });
+    expect(result).toEqual({ queued: true });
+  });
+
+  it("returns serialized activity details for FIT processing status", async () => {
+    const activityId = "33333333-3333-4333-8333-333333333333";
+    const createdAt = new Date("2026-01-01T12:00:00.000Z");
+    const { db } = createDbMock({
+      findFirstResults: [
+        {
+          id: activityId,
+          name: "Imported Ride",
+          type: "bike",
+          started_at: createdAt,
+        },
+      ],
+    });
+
+    const caller = createCaller({ db });
+    const result = await caller.getFitFileStatus({ activityId });
+
+    expect(result).toEqual({
+      activity: {
+        id: activityId,
+        name: "Imported Ride",
+        started_at: createdAt.toISOString(),
+        type: "bike",
+      },
+      filePath: null,
+      fileSize: null,
+      processingStatus: "pending",
+      updatedAt: null,
+      version: null,
+    });
+  });
+
+  it("lists FIT-backed activities with a next cursor", async () => {
+    const firstCreatedAt = new Date("2026-02-01T12:00:00.000Z");
+    const secondCreatedAt = new Date("2026-01-31T12:00:00.000Z");
+    const { db } = createDbMock({
+      selectResults: [
+        [
+          {
+            id: "44444444-4444-4444-8444-444444444444",
+            name: "Ride A",
+            type: "bike",
+            started_at: firstCreatedAt,
+            created_at: firstCreatedAt,
+          },
+          {
+            id: "55555555-5555-4555-8555-555555555555",
+            name: "Ride B",
+            type: "bike",
+            started_at: secondCreatedAt,
+            created_at: secondCreatedAt,
+          },
+        ],
+      ],
+    });
+
+    const caller = createCaller({ db });
+    const result = await caller.listFitFiles({ pageSize: 2 });
+
+    expect(result).toEqual({
+      files: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          name: "Ride A",
+          type: "bike",
+          started_at: firstCreatedAt.toISOString(),
+          created_at: firstCreatedAt.toISOString(),
+        },
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          name: "Ride B",
+          type: "bike",
+          started_at: secondCreatedAt.toISOString(),
+          created_at: secondCreatedAt.toISOString(),
+        },
+      ],
+      nextCursor: secondCreatedAt.toISOString(),
+    });
+  });
+
+  it("rejects download URLs for another user's FIT file", async () => {
+    const caller = createCaller();
+
+    await expect(
+      caller.getFitFileUrl({
+        filePath: "22222222-2222-4222-8222-222222222222/ride.fit",
+        expiresIn: 600,
+      }),
+    ).rejects.toThrow("Access denied: You can only access your own files");
+  });
+
+  it("deletes an owned FIT file from storage", async () => {
+    const caller = createCaller();
+
+    const result = await caller.deleteFitFile({
+      filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+    });
+
+    expect(mocks.storage.remove).toHaveBeenCalledWith([
+      "11111111-1111-4111-8111-111111111111/ride.fit",
+    ]);
+    expect(result).toEqual({ success: true });
+  });
+
+  it("returns parsed streams for an owned activity", async () => {
+    const activityId = "66666666-6666-4666-8666-666666666666";
+    const { db } = createDbMock({
+      findFirstResults: [{ profile_id: "11111111-1111-4111-8111-111111111111", is_private: true }],
+    });
+
+    mocks.parseFitFileWithSDK.mockReturnValue({
+      records: [{ timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240 }],
+      laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
+      lengths: [],
+      summary: { totalTime: 1800, totalDistance: 20000 },
+    });
+
+    const caller = createCaller({ db });
+    const result = await caller.getStreams({
+      fitFilePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+      activityId,
+    });
+
+    expect(result).toEqual({
+      records: [{ timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240 }],
+      laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
+      lengths: [],
+      summary: { totalTime: 1800, totalDistance: 20000 },
+    });
   });
 });

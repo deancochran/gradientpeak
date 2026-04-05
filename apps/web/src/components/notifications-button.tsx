@@ -1,7 +1,7 @@
 "use client";
 
-import { getNotificationViewModel, normalizeNotificationListItem } from "@repo/core";
 import { invalidateNotificationQueries } from "@repo/api/react";
+import { getNotificationViewModel, normalizeNotificationListItem } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@repo/ui/components/dropdown-menu";
 import { Bell } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api/client";
 
@@ -31,6 +32,7 @@ export function NotificationsButton() {
         notification !== null,
     );
   const utils = api.useUtils();
+  const label = unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications";
 
   const markReadMutation = api.notifications.markRead.useMutation({
     onSuccess: async () => invalidateNotificationQueries(utils),
@@ -47,16 +49,17 @@ export function NotificationsButton() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" className="relative" aria-label={label} title={label}>
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
             <Badge
               variant="destructive"
-              className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center rounded-full p-0 text-xs"
+              className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full p-0 text-xs"
             >
               {unreadCount > 9 ? "9+" : unreadCount}
             </Badge>
           )}
+          <span className="sr-only">{label}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
@@ -87,11 +90,10 @@ export function NotificationsButton() {
           })
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="cursor-pointer justify-center text-center"
-          onClick={() => router.push("/notifications")}
-        >
-          View all
+        <DropdownMenuItem asChild>
+          <Link href="/notifications" className="cursor-pointer justify-center text-center">
+            View all notifications
+          </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

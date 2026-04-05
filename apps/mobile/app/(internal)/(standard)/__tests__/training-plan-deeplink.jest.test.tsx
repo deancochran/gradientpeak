@@ -12,6 +12,9 @@ function createHost(type: string) {
 var mockAlert = jest.fn();
 var mockApplyTemplateMutate = jest.fn();
 var mockDuplicateMutate = jest.fn();
+var mockUpdatePlanMutate = jest.fn();
+var mockActivePlanData: any = null;
+var mockApplyTemplateResult: any = null;
 var mockRouterReplace = jest.fn();
 var mockRouterPush = jest.fn();
 var mockLocalSearchParams: Record<string, string | undefined> = {};
@@ -94,10 +97,10 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({ data: null, isLoading: false }),
       },
       getActivePlan: {
-        useQuery: () => ({ data: null }),
+        useQuery: () => ({ data: mockActivePlanData }),
       },
       update: {
-        useMutation: () => ({ isPending: false }),
+        useMutation: () => ({ mutate: mockUpdatePlanMutate, isPending: false }),
       },
       duplicate: {
         useMutation: (options: any) => ({
@@ -109,9 +112,14 @@ jest.mock("@/lib/api", () => ({
         }),
       },
       applyTemplate: {
-        useMutation: () => ({
+        useMutation: (options: any) => ({
           mutateAsync: jest.fn(),
-          mutate: mockApplyTemplateMutate,
+          mutate: (input: any) => {
+            mockApplyTemplateMutate(input);
+            if (mockApplyTemplateResult) {
+              options?.onSuccess?.(mockApplyTemplateResult);
+            }
+          },
           isPending: false,
         }),
       },
@@ -347,6 +355,9 @@ const findButtonByText = (text: string) =>
     return getNodeText(node.props?.children) === text;
   });
 
+const findButtonByTestId = (testID: string) =>
+  getAllByTypeOrEmpty("Button").find((node: any) => node.props?.testID === testID);
+
 const getDateFields = () => getAllByTypeOrEmpty("DateField");
 
 const resetTestState = () => {
@@ -356,6 +367,9 @@ const resetTestState = () => {
   nativeAlertMock.mockReset();
   mockApplyTemplateMutate.mockReset();
   mockDuplicateMutate.mockReset();
+  mockUpdatePlanMutate.mockReset();
+  mockActivePlanData = null;
+  mockApplyTemplateResult = null;
   mockSnapshotState.plan = null;
   mockSnapshotState.isLoadingSharedDependencies = false;
   mockSnapshotState.hasSharedDependencyError = false;
@@ -579,6 +593,129 @@ describe("TrainingPlanOverview deep-link routing", () => {
       );
     });
     expect(mockApplyTemplateMutate).not.toHaveBeenCalled();
+  });
+
+  it("shows the concurrency warning instead of mutating when another active plan exists", async () => {
+    mockSnapshotState.plan = {
+      id: "plan-owned-anchor-4",
+      name: "Anchor Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    mockLocalSearchParams.id = "plan-owned-anchor-4";
+    mockActivePlanData = { id: "active-plan-1" };
+
+    renderNative(<TrainingPlanOverview />);
+
+    await act(async () => {
+      findButtonByText("Schedule Sessions").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
+    });
+
+    expect(findButtonByText("Open Current Plan")).toBeTruthy();
+    expect(mockApplyTemplateMutate).not.toHaveBeenCalled();
+  });
+
+  it("opens the current active plan from the concurrency warning CTA", async () => {
+    mockSnapshotState.plan = {
+      id: "plan-owned-anchor-5",
+      name: "Anchor Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    mockLocalSearchParams.id = "plan-owned-anchor-5";
+    mockActivePlanData = { id: "active-plan-1" };
+
+    renderNative(<TrainingPlanOverview />);
+
+    await act(async () => {
+      findButtonByText("Schedule Sessions").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByText("Open Current Plan").props.onPress();
+    });
+
+    expect(mockRouterReplace).toHaveBeenCalledWith(
+      ROUTES.PLAN.TRAINING_PLAN.DETAIL("active-plan-1"),
+    );
+  });
+
+  it("shows scheduling success actions after apply-template succeeds", async () => {
+    mockSnapshotState.plan = {
+      id: "plan-owned-anchor-6",
+      name: "Anchor Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    mockLocalSearchParams.id = "plan-owned-anchor-6";
+    mockApplyTemplateResult = { applied_plan_id: "scheduled-plan-1", created_event_count: 3 };
+
+    renderNative(<TrainingPlanOverview />);
+
+    await act(async () => {
+      findButtonByText("Schedule Sessions").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(nativeAlertMock).toHaveBeenCalledWith(
+      "Plan scheduled",
+      "Scheduled 3 sessions on your calendar.",
+      expect.any(Array),
+    );
+
+    const successButtons = nativeAlertMock.mock.calls.at(-1)?.[2] as
+      | Array<{ onPress?: () => void }>
+      | undefined;
+
+    act(() => {
+      successButtons?.[0]?.onPress?.();
+    });
+
+    expect(mockRouterReplace).toHaveBeenCalledWith(
+      ROUTES.PLAN.TRAINING_PLAN.DETAIL("scheduled-plan-1"),
+    );
+  });
+
+  it("toggles privacy with the expected template visibility payload", async () => {
+    mockSnapshotState.plan = {
+      id: "plan-owned-privacy-1",
+      name: "Owned Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    mockLocalSearchParams.id = "plan-owned-privacy-1";
+
+    renderNative(<TrainingPlanOverview />);
+
+    const switches = getAllByTypeOrEmpty("Switch");
+    await act(async () => {
+      switches[0].props.onCheckedChange(true);
+    });
+
+    expect(mockUpdatePlanMutate).toHaveBeenCalledWith({
+      id: "plan-owned-privacy-1",
+      template_visibility: "public",
+    });
   });
 
   it("routes review-activity intent CTA to activity detail", () => {

@@ -63,8 +63,14 @@ import {
   trainingPlanUpdateInputSchema,
   validatePlanFeasibility,
 } from "@repo/core";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  type ProfileGoalRow,
+  type ProfileTrainingSettingsRow,
+  schema,
+  type TrainingPlanRow,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   createFromCreationConfigUseCase,
@@ -94,6 +100,278 @@ const conservativeStarterDailyTss = conservativeStarterWeeklyTss / 7;
 
 type FeasibilityState = z.infer<typeof feasibilityStateSchema>;
 type SafetyState = z.infer<typeof safetyStateSchema>;
+type DbClient = ReturnType<typeof getRequiredDb>;
+type LegacyPlanningReader = { from: (...args: any[]) => any };
+
+type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings">;
+
+type ProfileGoalSqlRow = Pick<
+  ProfileGoalRow,
+  | "id"
+  | "profile_id"
+  | "milestone_event_id"
+  | "title"
+  | "priority"
+  | "activity_category"
+  | "target_payload"
+>;
+
+type TrainingPlanCountRow = { value: number | string };
+
+const activitySummaryColumns = {
+  id: schema.activities.id,
+  type: schema.activities.type,
+  started_at: schema.activities.started_at,
+  finished_at: schema.activities.finished_at,
+  duration_seconds: schema.activities.duration_seconds,
+  moving_seconds: schema.activities.moving_seconds,
+  distance_meters: schema.activities.distance_meters,
+  avg_heart_rate: schema.activities.avg_heart_rate,
+  max_heart_rate: schema.activities.max_heart_rate,
+  avg_power: schema.activities.avg_power,
+  max_power: schema.activities.max_power,
+  avg_speed_mps: schema.activities.avg_speed_mps,
+  max_speed_mps: schema.activities.max_speed_mps,
+  normalized_power: schema.activities.normalized_power,
+  normalized_speed_mps: schema.activities.normalized_speed_mps,
+  normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
+} as const;
+
+function getSqlRows<T>(result: unknown) {
+  return ((result as { rows?: T[] }).rows ?? []) as T[];
+}
+
+async function getAccessibleTrainingPlan(input: {
+  db: DbClient;
+  planId: string;
+  profileId: string;
+}): Promise<TrainingPlanRow | null> {
+  const result = await input.db.execute(sql<TrainingPlanRow>`
+    select *
+    from training_plans
+    where id = ${input.planId}::uuid
+      and (
+        profile_id = ${input.profileId}::uuid
+        or is_system_template = true
+        or template_visibility = 'public'
+      )
+    limit 1
+  `);
+
+  return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
+}
+
+async function getProfileTrainingSettingsRow(input: {
+  db: DbClient;
+  profileId: string;
+}): Promise<ProfileTrainingSettingsSqlRow | null> {
+  const result = await input.db.execute(sql<ProfileTrainingSettingsSqlRow>`
+    select settings
+    from profile_training_settings
+    where profile_id = ${input.profileId}::uuid
+    limit 1
+  `);
+
+  return getSqlRows<ProfileTrainingSettingsSqlRow>(result)[0] ?? null;
+}
+
+async function getOwnedTrainingPlan(input: {
+  db: DbClient;
+  planId: string;
+  profileId: string;
+}): Promise<TrainingPlanRow | null> {
+  const result = await input.db.execute(sql<TrainingPlanRow>`
+    select *
+    from training_plans
+    where id = ${input.planId}::uuid
+      and profile_id = ${input.profileId}::uuid
+    limit 1
+  `);
+
+  return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
+}
+
+async function listTrainingPlans(input: {
+  db: DbClient;
+  profileId: string;
+  ownerScope: "own" | "system" | "public" | "all";
+  visibility?: "private" | "public";
+}): Promise<TrainingPlanRow[]> {
+  const conditions = [sql`1 = 1`];
+
+  if (input.ownerScope === "own") {
+    conditions.push(sql`profile_id = ${input.profileId}::uuid`);
+  } else if (input.ownerScope === "system") {
+    conditions.push(sql`is_system_template = true`);
+  } else if (input.ownerScope === "public") {
+    conditions.push(sql`template_visibility = 'public'`);
+  } else {
+    conditions.push(sql`(
+      profile_id = ${input.profileId}::uuid
+      or is_system_template = true
+      or template_visibility = 'public'
+    )`);
+  }
+
+  if (input.visibility) {
+    conditions.push(sql`template_visibility = ${input.visibility}`);
+  }
+
+  const result = await input.db.execute(sql<TrainingPlanRow>`
+    select *
+    from training_plans
+    where ${sql.join(conditions, sql` and `)}
+    order by created_at desc
+  `);
+
+  return getSqlRows<TrainingPlanRow>(result);
+}
+
+async function countOwnedTrainingPlans(db: DbClient, profileId: string): Promise<number> {
+  const result = await db.execute(sql<TrainingPlanCountRow>`
+    select count(*)::int as value
+    from training_plans
+    where profile_id = ${profileId}::uuid
+  `);
+
+  return Number(getSqlRows<TrainingPlanCountRow>(result)[0]?.value ?? 0);
+}
+
+async function listTrainingPlanLikedIds(input: {
+  db: DbClient;
+  profileId: string;
+  planIds: string[];
+}): Promise<string[]> {
+  if (input.planIds.length === 0) {
+    return [];
+  }
+
+  const rows = await input.db
+    .select({ entity_id: schema.likes.entity_id })
+    .from(schema.likes)
+    .where(
+      and(
+        eq(schema.likes.profile_id, input.profileId),
+        eq(schema.likes.entity_type, "training_plan"),
+        inArray(schema.likes.entity_id, input.planIds),
+      ),
+    );
+
+  return rows.map((row) => row.entity_id);
+}
+
+async function hasTrainingPlanLike(input: {
+  db: DbClient;
+  profileId: string;
+  planId: string;
+}): Promise<boolean> {
+  const rows = await input.db
+    .select({ id: schema.likes.id })
+    .from(schema.likes)
+    .where(
+      and(
+        eq(schema.likes.profile_id, input.profileId),
+        eq(schema.likes.entity_type, "training_plan"),
+        eq(schema.likes.entity_id, input.planId),
+      ),
+    )
+    .limit(1);
+
+  return rows.length > 0;
+}
+
+async function insertTrainingPlan(input: {
+  db: DbClient;
+  values: {
+    name: string;
+    description: string | null;
+    structure: Record<string, unknown>;
+    profileId: string;
+    templateVisibility?: "private" | "public";
+    isPublic?: boolean;
+  };
+}): Promise<TrainingPlanRow> {
+  const result = await input.db.execute(sql<TrainingPlanRow>`
+    insert into training_plans (
+      name,
+      description,
+      structure,
+      profile_id,
+      template_visibility,
+      is_public
+    )
+    values (
+      ${input.values.name},
+      ${input.values.description},
+      ${JSON.stringify(input.values.structure)}::jsonb,
+      ${input.values.profileId}::uuid,
+      ${input.values.templateVisibility ?? null},
+      ${input.values.isPublic ?? null}
+    )
+    returning *
+  `);
+
+  const row = getSqlRows<TrainingPlanRow>(result)[0];
+  if (!row) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to save training plan" });
+  }
+  return row;
+}
+
+async function updateOwnedTrainingPlanRow(input: {
+  db: DbClient;
+  id: string;
+  profileId: string;
+  name?: string;
+  description?: string | null;
+  structure?: Record<string, unknown>;
+  templateVisibility?: "private" | "public";
+}): Promise<TrainingPlanRow | null> {
+  const updates = [sql`updated_at = now()`];
+
+  if (input.name !== undefined) updates.push(sql`name = ${input.name}`);
+  if (input.description !== undefined) updates.push(sql`description = ${input.description}`);
+  if (input.structure !== undefined) {
+    updates.push(sql`structure = ${JSON.stringify(input.structure)}::jsonb`);
+  }
+  if (input.templateVisibility !== undefined) {
+    updates.push(sql`template_visibility = ${input.templateVisibility}`);
+  }
+
+  const result = await input.db.execute(sql<TrainingPlanRow>`
+    update training_plans
+    set ${sql.join(updates, sql`, `)}
+    where id = ${input.id}::uuid
+      and profile_id = ${input.profileId}::uuid
+    returning *
+  `);
+
+  return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
+}
+
+async function listPublicTemplateTrainingPlans(db: DbClient): Promise<TrainingPlanRow[]> {
+  const result = await db.execute(sql<TrainingPlanRow>`
+    select
+      id,
+      name,
+      description,
+      structure,
+      sessions_per_week_target,
+      duration_hours,
+      is_system_template,
+      template_visibility,
+      likes_count,
+      created_at,
+      updated_at,
+      profile_id
+    from training_plans
+    where is_system_template = true
+      and template_visibility = 'public'
+    order by created_at desc
+  `);
+
+  return getSqlRows<TrainingPlanRow>(result);
+}
 
 function toDayStartIso(dateOnly: string): string {
   return `${dateOnly}T00:00:00.000Z`;
@@ -120,14 +398,67 @@ function todayDateOnlyUtc(): string {
 
 type ActivePlanLookup = {
   trainingPlanId: string;
-  trainingPlan: Record<string, any>;
+  trainingPlan: TrainingPlanRow;
   nextEventAt: string;
 };
 
 async function getActivePlanFromFutureEvents(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   profileId: string;
 }): Promise<ActivePlanLookup | null> {
+  if (input.db) {
+    const upcomingEvents = await input.db
+      .select({
+        training_plan_id: schema.events.training_plan_id,
+        starts_at: schema.events.starts_at,
+      })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.profile_id, input.profileId),
+          eq(schema.events.event_type, plannedEventType),
+          isNotNull(schema.events.training_plan_id),
+          gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
+        ),
+      )
+      .orderBy(asc(schema.events.starts_at))
+      .limit(50);
+
+    const nextScheduledPlanEvent = upcomingEvents.find(
+      (event) => isUuidString(event.training_plan_id) && event.starts_at instanceof Date,
+    );
+
+    if (!nextScheduledPlanEvent) {
+      return null;
+    }
+
+    const trainingPlanId = nextScheduledPlanEvent.training_plan_id as string;
+
+    const trainingPlan = await getAccessibleTrainingPlan({
+      db: input.db,
+      planId: trainingPlanId,
+      profileId: input.profileId,
+    });
+
+    if (!trainingPlan) {
+      return null;
+    }
+
+    return {
+      trainingPlanId,
+      trainingPlan,
+      nextEventAt: nextScheduledPlanEvent.starts_at.toISOString(),
+    };
+  }
+
+  if (!input.supabase) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Database client unavailable",
+    });
+  }
+
   let eventsQuery: any = input.supabase
     .from("events")
     .select("training_plan_id, starts_at")
@@ -187,7 +518,7 @@ async function getActivePlanFromFutureEvents(input: {
 
   return {
     trainingPlanId,
-    trainingPlan: trainingPlan as Record<string, any>,
+    trainingPlan: trainingPlan as TrainingPlanRow,
     nextEventAt,
   };
 }
@@ -1133,7 +1464,8 @@ function estimateWeeklyTssFromDailyMap(dailyTss: Map<string, number>): number | 
 }
 
 async function estimateWeeklyTssFromStructuredActivities(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   profileId: string;
   structure: Record<string, unknown> | null | undefined;
   startDate: string;
@@ -1160,6 +1492,57 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
     ...new Set(materializedEvents.map((event: any) => event.activity_plan_id)),
   ];
   if (activityPlanIds.length === 0) {
+    return {
+      weeklyTss: null,
+      latestScheduledDate,
+    };
+  }
+
+  if (input.db) {
+    const estimationStore = createEventReadRepository(input.db);
+    const activityPlans = await input.db
+      .select()
+      .from(schema.activityPlans)
+      .where(inArray(schema.activityPlans.id, activityPlanIds));
+
+    if (activityPlans.length === 0) {
+      return {
+        weeklyTss: null,
+        latestScheduledDate,
+      };
+    }
+
+    const plansWithEstimations = await addEstimationToPlans(
+      activityPlans as any,
+      estimationStore,
+      input.profileId,
+    );
+
+    const estimatedTssByPlanId = new Map(
+      plansWithEstimations.map((plan: any) => [plan.id, plan.estimated_tss || 0]),
+    );
+
+    const dailyTss = new Map<string, number>();
+    for (const event of materializedEvents) {
+      if (!event.activity_plan_id) {
+        continue;
+      }
+
+      const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id) || 0;
+      if (estimatedTss <= 0) {
+        continue;
+      }
+
+      dailyTss.set(event.scheduled_date, (dailyTss.get(event.scheduled_date) || 0) + estimatedTss);
+    }
+
+    return {
+      weeklyTss: estimateWeeklyTssFromDailyMap(dailyTss),
+      latestScheduledDate,
+    };
+  }
+
+  if (!input.supabase) {
     return {
       weeklyTss: null,
       latestScheduledDate,
@@ -1744,30 +2127,54 @@ function mapCanonicalGoalToMinimalPlanGoal(
 }
 
 async function loadProfileGoalsWithTargetDates(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   profileId: string;
   startDate: string;
 }): Promise<GoalProjectionSource[]> {
-  let query: any = input.supabase
-    .from("profile_goals")
-    .select(
-      "id, profile_id, milestone_event_id, title, priority, activity_category, target_payload",
-    )
-    .eq("profile_id", input.profileId)
-    .order("created_at", { ascending: true })
-    .limit(40);
+  let goalRows: unknown[] = [];
 
-  const { data, error } = await query;
+  if (input.db) {
+    const result = await input.db.execute(sql<ProfileGoalSqlRow>`
+      select
+        id,
+        profile_id,
+        milestone_event_id,
+        title,
+        priority,
+        activity_category,
+        target_payload
+      from profile_goals
+      where profile_id = ${input.profileId}::uuid
+      order by created_at asc
+      limit 40
+    `);
 
-  if (error) {
-    console.warn(
-      "Failed to load profile goals for insight timeline projection fallback.",
-      error.message,
-    );
+    goalRows = getSqlRows<ProfileGoalSqlRow>(result);
+  } else if (input.supabase) {
+    const { data, error } = await input.supabase
+      .from("profile_goals")
+      .select(
+        "id, profile_id, milestone_event_id, title, priority, activity_category, target_payload",
+      )
+      .eq("profile_id", input.profileId)
+      .order("created_at", { ascending: true })
+      .limit(40);
+
+    if (error) {
+      console.warn(
+        "Failed to load profile goals for insight timeline projection fallback.",
+        error.message,
+      );
+      return [];
+    }
+
+    goalRows = (data ?? []) as unknown[];
+  } else {
     return [];
   }
 
-  const parsedGoals = ((data ?? []) as unknown[]).flatMap((item: unknown) => {
+  const parsedGoals = goalRows.flatMap((item: unknown) => {
     try {
       return [parseProfileGoalRecord(item)];
     } catch (parseError) {
@@ -1803,21 +2210,36 @@ async function loadProfileGoalsWithTargetDates(input: {
   const milestoneEventIds = [
     ...new Set(parsedGoals.map((goal: ProfileGoal) => goal.milestone_event_id)),
   ];
-  const { data: eventRows, error: eventError } = await input.supabase
-    .from("events")
-    .select("id, starts_at")
-    .in("id", milestoneEventIds);
+  let eventRows: Array<{ id: string; starts_at: string }> = [];
 
-  if (eventError) {
-    console.warn(
-      "Failed to load milestone events for insight timeline projection fallback.",
-      eventError.message,
-    );
-    return [];
+  if (milestoneEventIds.length > 0) {
+    if (input.db) {
+      const rows = await input.db
+        .select({ id: schema.events.id, starts_at: schema.events.starts_at })
+        .from(schema.events)
+        .where(inArray(schema.events.id, milestoneEventIds));
+
+      eventRows = rows.map((event) => ({ id: event.id, starts_at: event.starts_at.toISOString() }));
+    } else if (input.supabase) {
+      const { data, error } = await input.supabase
+        .from("events")
+        .select("id, starts_at")
+        .in("id", milestoneEventIds);
+
+      if (error) {
+        console.warn(
+          "Failed to load milestone events for insight timeline projection fallback.",
+          error.message,
+        );
+        return [];
+      }
+
+      eventRows = (data ?? []) as Array<{ id: string; starts_at: string }>;
+    }
   }
 
   const eventById = new Map(
-    (eventRows ?? [])
+    eventRows
       .filter(
         (event): event is { id: string; starts_at: string } =>
           typeof event?.id === "string" && typeof event?.starts_at === "string",
@@ -1853,20 +2275,26 @@ async function loadProfileGoalsWithTargetDates(input: {
 }
 
 async function loadProfileTrainingSettingsCreationDefaults(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   profileId: string;
 }): Promise<z.infer<typeof creationNormalizationInputSchema>> {
-  const { data, error } = await input.supabase
-    .from("profile_training_settings")
-    .select("settings")
-    .eq("profile_id", input.profileId)
-    .maybeSingle();
+  const settingsRow = input.db
+    ? await getProfileTrainingSettingsRow({ db: input.db, profileId: input.profileId })
+    : input.supabase
+      ? await input.supabase
+          .from("profile_training_settings")
+          .select("settings")
+          .eq("profile_id", input.profileId)
+          .maybeSingle()
+          .then(({ data, error }: { data: any; error: any }) => (error ? null : data))
+      : null;
 
-  if (error || !data?.settings) {
+  if (!settingsRow?.settings) {
     return {};
   }
 
-  const defaults = extractCreationDefaultsFromProfileSettings(data.settings);
+  const defaults = extractCreationDefaultsFromProfileSettings(settingsRow.settings);
 
   if (Object.keys(defaults).length === 0) {
     return {};
@@ -1908,7 +2336,8 @@ function mapProjectionMicrocyclesToIdealTssByDate(
 }
 
 async function deriveInsightTimelineProjectionIdealTssByDate(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   startDate: string;
@@ -1920,6 +2349,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
 }> {
   try {
     const rawGoals = await loadProfileGoalsWithTargetDates({
+      db: input.db,
       supabase: input.supabase,
       profileId: input.profileId,
       startDate: input.startDate,
@@ -1998,17 +2428,20 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
     }
 
     const creationInput = await loadProfileTrainingSettingsCreationDefaults({
+      db: input.db,
       supabase: input.supabase,
       profileId: input.profileId,
     });
 
     const profileContext = await deriveProfileAwareCreationContext({
+      db: input.db,
       supabase: input.supabase,
       store: input.store,
       profileId: input.profileId,
     });
 
     const creationConfig = await evaluateCreationConfig({
+      db: input.db,
       supabase: input.supabase,
       store: input.store,
       profileId: input.profileId,
@@ -2079,25 +2512,42 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
 }
 
 async function estimateCurrentCtl(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
 }): Promise<number> {
-  const { supabase, store, profileId } = input;
+  const { store, profileId } = input;
   const asOf = new Date();
   const since = new Date(asOf);
   since.setDate(since.getDate() - 90);
 
-  const { data, error } = await supabase
-    .from("activities")
-    .select(
-      "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
-    )
-    .eq("profile_id", profileId)
-    .gte("started_at", since.toISOString())
-    .order("started_at", { ascending: true });
+  const data = input.db
+    ? await input.db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, profileId),
+            gte(schema.activities.started_at, since),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at))
+    : input.supabase
+      ? await input.supabase
+          .from("activities")
+          .select(
+            "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
+          )
+          .eq("profile_id", profileId)
+          .gte("started_at", since.toISOString())
+          .order("started_at", { ascending: true })
+          .then(({ data: rows, error }: { data: any[] | null; error: any }) =>
+            error ? null : rows,
+          )
+      : null;
 
-  if (error || !data) {
+  if (!data) {
     return 0;
   }
 
@@ -2387,7 +2837,8 @@ function enforceCreationConfigFeatureEnabled(): void {
 }
 
 export async function deriveProfileAwareCreationContext(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   asOfIso?: string;
@@ -2400,36 +2851,96 @@ export async function deriveProfileAwareCreationContext(input: {
   recentEffortsCutoff.setDate(recentEffortsCutoff.getDate() - 84);
 
   const [activitiesResult, effortsResult, profileMetricsResult, profileResult, settingsResult] =
-    await Promise.all([
-      input.supabase
-        .from("activities")
-        .select(
-          "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
-        )
-        .eq("profile_id", input.profileId)
-        .gte("started_at", recentActivitiesCutoff.toISOString())
-        .order("started_at", { ascending: false })
-        .limit(300),
-      input.supabase
-        .from("activity_efforts")
-        .select("recorded_at, effort_type, duration_seconds, value, activity_category")
-        .eq("profile_id", input.profileId)
-        .gte("recorded_at", recentEffortsCutoff.toISOString())
-        .order("recorded_at", { ascending: false })
-        .limit(200),
-      input.supabase
-        .from("profile_metrics")
-        .select("metric_type, value, recorded_at")
-        .eq("profile_id", input.profileId)
-        .in("metric_type", ["lthr", "weight_kg"])
-        .order("recorded_at", { ascending: false }),
-      input.supabase.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
-      input.supabase
-        .from("profile_training_settings")
-        .select("settings")
-        .eq("profile_id", input.profileId)
-        .maybeSingle(),
-    ]);
+    input.db
+      ? await Promise.all([
+          input.db
+            .select(activitySummaryColumns)
+            .from(schema.activities)
+            .where(
+              and(
+                eq(schema.activities.profile_id, input.profileId),
+                gte(schema.activities.started_at, recentActivitiesCutoff),
+              ),
+            )
+            .orderBy(sql`${schema.activities.started_at} desc`)
+            .limit(300)
+            .then((data) => ({ data, error: null })),
+          input.db
+            .select({
+              recorded_at: schema.activityEfforts.recorded_at,
+              effort_type: schema.activityEfforts.effort_type,
+              duration_seconds: schema.activityEfforts.duration_seconds,
+              value: schema.activityEfforts.value,
+              activity_category: schema.activityEfforts.activity_category,
+            })
+            .from(schema.activityEfforts)
+            .where(
+              and(
+                eq(schema.activityEfforts.profile_id, input.profileId),
+                gte(schema.activityEfforts.recorded_at, recentEffortsCutoff),
+              ),
+            )
+            .orderBy(sql`${schema.activityEfforts.recorded_at} desc`)
+            .limit(200)
+            .then((data) => ({ data, error: null })),
+          input.db
+            .select({
+              metric_type: schema.profileMetrics.metric_type,
+              value: schema.profileMetrics.value,
+              recorded_at: schema.profileMetrics.recorded_at,
+            })
+            .from(schema.profileMetrics)
+            .where(
+              and(
+                eq(schema.profileMetrics.profile_id, input.profileId),
+                inArray(schema.profileMetrics.metric_type, ["lthr", "weight_kg"]),
+              ),
+            )
+            .orderBy(sql`${schema.profileMetrics.recorded_at} desc`)
+            .then((data) => ({ data, error: null })),
+          input.db
+            .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
+            .from(schema.profiles)
+            .where(eq(schema.profiles.id, input.profileId))
+            .limit(1)
+            .then((data) => ({ data, error: null })),
+          getProfileTrainingSettingsRow({ db: input.db, profileId: input.profileId }).then(
+            (data) => ({
+              data,
+              error: null,
+            }),
+          ),
+        ])
+      : await Promise.all([
+          input
+            .supabase!.from("activities")
+            .select(
+              "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
+            )
+            .eq("profile_id", input.profileId)
+            .gte("started_at", recentActivitiesCutoff.toISOString())
+            .order("started_at", { ascending: false })
+            .limit(300),
+          input
+            .supabase!.from("activity_efforts")
+            .select("recorded_at, effort_type, duration_seconds, value, activity_category")
+            .eq("profile_id", input.profileId)
+            .gte("recorded_at", recentEffortsCutoff.toISOString())
+            .order("recorded_at", { ascending: false })
+            .limit(200),
+          input
+            .supabase!.from("profile_metrics")
+            .select("metric_type, value, recorded_at")
+            .eq("profile_id", input.profileId)
+            .in("metric_type", ["lthr", "weight_kg"])
+            .order("recorded_at", { ascending: false }),
+          input.supabase!.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
+          input
+            .supabase!.from("profile_training_settings")
+            .select("settings")
+            .eq("profile_id", input.profileId)
+            .maybeSingle(),
+        ]);
 
   if (activitiesResult.error) {
     console.warn(
@@ -2474,17 +2985,24 @@ export async function deriveProfileAwareCreationContext(input: {
     intensity_factor: activityDerivedMap.get(activity.id)?.intensity_factor ?? null,
   }));
 
-  const activityCounts = completedActivities.reduce<Record<string, number>>((acc, activity) => {
-    const category = activity.activity_category ?? "other";
-    acc[category] = (acc[category] ?? 0) + 1;
-    return acc;
-  }, {});
+  const activityCounts = completedActivities.reduce(
+    (acc: Record<string, number>, activity: any) => {
+      const category = activity.activity_category ?? "other";
+      acc[category] = (acc[category] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
 
-  const totalActivityCount = Object.values(activityCounts).reduce((sum, count) => sum + count, 0);
+  const activityCountValues = Object.values(activityCounts) as number[];
+  const totalActivityCount = activityCountValues.reduce(
+    (sum: number, count: number) => sum + count,
+    0,
+  );
   const categoryMix =
     totalActivityCount > 0
       ? Object.fromEntries(
-          Object.entries(activityCounts).map(([category, count]) => [
+          (Object.entries(activityCounts) as Array<[string, number]>).map(([category, count]) => [
             category,
             Number((count / totalActivityCount).toFixed(3)),
           ]),
@@ -2494,7 +3012,7 @@ export async function deriveProfileAwareCreationContext(input: {
   const primaryCategory =
     Object.entries(activityCounts).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] ?? undefined;
 
-  const efforts = (effortsResult.error ? [] : (effortsResult.data ?? [])).map((effort) => ({
+  const efforts = (effortsResult.error ? [] : (effortsResult.data ?? [])).map((effort: any) => ({
     recorded_at: effort.recorded_at,
     effort_type: effort.effort_type,
     duration_seconds: effort.duration_seconds,
@@ -2503,13 +3021,13 @@ export async function deriveProfileAwareCreationContext(input: {
   }));
 
   const ftpEffort = efforts
-    .filter((effort) => effort.effort_type === "power" && effort.duration_seconds === 1200)
+    .filter((effort: any) => effort.effort_type === "power" && effort.duration_seconds === 1200)
     .sort((a: any, b: any) => b.value - a.value)[0];
 
   const profileMetricsRows = profileMetricsResult.error ? [] : (profileMetricsResult.data ?? []);
 
-  const lthrMetric = profileMetricsRows.find((metric) => metric.metric_type === "lthr");
-  const weightMetric = profileMetricsRows.find((metric) => metric.metric_type === "weight_kg");
+  const lthrMetric = profileMetricsRows.find((metric: any) => metric.metric_type === "lthr");
+  const weightMetric = profileMetricsRows.find((metric: any) => metric.metric_type === "weight_kg");
 
   const profileMetrics = {
     ftp: ftpEffort?.value ? Math.round(ftpEffort.value * 0.95) : null,
@@ -2693,7 +3211,8 @@ function mergeConfirmedSuggestions(input: {
 }
 
 async function evaluateCreationConfig(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
@@ -2707,6 +3226,7 @@ async function evaluateCreationConfig(input: {
     globalAtlOverride,
     baselineFitnessOverride,
   } = await deriveProfileAwareCreationContext({
+    db: input.db,
     supabase: input.supabase,
     store: input.store,
     profileId: input.profileId,
@@ -2907,21 +3427,27 @@ function mergeCreationDefaults(input: {
 }
 
 async function withProfileTrainingSettingsDefaults(input: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   profileId: string;
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
 }): Promise<z.infer<typeof creationNormalizationInputSchema>> {
-  const { data, error } = await input.supabase
-    .from("profile_training_settings")
-    .select("settings")
-    .eq("profile_id", input.profileId)
-    .maybeSingle();
+  const settingsRow = input.db
+    ? await getProfileTrainingSettingsRow({ db: input.db, profileId: input.profileId })
+    : input.supabase
+      ? await input.supabase
+          .from("profile_training_settings")
+          .select("settings")
+          .eq("profile_id", input.profileId)
+          .maybeSingle()
+          .then(({ data, error }: { data: any; error: any }) => (error ? null : data))
+      : null;
 
-  if (error || !data?.settings) {
+  if (!settingsRow?.settings) {
     return input.creationInput;
   }
 
-  const profileDefaults = extractCreationDefaultsFromProfileSettings(data.settings);
+  const profileDefaults = extractCreationDefaultsFromProfileSettings(settingsRow.settings);
   if (Object.keys(profileDefaults).length === 0) {
     return input.creationInput;
   }
@@ -2936,12 +3462,14 @@ async function withProfileTrainingSettingsDefaults(input: {
 }
 
 export async function getPlanTabProjectionService({
+  db,
   supabase,
   store,
   profileId,
   input,
 }: {
-  supabase: SupabaseClient;
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
   store: ReturnType<typeof createActivityAnalysisStore>;
   profileId: string;
   input: {
@@ -2966,17 +3494,29 @@ export async function getPlanTabProjectionService({
     });
   }
 
+  if (!db && !supabase) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Database client unavailable",
+    });
+  }
+
+  const fallbackSupabase = supabase;
+
   let plan: Record<string, unknown> | null = null;
 
   if (input.training_plan_id) {
-    const { data: fetchedPlan, error: planError } = await supabase
-      .from("training_plans")
-      .select("*")
-      .eq("id", input.training_plan_id)
-      .or(`profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`)
-      .single();
+    const fetchedPlan = db
+      ? await getAccessibleTrainingPlan({ db, planId: input.training_plan_id, profileId })
+      : await fallbackSupabase!
+          .from("training_plans")
+          .select("*")
+          .eq("id", input.training_plan_id)
+          .or(`profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`)
+          .single()
+          .then(({ data, error }: { data: any; error: any }) => (error ? null : data));
 
-    if (planError || !fetchedPlan) {
+    if (!fetchedPlan) {
       throw new TRPCError({
         code: "NOT_FOUND",
         message: "Training plan not found",
@@ -3023,7 +3563,7 @@ export async function getPlanTabProjectionService({
       ? validatePlanFeasibility(parsedStructure.data).warnings
       : [];
 
-  const estimatedCurrentCtl = await estimateCurrentCtl({ supabase, store, profileId });
+  const estimatedCurrentCtl = await estimateCurrentCtl({ db, supabase, store, profileId });
 
   const targetCtlAtPeak =
     parsedStructure.success && parsedStructure.data.plan_type === "periodized"
@@ -3040,38 +3580,58 @@ export async function getPlanTabProjectionService({
     blockRampWarnings,
   });
 
-  let plannedActivitiesQuery: any = supabase
-    .from("events")
-    .select("starts_at, training_plan_id, activity_plan:activity_plans (*)")
-    .eq("profile_id", profileId)
-    .eq("event_type", plannedEventType)
-    .gte("starts_at", toDayStartIso(input.start_date))
-    .lt("starts_at", toNextDayStartIso(input.end_date));
+  const endExclusiveIso = toNextDayStartIso(input.end_date);
+  const projectionInputs = db
+    ? await createEventReadRepository(db).getAccessibleTrainingPlanProjection({
+        profileId,
+        trainingPlanId: input.training_plan_id,
+        startDateIso: toDayStartIso(input.start_date),
+        endDateExclusiveIso: endExclusiveIso,
+      })
+    : null;
 
-  if (input.training_plan_id) {
-    plannedActivitiesQuery = plannedActivitiesQuery.eq("training_plan_id", input.training_plan_id);
-  }
+  const plannedActivitiesRaw = projectionInputs
+    ? projectionInputs.plannedActivities
+    : await (async () => {
+        let plannedActivitiesQuery: any = fallbackSupabase!
+          .from("events")
+          .select("starts_at, training_plan_id, activity_plan:activity_plans (*)")
+          .eq("profile_id", profileId)
+          .eq("event_type", plannedEventType)
+          .gte("starts_at", toDayStartIso(input.start_date))
+          .lt("starts_at", endExclusiveIso);
 
-  const { data: plannedActivitiesEventsRaw } = await plannedActivitiesQuery;
+        if (input.training_plan_id) {
+          plannedActivitiesQuery = plannedActivitiesQuery.eq(
+            "training_plan_id",
+            input.training_plan_id,
+          );
+        }
 
-  const plannedActivitiesRaw = (
-    (plannedActivitiesEventsRaw || []) as Array<{
-      starts_at?: string | null;
-      training_plan_id?: string | null;
-      activity_plan?: unknown;
-    }>
-  ).map((item: any) => ({
-    ...item,
-    scheduled_date: item.starts_at?.split("T")[0] ?? "",
-    activity_plan: item.activity_plan as any,
-  }));
+        const { data } = await plannedActivitiesQuery;
+
+        return (
+          (data || []) as Array<{
+            starts_at?: string | null;
+            training_plan_id?: string | null;
+            activity_plan?: unknown;
+          }>
+        ).map((item: any) => ({
+          ...item,
+          scheduled_date: item.starts_at?.split("T")[0] ?? "",
+          activity_plan: item.activity_plan as any,
+        }));
+      })();
 
   const activityPlans = (plannedActivitiesRaw || [])
     .map((item: any) => item.activity_plan)
     .filter((item): item is NonNullable<typeof item> => item !== null);
 
+  const estimationReader = db ? createEventReadRepository(db) : fallbackSupabase!;
   const plansWithEstimations =
-    activityPlans.length > 0 ? await addEstimationToPlans(activityPlans, supabase, profileId) : [];
+    activityPlans.length > 0
+      ? await addEstimationToPlans(activityPlans, estimationReader as any, profileId)
+      : [];
 
   const estimatedTssByPlanId = new Map(
     plansWithEstimations.map((item: any) => [item.id, item.estimated_tss]),
@@ -3087,17 +3647,17 @@ export async function getPlanTabProjectionService({
     scheduledByDate.set(scheduledDate, (scheduledByDate.get(scheduledDate) || 0) + estimatedTss);
   }
 
-  const endExclusive = new Date(parseDateOnlyUtc(input.end_date));
-  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
-
-  const { data: actualActivities } = await supabase
-    .from("activities")
-    .select(
-      "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
-    )
-    .eq("profile_id", profileId)
-    .gte("started_at", `${input.start_date}T00:00:00.000Z`)
-    .lt("started_at", endExclusive.toISOString());
+  const actualActivities = projectionInputs
+    ? projectionInputs.actualActivities
+    : await fallbackSupabase!
+        .from("activities")
+        .select(
+          "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
+        )
+        .eq("profile_id", profileId)
+        .gte("started_at", `${input.start_date}T00:00:00.000Z`)
+        .lt("started_at", endExclusiveIso)
+        .then(({ data }: { data: any[] | null }) => data ?? []);
 
   const actualDerivedMap = await buildActivityDerivedSummaryMap({
     store,
@@ -3114,6 +3674,7 @@ export async function getPlanTabProjectionService({
   }
 
   const projectionGoalContext = await deriveInsightTimelineProjectionIdealTssByDate({
+    db,
     supabase,
     store,
     profileId,
@@ -3283,27 +3844,19 @@ export const trainingPlansRouter = createTRPCRouter({
   get: protectedProcedure
     .input(z.object({ id: z.string().uuid().optional() }).optional())
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // If ID provided, get specific plan
       if (input?.id) {
-        const { data, error } = await ctx.supabase
-          .from("training_plans")
-          .select("*")
-          .eq("id", input.id)
-          .or(
-            `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-          )
-          .single();
+        const data = await getAccessibleTrainingPlan({
+          db,
+          planId: input.id,
+          profileId: ctx.session.user.id,
+        });
 
-        if (error) {
-          if (error.code === "PGRST116") {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Training plan not found",
-            });
-          }
+        if (!data) {
           throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: error.message,
+            code: "NOT_FOUND",
+            message: "Training plan not found",
           });
         }
 
@@ -3321,23 +3874,21 @@ export const trainingPlansRouter = createTRPCRouter({
         }
 
         // Check if user has liked this plan
-        const { data: likeData } = await (ctx.supabase as any)
-          .from("likes")
-          .select("id")
-          .eq("profile_id", ctx.session.user.id)
-          .eq("entity_type", "training_plan")
-          .eq("entity_id", input.id)
-          .maybeSingle();
+        const hasLiked = await hasTrainingPlanLike({
+          db,
+          profileId: ctx.session.user.id,
+          planId: input.id,
+        });
 
         return {
           ...data,
-          has_liked: !!likeData,
+          has_liked: hasLiked,
         };
       }
 
       // Otherwise, get active plan from future scheduled events
       const activePlanLookup = await getActivePlanFromFutureEvents({
-        supabase: ctx.supabase,
+        db,
         profileId: ctx.session.user.id,
       });
 
@@ -3357,17 +3908,15 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       // Check if user has liked this plan
-      const { data: likeData } = await (ctx.supabase as any)
-        .from("likes")
-        .select("id")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("entity_type", "training_plan")
-        .eq("entity_id", data.id)
-        .maybeSingle();
+      const hasLiked = await hasTrainingPlanLike({
+        db,
+        profileId: ctx.session.user.id,
+        planId: data.id,
+      });
 
       return {
         ...data,
-        has_liked: !!likeData,
+        has_liked: hasLiked,
       };
     }),
 
@@ -3386,10 +3935,7 @@ export const trainingPlansRouter = createTRPCRouter({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      let query = ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const db = getRequiredDb(ctx);
 
       let ownerScope: "own" | "system" | "public" | "all" | "none";
       if (input?.ownerScope) {
@@ -3407,45 +3953,26 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       if (ownerScope === "own") {
-        query = query.eq("profile_id", ctx.session.user.id);
       } else if (ownerScope === "system") {
-        query = query.eq("is_system_template", true);
       } else if (ownerScope === "public") {
-        query = query.eq("template_visibility", "public");
       } else if (ownerScope === "all") {
-        query = query.or(
-          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-        );
       } else {
         return [];
       }
 
-      if (input?.visibility) {
-        query = query.eq("template_visibility", input.visibility);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      const data = await listTrainingPlans({
+        db,
+        profileId: ctx.session.user.id,
+        ownerScope,
+        visibility: input?.visibility,
+      });
 
       const planIds = data?.map((p: any) => p.id) || [];
-      let userLikes: string[] = [];
-
-      if (planIds.length > 0) {
-        const { data: likesData } = await (ctx.supabase as any)
-          .from("likes")
-          .select("entity_id")
-          .eq("profile_id", ctx.session.user.id)
-          .eq("entity_type", "training_plan")
-          .in("entity_id", planIds);
-
-        userLikes = likesData?.map((l: any) => l.entity_id) || [];
-      }
+      const userLikes = await listTrainingPlanLikedIds({
+        db,
+        profileId: ctx.session.user.id,
+        planIds,
+      });
 
       return (data || []).map((plan: any) => ({
         ...withTrainingPlanIdentity(plan as any),
@@ -3457,19 +3984,8 @@ export const trainingPlansRouter = createTRPCRouter({
   // Check if user has a training plan
   // ------------------------------
   exists: protectedProcedure.query(async ({ ctx }) => {
-    const { count, error } = await ctx.supabase
-      .from("training_plans")
-      .select("id", { count: "exact", head: true })
-      .eq("profile_id", ctx.session.user.id);
-
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
-
-    return { exists: (count || 0) > 0, count: count || 0 };
+    const count = await countOwnedTrainingPlans(getRequiredDb(ctx), ctx.session.user.id);
+    return { exists: count > 0, count };
   }),
 
   // ------------------------------
@@ -3479,6 +3995,7 @@ export const trainingPlansRouter = createTRPCRouter({
   create: protectedProcedure
     .input(trainingPlanCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Note: input.structure is already validated by trainingPlanCreateInputSchema
       // which uses trainingPlanCreateSchema (no ID required)
 
@@ -3525,25 +4042,15 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      const { data, error } = await ctx.supabase
-        .from("training_plans")
-        .insert({
+      return insertTrainingPlan({
+        db,
+        values: {
           name: input.name,
           description: input.description ?? null,
-          structure: structureWithId as any, // Cast to satisfy Supabase Json type
-          profile_id: ctx.session.user.id,
-        })
-        .select("*")
-        .single();
-
-      if (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error.message,
-        });
-      }
-
-      return data;
+          structure: structureWithId,
+          profileId: ctx.session.user.id,
+        },
+      });
     }),
 
   // ------------------------------
@@ -3552,9 +4059,10 @@ export const trainingPlansRouter = createTRPCRouter({
   getFeasibilityPreview: protectedProcedure
     .input(minimalTrainingPlanCreateSchema)
     .query(async ({ ctx, input }) => {
-      const store = createActivityAnalysisStore(getRequiredDb(ctx));
+      const db = getRequiredDb(ctx);
+      const store = createActivityAnalysisStore(db);
       const estimatedCurrentCtl = await estimateCurrentCtl({
-        supabase: ctx.supabase,
+        db,
         store,
         profileId: ctx.session.user.id,
       });
@@ -3654,14 +4162,16 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(getCreationSuggestionsInputSchema)
     .query(async ({ ctx, input }) => {
       enforceCreationConfigFeatureEnabled();
+      const db = getRequiredDb(ctx);
       return getCreationSuggestionsUseCase({
-        supabase: ctx.supabase,
+        creationContextReader: db,
         profileId: ctx.session.user.id,
         params: input,
-        deriveProfileAwareCreationContext: (params) =>
+        deriveProfileAwareCreationContext: ({ creationContextReader, ...params }) =>
           deriveProfileAwareCreationContext({
+            db: creationContextReader,
             ...params,
-            store: createActivityAnalysisStore(getRequiredDb(ctx)),
+            store: createActivityAnalysisStore(db),
           }),
       });
     }),
@@ -3674,14 +4184,14 @@ export const trainingPlansRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const creationInputWithProfileDefaults = await withProfileTrainingSettingsDefaults({
-        supabase: ctx.supabase,
+        db,
         profileId: ctx.session.user.id,
         creationInput: input.creation_input,
       });
 
       const result = await previewCreationConfigUseCase({
         profileId: ctx.session.user.id,
-        supabase: ctx.supabase,
+        creationContextReader: db,
         params: {
           ...input,
           creation_input: creationInputWithProfileDefaults,
@@ -3690,19 +4200,20 @@ export const trainingPlansRouter = createTRPCRouter({
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
-          evaluateCreationConfig: (params) =>
+          evaluateCreationConfig: ({ creationContextReader, ...params }) =>
             evaluateCreationConfig({
+              db: creationContextReader,
               ...params,
-              store: createActivityAnalysisStore(getRequiredDb(ctx)),
+              store: createActivityAnalysisStore(db),
             }),
-          buildCreationProjectionArtifacts,
-          buildCreationPreviewSnapshotToken,
-          deriveProjectionDrivenConflicts,
+          buildCreationProjectionArtifacts: buildCreationProjectionArtifacts as any,
+          buildCreationPreviewSnapshotToken: buildCreationPreviewSnapshotToken as any,
+          deriveProjectionDrivenConflicts: deriveProjectionDrivenConflicts as any,
           previewSnapshotVersion: CREATION_PREVIEW_SNAPSHOT_VERSION,
         },
       });
 
-      return result as PreviewCreationConfigResponse;
+      return result as unknown as PreviewCreationConfigResponse;
     }),
 
   // ------------------------------
@@ -3713,14 +4224,14 @@ export const trainingPlansRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const creationInputWithProfileDefaults = await withProfileTrainingSettingsDefaults({
-        supabase: ctx.supabase,
+        db,
         profileId: ctx.session.user.id,
         creationInput: input.creation_input,
       });
 
-      return createFromCreationConfigUseCase({
+      return (await createFromCreationConfigUseCase({
         profileId: ctx.session.user.id,
-        supabase: ctx.supabase,
+        creationContextReader: db,
         params: {
           ...input,
           creation_input: creationInputWithProfileDefaults,
@@ -3729,34 +4240,37 @@ export const trainingPlansRouter = createTRPCRouter({
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
-          evaluateCreationConfig: (params) =>
+          evaluateCreationConfig: ({ creationContextReader, ...params }) =>
             evaluateCreationConfig({
+              db: creationContextReader,
               ...params,
-              store: createActivityAnalysisStore(getRequiredDb(ctx)),
+              store: createActivityAnalysisStore(db),
             }),
-          buildCreationProjectionArtifacts,
-          buildCreationPreviewSnapshotToken,
-          deriveProjectionDrivenConflicts,
+          buildCreationProjectionArtifacts: buildCreationProjectionArtifacts as any,
+          buildCreationPreviewSnapshotToken: buildCreationPreviewSnapshotToken as any,
+          deriveProjectionDrivenConflicts: deriveProjectionDrivenConflicts as any,
           throwPathValidationError,
           parseTrainingPlanStructure: (value) => {
             trainingPlanSchema.parse(value);
           },
         },
-      });
+      })) as any;
     }),
 
   updateFromCreationConfig: protectedProcedure
     .input(updateFromCreationConfigRouterInputSchema)
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const creationInputWithProfileDefaults = await withProfileTrainingSettingsDefaults({
-        supabase: ctx.supabase,
+        db,
         profileId: ctx.session.user.id,
         creationInput: input.creation_input,
       });
 
-      return updateFromCreationConfigUseCase({
+      return (await updateFromCreationConfigUseCase({
         profileId: ctx.session.user.id,
-        supabase: ctx.supabase,
+        repository: createTrainingPlanRepository(db),
+        creationContextReader: db,
         params: {
           ...input,
           creation_input: creationInputWithProfileDefaults,
@@ -3764,19 +4278,20 @@ export const trainingPlansRouter = createTRPCRouter({
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
-          evaluateCreationConfig: (params) =>
+          evaluateCreationConfig: ({ creationContextReader, ...params }) =>
             evaluateCreationConfig({
+              db: creationContextReader,
               ...params,
-              store: createActivityAnalysisStore(getRequiredDb(ctx)),
+              store: createActivityAnalysisStore(db),
             }),
-          buildCreationProjectionArtifacts,
-          buildCreationPreviewSnapshotToken,
-          deriveProjectionDrivenConflicts,
+          buildCreationProjectionArtifacts: buildCreationProjectionArtifacts as any,
+          buildCreationPreviewSnapshotToken: buildCreationPreviewSnapshotToken as any,
+          deriveProjectionDrivenConflicts: deriveProjectionDrivenConflicts as any,
           parseTrainingPlanStructure: (value) => {
             trainingPlanSchema.parse(value);
           },
         },
-      });
+      })) as any;
     }),
 
   // ------------------------------
@@ -3785,9 +4300,11 @@ export const trainingPlansRouter = createTRPCRouter({
   createFromMinimalGoal: protectedProcedure
     .input(minimalTrainingPlanCreateSchema)
     .mutation(async ({ ctx, input }) => {
-      const store = createActivityAnalysisStore(getRequiredDb(ctx));
+      const db = getRequiredDb(ctx);
+      const store = createActivityAnalysisStore(db);
+      const repository = createTrainingPlanRepository(db);
       const estimatedCurrentCtl = await estimateCurrentCtl({
-        supabase: ctx.supabase,
+        db,
         store,
         profileId: ctx.session.user.id,
       });
@@ -3811,25 +4328,12 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      const { data, error } = await ctx.supabase
-        .from("training_plans")
-        .insert({
-          name: expandedPlan.name,
-          description: expandedPlan.description ?? null,
-          structure: structureWithId as any,
-          profile_id: ctx.session.user.id,
-        })
-        .select("*")
-        .single();
-
-      if (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error.message,
-        });
-      }
-
-      return data;
+      return repository.createTrainingPlan({
+        name: expandedPlan.name,
+        description: expandedPlan.description ?? null,
+        structure: structureWithId,
+        profileId: ctx.session.user.id,
+      });
     }),
 
   // ------------------------------
@@ -3838,9 +4342,10 @@ export const trainingPlansRouter = createTRPCRouter({
   getInsightTimeline: protectedProcedure
     .input(insightTimelineInputSchema)
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       return getPlanTabProjectionService({
-        supabase: ctx.supabase,
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        db,
+        store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
         input,
       });
@@ -3850,18 +4355,18 @@ export const trainingPlansRouter = createTRPCRouter({
   // Update training plan
   // ------------------------------
   update: protectedProcedure.input(z.custom()).mutation(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
     const { id, template_visibility, ...updates } = input as {
       id: string;
       template_visibility?: "private" | "public";
     } & z.infer<typeof trainingPlanUpdateInputSchema>;
 
     // Check ownership
-    const { data: existing } = await ctx.supabase
-      .from("training_plans")
-      .select("*")
-      .eq("id", id)
-      .eq("profile_id", ctx.session.user.id)
-      .single();
+    const existing = await getOwnedTrainingPlan({
+      db,
+      planId: id,
+      profileId: ctx.session.user.id,
+    });
 
     if (!existing) {
       throw new TRPCError({
@@ -3883,23 +4388,18 @@ export const trainingPlansRouter = createTRPCRouter({
       }
     }
 
-    const { data, error } = await ctx.supabase
-      .from("training_plans")
-      .update({
-        name: updates.name as string | undefined,
-        description: updates.description as string | null | undefined,
-        structure: updates.structure as any,
-        template_visibility: template_visibility,
-      })
-      .eq("id", id)
-      .select("*")
-      .single();
+    const data = await updateOwnedTrainingPlanRow({
+      db,
+      id,
+      profileId: ctx.session.user.id,
+      name: updates.name as string | undefined,
+      description: updates.description as string | null | undefined,
+      structure: updates.structure as Record<string, unknown> | undefined,
+      templateVisibility: template_visibility,
+    });
 
-    if (error) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: error.message,
-      });
+    if (!data) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to update training plan" });
     }
 
     return data;
@@ -3911,13 +4411,13 @@ export const trainingPlansRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Check ownership
-      const { data: existing } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const existing = await getOwnedTrainingPlan({
+        db,
+        planId: input.id,
+        profileId: ctx.session.user.id,
+      });
 
       if (!existing) {
         throw new TRPCError({
@@ -3927,29 +4427,22 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       // Delete all planned events associated with this training plan first
-      const { error: deleteActivitiesError } = await ctx.supabase
-        .from("events")
-        .delete()
-        .eq("event_type", plannedEventType)
-        .eq("training_plan_id", input.id)
-        .eq("profile_id", ctx.session.user.id);
-
-      if (deleteActivitiesError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to delete planned events: ${deleteActivitiesError.message}`,
-        });
-      }
+      await db
+        .delete(schema.events)
+        .where(
+          and(
+            eq(schema.events.event_type, plannedEventType),
+            eq(schema.events.training_plan_id, input.id),
+            eq(schema.events.profile_id, ctx.session.user.id),
+          ),
+        );
 
       // Now delete the training plan
-      const { error } = await ctx.supabase.from("training_plans").delete().eq("id", input.id);
-
-      if (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error.message,
-        });
-      }
+      await db.execute(sql`
+        delete from training_plans
+        where id = ${input.id}::uuid
+          and profile_id = ${ctx.session.user.id}::uuid
+      `);
 
       return { success: true };
     }),
@@ -3962,16 +4455,14 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { data: sourcePlan, error: sourcePlanError } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.id)
-        .or(
-          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-        )
-        .single();
+      const db = getRequiredDb(ctx);
+      const sourcePlan = await getAccessibleTrainingPlan({
+        db,
+        planId: input.id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (sourcePlanError || !sourcePlan) {
+      if (!sourcePlan) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Training plan not found",
@@ -4006,25 +4497,17 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      const { data, error } = await ctx.supabase
-        .from("training_plans")
-        .insert({
+      const data = await insertTrainingPlan({
+        db,
+        values: {
           name: input.newName?.trim() || `${sourcePlan.name} (Copy)`,
-          description: sourcePlan.description,
-          structure: duplicatedStructure as any,
-          profile_id: ctx.session.user.id,
-          template_visibility: "private",
-          is_public: false,
-        })
-        .select("*")
-        .single();
-
-      if (error || !data) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error?.message ?? "Failed to duplicate training plan",
-        });
-      }
+          description: (sourcePlan.description as string | null | undefined) ?? null,
+          structure: duplicatedStructure,
+          profileId: ctx.session.user.id,
+          templateVisibility: "private",
+          isPublic: false,
+        },
+      });
 
       return withTrainingPlanIdentity(data);
     }),
@@ -4035,16 +4518,14 @@ export const trainingPlansRouter = createTRPCRouter({
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const { data, error } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.id)
-        .or(
-          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-        )
-        .single();
+      const db = getRequiredDb(ctx);
+      const data = await getAccessibleTrainingPlan({
+        db,
+        planId: input.id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (error) {
+      if (!data) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Training plan not found",
@@ -4060,17 +4541,15 @@ export const trainingPlansRouter = createTRPCRouter({
         console.error("Invalid structure in database for training plan", input.id, validationError);
       }
 
-      const { data: likeData } = await (ctx.supabase as any)
-        .from("likes")
-        .select("id")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("entity_type", "training_plan")
-        .eq("entity_id", input.id)
-        .maybeSingle();
+      const hasLiked = await hasTrainingPlanLike({
+        db,
+        profileId: ctx.session.user.id,
+        planId: input.id,
+      });
 
       return {
         ...data,
-        has_liked: !!likeData,
+        has_liked: hasLiked,
       };
     }),
 
@@ -4078,12 +4557,14 @@ export const trainingPlansRouter = createTRPCRouter({
   // Get current training status (CTL/ATL/TSB)
   // ------------------------------
   getCurrentStatus: protectedProcedure.query(async ({ ctx }) => {
+    const db = getRequiredDb(ctx);
     // First check if user has a training plan
-    const { data: plan } = await ctx.supabase
-      .from("training_plans")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .single();
+    const ownedPlans = await listTrainingPlans({
+      db,
+      profileId: ctx.session.user.id,
+      ownerScope: "own",
+    });
+    const plan = ownedPlans[0] ?? null;
 
     if (!plan) {
       return null;
@@ -4094,28 +4575,25 @@ export const trainingPlansRouter = createTRPCRouter({
     const fortyTwoDaysAgo = new Date(today);
     fortyTwoDaysAgo.setDate(fortyTwoDaysAgo.getDate() - 42);
 
-    const { data: activities, error: activitiesError } = await ctx.supabase
-      .from("activities")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .gte("started_at", fortyTwoDaysAgo.toISOString())
-      .order("started_at", { ascending: true });
-
-    if (activitiesError) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: activitiesError.message,
-      });
-    }
+    const activities = await db
+      .select(activitySummaryColumns)
+      .from(schema.activities)
+      .where(
+        and(
+          eq(schema.activities.profile_id, ctx.session.user.id),
+          gte(schema.activities.started_at, fortyTwoDaysAgo),
+        ),
+      )
+      .orderBy(asc(schema.activities.started_at));
 
     const derivedActivityMap = await buildActivityDerivedSummaryMap({
-      store: createActivityAnalysisStore(getRequiredDb(ctx)),
+      store: createActivityAnalysisStore(db),
       profileId: ctx.session.user.id,
-      activities: activities || [],
+      activities,
     });
 
-    const tssData = (activities || []).map(
-      (activity) => derivedActivityMap.get(activity.id)?.tss || 0,
+    const tssData = activities.map(
+      (activity: { id: string }) => derivedActivityMap.get(activity.id)?.tss || 0,
     );
     const loadSeries = calculateTrainingLoadSeries(tssData, 0, 0);
     const latestLoadState = loadSeries[loadSeries.length - 1];
@@ -4133,22 +4611,27 @@ export const trainingPlansRouter = createTRPCRouter({
     endOfWeek.setDate(startOfWeek.getDate() + 7);
 
     // Get completed activities this week
-    const { data: weekActivities } = await ctx.supabase
-      .from("activities")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .gte("started_at", startOfWeek.toISOString())
-      .lt("started_at", endOfWeek.toISOString());
+    const weekActivities = await db
+      .select(activitySummaryColumns)
+      .from(schema.activities)
+      .where(
+        and(
+          eq(schema.activities.profile_id, ctx.session.user.id),
+          gte(schema.activities.started_at, startOfWeek),
+          lt(schema.activities.started_at, endOfWeek),
+        ),
+      );
 
     const weekActivitiesDerivedMap = await buildActivityDerivedSummaryMap({
-      store: createActivityAnalysisStore(getRequiredDb(ctx)),
+      store: createActivityAnalysisStore(db),
       profileId: ctx.session.user.id,
-      activities: weekActivities || [],
+      activities: weekActivities,
     });
 
     const completedWeeklyTSS =
-      weekActivities?.reduce(
-        (sum, act) => sum + (weekActivitiesDerivedMap.get(act.id)?.tss || 0),
+      weekActivities.reduce(
+        (sum: number, act: { id: string }) =>
+          sum + (weekActivitiesDerivedMap.get(act.id)?.tss || 0),
         0,
       ) || 0;
 
@@ -4156,27 +4639,34 @@ export const trainingPlansRouter = createTRPCRouter({
     const weekStartDate = startOfWeek.toISOString().split("T")[0] || "";
     const weekEndDate = endOfWeek.toISOString().split("T")[0] || "";
 
-    const { data: plannedActivitiesEvents } = await ctx.supabase
-      .from("events")
-      .select("*, activity_plan:activity_plans (*)")
-      .eq("profile_id", ctx.session.user.id)
-      .eq("event_type", plannedEventType)
-      .gte("starts_at", toDayStartIso(weekStartDate))
-      .lt("starts_at", toDayStartIso(weekEndDate));
+    const plannedActivitiesEvents = await db
+      .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
+      .from(schema.events)
+      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+      .where(
+        and(
+          eq(schema.events.profile_id, ctx.session.user.id),
+          eq(schema.events.event_type, plannedEventType),
+          gte(schema.events.starts_at, new Date(toDayStartIso(weekStartDate))),
+          lt(schema.events.starts_at, new Date(toDayStartIso(weekEndDate))),
+        ),
+      );
 
-    const plannedActivities = (plannedActivitiesEvents || []).map((item: any) => ({
+    const plannedActivities = plannedActivitiesEvents.map((item: any) => ({
       ...item,
-      scheduled_date: item.starts_at?.split("T")[0] ?? "",
+      starts_at: item.starts_at.toISOString(),
+      scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
     }));
 
     // Extract activity plans and add estimations
     const activityPlans = (plannedActivities || [])
       .map((pa: any) => pa.activity_plan)
-      .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
+      .filter((plan: unknown): plan is NonNullable<typeof plan> => plan !== null);
 
+    const estimationStore = createEventReadRepository(db);
     const plansWithEstimations =
       activityPlans.length > 0
-        ? await addEstimationToPlans(activityPlans, ctx.supabase, ctx.session.user.id)
+        ? await addEstimationToPlans(activityPlans as any, estimationStore, ctx.session.user.id)
         : [];
 
     const plannedWeeklyTSS = plansWithEstimations.reduce(
@@ -4187,12 +4677,7 @@ export const trainingPlansRouter = createTRPCRouter({
     const totalPlannedActivities = plannedActivities?.length || 0;
 
     // Count completed activities this week
-    const { count: completedActivitiesCount } = await ctx.supabase
-      .from("activities")
-      .select("id", { count: "exact", head: true })
-      .eq("profile_id", ctx.session.user.id)
-      .gte("started_at", startOfWeek.toISOString())
-      .lt("started_at", endOfWeek.toISOString());
+    const completedActivitiesCount = weekActivities.length;
 
     // Get upcoming activities (next 5 days)
     const fiveDaysFromNow = new Date(today);
@@ -4201,34 +4686,44 @@ export const trainingPlansRouter = createTRPCRouter({
     const todayDate = today.toISOString().split("T")[0] || "";
     const fiveDaysFromNowDate = fiveDaysFromNow.toISOString().split("T")[0] || "";
 
-    const { data: upcomingActivitiesEventsRaw } = await ctx.supabase
-      .from("events")
-      .select("*, activity_plan:activity_plans (*)")
-      .eq("profile_id", ctx.session.user.id)
-      .eq("event_type", plannedEventType)
-      .gte("starts_at", toDayStartIso(todayDate))
-      .lt("starts_at", toNextDayStartIso(fiveDaysFromNowDate))
-      .order("starts_at", { ascending: true })
+    const upcomingActivitiesEventsRaw = await db
+      .select({
+        id: schema.events.id,
+        starts_at: schema.events.starts_at,
+        activity_plan: schema.activityPlans,
+      })
+      .from(schema.events)
+      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+      .where(
+        and(
+          eq(schema.events.profile_id, ctx.session.user.id),
+          eq(schema.events.event_type, plannedEventType),
+          gte(schema.events.starts_at, new Date(toDayStartIso(todayDate))),
+          lt(schema.events.starts_at, new Date(toNextDayStartIso(fiveDaysFromNowDate))),
+        ),
+      )
+      .orderBy(asc(schema.events.starts_at))
       .limit(5);
 
-    const upcomingActivitiesRaw = (upcomingActivitiesEventsRaw || []).map((item: any) => ({
+    const upcomingActivitiesRaw = upcomingActivitiesEventsRaw.map((item: any) => ({
       ...item,
-      scheduled_date: item.starts_at?.split("T")[0] ?? "",
+      starts_at: item.starts_at.toISOString(),
+      scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
     }));
 
     // Add estimations to upcoming activity plans
     const upcomingPlans = (upcomingActivitiesRaw || [])
       .map((pa: any) => pa.activity_plan)
-      .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
+      .filter((plan: unknown): plan is NonNullable<typeof plan> => plan !== null);
 
     const upcomingPlansWithEstimations =
       upcomingPlans.length > 0
-        ? await addEstimationToPlans(upcomingPlans, ctx.supabase, ctx.session.user.id)
+        ? await addEstimationToPlans(upcomingPlans as any, estimationStore, ctx.session.user.id)
         : [];
 
     // Map back to planned activities structure with estimated values
     const upcomingActivities =
-      upcomingActivitiesRaw?.map((pa, index) => ({
+      upcomingActivitiesRaw?.map((pa: any, index: number) => ({
         id: pa.id,
         scheduled_date: pa.scheduled_date,
         activity_plan: upcomingPlansWithEstimations[index]
@@ -4290,17 +4785,15 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Get the training plan
-      const { data: plan, error: planError } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.id)
-        .or(
-          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-        )
-        .single();
+      const plan = await getAccessibleTrainingPlan({
+        db,
+        planId: input.id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (planError || !plan) {
+      if (!plan) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Training plan not found",
@@ -4310,7 +4803,7 @@ export const trainingPlansRouter = createTRPCRouter({
       const structure = (plan.structure as Record<string, unknown> | null) ?? {};
 
       const structuredWeeklyTss = await estimateWeeklyTssFromStructuredActivities({
-        supabase: ctx.supabase,
+        db,
         profileId: ctx.session.user.id,
         structure,
         startDate: input.start_date,
@@ -4322,12 +4815,16 @@ export const trainingPlansRouter = createTRPCRouter({
         conservativeStarterWeeklyTss;
 
       // ✅ FIX: Get user's CURRENT CTL (not plan's starting_ctl)
-      const { data: actualCurve } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .lte("started_at", new Date().toISOString())
-        .order("started_at", { ascending: false })
+      const actualCurve = await db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, ctx.session.user.id),
+            lte(schema.activities.started_at, new Date()),
+          ),
+        )
+        .orderBy(desc(schema.activities.started_at))
         .limit(42);
 
       let currentCTL =
@@ -4337,7 +4834,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       if (actualCurve && actualCurve.length > 0) {
         const actualCurveDerivedMap = await buildActivityDerivedSummaryMap({
-          store: createActivityAnalysisStore(getRequiredDb(ctx)),
+          store: createActivityAnalysisStore(db),
           profileId: ctx.session.user.id,
           activities: actualCurve,
         });
@@ -4442,6 +4939,7 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const startDate = new Date(input.start_date);
       const endDate = new Date(input.end_date);
 
@@ -4449,20 +4947,24 @@ export const trainingPlansRouter = createTRPCRouter({
       const extendedStart = new Date(startDate);
       extendedStart.setDate(startDate.getDate() - 42); // 42 days before
 
-      const { data: baselineActivities } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .lt("started_at", startDate.toISOString())
-        .gte("started_at", extendedStart.toISOString())
-        .order("started_at", { ascending: true });
+      const baselineActivities = await db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, ctx.session.user.id),
+            lt(schema.activities.started_at, startDate),
+            gte(schema.activities.started_at, extendedStart),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at));
 
       let initialCTL = 0;
       let initialATL = 0;
 
       if (baselineActivities && baselineActivities.length > 0) {
         const baselineDerivedMap = await buildActivityDerivedSummaryMap({
-          store: createActivityAnalysisStore(getRequiredDb(ctx)),
+          store: createActivityAnalysisStore(db),
           profileId: ctx.session.user.id,
           activities: baselineActivities,
         });
@@ -4478,26 +4980,23 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       // Get activities in range
-      const { data: activities, error: activitiesError } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", startDate.toISOString())
-        .lte("started_at", endDate.toISOString())
-        .order("started_at", { ascending: true });
-
-      if (activitiesError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: activitiesError.message,
-        });
-      }
+      const activities = await db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, ctx.session.user.id),
+            gte(schema.activities.started_at, startDate),
+            lte(schema.activities.started_at, endDate),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at));
 
       const { byActivityId: actualDerivedMap, byDate: activitiesByDate } =
         await buildDynamicStressSeries({
-          store: createActivityAnalysisStore(getRequiredDb(ctx)),
+          store: createActivityAnalysisStore(db),
           profileId: ctx.session.user.id,
-          activities: activities || [],
+          activities,
         });
 
       const tssData: { date: string; tss: number }[] = [];
@@ -4556,13 +5055,13 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Check ownership
-      const { data: existing } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const existing = await getOwnedTrainingPlan({
+        db,
+        planId: input.id,
+        profileId: ctx.session.user.id,
+      });
 
       if (!existing) {
         throw new TRPCError({
@@ -4583,20 +5082,15 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       // Apply the adjustment
-      const { data, error } = await ctx.supabase
-        .from("training_plans")
-        .update({
-          structure: input.adjustedStructure,
-        })
-        .eq("id", input.id)
-        .select("*")
-        .single();
+      const data = await updateOwnedTrainingPlanRow({
+        db,
+        id: input.id,
+        profileId: ctx.session.user.id,
+        structure: input.adjustedStructure,
+      });
 
-      if (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error.message,
-        });
+      if (!data) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to adjust training plan" });
       }
 
       return data;
@@ -4613,17 +5107,15 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Verify plan accessibility
-      const { data: plan, error: planError } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.training_plan_id)
-        .or(
-          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-        )
-        .maybeSingle();
+      const plan = await getAccessibleTrainingPlan({
+        db,
+        planId: input.training_plan_id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (planError || !plan) {
+      if (!plan) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Training plan not found",
@@ -4642,28 +5134,35 @@ export const trainingPlansRouter = createTRPCRouter({
       const startDateOnly = startDate.toISOString().split("T")[0] || "";
       const todayDateOnly = today.toISOString().split("T")[0] || "";
 
-      const { data: plannedActivitiesEventsRaw } = await ctx.supabase
-        .from("events")
-        .select("*, activity_plan:activity_plans (*)")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("training_plan_id", input.training_plan_id)
-        .eq("event_type", plannedEventType)
-        .gte("starts_at", toDayStartIso(startDateOnly))
-        .lt("starts_at", toNextDayStartIso(todayDateOnly));
+      const plannedActivitiesEventsRaw = await db
+        .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
+        .from(schema.events)
+        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .where(
+          and(
+            eq(schema.events.profile_id, ctx.session.user.id),
+            eq(schema.events.training_plan_id, input.training_plan_id),
+            eq(schema.events.event_type, plannedEventType),
+            gte(schema.events.starts_at, new Date(toDayStartIso(startDateOnly))),
+            lt(schema.events.starts_at, new Date(toNextDayStartIso(todayDateOnly))),
+          ),
+        );
 
-      const plannedActivitiesRaw = (plannedActivitiesEventsRaw || []).map((item: any) => ({
+      const plannedActivitiesRaw = plannedActivitiesEventsRaw.map((item: any) => ({
         ...item,
-        scheduled_date: item.starts_at?.split("T")[0] ?? "",
+        starts_at: item.starts_at.toISOString(),
+        scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
       }));
 
       // Extract activity plans and add estimations
       const activityPlans = (plannedActivitiesRaw || [])
         .map((pa: any) => pa.activity_plan)
-        .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
+        .filter((plan: unknown): plan is NonNullable<typeof plan> => plan !== null);
 
+      const estimationStore = createEventReadRepository(db);
       const plansWithEstimations =
         activityPlans.length > 0
-          ? await addEstimationToPlans(activityPlans, ctx.supabase, ctx.session.user.id)
+          ? await addEstimationToPlans(activityPlans as any, estimationStore, ctx.session.user.id)
           : [];
 
       // Create a map for quick lookup of estimated TSS by plan ID
@@ -4684,17 +5183,21 @@ export const trainingPlansRouter = createTRPCRouter({
         })) || [];
 
       // Get all completed activities in range
-      const { data: completedActivities } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", startDate.toISOString())
-        .lte("started_at", today.toISOString());
+      const completedActivities = await db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, ctx.session.user.id),
+            gte(schema.activities.started_at, startDate),
+            lte(schema.activities.started_at, today),
+          ),
+        );
 
       const completedDerivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: completedActivities || [],
+        activities: completedActivities,
       });
 
       // Group by week
@@ -4716,19 +5219,19 @@ export const trainingPlansRouter = createTRPCRouter({
           }) || [];
 
         const plannedTSS = weekPlanned.reduce(
-          (sum, pa) => sum + (pa.activity_plan?.estimated_tss || 0),
+          (sum: number, pa: any) => sum + (pa.activity_plan?.estimated_tss || 0),
           0,
         );
 
         // Count completed activities and TSS for this week
         const weekCompleted =
-          completedActivities?.filter((act) => {
+          completedActivities?.filter((act: { started_at: string | Date }) => {
             const date = new Date(act.started_at);
             return date >= weekStart && date < weekEnd;
           }) || [];
 
         const completedTSS = weekCompleted.reduce(
-          (sum, act) => sum + (completedDerivedMap.get(act.id)?.tss || 0),
+          (sum: number, act: { id: string }) => sum + (completedDerivedMap.get(act.id)?.tss || 0),
           0,
         );
 
@@ -4797,29 +5300,27 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Get completed activities in date range with intensity_factor
-      const { data: activities, error } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", input.start_date)
-        .lte("started_at", input.end_date)
-        .order("started_at", { ascending: false });
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      const activities = await db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, ctx.session.user.id),
+            gte(schema.activities.started_at, new Date(input.start_date)),
+            lte(schema.activities.started_at, new Date(input.end_date)),
+          ),
+        )
+        .orderBy(desc(schema.activities.started_at));
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: activities || [],
+        activities,
       });
 
-      const totalActivities = activities?.length || 0;
+      const totalActivities = activities.length;
 
       // Initialize 7-zone distribution (TSS-weighted)
       type IntensityZone =
@@ -4843,7 +5344,7 @@ export const trainingPlansRouter = createTRPCRouter({
       let totalTSS = 0;
 
       // Calculate actual distribution from IF values
-      if (activities && activities.length > 0) {
+      if (activities.length > 0) {
         for (const activity of activities) {
           const intensityFactorValue = derivedMap.get(activity.id)?.intensity_factor || 0;
           const tss = derivedMap.get(activity.id)?.tss || 0;
@@ -4946,30 +5447,28 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - input.weeks_back * 7);
 
       // Get activities with IF values
-      const { data: activities, error } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", startDate.toISOString())
-        .lte("started_at", endDate.toISOString())
-        .order("started_at", { ascending: true });
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      const activities = await db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, ctx.session.user.id),
+            gte(schema.activities.started_at, startDate),
+            lte(schema.activities.started_at, endDate),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at));
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: activities || [],
+        activities,
       });
 
       // Group by week
@@ -4992,7 +5491,7 @@ export const trainingPlansRouter = createTRPCRouter({
         }
       > = {};
 
-      if (activities && activities.length > 0) {
+      if (activities.length > 0) {
         for (const activity of activities) {
           const date = new Date(activity.started_at);
           // Get Monday of the week
@@ -5053,7 +5552,7 @@ export const trainingPlansRouter = createTRPCRouter({
         weeks: Object.values(weeklyData).sort(
           (a, b) => new Date(a.weekStart).getTime() - new Date(b.weekStart).getTime(),
         ),
-        totalActivities: activities?.length || 0,
+        totalActivities: activities.length,
       };
     }),
 
@@ -5068,33 +5567,33 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Get activities with IF >= 0.85 (threshold and above)
-      const { data: allActivities, error } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", input.start_date)
-        .lte("started_at", input.end_date)
-        .order("started_at", { ascending: true });
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      const allActivities = await db
+        .select({
+          ...activitySummaryColumns,
+          name: schema.activities.name,
+        })
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, ctx.session.user.id),
+            gte(schema.activities.started_at, new Date(input.start_date)),
+            lte(schema.activities.started_at, new Date(input.end_date)),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at));
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: allActivities || [],
+        activities: allActivities,
       });
 
       // Filter activities with IF >= 0.85
-      const activities =
-        allActivities?.filter((a: any) => {
-          return (derivedMap.get(a.id)?.intensity_factor || 0) >= 0.85;
-        }) || [];
+      const activities = allActivities.filter(
+        (a: any) => (derivedMap.get(a.id)?.intensity_factor || 0) >= 0.85,
+      );
 
       const violations: Array<{
         activity1: {
@@ -5128,13 +5627,13 @@ export const trainingPlansRouter = createTRPCRouter({
               activity1: {
                 id: prev.id,
                 name: prev.name || "Unnamed activity",
-                started_at: prev.started_at,
+                started_at: prev.started_at.toISOString(),
                 intensity_factor: derivedMap.get(prev.id)?.intensity_factor ?? 0,
               },
               activity2: {
                 id: curr.id,
                 name: curr.name || "Unnamed activity",
-                started_at: curr.started_at,
+                started_at: curr.started_at.toISOString(),
                 intensity_factor: derivedMap.get(curr.id)?.intensity_factor ?? 0,
               },
               hoursBetween: Math.round(hoursBetween * 10) / 10,
@@ -5162,6 +5661,7 @@ export const trainingPlansRouter = createTRPCRouter({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Calculate week boundaries (Sunday to Saturday)
       const today = new Date();
       const weekStart = input?.weekStartDate ? new Date(input.weekStartDate) : new Date(today);
@@ -5176,26 +5676,26 @@ export const trainingPlansRouter = createTRPCRouter({
       weekEnd.setDate(weekStart.getDate() + 7);
 
       // Get completed activities for this week
-      const { data: activities, error } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", weekStart.toISOString())
-        .lt("started_at", weekEnd.toISOString());
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      const activities = await db
+        .select({
+          distance_meters: schema.activities.distance_meters,
+          duration_seconds: schema.activities.duration_seconds,
+        })
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, ctx.session.user.id),
+            gte(schema.activities.started_at, weekStart),
+            lt(schema.activities.started_at, weekEnd),
+          ),
+        );
 
       // Sum totals
       let totalDistance = 0;
       let totalTime = 0;
-      const count = activities?.length || 0;
+      const count = activities.length;
 
-      if (activities && activities.length > 0) {
+      if (activities.length > 0) {
         for (const activity of activities) {
           totalDistance += activity.distance_meters || 0;
           totalTime += activity.duration_seconds || 0;
@@ -5225,23 +5725,7 @@ export const trainingPlansRouter = createTRPCRouter({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      // Query system templates from database
-      let query = ctx.supabase
-        .from("training_plans")
-        .select(
-          "id, name, description, structure, sessions_per_week_target, duration_hours, is_system_template, template_visibility, likes_count, created_at, updated_at",
-        )
-        .eq("is_system_template", true)
-        .eq("template_visibility", "public");
-
-      const { data: templates, error } = await query;
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch templates",
-        });
-      }
+      const templates = await listPublicTemplateTrainingPlans(getRequiredDb(ctx));
 
       // Transform and filter results
       let result = (templates || []).map((t: any) => ({
@@ -5287,18 +5771,11 @@ export const trainingPlansRouter = createTRPCRouter({
   getTemplate: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      // Query system template from database
-      const { data: template, error } = await ctx.supabase
-        .from("training_plans")
-        .select(
-          "id, name, description, structure, sessions_per_week_target, duration_hours, is_system_template, template_visibility, likes_count, created_at, updated_at",
-        )
-        .eq("id", input.id)
-        .eq("is_system_template", true)
-        .eq("template_visibility", "public")
-        .single();
+      const template = (await listPublicTemplateTrainingPlans(getRequiredDb(ctx))).find(
+        (item) => item.id === input.id,
+      );
 
-      if (error || !template) {
+      if (!template) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Template not found",
@@ -5326,9 +5803,10 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const profileId = ctx.session.user.id;
+      const db = getRequiredDb(ctx);
 
       const activePlanLookup = await getActivePlanFromFutureEvents({
-        supabase: ctx.supabase,
+        db,
         profileId,
       });
 
@@ -5339,14 +5817,13 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      const { data: templatePlan, error: templateError } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.template_id)
-        .or(`profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`)
-        .single();
+      const templatePlan = await getAccessibleTrainingPlan({
+        db,
+        planId: input.template_id,
+        profileId,
+      });
 
-      if (templateError || !templatePlan) {
+      if (!templatePlan) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Training plan template not found",
@@ -5395,22 +5872,21 @@ export const trainingPlansRouter = createTRPCRouter({
 
       let allowedPlanIds = new Set<string>();
       if (candidatePlanIds.length > 0) {
-        const { data: accessiblePlans, error: plansError } = await ctx.supabase
-          .from("activity_plans")
-          .select("id")
-          .in("id", candidatePlanIds)
-          .or(
-            `profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`,
-          );
+        const accessiblePlans = await db.execute(sql<{ id: string }>`
+          select id
+          from activity_plans
+          where id in (${sql.join(
+            candidatePlanIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
+            and (
+              profile_id = ${profileId}::uuid
+              or is_system_template = true
+              or template_visibility = 'public'
+            )
+        `);
 
-        if (plansError) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: plansError.message,
-          });
-        }
-
-        allowedPlanIds = new Set((accessiblePlans ?? []).map((row: any) => row.id));
+        allowedPlanIds = new Set(getSqlRows<{ id: string }>(accessiblePlans).map((row) => row.id));
       }
 
       const unresolvedPlanIds = candidatePlanIds.filter((planId) => !allowedPlanIds.has(planId));
@@ -5460,24 +5936,17 @@ export const trainingPlansRouter = createTRPCRouter({
         });
       }
 
-      const { data: insertedEvents, error: eventsError } = await ctx.supabase
-        .from("events")
-        .insert(
+      const insertedEvents = await db
+        .insert(schema.events)
+        .values(
           eventRows.map((eventRow) => ({
             ...eventRow,
             schedule_batch_id,
-          })),
+          })) as any,
         )
-        .select("id");
+        .returning({ id: schema.events.id });
 
-      if (eventsError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Applied plan was created, but event scheduling failed",
-        });
-      }
-
-      created_event_count = insertedEvents?.length ?? 0;
+      created_event_count = insertedEvents.length;
 
       return {
         applied_plan_id: appliedPlanId,
@@ -5501,21 +5970,19 @@ export const trainingPlansRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const profileId = ctx.session.user.id;
       const windowStartIso = todayStartIsoUtc();
+      const db = getRequiredDb(ctx);
 
-      const { data: futurePlanEvents, error: futurePlanEventsError } = await ctx.supabase
-        .from("events")
-        .select("id, training_plan_id")
-        .eq("profile_id", profileId)
-        .eq("event_type", plannedEventType)
-        .eq("training_plan_id", input.id)
-        .gte("starts_at", windowStartIso);
-
-      if (futurePlanEventsError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to inspect active plan events",
-        });
-      }
+      const futurePlanEvents = await db
+        .select({ id: schema.events.id, training_plan_id: schema.events.training_plan_id })
+        .from(schema.events)
+        .where(
+          and(
+            eq(schema.events.profile_id, profileId),
+            eq(schema.events.event_type, plannedEventType),
+            eq(schema.events.training_plan_id, input.id),
+            gte(schema.events.starts_at, new Date(windowStartIso)),
+          ),
+        );
 
       const hasFutureEventsForPlan = (futurePlanEvents?.length ?? 0) > 0;
       if (!hasFutureEventsForPlan && (input.status === "active" || input.status === "paused")) {
@@ -5526,23 +5993,20 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       if (input.status === "active" || input.status === "paused") {
-        const { data: allFuturePlanEvents, error: allFuturePlanEventsError } = await ctx.supabase
-          .from("events")
-          .select("training_plan_id")
-          .eq("profile_id", profileId)
-          .eq("event_type", plannedEventType)
-          .gte("starts_at", windowStartIso)
+        const allFuturePlanEvents = await db
+          .select({ training_plan_id: schema.events.training_plan_id })
+          .from(schema.events)
+          .where(
+            and(
+              eq(schema.events.profile_id, profileId),
+              eq(schema.events.event_type, plannedEventType),
+              gte(schema.events.starts_at, new Date(windowStartIso)),
+            ),
+          )
           .limit(200);
 
-        if (allFuturePlanEventsError) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to check other active plans",
-          });
-        }
-
         const hasOtherActivePlan = (allFuturePlanEvents ?? []).some(
-          (event) =>
+          (event: { training_plan_id?: unknown }) =>
             isUuidString((event as any).training_plan_id) &&
             (event as any).training_plan_id !== input.id,
         );
@@ -5564,21 +6028,17 @@ export const trainingPlansRouter = createTRPCRouter({
         };
       }
 
-      const { data: deletedEvents, error: deleteEventsError } = await ctx.supabase
-        .from("events")
-        .delete()
-        .eq("profile_id", profileId)
-        .eq("event_type", plannedEventType)
-        .eq("training_plan_id", input.id)
-        .gte("starts_at", windowStartIso)
-        .select("id");
-
-      if (deleteEventsError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to update training plan status",
-        });
-      }
+      const deletedEvents = await db
+        .delete(schema.events)
+        .where(
+          and(
+            eq(schema.events.profile_id, profileId),
+            eq(schema.events.event_type, plannedEventType),
+            eq(schema.events.training_plan_id, input.id),
+            gte(schema.events.starts_at, new Date(windowStartIso)),
+          ),
+        )
+        .returning({ id: schema.events.id });
 
       return {
         id: input.id,
@@ -5590,8 +6050,9 @@ export const trainingPlansRouter = createTRPCRouter({
     }),
 
   getActivePlan: protectedProcedure.query(async ({ ctx }) => {
+    const db = getRequiredDb(ctx);
     const activePlanLookup = await getActivePlanFromFutureEvents({
-      supabase: ctx.supabase,
+      db,
       profileId: ctx.session.user.id,
     });
 
@@ -5615,15 +6076,15 @@ export const trainingPlansRouter = createTRPCRouter({
   autoAddPeriodization: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       // Check ownership
-      const { data: existing, error: fetchError } = await ctx.supabase
-        .from("training_plans")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const existing = await getOwnedTrainingPlan({
+        db,
+        planId: input.id,
+        profileId: ctx.session.user.id,
+      });
 
-      if (fetchError || !existing) {
+      if (!existing) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Training plan not found or you don't have permission to edit it",

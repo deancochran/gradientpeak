@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 
 vi.mock("@repo/core/estimation", async () => {
   const actual =
@@ -25,15 +26,20 @@ vi.mock("@repo/core/estimation", async () => {
 import { trainingPlansRouter } from "../planning/training-plans";
 import { getPlanTabProjectionService } from "../planning/training-plans/base";
 
-type QueryResult = {
-  data: any;
-  error: { message: string } | null;
-};
+function createSupabaseMock(results: QueryMap) {
+  const counters = new Map<string, number>();
 
-function createSupabaseMock(results: Record<string, QueryResult>) {
   return {
     from: (table: string) => {
-      const result = results[table] ?? { data: [], error: null };
+      const entry = results[table];
+      const result =
+        !entry || !Array.isArray(entry)
+          ? (entry ?? { data: [], error: null })
+          : (() => {
+              const index = counters.get(table) ?? 0;
+              counters.set(table, index + 1);
+              return entry[index] ?? entry[entry.length - 1] ?? { data: [], error: null };
+            })();
       const filters: Array<
         | { type: "eq"; column: string; value: unknown }
         | { type: "gte"; column: string; value: unknown }
@@ -109,8 +115,11 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
   };
 }
 
-function createTrainingPlansCaller(results: Record<string, QueryResult> = {}) {
+function createTrainingPlansCaller(results: QueryMap = {}) {
+  const { db } = createQueryMapDbMock(results);
+
   return trainingPlansRouter.createCaller({
+    db: db as any,
     supabase: createSupabaseMock(results) as any,
     session: {
       user: {

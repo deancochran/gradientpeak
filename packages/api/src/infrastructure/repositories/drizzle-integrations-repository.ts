@@ -1,4 +1,4 @@
-import type { DrizzleDbClient, PublicIntegrationsRow } from "@repo/db";
+import type { DrizzleDbClient, IntegrationRow } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, gt, lt } from "drizzle-orm";
 import type { IntegrationsRepositories } from "../../repositories";
@@ -12,14 +12,7 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
           .from(schema.integrations)
           .where(eq(schema.integrations.profile_id, profileId));
 
-        return rows.map((row) => ({
-          ...row,
-          idx: row.idx ?? 0,
-          created_at: row.created_at.toISOString(),
-          updated_at: row.updated_at.toISOString(),
-          external_id: row.external_id ?? "",
-          expires_at: row.expires_at ? row.expires_at.toISOString() : null,
-        })) as unknown as PublicIntegrationsRow[];
+        return rows as IntegrationRow[];
       },
 
       async findByProfileIdAndProvider({ profileId, provider }) {

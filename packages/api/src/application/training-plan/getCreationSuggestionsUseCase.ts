@@ -3,27 +3,26 @@ import {
   deriveCreationSuggestions,
   getCreationSuggestionsInputSchema,
 } from "@repo/core";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 type GetCreationSuggestionsInput = z.infer<typeof getCreationSuggestionsInputSchema>;
 
-type DeriveProfileAwareCreationContext = (input: {
-  supabase: SupabaseClient;
+type DeriveProfileAwareCreationContext<TCreationContextReader> = (input: {
+  creationContextReader: TCreationContextReader;
   profileId: string;
   asOfIso?: string;
 }) => Promise<{ contextSummary: CreationContextSummary }>;
 
-export async function getCreationSuggestionsUseCase(input: {
-  supabase: SupabaseClient;
+export async function getCreationSuggestionsUseCase<TCreationContextReader>(input: {
+  creationContextReader: TCreationContextReader;
   profileId: string;
   params: GetCreationSuggestionsInput;
-  deriveProfileAwareCreationContext: DeriveProfileAwareCreationContext;
+  deriveProfileAwareCreationContext: DeriveProfileAwareCreationContext<TCreationContextReader>;
   nowIso?: string;
 }) {
   const nowIso = input.nowIso ?? new Date().toISOString();
   const { contextSummary } = await input.deriveProfileAwareCreationContext({
-    supabase: input.supabase,
+    creationContextReader: input.creationContextReader,
     profileId: input.profileId,
     asOfIso: input.params?.as_of,
   });

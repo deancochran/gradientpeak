@@ -154,7 +154,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
-    "@repo/core": "workspace:*",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.10",
@@ -174,6 +173,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@react-native-community/datetimepicker": "^8.4.4",
     "@react-native-community/slider": "^5.1.1",
+    "@repo/core": "workspace:*",
     "@rn-primitives/accordion": "^1.2.0",
     "@rn-primitives/alert-dialog": "^1.2.0",
     "@rn-primitives/aspect-ratio": "^1.2.0",
@@ -217,12 +217,12 @@
     "zod": "^4.2.1"
   },
   "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
     "@swc/core": "^1.13.12",
     "@swc/jest": "^0.2.39",
-    "@testing-library/react-native": "^13.3.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
-    "@repo/typescript-config": "workspace:*",
+    "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",
     "@types/react": "^19.2.7",
     "jest": "^30.2.0",

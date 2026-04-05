@@ -10,8 +10,6 @@ import {
   type TrainingPlanCreationConfig,
   trainingPlanCalibrationConfigSchema,
 } from "@repo/core";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   buildConflictCommitError,
@@ -45,6 +43,14 @@ type OverrideAudit = {
     unresolved_blocking_conflict_codes: string[];
     rationale_codes: string[];
   };
+};
+
+type ProjectionFeasibilityDiagnostics = {
+  tss_ramp_near_cap_weeks: number;
+  ctl_ramp_near_cap_weeks: number;
+  tss_ramp_clamp_weeks: number;
+  ctl_ramp_clamp_weeks: number;
+  recovery_weeks: number;
 };
 
 const OVERRIDABLE_BLOCKING_CONFLICT_CODES = new Set([
@@ -120,17 +126,43 @@ type EvaluateCreationConfigResult = {
 };
 
 export async function createFromCreationConfigUseCase<
+  TCreationContextReader,
   TEvaluateCreationConfig extends (input: {
-    supabase: SupabaseClient;
+    creationContextReader: TCreationContextReader;
     profileId: string;
     creationInput: CreateFromCreationConfigInput["creation_input"];
     asOfIso?: string;
   }) => Promise<EvaluateCreationConfigResult>,
+  TExpandedPlan extends {
+    name: string;
+    description?: string;
+    metadata?: Record<string, unknown>;
+    goals: unknown[];
+    blocks: unknown[];
+  } & Record<string, unknown>,
   TProjectionChart extends {
     constraint_summary: ProjectionConstraintSummary;
     inferred_current_state?: InferredStateSnapshot;
+    points: unknown[];
+    readiness_score: number;
+    readiness_confidence?: unknown;
+    display_points?: unknown;
+    capacity_envelope?: unknown;
+    risk_flags?: unknown;
+    caps_applied?: unknown;
+    optimization_tradeoff_summary?: unknown;
+    projection_diagnostics?: {
+      effective_optimizer_config?: unknown;
+      clamp_counts?: unknown;
+      objective_contributions?: unknown;
+    };
     no_history?: unknown;
   },
+  TProjectionFeasibility extends {
+    state: "feasible" | "aggressive" | "unsafe";
+    reasons: string[];
+    diagnostics: ProjectionFeasibilityDiagnostics;
+  } & Record<string, unknown>,
   TBuildCreationProjectionArtifacts extends (input: {
     minimalPlan: CreateFromCreationConfigInput["minimal_plan"];
     loadBootstrapState: LoadBootstrapState;
@@ -140,37 +172,28 @@ export async function createFromCreationConfigUseCase<
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     contextSummary: Awaited<ReturnType<TEvaluateCreationConfig>>["contextSummary"];
   }) => {
-    expandedPlan: {
-      name: string;
-      description?: string;
-      metadata?: Record<string, unknown>;
-      goals: unknown[];
-      blocks: unknown[];
-    } & Record<string, unknown>;
+    expandedPlan: TExpandedPlan;
     projectionChart: TProjectionChart;
-    projectionFeasibility: {
-      state: "feasible" | "aggressive" | "unsafe";
-      reasons: string[];
-    };
+    projectionFeasibility: TProjectionFeasibility;
   },
   TBuildCreationPreviewSnapshotToken extends (input: {
     minimalPlan: CreateFromCreationConfigInput["minimal_plan"];
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     loadBootstrapState: LoadBootstrapState;
     projectionConstraintSummary: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["constraint_summary"];
-    projectionFeasibility: ReturnType<TBuildCreationProjectionArtifacts>["projectionFeasibility"];
+    projectionFeasibility: TProjectionFeasibility;
     noHistoryMetadata?: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["no_history"];
   }) => string,
   TDeriveProjectionDrivenConflicts extends (input: {
-    expandedPlan: ReturnType<TBuildCreationProjectionArtifacts>["expandedPlan"];
-    projectionChart: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"];
+    expandedPlan: TExpandedPlan;
+    projectionChart: TProjectionChart;
     postGoalRecoveryDays: number;
   }) => CreationConflictItem[],
 >(input: {
-  supabase: SupabaseClient;
+  creationContextReader: TCreationContextReader;
   profileId: string;
   params: CreateFromCreationConfigInput;
-  repository?: TrainingPlanRepository;
+  repository: TrainingPlanRepository;
   deps: {
     enforceCreationConfigFeatureEnabled: () => void;
     enforceNoAutonomousPostCreateMutation: (
@@ -192,14 +215,14 @@ export async function createFromCreationConfigUseCase<
   input.deps.enforceNoAutonomousPostCreateMutation(input.params.post_create_behavior);
 
   const evaluation = await input.deps.evaluateCreationConfig({
-    supabase: input.supabase,
+    creationContextReader: input.creationContextReader,
     profileId: input.profileId,
     creationInput: input.params.creation_input,
   });
 
-  const repositoryPriorSnapshot = input.repository
-    ? await input.repository.getPriorInferredStateSnapshot(input.profileId)
-    : null;
+  const repositoryPriorSnapshot = await input.repository.getPriorInferredStateSnapshot(
+    input.profileId,
+  );
   const priorInferredSnapshot = inferredStateSnapshotSchema
     .nullable()
     .parse(input.params.prior_inferred_snapshot ?? repositoryPriorSnapshot);
@@ -289,36 +312,14 @@ export async function createFromCreationConfigUseCase<
     });
   }
 
-  const data = input.repository
-    ? await input.repository.createTrainingPlan({
-        name: expandedPlan.name,
-        description: expandedPlan.description ?? null,
-        structure: structureWithId,
-        profileId: input.profileId,
-      })
-    : await (async () => {
-        const { data, error } = await input.supabase
-          .from("training_plans")
-          .insert({
-            name: expandedPlan.name,
-            description: expandedPlan.description ?? null,
-            structure: structureWithId,
-            profile_id: input.profileId,
-          })
-          .select("*")
-          .single();
+  const data = await input.repository.createTrainingPlan({
+    name: expandedPlan.name,
+    description: expandedPlan.description ?? null,
+    structure: structureWithId,
+    profileId: input.profileId,
+  });
 
-        if (error) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: error.message,
-          });
-        }
-
-        return data;
-      })();
-
-  if (projectionChart.inferred_current_state && input.repository) {
+  if (projectionChart.inferred_current_state) {
     const createdPlanId =
       typeof (data as { id?: unknown }).id === "string" ? (data as { id: string }).id : undefined;
     await input.repository.persistInferredStateSnapshot({

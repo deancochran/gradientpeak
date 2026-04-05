@@ -25,10 +25,10 @@ import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCate
 import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
+import { api } from "@/lib/api";
 import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
-import { api } from "@/lib/api";
 
 export type ActivityPlanComposerModeContract =
   | {
@@ -594,7 +594,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                       <View className="flex-row items-center gap-1">
                         <Icon as={MapPin} size={12} className="text-muted-foreground" />
                         <Text className="text-xs text-muted-foreground">
-                          {(routeQuery.data.total_distance / 1000).toFixed(1)} km
+                          {((routeQuery.data.total_distance ?? 0) / 1000).toFixed(1)} km
                         </Text>
                       </View>
                     </View>

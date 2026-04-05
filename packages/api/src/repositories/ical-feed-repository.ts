@@ -1,16 +1,14 @@
-import type { DrizzleDbClient } from "@repo/db";
+import type { DrizzleDbClient, EventRow } from "@repo/db";
 import type { NormalizedIcalEvent } from "../lib/integrations/ical/parser";
 
-export type ExistingFeedEvent = {
-  id: string;
-  external_calendar_id: string | null;
-  external_event_id: string | null;
+export type ExistingFeedEvent = Pick<
+  EventRow,
+  "id" | "external_calendar_id" | "external_event_id" | "occurrence_key"
+> & {
   occurrence_key: string;
 };
 
-export type IcalFeedListRow = {
-  external_calendar_id: string | null;
-  integration_account_id: string | null;
+export type IcalFeedListRow = Pick<EventRow, "external_calendar_id" | "integration_account_id"> & {
   updated_at: string | null;
 };
 

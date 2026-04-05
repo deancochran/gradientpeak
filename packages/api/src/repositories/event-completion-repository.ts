@@ -1,36 +1,38 @@
-import type { PublicEventStatus } from "@repo/db";
+import type { ActivityRow, EventRow, PublicEventStatus } from "@repo/db";
 
-export type EventCompletionEventRecord = {
-  id: string;
-  idx: number | null;
-  profile_id: string;
-  event_type: "planned_activity" | "rest_day" | "race" | "custom" | "imported";
-  title: string | null;
-  description: string | null;
-  all_day: boolean | null;
-  timezone: string | null;
-  activity_plan_id: string | null;
-  training_plan_id: string | null;
-  recurrence_rule: string | null;
-  recurrence_timezone: string | null;
-  series_id: string | null;
-  source_provider: string | null;
-  occurrence_key: string | null;
-  original_starts_at: string | null;
-  notes: string | null;
-  status: PublicEventStatus | null;
-  linked_activity_id: string | null;
+type EventCompletionBase = Pick<
+  EventRow,
+  | "id"
+  | "idx"
+  | "profile_id"
+  | "event_type"
+  | "title"
+  | "description"
+  | "all_day"
+  | "timezone"
+  | "activity_plan_id"
+  | "training_plan_id"
+  | "recurrence_rule"
+  | "recurrence_timezone"
+  | "series_id"
+  | "source_provider"
+  | "occurrence_key"
+  | "notes"
+  | "status"
+  | "linked_activity_id"
+> & {
   created_at: string;
   updated_at: string;
   starts_at: string;
   ends_at: string | null;
+  original_starts_at: string | null;
+};
+
+export type EventCompletionEventRecord = EventCompletionBase & {
   activity_plan: null;
 };
 
-export type EventDeleteCandidateRecord = {
-  event_type: EventCompletionEventRecord["event_type"];
-  id: string;
-};
+export type EventDeleteCandidateRecord = Pick<EventRow, "id" | "event_type">;
 
 export type EventDeleteScope = "single" | "future" | "series";
 
@@ -53,7 +55,7 @@ export interface EventCompletionRepository {
     dateFromInclusiveIso: string;
     dateToExclusiveIso: string;
     profileId: string;
-  }): Promise<Array<{ activity_plan_id: string | null; id: string; started_at: string }>>;
+  }): Promise<Array<Pick<ActivityRow, "id" | "activity_plan_id"> & { started_at: string }>>;
   listHistoricalEventsForReconciliation(input: {
     dateFromInclusiveIso: string;
     dateToExclusiveIso: string;
@@ -74,12 +76,9 @@ export interface EventCompletionRepository {
     activityId: string;
     eventId: string;
     profileId: string;
-  }): Promise<{
-    id: string;
-    starts_at: string;
-    training_plan_id: string | null;
-    updated_at: string;
-  } | null>;
+  }): Promise<
+    (Pick<EventRow, "id" | "training_plan_id"> & { starts_at: string; updated_at: string }) | null
+  >;
   deleteOwnedEventsForScope(input: {
     anchorEvent: Pick<
       EventCompletionEventRecord,

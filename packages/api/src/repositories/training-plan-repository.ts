@@ -1,18 +1,21 @@
 import type { InferredStateSnapshot } from "@repo/core";
+import type { TrainingPlanInsert, TrainingPlanRow } from "@repo/db";
 
-export interface CreateTrainingPlanRecordInput {
-  name: string;
-  description: string | null;
-  structure: Record<string, unknown>;
+export interface CreateTrainingPlanRecordInput
+  extends Pick<TrainingPlanInsert, "description" | "name" | "structure"> {
   profileId: string;
 }
 
-export type CreatedTrainingPlanRecord = {
+export interface UpdateTrainingPlanRecordInput
+  extends Pick<TrainingPlanInsert, "description" | "name" | "structure"> {
   id: string;
-} & Record<string, unknown>;
+  profileId: string;
+}
 
 export interface TrainingPlanRepository {
-  createTrainingPlan(input: CreateTrainingPlanRecordInput): Promise<CreatedTrainingPlanRecord>;
+  createTrainingPlan(input: CreateTrainingPlanRecordInput): Promise<TrainingPlanRow>;
+  getOwnedTrainingPlan(input: { id: string; profileId: string }): Promise<TrainingPlanRow | null>;
+  updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow>;
   getPriorInferredStateSnapshot(profileId: string): Promise<InferredStateSnapshot | null>;
   persistInferredStateSnapshot(input: {
     profileId: string;

@@ -382,6 +382,25 @@ describe("activity plan detail scheduling", () => {
     expect(nativeAlertMock).not.toHaveBeenCalled();
   });
 
+  it("opens rescheduling immediately for a routed scheduled activity", () => {
+    fetchedPlanMock.current = {
+      id: "owned-plan-1",
+      name: "Owned Builder",
+      activity_category: "run",
+      profile_id: "profile-1",
+      structure: { intervals: [] },
+    };
+    localSearchParamsMock.planId = "owned-plan-1";
+    localSearchParamsMock.eventId = "event-1";
+    localSearchParamsMock.action = "schedule";
+
+    renderNative(<ActivityPlanDetail />);
+
+    expect(scheduleModalProps.at(-1)?.visible).toBe(true);
+    expect(scheduleModalProps.at(-1)?.eventId).toBe("event-1");
+    expect(nativeAlertMock).not.toHaveBeenCalled();
+  });
+
   it("shows the new summary-first detail context and hides placeholder share UI", () => {
     localSearchParamsMock.template = JSON.stringify({
       id: "11111111-1111-1111-1111-111111111111",

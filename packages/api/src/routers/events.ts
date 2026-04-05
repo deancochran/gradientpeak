@@ -7,6 +7,8 @@ import {
   plannedActivityUpdateSchema,
 } from "@repo/core";
 import type {
+  ActivityRow,
+  EventRow,
   PublicActivityCategory,
   PublicActivityPlansRow,
   PublicEffortType,
@@ -14,7 +16,6 @@ import type {
   PublicEventType,
   PublicProfileMetricType,
 } from "@repo/db";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
@@ -25,8 +26,11 @@ import {
   createWahooRepository,
 } from "../infrastructure/repositories";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlan, addEstimationToPlans } from "../utils/estimation-helpers";
+
+const storageService = getApiStorageService();
 
 type EventLifecycleStatus =
   | "scheduled"
@@ -41,7 +45,7 @@ function getWahooSyncService(ctx: any) {
     repository: createWahooRepository({ db: getRequiredDb(ctx) }),
     storage: createWahooRouteStorage({
       async downloadRouteGpx(filePath) {
-        const { data, error } = await ctx.supabase.storage.from("routes").download(filePath);
+        const { data, error } = await storageService.storage.from("routes").download(filePath);
         if (error || !data) return null;
         return data.text();
       },
@@ -72,8 +76,6 @@ type InsightRefreshHint = {
   changed_date: string | null;
   refresh_key: string;
 };
-
-type ActivityPlanRecord = PublicActivityPlansRow;
 
 type DbEventType = PublicEventType;
 type CoreEventType = z.infer<typeof eventTypeInputSchema>;
@@ -133,31 +135,41 @@ const plannedEventSelect = `
   activity_plan:activity_plans (*)
 `;
 
-type PlannedEventRecord = {
-  id: string;
-  idx: number;
-  profile_id: string;
-  event_type: DbEventType;
-  title: string;
-  description: string | null;
-  all_day: boolean;
-  timezone: string;
-  activity_plan_id: string | null;
-  training_plan_id: string | null;
-  recurrence_rule: string | null;
-  recurrence_timezone: string | null;
-  series_id: string | null;
-  source_provider: string | null;
-  occurrence_key: string;
-  original_starts_at: string | null;
-  notes: string | null;
-  status: PublicEventStatus;
-  linked_activity_id: string | null;
+type PlannedEventRecord = Omit<
+  Pick<
+    EventRow,
+    | "id"
+    | "idx"
+    | "profile_id"
+    | "event_type"
+    | "title"
+    | "description"
+    | "all_day"
+    | "timezone"
+    | "activity_plan_id"
+    | "training_plan_id"
+    | "recurrence_rule"
+    | "recurrence_timezone"
+    | "series_id"
+    | "source_provider"
+    | "occurrence_key"
+    | "original_starts_at"
+    | "notes"
+    | "status"
+    | "linked_activity_id"
+    | "created_at"
+    | "updated_at"
+    | "starts_at"
+    | "ends_at"
+  >,
+  "created_at" | "updated_at" | "starts_at" | "ends_at" | "original_starts_at"
+> & {
   created_at: string;
   updated_at: string;
   starts_at: string;
   ends_at: string | null;
-  activity_plan: ActivityPlanRecord[] | null;
+  original_starts_at: string | null;
+  activity_plan: PublicActivityPlansRow[] | null;
 };
 
 type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
@@ -167,12 +179,12 @@ type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
   scheduled_date: string;
   event_type: CoreEventType;
   legacy_event_type: DbEventType;
-  activity_plan: ActivityPlanRecord | null;
+  activity_plan: PublicActivityPlansRow | null;
 };
 
 function flattenActivityPlanRelation(
-  activityPlan: PlannedEventRecord["activity_plan"] | ActivityPlanRecord | null | undefined,
-): ActivityPlanRecord | null {
+  activityPlan: PlannedEventRecord["activity_plan"] | PublicActivityPlansRow | null | undefined,
+): PublicActivityPlansRow | null {
   if (Array.isArray(activityPlan)) return activityPlan[0] ?? null;
   return activityPlan ?? null;
 }
@@ -322,8 +334,110 @@ function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
   };
 }
 
+function isLegacyRestDayEvent(
+  event: Pick<PlannedEventRecord, "event_type"> | null | undefined,
+): boolean {
+  return (event?.event_type ?? plannedEventType) === "rest_day";
+}
+
 function mapEvents<T extends PlannedEventRecord>(events: T[] | null): Array<MappedEvent<T>> {
-  return (events || []).map((event) => mapEvent(event));
+  return (events || [])
+    .filter((event) => !isLegacyRestDayEvent(event))
+    .map((event) => mapEvent(event));
+}
+
+function assertRestDayWritesBlocked(eventType: CoreEventType, action: "create" | "update"): void {
+  if (eventType !== "rest_day") return;
+
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `Cannot ${action} rest_day events; rest is inferred from dates without scheduled planned events`,
+  });
+}
+
+async function listVisibleOwnedEvents(
+  repository: ReturnType<typeof getEventReadRepository>,
+  input: Parameters<ReturnType<typeof getEventReadRepository>["listOwnedEvents"]>[0],
+): Promise<{ rows: PlannedEventRecord[]; hasMore: boolean }> {
+  const requestedCount = input.limit;
+  const visibleRows: PlannedEventRecord[] = [];
+  let cursor = input.cursor;
+  let hasMore = false;
+
+  while (visibleRows.length < requestedCount + 1) {
+    const batch = (await repository.listOwnedEvents({
+      ...input,
+      cursor,
+      limit: requestedCount + 1,
+    })) as PlannedEventRecord[] | null;
+
+    const rawRows = batch ?? [];
+    if (rawRows.length === 0) break;
+
+    visibleRows.push(...rawRows.filter((row) => !isLegacyRestDayEvent(row)));
+
+    const lastRawRow = rawRows[rawRows.length - 1];
+    if (!lastRawRow) break;
+
+    if (rawRows.length < requestedCount + 1) break;
+
+    cursor = {
+      startsAt: toCanonicalInstantIso(lastRawRow.starts_at),
+      id: lastRawRow.id,
+    };
+
+    if (visibleRows.length > requestedCount) {
+      hasMore = true;
+      break;
+    }
+  }
+
+  return {
+    rows: visibleRows.slice(0, requestedCount + 1),
+    hasMore: hasMore || visibleRows.length > requestedCount,
+  };
+}
+
+async function countVisibleOwnedEventsInRange(
+  repository: ReturnType<typeof getEventReadRepository>,
+  input: Pick<
+    Parameters<ReturnType<typeof getEventReadRepository>["listOwnedEvents"]>[0],
+    "profileId" | "dateFrom" | "dateTo"
+  >,
+): Promise<number> {
+  let cursor: { startsAt: string; id: string } | undefined;
+  let count = 0;
+  const pageSize = 500;
+
+  while (true) {
+    const batch = (await repository.listOwnedEvents({
+      ...input,
+      includeAdhoc: true,
+      limit: pageSize,
+      cursor,
+    })) as PlannedEventRecord[] | null;
+
+    const rows = batch ?? [];
+    if (rows.length === 0) break;
+
+    count += rows.filter((row) => !isLegacyRestDayEvent(row)).length;
+
+    if (rows.length < pageSize) break;
+
+    const lastRow = rows[rows.length - 1];
+    if (!lastRow) break;
+
+    cursor = {
+      startsAt: toCanonicalInstantIso(lastRow.starts_at),
+      id: lastRow.id,
+    };
+  }
+
+  return count;
+}
+
+function countUniqueScheduledDates(events: Array<Pick<PlannedEventRecord, "starts_at">>): number {
+  return new Set(events.map((event) => toDateKey(event.starts_at))).size;
 }
 
 function getRecordValue(record: unknown, key: string): unknown {
@@ -543,20 +657,16 @@ function applyScopeFilters(
   return query.eq("series_id", seriesId);
 }
 
-type ReconciliationEventCandidate = {
-  id: string;
+type ReconciliationEventCandidate = Pick<
+  EventRow,
+  "id" | "activity_plan_id" | "training_plan_id" | "status" | "linked_activity_id"
+> & {
   starts_at: string;
-  activity_plan_id: string | null;
-  training_plan_id: string | null;
-  status: PublicEventStatus;
-  linked_activity_id: string | null;
   event_type: DbEventType;
 };
 
-type ReconciliationActivityCandidate = {
-  id: string;
+type ReconciliationActivityCandidate = Pick<ActivityRow, "id" | "activity_plan_id"> & {
   started_at: string;
-  activity_plan_id: string | null;
 };
 
 function compareActivitiesForReconciliation(
@@ -592,6 +702,13 @@ export const eventsRouter = createTRPCRouter({
       });
 
       if (!data) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Event not found",
+        });
+      }
+
+      if (isLegacyRestDayEvent(data as PlannedEventRecord)) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Event not found",
@@ -663,10 +780,10 @@ export const eventsRouter = createTRPCRouter({
     const endOfWeekUtc = new Date(startOfWeekUtc);
     endOfWeekUtc.setUTCDate(startOfWeekUtc.getUTCDate() + 7);
 
-    return eventReadRepository.countOwnedEventsInRange({
+    return countVisibleOwnedEventsInRange(eventReadRepository, {
       profileId: ctx.session.user.id,
-      startsAtGte: startOfWeekUtc.toISOString(),
-      startsAtLt: endOfWeekUtc.toISOString(),
+      dateFrom: startOfWeekUtc.toISOString(),
+      dateTo: endOfWeekUtc.toISOString(),
     });
   }),
 
@@ -674,6 +791,8 @@ export const eventsRouter = createTRPCRouter({
     const eventWriteRepository = getEventWriteRepository(ctx);
     const legacyInput = "scheduled_date" in input ? (input as LegacyPlannedCreateInput) : null;
     const normalizedEventType: CoreEventType = (input.event_type ?? "planned") as CoreEventType;
+
+    assertRestDayWritesBlocked(normalizedEventType, "create");
 
     if (normalizedEventType === "imported") {
       throw new TRPCError({
@@ -685,13 +804,6 @@ export const eventsRouter = createTRPCRouter({
     const recurrence = input.recurrence;
     ensurePersistableRecurrence(recurrence);
     const status = toPersistableEventStatus(input.lifecycle);
-
-    if (normalizedEventType === "rest_day" && input.activity_plan_id) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: 'activity_plan_id must be omitted when event_type is "rest_day"',
-      });
-    }
 
     if (normalizedEventType === "planned" && !input.activity_plan_id) {
       throw new TRPCError({
@@ -829,6 +941,8 @@ export const eventsRouter = createTRPCRouter({
     const existingEvent = existing as PlannedEventRecord;
     const existingEventType = toCoreEventType(existingEvent.event_type);
 
+    assertRestDayWritesBlocked(existingEventType, "update");
+
     if (existingEventType === "imported") {
       throw new TRPCError({
         code: "FORBIDDEN",
@@ -840,6 +954,9 @@ export const eventsRouter = createTRPCRouter({
     const patchAny = patch as any;
     const scheduledDate = "scheduled_date" in input ? input.scheduled_date : undefined;
     const targetEventType = (patchAny.event_type as CoreEventType | undefined) ?? existingEventType;
+
+    assertRestDayWritesBlocked(targetEventType, "update");
+
     const hasScheduledDateMove =
       scheduledDate !== undefined &&
       toDateKey(scheduledDate) !== toDateKey(existingEvent.starts_at);
@@ -866,13 +983,6 @@ export const eventsRouter = createTRPCRouter({
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: 'activity_plan_id is required when event_type is "planned"',
-      });
-    }
-
-    if (targetEventType === "rest_day" && nextActivityPlanId) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: 'activity_plan_id must be omitted when event_type is "rest_day"',
       });
     }
 
@@ -957,10 +1067,6 @@ export const eventsRouter = createTRPCRouter({
       if (existingEvent.status === "completed") {
         eventUpdates.status = "scheduled";
       }
-    }
-
-    if (targetEventType === "rest_day" && patchAny.activity_plan_id === undefined) {
-      eventUpdates.activity_plan_id = null;
     }
 
     let updatedRows;
@@ -1128,6 +1234,9 @@ export const eventsRouter = createTRPCRouter({
 
       const existingEvent = existingEventRow as PlannedEventRecord;
       const existingEventType = toCoreEventType(existingEvent.event_type);
+
+      assertRestDayWritesBlocked(existingEventType, "update");
+
       if (existingEventType === "imported") {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -1199,6 +1308,9 @@ export const eventsRouter = createTRPCRouter({
 
       const existingEvent = existingEventRow as PlannedEventRecord;
       const existingEventType = toCoreEventType(existingEvent.event_type);
+
+      assertRestDayWritesBlocked(existingEventType, "update");
+
       if (existingEventType === "imported") {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -1433,9 +1545,17 @@ export const eventsRouter = createTRPCRouter({
     const eventReadRepository = getEventReadRepository(ctx);
     const limit = input.limit;
     const [cursorDate, cursorId] = input.cursor ? input.cursor.split("_") : [];
-    const data = await eventReadRepository.listOwnedEvents({
+
+    if (input.event_types?.every((eventType) => eventType === "rest_day")) {
+      return {
+        items: [],
+        nextCursor: undefined,
+      };
+    }
+
+    const { rows, hasMore } = await listVisibleOwnedEvents(eventReadRepository, {
       profileId: ctx.session.user.id,
-      limit: limit + 1,
+      limit,
       includeAdhoc: input.include_adhoc,
       trainingPlanId: input.training_plan_id,
       activityPlanId: input.activity_plan_id,
@@ -1458,8 +1578,6 @@ export const eventsRouter = createTRPCRouter({
           : undefined,
     });
 
-    const rows = data ?? [];
-    const hasMore = rows.length > limit;
     const events = mapEvents((hasMore ? rows.slice(0, limit) : rows) as PlannedEventRecord[]);
 
     const itemsWithPlans = events.filter(
@@ -1666,7 +1784,12 @@ export const eventsRouter = createTRPCRouter({
             ? "warning"
             : "violated";
 
-      const restDaysThisWeek = 7 - newActivitiesCount;
+      const currentPlannedDayCount = countUniqueScheduledDates(plannedThisWeekMapped);
+      const nextPlannedDayCount = new Set([
+        ...plannedThisWeekMapped.map((event) => toDateKey(event.starts_at)),
+        input.scheduled_date,
+      ]).size;
+      const restDaysThisWeek = 7 - nextPlannedDayCount;
       const minRestDays = structure.min_rest_days_per_week || 0;
       const restDaysStatus =
         restDaysThisWeek >= minRestDays
@@ -1697,7 +1820,7 @@ export const eventsRouter = createTRPCRouter({
           },
           restDays: {
             status: restDaysStatus as "satisfied" | "warning" | "violated",
-            current: 7 - currentActivitiesCount,
+            current: 7 - currentPlannedDayCount,
             withNew: restDaysThisWeek,
             minimum: minRestDays,
           },

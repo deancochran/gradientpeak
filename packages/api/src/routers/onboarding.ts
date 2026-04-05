@@ -23,9 +23,12 @@ import {
 import {
   completeOnboardingSchema,
   estimateMetricsInputSchema,
-  type Sport,
 } from "@repo/core/schemas/onboarding";
+import { activities, profiles } from "@repo/db";
+import { TRPCError } from "@trpc/server";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   batchInsertActivityEfforts,
@@ -70,8 +73,8 @@ export const onboardingRouter = createTRPCRouter({
   completeOnboarding: protectedProcedure
     .input(completeOnboardingSchema)
     .mutation(async ({ ctx, input }) => {
-      const { supabase, session } = ctx;
-      const userId = session.user.id;
+      const db = getRequiredDb(ctx);
+      const userId = ctx.session.user.id;
 
       // Calculate age from DOB (default to 30 if missing for calculations ONLY)
       // DO NOT use this default for saving to the profile.
@@ -96,18 +99,44 @@ export const onboardingRouter = createTRPCRouter({
           )
         : null;
 
-      // 1. Update profiles table - ONLY with provided values
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          ...(input.dob ? { dob: input.dob } : {}),
-          ...(input.gender ? { gender: input.gender } : {}),
+      // 1. Update profiles table - ONLY with provided values.
+      try {
+        const profileUpdate = {
+          dob: input.dob ? new Date(input.dob) : undefined,
+          gender: input.gender,
           onboarded: true,
-        })
-        .eq("id", userId);
+          updated_at: new Date(),
+        };
 
-      if (profileError) {
-        throw new Error(`Failed to update profile: ${profileError.message}`);
+        if (Object.values(profileUpdate).some((value) => value !== undefined)) {
+          const [updatedProfile] = await db
+            .update(profiles)
+            .set(profileUpdate)
+            .where(eq(profiles.id, userId))
+            .returning({ id: profiles.id });
+
+          if (!updatedProfile?.id) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Profile not found",
+            });
+          }
+        } else {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Profile not found",
+          });
+        }
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update profile during onboarding",
+          cause: error,
+        });
       }
 
       // 2. Prepare and insert profile metrics
@@ -122,23 +151,26 @@ export const onboardingRouter = createTRPCRouter({
         baseline,
       );
 
-      const { error: metricsError } = await batchInsertProfileMetrics(supabase, userId, metrics);
-
-      if (metricsError) {
-        throw new Error(`Failed to insert metrics: ${metricsError.message}`);
+      try {
+        await batchInsertProfileMetrics(db, userId, metrics);
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to insert onboarding metrics",
+          cause: error,
+        });
       }
 
       // 3. Derive and insert all activity efforts
       const allEfforts = [];
       const warnings: string[] = [];
 
-      const { data: latestActivity } = await supabase
-        .from("activities")
-        .select("id")
-        .eq("profile_id", userId)
-        .order("started_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const [latestActivity] = await db
+        .select({ id: activities.id })
+        .from(activities)
+        .where(eq(activities.profile_id, userId))
+        .orderBy(desc(activities.started_at))
+        .limit(1);
 
       const fallbackActivityId = latestActivity?.id ?? null;
 
@@ -166,25 +198,29 @@ export const onboardingRouter = createTRPCRouter({
 
       // Batch insert all derived efforts
       if (allEfforts.length > 0) {
-        const { error: effortsError } = await batchInsertActivityEfforts(
-          supabase,
-          userId,
-          allEfforts,
-          input.experience_level,
-          fallbackActivityId,
-        );
-
-        if (effortsError) {
+        try {
+          await batchInsertActivityEfforts(
+            db,
+            userId,
+            allEfforts,
+            input.experience_level,
+            fallbackActivityId,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "";
           const isActivityIdNotNullViolation =
-            effortsError.message?.includes("activity_id") &&
-            effortsError.message?.includes("not-null");
+            message.includes("activity_id") && message.includes("not-null");
 
           if (isActivityIdNotNullViolation && !fallbackActivityId) {
             warnings.push(
               "Skipped effort insertion because this environment requires activity_id and no activities exist yet.",
             );
           } else {
-            throw new Error(`Failed to insert efforts: ${effortsError.message}`);
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Failed to insert onboarding efforts",
+              cause: error,
+            });
           }
         }
       }

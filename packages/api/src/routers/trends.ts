@@ -5,7 +5,8 @@ import {
   getTrainingIntensityZone,
 } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
-import { TRPCError } from "@trpc/server";
+import { type ActivityRow, activities, profiles, publicActivityCategorySchema } from "@repo/db";
+import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
@@ -14,19 +15,23 @@ import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
 
+const activityTypeSchema = publicActivityCategorySchema;
+
 // Input schemas
-const dateRangeSchema = z.object({
-  start_date: z.string(),
-  end_date: z.string(),
-});
+const dateRangeSchema = z
+  .object({
+    start_date: z.string(),
+    end_date: z.string(),
+  })
+  .strict();
 
 const volumeTrendsSchema = dateRangeSchema.extend({
   groupBy: z.enum(["day", "week", "month"]).default("week"),
-  type: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
+  type: activityTypeSchema.optional(),
 });
 
 const performanceTrendsSchema = dateRangeSchema.extend({
-  type: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
+  type: activityTypeSchema.optional(),
 });
 
 const zoneDistributionTrendsSchema = dateRangeSchema.extend({
@@ -34,7 +39,7 @@ const zoneDistributionTrendsSchema = dateRangeSchema.extend({
 });
 
 const peakPerformancesSchema = z.object({
-  type: z.enum(["run", "bike", "swim", "strength", "other"]).optional(),
+  type: activityTypeSchema.optional(),
   metric: z.enum(["distance", "speed", "power", "duration", "tss"]),
   limit: z.number().min(1).max(50).default(10),
 });
@@ -44,30 +49,24 @@ export const trendsRouter = createTRPCRouter({
   // Volume Trends - Distance, Time, Activity Count
   // ------------------------------
   getVolumeTrends: protectedProcedure.input(volumeTrendsSchema).query(async ({ ctx, input }) => {
-    // Build query
-    let query = ctx.supabase
-      .from("activities")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .gte("started_at", input.start_date)
-      .lte("started_at", input.end_date)
-      .order("started_at", { ascending: true });
+    const db = getRequiredDb(ctx);
+    const conditions = [
+      eq(activities.profile_id, ctx.session.user.id),
+      gte(activities.started_at, new Date(input.start_date)),
+      lte(activities.started_at, new Date(input.end_date)),
+    ];
 
-    // Filter by category if provided
     if (input.type) {
-      query = query.eq("type", input.type);
+      conditions.push(eq(activities.type, input.type));
     }
 
-    const { data: activities, error } = await query;
+    const activityRows = await db
+      .select()
+      .from(activities)
+      .where(and(...conditions))
+      .orderBy(asc(activities.started_at));
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
-
-    if (!activities || activities.length === 0) {
+    if (activityRows.length === 0) {
       return { dataPoints: [], totals: null };
     }
 
@@ -82,7 +81,7 @@ export const trendsRouter = createTRPCRouter({
       }
     >();
 
-    for (const activity of activities) {
+    for (const activity of activityRows) {
       const date = new Date(activity.started_at);
       let groupKey: string;
 
@@ -124,12 +123,12 @@ export const trendsRouter = createTRPCRouter({
 
     // Calculate totals
     const totals = {
-      totalDistance: activities.reduce((sum: any, a: any) => sum + (a.distance_meters || 0), 0),
-      totalTime: activities.reduce(
+      totalDistance: activityRows.reduce((sum, a) => sum + (a.distance_meters || 0), 0),
+      totalTime: activityRows.reduce(
         (sum, a) => sum + (a.moving_seconds || a.duration_seconds || 0),
         0,
       ),
-      totalActivities: activities.length,
+      totalActivities: activityRows.length,
     };
 
     return { dataPoints, totals };
@@ -141,34 +140,30 @@ export const trendsRouter = createTRPCRouter({
   getPerformanceTrends: protectedProcedure
     .input(performanceTrendsSchema)
     .query(async ({ ctx, input }) => {
-      let query = ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", input.start_date)
-        .lte("started_at", input.end_date)
-        .order("started_at", { ascending: true });
+      const db = getRequiredDb(ctx);
+      const conditions = [
+        eq(activities.profile_id, ctx.session.user.id),
+        gte(activities.started_at, new Date(input.start_date)),
+        lte(activities.started_at, new Date(input.end_date)),
+      ];
 
       if (input.type) {
-        query = query.eq("type", input.type);
+        conditions.push(eq(activities.type, input.type));
       }
 
-      const { data: activities, error } = await query;
+      const activityRows = await db
+        .select()
+        .from(activities)
+        .where(and(...conditions))
+        .orderBy(asc(activities.started_at));
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
-
-      if (!activities || activities.length === 0) {
+      if (activityRows.length === 0) {
         return { dataPoints: [] };
       }
 
-      const dataPoints = activities.map((activity: any) => {
+      const dataPoints = activityRows.map((activity) => {
         return {
-          date: activity.started_at,
+          date: activity.started_at.toISOString(),
           activityId: activity.id,
           activityName: activity.name,
           avgSpeed: activity.avg_speed_mps || null,
@@ -186,23 +181,17 @@ export const trendsRouter = createTRPCRouter({
   // Training Load Trends (works WITHOUT training plan)
   // ------------------------------
   getTrainingLoadTrends: protectedProcedure.input(dateRangeSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
     const startDate = new Date(input.start_date);
     const endDate = new Date(input.end_date);
 
-    const { data: profile, error: profileError } = await ctx.supabase
-      .from("profiles")
-      .select("dob, gender")
-      .eq("id", ctx.session.user.id)
-      .maybeSingle();
+    const [profile] = await db
+      .select({ dob: profiles.dob, gender: profiles.gender })
+      .from(profiles)
+      .where(eq(profiles.id, ctx.session.user.id))
+      .limit(1);
 
-    if (profileError) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: profileError.message,
-      });
-    }
-
-    const userAge = calculateAge(profile?.dob ?? null);
+    const userAge = calculateAge(profile?.dob?.toISOString() ?? null);
     const userGender =
       profile?.gender === "male" || profile?.gender === "female" ? profile.gender : null;
     const effectiveAge = featureFlags.personalizationAgeConstants ? userAge : undefined;
@@ -212,22 +201,19 @@ export const trendsRouter = createTRPCRouter({
     const extendedStart = new Date(startDate);
     extendedStart.setDate(startDate.getDate() - 42);
 
-    const { data: activities, error: activitiesError } = await ctx.supabase
-      .from("activities")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .gte("started_at", extendedStart.toISOString())
-      .lte("started_at", endDate.toISOString())
-      .order("started_at", { ascending: true });
+    const activityRows = await db
+      .select()
+      .from(activities)
+      .where(
+        and(
+          eq(activities.profile_id, ctx.session.user.id),
+          gte(activities.started_at, extendedStart),
+          lte(activities.started_at, endDate),
+        ),
+      )
+      .orderBy(asc(activities.started_at));
 
-    if (activitiesError) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: activitiesError.message,
-      });
-    }
-
-    if (!activities || activities.length === 0) {
+    if (activityRows.length === 0) {
       const workload = buildWorkloadEnvelopes([], startDate, endDate);
       return {
         dataPoints: [],
@@ -238,15 +224,15 @@ export const trendsRouter = createTRPCRouter({
 
     const { byActivityId: derivedActivityMap, byDate: activitiesByDate } =
       await buildDynamicStressSeries({
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities,
+        activities: activityRows,
       });
 
     const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
       ? calculateRollingTrainingQuality(
-          activities.map((activity: any) => ({
-            started_at: activity.started_at,
+          activityRows.map((activity) => ({
+            started_at: activity.started_at.toISOString(),
             tss: derivedActivityMap.get(activity.id)?.tss ?? null,
             intensity_factor: derivedActivityMap.get(activity.id)?.intensity_factor ?? null,
           })),
@@ -304,8 +290,8 @@ export const trendsRouter = createTRPCRouter({
     const workloadWindowStart = new Date(endDate);
     workloadWindowStart.setDate(endDate.getDate() - 27);
     const workload = buildWorkloadEnvelopes(
-      activities.map((activity: any) => ({
-        started_at: activity.started_at,
+      activityRows.map((activity) => ({
+        started_at: activity.started_at.toISOString(),
         tss: derivedActivityMap.get(activity.id)?.tss ?? null,
       })),
       workloadWindowStart,
@@ -338,31 +324,29 @@ export const trendsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const startDate = new Date(input.start_date);
       const endDate = new Date(input.end_date);
+      const db = getRequiredDb(ctx);
 
       // Get activities with intensity factor and TSS
-      const { data: activities, error } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", input.start_date)
-        .lte("started_at", input.end_date)
-        .order("started_at", { ascending: true });
+      const activityRows = await db
+        .select()
+        .from(activities)
+        .where(
+          and(
+            eq(activities.profile_id, ctx.session.user.id),
+            gte(activities.started_at, startDate),
+            lte(activities.started_at, endDate),
+          ),
+        )
+        .orderBy(asc(activities.started_at));
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
-
-      if (!activities || activities.length === 0) {
+      if (activityRows.length === 0) {
         return { weeklyData: [] };
       }
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities,
+        activities: activityRows,
       });
 
       // Group by week
@@ -384,7 +368,7 @@ export const trendsRouter = createTRPCRouter({
         }
       >();
 
-      for (const activity of activities) {
+      for (const activity of activityRows) {
         const derived = derivedMap.get(activity.id);
         const intensityFactor = derived?.intensity_factor ?? null;
         const tss = derived?.tss ?? null;
@@ -457,22 +441,20 @@ export const trendsRouter = createTRPCRouter({
   // Consistency Metrics
   // ------------------------------
   getConsistencyMetrics: protectedProcedure.input(dateRangeSchema).query(async ({ ctx, input }) => {
-    const { data: activities, error } = await ctx.supabase
-      .from("activities")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .gte("started_at", input.start_date)
-      .lte("started_at", input.end_date)
-      .order("started_at", { ascending: true });
+    const db = getRequiredDb(ctx);
+    const activityRows = await db
+      .select()
+      .from(activities)
+      .where(
+        and(
+          eq(activities.profile_id, ctx.session.user.id),
+          gte(activities.started_at, new Date(input.start_date)),
+          lte(activities.started_at, new Date(input.end_date)),
+        ),
+      )
+      .orderBy(asc(activities.started_at));
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
-
-    if (!activities || activities.length === 0) {
+    if (activityRows.length === 0) {
       return {
         activityDays: [],
         weeklyAvg: 0,
@@ -485,7 +467,7 @@ export const trendsRouter = createTRPCRouter({
 
     // Get unique activity days
     const activityDaysSet = new Set<string>();
-    for (const activity of activities) {
+    for (const activity of activityRows) {
       const dateStr = new Date(activity.started_at).toISOString().split("T")[0];
       if (dateStr) activityDaysSet.add(dateStr);
     }
@@ -546,14 +528,14 @@ export const trendsRouter = createTRPCRouter({
     const totalDays =
       Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     const totalWeeks = totalDays / 7;
-    const weeklyAvg = totalWeeks > 0 ? Math.round((activities.length / totalWeeks) * 10) / 10 : 0;
+    const weeklyAvg = totalWeeks > 0 ? Math.round((activityRows.length / totalWeeks) * 10) / 10 : 0;
 
     return {
       activityDays,
       weeklyAvg,
       currentStreak,
       longestStreak,
-      totalActivities: activities.length,
+      totalActivities: activityRows.length,
       totalDays,
     };
   }),
@@ -564,71 +546,66 @@ export const trendsRouter = createTRPCRouter({
   getPeakPerformances: protectedProcedure
     .input(peakPerformancesSchema)
     .query(async ({ ctx, input }) => {
-      // Build query
-      let query = ctx.supabase.from("activities").select("*").eq("profile_id", ctx.session.user.id);
+      const db = getRequiredDb(ctx);
+      const conditions = [eq(activities.profile_id, ctx.session.user.id)];
 
       if (input.type) {
-        query = query.eq("type", input.type);
+        conditions.push(eq(activities.type, input.type));
       }
 
-      // Order by the selected metric
-      // Note: We can't order by JSONB fields directly, so we'll fetch all and sort in memory
-      switch (input.metric) {
-        case "distance":
-          query = query
-            .order("distance_meters", { ascending: false })
-            .not("distance_meters", "is", null);
-          break;
-        case "duration":
-          query = query
-            .order("moving_seconds", { ascending: false })
-            .not("moving_seconds", "is", null);
-          break;
-        case "speed":
-          query = query
-            .order("avg_speed_mps", { ascending: false })
-            .not("avg_speed_mps", "is", null);
-          break;
-        case "power":
-          query = query.order("avg_power", { ascending: false }).not("avg_power", "is", null);
-          break;
-        case "tss":
-          query = query.order("started_at", { ascending: false });
-          break;
-      }
+      const baseWhere = and(...conditions);
+      const activityRows: ActivityRow[] =
+        input.metric === "distance"
+          ? await db
+              .select()
+              .from(activities)
+              .where(baseWhere)
+              .orderBy(desc(activities.distance_meters))
+              .limit(input.limit)
+          : input.metric === "duration"
+            ? await db
+                .select()
+                .from(activities)
+                .where(baseWhere)
+                .orderBy(desc(activities.moving_seconds))
+                .limit(input.limit)
+            : input.metric === "speed"
+              ? await db
+                  .select()
+                  .from(activities)
+                  .where(and(baseWhere, isNotNull(activities.avg_speed_mps)))
+                  .orderBy(desc(activities.avg_speed_mps))
+                  .limit(input.limit * 10)
+              : input.metric === "power"
+                ? await db
+                    .select()
+                    .from(activities)
+                    .where(and(baseWhere, isNotNull(activities.avg_power)))
+                    .orderBy(desc(activities.avg_power))
+                    .limit(input.limit * 10)
+                : await db
+                    .select()
+                    .from(activities)
+                    .where(baseWhere)
+                    .orderBy(desc(activities.started_at))
+                    .limit(input.limit * 10);
 
-      // For metrics stored in JSONB, we need more records to sort
-      if (["speed", "power", "tss"].includes(input.metric)) {
-        query = query.limit(input.limit * 10); // Fetch more to sort
-      } else {
-        query = query.limit(input.limit);
-      }
-
-      const { data: activities, error } = await query;
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
-
-      if (!activities || activities.length === 0) {
+      if (activityRows.length === 0) {
         return { performances: [] };
       }
 
       const derivedMap =
         input.metric === "tss"
           ? await buildActivityDerivedSummaryMap({
-              store: createActivityAnalysisStore(getRequiredDb(ctx)),
+              store: createActivityAnalysisStore(db),
               profileId: ctx.session.user.id,
-              activities,
+              activities: activityRows,
             })
           : null;
 
       // Map activities to performances with extracted values
-      const allPerformances = activities
-        .map((activity: any) => {
+      const allPerformances = activityRows
+        .map((activity) => {
           let value: number | null = null;
           let unit = "";
 
@@ -658,21 +635,21 @@ export const trendsRouter = createTRPCRouter({
           return {
             activityId: activity.id,
             activityName: activity.name,
-            date: activity.started_at,
+            date: activity.started_at.toISOString(),
             value,
             unit,
             category: activity.type,
           };
         })
-        .filter((p: any) => p.value !== null && p.value !== undefined);
+        .filter((performance) => performance.value !== null && performance.value !== undefined);
 
       // Sort by value descending for JSONB metrics
       if (["speed", "power", "tss"].includes(input.metric)) {
-        allPerformances.sort((a: any, b: any) => (b.value || 0) - (a.value || 0));
+        allPerformances.sort((a, b) => (b.value || 0) - (a.value || 0));
       }
 
       // Take top N and add ranks
-      const performances = allPerformances.slice(0, input.limit).map((perf: any, index: any) => ({
+      const performances = allPerformances.slice(0, input.limit).map((perf, index) => ({
         ...perf,
         rank: index + 1,
       }));

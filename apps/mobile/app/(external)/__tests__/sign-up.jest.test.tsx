@@ -15,6 +15,16 @@ jest.mock("@/components/auth/ServerUrlOverride", () => ({
   ServerUrlOverride: () => null,
 }));
 
+jest.mock("@/lib/auth/client", () => ({
+  __esModule: true,
+  authClient: {
+    signUp: {
+      email: (...args: any[]) => signUpMock(...args),
+    },
+  },
+  getEmailVerificationCallbackUrl: () => "gradientpeak-dev://callback",
+}));
+
 jest.mock("@/lib/auth/request-timeout", () => ({
   __esModule: true,
   AuthRequestTimeoutError: class AuthRequestTimeoutError extends Error {},
@@ -25,6 +35,11 @@ jest.mock("@/lib/auth/request-timeout", () => ({
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
   useAuth: () => ({ loading: false }),
+}));
+
+jest.mock("@/lib/logging/mobile-action-log", () => ({
+  __esModule: true,
+  logMobileAction: jest.fn(),
 }));
 
 jest.mock("@/lib/server-config", () => ({
@@ -38,15 +53,6 @@ jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: {
     getState: () => ({ clearSession: jest.fn(async () => undefined) }),
-  },
-}));
-
-jest.mock("@/lib/supabase/client", () => ({
-  __esModule: true,
-  supabase: {
-    auth: {
-      signUp: (...args: any[]) => signUpMock(...args),
-    },
   },
 }));
 
@@ -92,7 +98,6 @@ jest.mock("@repo/ui/components/card", () => {
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
   Form: ({ children }: any) => children,
-  FormMessage: ({ children }: any) => React.createElement("Text", null, children),
   FormTextField: ({ control, name, placeholder, testId }: any) =>
     React.createElement(
       React.Fragment,
@@ -134,6 +139,7 @@ jest.mock("@repo/ui/hooks", () => {
           },
         },
         formState: { errors },
+        clearErrors: jest.fn(),
         setError: (name: string, error: { message: string }) => {
           setErrors((current: Record<string, { message: string }>) => ({
             ...current,
@@ -143,6 +149,10 @@ jest.mock("@repo/ui/hooks", () => {
         handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
       };
     },
+    useZodFormSubmit: ({ form, onSubmit }: any) => ({
+      handleSubmit: form.handleSubmit(onSubmit),
+      isSubmitting: false,
+    }),
   };
 });
 

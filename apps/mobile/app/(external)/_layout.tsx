@@ -9,8 +9,6 @@ import React from "react";
  * All unauthenticated pages (sign-in, sign-up, forgot-password, etc.) support back navigation.
  */
 export default function ExternalLayout() {
-  console.log("ExternalLayout loaded");
-
   return (
     <Stack
       screenOptions={{
@@ -67,20 +65,20 @@ export default function ExternalLayout() {
       <Stack.Screen
         name="callback"
         options={{
-          title: "Authenticating",
+          title: "Completing authentication",
         }}
       />
       <Stack.Screen
         name="storybook"
         options={{
-          title: "Storybook",
+          title: "Developer Storybook",
           headerShown: false,
         }}
       />
       <Stack.Screen
         name="ui-preview"
         options={{
-          title: "UI Preview",
+          title: "Developer UI Preview",
         }}
       />
     </Stack>

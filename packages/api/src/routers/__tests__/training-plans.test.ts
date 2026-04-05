@@ -1,16 +1,32 @@
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../planning/training-plans";
 
-type QueryResult = {
-  data: any;
-  error: { message: string } | null;
-};
+function createSupabaseMock(results: QueryMap) {
+  const counters = new Map<string, number>();
 
-function createSupabaseMock(results: Record<string, QueryResult>) {
   return {
     from: (table: string) => {
-      const result = results[table] ?? { data: [], error: null };
+      const entry = results[table];
+      const baseResult =
+        !entry || !Array.isArray(entry)
+          ? (entry ?? { data: [], error: null })
+          : (() => {
+              const index = counters.get(table) ?? 0;
+              counters.set(table, index + 1);
+              return entry[index] ?? entry[entry.length - 1] ?? { data: [], error: null };
+            })();
+      const result =
+        table === "activities" && Array.isArray(baseResult.data)
+          ? {
+              ...baseResult,
+              data: baseResult.data.map((row: Record<string, unknown>) => ({
+                ...row,
+                finished_at: row.finished_at ?? row.started_at,
+              })),
+            }
+          : baseResult;
       const builder: any = {
         select: vi.fn(() => builder),
         update: vi.fn(() => builder),
@@ -37,8 +53,11 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
   };
 }
 
-function createTrainingPlansCaller(results: Record<string, QueryResult> = {}) {
+function createTrainingPlansCaller(results: QueryMap = {}) {
+  const { db } = createQueryMapDbMock(results);
+
   return trainingPlansRouter.createCaller({
+    db: db as any,
     supabase: createSupabaseMock(results) as any,
     session: {
       user: {
@@ -52,41 +71,17 @@ function createTrainingPlansCaller(results: Record<string, QueryResult> = {}) {
 }
 
 function createTrainingPlansCreateHarness() {
-  const deactivationEq = vi.fn();
-  const deactivationBuilder: any = {
-    eq: vi.fn((field: string, value: unknown) => {
-      deactivationEq(field, value);
-      return deactivationBuilder;
-    }),
-    then: (onFulfilled: (value: QueryResult) => unknown) =>
-      Promise.resolve({ data: null, error: null }).then(onFulfilled),
-  };
-
-  let insertedPayload: Record<string, unknown> | null = null;
-
-  const insertBuilder: any = {
-    select: vi.fn(() => insertBuilder),
-    single: vi.fn(async () => ({
+  const { db, callLog } = createQueryMapDbMock({
+    training_plans: {
       data: {
         id: "22222222-2222-4222-8222-222222222222",
-        ...(insertedPayload ?? {}),
       },
       error: null,
-    })),
-  };
-
-  const tableBuilder: any = {
-    update: vi.fn(() => deactivationBuilder),
-    insert: vi.fn((payload: Record<string, unknown>) => {
-      insertedPayload = payload;
-      return insertBuilder;
-    }),
-  };
+    },
+  });
 
   const caller = trainingPlansRouter.createCaller({
-    supabase: {
-      from: vi.fn(() => tableBuilder),
-    } as any,
+    db: db as any,
     session: {
       user: {
         id: "profile-123",
@@ -99,10 +94,10 @@ function createTrainingPlansCreateHarness() {
 
   return {
     caller,
-    tableBuilder,
-    deactivationBuilder,
-    deactivationEq,
-    getInsertedPayload: () => insertedPayload,
+    callLog,
+    getInsertedPayload: () =>
+      (callLog.find((call) => call.table === "training_plans" && call.operation === "insert")
+        ?.payload ?? null) as Record<string, unknown> | null,
   };
 }
 
@@ -1648,36 +1643,36 @@ describe("trainingPlansRouter plan_start_date support", () => {
       "readiness_delta_diagnostics_v1",
     );
     expect(created.creation_summary.projection_feasibility).toEqual(preview.projection_feasibility);
-    expect(created.creation_summary.projection_chart.readiness_score).toBe(
-      preview.projection_chart.readiness_score,
+    expect((created.creation_summary.projection_chart as any).readiness_score).toBe(
+      (preview.projection_chart as any).readiness_score,
     );
-    expect(created.creation_summary.projection_chart.readiness_confidence).toBe(
-      preview.projection_chart.readiness_confidence,
+    expect((created.creation_summary.projection_chart as any).readiness_confidence).toBe(
+      (preview.projection_chart as any).readiness_confidence,
     );
-    expect(created.creation_summary.projection_chart.display_points).toEqual(
-      preview.projection_chart.display_points,
+    expect((created.creation_summary.projection_chart as any).display_points).toEqual(
+      (preview.projection_chart as any).display_points,
     );
-    expect(created.creation_summary.projection_chart.capacity_envelope).toEqual(
-      preview.projection_chart.capacity_envelope,
+    expect((created.creation_summary.projection_chart as any).capacity_envelope).toEqual(
+      (preview.projection_chart as any).capacity_envelope,
     );
-    expect(created.creation_summary.projection_chart.risk_flags).toEqual(
-      preview.projection_chart.risk_flags,
+    expect((created.creation_summary.projection_chart as any).risk_flags).toEqual(
+      (preview.projection_chart as any).risk_flags,
     );
-    expect(created.creation_summary.projection_chart.caps_applied).toEqual(
-      preview.projection_chart.caps_applied,
+    expect((created.creation_summary.projection_chart as any).caps_applied).toEqual(
+      (preview.projection_chart as any).caps_applied,
     );
-    expect(created.creation_summary.projection_chart.optimization_tradeoff_summary).toEqual(
-      preview.projection_chart.optimization_tradeoff_summary,
-    );
-    expect(preview.projection_chart.optimization_tradeoff_summary).toEqual(
-      preview.projection_chart.projection_diagnostics?.optimization_tradeoff_summary,
+    expect(
+      (created.creation_summary.projection_chart as any).optimization_tradeoff_summary,
+    ).toEqual((preview.projection_chart as any).optimization_tradeoff_summary);
+    expect((preview.projection_chart as any).optimization_tradeoff_summary).toEqual(
+      (preview.projection_chart as any).projection_diagnostics?.optimization_tradeoff_summary,
     );
     expect(preview.projection_chart.prediction_uncertainty).toBeUndefined();
     expect(preview.projection_chart.goal_target_distributions).toBeUndefined();
-    expect(created.creation_summary.projection_chart.projection_diagnostics).toEqual(
-      preview.projection_chart.projection_diagnostics,
+    expect((created.creation_summary.projection_chart as any).projection_diagnostics).toEqual(
+      (preview.projection_chart as any).projection_diagnostics,
     );
-    expect(preview.projection_chart.projection_diagnostics).toMatchObject({
+    expect((preview.projection_chart as any).projection_diagnostics).toMatchObject({
       effective_optimizer_config: {
         weights: expect.any(Object),
         caps: expect.any(Object),
@@ -1697,19 +1692,21 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     });
     expect(
-      created.creation_summary.projection_chart.projection_diagnostics?.effective_optimizer_config,
-    ).toEqual(preview.projection_chart.projection_diagnostics?.effective_optimizer_config);
-    expect(created.creation_summary.projection_chart.projection_diagnostics?.clamp_counts).toEqual(
-      preview.projection_chart.projection_diagnostics?.clamp_counts,
-    );
+      (created.creation_summary.projection_chart as any).projection_diagnostics
+        ?.effective_optimizer_config,
+    ).toEqual((preview.projection_chart as any).projection_diagnostics?.effective_optimizer_config);
     expect(
-      created.creation_summary.projection_chart.projection_diagnostics?.objective_contributions,
-    ).toEqual(preview.projection_chart.projection_diagnostics?.objective_contributions);
-    expect(replayPreview.projection_chart.projection_diagnostics).toEqual(
-      created.creation_summary.projection_chart.projection_diagnostics,
+      (created.creation_summary.projection_chart as any).projection_diagnostics?.clamp_counts,
+    ).toEqual((preview.projection_chart as any).projection_diagnostics?.clamp_counts);
+    expect(
+      (created.creation_summary.projection_chart as any).projection_diagnostics
+        ?.objective_contributions,
+    ).toEqual((preview.projection_chart as any).projection_diagnostics?.objective_contributions);
+    expect((replayPreview.projection_chart as any).projection_diagnostics).toEqual(
+      (created.creation_summary.projection_chart as any).projection_diagnostics,
     );
-    expect(replayPreview.projection_chart.readiness_score).toBe(
-      created.creation_summary.projection_chart.readiness_score,
+    expect((replayPreview.projection_chart as any).readiness_score).toBe(
+      (created.creation_summary.projection_chart as any).readiness_score,
     );
     expect(replayPreview.normalized_creation_config.calibration).toEqual(
       created.creation_summary.calibration.snapshot,
@@ -1878,35 +1875,39 @@ describe("trainingPlansRouter plan_start_date support", () => {
         [...previewDates].sort((a, b) => a.localeCompare(b)),
       );
 
-      const createdChart = created.creation_summary.projection_chart;
-      const updatedChart = updated.creation_summary.projection_chart;
+      const createdChart = created.creation_summary.projection_chart as any;
+      const updatedChart = updated.creation_summary.projection_chart as any;
       expect(createdChart.points.map((point: any) => point.date)).toEqual(previewDates);
       expect(updatedChart.points.map((point: any) => point.date)).toEqual(previewDates);
       expect(createdChart.constraint_summary).toEqual(preview.projection_chart.constraint_summary);
       expect(updatedChart.constraint_summary).toEqual(preview.projection_chart.constraint_summary);
       expect(createdChart.projection_diagnostics).toEqual(
-        preview.projection_chart.projection_diagnostics,
+        (preview.projection_chart as any).projection_diagnostics,
       );
       expect(updatedChart.projection_diagnostics).toEqual(
-        preview.projection_chart.projection_diagnostics,
+        (preview.projection_chart as any).projection_diagnostics,
       );
 
       const tolerance = 0.05;
       expect(
-        Math.abs(createdChart.readiness_score - (preview.projection_chart.readiness_score ?? 0)),
+        Math.abs(
+          createdChart.readiness_score - ((preview.projection_chart as any).readiness_score ?? 0),
+        ),
         `${fixture.key} create readiness_score`,
       ).toBeLessThanOrEqual(tolerance);
       expect(
-        Math.abs(updatedChart.readiness_score - (preview.projection_chart.readiness_score ?? 0)),
+        Math.abs(
+          updatedChart.readiness_score - ((preview.projection_chart as any).readiness_score ?? 0),
+        ),
         `${fixture.key} update readiness_score`,
       ).toBeLessThanOrEqual(tolerance);
-      expect(preview.projection_chart.readiness_confidence).toBeDefined();
+      expect((preview.projection_chart as any).readiness_confidence).toBeDefined();
       expect(createdChart.readiness_confidence).toBeCloseTo(
-        preview.projection_chart.readiness_confidence ?? 0,
+        (preview.projection_chart as any).readiness_confidence ?? 0,
         4,
       );
       expect(updatedChart.readiness_confidence).toBeCloseTo(
-        preview.projection_chart.readiness_confidence ?? 0,
+        (preview.projection_chart as any).readiness_confidence ?? 0,
         4,
       );
     }
@@ -2654,11 +2655,11 @@ describe("trainingPlansRouter plan_start_date support", () => {
       });
       createLatenciesMs.push(performance.now() - createStart);
       assertSaneProjectionDiagnostics(
-        created.creation_summary.projection_chart.projection_diagnostics,
+        (created.creation_summary.projection_chart as any).projection_diagnostics,
       );
 
-      expect(created.creation_summary.projection_chart.projection_diagnostics).toEqual(
-        preview.projection_chart.projection_diagnostics,
+      expect((created.creation_summary.projection_chart as any).projection_diagnostics).toEqual(
+        (preview.projection_chart as any).projection_diagnostics,
       );
     }
 

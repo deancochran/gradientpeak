@@ -6,11 +6,13 @@ import React, { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
 import {
   getEventPrimaryMeta,
+  getEventStatusLabel,
   getEventSupportingLine,
   getEventTimeLabel,
   getEventTitle,
   isEditableEvent,
 } from "@/lib/calendar/eventPresentation";
+import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 
 type CalendarEventPreviewSheetProps = {
@@ -53,7 +55,13 @@ export function CalendarEventPreviewSheet({
 
   const meta = getEventPrimaryMeta(event);
   const supportingLine = getEventSupportingLine(event);
+  const statusLabel = getEventStatusLabel(event);
   const editable = isEditableEvent(event);
+  const canOpenDetail =
+    buildOpenEventRoute({
+      id: event.id,
+      event_type: event.event_type === null ? undefined : (event.event_type as any),
+    }) !== null;
 
   return (
     <BottomSheet
@@ -70,7 +78,14 @@ export function CalendarEventPreviewSheet({
       >
         <View className="gap-1">
           <Text className="text-lg font-semibold text-foreground">{getEventTitle(event)}</Text>
-          <Text className="text-sm text-muted-foreground">{getEventTimeLabel(event)}</Text>
+          <View className="flex-row flex-wrap items-center gap-2">
+            <Text className="text-sm text-muted-foreground">{getEventTimeLabel(event)}</Text>
+            {statusLabel ? (
+              <View className="rounded-full bg-muted px-2 py-1">
+                <Text className="text-[11px] font-medium text-muted-foreground">{statusLabel}</Text>
+              </View>
+            ) : null}
+          </View>
           {meta.length > 0 ? (
             <Text className="text-sm text-muted-foreground">{meta.join(" • ")}</Text>
           ) : null}
@@ -96,17 +111,19 @@ export function CalendarEventPreviewSheet({
             </TouchableOpacity>
           ) : null}
 
-          <TouchableOpacity
-            onPress={onOpenDetail}
-            className="rounded-2xl border border-border bg-card px-4 py-4"
-            activeOpacity={0.85}
-            testID="calendar-preview-open-detail"
-          >
-            <View className="flex-row items-center gap-2">
-              <Icon as={ArrowUpRight} size={16} className="text-foreground" />
-              <Text className="text-sm font-semibold text-foreground">Open full detail</Text>
-            </View>
-          </TouchableOpacity>
+          {canOpenDetail ? (
+            <TouchableOpacity
+              onPress={onOpenDetail}
+              className="rounded-2xl border border-border bg-card px-4 py-4"
+              activeOpacity={0.85}
+              testID="calendar-preview-open-detail"
+            >
+              <View className="flex-row items-center gap-2">
+                <Icon as={ArrowUpRight} size={16} className="text-foreground" />
+                <Text className="text-sm font-semibold text-foreground">Open full detail</Text>
+              </View>
+            </TouchableOpacity>
+          ) : null}
 
           {editable ? (
             <>

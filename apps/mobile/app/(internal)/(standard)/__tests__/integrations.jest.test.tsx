@@ -75,7 +75,7 @@ jest.mock("expo-file-system", () => ({
 jest.mock("expo-linking", () => ({
   __esModule: true,
   addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-  createURL: jest.fn(() => "gradientpeak://integrations"),
+  createURL: jest.fn(() => "gradientpeak-dev://integrations"),
 }));
 
 jest.mock("expo-web-browser", () => ({
@@ -89,11 +89,6 @@ jest.mock("@/lib/hooks/useReliableMutation", () => ({
     mutateAsync: jest.fn(async () => undefined),
     isPending: false,
   }),
-}));
-
-jest.mock("@/lib/server-config", () => ({
-  __esModule: true,
-  getServerConfig: () => ({ supabaseUrl: "https://supabase.example.test" }),
 }));
 
 jest.mock("@/lib/services/fit/FitUploader", () => ({

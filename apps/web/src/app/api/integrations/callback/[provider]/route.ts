@@ -42,6 +42,22 @@ const OAUTH_CONFIGS = {
   },
 };
 
+function isSupportedProvider(provider: string): provider is PublicIntegrationProvider {
+  return provider in OAUTH_CONFIGS;
+}
+
+function buildRedirectUrl(baseUrl: string, params: Record<string, string | null | undefined>) {
+  const redirectUrl = new URL(baseUrl);
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      redirectUrl.searchParams.set(key, value);
+    }
+  }
+
+  return redirectUrl.toString();
+}
+
 async function exchangeCodeForTokens(provider: PublicIntegrationProvider, code: string) {
   const config = OAUTH_CONFIGS[provider];
   if (!config) {
@@ -101,12 +117,7 @@ async function exchangeCodeForTokens(provider: PublicIntegrationProvider, code: 
       (typeof errorData?.message === "string" && errorData.message) ||
       `http_${response.status}`;
 
-    console.error("Token exchange failed:", {
-      status: response.status,
-      statusText: response.statusText,
-      error: errorData,
-      provider,
-    });
+    console.error("Token exchange failed", { detail, provider, status: response.status });
     throw new OAuthTokenExchangeError(`Token exchange failed: ${response.status}`, detail);
   }
 
@@ -123,16 +134,6 @@ export async function GET(
   const state = searchParams.get("state");
   const error = searchParams.get("error");
 
-  // Debug logging to see what Wahoo actually sends
-  console.log("OAuth callback received:", {
-    provider: resolvedParams.provider,
-    url: request.url,
-    searchParams: Object.fromEntries(searchParams.entries()),
-    code: code ? "present" : "missing",
-    state: state ? "present" : "missing",
-    error: error || "none",
-  });
-
   // Create tRPC context and caller
   const ctx = await createApiContext({
     headers: request.headers,
@@ -147,16 +148,20 @@ export async function GET(
   const fallbackRedirect =
     process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
 
+  if (!isSupportedProvider(resolvedParams.provider)) {
+    return NextResponse.redirect(buildRedirectUrl(fallbackRedirect, { error: "invalid_provider" }));
+  }
+
   // Validate OAuth state using tRPC
   if (!state) {
-    return NextResponse.redirect(`${fallbackRedirect}?error=missing_state`);
+    return NextResponse.redirect(buildRedirectUrl(fallbackRedirect, { error: "missing_state" }));
   }
 
   const storedState = await caller.integrations.validateOAuthState({ state });
 
   if (!storedState) {
     // No valid state found - possible CSRF attack or expired flow
-    return NextResponse.redirect(`${fallbackRedirect}?error=invalid_state`);
+    return NextResponse.redirect(buildRedirectUrl(fallbackRedirect, { error: "invalid_state" }));
   }
 
   const { userId, mobileRedirectUri } = storedState;
@@ -165,15 +170,15 @@ export async function GET(
   if (error) {
     // Clean up the state since the flow failed
     await caller.integrations.deleteOAuthState({ state });
-    return NextResponse.redirect(`${mobileRedirectUri}?error=${error}`);
+    return NextResponse.redirect(buildRedirectUrl(mobileRedirectUri, { error }));
   }
 
   if (!code) {
     await caller.integrations.deleteOAuthState({ state });
-    return NextResponse.redirect(`${mobileRedirectUri}?error=missing_code`);
+    return NextResponse.redirect(buildRedirectUrl(mobileRedirectUri, { error: "missing_code" }));
   }
 
-  const provider = resolvedParams.provider as PublicIntegrationProvider;
+  const provider = resolvedParams.provider;
 
   try {
     // Exchange code for tokens with the provider
@@ -205,7 +210,10 @@ export async function GET(
           externalId = userData.id.toString();
         }
       } catch (userError) {
-        console.error("Failed to fetch Wahoo user profile:", userError);
+        console.error("Failed to fetch Wahoo user profile", {
+          provider,
+          errorName: userError instanceof Error ? userError.name : "unknown",
+        });
       }
     }
 
@@ -229,33 +237,41 @@ export async function GET(
         state, // Pass state to clean it up after storing
       });
     } catch (storeError) {
-      console.error("Failed to store integration:", {
+      console.error("Failed to store integration", {
         provider,
         userId,
         externalId,
-        error: storeError,
+        errorName: storeError instanceof Error ? storeError.name : "unknown",
       });
       await caller.integrations.deleteOAuthState({ state });
       return NextResponse.redirect(
-        `${mobileRedirectUri}?error=store_integration_failed&provider=${provider}`,
+        buildRedirectUrl(mobileRedirectUri, {
+          error: "store_integration_failed",
+          provider,
+        }),
       );
     }
 
     // Redirect back to mobile app with success
-    return NextResponse.redirect(`${mobileRedirectUri}?success=true&provider=${provider}`);
+    return NextResponse.redirect(
+      buildRedirectUrl(mobileRedirectUri, { provider, success: "true" }),
+    );
   } catch (error) {
     const detail = error instanceof OAuthTokenExchangeError ? error.detail || "unknown" : "unknown";
 
-    console.error("OAuth callback error:", {
+    console.error("OAuth callback error", {
       provider,
-      state,
       detail,
-      error,
+      errorName: error instanceof Error ? error.name : "unknown",
     });
     // Clean up state on any error
     await caller.integrations.deleteOAuthState({ state });
     return NextResponse.redirect(
-      `${mobileRedirectUri}?error=token_exchange_failed&provider=${provider}&error_detail=${encodeURIComponent(detail)}`,
+      buildRedirectUrl(mobileRedirectUri, {
+        error: "token_exchange_failed",
+        error_detail: detail,
+        provider,
+      }),
     );
   }
 }

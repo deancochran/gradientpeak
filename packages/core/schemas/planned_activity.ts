@@ -70,7 +70,7 @@ function isValidIcalRRule(value: string): boolean {
  * Event types used by the core event domain.
  *
  * - "planned": user/programmed planned workout
- * - "rest_day": planned rest day block
+ * - "rest_day": legacy persisted rest-day marker (read compatibility only)
  * - "race_target": race/goal target marker
  * - "custom": user-authored non-workout event
  * - "imported": read-only external calendar import
@@ -88,7 +88,15 @@ export const eventTypeInputSchema = z
     return eventType;
   });
 
-export const editableEventTypeSchema = z.enum(["planned", "rest_day", "race_target", "custom"]);
+export const editableEventTypeSchema = z.enum(["planned", "race_target", "custom"]);
+
+export const editableEventTypeInputSchema = z
+  .union([editableEventTypeSchema, z.literal("planned_activity"), z.literal("race")])
+  .transform((eventType) => {
+    if (eventType === "planned_activity") return "planned" as const;
+    if (eventType === "race") return "race_target" as const;
+    return eventType;
+  });
 
 export const eventMutationScopeSchema = z.enum(["single", "future", "series"]);
 
@@ -271,14 +279,6 @@ export const editableEventDomainSchema = editableEventDomainBaseSchema
         message: 'activity_plan_id is required when event_type is "planned"',
       });
     }
-
-    if (event.event_type === "rest_day" && event.activity_plan_id) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["activity_plan_id"],
-        message: 'activity_plan_id must be omitted when event_type is "rest_day"',
-      });
-    }
   });
 
 export const editableEventPatchSchema = z
@@ -304,14 +304,6 @@ export const editableEventPatchSchema = z
         code: "custom",
         path: ["activity_plan_id"],
         message: 'activity_plan_id is required when event_type is "planned"',
-      });
-    }
-
-    if (event.event_type === "rest_day" && event.activity_plan_id) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["activity_plan_id"],
-        message: 'activity_plan_id must be omitted when event_type is "rest_day"',
       });
     }
   });
@@ -388,7 +380,7 @@ export const plannedActivityCreateSchema = z.object({
   scheduled_date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
   training_plan_id: z.string().uuid("Invalid training plan ID").optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
-  event_type: eventTypeInputSchema.default("planned").optional(),
+  event_type: editableEventTypeInputSchema.default("planned").optional(),
   recurrence: eventRecurrenceSchema.optional(),
   lifecycle: eventLifecycleSchema.optional(),
   source: importedEventSourceMetadataSchema.optional(),
@@ -406,7 +398,7 @@ export const plannedActivityUpdateSchema = z.object({
     .refine((val) => !isNaN(Date.parse(val)), "Invalid date format")
     .optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
-  event_type: eventTypeInputSchema.optional(),
+  event_type: editableEventTypeInputSchema.optional(),
   recurrence: eventRecurrenceSchema.optional(),
   lifecycle: eventLifecycleSchema.optional(),
 });

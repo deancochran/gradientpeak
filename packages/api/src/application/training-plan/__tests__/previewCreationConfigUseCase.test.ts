@@ -110,7 +110,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     const deps = createDeps();
 
     const result = await previewCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-1",
       params: {
         minimal_plan: {
@@ -187,7 +187,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     };
 
     await previewCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-1",
       params: {
         minimal_plan: {
@@ -222,7 +222,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     const deps = createDeps();
 
     const result = await previewCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-1",
       params: {
         minimal_plan: {
@@ -251,7 +251,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     ]);
 
     const result = await previewCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-1",
       params: {
         minimal_plan: {
@@ -283,7 +283,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     ]);
 
     const result = await previewCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-1",
       params: {
         minimal_plan: {

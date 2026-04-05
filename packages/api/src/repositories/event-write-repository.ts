@@ -1,4 +1,8 @@
+import type { ActivityPlanRow, TrainingPlanRow } from "@repo/db";
 import type { EventCompletionEventRecord, EventDeleteScope } from "./event-completion-repository";
+
+type OwnedActivityPlanRef = Pick<ActivityPlanRow, "id">;
+type OwnedTrainingPlanRef = Pick<TrainingPlanRow, "id">;
 
 export interface CreateOwnedEventInput {
   activityPlanId: string | null;
@@ -23,11 +27,11 @@ export interface EventWriteRepository {
   getAccessibleActivityPlan(input: {
     activityPlanId: string;
     profileId: string;
-  }): Promise<{ id: string } | null>;
+  }): Promise<OwnedActivityPlanRef | null>;
   getOwnedTrainingPlan(input: {
     profileId: string;
     trainingPlanId: string;
-  }): Promise<{ id: string } | null>;
+  }): Promise<OwnedTrainingPlanRef | null>;
   updateOwnedEventsForScope(input: {
     anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id" | "starts_at">;
     eventUpdates: Record<string, unknown>;

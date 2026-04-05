@@ -139,4 +139,32 @@ describe("planned activity event domain schemas", () => {
 
     expect(parsed.success).toBe(false);
   });
+
+  it("rejects new rest-day writes while preserving legacy event-type parsing", () => {
+    expect(eventTypeInputSchema.parse("rest_day")).toBe("rest_day");
+
+    expect(
+      eventCreateSchema.safeParse({
+        event_type: "rest_day",
+        title: "Rest day",
+        starts_at: "2026-03-12T00:00:00.000Z",
+        timezone: "UTC",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      plannedActivityCreateSchema.safeParse({
+        activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
+        scheduled_date: "2026-03-01T09:00:00.000Z",
+        event_type: "rest_day",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      eventUpdateSchema.safeParse({
+        id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+        patch: { event_type: "rest_day" },
+      }).success,
+    ).toBe(false);
+  });
 });

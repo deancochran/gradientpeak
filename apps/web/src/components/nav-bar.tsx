@@ -1,113 +1,51 @@
 "use client";
+
 import { Button } from "@repo/ui/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu";
-import { House, LogOut, Settings } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { authClient } from "@/lib/auth/client";
-import { CurrentUserAvatar } from "./current-user-avatar";
+import { usePathname } from "next/navigation";
 import { useAuth } from "./providers/auth-provider";
+import { UserNav } from "./user-nav";
 
 const Navbar = () => {
-  const router = useRouter();
-  const { isAuthenticated, refreshSession } = useAuth();
-  const [isPending, setIsPending] = useState(false);
-  const logout = async () => {
-    setIsPending(true);
-    try {
-      const result = await authClient.signOut();
-      if (result.error) {
-        throw result.error;
-      }
-      await refreshSession();
-      router.refresh();
-      router.push("/auth/login");
-    } catch (error) {
-      console.error("Logout failed:", error);
-    } finally {
-      setIsPending(false);
-    }
-  };
+  const { isAuthenticated } = useAuth();
+  const pathname = usePathname();
+  const isAuthRoute = pathname?.startsWith("/auth") ?? false;
+
+  if (isAuthenticated && !isAuthRoute) {
+    return null;
+  }
 
   return (
-    <nav className="w-full p-4 flex justify-between">
-      <div className="flex items-center gap-2">
-        {/* Logo */}
+    <nav className="sticky top-0 z-30 flex w-full items-center justify-between border-b bg-background/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 sm:px-6">
+      <Link href="/" className="flex items-center gap-2">
         <Image
           src="/images/icons/splash-icon-prod.svg"
           className="dark:invert"
           height={32}
           width={32}
-          alt="Logo"
+          alt="GradientPeak"
         />
         <span className="text-lg font-semibold tracking-tighter">GradientPeak</span>
-      </div>
+      </Link>
 
-      <div className="flex gap-2">
-        {/* Show avatar only if user is authenticated */}
+      <div className="flex items-center gap-2">
         {isAuthenticated && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="secondary"
-                size="icon"
-                className="overflow-hidden rounded-full cursor-pointer"
-              >
-                <CurrentUserAvatar />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
-              <DropdownMenuLabel>My Account</DropdownMenuLabel>
-              <DropdownMenuGroup>
-                <DropdownMenuItem asChild>
-                  <Button asChild variant="ghost" className="w-full justify-start  cursor-pointer">
-                    <Link href="/" className="text-popover-foreground">
-                      <House />
-                      Dashboard
-                    </Link>
-                  </Button>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Button asChild variant="ghost" className="w-full justify-start  cursor-pointer">
-                    <Link href="/settings" className="text-popover-foreground">
-                      <Settings />
-                      Settings
-                    </Link>
-                  </Button>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Button
-                    onClick={logout}
-                    disabled={isPending}
-                    variant="ghost"
-                    className="w-full justify-start cursor-pointer"
-                  >
-                    <LogOut />
-                    <span className="text-popover-foreground">Sign Out</span>
-                  </Button>
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/">Dashboard</Link>
+            </Button>
+            <UserNav />
+          </>
         )}
 
-        {/* Show login/signup buttons only if user is NOT authenticated */}
         {!isAuthenticated && (
           <>
-            <Button asChild variant="outline">
-              <a href="/auth/login">Login</a>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/auth/login">Log in</Link>
             </Button>
-            <Button asChild>
-              <a href="/auth/sign-up">Signup</a>
+            <Button asChild size="sm">
+              <Link href="/auth/sign-up">Sign up</Link>
             </Button>
           </>
         )}

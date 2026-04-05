@@ -2,20 +2,23 @@ import { Button } from "@repo/ui/components/button";
 import {
   Form,
   FormBoundedNumberField,
+  FormControl,
+  FormField,
   FormIntegerStepperField,
+  FormItem,
+  FormLabel,
+  FormMessage,
   FormTextField,
 } from "@repo/ui/components/form";
-import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
-import React from "react";
-import { Controller } from "react-hook-form";
+import React, { useEffect } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { useFormMutation } from "@/lib/hooks/useFormMutation";
 import { api } from "@/lib/api";
+import { applyServerFormErrors, showErrorAlert } from "@/lib/utils/formErrors";
 
 const effortSchema = z.object({
   activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
@@ -30,6 +33,7 @@ type FormValues = z.infer<typeof effortSchema>;
 
 function ActivityEffortCreate() {
   const router = useRouter();
+  const utils = api.useUtils();
 
   const form = useZodForm({
     schema: effortSchema,
@@ -44,24 +48,33 @@ function ActivityEffortCreate() {
   });
 
   const createMutation = api.activityEfforts.create.useMutation();
-
-  const mutation = useFormMutation({
-    mutationFn: async (data: FormValues) => {
-      return createMutation.mutateAsync(data);
-    },
+  const submitForm = useZodFormSubmit<FormValues>({
     form,
-    invalidateQueries: [["activityEfforts"]],
-    successMessage: "Effort created successfully",
-    onSuccess: () => {
-      router.back();
-    },
-    onError: (error: any) => {
-      Alert.alert("Error", error.message || "Failed to create effort");
+    onSubmit: async (data) => {
+      try {
+        await createMutation.mutateAsync(data);
+        await utils.activityEfforts.invalidate();
+        Alert.alert("Success", "Effort created successfully");
+        router.back();
+      } catch (error) {
+        if (applyServerFormErrors(form, error)) {
+          return;
+        }
+
+        throw error;
+      }
     },
   });
 
+  useEffect(() => {
+    if (submitForm.submitError) {
+      showErrorAlert(submitForm.submitError, "Failed to create effort");
+    }
+  }, [submitForm.submitError]);
+
   const categories = ["run", "bike", "swim", "strength", "other"] as const;
   const effortTypes = ["power", "speed"] as const;
+  const isSubmitting = submitForm.isSubmitting || createMutation.isPending;
 
   return (
     <ScrollView
@@ -69,78 +82,76 @@ function ActivityEffortCreate() {
       contentContainerClassName="p-6 gap-6"
       keyboardShouldPersistTaps="handled"
     >
-      <View className="gap-2">
-        <Label nativeID="categoryLabel">Activity Category</Label>
-        <Controller
-          control={form.control}
-          name="activity_category"
-          render={({ field }) => (
-            <View className="flex-row flex-wrap gap-2">
-              {categories.map((cat) => (
-                <Button
-                  key={cat}
-                  variant={field.value === cat ? "default" : "outline"}
-                  onPress={() => field.onChange(cat)}
-                  className="flex-1 min-w-[30%]"
-                >
-                  <Text
-                    className={
-                      field.value === cat
-                        ? "text-primary-foreground capitalize"
-                        : "text-foreground capitalize"
-                    }
-                  >
-                    {cat}
-                  </Text>
-                </Button>
-              ))}
-            </View>
-          )}
-        />
-        {form.formState.errors.activity_category && (
-          <Text className="text-destructive text-sm mt-1">
-            {form.formState.errors.activity_category.message}
-          </Text>
-        )}
-      </View>
-
-      <View className="gap-2">
-        <Label nativeID="typeLabel">Effort Type</Label>
-        <Controller
-          control={form.control}
-          name="effort_type"
-          render={({ field }) => (
-            <View className="flex-row gap-2">
-              {effortTypes.map((t) => (
-                <Button
-                  key={t}
-                  variant={field.value === t ? "default" : "outline"}
-                  onPress={() => field.onChange(t)}
-                  className="flex-1"
-                >
-                  <Text
-                    className={
-                      field.value === t
-                        ? "text-primary-foreground capitalize"
-                        : "text-foreground capitalize"
-                    }
-                  >
-                    {t}
-                  </Text>
-                </Button>
-              ))}
-            </View>
-          )}
-        />
-        {form.formState.errors.effort_type && (
-          <Text className="text-destructive text-sm mt-1">
-            {form.formState.errors.effort_type.message}
-          </Text>
-        )}
-      </View>
-
       <Form {...form}>
         <View className="gap-6">
+          <FormField
+            control={form.control}
+            name="activity_category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Activity Category</FormLabel>
+                <FormControl>
+                  <View className="flex-row flex-wrap gap-2">
+                    {categories.map((category) => (
+                      <Button
+                        key={category}
+                        variant={field.value === category ? "default" : "outline"}
+                        onPress={() => field.onChange(category)}
+                        className="flex-1 min-w-[30%]"
+                        disabled={isSubmitting}
+                      >
+                        <Text
+                          className={
+                            field.value === category
+                              ? "text-primary-foreground capitalize"
+                              : "text-foreground capitalize"
+                          }
+                        >
+                          {category}
+                        </Text>
+                      </Button>
+                    ))}
+                  </View>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="effort_type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Effort Type</FormLabel>
+                <FormControl>
+                  <View className="flex-row gap-2">
+                    {effortTypes.map((effortType) => (
+                      <Button
+                        key={effortType}
+                        variant={field.value === effortType ? "default" : "outline"}
+                        onPress={() => field.onChange(effortType)}
+                        className="flex-1"
+                        disabled={isSubmitting}
+                      >
+                        <Text
+                          className={
+                            field.value === effortType
+                              ? "text-primary-foreground capitalize"
+                              : "text-foreground capitalize"
+                          }
+                        >
+                          {effortType}
+                        </Text>
+                      </Button>
+                    ))}
+                  </View>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
           <FormIntegerStepperField
             control={form.control}
             description="Use whole seconds for the effort duration."
@@ -173,13 +184,9 @@ function ActivityEffortCreate() {
         </View>
       </Form>
 
-      <Button
-        className="mt-4"
-        onPress={form.handleSubmit((data) => mutation.mutate(data))}
-        disabled={mutation.isLoading}
-      >
-        <Text className={mutation.isLoading ? "text-muted-foreground" : "text-primary-foreground"}>
-          {mutation.isLoading ? "Saving..." : "Save Effort"}
+      <Button className="mt-4" onPress={submitForm.handleSubmit} disabled={isSubmitting}>
+        <Text className={isSubmitting ? "text-muted-foreground" : "text-primary-foreground"}>
+          {isSubmitting ? "Saving..." : "Save Effort"}
         </Text>
       </Button>
     </ScrollView>

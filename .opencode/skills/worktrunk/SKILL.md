@@ -17,16 +17,16 @@ description: Git worktree orchestration, Worktrunk commands, hooks, and parallel
 1. Prefer `wt switch`, `wt list`, `wt merge`, and `wt remove` over raw `git worktree` commands when `wt` is available.
 2. Keep one branch and one worktree per agent or bounded workstream.
 3. Keep the coordinator in the primary worktree unless there is a strong reason to isolate it too.
-4. Prefer a centralized external worktree root like `~/worktrees/{{ repo }}/{{ branch | sanitize }}` for local development.
+4. Prefer a project-scoped worktree root like `{{ repo_path }}/.worktrees/{{ branch | sanitize }}` when the repo and IDE setup can support it cleanly.
 5. Put shared automation in Worktrunk config and hooks, not in ad hoc shell history.
 
 ## Repo-Specific Guidance
 
-- For this repo, the standard local layout is `~/worktrees/{{ repo }}/{{ branch | sanitize }}`.
-- Keep nested in-repo worktrees as an exceptional cloud-IDE fallback, not the default workflow.
+- For this repo, the standard local layout is `{{ repo_path }}/.worktrees/{{ branch | sanitize }}`.
+- External sibling worktrees are optional, but not the default workflow for this repo.
 - Use `.config/wt.toml` for shared project hooks and list display settings.
 - Use `~/.config/worktrunk/config.toml` for user-specific path templates and personal defaults.
-- Allow external worktree access in OpenCode so agents can read, edit, and run commands there without repeated prompts.
+- OpenCode can work in the default `.worktrees/` layout without extra `external_directory` permissions because those worktrees stay inside the repo.
 - This repo's shared starter hooks currently run `pnpm install --frozen-lockfile` on `pre-start`, `pnpm check-types` + `pnpm lint` + `pnpm test` on `pre-merge`, and clear Worktrunk markers on `post-remove`.
 - Do not let multiple agents edit the same files without explicit coordinator ownership.
 
@@ -59,7 +59,7 @@ wt remove
 
 - Mixing raw `git worktree` cleanup and `wt` cleanup casually in the same workflow
 - Broad hook commands that mutate unrelated state across all worktrees
-- Assuming a web IDE can see sibling worktrees without explicit multi-root setup
+- Assuming a web IDE can see sibling worktrees outside the repo without explicit multi-root setup
 - Treating worktree isolation as protection against merge conflicts when file ownership still overlaps
 
 ## Quick Checklist

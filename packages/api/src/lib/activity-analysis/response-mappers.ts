@@ -1,11 +1,14 @@
 import type { ActivityDerivedMetrics, ActivityListDerivedSummary } from "@repo/core";
-import type { ActivityRow, PublicActivityPlansRow } from "@repo/db";
+import type { ActivityPlanRow, ActivityRow } from "@repo/db";
 
-type ActivityPlanRow = PublicActivityPlansRow;
+type ActivityPlanReference = Omit<ActivityPlanRow, "created_at" | "updated_at"> & {
+  created_at: string | Date;
+  updated_at: string | Date;
+};
 
 export function mapActivityToDerivedResponse(input: {
   activity: ActivityRow & {
-    activity_plans?: ActivityPlanRow | null;
+    activity_plans?: ActivityPlanReference | null;
   };
   has_liked: boolean;
   derived: ActivityDerivedMetrics;

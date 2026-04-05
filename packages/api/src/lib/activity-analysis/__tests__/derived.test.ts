@@ -85,12 +85,12 @@ describe("buildActivityDerivedSummaryMap", () => {
     expect(derivedMap.get("older-activity")).toMatchObject({
       intensity_factor: 1.32,
       tss: 174,
-      computed_as_of: new Date("2025-02-01T10:00:00.000Z"),
+      computed_as_of: "2025-02-01T10:00:00.000Z",
     });
     expect(derivedMap.get("later-activity")).toMatchObject({
       intensity_factor: 0.88,
       tss: 77,
-      computed_as_of: new Date("2025-04-01T10:00:00.000Z"),
+      computed_as_of: "2025-04-01T10:00:00.000Z",
     });
   });
 
@@ -141,12 +141,12 @@ describe("buildActivityDerivedSummaryMap", () => {
     expect(derivedMap.get("historical-import")).toMatchObject({
       intensity_factor: 1.32,
       tss: 174,
-      computed_as_of: new Date("2025-02-01T10:00:00.000Z"),
+      computed_as_of: "2025-02-01T10:00:00.000Z",
     });
     expect(derivedMap.get("existing-later-activity")).toMatchObject({
       intensity_factor: 0.88,
       tss: 77,
-      computed_as_of: new Date("2025-04-01T10:00:00.000Z"),
+      computed_as_of: "2025-04-01T10:00:00.000Z",
     });
   });
 });

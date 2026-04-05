@@ -1,12 +1,12 @@
 import { type InferredStateSnapshot, inferredStateSnapshotSchema } from "@repo/core";
-import type { JsonValue } from "@repo/db";
+import type { TrainingPlanInsert, TrainingPlanRow } from "@repo/db";
 import { schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, gte, isNotNull } from "drizzle-orm";
 import type {
-  CreatedTrainingPlanRecord,
   CreateTrainingPlanRecordInput,
   TrainingPlanRepository,
+  UpdateTrainingPlanRecordInput,
 } from "../../repositories";
 
 type DrizzleLike = {
@@ -102,15 +102,13 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
   };
 
   return {
-    async createTrainingPlan(
-      input: CreateTrainingPlanRecordInput,
-    ): Promise<CreatedTrainingPlanRecord> {
+    async createTrainingPlan(input: CreateTrainingPlanRecordInput): Promise<TrainingPlanRow> {
       const [data] = await db
         .insert(schema.trainingPlans)
         .values({
           name: input.name,
           description: input.description,
-          structure: input.structure as JsonValue,
+          structure: input.structure as TrainingPlanInsert["structure"],
           profile_id: input.profileId,
         })
         .returning();
@@ -122,7 +120,48 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         });
       }
 
-      return data as CreatedTrainingPlanRecord;
+      return data as TrainingPlanRow;
+    },
+
+    async getOwnedTrainingPlan(input): Promise<TrainingPlanRow | null> {
+      const [plan] = await db
+        .select()
+        .from(schema.trainingPlans)
+        .where(
+          and(
+            eq(schema.trainingPlans.id, input.id),
+            eq(schema.trainingPlans.profile_id, input.profileId),
+          ),
+        )
+        .limit(1);
+
+      return (plan as TrainingPlanRow | undefined) ?? null;
+    },
+
+    async updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow> {
+      const [updatedPlan] = await db
+        .update(schema.trainingPlans)
+        .set({
+          name: input.name,
+          description: input.description,
+          structure: input.structure as TrainingPlanInsert["structure"],
+        })
+        .where(
+          and(
+            eq(schema.trainingPlans.id, input.id),
+            eq(schema.trainingPlans.profile_id, input.profileId),
+          ),
+        )
+        .returning();
+
+      if (!updatedPlan) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Failed to update training plan",
+        });
+      }
+
+      return updatedPlan as TrainingPlanRow;
     },
 
     async getPriorInferredStateSnapshot(profileId: string) {
@@ -163,7 +202,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       await db
         .update(schema.trainingPlans)
         .set({
-          structure: nextStructure as JsonValue,
+          structure: nextStructure as TrainingPlanInsert["structure"],
         })
         .where(
           and(

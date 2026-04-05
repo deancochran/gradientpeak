@@ -16,18 +16,22 @@
     "check-types": "tsc --noEmit",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@repo/auth": "workspace:*",
-    "@repo/db": "workspace:*",
     "@repo/core": "workspace:*",
-    "@tanstack/react-query": "^5.90.5",
+    "@repo/db": "workspace:*",
+    "@tanstack/react-query": "^5.90.6",
     "@trpc/client": "^11.16.0",
     "@trpc/react-query": "^11.16.0",
-    "@trpc/server": "^11.16.0"
+    "@trpc/server": "^11.16.0",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "typescript": "^5.5.2"
+    "@vitest/coverage-v8": "^4.0.18",
+    "typescript": "^5.5.2",
+    "vitest": "^4.0.18"
   }
 }

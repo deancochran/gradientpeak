@@ -18,7 +18,6 @@ import {
   createWahooImportFitFileStorage,
   createWahooRepository,
 } from "@repo/api/webhooks";
-import type { DbSupabaseDatabase } from "@repo/db";
 import { db } from "@repo/db/client";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
@@ -171,7 +170,7 @@ async function processWorkoutSummary(
   }
 
   try {
-    const supabase = createClient<DbSupabaseDatabase>(
+    const supabase = createClient(
       serverSupabaseUrl!,
       process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
     );

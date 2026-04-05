@@ -1,4 +1,4 @@
-import type { PublicActivityCategory } from "@repo/db";
+import type { ActivityCategory } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
@@ -16,7 +16,7 @@ import { api } from "@/lib/api";
 type SortBy = "date" | "distance" | "duration" | "tss";
 
 const ACTIVITY_TYPES: {
-  value: PublicActivityCategory;
+  value: ActivityCategory;
   label: string;
   icon: string;
 }[] = [
@@ -44,7 +44,7 @@ function formatDistance(meters: number): string {
 function ActivitiesScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedType, setSelectedType] = useState<PublicActivityCategory>("bike");
+  const [selectedType, setSelectedType] = useState<ActivityCategory>("bike");
   const [sortBy, setSortBy] = useState<SortBy>("date");
   const [page, setPage] = useState(0);
   const limit = 20;
@@ -82,7 +82,7 @@ function ActivitiesScreen() {
     }
   };
 
-  const handleTypeChange = (type: PublicActivityCategory) => {
+  const handleTypeChange = (type: ActivityCategory) => {
     setSelectedType(type);
     setPage(0); // Reset to first page
   };

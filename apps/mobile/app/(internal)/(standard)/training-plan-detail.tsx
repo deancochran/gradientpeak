@@ -1,34 +1,12 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { DateInput as DateField } from "@repo/ui/components/date-input";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@repo/ui/components/dialog";
 import { Icon } from "@repo/ui/components/icon";
-import { RadioGroup, RadioGroupItem } from "@repo/ui/components/radio-group";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import {
-  Activity,
-  Calendar,
-  ChevronRight,
-  Copy,
-  Eye,
-  EyeOff,
-  Heart,
-  Trash2,
-  TrendingUp,
-} from "lucide-react-native";
+import { Activity, Calendar, Trash2, TrendingUp } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -39,7 +17,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { TrainingPlanSummaryHeader } from "@/components/training-plan/TrainingPlanSummaryHeader";
+import { TrainingPlanDangerZoneCard } from "@/components/training-plan/TrainingPlanDangerZoneCard";
+import { TrainingPlanDetailFocusBanner } from "@/components/training-plan/TrainingPlanDetailFocusBanner";
+import { TrainingPlanDetailHeaderActionsSection } from "@/components/training-plan/TrainingPlanDetailHeaderActionsSection";
+import { TrainingPlanNoPlanEmptyState } from "@/components/training-plan/TrainingPlanNoPlanEmptyState";
+import { TrainingPlanStructureSection } from "@/components/training-plan/TrainingPlanStructureSection";
+import { useTrainingPlanHeaderSocialActions } from "@/components/training-plan/useTrainingPlanHeaderSocialActions";
+import { useTrainingPlanTemplateSchedulingController } from "@/components/training-plan/useTrainingPlanTemplateSchedulingController";
+import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import {
   normalizeTrainingPlanNextStep,
@@ -48,14 +33,6 @@ import {
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
-import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
-import { api } from "@/lib/api";
-import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
-
-function isValidUuid(value: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(value);
-}
 
 type StructureSessionRow = {
   key: string;
@@ -81,8 +58,6 @@ type GroupedMicrocycleSessions = {
     sessions: StructureSessionRow[];
   }>;
 };
-
-type ScheduleAnchorMode = "start" | "finish";
 
 const weekDayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -261,12 +236,6 @@ export default function TrainingPlanOverview() {
       enabled: isSystemTemplateId && !!id,
     });
 
-  const { data: rawActivePlan } = api.trainingPlans.getActivePlan.useQuery(
-    undefined,
-    scheduleAwareReadQueryOptions,
-  );
-  const activePlan = rawActivePlan as any;
-
   const normalizedNextStepIntent = normalizeTrainingPlanNextStep(nextStep);
 
   const snapshot = useTrainingPlanSnapshot({
@@ -279,10 +248,6 @@ export default function TrainingPlanOverview() {
   const isOwnedByUser = plan?.profile_id === profile?.id;
 
   const [refreshing, setRefreshing] = React.useState(false);
-  const [scheduleAnchorMode, setScheduleAnchorMode] = React.useState<ScheduleAnchorMode>("start");
-  const [templateAnchorDate, setTemplateAnchorDate] = React.useState("");
-  const [showApplyModal, setShowApplyModal] = React.useState(false);
-  const [showConcurrencyWarning, setShowConcurrencyWarning] = React.useState(false);
   const [showActivityPicker, setShowActivityPicker] = React.useState(false);
   const [selectedSessionRow, setSelectedSessionRow] = React.useState<StructureSessionRow | null>(
     null,
@@ -292,76 +257,17 @@ export default function TrainingPlanOverview() {
     router.replace(ROUTES.CALENDAR as any);
   }, [router]);
 
-  const handleOpenActivePlan = useCallback(() => {
-    if (typeof activePlan?.id === "string") {
-      router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
-      return;
-    }
-
-    router.replace(ROUTES.PLAN.INDEX as any);
-  }, [activePlan?.id, router]);
-
-  const duplicatePlanMutation = api.trainingPlans.duplicate.useMutation({
-    onSuccess: async (result: { id: string }) => {
-      await invalidateTrainingPlanQueries(utils);
-      Alert.alert("Duplicated", "Training plan added to your plans.", [
-        {
-          text: "Open",
-          onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.id) as any),
-        },
-      ]);
-    },
-    onError: (error: { message?: string }) => {
-      Alert.alert("Duplicate failed", error.message || "Could not duplicate this training plan");
-    },
+  const scheduling = useTrainingPlanTemplateSchedulingController({
+    handleOpenCalendar,
+    planId: plan?.id,
+    queryClient,
+    router,
+    utils,
   });
-
-  const applyTemplateMutation = api.trainingPlans.applyTemplate.useMutation({
-    onSuccess: async (result) => {
-      await refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation");
-      const successActions = [] as Array<{
-        text: string;
-        onPress: () => void;
-      }>;
-
-      if (typeof result.applied_plan_id === "string") {
-        successActions.push({
-          text: "Open Scheduled Plan",
-          onPress: () =>
-            router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.applied_plan_id) as any),
-        });
-      }
-
-      successActions.push({
-        text: "View Calendar",
-        onPress: handleOpenCalendar,
-      });
-
-      Alert.alert(
-        "Plan scheduled",
-        `Scheduled ${result.created_event_count} session${result.created_event_count === 1 ? "" : "s"} on your calendar.`,
-        successActions,
-      );
-      setShowApplyModal(false);
-    },
-    onError: (error) => {
-      if (error.message?.includes("active training plan")) {
-        Alert.alert(
-          "Finish your current plan first",
-          "You already have scheduled sessions from a training plan. Finish or abandon that plan before scheduling another one.",
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Open Current Plan",
-              onPress: handleOpenActivePlan,
-            },
-          ],
-        );
-        return;
-      }
-
-      Alert.alert("Schedule failed", error.message || "Could not schedule this training plan");
-    },
+  const headerActions = useTrainingPlanHeaderSocialActions({
+    plan,
+    router,
+    utils,
   });
 
   const deletePlanMutation = useReliableMutation(api.trainingPlans.delete, {
@@ -378,36 +284,6 @@ export default function TrainingPlanOverview() {
       Alert.alert("Delete Failed", error.message || "Failed to delete plan");
     },
   });
-
-  const [isPublic, setIsPublic] = useState(plan?.template_visibility === "public");
-  useEffect(() => {
-    setIsPublic(plan?.template_visibility === "public");
-  }, [plan?.template_visibility]);
-
-  const updateVisibilityMutation = api.trainingPlans.update.useMutation({
-    onSuccess: async () => invalidateTrainingPlanQueries(utils),
-    onError: (error) => {
-      setIsPublic(plan?.template_visibility === "public");
-      Alert.alert("Update Failed", error.message || "Failed to update visibility");
-    },
-  });
-
-  const handleTogglePrivacy = useCallback(() => {
-    if (!plan) return;
-    const newVisibility = !isPublic;
-    setIsPublic(newVisibility);
-    updateVisibilityMutation.mutate({
-      id: plan.id,
-      template_visibility: newVisibility ? "public" : "private",
-    });
-  }, [isPublic, plan, updateVisibilityMutation]);
-
-  const [isLiked, setIsLiked] = useState(plan?.has_liked ?? false);
-  const [likesCount, setLikesCount] = useState(plan?.likes_count ?? 0);
-  useEffect(() => {
-    setIsLiked(plan?.has_liked ?? false);
-    setLikesCount(plan?.likes_count ?? 0);
-  }, [plan?.has_liked, plan?.likes_count]);
 
   const {
     data: activityPlansData,
@@ -463,28 +339,6 @@ export default function TrainingPlanOverview() {
     },
   });
 
-  const toggleLikeMutation = api.social.toggleLike.useMutation({
-    onError: () => {
-      setIsLiked(plan?.has_liked ?? false);
-      setLikesCount(plan?.likes_count ?? 0);
-    },
-  });
-
-  const handleToggleLike = useCallback(() => {
-    if (!plan?.id) return;
-    if (!isValidUuid(plan.id)) {
-      Alert.alert("Error", "Cannot like this item - invalid ID");
-      return;
-    }
-    const newLikedState = !isLiked;
-    setIsLiked(newLikedState);
-    setLikesCount((prev: number) => (newLikedState ? prev + 1 : prev - 1));
-    toggleLikeMutation.mutate({
-      entity_id: plan.id,
-      entity_type: "training_plan",
-    });
-  }, [plan?.id, isLiked, toggleLikeMutation]);
-
   const handleOpenActivity = useCallback(() => {
     if (typeof activityId !== "string") return;
     router.push(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
@@ -528,98 +382,6 @@ export default function TrainingPlanOverview() {
       ],
     );
   }, [deletePlanMutation, plan]);
-
-  const handleDuplicate = useCallback(() => {
-    if (!plan?.id) {
-      Alert.alert("Duplicate failed", "No plan ID was found.");
-      return;
-    }
-    duplicatePlanMutation.mutate({
-      id: plan.id,
-      newName: `${plan.name} (Copy)`,
-    });
-  }, [duplicatePlanMutation, plan?.id, plan?.name]);
-
-  const scheduleAnchorContent = useMemo(() => {
-    if (scheduleAnchorMode === "finish") {
-      return {
-        fieldLabel: "Finish By",
-        fieldPlaceholder: "Select finish date",
-        helperText:
-          templateAnchorDate.length > 0
-            ? "We'll back-schedule the earlier sessions so the final session lands by this date."
-            : "Choose the date your final session should land. We'll place the earlier sessions automatically.",
-        emptyDateTitle: "Choose a finish date",
-        emptyDateMessage: "Pick the date you want this plan to finish, or switch back to Start On.",
-        invalidDateTitle: "Invalid finish date",
-      };
-    }
-
-    return {
-      fieldLabel: "Start On",
-      fieldPlaceholder: "Select start date",
-      helperText:
-        templateAnchorDate.length > 0
-          ? "Week 1 will begin on this date and the rest of the plan will follow from there."
-          : "Leave blank to start from today, or pick the day you want week 1 to begin.",
-      emptyDateTitle: null,
-      emptyDateMessage: null,
-      invalidDateTitle: "Invalid start date",
-    };
-  }, [scheduleAnchorMode, templateAnchorDate]);
-
-  const handleSelectScheduleAnchorMode = useCallback((mode: ScheduleAnchorMode) => {
-    setScheduleAnchorMode(mode);
-    setTemplateAnchorDate("");
-  }, []);
-
-  const executeApplyTemplate = (normalizedAnchorDate: string, anchorMode: ScheduleAnchorMode) => {
-    applyTemplateMutation.mutate({
-      template_type: "training_plan",
-      template_id: plan!.id,
-      start_date: anchorMode === "start" && normalizedAnchorDate ? normalizedAnchorDate : undefined,
-      target_date:
-        anchorMode === "finish" && normalizedAnchorDate ? normalizedAnchorDate : undefined,
-    });
-  };
-
-  const handleApplyTemplate = useCallback(() => {
-    if (!plan?.id) {
-      Alert.alert("Schedule failed", "No plan ID was found.");
-      return;
-    }
-
-    const normalizedAnchorDate = templateAnchorDate.trim();
-
-    if (scheduleAnchorMode === "finish" && !normalizedAnchorDate) {
-      Alert.alert(
-        scheduleAnchorContent.emptyDateTitle ?? "Choose a finish date",
-        scheduleAnchorContent.emptyDateMessage ?? "Pick the date you want this plan to finish.",
-      );
-      return;
-    }
-
-    if (normalizedAnchorDate && !/^\d{4}-\d{2}-\d{2}$/.test(normalizedAnchorDate)) {
-      Alert.alert(scheduleAnchorContent.invalidDateTitle, "Use YYYY-MM-DD format.");
-      return;
-    }
-
-    if (activePlan) {
-      setShowApplyModal(false);
-      setShowConcurrencyWarning(true);
-    } else {
-      executeApplyTemplate(normalizedAnchorDate, scheduleAnchorMode);
-    }
-  }, [
-    activePlan,
-    applyTemplateMutation,
-    scheduleAnchorContent.emptyDateMessage,
-    scheduleAnchorContent.emptyDateTitle,
-    scheduleAnchorContent.invalidDateTitle,
-    scheduleAnchorMode,
-    plan,
-    templateAnchorDate,
-  ]);
 
   const activityPlanItems = ((activityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
   const linkedActivityPlanItems =
@@ -843,71 +605,11 @@ export default function TrainingPlanOverview() {
     }
 
     return (
-      <ScrollView
-        className="flex-1 bg-background"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-      >
-        <View className="flex-1 p-6 gap-6">
-          <Card className="mt-8">
-            <CardContent className="p-8">
-              <View className="items-center">
-                <View className="bg-primary/10 rounded-full p-6 mb-6">
-                  <Icon as={Activity} size={64} className="text-primary" />
-                </View>
-                <Text className="text-2xl font-bold mb-3 text-center">No Training Plan</Text>
-                <Text className="text-base text-muted-foreground text-center mb-6">
-                  A training plan helps you build fitness systematically, track your progress, and
-                  prevent overtraining through structured activities and recovery.
-                </Text>
-                <View className="w-full gap-3">
-                  <Button size="lg" onPress={handleCreatePlan}>
-                    <Text className="text-primary-foreground font-semibold">
-                      Create Training Plan
-                    </Text>
-                  </Button>
-                </View>
-              </View>
-            </CardContent>
-          </Card>
-
-          <View className="gap-4 mt-4">
-            <Text className="text-lg font-semibold">Benefits of a Training Plan:</Text>
-            <View className="flex-row items-start gap-3">
-              <View className="bg-primary/10 rounded-full p-2 mt-1">
-                <Icon as={TrendingUp} size={20} className="text-primary" />
-              </View>
-              <View className="flex-1">
-                <Text className="font-semibold mb-1">Track Your Fitness</Text>
-                <Text className="text-sm text-muted-foreground">
-                  Monitor CTL, ATL, and TSB to understand your fitness trends and form.
-                </Text>
-              </View>
-            </View>
-            <View className="flex-row items-start gap-3">
-              <View className="bg-primary/10 rounded-full p-2 mt-1">
-                <Icon as={Calendar} size={20} className="text-primary" />
-              </View>
-              <View className="flex-1">
-                <Text className="font-semibold mb-1">Structured Scheduling</Text>
-                <Text className="text-sm text-muted-foreground">
-                  Weekly TSS targets and constraint validation ensure balanced training.
-                </Text>
-              </View>
-            </View>
-            <View className="flex-row items-start gap-3">
-              <View className="bg-primary/10 rounded-full p-2 mt-1">
-                <Icon as={Activity} size={20} className="text-primary" />
-              </View>
-              <View className="flex-1">
-                <Text className="font-semibold mb-1">Prevent Overtraining</Text>
-                <Text className="text-sm text-muted-foreground">
-                  Recovery rules and intensity distribution keep you healthy and improving.
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
+      <TrainingPlanNoPlanEmptyState
+        onCreatePlan={handleCreatePlan}
+        onRefresh={handleRefresh}
+        refreshing={refreshing}
+      />
     );
   }
 
@@ -919,667 +621,85 @@ export default function TrainingPlanOverview() {
       <View className="flex-1 p-4 gap-4">
         <View className="mb-4">
           {focusContext && (
-            <Card className="border-primary/40 bg-primary/5 mb-4">
-              <CardContent className="p-3">
-                <Text className="text-sm text-primary font-semibold">{focusContext.title}</Text>
-                <Text className="text-xs text-muted-foreground mt-1">
-                  {focusContext.description}
-                </Text>
-                <TouchableOpacity
-                  onPress={focusContext.onPress}
-                  className="self-start mt-2 px-3 py-1.5 rounded-full bg-primary"
-                  activeOpacity={0.8}
-                >
-                  <Text className="text-xs font-semibold text-primary-foreground">
-                    {focusContext.ctaLabel}
-                  </Text>
-                </TouchableOpacity>
-              </CardContent>
-            </Card>
+            <TrainingPlanDetailFocusBanner
+              ctaLabel={focusContext.ctaLabel}
+              description={focusContext.description}
+              onPress={focusContext.onPress}
+              title={focusContext.title}
+            />
           )}
 
-          <TrainingPlanSummaryHeader
-            title={plan.name}
-            description={plan.description || undefined}
-            isActive={false}
-            inactiveLabel="Template"
-            createdAt={plan.created_at}
-            showStatusDot={false}
-            formatStartedDate={(date) =>
-              date.toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })
-            }
-            rightAccessory={
-              <View className="flex-row items-center gap-2">
-                <Pressable
-                  onPress={handleToggleLike}
-                  className="flex-row items-center bg-primary/10 rounded-full px-3 py-2 gap-1"
-                >
-                  <Icon
-                    as={Heart}
-                    size={18}
-                    className={isLiked ? "text-red-500 fill-red-500" : "text-primary"}
-                  />
-                  {likesCount > 0 && (
-                    <Text className="text-sm font-medium text-primary">{likesCount}</Text>
-                  )}
-                </Pressable>
-                {isOwnedByUser && (
-                  <TouchableOpacity onPress={handleEditStructure} className="ml-1">
-                    <View className="bg-primary/10 rounded-full p-2">
-                      <Icon as={ChevronRight} size={24} className="text-primary" />
-                    </View>
-                  </TouchableOpacity>
-                )}
-              </View>
-            }
+          <TrainingPlanDetailHeaderActionsSection
+            duplicatePending={headerActions.duplicatePending}
+            handleDuplicate={headerActions.handleDuplicate}
+            handleEditStructure={handleEditStructure}
+            handleToggleLike={headerActions.handleToggleLike}
+            handleTogglePrivacy={headerActions.handleTogglePrivacy}
+            isLiked={headerActions.isLiked}
+            isOwnedByUser={isOwnedByUser}
+            isPublic={headerActions.isPublic}
+            likesCount={headerActions.likesCount}
+            onOpenCalendar={() => router.push(ROUTES.CALENDAR as any)}
+            plan={plan}
+            schedulingDialogProps={{
+              applyPending: scheduling.applyTemplateMutation.isPending,
+              onApply: scheduling.handleApplyTemplate,
+              onConcurrencyOpenChange: scheduling.setShowConcurrencyWarning,
+              onOpenActivePlan: scheduling.handleOpenActivePlan,
+              onScheduleModalOpenChange: scheduling.setShowApplyModal,
+              onSelectScheduleAnchorMode: scheduling.handleSelectScheduleAnchorMode,
+              scheduleAnchorContent: scheduling.scheduleAnchorContent,
+              scheduleAnchorMode: scheduling.scheduleAnchorMode,
+              setTemplateAnchorDate: scheduling.setTemplateAnchorDate,
+              showConcurrencyWarning: scheduling.showConcurrencyWarning,
+              showScheduleModal: scheduling.showApplyModal,
+              templateAnchorDate: scheduling.templateAnchorDate,
+            }}
+            visibilityPending={headerActions.visibilityPending}
           />
-
-          <Card className="mt-3">
-            <CardContent className="p-3 gap-3">
-              <View className="gap-1">
-                <Text className="text-sm font-semibold">Plan snapshot</Text>
-                <Text className="text-xs text-muted-foreground">
-                  Understand the commitment first, then decide whether to schedule sessions or make
-                  an editable copy.
-                </Text>
-              </View>
-              <View className="flex-row flex-wrap gap-2">
-                {plan.durationWeeks?.recommended || plan.durationWeeks?.min ? (
-                  <TrainingPlanDetailChip
-                    label={`${plan.durationWeeks?.recommended || plan.durationWeeks?.min} week${(plan.durationWeeks?.recommended || plan.durationWeeks?.min) === 1 ? "" : "s"}`}
-                  />
-                ) : null}
-                {plan.sessions_per_week_target ? (
-                  <TrainingPlanDetailChip
-                    label={`${plan.sessions_per_week_target} sessions/week`}
-                  />
-                ) : null}
-                {Array.isArray(plan.sport)
-                  ? plan.sport
-                      .slice(0, 2)
-                      .map((sport: string) => <TrainingPlanDetailChip key={sport} label={sport} />)
-                  : null}
-                {Array.isArray(plan.experienceLevel)
-                  ? plan.experienceLevel
-                      .slice(0, 1)
-                      .map((level: string) => <TrainingPlanDetailChip key={level} label={level} />)
-                  : typeof plan.experienceLevel === "string"
-                    ? [
-                        <TrainingPlanDetailChip
-                          key={plan.experienceLevel}
-                          label={plan.experienceLevel}
-                        />,
-                      ]
-                    : null}
-              </View>
-            </CardContent>
-          </Card>
-
-          <Card className="mt-3">
-            <CardContent className="p-3 gap-3">
-              <View className="gap-1">
-                <Text className="text-sm font-semibold">Plan Actions</Text>
-                <Text className="text-xs text-muted-foreground">
-                  Get this plan onto your calendar first, then use editing only when you need to
-                  customize it.
-                </Text>
-                {!isOwnedByUser ? (
-                  <Text className="text-xs text-muted-foreground">
-                    Shared plans stay read-only here. Make an editable copy if you want to customize
-                    the structure first.
-                  </Text>
-                ) : null}
-              </View>
-
-              {isOwnedByUser && (
-                <View className="flex-row items-center justify-between bg-muted/30 rounded-lg p-3">
-                  <View className="flex-row items-center gap-2">
-                    <Icon
-                      as={isPublic ? Eye : EyeOff}
-                      size={18}
-                      className="text-muted-foreground"
-                    />
-                    <View>
-                      <Text className="text-sm font-medium">{isPublic ? "Public" : "Private"}</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {isPublic
-                          ? "Anyone can find and use this template"
-                          : "Only you can see this template"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Switch
-                    checked={isPublic}
-                    onCheckedChange={handleTogglePrivacy}
-                    disabled={updateVisibilityMutation.isPending}
-                  />
-                </View>
-              )}
-
-              <View className="flex-row gap-2">
-                {isOwnedByUser ? (
-                  <Button
-                    variant="outline"
-                    onPress={handleEditStructure}
-                    className="flex-1"
-                    testID="training-plan-edit-button"
-                  >
-                    <Text>Edit Plan</Text>
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onPress={handleDuplicate}
-                    disabled={duplicatePlanMutation.isPending}
-                    className="flex-1"
-                    testID="training-plan-duplicate-button"
-                  >
-                    <Icon as={Copy} size={16} className="text-foreground mr-2" />
-                    <Text className="text-foreground font-medium">
-                      {duplicatePlanMutation.isPending ? "Duplicating..." : "Make Editable Copy"}
-                    </Text>
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  onPress={() => router.push(ROUTES.CALENDAR as any)}
-                  className="flex-1"
-                  testID="training-plan-open-calendar-button"
-                >
-                  <Text>Open Calendar</Text>
-                </Button>
-              </View>
-
-              <Dialog open={showApplyModal} onOpenChange={setShowApplyModal}>
-                <DialogTrigger asChild>
-                  <Button className="w-full" testID="training-plan-schedule-button">
-                    <Text className="text-primary-foreground font-semibold">Schedule Sessions</Text>
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px]">
-                  <DialogHeader>
-                    <DialogTitle>Schedule this plan</DialogTitle>
-                    <DialogDescription>
-                      Choose one anchor for this schedule. You can either place week 1 on a date or
-                      finish the whole plan by a date.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <View className="gap-4 py-4">
-                    <View className="gap-2">
-                      <Text className="text-sm font-medium">How should this schedule line up?</Text>
-                      <RadioGroup
-                        value={scheduleAnchorMode}
-                        onValueChange={(nextValue) => {
-                          if (nextValue === "start" || nextValue === "finish") {
-                            handleSelectScheduleAnchorMode(nextValue);
-                          }
-                        }}
-                      >
-                        <TouchableOpacity
-                          onPress={() => handleSelectScheduleAnchorMode("start")}
-                          className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
-                          activeOpacity={0.8}
-                          testID="training-plan-anchor-start"
-                        >
-                          <View className="flex-row items-start gap-3">
-                            <RadioGroupItem value="start" />
-                            <View className="flex-1">
-                              <Text className="text-sm font-semibold text-foreground">
-                                Start On
-                              </Text>
-                              <Text className="mt-1 text-xs text-muted-foreground">
-                                Put week 1 on a specific date.
-                              </Text>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => handleSelectScheduleAnchorMode("finish")}
-                          className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "finish" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
-                          activeOpacity={0.8}
-                          testID="training-plan-anchor-finish"
-                        >
-                          <View className="flex-row items-start gap-3">
-                            <RadioGroupItem value="finish" />
-                            <View className="flex-1">
-                              <Text className="text-sm font-semibold text-foreground">
-                                Finish By
-                              </Text>
-                              <Text className="mt-1 text-xs text-muted-foreground">
-                                Back-schedule the plan so the final session lands by a specific
-                                date.
-                              </Text>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                      </RadioGroup>
-                    </View>
-                    <View className="gap-2">
-                      <DateField
-                        id="apply-template-anchor-date"
-                        label={scheduleAnchorContent.fieldLabel}
-                        value={templateAnchorDate || undefined}
-                        onChange={(nextDate) => setTemplateAnchorDate(nextDate ?? "")}
-                        placeholder={scheduleAnchorContent.fieldPlaceholder}
-                        helperText={scheduleAnchorContent.helperText}
-                        clearable
-                        pickerPresentation="modal"
-                      />
-                    </View>
-                  </View>
-                  <DialogFooter>
-                    <DialogClose asChild>
-                      <Button variant="outline" testID="training-plan-schedule-cancel">
-                        <Text className="text-foreground font-medium">Cancel</Text>
-                      </Button>
-                    </DialogClose>
-                    <Button
-                      onPress={handleApplyTemplate}
-                      disabled={applyTemplateMutation.isPending}
-                      testID="training-plan-schedule-confirm"
-                    >
-                      <Text className="text-primary-foreground font-semibold">
-                        {applyTemplateMutation.isPending ? "Scheduling..." : "Schedule Sessions"}
-                      </Text>
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </CardContent>
-          </Card>
         </View>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Plan overview and structure</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <View className="gap-3">
-              {plan.structure && (
-                <>
-                  <View className="flex-row flex-wrap gap-2">
-                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                      <Text className="text-xs font-medium text-foreground">
-                        {(plan.structure as any).target_weekly_tss_min} -{" "}
-                        {(plan.structure as any).target_weekly_tss_max} weekly TSS
-                      </Text>
-                    </View>
-                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                      <Text className="text-xs font-medium text-foreground">
-                        {(plan.structure as any).target_activities_per_week} sessions/week
-                      </Text>
-                    </View>
-                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                      <Text className="text-xs font-medium text-foreground">
-                        {(plan.structure as any).max_consecutive_days} max consecutive days
-                      </Text>
-                    </View>
-                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                      <Text className="text-xs font-medium text-foreground">
-                        {(plan.structure as any).min_rest_days_per_week} rest days/week
-                      </Text>
-                    </View>
-                  </View>
-                  {(plan.structure as any).periodization_template && (
-                    <>
-                      <View className="h-px bg-border" />
-                      <View className="flex-row justify-between items-center">
-                        <Text className="text-muted-foreground">Periodization</Text>
-                        <Text className="font-semibold">
-                          {(plan.structure as any).periodization_template.starting_ctl} →{" "}
-                          {(plan.structure as any).periodization_template.target_ctl} CTL
-                        </Text>
-                      </View>
-                      <View className="flex-row justify-between items-center">
-                        <Text className="text-muted-foreground">Target Date</Text>
-                        <Text className="font-semibold">
-                          {new Date(
-                            (plan.structure as any).periodization_template.target_date,
-                          ).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </Text>
-                      </View>
-                    </>
-                  )}
-                  {isOwnedByUser && (
-                    <>
-                      <View className="h-px bg-border" />
-                      <TouchableOpacity
-                        onPress={handleEditStructure}
-                        className="pt-1"
-                        testID="training-plan-edit-structure-link"
-                      >
-                        <Text className="text-sm font-semibold text-primary">
-                          Edit structure in composer
-                        </Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </>
-              )}
-
-              <View className="h-px bg-border" />
-              <View className="gap-2">
-                <Text className="text-sm font-semibold">Microcycle weekly load (estimated)</Text>
-                {weeklyLoadSummary.length === 0 ? (
-                  <Text className="text-xs text-muted-foreground">
-                    Add linked activity plans to see estimated weekly TSS.
-                  </Text>
-                ) : (
-                  <View className="gap-2">
-                    {weeklyLoadSummary.map((week) => {
-                      const widthPercent = Math.max(6, (week.estimatedTss / maxWeeklyLoad) * 100);
-
-                      return (
-                        <View key={`week-load-${week.microcycle}`} className="gap-1">
-                          <View className="flex-row items-center justify-between">
-                            <Text className="text-xs font-medium text-foreground">
-                              Week {week.microcycle}
-                            </Text>
-                            <Text className="text-xs text-muted-foreground">
-                              {Math.round(week.estimatedTss)} TSS
-                            </Text>
-                          </View>
-                          <View className="h-2 rounded-full bg-muted/60 overflow-hidden">
-                            <View
-                              className="h-2 rounded-full bg-primary"
-                              style={{ width: `${widthPercent}%` }}
-                            />
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-              </View>
-
-              <View className="h-px bg-border" />
-              <View className="gap-2">
-                <Text className="text-sm font-semibold">Linked activity plan structures</Text>
-                <Text className="text-xs text-muted-foreground">
-                  These are the workout building blocks referenced by this plan.
-                </Text>
-                {isLoadingLinkedPlans ? (
-                  <Text className="text-xs text-muted-foreground">
-                    Loading linked activity plans...
-                  </Text>
-                ) : uniqueLinkedActivityPlans.length === 0 ? (
-                  <Text className="text-xs text-muted-foreground">
-                    No linked activity plans in this template yet.
-                  </Text>
-                ) : (
-                  <View className="gap-2">
-                    {uniqueLinkedActivityPlans.map((linkedPlan) => (
-                      <View
-                        key={`linked-plan-${linkedPlan.id}`}
-                        className="rounded-md border border-border/60 bg-background px-2 py-2 gap-1"
-                      >
-                        <Text className="text-xs font-semibold text-foreground">
-                          {linkedPlan.name}
-                        </Text>
-                        <Text className="text-[11px] text-muted-foreground">
-                          {(linkedPlan.activity_category ?? "other").toUpperCase()} ·{" "}
-                          {Math.round(readFiniteNumber(linkedPlan.estimated_tss))} TSS ·{" "}
-                          {Math.round(readFiniteNumber(linkedPlan.estimated_duration))} min
-                        </Text>
-                        <Text className="text-[11px] text-muted-foreground">
-                          {hasIntervals(linkedPlan.structure)
-                            ? "Includes interval structure"
-                            : "No interval structure available"}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              <View className="h-px bg-border" />
-              <View className="gap-2">
-                <Text className="text-sm font-semibold">Sessions by microcycle and day</Text>
-                <Text className="text-xs text-muted-foreground">
-                  Review how sessions are distributed across each week before scheduling the full
-                  plan.
-                </Text>
-                {groupedStructureSessions.length === 0 ? (
-                  <Text className="text-xs text-muted-foreground">
-                    No structured sessions found in this template yet.
-                  </Text>
-                ) : (
-                  groupedStructureSessions.map((microcycle) => (
-                    <View
-                      key={`microcycle-${microcycle.microcycle}`}
-                      className="gap-2 rounded-md border border-border bg-muted/20 p-2"
-                    >
-                      <View className="flex-row items-center justify-between gap-2">
-                        <Text className="text-sm font-semibold text-foreground">
-                          Week {microcycle.microcycle}
-                        </Text>
-                        <Text className="text-[11px] text-muted-foreground">
-                          {microcycle.days.reduce((count, day) => count + day.sessions.length, 0)}{" "}
-                          session
-                          {microcycle.days.reduce(
-                            (count, day) => count + day.sessions.length,
-                            0,
-                          ) === 1
-                            ? ""
-                            : "s"}
-                        </Text>
-                      </View>
-                      {microcycle.days.map((day) => {
-                        return (
-                          <View
-                            key={`day-${day.dayOffset}`}
-                            className="gap-1 rounded-md border border-border/50 bg-background/70 p-2"
-                          >
-                            <View className="flex-row items-center justify-between gap-2">
-                              <Text className="text-xs font-medium text-muted-foreground">
-                                {formatCompactDayLabel(day.dayOffset)}
-                              </Text>
-                              <Text className="text-[11px] text-muted-foreground">
-                                {day.sessions.length} item
-                                {day.sessions.length === 1 ? "" : "s"}
-                              </Text>
-                            </View>
-                            {day.sessions.map((session) => (
-                              <View
-                                key={session.key}
-                                className="rounded-md border border-border/60 bg-background px-2 py-2"
-                              >
-                                <View className="flex-row items-start justify-between gap-3">
-                                  <View className="flex-1 gap-1">
-                                    <Text className="text-xs font-medium text-foreground">
-                                      {session.title}
-                                    </Text>
-                                    <Text className="text-[11px] text-muted-foreground">
-                                      {session.activityPlanId
-                                        ? (activityPlanNameById.get(session.activityPlanId) ??
-                                          "Linked activity plan")
-                                        : "No linked activity plan"}
-                                    </Text>
-                                  </View>
-                                  {isOwnedByUser ? (
-                                    <TouchableOpacity
-                                      onPress={() => handleOpenActivityPickerForSession(session)}
-                                      disabled={updatePlanStructureMutation.isPending}
-                                      className="rounded-full border border-border px-2 py-1"
-                                      activeOpacity={0.8}
-                                    >
-                                      <Text className="text-[11px] font-medium text-primary">
-                                        {session.activityPlanId ? "Change" : "Add"}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  ) : null}
-                                </View>
-                                {isOwnedByUser ? (
-                                  <View className="mt-2 flex-row items-center gap-2">
-                                    {session.activityPlanId ? (
-                                      <TouchableOpacity
-                                        onPress={() => handleRemoveActivityFromSession(session)}
-                                        disabled={updatePlanStructureMutation.isPending}
-                                        className="flex-row items-center gap-1 rounded-full border border-destructive/30 px-2 py-1"
-                                        activeOpacity={0.8}
-                                      >
-                                        <Text className="text-[11px] font-medium text-destructive">
-                                          Remove
-                                        </Text>
-                                      </TouchableOpacity>
-                                    ) : null}
-                                  </View>
-                                ) : null}
-                              </View>
-                            ))}
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ))
-                )}
-              </View>
-            </View>
-          </CardContent>
-        </Card>
+        <TrainingPlanStructureSection
+          activityPlanItems={activityPlanItems}
+          activityPlanNameById={activityPlanNameById}
+          formatCompactDayLabel={formatCompactDayLabel}
+          groupedStructureSessions={groupedStructureSessions}
+          hasIntervals={hasIntervals}
+          isLoadingActivityPlans={isLoadingActivityPlans}
+          isLoadingLinkedPlans={isLoadingLinkedPlans}
+          isOwnedByUser={isOwnedByUser}
+          linkedActivityPlanItems={linkedActivityPlanItems}
+          maxWeeklyLoad={maxWeeklyLoad}
+          onActivityPickerOpenChange={(open) => {
+            setShowActivityPicker(open);
+            if (!open) {
+              setSelectedSessionRow(null);
+            }
+          }}
+          onEditStructure={handleEditStructure}
+          onOpenActivityPickerForSession={handleOpenActivityPickerForSession}
+          onRefreshActivityPlans={() => {
+            void refetchActivityPlans();
+          }}
+          onRemoveActivityFromSession={handleRemoveActivityFromSession}
+          onSelectActivityForSession={(activityPlan) => {
+            void handleSelectActivityForSession(activityPlan);
+          }}
+          planStructure={plan.structure as any}
+          selectedSessionRow={selectedSessionRow}
+          showActivityPicker={showActivityPicker}
+          uniqueLinkedActivityPlans={uniqueLinkedActivityPlans}
+          updatePlanStructurePending={updatePlanStructureMutation.isPending}
+          weeklyLoadSummary={weeklyLoadSummary}
+        />
 
         {isOwnedByUser && (
-          <Card className="border-destructive">
-            <CardHeader>
-              <CardTitle className="text-destructive">Danger Zone</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <View className="gap-3">
-                <Text className="text-sm text-muted-foreground">
-                  Deleting this training plan will permanently remove its structure and all
-                  associated planned activities.
-                </Text>
-                <Button
-                  variant="destructive"
-                  onPress={handleDeletePlan}
-                  disabled={deletePlanMutation.isPending}
-                >
-                  <Icon as={Trash2} size={18} className="text-white mr-2" />
-                  <Text className="text-white font-semibold">
-                    {deletePlanMutation.isPending ? "Deleting..." : "Delete Training Plan"}
-                  </Text>
-                </Button>
-              </View>
-            </CardContent>
-          </Card>
+          <TrainingPlanDangerZoneCard
+            deletePending={deletePlanMutation.isPending}
+            onDelete={handleDeletePlan}
+          />
         )}
       </View>
-
-      <Dialog
-        open={showActivityPicker}
-        onOpenChange={(open) => {
-          setShowActivityPicker(open);
-          if (!open) {
-            setSelectedSessionRow(null);
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedSessionRow?.activityPlanId
-                ? "Replace activity plan"
-                : "Assign activity plan"}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedSessionRow
-                ? `Select an activity plan for ${selectedSessionRow.title}.`
-                : "Select an activity plan for this session."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <View className="max-h-80">
-            {isLoadingActivityPlans ? (
-              <View className="py-6 items-center gap-2">
-                <ActivityIndicator size="small" />
-                <Text className="text-xs text-muted-foreground">Loading activity plans...</Text>
-              </View>
-            ) : activityPlanItems.length === 0 ? (
-              <View className="py-6 items-center gap-2">
-                <Text className="text-sm text-muted-foreground text-center">
-                  You do not have any activity plans yet.
-                </Text>
-              </View>
-            ) : (
-              <ScrollView>
-                <View className="gap-2 py-1">
-                  {activityPlanItems.map((activityPlan) => (
-                    <TouchableOpacity
-                      key={activityPlan.id}
-                      className="rounded-md border border-border px-3 py-2"
-                      activeOpacity={0.8}
-                      disabled={updatePlanStructureMutation.isPending}
-                      onPress={() => {
-                        void handleSelectActivityForSession(activityPlan);
-                      }}
-                    >
-                      <Text className="text-sm font-medium text-foreground">
-                        {activityPlan.name}
-                      </Text>
-                      <Text className="text-[11px] text-muted-foreground">{activityPlan.id}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            )}
-          </View>
-
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" disabled={updatePlanStructureMutation.isPending}>
-                <Text className="text-foreground font-medium">Close</Text>
-              </Button>
-            </DialogClose>
-            <Button
-              variant="outline"
-              disabled={isLoadingActivityPlans || updatePlanStructureMutation.isPending}
-              onPress={() => {
-                void refetchActivityPlans();
-              }}
-            >
-              <Text className="text-foreground font-medium">Refresh</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showConcurrencyWarning} onOpenChange={setShowConcurrencyWarning}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Current plan already scheduled</DialogTitle>
-          </DialogHeader>
-          <DialogDescription>
-            You already have scheduled sessions from a training plan. Finish or abandon that plan
-            before scheduling another one.
-          </DialogDescription>
-          <DialogFooter className="mt-4">
-            <DialogClose asChild>
-              <Button variant="outline">
-                <Text className="text-foreground font-medium">Cancel</Text>
-              </Button>
-            </DialogClose>
-            <Button onPress={handleOpenActivePlan}>
-              <Text className="text-primary-foreground font-semibold">Open Current Plan</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </ScrollView>
-  );
-}
-
-function TrainingPlanDetailChip({ label }: { label: string }) {
-  return (
-    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-      <Text className="text-xs font-medium capitalize text-foreground">{label}</Text>
-    </View>
   );
 }

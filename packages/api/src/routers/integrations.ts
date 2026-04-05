@@ -1,4 +1,9 @@
-import type { IntegrationRow, PublicIntegrationProvider, PublicIntegrationsRow } from "@repo/db";
+import {
+  type IntegrationRow,
+  type PublicIntegrationProvider,
+  type PublicIntegrationsRow,
+  publicIntegrationProviderSchema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import type { Context } from "../context";
@@ -10,7 +15,10 @@ import {
 } from "../infrastructure/repositories";
 import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
+
+const storageService = getApiStorageService();
 
 function getIntegrationsRepositories(ctx: Context) {
   return createIntegrationsRepositories(getRequiredDb(ctx));
@@ -29,7 +37,7 @@ function getWahooSyncService(ctx: Context) {
     repository: createWahooRepository({ db: getRequiredDb(ctx) }),
     storage: createWahooRouteStorage({
       async downloadRouteGpx(filePath) {
-        const { data, error } = await ctx.supabase.storage.from("routes").download(filePath);
+        const { data, error } = await storageService.storage.from("routes").download(filePath);
         if (error || !data) return null;
         return data.text();
       },
@@ -38,7 +46,7 @@ function getWahooSyncService(ctx: Context) {
 }
 
 // Input schemas using supazod types
-const providerSchema = z.enum(["strava", "wahoo", "trainingpeaks", "garmin", "zwift"]);
+const providerSchema = publicIntegrationProviderSchema;
 
 const getAuthUrlInputSchema = z.object({
   provider: providerSchema,

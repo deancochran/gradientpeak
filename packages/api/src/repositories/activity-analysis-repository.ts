@@ -1,20 +1,22 @@
+import type { ActivityEffortRow, ProfileMetricRow, ProfileRow } from "@repo/db";
+
+type ActivityAnalysisProfileSnapshot = Pick<ProfileRow, "dob" | "gender">;
+type ActivityAnalysisMetricSnapshot = Omit<
+  Pick<ProfileMetricRow, "metric_type" | "recorded_at" | "value">,
+  "value"
+> & { value: number };
+type ActivityAnalysisEffortSnapshot = Omit<
+  Pick<
+    ActivityEffortRow,
+    "activity_category" | "duration_seconds" | "effort_type" | "recorded_at" | "value"
+  >,
+  "value"
+> & { value: number };
+
 export type ActivityAnalysisContextSnapshot = {
-  profile: {
-    dob: Date | null;
-    gender: "male" | "female" | "other" | null;
-  };
-  profileMetrics: Array<{
-    metric_type: "weight_kg" | "resting_hr" | "max_hr" | "lthr";
-    recorded_at: Date;
-    value: number;
-  }>;
-  recentEfforts: Array<{
-    activity_category: "run" | "bike" | "swim" | "strength" | "other";
-    duration_seconds: number;
-    effort_type: "power" | "speed";
-    recorded_at: Date;
-    value: number;
-  }>;
+  profile: ActivityAnalysisProfileSnapshot;
+  profileMetrics: ActivityAnalysisMetricSnapshot[];
+  recentEfforts: ActivityAnalysisEffortSnapshot[];
 };
 
 export interface ActivityAnalysisStore {

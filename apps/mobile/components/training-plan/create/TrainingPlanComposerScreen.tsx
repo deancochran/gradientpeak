@@ -36,8 +36,13 @@ import {
   type TrainingPlanConfigConflict,
   type TrainingPlanConfigFormData,
   type TrainingPlanFormData,
-  type TrainingPlanMetadataFormData,
 } from "@/components/training-plan/create/SinglePageForm";
+import type {
+  TrainingPlanMetadataFormData,
+  TrainingPlanMetadataFormValues,
+} from "@/components/training-plan/create/trainingPlanMetadataForm";
+import { trainingPlanMetadataFormSchema } from "@/components/training-plan/create/trainingPlanMetadataForm";
+import { api } from "@/lib/api";
 import { featureFlags } from "@/lib/constants/features";
 import { ROUTES } from "@/lib/constants/routes";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
@@ -57,7 +62,6 @@ import {
   shouldIgnorePreviewResponse,
 } from "@/lib/training-plan-form/previewRequestState";
 import { mapTrainingPlanSaveError } from "@/lib/training-plan-form/saveErrorMapping";
-import { api } from "@/lib/api";
 
 export type TrainingPlanComposerModeContract =
   | {
@@ -319,6 +323,19 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     mode: "onChange",
     reValidateMode: "onChange",
   });
+  const metadataForm = useZodForm({
+    schema: trainingPlanMetadataFormSchema,
+    defaultValues: {
+      name: "New Training Plan",
+      description: "",
+    } satisfies TrainingPlanMetadataFormData,
+    mode: "onChange",
+    reValidateMode: "onChange",
+  });
+
+  useEffect(() => {
+    void metadataForm.trigger();
+  }, [metadataForm]);
 
   const watchedFormData = useWatch({ control: form.control });
   const formData = (watchedFormData ?? form.getValues()) as TrainingPlanFormData;
@@ -326,10 +343,6 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
 
   const [configData, setConfigData] =
     useState<TrainingPlanConfigFormData>(createDefaultConfigState);
-  const [planMetadata, setPlanMetadata] = useState<TrainingPlanMetadataFormData>(() => ({
-    name: "New Training Plan",
-    description: "",
-  }));
   const [hasHydratedFromEditPlan, setHasHydratedFromEditPlan] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewPending, setIsPreviewPending] = useState(false);
@@ -422,15 +435,6 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
   });
 
   const effectiveFormData = useMemo(() => ensureInternalGoal(formData), [formData]);
-
-  const buildMinimalPayload = useCallback(
-    () =>
-      buildMinimalTrainingPlanPayload({
-        planStartDate: effectiveFormData.planStartDate,
-        goals: effectiveFormData.goals,
-      }),
-    [effectiveFormData.goals, effectiveFormData.planStartDate],
-  );
 
   const buildCreationInput = toCreationNormalizationInput;
 
@@ -668,13 +672,13 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
         structure: editPlanData.structure,
       }),
     );
-    setPlanMetadata({
+    metadataForm.reset({
       name: editPlanData.name,
       description: editPlanData.description ?? "",
     });
     setHasHydratedFromEditPlan(true);
     setHasSeededDefaults(true);
-  }, [editPlanData, form, hasHydratedFromEditPlan, isEditMode]);
+  }, [editPlanData, form, hasHydratedFromEditPlan, isEditMode, metadataForm]);
 
   useEffect(() => {
     if (!featureFlags.trainingPlanCreateConfigMvp || hasSeededDefaults) {
@@ -911,12 +915,28 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     setConfigData((previous) => ({
       ...previous,
       postGoalRecoveryDays: baselineConfig.postGoalRecoveryDays,
-      behaviorControlsV1: cloneJson(baselineConfig.behaviorControlsV1),
       startingCtlAssumption: baselineConfig.startingCtlAssumption,
       startingFatigueState: baselineConfig.startingFatigueState,
       locks: {
         ...previous.locks,
         post_goal_recovery_days: cloneJson(baselineConfig.locks.post_goal_recovery_days),
+      },
+    }));
+
+    setRecomputeNonce((value) => value + 1);
+  }, []);
+
+  const handleResetBehaviorControls = useCallback(() => {
+    const baselineConfig = initializedConfigDefaultsRef.current;
+    if (!baselineConfig) {
+      return;
+    }
+
+    setConfigData((previous) => ({
+      ...previous,
+      behaviorControlsV1: cloneJson(baselineConfig.behaviorControlsV1),
+      locks: {
+        ...previous.locks,
         behavior_controls_v1: cloneJson(baselineConfig.locks.behavior_controls_v1),
       },
     }));
@@ -925,22 +945,10 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     setRecomputeNonce((value) => value + 1);
   }, []);
 
-  const handleResetProjectionAll = useCallback(() => {
-    const baselineConfig = initializedConfigDefaultsRef.current;
-    if (!baselineConfig) {
-      return;
-    }
-
-    setConfigData((previous) => ({
-      ...previous,
-      calibration: cloneJson(baselineConfig.calibration),
-      calibrationCompositeLocks: cloneJson(baselineConfig.calibrationCompositeLocks),
-    }));
-
-    setRecomputeNonce((value) => value + 1);
-  }, []);
-
-  const handleSave = async () => {
+  const handleSave = async (
+    validatedFormData: TrainingPlanFormData,
+    validatedMetadata: TrainingPlanMetadataFormValues,
+  ) => {
     if (!canCreatePlan || isCreateBlockedByPolicy) {
       return;
     }
@@ -948,16 +956,14 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     setIsCreating(true);
 
     try {
-      const planName = planMetadata.name.trim();
-      if (!planName) {
-        Alert.alert("Invalid Input", "Plan name cannot be empty", [{ text: "OK" }]);
-        return;
-      }
-
-      const description = planMetadata.description.trim();
+      const normalizedFormData = ensureInternalGoal(validatedFormData);
+      const description = validatedMetadata.description;
 
       const payload = {
-        minimal_plan: buildMinimalPayload(),
+        minimal_plan: buildMinimalTrainingPlanPayload({
+          planStartDate: normalizedFormData.planStartDate,
+          goals: normalizedFormData.goals,
+        }),
         creation_input: buildCreationInput(configData),
         starting_ctl_override: configData.startingCtlAssumption,
         starting_atl_override: resolveStartingAtlOverride(configData),
@@ -977,7 +983,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
 
         await updatePlanMetadataMutation.mutateAsync({
           id: updatedPlan.id,
-          name: planName,
+          name: validatedMetadata.name,
           description: description.length > 0 ? description : null,
         });
 
@@ -993,7 +999,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
 
       await updatePlanMetadataMutation.mutateAsync({
         id: createdPlan.id,
-        name: planName,
+        name: validatedMetadata.name,
         description: description.length > 0 ? description : null,
       });
 
@@ -1018,6 +1024,14 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
       setIsCreating(false);
     }
   };
+
+  const handleSavePress = useCallback(() => {
+    void form.handleSubmit(async (validatedFormData) => {
+      await metadataForm.handleSubmit(async (validatedMetadata) => {
+        await handleSave(validatedFormData as TrainingPlanFormData, validatedMetadata);
+      })();
+    })();
+  }, [form, metadataForm, handleSave]);
 
   if (isEditMode && editPlanQuery.isLoading) {
     return (
@@ -1048,7 +1062,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
           headerRight: () => (
             <Pressable
               onPress={() => {
-                void form.handleSubmit(handleSave)();
+                handleSavePress();
               }}
               disabled={!canCreatePlan}
               testID="training-plan-save-button"
@@ -1133,8 +1147,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
           </View>
         ) : null}
         <SinglePageForm
-          planMetadata={planMetadata}
-          onPlanMetadataChange={setPlanMetadata}
+          metadataForm={metadataForm}
           initialTab={contract.initialTab}
           formData={formData}
           onFormDataChange={handleFormDataChange}
@@ -1146,7 +1159,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
           onConfigChange={handleConfigChange}
           onResetAvailability={handleResetAvailability}
           onResetLimits={handleResetLimits}
-          onResetProjectionAll={handleResetProjectionAll}
+          onResetBehaviorControls={handleResetBehaviorControls}
           contextSummary={contextSummary}
           feasibilitySafetySummary={feasibilitySummary}
           informationalConflicts={informationalConflicts}

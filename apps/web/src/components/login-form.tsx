@@ -8,30 +8,43 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
+import { useZodForm } from "@repo/ui/hooks";
 import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { authClient } from "@/lib/auth/client";
+import { getLoginFormError } from "@/lib/auth/form-errors";
+import { type LoginFormValues, loginFormSchema } from "@/lib/auth/form-schemas";
 import { useAuth } from "./providers/auth-provider";
+
 export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, setIsPending] = useState(false);
   const router = useRouter();
   const { refreshSession } = useAuth();
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsPending(true);
+  const form = useZodForm({
+    schema: loginFormSchema,
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
+
+  const handleLogin = async (values: LoginFormValues) => {
+    form.clearErrors("root");
 
     try {
       const result = await authClient.signIn.email({
-        email,
-        password,
+        email: values.email,
+        password: values.password,
       });
 
       if (result.error) {
@@ -42,11 +55,13 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
       router.refresh();
       router.push("/");
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
-    } finally {
-      setIsPending(false);
+      const formError = getLoginFormError(error);
+      form.setError(formError.target, { message: formError.message });
     }
   };
+
+  const isPending = form.formState.isSubmitting;
+
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
@@ -55,51 +70,62 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
           <CardDescription>Enter your email below to login to your account</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin}>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  testId="login-email-input"
-                  type="email"
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleLogin)}>
+              <div className="flex flex-col gap-6">
+                <FormTextField
+                  autoComplete="email"
+                  control={form.control}
+                  label="Email"
+                  name="email"
                   placeholder="m@example.com"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  testId="login-email-input"
+                  type="email"
                 />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                  <Link
-                    href="/auth/forgot-password"
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
-                  >
-                    Forgot your password?
-                  </Link>
-                </div>
-                <Input
-                  id="password"
-                  testId="login-password-input"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between gap-3">
+                        <FormLabel>Password *</FormLabel>
+                        <Link
+                          href="/auth/forgot-password"
+                          className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
+                        >
+                          Forgot your password?
+                        </Link>
+                      </div>
+                      <FormControl>
+                        <Input
+                          autoComplete="current-password"
+                          onBlur={field.onBlur}
+                          onChange={(event) => field.onChange(event.currentTarget.value)}
+                          testId="login-password-input"
+                          type="password"
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
+                {form.formState.errors.root?.message ? (
+                  <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+                ) : null}
+                <Button disabled={isPending} testId="login-submit-button" type="submit">
+                  {isPending ? "Logging in..." : "Login"}
+                </Button>
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button disabled={isPending} testId="login-submit-button" type="submit">
-                {isPending ? "Logging in..." : "Login"}
-              </Button>
-            </div>
-            <div className="mt-4 text-center text-sm">
-              Don&apos;t have an account?{" "}
-              <Link href="/auth/sign-up" className="underline underline-offset-4">
-                Sign up
-              </Link>
-            </div>
-          </form>
+              <div className="mt-4 text-center text-sm">
+                Don&apos;t have an account?{" "}
+                <Link href="/auth/sign-up" className="underline underline-offset-4">
+                  Sign up
+                </Link>
+              </div>
+            </form>
+          </Form>
         </CardContent>
       </Card>
     </div>

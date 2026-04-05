@@ -1,12 +1,22 @@
+import { randomUUID } from "node:crypto";
 import { profileQuickUpdateSchema } from "@repo/core";
+import {
+  activities,
+  activityEfforts,
+  type PublicProfilesRow,
+  profileMetrics,
+  profiles,
+  publicFollowsRowSchema,
+  publicProfilesRowSchema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-// API-specific schemas
 const profileListFiltersSchema = z.object({
   username: z.string().optional(),
   limit: z.number().min(1).max(100).default(20),
@@ -22,59 +32,310 @@ const trainingZonesUpdateSchema = z.object({
   ftp: z.number().int().positive().optional(),
 });
 
-const publicProfileProjection = [
-  "id",
-  "username",
-  "avatar_url",
-  "bio",
-  "gender",
-  "preferred_units",
-  "language",
-  "is_public",
-].join(", ");
+const publicProfileSchema = publicProfilesRowSchema
+  .pick({
+    id: true,
+    username: true,
+    avatar_url: true,
+    bio: true,
+    gender: true,
+    preferred_units: true,
+    language: true,
+    is_public: true,
+  })
+  .extend({
+    follow_status: publicFollowsRowSchema.shape.status.nullable().optional(),
+    followers_count: z.number().nullable().optional(),
+    following_count: z.number().nullable().optional(),
+  });
 
-const publicProfileSchema = z.object({
-  id: z.string().uuid(),
-  username: z.string().nullable(),
-  avatar_url: z.string().nullable(),
-  bio: z.string().nullable(),
-  gender: z.string().nullable(),
-  preferred_units: z.string().nullable(),
-  language: z.string().nullable(),
-  is_public: z.boolean().nullable().optional(),
-  follow_status: z.string().nullable().optional(),
-  followers_count: z.number().nullable().optional(),
-  following_count: z.number().nullable().optional(),
-});
+const MANUAL_FTP_UNIT = "ftp_manual";
+
+const profileBaseSelect = {
+  id: profiles.id,
+  idx: profiles.idx,
+  created_at: profiles.created_at,
+  updated_at: profiles.updated_at,
+  email: profiles.email,
+  full_name: profiles.full_name,
+  avatar_url: profiles.avatar_url,
+  bio: profiles.bio,
+  dob: profiles.dob,
+  gender: profiles.gender,
+  onboarded: profiles.onboarded,
+  is_public: profiles.is_public,
+  username: profiles.username,
+  preferred_units: profiles.preferred_units,
+  language: profiles.language,
+} as const;
+
+type DbClient = ReturnType<typeof getRequiredDb>;
+
+type ProfileBaseRow = Pick<
+  PublicProfilesRow,
+  | "id"
+  | "idx"
+  | "created_at"
+  | "updated_at"
+  | "email"
+  | "full_name"
+  | "avatar_url"
+  | "bio"
+  | "dob"
+  | "gender"
+  | "onboarded"
+  | "is_public"
+  | "username"
+  | "preferred_units"
+  | "language"
+>;
+
+function toNullableNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return Number(value);
+}
+
+function serializeProfile(
+  profile: ProfileBaseRow,
+  performance?: {
+    weight_kg: number | null;
+    threshold_hr: number | null;
+    ftp: number | null;
+  },
+) {
+  return {
+    ...profile,
+    created_at: profile.created_at.toISOString(),
+    updated_at: profile.updated_at.toISOString(),
+    dob: profile.dob?.toISOString() ?? null,
+    ftp: performance?.ftp ?? null,
+    threshold_hr: performance?.threshold_hr ?? null,
+    weight_kg: performance?.weight_kg ?? null,
+  };
+}
+
+async function getProfileBaseById(db: DbClient, profileId: string) {
+  const [profile] = await db
+    .select(profileBaseSelect)
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+
+  return (profile ?? null) as ProfileBaseRow | null;
+}
+
+async function getProfilePerformanceSnapshot(db: DbClient, profileId: string) {
+  const ftpCutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+  const [weightMetric, lthrMetric, manualFtpEffort, best20mEffort] = await Promise.all([
+    db
+      .select({ value: profileMetrics.value })
+      .from(profileMetrics)
+      .where(
+        and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "weight_kg")),
+      )
+      .orderBy(desc(profileMetrics.recorded_at))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({ value: profileMetrics.value })
+      .from(profileMetrics)
+      .where(and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "lthr")))
+      .orderBy(desc(profileMetrics.recorded_at))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({ value: activityEfforts.value })
+      .from(activityEfforts)
+      .where(
+        and(
+          eq(activityEfforts.profile_id, profileId),
+          eq(activityEfforts.activity_category, "bike"),
+          eq(activityEfforts.effort_type, "power"),
+          eq(activityEfforts.duration_seconds, 1200),
+          eq(activityEfforts.unit, MANUAL_FTP_UNIT),
+          isNull(activityEfforts.activity_id),
+        ),
+      )
+      .orderBy(desc(activityEfforts.recorded_at))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+    db
+      .select({ value: activityEfforts.value })
+      .from(activityEfforts)
+      .where(
+        and(
+          eq(activityEfforts.profile_id, profileId),
+          eq(activityEfforts.activity_category, "bike"),
+          eq(activityEfforts.effort_type, "power"),
+          eq(activityEfforts.duration_seconds, 1200),
+          gte(activityEfforts.recorded_at, ftpCutoffDate),
+        ),
+      )
+      .orderBy(desc(activityEfforts.value))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
+  ]);
+
+  const ftpSource = manualFtpEffort ?? best20mEffort;
+
+  return {
+    ftp: ftpSource?.value ? Math.round(Number(ftpSource.value) * 0.95) : null,
+    threshold_hr: toNullableNumber(lthrMetric?.value),
+    weight_kg: toNullableNumber(weightMetric?.value),
+  };
+}
+
+async function getSerializedProfile(db: DbClient, profileId: string) {
+  const [profile, performance] = await Promise.all([
+    getProfileBaseById(db, profileId),
+    getProfilePerformanceSnapshot(db, profileId),
+  ]);
+
+  if (!profile) {
+    return null;
+  }
+
+  return serializeProfile(profile, performance);
+}
+
+async function syncProfileMetric(
+  db: DbClient,
+  input: {
+    profileId: string;
+    metricType: "lthr" | "weight_kg";
+    value: number | null | undefined;
+  },
+) {
+  if (input.value === undefined) {
+    return;
+  }
+
+  if (input.value === null) {
+    await db
+      .delete(profileMetrics)
+      .where(
+        and(
+          eq(profileMetrics.profile_id, input.profileId),
+          eq(profileMetrics.metric_type, input.metricType),
+          isNull(profileMetrics.reference_activity_id),
+        ),
+      );
+
+    return;
+  }
+
+  await db.insert(profileMetrics).values({
+    id: randomUUID(),
+    created_at: new Date(),
+    profile_id: input.profileId,
+    metric_type: input.metricType,
+    recorded_at: new Date(),
+    unit: input.metricType === "weight_kg" ? "kg" : "bpm",
+    notes: null,
+    reference_activity_id: null,
+    value: String(input.value),
+  });
+}
+
+async function syncManualFtp(
+  db: DbClient,
+  input: { profileId: string; value: number | null | undefined },
+) {
+  if (input.value === undefined) {
+    return;
+  }
+
+  await db
+    .delete(activityEfforts)
+    .where(
+      and(
+        eq(activityEfforts.profile_id, input.profileId),
+        eq(activityEfforts.activity_category, "bike"),
+        eq(activityEfforts.effort_type, "power"),
+        eq(activityEfforts.duration_seconds, 1200),
+        eq(activityEfforts.unit, MANUAL_FTP_UNIT),
+        isNull(activityEfforts.activity_id),
+      ),
+    );
+
+  if (input.value === null) {
+    return;
+  }
+
+  await db.insert(activityEfforts).values({
+    id: randomUUID(),
+    created_at: new Date(),
+    updated_at: new Date(),
+    profile_id: input.profileId,
+    activity_id: null,
+    recorded_at: new Date(),
+    activity_category: "bike",
+    effort_type: "power",
+    duration_seconds: 1200,
+    start_offset: null,
+    unit: MANUAL_FTP_UNIT,
+    value: Number((input.value / 0.95).toFixed(2)),
+  });
+}
+
+async function getFollowStatus(db: DbClient, followerId: string, followingId: string) {
+  const result = await db.execute(sql<{ status: string | null }>`
+    select status
+    from follows
+    where follower_id = ${followerId}
+      and following_id = ${followingId}
+    limit 1
+  `);
+
+  return publicFollowsRowSchema.shape.status.nullable().parse(result.rows[0]?.status ?? null);
+}
+
+async function getFollowersCount(db: DbClient, profileId: string) {
+  const result = await db.execute(sql<{ value: number | string }>`
+    select count(*)::int as value
+    from follows
+    where following_id = ${profileId}
+      and status = 'accepted'
+  `);
+
+  return Number(result.rows[0]?.value ?? 0);
+}
+
+async function getFollowingCount(db: DbClient, profileId: string) {
+  const result = await db.execute(sql<{ value: number | string }>`
+    select count(*)::int as value
+    from follows
+    where follower_id = ${profileId}
+      and status = 'accepted'
+  `);
+
+  return Number(result.rows[0]?.value ?? 0);
+}
 
 export const profilesRouter = createTRPCRouter({
   get: protectedProcedure.query(async ({ ctx }) => {
-    try {
-      const { data: profile, error } = await ctx.supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", ctx.session.user.id)
-        .single();
+    const db = getRequiredDb(ctx);
 
-      if (error) {
-        if (error.code === "PGRST116") {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Profile not found",
-          });
-        }
+    try {
+      const profile = await getSerializedProfile(db, ctx.session.user.id);
+
+      if (!profile) {
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
+          code: "NOT_FOUND",
+          message: "Profile not found",
         });
       }
 
-      // Return profile as-is - tRPC will handle serialization
       return profile;
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
       }
+
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Failed to fetch profile",
@@ -82,72 +343,55 @@ export const profilesRouter = createTRPCRouter({
     }
   }),
 
-  // Get public-safe profile data by ID (for user detail and activity feeds)
   getPublicById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      try {
-        const { data: profile, error } = await ctx.supabase
-          .from("profiles")
-          .select(publicProfileProjection)
-          .eq("id", input.id)
-          .single();
+      const db = getRequiredDb(ctx);
 
-        if (error) {
-          if (error.code === "PGRST116") {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Profile not found",
-            });
-          }
+      try {
+        const [profile] = await db
+          .select({
+            id: profiles.id,
+            username: profiles.username,
+            avatar_url: profiles.avatar_url,
+            bio: profiles.bio,
+            gender: profiles.gender,
+            preferred_units: profiles.preferred_units,
+            language: profiles.language,
+            is_public: profiles.is_public,
+          })
+          .from(profiles)
+          .where(eq(profiles.id, input.id))
+          .limit(1);
+
+        if (!profile) {
           throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: error.message,
+            code: "NOT_FOUND",
+            message: "Profile not found",
           });
         }
 
-        // Get follow status
-        const { data: followData } = await (ctx.supabase as any)
-          .from("follows")
-          .select("status")
-          .eq("follower_id", ctx.session.user.id)
-          .eq("following_id", input.id)
-          .maybeSingle();
+        const [follow_status, followersCount, followingCount] = await Promise.all([
+          getFollowStatus(db, ctx.session.user.id, input.id),
+          getFollowersCount(db, input.id),
+          getFollowingCount(db, input.id),
+        ]);
 
-        const follow_status = followData ? followData.status : null;
-
-        // Get followers count (users following this profile with accepted status)
-        const { count: followersCount } = await (ctx.supabase as any)
-          .from("follows")
-          .select("*", { count: "exact", head: true })
-          .eq("following_id", input.id)
-          .eq("status", "accepted");
-
-        // Get following count (users this profile is following with accepted status)
-        const { count: followingCount } = await (ctx.supabase as any)
-          .from("follows")
-          .select("*", { count: "exact", head: true })
-          .eq("follower_id", input.id)
-          .eq("status", "accepted");
-
-        // If private and not accepted follower (or self), strip out sensitive info
         const isSelf = ctx.session.user.id === input.id;
-        const isPrivate = (profile as any).is_public === false;
+        const isPrivate = profile.is_public === false;
         const isAcceptedFollower = follow_status === "accepted";
 
-        let resultProfile: any = {
-          ...(profile as any),
+        const resultProfile: z.input<typeof publicProfileSchema> = {
+          ...profile,
           follow_status,
-          followers_count: followersCount ?? 0,
-          following_count: followingCount ?? 0,
+          followers_count: followersCount,
+          following_count: followingCount,
         };
 
         if (!isSelf && isPrivate && !isAcceptedFollower) {
-          // Strip out sensitive fields for private accounts
           resultProfile.bio = null;
           resultProfile.preferred_units = null;
           resultProfile.language = null;
-          // E.g., recent activities would be skipped here if we fetched them
         }
 
         return publicProfileSchema.parse(resultProfile);
@@ -155,6 +399,7 @@ export const profilesRouter = createTRPCRouter({
         if (error instanceof TRPCError) {
           throw error;
         }
+
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to fetch public profile",
@@ -174,18 +419,65 @@ export const profilesRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      try {
-        const { data: profile, error } = await ctx.supabase
-          .from("profiles")
-          .update(input)
-          .eq("id", ctx.session.user.id)
-          .select()
-          .single();
+      const db = getRequiredDb(ctx);
 
-        if (error) {
+      try {
+        const profileUpdate = {
+          avatar_url: input.avatar_url,
+          bio: input.bio,
+          dob:
+            input.dob === undefined ? undefined : input.dob === null ? null : new Date(input.dob),
+          is_public: input.is_public,
+          updated_at: new Date(),
+        };
+
+        if (Object.values(profileUpdate).some((value) => value !== undefined)) {
+          await db.update(profiles).set(profileUpdate).where(eq(profiles.id, ctx.session.user.id));
+        }
+
+        const legacySetClauses = [] as ReturnType<typeof sql>[];
+
+        if (input.username !== undefined) {
+          legacySetClauses.push(sql`"username" = ${input.username}`);
+        }
+        if (input.language !== undefined) {
+          legacySetClauses.push(sql`"language" = ${input.language}`);
+        }
+        if (input.preferred_units !== undefined) {
+          legacySetClauses.push(sql`"preferred_units" = ${input.preferred_units}`);
+        }
+
+        if (legacySetClauses.length > 0) {
+          await db.execute(sql`
+            update "profiles"
+            set ${sql.join([...legacySetClauses, sql`"updated_at" = now()`], sql`, `)}
+            where "id" = ${ctx.session.user.id}
+          `);
+        }
+
+        await Promise.all([
+          syncProfileMetric(db, {
+            profileId: ctx.session.user.id,
+            metricType: "weight_kg",
+            value: input.weight_kg,
+          }),
+          syncProfileMetric(db, {
+            profileId: ctx.session.user.id,
+            metricType: "lthr",
+            value: input.threshold_hr,
+          }),
+          syncManualFtp(db, {
+            profileId: ctx.session.user.id,
+            value: input.ftp,
+          }),
+        ]);
+
+        const profile = await getSerializedProfile(db, ctx.session.user.id);
+
+        if (!profile) {
           throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: error.message,
+            code: "NOT_FOUND",
+            message: "Profile not found",
           });
         }
 
@@ -194,6 +486,7 @@ export const profilesRouter = createTRPCRouter({
         if (error instanceof TRPCError) {
           throw error;
         }
+
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update profile",
@@ -202,30 +495,25 @@ export const profilesRouter = createTRPCRouter({
     }),
 
   list: protectedProcedure.input(profileListFiltersSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
+    void ctx;
+
     try {
-      let query = ctx.supabase
-        .from("profiles")
-        .select("*")
-        .range(input.offset, input.offset + input.limit - 1);
+      const rows: ProfileBaseRow[] = input.username
+        ? await db
+            .select(profileBaseSelect)
+            .from(profiles)
+            .where(sql`"profiles"."username" ilike ${`%${input.username}%`}`)
+            .limit(input.limit)
+            .offset(input.offset)
+        : await db.select(profileBaseSelect).from(profiles).limit(input.limit).offset(input.offset);
 
-      if (input.username) {
-        query = query.ilike("username", `%${input.username}%`);
-      }
-
-      const { data: profiles, error } = await query;
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
-
-      return profiles || [];
+      return rows.map((profile) => serializeProfile(profile));
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
       }
+
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Failed to fetch profiles",
@@ -234,41 +522,40 @@ export const profilesRouter = createTRPCRouter({
   }),
 
   getStats: protectedProcedure.input(profileStatsSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
+
     try {
-      // Calculate stats from activities over the specified period
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - input.period);
 
-      const { data: activities, error } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .gte("started_at", startDate.toISOString())
-        .lte("started_at", endDate.toISOString());
-
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
+      const activityRows = await db
+        .select()
+        .from(activities)
+        .where(
+          and(
+            eq(activities.profile_id, ctx.session.user.id),
+            gte(activities.started_at, startDate),
+            lte(activities.started_at, endDate),
+          ),
+        );
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: activities || [],
+        activities: activityRows,
       });
 
-      const totalActivities = activities?.length || 0;
-      const totalDuration =
-        activities?.reduce((sum: any, a: any) => sum + (a.duration_seconds || 0), 0) || 0;
-      const totalDistance =
-        activities?.reduce((sum: any, a: any) => sum + (a.distance_meters || 0), 0) || 0;
-      const totalTSS =
-        activities?.reduce((sum: any, a: any) => {
-          return sum + (derivedMap.get(a.id)?.tss || 0);
-        }, 0) || 0;
+      const totalActivities = activityRows.length;
+      const totalDuration = activityRows.reduce((sum, activity) => {
+        return sum + (activity.duration_seconds || 0);
+      }, 0);
+      const totalDistance = activityRows.reduce((sum, activity) => {
+        return sum + (activity.distance_meters || 0);
+      }, 0);
+      const totalTSS = activityRows.reduce((sum, activity) => {
+        return sum + (derivedMap.get(activity.id)?.tss || 0);
+      }, 0);
 
       return {
         totalActivities,
@@ -282,6 +569,7 @@ export const profilesRouter = createTRPCRouter({
       if (error instanceof TRPCError) {
         throw error;
       }
+
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Failed to get profile stats",
@@ -290,96 +578,62 @@ export const profilesRouter = createTRPCRouter({
   }),
 
   getZones: protectedProcedure.query(async ({ ctx }) => {
+    const db = getRequiredDb(ctx);
+
     try {
-      // Fetch latest threshold HR from profile metrics (lthr)
-      const { data: lthrMetric } = await ctx.supabase
-        .from("profile_metrics")
-        .select("value")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("metric_type", "lthr")
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-      // Fetch latest weight from profile metrics (weight_kg)
-      const { data: weightMetric } = await ctx.supabase
-        .from("profile_metrics")
-        .select("value")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("metric_type", "weight_kg")
-        .order("recorded_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const [performance, bestPace] = await Promise.all([
+        getProfilePerformanceSnapshot(db, ctx.session.user.id),
+        db
+          .select({ value: activityEfforts.value })
+          .from(activityEfforts)
+          .where(
+            and(
+              eq(activityEfforts.profile_id, ctx.session.user.id),
+              eq(activityEfforts.activity_category, "run"),
+              eq(activityEfforts.effort_type, "speed"),
+              gte(activityEfforts.recorded_at, cutoffDate),
+            ),
+          )
+          .orderBy(desc(activityEfforts.value))
+          .limit(1)
+          .then((rows) => rows[0] ?? null),
+      ]);
 
-      // Fetch latest FTP from activity efforts (best 20m power * 0.95)
-      const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-      const { data: best20m } = await ctx.supabase
-        .from("activity_efforts")
-        .select("value")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("activity_category", "bike")
-        .eq("effort_type", "power")
-        .eq("duration_seconds", 1200)
-        .gte("recorded_at", cutoffDate)
-        .order("value", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      // Fetch latest threshold pace from activity efforts (best 10km proxy or similar)
-      // For now, let's look for best 1km pace as a proxy if we don't have a 10k effort
-      const { data: bestPace } = await ctx.supabase
-        .from("activity_efforts")
-        .select("value")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("activity_category", "run")
-        .eq("effort_type", "speed")
-        .gte("recorded_at", cutoffDate)
-        .order("value", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const threshold_hr = lthrMetric?.value ? Number(lthrMetric.value) : undefined;
-      const weight_kg = weightMetric?.value ? Number(weightMetric.value) : undefined;
-      const ftp = best20m?.value ? Math.round(best20m.value * 0.95) : undefined;
-
-      // Threshold pace proxy from speed (mps to sec/km)
-      // 1 mps = 1000 sec/km
-      // pace (sec/km) = 1000 / speed (mps)
+      const threshold_hr = performance.threshold_hr ?? undefined;
+      const weight_kg = performance.weight_kg ?? undefined;
+      const ftp = performance.ftp ?? undefined;
       const threshold_pace = bestPace?.value
-        ? Math.round(1000 / (Number(bestPace.value) * 0.9)) // Assume threshold is ~90% of best recorded speed
+        ? Math.round(1000 / (Number(bestPace.value) * 0.9))
         : undefined;
 
-      // Calculate heart rate zones based on threshold HR
-      // Threshold HR is typically at the top of Zone 3 (~85-90% of max HR)
       const heartRateZones = threshold_hr
         ? {
-            // Estimate max HR from threshold (assuming threshold is ~87% of max)
             maxHR: Math.round(threshold_hr / 0.87),
-
             zone1: {
-              min: Math.round(threshold_hr * 0.55), // ~50-60% max HR
-              max: Math.round(threshold_hr * 0.75), // ~65% max HR
+              min: Math.round(threshold_hr * 0.55),
+              max: Math.round(threshold_hr * 0.75),
             },
             zone2: {
-              min: Math.round(threshold_hr * 0.75), // ~65% max HR
-              max: Math.round(threshold_hr * 0.87), // ~75% max HR
+              min: Math.round(threshold_hr * 0.75),
+              max: Math.round(threshold_hr * 0.87),
             },
             zone3: {
-              min: Math.round(threshold_hr * 0.87), // ~75% max HR
-              max: Math.round(threshold_hr * 0.98), // ~85% max HR (at threshold)
+              min: Math.round(threshold_hr * 0.87),
+              max: Math.round(threshold_hr * 0.98),
             },
             zone4: {
-              min: Math.round(threshold_hr * 0.98), // ~85% max HR
-              max: Math.round(threshold_hr * 1.06), // ~92% max HR
+              min: Math.round(threshold_hr * 0.98),
+              max: Math.round(threshold_hr * 1.06),
             },
             zone5: {
-              min: Math.round(threshold_hr * 1.06), // ~92% max HR
-              max: Math.round(threshold_hr / 0.87), // ~100% max HR
+              min: Math.round(threshold_hr * 1.06),
+              max: Math.round(threshold_hr / 0.87),
             },
           }
         : null;
 
-      // Calculate power zones (basic 7-zone model based on FTP)
       const powerZones = ftp
         ? {
             zone1: { min: 0, max: Math.round(ftp * 0.55) },
@@ -411,16 +665,17 @@ export const profilesRouter = createTRPCRouter({
         heartRateZones,
         powerZones,
         profile: {
-          threshold_hr: threshold_hr,
-          ftp: ftp,
-          weight_kg: weight_kg,
-          threshold_pace: threshold_pace,
+          threshold_hr,
+          ftp,
+          weight_kg,
+          threshold_pace,
         },
       };
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
       }
+
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Failed to get training zones",
@@ -431,24 +686,31 @@ export const profilesRouter = createTRPCRouter({
   updateZones: protectedProcedure
     .input(trainingZonesUpdateSchema)
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+
       try {
-        const updateData: any = {};
+        await Promise.all([
+          input.threshold_hr === undefined
+            ? Promise.resolve()
+            : syncProfileMetric(db, {
+                profileId: ctx.session.user.id,
+                metricType: "lthr",
+                value: input.threshold_hr,
+              }),
+          input.ftp === undefined
+            ? Promise.resolve()
+            : syncManualFtp(db, {
+                profileId: ctx.session.user.id,
+                value: input.ftp,
+              }),
+        ]);
 
-        // Map input fields to actual schema columns
-        if (input.threshold_hr !== undefined) updateData.threshold_hr = input.threshold_hr;
-        if (input.ftp !== undefined) updateData.ftp = input.ftp;
+        const profile = await getSerializedProfile(db, ctx.session.user.id);
 
-        const { data: profile, error } = await ctx.supabase
-          .from("profiles")
-          .update(updateData)
-          .eq("id", ctx.session.user.id)
-          .select()
-          .single();
-
-        if (error) {
+        if (!profile) {
           throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: error.message,
+            code: "NOT_FOUND",
+            message: "Profile not found",
           });
         }
 
@@ -457,6 +719,7 @@ export const profilesRouter = createTRPCRouter({
         if (error instanceof TRPCError) {
           throw error;
         }
+
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update training zones",

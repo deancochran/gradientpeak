@@ -6,33 +6,22 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { z } from "zod";
 import { authClient, signOutMobileAuth } from "@/lib/auth/client";
+import {
+  getAuthFormUnexpectedErrorMessage,
+  mapResetPasswordError,
+  setAuthFormError,
+} from "@/lib/auth/form-helpers";
+import { type ResetPasswordFields, resetPasswordSchema } from "@/lib/auth/form-schemas";
+import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { useAuthStore } from "@/lib/stores/auth-store";
-
-const resetPasswordSchema = z
-  .object({
-    password: z
-      .string()
-      .min(8, "Password must be at least 8 characters")
-      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-      .regex(/[0-9]/, "Password must contain at least one number"),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
-    path: ["confirmPassword"],
-  });
-
-type ResetPasswordFields = z.infer<typeof resetPasswordSchema>;
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const { token } = useLocalSearchParams<{ token?: string }>();
-  const [isLoading, setIsLoading] = useState(false);
 
   const form = useZodForm({
     schema: resetPasswordSchema,
@@ -58,18 +47,18 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    setIsLoading(true);
-
     try {
       logMobileAction("auth.updatePassword", "attempt", {});
-      const result = await authClient.resetPassword({
-        newPassword: data.password,
-        token: String(token),
-      });
+      const result = await withAuthRequestTimeout(
+        authClient.resetPassword({
+          newPassword: data.password,
+          token: String(token),
+        }),
+      );
 
       if (result.error) {
         logMobileAction("auth.updatePassword", "failure", { error: result.error.message });
-        form.setError("root", { message: result.error.message });
+        setAuthFormError(form, mapResetPasswordError(result.error.message));
         return;
       }
 
@@ -87,9 +76,10 @@ export default function ResetPasswordScreen() {
       logMobileAction("auth.updatePassword", "failure", {
         error: err instanceof Error ? err.message : String(err),
       });
-      form.setError("root", { message: "An unexpected error occurred" });
-    } finally {
-      setIsLoading(false);
+      setAuthFormError(form, {
+        name: "root",
+        message: getAuthFormUnexpectedErrorMessage(err),
+      });
     }
   };
 
@@ -171,11 +161,11 @@ export default function ResetPasswordScreen() {
               variant="default"
               size="lg"
               onPress={submitForm.handleSubmit}
-              disabled={isLoading || !token}
+              disabled={submitForm.isSubmitting || !token}
               testID="update-password-button"
               className="w-full"
             >
-              <Text>{isLoading ? "Updating Password..." : "Update Password"}</Text>
+              <Text>{submitForm.isSubmitting ? "Updating Password..." : "Update Password"}</Text>
             </Button>
 
             <View className="pt-4" testID="help-container">

@@ -1,5 +1,6 @@
 import { ALL_SAMPLE_PLANS } from "@repo/core";
 import { describe, expect, it } from "vitest";
+import { createQueryMapDbMock } from "../../test/mock-query-db";
 import { trainingPlansCrudRouter, trainingPlansRouter } from "../planning/training-plans";
 
 type SystemTrainingPlanRow = {
@@ -45,47 +46,19 @@ function toExpectedTemplateResponse(plan: SamplePlan) {
   };
 }
 
-function createSupabaseMock(rows: SystemTrainingPlanRow[]) {
-  return {
-    from: (table: string) => {
-      if (table !== "training_plans") {
-        throw new Error(`Unexpected table: ${table}`);
-      }
-
-      const filters: Array<{ column: string; value: unknown }> = [];
-
-      const applyFilters = () =>
-        rows.filter((row) =>
-          filters.every(
-            ({ column, value }) => row[column as keyof SystemTrainingPlanRow] === value,
-          ),
-        );
-
-      const builder: any = {
-        select: () => builder,
-        eq: (column: string, value: unknown) => {
-          filters.push({ column, value });
-          return builder;
-        },
-        single: async () => {
-          const data = applyFilters()[0] ?? null;
-          return { data, error: null };
-        },
-        then: (onFulfilled: (value: { data: SystemTrainingPlanRow[]; error: null }) => unknown) =>
-          Promise.resolve({ data: applyFilters(), error: null }).then(onFulfilled),
-      };
-
-      return builder;
-    },
-  };
-}
-
 function createCaller(
   router: typeof trainingPlansRouter | typeof trainingPlansCrudRouter,
   rows: SystemTrainingPlanRow[],
 ) {
+  const { db } = createQueryMapDbMock({
+    training_plans: {
+      data: rows,
+      error: null,
+    },
+  });
+
   return router.createCaller({
-    supabase: createSupabaseMock(rows) as any,
+    db: db as any,
     session: { user: { id: "profile-123" } },
     headers: new Headers(),
     clientType: "test",

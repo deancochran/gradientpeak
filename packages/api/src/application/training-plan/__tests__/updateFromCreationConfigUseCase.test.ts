@@ -1,20 +1,19 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it, vi } from "vitest";
 import { updateFromCreationConfigUseCase } from "../updateFromCreationConfigUseCase";
 
-function createSupabaseMock(trainingPlansResult: any) {
-  const builder: any = {
-    select: vi.fn(() => builder),
-    update: vi.fn(() => builder),
-    eq: vi.fn(() => builder),
-    neq: vi.fn(() => builder),
-    single: vi.fn(async () => trainingPlansResult),
-  };
-
+function createRepositoryMock(existingPlan: Record<string, unknown> | null) {
   return {
-    from: vi.fn(() => builder),
-    __builder: builder,
-  } as any;
+    createTrainingPlan: vi.fn(),
+    getOwnedTrainingPlan: vi.fn(async () => existingPlan),
+    updateTrainingPlan: vi.fn(async (input) => ({
+      id: existingPlan?.id ?? input.id,
+      profile_id: input.profileId,
+      structure: input.structure,
+      ...input,
+    })),
+    getPriorInferredStateSnapshot: vi.fn(async () => null),
+    persistInferredStateSnapshot: vi.fn(async () => undefined),
+  };
 }
 
 function createDeps() {
@@ -62,18 +61,17 @@ function createDeps() {
 
 describe("updateFromCreationConfigUseCase", () => {
   it("updates existing plan and preserves identity", async () => {
-    const supabase = createSupabaseMock({
-      data: {
-        id: "11111111-1111-4111-8111-111111111111",
-        structure: { id: "11111111-1111-4111-8111-111111111111" },
-        is_active: true,
-      },
-      error: null,
+    const repository = createRepositoryMock({
+      id: "11111111-1111-4111-8111-111111111111",
+      profile_id: "profile-123",
+      structure: { id: "11111111-1111-4111-8111-111111111111" },
+      is_active: true,
     });
     const deps = createDeps();
 
     const result = await updateFromCreationConfigUseCase({
-      supabase,
+      creationContextReader: {} as any,
+      repository: repository as any,
       profileId: "profile-123",
       params: {
         plan_id: "11111111-1111-4111-8111-111111111111",
@@ -88,10 +86,10 @@ describe("updateFromCreationConfigUseCase", () => {
     expect(result.id).toBe("11111111-1111-4111-8111-111111111111");
     expect(result.creation_summary.conflicts.is_blocking).toBe(false);
 
-    const updateCalls = (supabase.__builder.update as any).mock.calls;
-    const persistedUpdatePayload = updateCalls.find(
-      ([value]: Array<Record<string, unknown>>) => value && "structure" in value,
-    )?.[0] as { structure?: { metadata?: Record<string, unknown> } };
+    const updateCalls = repository.updateTrainingPlan.mock.calls;
+    const persistedUpdatePayload = updateCalls[0]?.[0] as {
+      structure?: { metadata?: Record<string, unknown> };
+    };
 
     expect(persistedUpdatePayload).not.toHaveProperty("is_active");
 
@@ -106,13 +104,11 @@ describe("updateFromCreationConfigUseCase", () => {
   });
 
   it("rejects unresolved conflicts", async () => {
-    const supabase = createSupabaseMock({
-      data: {
-        id: "11111111-1111-4111-8111-111111111111",
-        structure: { id: "11111111-1111-4111-8111-111111111111" },
-        is_active: true,
-      },
-      error: null,
+    const repository = createRepositoryMock({
+      id: "11111111-1111-4111-8111-111111111111",
+      profile_id: "profile-123",
+      structure: { id: "11111111-1111-4111-8111-111111111111" },
+      is_active: true,
     });
     const deps = createDeps();
     deps.deriveProjectionDrivenConflicts = vi.fn(() => [
@@ -127,7 +123,8 @@ describe("updateFromCreationConfigUseCase", () => {
 
     await expect(
       updateFromCreationConfigUseCase({
-        supabase,
+        creationContextReader: {} as any,
+        repository: repository as any,
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",
@@ -154,19 +151,18 @@ describe("updateFromCreationConfigUseCase", () => {
   });
 
   it("rejects stale preview token with typed stale cause", async () => {
-    const supabase = createSupabaseMock({
-      data: {
-        id: "11111111-1111-4111-8111-111111111111",
-        structure: { id: "11111111-1111-4111-8111-111111111111" },
-        is_active: true,
-      },
-      error: null,
+    const repository = createRepositoryMock({
+      id: "11111111-1111-4111-8111-111111111111",
+      profile_id: "profile-123",
+      structure: { id: "11111111-1111-4111-8111-111111111111" },
+      is_active: true,
     });
     const deps = createDeps();
 
     await expect(
       updateFromCreationConfigUseCase({
-        supabase,
+        creationContextReader: {} as any,
+        repository: repository as any,
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",
@@ -190,13 +186,11 @@ describe("updateFromCreationConfigUseCase", () => {
   });
 
   it("rejects invalid generated payload with typed invalid cause", async () => {
-    const supabase = createSupabaseMock({
-      data: {
-        id: "11111111-1111-4111-8111-111111111111",
-        structure: { id: "11111111-1111-4111-8111-111111111111" },
-        is_active: true,
-      },
-      error: null,
+    const repository = createRepositoryMock({
+      id: "11111111-1111-4111-8111-111111111111",
+      profile_id: "profile-123",
+      structure: { id: "11111111-1111-4111-8111-111111111111" },
+      is_active: true,
     });
     const deps = createDeps();
     deps.parseTrainingPlanStructure = vi.fn(() => {
@@ -205,7 +199,8 @@ describe("updateFromCreationConfigUseCase", () => {
 
     await expect(
       updateFromCreationConfigUseCase({
-        supabase,
+        creationContextReader: {} as any,
+        repository: repository as any,
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",
@@ -229,15 +224,13 @@ describe("updateFromCreationConfigUseCase", () => {
   });
 
   it("rejects when plan is missing or not owned by caller", async () => {
-    const supabase = createSupabaseMock({
-      data: null,
-      error: { message: "not found" },
-    });
+    const repository = createRepositoryMock(null);
     const deps = createDeps();
 
     await expect(
       updateFromCreationConfigUseCase({
-        supabase,
+        creationContextReader: {} as any,
+        repository: repository as any,
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",

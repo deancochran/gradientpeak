@@ -1,4 +1,13 @@
-import type { PublicActivityPlansRow } from "@repo/db";
+import type {
+  ActivityEffortRow,
+  ActivityPlanRow,
+  ActivityRouteRow,
+  ActivityRow,
+  EventRow,
+  ProfileMetricRow,
+  ProfileRow,
+  TrainingPlanRow,
+} from "@repo/db";
 import type { EventCompletionEventRecord } from "./event-completion-repository";
 
 export interface EventListOwnedInput {
@@ -14,6 +23,51 @@ export interface EventListOwnedInput {
   trainingPlanId?: string;
 }
 
+type SerializedProfileDob = { dob: string | null };
+type SerializedActivityTime = Pick<ActivityRow, "id"> & { started_at: string };
+type SerializedEventDate = { starts_at: string };
+type ConstraintActivityPlan = Pick<
+  ActivityPlanRow,
+  "id" | "activity_category" | "route_id" | "structure"
+>;
+type NumericValue = { value: number };
+type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
+type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
+type EstimationEffort = Pick<
+  ActivityEffortRow,
+  "activity_category" | "duration_seconds" | "effort_type" | "unit" | "value"
+>;
+type EstimationMetric = Pick<ProfileMetricRow, "metric_type" | "value"> & { recorded_at: string };
+type EstimationRoute = {
+  id: ActivityRouteRow["id"];
+  distance_meters: number | null;
+  total_ascent: ActivityRouteRow["total_ascent"];
+  total_descent: ActivityRouteRow["total_descent"];
+};
+type ProjectionActivity = Pick<
+  ActivityRow,
+  | "id"
+  | "type"
+  | "avg_heart_rate"
+  | "max_heart_rate"
+  | "avg_power"
+  | "max_power"
+  | "avg_speed_mps"
+  | "max_speed_mps"
+  | "distance_meters"
+  | "duration_seconds"
+  | "moving_seconds"
+  | "normalized_power"
+  | "normalized_speed_mps"
+  | "normalized_graded_speed_mps"
+> & { started_at: string; finished_at: string };
+type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
+  activity_plan: ActivityPlanRow | null;
+  scheduled_date: string;
+  starts_at: string;
+};
+type ProjectionTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
+
 export interface EventReadRepository {
   countOwnedEventsInRange(input: {
     profileId: string;
@@ -28,54 +82,34 @@ export interface EventReadRepository {
     profileId: string;
     startedAtGte: string;
     startedAtLt: string;
-  }): Promise<Array<{ id: string; started_at: string }>>;
+  }): Promise<SerializedActivityTime[]>;
   listPlannedEventDatesInRange(input: {
     profileId: string;
     startsAtGte: string;
     startsAtLte: string;
-  }): Promise<Array<{ starts_at: string }>>;
+  }): Promise<SerializedEventDate[]>;
   getValidateConstraintsInputs(input: {
     activityPlanId: string;
     effortCutoffIso: string;
     profileId: string;
     trainingPlanId: string;
   }): Promise<{
-    activityPlan: {
-      activity_category: "run" | "bike" | "swim" | "strength" | "other";
-      id: string;
-      route_id: string | null;
-      structure: unknown;
-    } | null;
-    best20mPower: { value: number } | null;
-    lthrMetric: { value: string | number } | null;
-    profile: { dob: string | null } | null;
-    trainingPlan: { id: string; structure: unknown } | null;
-    weightMetric: { value: string | number } | null;
+    activityPlan: ConstraintActivityPlan | null;
+    best20mPower: NumericValue | null;
+    lthrMetric: ProfileMetricValue | null;
+    profile: SerializedProfileDob | null;
+    trainingPlan: ConstraintTrainingPlan | null;
+    weightMetric: ProfileMetricValue | null;
   }>;
   getEstimationInputs(input: {
     effortCutoffIso: string;
     profileId: string;
     routeIds: string[];
   }): Promise<{
-    efforts: Array<{
-      activity_category: "run" | "bike" | "swim" | "strength" | "other";
-      duration_seconds: number;
-      effort_type: "power" | "pace" | "speed" | "heart_rate";
-      unit: string;
-      value: number;
-    }>;
-    metrics: Array<{
-      metric_type: "weight_kg" | "resting_hr" | "max_hr" | "lthr";
-      recorded_at: string;
-      value: string | number;
-    }>;
-    profile: { dob: string | null } | null;
-    routes: Array<{
-      distance_meters: number | null;
-      id: string;
-      total_ascent: number | null;
-      total_descent: number | null;
-    }>;
+    efforts: EstimationEffort[];
+    metrics: EstimationMetric[];
+    profile: SerializedProfileDob | null;
+    routes: EstimationRoute[];
   }>;
   getAccessibleTrainingPlanProjection(input: {
     endDateExclusiveIso: string;
@@ -83,31 +117,9 @@ export interface EventReadRepository {
     startDateIso: string;
     trainingPlanId?: string;
   }): Promise<{
-    actualActivities: Array<{
-      avg_heart_rate: number | null;
-      avg_power: number | null;
-      avg_speed_mps: number | null;
-      distance_meters: number | null;
-      duration_seconds: number | null;
-      finished_at: string;
-      id: string;
-      max_heart_rate: number | null;
-      max_power: number | null;
-      max_speed_mps: number | null;
-      moving_seconds: number | null;
-      normalized_graded_speed_mps: number | null;
-      normalized_power: number | null;
-      normalized_speed_mps: number | null;
-      started_at: string;
-      type: string | null;
-    }>;
-    plannedActivities: Array<{
-      activity_plan: PublicActivityPlansRow | null;
-      scheduled_date: string;
-      starts_at: string;
-      training_plan_id: string | null;
-    }>;
-    trainingPlan: { id: string; structure: unknown } | null;
+    actualActivities: ProjectionActivity[];
+    plannedActivities: ProjectionPlannedActivity[];
+    trainingPlan: ProjectionTrainingPlan | null;
   }>;
   listOwnedEvents(input: EventListOwnedInput): Promise<EventCompletionEventRecord[]>;
 }

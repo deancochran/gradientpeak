@@ -156,7 +156,7 @@ export function RouteSelector({
                     <View className="flex-row items-center gap-1">
                       <MapPin size={14} className="text-muted-foreground" />
                       <Text className="text-xs">
-                        {formatDistance(selectedRoute.total_distance)}
+                        {formatDistance(selectedRoute.total_distance ?? 0)}
                       </Text>
                     </View>
                     {selectedRoute.total_ascent != null && selectedRoute.total_ascent > 0 && (

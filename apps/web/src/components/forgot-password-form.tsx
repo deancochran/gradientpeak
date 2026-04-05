@@ -8,27 +8,30 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
+import { Form, FormTextField } from "@repo/ui/components/form";
+import { useZodForm } from "@repo/ui/hooks";
 import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useState } from "react";
 import { authClient, toAbsoluteWebUrl } from "@/lib/auth/client";
+import { getForgotPasswordFormError } from "@/lib/auth/form-errors";
+import { type ForgotPasswordFormValues, forgotPasswordFormSchema } from "@/lib/auth/form-schemas";
 
 export function ForgotPasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
-  const [email, setEmail] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [isPending, setIsPending] = useState(false);
+  const form = useZodForm({
+    schema: forgotPasswordFormSchema,
+    defaultValues: {
+      email: "",
+    },
+  });
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setIsPending(true);
+  const handleForgotPassword = async (values: ForgotPasswordFormValues) => {
+    form.clearErrors();
 
     try {
       const result = await authClient.requestPasswordReset({
-        email,
+        email: values.email,
         redirectTo: toAbsoluteWebUrl("/auth/update-password"),
       });
 
@@ -37,13 +40,13 @@ export function ForgotPasswordForm({ className, ...props }: React.ComponentProps
       }
 
       setSuccess(true);
-      setError(null);
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred");
-    } finally {
-      setIsPending(false);
+      const formError = getForgotPasswordFormError(error);
+      form.setError(formError.target, { message: formError.message });
     }
   };
+
+  const isPending = form.formState.isSubmitting;
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -69,31 +72,30 @@ export function ForgotPasswordForm({ className, ...props }: React.ComponentProps
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleForgotPassword}>
-              <div className="flex flex-col gap-6">
-                <div className="grid gap-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleForgotPassword)}>
+                <div className="flex flex-col gap-6">
+                  <FormTextField
+                    autoComplete="email"
+                    control={form.control}
+                    label="Email"
+                    name="email"
                     placeholder="m@example.com"
                     required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    type="email"
                   />
+                  <Button type="submit" disabled={isPending}>
+                    {isPending ? "Sending..." : "Send reset email"}
+                  </Button>
                 </div>
-                {error && <p className="text-sm text-red-500">{error}</p>}
-                <Button type="submit" disabled={isPending}>
-                  {isPending ? "Sending..." : "Send reset email"}
-                </Button>
-              </div>
-              <div className="mt-4 text-center text-sm">
-                Already have an account?{" "}
-                <Link href="/auth/login" className="underline underline-offset-4">
-                  Login
-                </Link>
-              </div>
-            </form>
+                <div className="mt-4 text-center text-sm">
+                  Already have an account?{" "}
+                  <Link href="/auth/login" className="underline underline-offset-4">
+                    Login
+                  </Link>
+                </div>
+              </form>
+            </Form>
           </CardContent>
         </Card>
       )}

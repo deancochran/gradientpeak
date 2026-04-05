@@ -1,6 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+
+const storageService = getApiStorageService();
 
 const BUCKET_NAME = "profile-avatars";
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -29,7 +32,7 @@ export const storageRouter = createTRPCRouter({
         const uniqueFileName = `${ctx.session.user.id}/${Date.now()}.${fileExt}`;
 
         // Create signed upload URL
-        const { data, error } = await ctx.supabase.storage
+        const { data, error } = await storageService.storage
           .from(BUCKET_NAME)
           .createSignedUploadUrl(uniqueFileName);
 
@@ -40,9 +43,14 @@ export const storageRouter = createTRPCRouter({
           });
         }
 
+        const {
+          data: { publicUrl },
+        } = storageService.storage.from(BUCKET_NAME).getPublicUrl(data.path);
+
         return {
           signedUrl: data.signedUrl,
           path: data.path,
+          publicUrl,
         };
       } catch (error) {
         if (error instanceof TRPCError) {
@@ -70,8 +78,15 @@ export const storageRouter = createTRPCRouter({
           });
         }
 
+        if (!input.filePath.startsWith(`${ctx.session.user.id}/`)) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You can only access your own files",
+          });
+        }
+
         // Create signed URL for download (valid for 1 hour)
-        const { data, error } = await ctx.supabase.storage
+        const { data, error } = await storageService.storage
           .from(BUCKET_NAME)
           .createSignedUrl(input.filePath, 3600);
 
@@ -112,7 +127,7 @@ export const storageRouter = createTRPCRouter({
           });
         }
 
-        const { error } = await ctx.supabase.storage.from(BUCKET_NAME).remove([input.filePath]);
+        const { error } = await storageService.storage.from(BUCKET_NAME).remove([input.filePath]);
 
         if (error) {
           throw new TRPCError({

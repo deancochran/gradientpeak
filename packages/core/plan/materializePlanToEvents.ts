@@ -6,7 +6,7 @@ type PlanNode = Record<string, unknown>;
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const nestedCollectionKeys = ["blocks", "weeks", "days"] as const;
 
-export type MaterializedPlanEventType = "planned" | "rest_day";
+export type MaterializedPlanEventType = "planned";
 
 export interface MaterializedPlanEvent {
   scheduled_date: string;
@@ -90,11 +90,11 @@ function getNodeBaseDate(node: PlanNode, parentBaseDate: string): string {
   return addDaysDateOnlyUtc(parentBaseDate, offsetDays);
 }
 
-function getSessionEventType(session: SessionSource): MaterializedPlanEventType {
+function shouldMaterializeSession(session: SessionSource): boolean {
   const sessionType =
     typeof session.session_type === "string" ? session.session_type.toLowerCase() : "";
 
-  return sessionType === "rest" || sessionType === "rest_day" ? "rest_day" : "planned";
+  return sessionType !== "rest" && sessionType !== "rest_day";
 }
 
 /**
@@ -130,18 +130,18 @@ export function materializePlanToEvents(
       return;
     }
 
-    const eventType = getSessionEventType(session);
-    const activityPlanId =
-      eventType === "planned" && isUuidString(session.activity_plan_id)
-        ? session.activity_plan_id
-        : null;
+    if (!shouldMaterializeSession(session)) {
+      return;
+    }
+
+    const activityPlanId = isUuidString(session.activity_plan_id) ? session.activity_plan_id : null;
 
     const title =
       typeof session.title === "string" && session.title.trim().length > 0
         ? session.title.trim()
         : fallbackTitle;
 
-    const key = `${scheduledDate}|${eventType}|${activityPlanId ?? "none"}|${title}`;
+    const key = `${scheduledDate}|planned|${activityPlanId ?? "none"}|${title}`;
     if (dedupe.has(key)) {
       return;
     }
@@ -152,7 +152,7 @@ export function materializePlanToEvents(
       starts_at: toDayStartIso(scheduledDate),
       ends_at: toNextDayStartIso(scheduledDate),
       title,
-      event_type: eventType,
+      event_type: "planned",
       activity_plan_id: activityPlanId,
       all_day: true,
     });

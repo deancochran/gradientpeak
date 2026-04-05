@@ -1,5 +1,7 @@
 import { TRPCError } from "@trpc/server";
+import { sql } from "drizzle-orm";
 import type { Context } from "../../context";
+import { getRequiredDb } from "../../db";
 
 type AssertProfileAccessParams = {
   ctx: Context;
@@ -11,7 +13,6 @@ export async function assertProfileAccess({
   profileId,
 }: AssertProfileAccessParams): Promise<void> {
   const requesterId = ctx.session?.user?.id;
-  const supabase = ctx.supabase as any;
 
   if (!requesterId) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -21,21 +22,28 @@ export async function assertProfileAccess({
     return;
   }
 
-  const { data, error } = await supabase
-    .from("coaches_athletes")
-    .select("coach_id")
-    .eq("coach_id", requesterId)
-    .eq("athlete_id", profileId)
-    .maybeSingle();
+  const db = getRequiredDb(ctx);
+  let hasAccess = false;
 
-  if (error) {
+  try {
+    const result = await db.execute(sql<{ has_access: boolean }>`
+      select exists(
+        select 1
+        from coaches_athletes
+        where coach_id = ${requesterId}::uuid
+          and athlete_id = ${profileId}::uuid
+      ) as has_access
+    `);
+
+    hasAccess = Boolean(result.rows[0]?.has_access);
+  } catch {
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message: "Failed to verify profile access",
     });
   }
 
-  if (!data) {
+  if (!hasAccess) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "You are not authorized to access this profile",

@@ -4,7 +4,7 @@ import { Redirect, useSegments } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
+import { useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
@@ -24,12 +24,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
   const childSegment = segments.at(1);
   const grandchildSegment = segments.at(2);
   const clearSession = useAuthStore((state) => state.clearSession);
-
-  React.useEffect(() => {
-    if (!initialized) {
-      void initializeServerConfig();
-    }
-  }, [initialized]);
 
   const inInternalGroup = rootSegment === "(internal)";
   const inExternalGroup = rootSegment === "(external)";

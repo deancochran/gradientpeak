@@ -149,4 +149,45 @@ describe("materializePlanToEvents", () => {
     expect(events.map((event) => event.scheduled_date)).toEqual(["2026-04-09", "2026-04-09"]);
     expect(events.map((event) => event.title)).toEqual(["AM Easy Run", "PM Strength"]);
   });
+
+  it("skips explicit rest-day sessions instead of materializing synthetic events", () => {
+    const events = materializePlanToEvents(
+      {
+        start_date: "2026-04-06",
+        days: [
+          {
+            offset_days: 1,
+            sessions: [
+              {
+                title: "Rest",
+                session_type: "rest_day",
+              },
+              {
+                title: "Easy Run",
+                activity_plan_id: activityPlanIdA,
+              },
+            ],
+          },
+          {
+            offset_days: 2,
+            sessions: [
+              {
+                title: "Recovery",
+                session_type: "rest",
+              },
+            ],
+          },
+        ],
+      },
+      "2026-04-06",
+    );
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        scheduled_date: "2026-04-07",
+        title: "Easy Run",
+        event_type: "planned",
+      }),
+    ]);
+  });
 });

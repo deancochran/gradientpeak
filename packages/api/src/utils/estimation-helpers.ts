@@ -3,12 +3,35 @@
  */
 
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
-import type { PublicActivityPlansRow, PublicActivityRoutesRow } from "@repo/db";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ActivityPlanRow, PublicActivityRoutesRow } from "@repo/db";
 import type { EventReadRepository } from "../repositories";
 
 type EstimationReadStore = {
   getEstimationInputs: EventReadRepository["getEstimationInputs"];
+};
+
+type EstimationActivityPlanInput = Pick<
+  ActivityPlanRow,
+  "id" | "profile_id" | "name" | "description" | "activity_category" | "structure" | "route_id"
+> & {
+  [key: string]: unknown;
+};
+
+type LegacyEstimationReadClient = {
+  from: (...args: any[]) => any;
+};
+
+type PlannedActivityEstimationStore = EstimationReadStore & {
+  getActivityPlanById(input: { activityPlanId: string }): Promise<{
+    activity_category: string;
+    route_id: string | null;
+    structure: unknown;
+  } | null>;
+  getLatestFitnessSnapshot(profileId: string): Promise<{
+    atl: number | null;
+    ctl: number | null;
+    tsb: number | null;
+  } | null>;
 };
 
 async function getEstimationProfileInputsFromStore(store: EstimationReadStore, userId: string) {
@@ -95,8 +118,14 @@ async function getRoutesMapFromStore(
   return new Map(data.routes.map((route) => [route.id, route]));
 }
 
+function isLegacyEstimationReadClient(
+  input: EstimationReadStore | LegacyEstimationReadClient,
+): input is LegacyEstimationReadClient {
+  return "from" in input;
+}
+
 async function getEstimationProfileInputs(
-  supabase: SupabaseClient,
+  legacyReader: LegacyEstimationReadClient,
   userId: string,
 ): Promise<{
   ftp?: number | null;
@@ -109,9 +138,13 @@ async function getEstimationProfileInputs(
 }> {
   const ninetyDaysAgoIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: profile } = await supabase.from("profiles").select("dob").eq("id", userId).single();
+  const { data: profile } = await legacyReader
+    .from("profiles")
+    .select("dob")
+    .eq("id", userId)
+    .single();
 
-  const { data: efforts } = await supabase
+  const { data: efforts } = await legacyReader
     .from("activity_efforts")
     .select("effort_type, duration_seconds, value, unit, activity_category")
     .eq("profile_id", userId)
@@ -120,7 +153,7 @@ async function getEstimationProfileInputs(
     .order("recorded_at", { ascending: false })
     .limit(300);
 
-  const { data: metrics } = await supabase
+  const { data: metrics } = await legacyReader
     .from("profile_metrics")
     .select("metric_type, value, recorded_at")
     .eq("profile_id", userId)
@@ -132,7 +165,20 @@ async function getEstimationProfileInputs(
   let maxHr: number | null = null;
   let lthr: number | null = null;
 
-  const bikePower20mEffort = (efforts || [])
+  const legacyEfforts = (efforts || []) as Array<{
+    effort_type: string;
+    duration_seconds: number;
+    value: number;
+    unit: string;
+    activity_category: string;
+  }>;
+  const legacyMetrics = (metrics || []) as Array<{
+    metric_type: string;
+    value: number;
+    recorded_at: string;
+  }>;
+
+  const bikePower20mEffort = legacyEfforts
     .filter(
       (effort) =>
         effort.effort_type === "power" &&
@@ -141,7 +187,7 @@ async function getEstimationProfileInputs(
     )
     .sort((a, b) => b.value - a.value)[0];
 
-  const runSpeed20mEffort = (efforts || [])
+  const runSpeed20mEffort = legacyEfforts
     .filter(
       (effort) =>
         effort.effort_type === "speed" &&
@@ -161,7 +207,7 @@ async function getEstimationProfileInputs(
     }
   }
 
-  for (const metric of metrics || []) {
+  for (const metric of legacyMetrics) {
     if (metric.metric_type === "weight_kg" && weightKg === null) {
       weightKg = metric.value;
       continue;
@@ -194,15 +240,9 @@ async function getEstimationProfileInputs(
 /**
  * Activity plan with estimation added
  */
-export interface ActivityPlanWithEstimation {
-  // Base fields from activity plan
-  id: string;
-  profile_id: string | null;
-  name: string;
-  description: string | null;
-  activity_category: string;
-  // Add all other fields we need
-  [key: string]: unknown;
+export type ActivityPlanWithEstimation<
+  TPlan extends EstimationActivityPlanInput = EstimationActivityPlanInput,
+> = TPlan & {
   // Dynamically calculated fields
   estimated_tss: number;
   estimated_duration: number;
@@ -212,33 +252,34 @@ export interface ActivityPlanWithEstimation {
   intensity_factor: number;
   confidence: string;
   confidence_score: number;
-}
+};
 
 /**
  * Calculate TSS and metrics for a single activity plan
  */
-export async function addEstimationToPlan(
-  plan: PublicActivityPlansRow,
-  input: SupabaseClient | EstimationReadStore,
+export async function addEstimationToPlan<TPlan extends EstimationActivityPlanInput>(
+  plan: TPlan,
+  estimationReader: EstimationReadStore | LegacyEstimationReadClient,
   userId: string,
-): Promise<ActivityPlanWithEstimation> {
-  const profile =
-    "from" in input
-      ? await getEstimationProfileInputs(input, userId)
-      : await getEstimationProfileInputsFromStore(input, userId);
+): Promise<ActivityPlanWithEstimation<TPlan>> {
+  const profile = isLegacyEstimationReadClient(estimationReader)
+    ? await getEstimationProfileInputs(estimationReader, userId)
+    : await getEstimationProfileInputsFromStore(estimationReader, userId);
 
   // Fetch route if referenced
   let route: any = undefined;
   if (plan.route_id) {
-    if ("from" in input) {
-      const { data: routeData } = await input
+    if (isLegacyEstimationReadClient(estimationReader)) {
+      const { data: routeData } = await estimationReader
         .from("activity_routes")
         .select("distance_meters:total_distance, total_ascent, total_descent")
         .eq("id", plan.route_id)
         .single();
       route = routeData;
     } else {
-      route = (await getRoutesMapFromStore(input, userId, [plan.route_id])).get(plan.route_id);
+      route = (await getRoutesMapFromStore(estimationReader, userId, [plan.route_id])).get(
+        plan.route_id,
+      );
     }
   }
 
@@ -290,7 +331,7 @@ export async function computePlanMetrics(
     structure: any;
     route_id?: string | null;
   },
-  supabase: SupabaseClient,
+  estimationReader: EstimationReadStore | LegacyEstimationReadClient,
   userId: string,
 ): Promise<{
   estimated_tss: number;
@@ -298,28 +339,33 @@ export async function computePlanMetrics(
   intensity_factor: number;
   estimated_distance_meters: number;
 }> {
-  const profile = await getEstimationProfileInputs(supabase, userId);
+  const profile = isLegacyEstimationReadClient(estimationReader)
+    ? await getEstimationProfileInputs(estimationReader, userId)
+    : await getEstimationProfileInputsFromStore(estimationReader, userId);
 
-  // Fetch route if referenced
   let route: any = undefined;
   if (planInput.route_id) {
-    const { data: routeData } = await supabase
-      .from("activity_routes") // Ensure correct table name
-      .select("*")
-      .eq("id", planInput.route_id)
-      .single();
-
-    if (routeData) {
-      route = {
-        distance_meters: routeData.total_distance,
-        total_ascent: routeData.total_ascent,
-        total_descent: routeData.total_descent,
-        average_grade: (routeData as any).average_grade, // Cast if needed based on table schema
-      };
-    }
+    route = isLegacyEstimationReadClient(estimationReader)
+      ? await estimationReader
+          .from("activity_routes")
+          .select("*")
+          .eq("id", planInput.route_id)
+          .single()
+          .then(({ data }: { data: Record<string, any> | null }) =>
+            data
+              ? {
+                  distance_meters: data.total_distance,
+                  total_ascent: data.total_ascent,
+                  total_descent: data.total_descent,
+                  average_grade: (data as any).average_grade,
+                }
+              : undefined,
+          )
+      : (await getRoutesMapFromStore(estimationReader, userId, [planInput.route_id])).get(
+          planInput.route_id,
+        );
   }
 
-  // Build estimation context
   const context = buildEstimationContext({
     userProfile: profile || {},
     activityPlan: {
@@ -330,7 +376,6 @@ export async function computePlanMetrics(
     route,
   });
 
-  // Calculate estimation
   const estimation = estimateActivity(context);
   const metrics = estimateMetrics(estimation, context);
 
@@ -346,21 +391,18 @@ export async function computePlanMetrics(
  * Calculate TSS and metrics for multiple activity plans
  * More efficient than calling addEstimationToPlan repeatedly
  */
-export async function addEstimationToPlans(
-  plans: Array<PublicActivityPlansRow | null | undefined>,
-  input: SupabaseClient | EstimationReadStore,
+export async function addEstimationToPlans<TPlan extends EstimationActivityPlanInput>(
+  plans: Array<TPlan | null | undefined>,
+  estimationReader: EstimationReadStore | LegacyEstimationReadClient,
   userId: string,
-): Promise<ActivityPlanWithEstimation[]> {
-  const normalizedPlans = plans.filter(
-    (plan): plan is PublicActivityPlansRow => !!plan && typeof plan === "object",
-  );
+): Promise<ActivityPlanWithEstimation<TPlan>[]> {
+  const normalizedPlans = plans.filter((plan): plan is TPlan => !!plan && typeof plan === "object");
 
   if (normalizedPlans.length === 0) return [];
 
-  const profile =
-    "from" in input
-      ? await getEstimationProfileInputs(input, userId)
-      : await getEstimationProfileInputsFromStore(input, userId);
+  const profile = isLegacyEstimationReadClient(estimationReader)
+    ? await getEstimationProfileInputs(estimationReader, userId)
+    : await getEstimationProfileInputsFromStore(estimationReader, userId);
 
   // Collect all route IDs
   const routeIds = normalizedPlans
@@ -372,22 +414,22 @@ export async function addEstimationToPlans(
   // Fetch all routes at once
   let routesMap = new Map<string, any>();
   if (routeIds.length > 0) {
-    if ("from" in input) {
-      const { data: routes } = await input
+    if (isLegacyEstimationReadClient(estimationReader)) {
+      const { data: routes } = await estimationReader
         .from("activity_routes")
         .select("id, distance_meters:total_distance, total_ascent, total_descent")
         .in("id", routeIds);
 
       if (routes) {
-        routesMap = new Map(routes.map((r) => [r.id, r]));
+        routesMap = new Map((routes as Array<{ id: string }>).map((route) => [route.id, route]));
       }
     } else {
-      routesMap = await getRoutesMapFromStore(input, userId, routeIds);
+      routesMap = await getRoutesMapFromStore(estimationReader, userId, routeIds);
     }
   }
 
   // Calculate estimation for each plan
-  const results: ActivityPlanWithEstimation[] = [];
+  const results: ActivityPlanWithEstimation<TPlan>[] = [];
 
   for (const plan of normalizedPlans) {
     try {
@@ -453,7 +495,7 @@ export async function addEstimationToPlans(
 export async function estimatePlannedActivity(
   activityPlanId: string,
   scheduledDate: Date,
-  supabase: SupabaseClient,
+  estimationStore: PlannedActivityEstimationStore,
   userId: string,
 ): Promise<{
   estimated_tss: number;
@@ -462,26 +504,16 @@ export async function estimatePlannedActivity(
   fatigueImpact?: any;
 }> {
   // Fetch activity plan
-  const { data: plan } = await supabase
-    .from("activity_plans")
-    .select("activity_category, structure, route_id")
-    .eq("id", activityPlanId)
-    .single();
+  const plan = await estimationStore.getActivityPlanById({ activityPlanId });
 
   if (!plan) {
     throw new Error("Activity plan not found");
   }
 
-  const profile = await getEstimationProfileInputs(supabase, userId);
+  const profile = await getEstimationProfileInputsFromStore(estimationStore, userId);
 
   // Fetch current fitness state
-  const { data: fitnessData } = await supabase
-    .from("fitness_snapshots")
-    .select("ctl, atl, tsb, snapshot_date")
-    .eq("profile_id", userId)
-    .order("snapshot_date", { ascending: false })
-    .limit(1)
-    .single();
+  const fitnessData = await estimationStore.getLatestFitnessSnapshot(userId);
 
   // Fetch route if referenced
   let route:
@@ -493,14 +525,12 @@ export async function estimatePlannedActivity(
       }
     | undefined;
   if (plan.route_id) {
-    const { data: routeData } = await supabase
-      .from("activity_routes")
-      .select("*")
-      .eq("id", plan.route_id)
-      .single();
+    const routeData = (await getRoutesMapFromStore(estimationStore, userId, [plan.route_id])).get(
+      plan.route_id,
+    );
     if (routeData) {
       route = {
-        distance_meters: routeData.total_distance,
+        distance_meters: routeData.distance_meters ?? 0,
         total_ascent: routeData.total_ascent || 0,
         total_descent: routeData.total_descent || 0,
       };
@@ -510,17 +540,21 @@ export async function estimatePlannedActivity(
   // Build estimation context with fitness state
   const context = buildEstimationContext({
     userProfile: profile || {},
-    fitnessState: fitnessData
-      ? {
-          ctl: fitnessData.ctl,
-          atl: fitnessData.atl,
-          tsb: fitnessData.tsb,
-        }
-      : undefined,
+    fitnessState:
+      fitnessData &&
+      fitnessData.ctl !== null &&
+      fitnessData.atl !== null &&
+      fitnessData.tsb !== null
+        ? {
+            ctl: fitnessData.ctl,
+            atl: fitnessData.atl,
+            tsb: fitnessData.tsb,
+          }
+        : undefined,
     activityPlan: {
       activity_category: plan.activity_category,
       structure: plan.structure,
-      route_id: plan.route_id,
+      route_id: plan.route_id ?? undefined,
     },
     route,
     scheduledDate,

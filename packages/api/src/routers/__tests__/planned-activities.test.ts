@@ -10,6 +10,31 @@ vi.mock("@repo/core", async () => {
   };
 });
 
+vi.mock("../../infrastructure/repositories", () => ({
+  createEventReadRepository: vi.fn((db: MockDb) => db.readRepository),
+  createEventWriteRepository: vi.fn(() => ({
+    createOwnedEvent: vi.fn(async () => undefined),
+    getAccessibleActivityPlan: vi.fn(async () => null),
+    getOwnedTrainingPlan: vi.fn(async () => null),
+    updateOwnedEventsForScope: vi.fn(async () => []),
+  })),
+  createEventCompletionRepository: vi.fn(() => ({
+    clearLinkedCompletionForEvent: vi.fn(async () => undefined),
+    listLinkedCompletedActivitiesForTrainingPlan: vi.fn(async () => []),
+  })),
+  createWahooRepository: vi.fn(() => ({
+    createSyncedEvent: vi.fn(async () => undefined),
+    deleteSyncedEvent: vi.fn(async () => undefined),
+    findWahooIntegrationByProfileId: vi.fn(async () => null),
+    getPlannedEventForSync: vi.fn(async () => null),
+    getProfileSyncMetrics: vi.fn(async () => null),
+    getRouteForSync: vi.fn(async () => null),
+    getSyncedEvent: vi.fn(async () => null),
+    listEventSyncs: vi.fn(async () => []),
+    updateSyncedEvent: vi.fn(async () => undefined),
+  })),
+}));
+
 import { eventsRouter } from "../events";
 
 type QueryResult = {
@@ -44,8 +69,32 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
   };
 }
 
+type MockDb = {
+  readRepository: {
+    getValidateConstraintsInputs: (input: unknown) => Promise<unknown>;
+    listOwnedEvents: (input: unknown) => Promise<unknown[]>;
+    listPlannedEventDatesInRange: (input: unknown) => Promise<unknown[]>;
+  };
+};
+
 function createEventsCaller(results: Record<string, QueryResult>) {
+  const db: MockDb = {
+    readRepository: {
+      getValidateConstraintsInputs: vi.fn(async () => ({
+        trainingPlan: results.training_plans?.data ?? null,
+        activityPlan: results.activity_plans?.data ?? null,
+        profile: results.profiles?.data ?? null,
+        best20mPower: results.activity_efforts?.data ?? null,
+        lthrMetric: results.profile_metrics?.data ?? null,
+        weightMetric: results.profile_metrics?.data ?? null,
+      })),
+      listOwnedEvents: vi.fn(async () => (results.events?.data as unknown[]) ?? []),
+      listPlannedEventDatesInRange: vi.fn(async () => (results.events?.data as unknown[]) ?? []),
+    },
+  };
+
   return eventsRouter.createCaller({
+    db: db as any,
     supabase: createSupabaseMock(results) as any,
     session: {
       user: {

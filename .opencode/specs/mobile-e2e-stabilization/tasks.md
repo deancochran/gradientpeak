@@ -16,7 +16,7 @@
 ### Phase 2 - Targeted Fix
 
 - [x] Apply the smallest code or Maestro change needed for the current blocker.
-- [ ] Resolve the current external environment blocker: local Supabase auth is unreachable from the mobile E2E runtime, so authenticated flows stop on `The authentication service is not responding` before app navigation.
+- [ ] Resolve the current external environment blocker: Better Auth now shares the same DB URL resolution as `packages/db`, but authenticated mobile E2E flows will still stop on `The authentication service is not responding` until the running web auth process is restarted with a reachable `DATABASE_URL`/`POSTGRES_URL`/`SUPABASE_DB_URL` (and the target DB is actually up).
 
 ### Phase 3 - Verify And Iterate
 
@@ -25,7 +25,7 @@
 
 ## Pending Validation
 
-- [ ] `pnpm run test:e2e` after local Supabase/Docker health is restored.
+- [ ] `pnpm run test:e2e` after the web auth runtime is restarted with a reachable `DATABASE_URL`/`POSTGRES_URL`/`SUPABASE_DB_URL` and the target DB is healthy.
 
 ## Completed Summary
 

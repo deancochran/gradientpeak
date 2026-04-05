@@ -1,3 +1,4 @@
+import { act } from "@testing-library/react-native/pure";
 import React from "react";
 import { create } from "zustand";
 
@@ -5,7 +6,17 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const pushMock = jest.fn();
 const replaceMock = jest.fn();
-const openRouteMock = jest.fn(() => "/event/event-1");
+const openRouteMock = jest.fn((event: { id: string; event_type?: string }) => {
+  if (
+    event.event_type === "planned" ||
+    event.event_type === "custom" ||
+    event.event_type === "race_target"
+  ) {
+    return `/event/${event.id}`;
+  }
+
+  return null;
+});
 const setSelectionMock = jest.fn();
 const eventCreateMutateMock = jest.fn();
 const eventUpdateMutateMock = jest.fn();
@@ -153,6 +164,7 @@ jest.mock("lucide-react-native", () => ({
   Pencil: createHost("Pencil"),
   Play: createHost("Play"),
   Plus: createHost("Plus"),
+  RotateCcw: createHost("RotateCcw"),
   Target: createHost("Target"),
   Trash2: createHost("Trash2"),
   Zap: createHost("Zap"),
@@ -196,7 +208,7 @@ jest.mock("@/lib/navigation/useNavigationActionGuard", () => ({
 jest.mock("@/lib/calendar/eventRouting", () => ({
   __esModule: true,
   buildEditEventRoute: jest.fn(() => "/edit/event-1"),
-  buildOpenEventRoute: openRouteMock,
+  buildOpenEventRoute: (event: { id: string; event_type?: string }) => openRouteMock(event),
 }));
 
 jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
@@ -238,6 +250,31 @@ jest.mock("@/lib/api", () => ({
                   estimated_duration: 3600,
                   estimated_tss: 72,
                 },
+              },
+              {
+                id: "event-3",
+                event_type: "custom",
+                title: "Mobility session",
+                description: "Gentle evening mobility.",
+                scheduled_date: "2026-03-24",
+                starts_at: "2026-03-24T18:00:00.000Z",
+                all_day: false,
+              },
+              {
+                id: "event-4",
+                event_type: "rest_day",
+                title: "Legacy rest day",
+                scheduled_date: "2026-03-25",
+                all_day: true,
+              },
+              {
+                id: "event-5",
+                event_type: "imported",
+                title: "Imported ride",
+                description: "Pulled in from provider sync.",
+                scheduled_date: today,
+                starts_at: `${today}T14:00:00.000Z`,
+                all_day: false,
               },
             ],
           },
@@ -299,11 +336,40 @@ describe("calendar redesign screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(screen.getByTestId("create-event-entry")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-reset-day-button")).toBeNull();
     expect(screen.getByTestId("calendar-mode-switcher")).toBeTruthy();
     expect(screen.getByTestId("calendar-day-page-2026-03-23")).toBeTruthy();
     expect(screen.getByTestId("schedule-event-event-1")).toBeTruthy();
     expect(screen.queryByText("Week Of")).toBeNull();
     expect(screen.queryByText("Next event")).toBeNull();
+  });
+
+  it("resets month mode back to the active day view", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("calendar-mode-month"));
+
+    expect(screen.getByTestId("calendar-reset-day-button")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("calendar-reset-day-button"));
+
+    expect(screen.getByTestId("calendar-day-page-2026-03-23")).toBeTruthy();
+  });
+
+  it("uses the currently visible day for create actions", () => {
+    const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
+
+    const flatList = (rendered as any).UNSAFE_getByType("FlatList");
+    act(() => {
+      flatList.props.onViewableItemsChanged({ viewableItems: [{ item: "2026-03-24" }] });
+    });
+
+    fireEvent.press(screen.getByTestId("create-event-entry"));
+    fireEvent.press(screen.getByTestId("create-type-planned"));
+    fireEvent.press(screen.getByTestId("calendar-planned-activity-option-plan-1"));
+
+    const scheduleModal = (screen as any).UNSAFE_getAllByType("ScheduleActivityModal")[0];
+    expect(scheduleModal.props.preselectedDate).toBe("2026-03-24");
   });
 
   it("switches to month mode and jumps back into day mode from a month cell", () => {
@@ -329,6 +395,43 @@ describe("calendar redesign screen", () => {
     expect(openRouteMock).toHaveBeenCalled();
   });
 
+  it("renders richer planned cards and calmer non-planned cards", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByText("Outdoor Run • 1h")).toBeTruthy();
+    expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
+    expect(screen.getByText("Bring spikes")).toBeTruthy();
+    expect(screen.queryByText("From Plan")).toBeNull();
+  });
+
+  it("keeps imported preview flow sheet-only when no routed detail fallback exists", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("schedule-event-event-5"));
+
+    expect(screen.getByTestId("calendar-event-preview-sheet")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-preview-open-detail")).toBeNull();
+  });
+
+  it("does not navigate after unmount when deferred detail navigation flushes", () => {
+    let deferredNavigation: (() => void) | undefined;
+    const timeoutSpy = jest.spyOn(global, "setTimeout").mockImplementationOnce(((fn: any) => {
+      deferredNavigation = fn;
+      return 0 as any;
+    }) as any);
+
+    const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("schedule-event-event-1"));
+    fireEvent.press(screen.getByTestId("calendar-preview-open-detail"));
+
+    rendered.unmount();
+    deferredNavigation?.();
+
+    expect(pushMock).not.toHaveBeenCalled();
+    timeoutSpy.mockRestore();
+  });
+
   it("starts a planned activity from the day card quick action", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
@@ -347,6 +450,8 @@ describe("calendar redesign screen", () => {
 
     fireEvent.press(screen.getByTestId("create-event-entry"));
     expect(screen.getByTestId("calendar-actions-sheet")).toBeTruthy();
+    expect(screen.queryByTestId("create-type-rest-day")).toBeNull();
+    expect(screen.queryByTestId("calendar-actions-today")).toBeNull();
 
     fireEvent.press(screen.getByTestId("create-type-planned"));
     fireEvent.press(screen.getByTestId("calendar-planned-activity-option-plan-1"));
@@ -363,6 +468,68 @@ describe("calendar redesign screen", () => {
     fireEvent.press(screen.getByTestId("create-type-custom"));
 
     expect(screen.getByTestId("manual-create-modal")).toBeTruthy();
+  });
+
+  it("renders an inferred rest-day state for an empty day", () => {
+    act(() => {
+      useCalendarStore.setState({ activeDate: "2026-03-26", visibleAnchor: "2026-03-26" });
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-rest-day-state-2026-03-26")).toBeTruthy();
+  });
+
+  it("keeps the inferred rest-day treatment when a day only has non-planned events", () => {
+    act(() => {
+      useCalendarStore.setState({ activeDate: "2026-03-24", visibleAnchor: "2026-03-24" });
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-rest-day-state-2026-03-24")).toBeTruthy();
+    expect(screen.getByTestId("schedule-event-event-3")).toBeTruthy();
+  });
+
+  it("does not show the inferred rest-day treatment when a planned event exists", () => {
+    act(() => {
+      useCalendarStore.setState({ activeDate: "2026-03-23", visibleAnchor: "2026-03-23" });
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.queryByTestId("calendar-rest-day-state-2026-03-23")).toBeNull();
+    expect(screen.getByTestId("schedule-event-event-2")).toBeTruthy();
+  });
+
+  it("filters legacy explicit rest-day cards from the day surface", () => {
+    act(() => {
+      useCalendarStore.setState({ activeDate: "2026-03-25", visibleAnchor: "2026-03-25" });
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-rest-day-state-2026-03-25")).toBeTruthy();
+    expect(screen.queryByTestId("schedule-event-event-4")).toBeNull();
+  });
+
+  it("keeps persisted legacy rest-day preview state read-only", () => {
+    act(() => {
+      useCalendarStore.setState({
+        activeDate: "2026-03-25",
+        visibleAnchor: "2026-03-25",
+        selectedEventId: "event-4",
+        sheetState: "event-preview",
+      });
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-event-preview-sheet")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-preview-open-detail")).toBeNull();
+    expect(screen.queryByTestId("calendar-preview-edit")).toBeNull();
+    expect(screen.queryByTestId("calendar-preview-move")).toBeNull();
+    expect(screen.queryByTestId("calendar-preview-delete")).toBeNull();
   });
 
   it("moves an event onto another day through drag-mode drop targets", () => {

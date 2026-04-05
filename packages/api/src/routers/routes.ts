@@ -1,19 +1,34 @@
+import { randomUUID } from "node:crypto";
 import {
   calculateRouteStats,
   encodeElevationPolyline,
   encodePolyline,
   simplifyCoordinates,
 } from "@repo/core";
+import {
+  type ActivityRouteRow,
+  activityPlans,
+  activityRoutes,
+  likes,
+  publicActivityCategorySchema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
+import { getRequiredDb } from "../db";
 import { parseRoute, validateRoute } from "../lib/routes/route-parser";
+import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+
+const storageService = getApiStorageService();
 
 const ROUTES_BUCKET = "gpx-routes";
 
 // Input schemas
+const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
+
 const listRoutesSchema = z.object({
-  activityCategory: z.enum(["run", "bike", "swim", "strength", "other", "all"]).optional(),
+  activityCategory: activityCategoryFilterSchema.optional(),
   search: z.string().optional(),
   limit: z.number().min(1).max(100).default(20),
   cursor: z.string().optional(),
@@ -22,81 +37,90 @@ const listRoutesSchema = z.object({
 const uploadRouteSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(1000).optional(),
-  activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]),
+  activityCategory: publicActivityCategorySchema,
   fileContent: z.string().min(1),
   fileName: z.string(),
   source: z.string().optional(),
 });
+
+function serializeActivityRouteRow(row: ActivityRouteRow) {
+  return {
+    ...row,
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  };
+}
 
 export const routesRouter = createTRPCRouter({
   // ------------------------------
   // List routes with encoded polylines for preview
   // ------------------------------
   list: protectedProcedure.input(listRoutesSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
     const limit = input.limit;
+    const conditions = [eq(activityRoutes.profile_id, ctx.session.user.id)];
 
-    let query = ctx.supabase
-      .from("activity_routes")
-      .select("*")
-      .eq("profile_id", ctx.session.user.id)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: true })
-      .limit(limit + 1);
-
-    // Apply activity category filter
     if (input.activityCategory && input.activityCategory !== "all") {
-      query = query.eq("activity_category", input.activityCategory);
+      conditions.push(eq(activityRoutes.activity_category, input.activityCategory));
     }
 
-    // Apply search filter
     if (input.search) {
-      query = query.ilike("name", `%${input.search}%`);
+      conditions.push(ilike(activityRoutes.name, `%${input.search}%`));
     }
 
-    // Apply cursor
     if (input.cursor) {
       const [cursorDate, cursorId] = input.cursor.split("_");
-      query = query.or(
-        `created_at.lt.${cursorDate},and(created_at.eq.${cursorDate},id.gt.${cursorId})`,
-      );
+      if (cursorDate && cursorId) {
+        const cursorCreatedAt = new Date(cursorDate);
+        const cursorCondition = or(
+          lt(activityRoutes.created_at, cursorCreatedAt),
+          and(eq(activityRoutes.created_at, cursorCreatedAt), gt(activityRoutes.id, cursorId)),
+        );
+
+        if (cursorCondition) {
+          conditions.push(cursorCondition);
+        }
+      }
     }
 
-    const { data, error } = await query;
+    const rows = await db
+      .select()
+      .from(activityRoutes)
+      .where(and(...conditions))
+      .orderBy(desc(activityRoutes.created_at), asc(activityRoutes.id))
+      .limit(limit + 1);
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
-
-    const hasMore = data.length > limit;
-    const items = hasMore ? data.slice(0, limit) : data;
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const items = pageRows.map(serializeActivityRouteRow);
 
     let nextCursor: string | undefined;
-    if (hasMore && items.length > 0) {
-      const lastItem = items[items.length - 1];
+    if (hasMore && pageRows.length > 0) {
+      const lastItem = pageRows[pageRows.length - 1];
       if (!lastItem) throw new Error("Unexpected error");
-      nextCursor = `${lastItem.created_at}_${lastItem.id}`;
+      nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
     }
 
-    // Get user likes for these routes
-    const routeIds = items.map((r: any) => r.id) || [];
+    const routeIds = items.map((route) => route.id);
     let userLikes: string[] = [];
 
     if (routeIds.length > 0) {
-      const { data: likesData } = await (ctx.supabase as any)
-        .from("likes")
-        .select("entity_id")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("entity_type", "route")
-        .in("entity_id", routeIds);
+      const likeRows = await db
+        .select({ entity_id: likes.entity_id })
+        .from(likes)
+        .where(
+          and(
+            eq(likes.profile_id, ctx.session.user.id),
+            eq(likes.entity_type, "route"),
+            inArray(likes.entity_id, routeIds),
+          ),
+        );
 
-      userLikes = likesData?.map((l: any) => l.entity_id) || [];
+      userLikes = likeRows.map((row) => row.entity_id);
     }
 
     return {
-      items: items.map((route: any) => ({
+      items: items.map((route) => ({
         ...route,
         has_liked: userLikes.includes(route.id),
       })),
@@ -110,31 +134,37 @@ export const routesRouter = createTRPCRouter({
   get: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const { data, error } = await ctx.supabase
-        .from("activity_routes")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const db = getRequiredDb(ctx);
 
-      if (error) {
+      const [route] = await db
+        .select()
+        .from(activityRoutes)
+        .where(
+          and(eq(activityRoutes.id, input.id), eq(activityRoutes.profile_id, ctx.session.user.id)),
+        )
+        .limit(1);
+
+      if (!route) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Route not found",
         });
       }
 
-      // Check if user has liked this route
-      const { data: likeData } = await (ctx.supabase as any)
-        .from("likes")
-        .select("id")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("entity_type", "route")
-        .eq("entity_id", input.id)
-        .maybeSingle();
+      const [likeData] = await db
+        .select({ id: likes.id })
+        .from(likes)
+        .where(
+          and(
+            eq(likes.profile_id, ctx.session.user.id),
+            eq(likes.entity_type, "route"),
+            eq(likes.entity_id, input.id),
+          ),
+        )
+        .limit(1);
 
       return {
-        ...data,
+        ...serializeActivityRouteRow(route),
         has_liked: !!likeData,
       };
     }),
@@ -145,23 +175,31 @@ export const routesRouter = createTRPCRouter({
   loadFull: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      // Get route metadata from database
-      const { data: routeData, error: dbError } = await ctx.supabase
-        .from("activity_routes")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const db = getRequiredDb(ctx);
 
-      if (dbError || !routeData) {
+      const [routeData] = await db
+        .select()
+        .from(activityRoutes)
+        .where(
+          and(eq(activityRoutes.id, input.id), eq(activityRoutes.profile_id, ctx.session.user.id)),
+        )
+        .limit(1);
+
+      if (!routeData) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Route not found",
         });
       }
 
-      // Load full GPX file from storage
-      const { data: fileData, error: storageError } = await ctx.supabase.storage
+      if (!routeData.file_path) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Route file path missing",
+        });
+      }
+
+      const { data: fileData, error: storageError } = await storageService.storage
         .from(ROUTES_BUCKET)
         .download(routeData.file_path);
 
@@ -192,6 +230,8 @@ export const routesRouter = createTRPCRouter({
   // ------------------------------
   upload: protectedProcedure.input(uploadRouteSchema).mutation(async ({ ctx, input }) => {
     try {
+      const db = getRequiredDb(ctx);
+
       // Parse the route file
       const parsed = parseRoute(input.fileContent, "gpx");
 
@@ -226,8 +266,7 @@ export const routesRouter = createTRPCRouter({
       const timestamp = Date.now();
       const filePath = `${ctx.session.user.id}/${timestamp}.${fileExtension}`;
 
-      // Upload original file to storage
-      const { error: uploadError } = await ctx.supabase.storage
+      const { error: uploadError } = await storageService.storage
         .from(ROUTES_BUCKET)
         .upload(filePath, input.fileContent, {
           contentType: "application/gpx+xml",
@@ -241,36 +280,45 @@ export const routesRouter = createTRPCRouter({
         });
       }
 
-      // Save route metadata to database
-      const { data: routeData, error: dbError } = await ctx.supabase
-        .from("activity_routes")
-        .insert({
-          profile_id: ctx.session.user.id,
-          name: input.name,
-          description: input.description,
-          activity_category: input.activityCategory,
-          file_path: filePath,
-          total_distance: stats.totalDistance,
-          total_ascent: stats.totalAscent,
-          total_descent: stats.totalDescent,
-          polyline: polyline,
-          elevation_polyline: elevationPolyline,
-          source: input.source,
-        })
-        .select("*")
-        .single();
+      try {
+        const [routeData] = await db
+          .insert(activityRoutes)
+          .values({
+            id: randomUUID(),
+            created_at: new Date(),
+            updated_at: new Date(),
+            profile_id: ctx.session.user.id,
+            name: input.name,
+            description: input.description,
+            activity_category: input.activityCategory,
+            file_path: filePath,
+            total_distance: stats.totalDistance,
+            total_ascent: stats.totalAscent,
+            total_descent: stats.totalDescent,
+            polyline,
+            elevation_polyline: elevationPolyline,
+            source: input.source,
+            is_public: false,
+          })
+          .returning();
 
-      if (dbError) {
+        if (!routeData) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to save route",
+          });
+        }
+
+        return serializeActivityRouteRow(routeData);
+      } catch (dbError) {
         // Cleanup: delete uploaded file if database insert fails
-        await ctx.supabase.storage.from(ROUTES_BUCKET).remove([filePath]);
+        await storageService.storage.from(ROUTES_BUCKET).remove([filePath]);
 
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to save route: ${dbError.message}`,
+          message: `Failed to save route: ${dbError instanceof Error ? dbError.message : "Unknown database error"}`,
         });
       }
-
-      return routeData;
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
@@ -289,49 +337,54 @@ export const routesRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      // Get route details
-      const { data: route, error: fetchError } = await ctx.supabase
-        .from("activity_routes")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const db = getRequiredDb(ctx);
 
-      if (fetchError || !route) {
+      const [route] = await db
+        .select()
+        .from(activityRoutes)
+        .where(
+          and(eq(activityRoutes.id, input.id), eq(activityRoutes.profile_id, ctx.session.user.id)),
+        )
+        .limit(1);
+
+      if (!route) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Route not found or you don't have permission to delete it",
         });
       }
 
-      // Check if route is being used by any activity plans
-      const { count: plansCount } = await ctx.supabase
-        .from("activity_plans")
-        .select("id", { count: "exact", head: true })
-        .eq("route_id", input.id);
+      const [plansCountRow] = await db
+        .select({ value: count() })
+        .from(activityPlans)
+        .where(eq(activityPlans.route_id, input.id));
 
-      if (plansCount && plansCount > 0) {
+      const plansCount = plansCountRow?.value ?? 0;
+
+      if (plansCount > 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: `Cannot delete route because it is used by ${plansCount} activity plan${plansCount > 1 ? "s" : ""}. Please remove the route from those plans first.`,
         });
       }
 
-      // Delete from database first
-      const { error: deleteError } = await ctx.supabase
-        .from("activity_routes")
-        .delete()
-        .eq("id", input.id);
+      const [deletedRoute] = await db
+        .delete(activityRoutes)
+        .where(
+          and(eq(activityRoutes.id, input.id), eq(activityRoutes.profile_id, ctx.session.user.id)),
+        )
+        .returning({ id: activityRoutes.id });
 
-      if (deleteError) {
+      if (!deletedRoute) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: deleteError.message,
+          message: "Failed to delete route",
         });
       }
 
-      // Delete file from storage (best effort - don't fail if this fails)
-      await ctx.supabase.storage.from(ROUTES_BUCKET).remove([route.file_path]);
+      if (route.file_path) {
+        await storageService.storage.from(ROUTES_BUCKET).remove([route.file_path]);
+      }
 
       return { success: true };
     }),
@@ -348,15 +401,14 @@ export const routesRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const { id, ...updates } = input;
 
-      // Check ownership
-      const { data: existing } = await ctx.supabase
-        .from("activity_routes")
-        .select("*")
-        .eq("id", id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const [existing] = await db
+        .select({ id: activityRoutes.id })
+        .from(activityRoutes)
+        .where(and(eq(activityRoutes.id, id), eq(activityRoutes.profile_id, ctx.session.user.id)))
+        .limit(1);
 
       if (!existing) {
         throw new TRPCError({
@@ -365,21 +417,23 @@ export const routesRouter = createTRPCRouter({
         });
       }
 
-      const { data, error } = await ctx.supabase
-        .from("activity_routes")
-        .update(updates)
-        .eq("id", id)
-        .select("*")
-        .single();
+      const [data] = await db
+        .update(activityRoutes)
+        .set({
+          ...updates,
+          updated_at: new Date(),
+        })
+        .where(and(eq(activityRoutes.id, id), eq(activityRoutes.profile_id, ctx.session.user.id)))
+        .returning();
 
-      if (error) {
+      if (!data) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
+          message: "Failed to update route",
         });
       }
 
-      return data;
+      return serializeActivityRouteRow(data);
     }),
 });
 

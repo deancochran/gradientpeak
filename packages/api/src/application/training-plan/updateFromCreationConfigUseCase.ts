@@ -10,9 +10,7 @@ import {
   type TrainingPlanCreationConfig,
   trainingPlanCalibrationConfigSchema,
 } from "@repo/core";
-import type { JsonValue } from "@repo/db";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { TRPCError } from "@trpc/server";
+import type { TrainingPlanInsert } from "@repo/db";
 import { z } from "zod";
 import {
   buildConflictCommitError,
@@ -20,6 +18,7 @@ import {
   buildNotFoundCommitError,
   buildStalePreviewCommitError,
 } from "../../lib/errors/trainingPlanCommitErrors";
+import type { TrainingPlanRepository } from "../../repositories";
 
 type UpdateFromCreationConfigInput = z.infer<typeof createFromCreationConfigInputSchema> & {
   plan_id: string;
@@ -32,6 +31,14 @@ type CreationConflictItem = {
   message: string;
   field_paths: string[];
   suggestions: string[];
+};
+
+type ProjectionFeasibilityDiagnostics = {
+  tss_ramp_near_cap_weeks: number;
+  ctl_ramp_near_cap_weeks: number;
+  tss_ramp_clamp_weeks: number;
+  ctl_ramp_clamp_weeks: number;
+  recovery_weeks: number;
 };
 
 type OverrideAudit = {
@@ -122,17 +129,43 @@ function evaluateOverrideAudit(input: {
 }
 
 export async function updateFromCreationConfigUseCase<
+  TCreationContextReader,
   TEvaluateCreationConfig extends (input: {
-    supabase: SupabaseClient;
+    creationContextReader: TCreationContextReader;
     profileId: string;
     creationInput: UpdateFromCreationConfigInput["creation_input"];
     asOfIso?: string;
   }) => Promise<EvaluateCreationConfigResult>,
+  TExpandedPlan extends {
+    name: string;
+    description?: string;
+    metadata?: Record<string, unknown>;
+    goals: unknown[];
+    blocks: unknown[];
+  } & Record<string, unknown>,
   TProjectionChart extends {
     constraint_summary: ProjectionConstraintSummary;
     inferred_current_state?: InferredStateSnapshot;
+    points: unknown[];
+    readiness_score: number;
+    readiness_confidence?: unknown;
+    display_points?: unknown;
+    capacity_envelope?: unknown;
+    risk_flags?: unknown;
+    caps_applied?: unknown;
+    optimization_tradeoff_summary?: unknown;
+    projection_diagnostics?: {
+      effective_optimizer_config?: unknown;
+      clamp_counts?: unknown;
+      objective_contributions?: unknown;
+    };
     no_history?: unknown;
   },
+  TProjectionFeasibility extends {
+    state: "feasible" | "aggressive" | "unsafe";
+    reasons: string[];
+    diagnostics: ProjectionFeasibilityDiagnostics;
+  } & Record<string, unknown>,
   TBuildCreationProjectionArtifacts extends (input: {
     minimalPlan: UpdateFromCreationConfigInput["minimal_plan"];
     loadBootstrapState: LoadBootstrapState;
@@ -142,36 +175,28 @@ export async function updateFromCreationConfigUseCase<
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     contextSummary: Awaited<ReturnType<TEvaluateCreationConfig>>["contextSummary"];
   }) => {
-    expandedPlan: {
-      name: string;
-      description?: string;
-      metadata?: Record<string, unknown>;
-      goals: unknown[];
-      blocks: unknown[];
-    } & Record<string, unknown>;
+    expandedPlan: TExpandedPlan;
     projectionChart: TProjectionChart;
-    projectionFeasibility: {
-      state: "feasible" | "aggressive" | "unsafe";
-      reasons: string[];
-    };
+    projectionFeasibility: TProjectionFeasibility;
   },
   TBuildCreationPreviewSnapshotToken extends (input: {
     minimalPlan: UpdateFromCreationConfigInput["minimal_plan"];
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     loadBootstrapState: LoadBootstrapState;
     projectionConstraintSummary: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["constraint_summary"];
-    projectionFeasibility: ReturnType<TBuildCreationProjectionArtifacts>["projectionFeasibility"];
+    projectionFeasibility: TProjectionFeasibility;
     noHistoryMetadata?: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["no_history"];
   }) => string,
   TDeriveProjectionDrivenConflicts extends (input: {
-    expandedPlan: ReturnType<TBuildCreationProjectionArtifacts>["expandedPlan"];
-    projectionChart: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"];
+    expandedPlan: TExpandedPlan;
+    projectionChart: TProjectionChart;
     postGoalRecoveryDays: number;
   }) => CreationConflictItem[],
 >(input: {
-  supabase: SupabaseClient;
+  creationContextReader: TCreationContextReader;
   profileId: string;
   params: UpdateFromCreationConfigInput;
+  repository: TrainingPlanRepository;
   deps: {
     enforceCreationConfigFeatureEnabled: () => void;
     enforceNoAutonomousPostCreateMutation: (
@@ -184,24 +209,27 @@ export async function updateFromCreationConfigUseCase<
     parseTrainingPlanStructure: (value: unknown) => void;
   };
 }) {
+  const repository = input.repository as TrainingPlanRepository & {
+    getOwnedTrainingPlan: NonNullable<TrainingPlanRepository["getOwnedTrainingPlan"]>;
+    updateTrainingPlan: NonNullable<TrainingPlanRepository["updateTrainingPlan"]>;
+  };
+
   input.deps.enforceCreationConfigFeatureEnabled();
   input.deps.enforceNoAutonomousPostCreateMutation(input.params.post_create_behavior);
 
-  const { data: existingPlan, error: existingPlanError } = await input.supabase
-    .from("training_plans")
-    .select("*")
-    .eq("id", input.params.plan_id)
-    .eq("profile_id", input.profileId)
-    .single();
+  const existingPlan = await repository.getOwnedTrainingPlan({
+    id: input.params.plan_id,
+    profileId: input.profileId,
+  });
 
-  if (existingPlanError || !existingPlan) {
+  if (!existingPlan) {
     throw buildNotFoundCommitError({
       operation: "updateFromCreationConfig",
     });
   }
 
   const evaluation = await input.deps.evaluateCreationConfig({
-    supabase: input.supabase,
+    creationContextReader: input.creationContextReader,
     profileId: input.profileId,
     creationInput: input.params.creation_input,
   });
@@ -312,24 +340,13 @@ export async function updateFromCreationConfigUseCase<
   }
 
   // Invariant: edit-save only updates training_plans; it never writes activities.
-  const { data: updatedPlan, error: updateError } = await input.supabase
-    .from("training_plans")
-    .update({
-      name: expandedPlan.name,
-      description: expandedPlan.description ?? null,
-      structure: structureWithId as JsonValue,
-    })
-    .eq("id", existingPlan.id)
-    .eq("profile_id", input.profileId)
-    .select("*")
-    .single();
-
-  if (updateError || !updatedPlan) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: updateError?.message ?? "Failed to update training plan",
-    });
-  }
+  const updatedPlan = await repository.updateTrainingPlan({
+    id: existingPlan.id,
+    profileId: input.profileId,
+    name: expandedPlan.name,
+    description: expandedPlan.description ?? null,
+    structure: structureWithId as TrainingPlanInsert["structure"] as Record<string, unknown>,
+  });
 
   return {
     ...updatedPlan,

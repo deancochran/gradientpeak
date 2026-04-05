@@ -166,7 +166,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     };
 
     const result = await createFromCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-123",
       params: {
         minimal_plan: {
@@ -177,7 +177,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         preview_snapshot_token: "preview-token",
         is_active: true,
       },
-      repository,
+      repository: repository as any,
       deps: deps as any,
     });
 
@@ -214,7 +214,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     };
 
     await createFromCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-123",
       params: {
         minimal_plan: {
@@ -225,7 +225,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         preview_snapshot_token: "preview-token",
         is_active: true,
       },
-      repository,
+      repository: repository as any,
       deps: deps as any,
     });
 
@@ -285,7 +285,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     };
 
     const result = await createFromCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-123",
       params: {
         minimal_plan: {
@@ -296,7 +296,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         preview_snapshot_token: "preview-token",
         is_active: true,
       },
-      repository,
+      repository: repository as any,
       deps: deps as any,
     });
 
@@ -335,7 +335,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     };
 
     await createFromCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-123",
       params: {
         minimal_plan: {
@@ -346,7 +346,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         preview_snapshot_token: "preview-token",
         is_active: true,
       },
-      repository,
+      repository: repository as any,
       deps: deps as any,
     });
 
@@ -375,7 +375,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
 
     await expect(
       createFromCreationConfigUseCase({
-        supabase: {} as any,
+        creationContextReader: {} as any,
         profileId: "profile-123",
         params: {
           minimal_plan: {
@@ -386,7 +386,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
           preview_snapshot_token: "stale-preview-token",
           is_active: true,
         },
-        repository,
+        repository: repository as any,
         deps: deps as any,
       }),
     ).rejects.toMatchObject({
@@ -427,7 +427,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     };
 
     const result = await createFromCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-123",
       params: {
         minimal_plan: {
@@ -438,7 +438,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         preview_snapshot_token: "preview-token",
         is_active: true,
       },
-      repository,
+      repository: repository as any,
       deps: deps as any,
     });
 
@@ -474,7 +474,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
 
     await expect(
       createFromCreationConfigUseCase({
-        supabase: {} as any,
+        creationContextReader: {} as any,
         profileId: "profile-123",
         params: {
           minimal_plan: {
@@ -485,7 +485,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
           preview_snapshot_token: "preview-token",
           is_active: true,
         },
-        repository,
+        repository: repository as any,
         deps: deps as any,
       }),
     ).rejects.toMatchObject({
@@ -529,7 +529,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     };
 
     const result = await createFromCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-123",
       params: {
         minimal_plan: {
@@ -545,7 +545,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
           reason: "Coach-approved tradeoff",
         },
       },
-      repository,
+      repository: repository as any,
       deps: deps as any,
     });
 
@@ -581,7 +581,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
 
     await expect(
       createFromCreationConfigUseCase({
-        supabase: {} as any,
+        creationContextReader: {} as any,
         profileId: "profile-123",
         params: {
           minimal_plan: {
@@ -597,7 +597,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
             reason: "Accept objective tradeoffs",
           },
         },
-        repository,
+        repository: repository as any,
         deps: deps as any,
       }),
     ).rejects.toMatchObject({
@@ -654,7 +654,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     };
 
     await createFromCreationConfigUseCase({
-      supabase: {} as any,
+      creationContextReader: {} as any,
       profileId: "profile-123",
       params: {
         minimal_plan: {
@@ -707,7 +707,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
 
     await expect(
       createFromCreationConfigUseCase({
-        supabase: {} as any,
+        creationContextReader: {} as any,
         profileId: "profile-123",
         params: {
           minimal_plan: {
@@ -718,7 +718,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
           preview_snapshot_token: "preview-token",
           is_active: true,
         },
-        repository,
+        repository: repository as any,
         deps: deps as any,
       }),
     ).rejects.toMatchObject({

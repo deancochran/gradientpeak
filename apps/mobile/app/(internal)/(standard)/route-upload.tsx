@@ -1,233 +1,241 @@
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormSelectField,
+  FormTextareaField,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import * as DocumentPicker from "expo-document-picker";
 import { useRouter } from "expo-router";
-import { CheckCircle, FileText, Upload } from "lucide-react-native";
-import { useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { AlertCircle, CheckCircle, FileText, Upload } from "lucide-react-native";
+import { ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
-
-const ACTIVITY_CATEGORIES = [
-  { value: "run", label: "Run" },
-  { value: "bike", label: "Bike" },
-  { value: "swim", label: "Swim" },
-  { value: "strength", label: "Strength" },
-  { value: "other", label: "Other" },
-];
-
-// Helper to create Option objects for Select components
-const createOption = (value: string, label?: string) => ({
-  value,
-  label: label || value,
-});
+import { getErrorMessage } from "@/lib/utils/formErrors";
+import {
+  type RouteUploadFormValues,
+  routeUploadActivityCategoryOptions,
+  routeUploadFormSchema,
+} from "@/lib/validation/route-upload";
 
 export default function UploadRouteScreen() {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [activityCategory, setActivityCategory] = useState<string>("run");
-  const [selectedFile, setSelectedFile] = useState<{
-    name: string;
-    content: string;
-  } | null>(null);
-
   const utils = api.useUtils();
-
-  const uploadMutation = useReliableMutation(api.routes.upload, {
-    invalidate: [utils.routes],
-    success: "Route uploaded successfully!",
-    onSuccess: () => router.back(),
+  const form = useZodForm({
+    schema: routeUploadFormSchema,
+    defaultValues: {
+      name: "",
+      description: "",
+      activityCategory: "run",
+      fileName: "",
+      fileContent: "",
+    },
   });
 
+  const uploadMutation = api.routes.upload.useMutation({
+    onSuccess: async () => {
+      await utils.routes.invalidate();
+      router.back();
+    },
+  });
+
+  const selectedFileName = form.watch("fileName");
+
   const handlePickFile = async () => {
+    form.clearErrors(["fileName", "fileContent", "root"]);
+
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ["application/gpx+xml", "text/xml", "application/xml"],
         copyToCacheDirectory: true,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        const file = result.assets[0];
+      if (result.canceled || !result.assets[0]) {
+        return;
+      }
 
-        // Read file content
-        const response = await fetch(file.uri);
-        const content = await response.text();
+      const file = result.assets[0];
+      const response = await fetch(file.uri);
+      const content = await response.text();
 
-        setSelectedFile({
-          name: file.name,
-          content: content,
+      form.setValue("fileName", file.name, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+      form.setValue("fileContent", content, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+
+      if (!String(form.getValues("name") ?? "").trim() && file.name) {
+        form.setValue("name", file.name.replace(/\.gpx$/i, ""), {
+          shouldDirty: true,
+          shouldTouch: true,
+          shouldValidate: true,
         });
-
-        // Auto-fill name from filename if empty
-        if (!name && file.name) {
-          const fileName = file.name.replace(/\.gpx$/i, "");
-          setName(fileName);
-        }
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to read file");
+      form.setError("root", {
+        message: getErrorMessage(error),
+      });
     }
   };
 
-  const handleUpload = () => {
-    if (!selectedFile) {
-      Alert.alert("Error", "Please select a GPX file");
-      return;
-    }
+  const submitForm = useZodFormSubmit<RouteUploadFormValues>({
+    form,
+    onSubmit: async (values) => {
+      form.clearErrors("root");
 
-    if (!name.trim()) {
-      Alert.alert("Error", "Please enter a route name");
-      return;
-    }
+      try {
+        await uploadMutation.mutateAsync({
+          name: values.name,
+          description: values.description || undefined,
+          activityCategory: values.activityCategory,
+          fileContent: values.fileContent,
+          fileName: values.fileName,
+        });
+      } catch (error) {
+        form.setError("root", {
+          message: getErrorMessage(error),
+        });
+      }
+    },
+  });
 
-    uploadMutation.mutate({
-      name: name.trim(),
-      description: description.trim() || undefined,
-      activityCategory: activityCategory as any,
-      fileContent: selectedFile.content,
-      fileName: selectedFile.name,
-    });
-  };
+  const isSubmitting = uploadMutation.isPending || submitForm.isSubmitting;
 
   return (
     <View className="flex-1 bg-background" testID="route-upload-screen">
-      <ScrollView className="flex-1 p-4">
-        <View className="gap-6">
-          {/* File Picker */}
-          <Card>
-            <CardContent className="p-4">
-              <Label className="mb-2">GPX File</Label>
-              {!selectedFile ? (
-                <Button
-                  onPress={handlePickFile}
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  testID="route-upload-pick-file-button"
-                >
-                  <Upload className="text-foreground" size={20} />
-                  <Text>Choose GPX File</Text>
-                </Button>
-              ) : (
-                <View className="flex-row items-center gap-2 p-3 bg-muted rounded-lg">
-                  <FileText className="text-foreground" size={20} />
-                  <Text className="flex-1" numberOfLines={1}>
-                    {selectedFile.name}
-                  </Text>
-                  <CheckCircle className="text-green-500" size={20} />
-                  <Button
-                    onPress={handlePickFile}
-                    variant="ghost"
-                    size="sm"
-                    testID="route-upload-change-file-button"
-                  >
-                    <Text className="text-xs">Change</Text>
-                  </Button>
-                </View>
-              )}
-              <Text className="text-xs text-muted-foreground mt-2">
-                Select a GPX file from your device
-              </Text>
-            </CardContent>
-          </Card>
+      <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
+        <Form {...form}>
+          <View className="gap-6">
+            <Card>
+              <CardContent className="p-4">
+                <FormField
+                  control={form.control}
+                  name="fileName"
+                  render={() => (
+                    <FormItem>
+                      <FormLabel>GPX File *</FormLabel>
+                      <FormControl>
+                        {!selectedFileName ? (
+                          <Button
+                            onPress={handlePickFile}
+                            variant="outline"
+                            className="w-full justify-start gap-2"
+                            testID="route-upload-pick-file-button"
+                          >
+                            <Upload className="text-foreground" size={20} />
+                            <Text>Choose GPX File</Text>
+                          </Button>
+                        ) : (
+                          <View className="flex-row items-center gap-2 rounded-lg bg-muted p-3">
+                            <FileText className="text-foreground" size={20} />
+                            <Text className="flex-1" numberOfLines={1}>
+                              {selectedFileName}
+                            </Text>
+                            <CheckCircle className="text-green-500" size={20} />
+                            <Button
+                              onPress={handlePickFile}
+                              variant="ghost"
+                              size="sm"
+                              testID="route-upload-change-file-button"
+                            >
+                              <Text className="text-xs">Change</Text>
+                            </Button>
+                          </View>
+                        )}
+                      </FormControl>
+                      <FormDescription>Select a GPX file from your device</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
 
-          {/* Route Details */}
-          <Card>
-            <CardContent className="p-4 gap-4">
-              <View>
-                <Label className="mb-2">Route Name *</Label>
-                <Input
-                  value={name}
-                  onChangeText={setName}
+            <Card>
+              <CardContent className="gap-4 p-4">
+                <FormTextField
+                  control={form.control}
+                  label="Route Name"
+                  name="name"
                   placeholder="e.g., Morning Hill Climb"
-                  maxLength={100}
-                  testID="route-upload-name-input"
+                  required
+                  testId="route-upload-name-input"
                 />
-              </View>
 
-              <View>
-                <Label className="mb-2">Activity Category *</Label>
-                <Select
-                  value={createOption(activityCategory)}
-                  onValueChange={(option: { value: string; label: string } | undefined) => {
-                    if (option) setActivityCategory(option.value);
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select activity category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {ACTIVITY_CATEGORIES.map((category) => (
-                        <SelectItem
-                          key={category.value}
-                          value={category.value}
-                          label={category.label}
-                        />
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </View>
+                <FormSelectField
+                  control={form.control}
+                  label="Activity Category"
+                  name="activityCategory"
+                  options={routeUploadActivityCategoryOptions.map((option) => ({ ...option }))}
+                  placeholder="Select activity category"
+                  required
+                />
 
-              <View>
-                <Label className="mb-2">Description (Optional)</Label>
-                <Textarea
-                  value={description}
-                  onChangeText={setDescription}
+                <FormTextareaField
+                  control={form.control}
+                  label="Description"
+                  name="description"
                   placeholder="Add notes about this route..."
+                  description="Optional"
                   className="min-h-[80px]"
-                  maxLength={1000}
-                  multiline
                 />
-              </View>
-            </CardContent>
-          </Card>
 
-          {/* Info Card */}
-          <Card className="bg-muted/50">
-            <CardContent className="p-4">
-              <Text className="text-sm text-muted-foreground">
-                💡 The route will be analyzed to calculate distance, elevation gain, and create a
-                preview map. You can attach this route to activity plans later.
-              </Text>
-            </CardContent>
-          </Card>
-        </View>
+                {form.formState.errors.root?.message ? (
+                  <Alert icon={AlertCircle} variant="destructive" testID="route-upload-root-error">
+                    <AlertDescription>{form.formState.errors.root.message}</AlertDescription>
+                  </Alert>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-muted/50">
+              <CardContent className="p-4">
+                <Text className="text-sm text-muted-foreground">
+                  💡 The route will be analyzed to calculate distance, elevation gain, and create a
+                  preview map. You can attach this route to activity plans later.
+                </Text>
+              </CardContent>
+            </Card>
+          </View>
+        </Form>
       </ScrollView>
 
-      {/* Bottom Action Bar */}
-      <View className="p-4 border-t border-border bg-card">
+      <View className="border-t border-border bg-card p-4">
         <View className="flex-row gap-3">
           <Button
             variant="outline"
             className="flex-1"
-            onPress={() => router.back()}
-            disabled={uploadMutation.isPending}
+            onPress={() => {
+              form.clearErrors("root");
+              router.back();
+            }}
+            disabled={isSubmitting}
             testID="route-upload-cancel-button"
           >
             <Text>Cancel</Text>
           </Button>
           <Button
             className="flex-1"
-            onPress={handleUpload}
-            disabled={uploadMutation.isPending || !selectedFile || !name.trim()}
+            onPress={submitForm.handleSubmit}
+            disabled={isSubmitting}
             testID="route-upload-submit-button"
           >
             <Text className="text-primary-foreground">
-              {uploadMutation.isPending ? "Uploading..." : "Upload Route"}
+              {isSubmitting ? "Uploading..." : "Upload Route"}
             </Text>
           </Button>
         </View>

@@ -1,4 +1,4 @@
-import { Activity, Calendar, Heart } from "lucide-react-native";
+import { Activity, Calendar } from "lucide-react-native";
 import React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 
@@ -19,10 +19,6 @@ const TodaysTrainingCard: React.FC<TodaysTrainingCardProps> = ({
   onStartActivity,
   onViewPlan,
 }) => {
-  const isRestDay =
-    todaysActivity?.type?.toLowerCase().includes("rest") ||
-    todaysActivity?.title?.toLowerCase().includes("rest");
-
   // No Activity Scheduled State
   if (!todaysActivity) {
     return (
@@ -39,30 +35,6 @@ const TodaysTrainingCard: React.FC<TodaysTrainingCardProps> = ({
             <Text className="text-foreground text-sm font-semibold">View Plan</Text>
           </TouchableOpacity>
         </View>
-      </View>
-    );
-  }
-
-  // Rest Day State
-  if (isRestDay) {
-    return (
-      <View className="bg-card p-4 rounded-xl shadow-sm">
-        <View className="flex-row items-center mb-2">
-          <View className="bg-green-500/10 p-2 rounded-full mr-2">
-            <Heart className="text-green-500" size={18} />
-          </View>
-          <Text className="text-lg font-bold text-foreground">Rest Day</Text>
-        </View>
-        <Text className="text-sm text-muted-foreground leading-5 mb-3" numberOfLines={2}>
-          {todaysActivity.description ||
-            "Active recovery day. Focus on hydration, nutrition, and light stretching."}
-        </Text>
-        <TouchableOpacity
-          className="border border-border bg-background px-4 py-2 rounded-lg items-center"
-          onPress={onViewPlan}
-        >
-          <Text className="text-foreground text-sm font-semibold">View Full Week</Text>
-        </TouchableOpacity>
       </View>
     );
   }

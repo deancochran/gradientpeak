@@ -22,8 +22,24 @@ function formatEstimatedDuration(seconds: number | null): string | null {
   return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
+function formatCategoryLabel(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return value
+    .split("_")
+    .map((segment) => `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`)
+    .join(" ");
+}
+
+function trimText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 export function isEditableEvent(event: CalendarEvent): boolean {
-  return event.event_type !== "imported";
+  return event.event_type !== "imported" && event.event_type !== "rest_day";
 }
 
 export function isRecurringEvent(event: CalendarEvent): boolean {
@@ -35,7 +51,6 @@ export function getEventTitle(event: CalendarEvent): string {
     return event.activity_plan?.name || event.title || "Planned activity";
   }
 
-  if (event.event_type === "rest_day") return event.title || "Rest day";
   if (event.event_type === "race_target") return event.title || "Race target";
   if (event.event_type === "custom") return event.title || "Custom event";
   if (event.event_type === "imported") return event.title || "Imported event";
@@ -53,39 +68,42 @@ export function getEventPrimaryMeta(event: CalendarEvent): string[] {
     const duration = formatEstimatedDuration(readMetric(event.activity_plan?.estimated_duration));
     const tss = readMetric(event.activity_plan?.estimated_tss);
     return [
-      event.activity_plan?.activity_category
-        ?.split("_")
-        .map((segment) => `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`)
-        .join(" ") ?? null,
+      formatCategoryLabel(event.activity_plan?.activity_category),
       duration,
-      typeof tss === "number" ? `${Math.round(tss)} TSS` : null,
+      duration ? null : typeof tss === "number" ? `${Math.round(tss)} TSS` : null,
     ].filter(Boolean) as string[];
   }
 
-  return [event.notes?.trim() || event.description?.trim() || null].filter(Boolean) as string[];
+  return [];
 }
 
 export function getEventSupportingLine(event: CalendarEvent): string | null {
   if (event.event_type === "planned") {
     return (
-      event.activity_plan?.description?.trim() ||
-      event.notes?.trim() ||
-      event.description?.trim() ||
+      trimText(event.activity_plan?.description) ||
+      trimText(event.notes) ||
+      trimText(event.description) ||
       null
     );
   }
 
-  if (event.all_day) return "All day";
-  if (event.starts_at) return `Starts ${format(new Date(event.starts_at), "h:mm a")}`;
-  return event.notes?.trim() || event.description?.trim() || null;
+  return trimText(event.notes) || trimText(event.description) || null;
 }
 
-export function getEventBadges(event: CalendarEvent): string[] {
+export function getEventStatusLabel(event: CalendarEvent): string | null {
   const completed = event.event_type === "planned" ? isActivityCompleted(event) : false;
-  return [
-    completed ? "Completed" : null,
-    isRecurringEvent(event) ? "Recurring" : null,
-    event.event_type === "imported" ? "Read-only" : null,
-    event.activity_plan?.id ? "From Plan" : null,
-  ].filter(Boolean) as string[];
+
+  if (completed) {
+    return "Completed";
+  }
+
+  if (event.event_type === "imported") {
+    return "Read-only";
+  }
+
+  if (isRecurringEvent(event)) {
+    return "Recurring";
+  }
+
+  return null;
 }

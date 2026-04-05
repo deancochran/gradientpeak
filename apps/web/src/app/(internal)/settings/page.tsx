@@ -1,6 +1,4 @@
 "use client";
-
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   getProfileQuickUpdateDefaults,
   normalizeProfileSettingsView,
@@ -30,10 +28,10 @@ import {
 import { FileInput } from "@repo/ui/components/file-input";
 import { Form, FormSwitchField, FormTextField } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -45,10 +43,12 @@ const webProfileSettingsSchema = profileQuickUpdateSchema.pick({
   is_public: true,
 });
 
-type WebProfileSettingsFormData = Pick<
-  z.output<typeof webProfileSettingsSchema>,
-  "username" | "is_public"
->;
+type WebProfileSettingsFormData = z.output<typeof webProfileSettingsSchema>;
+
+const emptyProfileSettingsValues: z.input<typeof webProfileSettingsSchema> = {
+  username: "",
+  is_public: false,
+};
 
 export default function SettingsPage() {
   // Auth and Profile data
@@ -75,7 +75,6 @@ export default function SettingsPage() {
   const createSignedUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
   // Local state
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
-  const [updating, setUpdating] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const loading = authLoading || profileLoading;
@@ -83,26 +82,27 @@ export default function SettingsPage() {
   // Hooks
   const router = useRouter();
 
-  const form = useForm<z.input<typeof webProfileSettingsSchema>, any, WebProfileSettingsFormData>({
-    resolver: zodResolver(
-      webProfileSettingsSchema as unknown as Parameters<typeof zodResolver>[0],
-    ) as any,
-    defaultValues: {
-      username: "",
-      is_public: false,
-    },
+  const form = useZodForm({
+    schema: webProfileSettingsSchema,
+    defaultValues: emptyProfileSettingsValues,
   });
+  const isProfileDirty = form.formState.isDirty;
 
   // Update form when profile data loads
   useEffect(() => {
     if (profile) {
       const defaults = getProfileQuickUpdateDefaults(normalizeProfileSettingsView(profile));
+
+      if (isProfileDirty) {
+        return;
+      }
+
       form.reset({
         username: defaults.username,
         is_public: defaults.is_public,
       });
     }
-  }, [profile, form]);
+  }, [form, isProfileDirty, profile]);
 
   // Get avatar URL when profile has avatar_url
   const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
@@ -139,21 +139,21 @@ export default function SettingsPage() {
   }, [avatarBlobUrl]);
 
   // Event handlers
-  const onSubmit = async (values: WebProfileSettingsFormData) => {
-    if (!user) return;
+  const submitProfile = useZodFormSubmit<WebProfileSettingsFormData>({
+    form,
+    onSubmit: async (values) => {
+      if (!user) {
+        return;
+      }
 
-    setUpdating(true);
-    try {
       await updateProfileMutation.mutateAsync({
         username: values.username,
         is_public: values.is_public,
       });
-    } catch {
-      // Error handling is done in mutation onError
-    } finally {
-      setUpdating(false);
-    }
-  };
+
+      form.reset(values);
+    },
+  });
 
   const handleAvatarUpload = async (
     files: Array<{ file?: File; name: string; type?: string | null; size?: number | null }>,
@@ -311,7 +311,7 @@ export default function SettingsPage() {
 
             {/* Profile Form */}
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <form onSubmit={submitProfile.handleSubmit} className="space-y-4">
                 <FormTextField
                   control={form.control}
                   description="This is the username that will be displayed on your profile."
@@ -329,8 +329,8 @@ export default function SettingsPage() {
                   testId="profile-visibility-switch"
                 />
 
-                <Button type="submit" disabled={updating}>
-                  {updating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Button type="submit" disabled={submitProfile.isSubmitting || !isProfileDirty}>
+                  {submitProfile.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Update Profile
                 </Button>
               </form>

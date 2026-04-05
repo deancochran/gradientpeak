@@ -19,16 +19,12 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => authState,
 }));
 
-jest.mock("@/lib/supabase/client", () => ({
+jest.mock("@/lib/auth/client", () => ({
   __esModule: true,
-  supabase: {
-    auth: {
-      getUser: jest.fn(async () => ({ data: { user: null } })),
-      refreshSession: jest.fn(async () => undefined),
-      resend: (...args: any[]) => resendMock(...args),
-      verifyOtp: jest.fn(async () => ({ error: null })),
-    },
+  authClient: {
+    sendVerificationEmail: (...args: any[]) => resendMock(...args),
   },
+  getEmailVerificationCallbackUrl: jest.fn(() => "gradientpeak://callback"),
 }));
 
 jest.mock("@repo/ui/components/alert", () => {
@@ -151,8 +147,11 @@ describe("verify screen", () => {
     fireEvent.press(screen.getByTestId("resend-code-button"));
 
     await waitFor(() => {
-      expect(resendMock).toHaveBeenCalledWith({ type: "signup", email: "athlete@example.com" });
-      expect(screen.getByTestId("resend-message").props.children).toBe("Verification code sent!");
+      expect(resendMock).toHaveBeenCalledWith({
+        email: "athlete@example.com",
+        callbackURL: "gradientpeak://callback",
+      });
+      expect(screen.getByTestId("resend-message").props.children).toBe("Verification email sent!");
     });
   });
 

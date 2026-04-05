@@ -34,6 +34,22 @@ function getWeekStartDate(dateOnly: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+function inferWeeklyRestDayCount(week: {
+  week_start_date: string;
+  planned_session_dates: Set<string>;
+}): number {
+  let plannedDayCount = 0;
+
+  for (let index = 0; index < 7; index += 1) {
+    const date = addDaysDateOnlyUtc(week.week_start_date, index);
+    if (week.planned_session_dates.has(date)) {
+      plannedDayCount += 1;
+    }
+  }
+
+  return 7 - plannedDayCount;
+}
+
 /**
  * Aggregates dated planned sessions into stable Monday-based weekly buckets.
  *
@@ -55,6 +71,7 @@ export function aggregateWeeklyPlannedLoad(
   }
 
   const weeksByStartDate = new Map<string, AggregatedWeeklyPlannedLoad>();
+  const plannedDatesByWeekStartDate = new Map<string, Set<string>>();
   let firstWeekStartDate: string | null = null;
   let lastWeekStartDate: string | null = null;
 
@@ -79,12 +96,13 @@ export function aggregateWeeklyPlannedLoad(
       session_tss: [],
     };
 
-    if (session.event_type === "rest_day") {
-      existing.rest_day_count += 1;
-    } else {
+    if (session.event_type === "planned") {
       existing.planned_session_count += 1;
       existing.planned_weekly_tss += session.estimated_tss;
       existing.session_tss.push(session.estimated_tss);
+      const plannedDates = plannedDatesByWeekStartDate.get(weekStartDate) ?? new Set<string>();
+      plannedDates.add(session.scheduled_date);
+      plannedDatesByWeekStartDate.set(weekStartDate, plannedDates);
       if (session.title) {
         existing.session_titles.push(session.title);
       }
@@ -108,7 +126,10 @@ export function aggregateWeeklyPlannedLoad(
       week_end_date: addDaysDateOnlyUtc(weekStartDate, 6),
       planned_weekly_tss: existing?.planned_weekly_tss ?? 0,
       planned_session_count: existing?.planned_session_count ?? 0,
-      rest_day_count: existing?.rest_day_count ?? 0,
+      rest_day_count: inferWeeklyRestDayCount({
+        week_start_date: weekStartDate,
+        planned_session_dates: plannedDatesByWeekStartDate.get(weekStartDate) ?? new Set<string>(),
+      }),
       unresolved_session_count: existing?.unresolved_session_count ?? 0,
       session_titles: existing?.session_titles ?? [],
       session_tss: existing?.session_tss ?? [],

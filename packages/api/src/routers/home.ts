@@ -1,6 +1,14 @@
 import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
-import { TRPCError } from "@trpc/server";
+import {
+  type ActivityRow,
+  type EventRow,
+  type ProfileTrainingSettingsRow,
+  type PublicActivityPlansRow,
+  schema,
+  type TrainingPlanRow,
+} from "@repo/db";
+import { and, asc, eq, gte, isNotNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import {
@@ -17,6 +25,100 @@ const upcomingDaysSchema = z.object({
   days: z.number().min(1).max(14).default(7),
 });
 
+type ActivitySummaryRow = Pick<
+  ActivityRow,
+  | "id"
+  | "type"
+  | "started_at"
+  | "finished_at"
+  | "duration_seconds"
+  | "moving_seconds"
+  | "distance_meters"
+  | "avg_heart_rate"
+  | "max_heart_rate"
+  | "avg_power"
+  | "max_power"
+  | "avg_speed_mps"
+  | "max_speed_mps"
+  | "normalized_power"
+  | "normalized_speed_mps"
+  | "normalized_graded_speed_mps"
+>;
+
+type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
+
+type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings">;
+
+type PlannedActivityRow = Pick<EventRow, "id" | "notes"> & {
+  starts_at: Date;
+  activity_plan: PublicActivityPlansRow | null;
+  scheduled_date: string;
+};
+
+async function getProfileTrainingSettings(db: ReturnType<typeof getRequiredDb>, profileId: string) {
+  const result = await db.execute(sql<ProfileTrainingSettingsSqlRow>`
+    select settings
+    from profile_training_settings
+    where profile_id = ${profileId}
+    limit 1
+  `);
+
+  return ((result as unknown as { rows: ProfileTrainingSettingsSqlRow[] }).rows ?? [])[0] ?? null;
+}
+
+async function getAccessibleTrainingPlan(
+  db: ReturnType<typeof getRequiredDb>,
+  input: { planId: string; profileId: string },
+): Promise<DashboardTrainingPlanRow | null> {
+  const result = await db.execute(sql<DashboardTrainingPlanRow>`
+    select id, name, description, structure
+    from training_plans
+    where id = ${input.planId}
+      and (
+        profile_id = ${input.profileId}
+        or is_system_template = true
+        or template_visibility = 'public'
+      )
+    limit 1
+  `);
+
+  return ((result as unknown as { rows: DashboardTrainingPlanRow[] }).rows ?? [])[0] ?? null;
+}
+
+async function listPlannedActivitiesInRange(
+  db: ReturnType<typeof getRequiredDb>,
+  input: {
+    profileId: string;
+    startsAtGte: Date;
+    startsAtLt: Date;
+  },
+): Promise<PlannedActivityRow[]> {
+  const rows = await db
+    .select({
+      id: schema.events.id,
+      starts_at: schema.events.starts_at,
+      notes: schema.events.notes,
+      activity_plan: schema.activityPlans,
+    })
+    .from(schema.events)
+    .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+    .where(
+      and(
+        eq(schema.events.profile_id, input.profileId),
+        eq(schema.events.event_type, "planned_activity"),
+        gte(schema.events.starts_at, input.startsAtGte),
+        lt(schema.events.starts_at, input.startsAtLt),
+      ),
+    )
+    .orderBy(asc(schema.events.starts_at));
+
+  return rows.map((row) => ({
+    ...row,
+    activity_plan: (row.activity_plan as PublicActivityPlansRow | null) ?? null,
+    scheduled_date: row.starts_at.toISOString().split("T")[0] ?? "",
+  }));
+}
+
 export const homeRouter = createTRPCRouter({
   /**
    * getDashboard - Optimized endpoint for home screen
@@ -31,58 +133,45 @@ export const homeRouter = createTRPCRouter({
     .input(upcomingDaysSchema.optional())
     .query(async ({ ctx, input }) => {
       const upcomingDays = input?.days || 7;
-      const estimationStore = createEventReadRepository(getRequiredDb(ctx));
+      const db = getRequiredDb(ctx);
+      const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const { data: profile, error: profileError } = await ctx.supabase
-        .from("profiles")
-        .select("dob, gender")
-        .eq("id", userId)
-        .maybeSingle();
+      const [profile] = await db
+        .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
+        .from(schema.profiles)
+        .where(eq(schema.profiles.id, userId))
+        .limit(1);
 
-      if (profileError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: profileError.message,
-        });
-      }
-
-      const userAge = calculateAge(profile?.dob ?? null);
+      const userAge = calculateAge(profile?.dob?.toISOString() ?? null);
       const userGender =
         profile?.gender === "male" || profile?.gender === "female" ? profile.gender : null;
       const effectiveAge = featureFlags.personalizationAgeConstants ? userAge : undefined;
       const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
 
       // --- 1. Fetch Active Plan & Settings ---
-      const [
-        { data: nextPlannedEvent, error: nextPlannedEventError },
-        { data: profileSettingsData },
-      ] = await Promise.all([
-        ctx.supabase
-          .from("events")
-          .select("training_plan_id, starts_at")
-          .eq("profile_id", userId)
-          .eq("event_type", "planned_activity")
-          .not("training_plan_id", "is", null)
-          .gte("starts_at", today.toISOString())
-          .order("starts_at", { ascending: true })
+      const [nextPlannedEvent, profileSettingsData] = await Promise.all([
+        db
+          .select({
+            training_plan_id: schema.events.training_plan_id,
+            starts_at: schema.events.starts_at,
+          })
+          .from(schema.events)
+          .where(
+            and(
+              eq(schema.events.profile_id, userId),
+              eq(schema.events.event_type, "planned_activity"),
+              gte(schema.events.starts_at, today),
+              isNotNull(schema.events.training_plan_id),
+            ),
+          )
+          .orderBy(asc(schema.events.starts_at))
           .limit(1)
-          .maybeSingle(),
-        ctx.supabase
-          .from("profile_training_settings")
-          .select("settings")
-          .eq("profile_id", userId)
-          .maybeSingle(),
+          .then((rows) => rows[0] ?? null),
+        getProfileTrainingSettings(db, userId),
       ]);
-
-      if (nextPlannedEventError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: nextPlannedEventError.message,
-        });
-      }
 
       let plan: {
         id: string;
@@ -92,21 +181,10 @@ export const homeRouter = createTRPCRouter({
       } | null = null;
 
       if (nextPlannedEvent?.training_plan_id) {
-        const { data: activePlan, error: activePlanError } = await ctx.supabase
-          .from("training_plans")
-          .select("id, name, description, structure")
-          .eq("id", nextPlannedEvent.training_plan_id)
-          .or(`profile_id.eq.${userId},is_system_template.eq.true,template_visibility.eq.public`)
-          .maybeSingle();
-
-        if (activePlanError) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: activePlanError.message,
-          });
-        }
-
-        plan = activePlan;
+        plan = await getAccessibleTrainingPlan(db, {
+          planId: nextPlannedEvent.training_plan_id,
+          profileId: userId,
+        });
       }
 
       const planStructure = (plan?.structure as any) ?? null;
@@ -139,33 +217,47 @@ export const homeRouter = createTRPCRouter({
 
       // --- 3. Fetch Activities (Actual) ---
       // Fetching enough history for trends and current week stats
-      const { data: activities, error: activitiesError } = await ctx.supabase
-        .from("activities")
-        .select("*")
-        .eq("profile_id", userId)
-        .gte("started_at", historyStart.toISOString())
-        .lte("started_at", today.toISOString()) // Up to now
-        .order("started_at", { ascending: true });
-
-      if (activitiesError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: activitiesError.message,
-        });
-      }
+      const activities: ActivitySummaryRow[] = await db
+        .select({
+          id: schema.activities.id,
+          type: schema.activities.type,
+          started_at: schema.activities.started_at,
+          finished_at: schema.activities.finished_at,
+          duration_seconds: schema.activities.duration_seconds,
+          moving_seconds: schema.activities.moving_seconds,
+          distance_meters: schema.activities.distance_meters,
+          avg_heart_rate: schema.activities.avg_heart_rate,
+          max_heart_rate: schema.activities.max_heart_rate,
+          avg_power: schema.activities.avg_power,
+          max_power: schema.activities.max_power,
+          avg_speed_mps: schema.activities.avg_speed_mps,
+          max_speed_mps: schema.activities.max_speed_mps,
+          normalized_power: schema.activities.normalized_power,
+          normalized_speed_mps: schema.activities.normalized_speed_mps,
+          normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
+        })
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, userId),
+            gte(schema.activities.started_at, historyStart),
+            lte(schema.activities.started_at, today),
+          ),
+        )
+        .orderBy(asc(schema.activities.started_at));
 
       const { byActivityId: derivedActivityMap, byDate: tssByDate } =
         await buildDynamicStressSeries({
-          store: createActivityAnalysisStore(getRequiredDb(ctx)),
+          store: createActivityAnalysisStore(db),
           profileId: userId,
-          activities: activities || [],
+          activities,
         });
 
       const rollingTrainingQuality =
-        featureFlags.personalizationTrainingQuality && activities
+        featureFlags.personalizationTrainingQuality && activities.length > 0
           ? calculateRollingTrainingQuality(
-              activities.map((activity: any) => ({
-                started_at: activity.started_at,
+              activities.map((activity) => ({
+                started_at: activity.started_at.toISOString(),
                 tss: derivedActivityMap.get(activity.id)?.tss ?? null,
                 intensity_factor: derivedActivityMap.get(activity.id)?.intensity_factor ?? null,
               })),
@@ -175,46 +267,24 @@ export const homeRouter = createTRPCRouter({
       // --- 4. Fetch Planned Activities (Future & Current Week) ---
       // We need planned activities for the Schedule (Future) AND for the Weekly Summary (Past days of this week)
       // So we fetch from startOfWeek to scheduleEnd
-      const { data: plannedActivitiesRaw, error: plannedError } = await ctx.supabase
-        .from("events")
-        .select(
-          `
-          id,
-          starts_at,
-          notes,
-          activity_plan:activity_plans (*)
-        `,
-        )
-        .eq("profile_id", userId)
-        .eq("event_type", "planned_activity")
-        .gte("starts_at", startOfWeek.toISOString())
-        .lt("starts_at", scheduleEnd.toISOString())
-        .order("starts_at", { ascending: true });
-
-      if (plannedError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: plannedError.message,
-        });
-      }
-
-      const plannedActivities = (plannedActivitiesRaw || []).map((planned: any) => ({
-        ...planned,
-        scheduled_date: planned.starts_at?.split("T")[0] ?? "",
-      }));
+      const plannedActivities = await listPlannedActivitiesInRange(db, {
+        profileId: userId,
+        startsAtGte: startOfWeek,
+        startsAtLt: scheduleEnd,
+      });
 
       // --- 5. Process Estimations for Planned Activities ---
-      let activitiesWithEstimations = plannedActivities || [];
+      let activitiesWithEstimations = plannedActivities;
       if (activitiesWithEstimations.length > 0) {
         const plans = activitiesWithEstimations
-          .map((pa: any) => pa.activity_plan)
+          .map((pa) => pa.activity_plan)
           .filter((p): p is NonNullable<typeof p> => !!p);
 
         if (plans.length > 0) {
           const plansWithEstimation = await addEstimationToPlans(plans, estimationStore, userId);
-          const plansMap = new Map(plansWithEstimation.map((p: any) => [p.id, p]));
+          const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
 
-          activitiesWithEstimations = activitiesWithEstimations.map((pa: any) => ({
+          activitiesWithEstimations = activitiesWithEstimations.map((pa) => ({
             ...pa,
             activity_plan:
               pa.activity_plan && plansMap.get(pa.activity_plan.id)
@@ -319,7 +389,9 @@ export const homeRouter = createTRPCRouter({
       // Iterate backwards from yesterday
       let streak = 0;
       const uniqueActivityDays = new Set(
-        activities?.filter((a: any) => a.started_at).map((a: any) => a.started_at!.split("T")[0]),
+        activities
+          .map((activity) => activity.started_at.toISOString().split("T")[0])
+          .filter(Boolean),
       );
       // Check today
       if (uniqueActivityDays.has(today.toISOString().split("T")[0])) {
@@ -339,19 +411,21 @@ export const homeRouter = createTRPCRouter({
 
       // --- 8. Weekly Summary (Planned vs Actual) ---
       // Actuals
-      const weeklyActuals =
-        activities?.filter((a: any) => {
-          const d = new Date(a.started_at);
-          return d >= startOfWeek && d <= endOfWeek;
-        }) || [];
+      const weeklyActuals = activities.filter((activity) => {
+        const d = new Date(activity.started_at);
+        return d >= startOfWeek && d <= endOfWeek;
+      });
 
       const weeklyActualStats = {
         distance:
-          weeklyActuals.reduce((sum: any, a: any) => sum + (a.distance_meters || 0), 0) / 1000, // km
-        duration: weeklyActuals.reduce((sum: any, a: any) => sum + (a.duration_seconds || 0), 0),
+          weeklyActuals.reduce((sum, activity) => sum + (activity.distance_meters || 0), 0) / 1000,
+        duration: weeklyActuals.reduce(
+          (sum, activity) => sum + (activity.duration_seconds || 0),
+          0,
+        ),
         tss: Math.round(
           weeklyActuals.reduce(
-            (sum: any, a: any) => sum + (derivedActivityMap.get(a.id)?.tss || 0),
+            (sum, activity) => sum + (derivedActivityMap.get(activity.id)?.tss || 0),
             0,
           ),
         ),
@@ -387,8 +461,8 @@ export const homeRouter = createTRPCRouter({
       const workloadWindowStart = new Date(today);
       workloadWindowStart.setDate(today.getDate() - 27);
       const workload = buildWorkloadEnvelopes(
-        (activities || []).map((activity: any) => ({
-          started_at: activity.started_at,
+        activities.map((activity) => ({
+          started_at: activity.started_at.toISOString(),
           tss: derivedActivityMap.get(activity.id)?.tss ?? null,
         })),
         workloadWindowStart,
@@ -403,8 +477,8 @@ export const homeRouter = createTRPCRouter({
       plannedActivities?.forEach((pa) => {
         if (!pa.scheduled_date) return;
         const paDate = pa.scheduled_date.split("T")[0];
-        const hasActivity = activities?.some(
-          (a) => a.started_at && a.started_at.split("T")[0] === paDate,
+        const hasActivity = activities.some(
+          (activity) => activity.started_at.toISOString().split("T")[0] === paDate,
         );
         if (hasActivity) {
           completedActivityMap.set(pa.id, true);
@@ -437,33 +511,19 @@ export const homeRouter = createTRPCRouter({
       projectionEnd.setDate(today.getDate() + projectionDays);
 
       // Fetch future planned activities for projection
-      const { data: futureActivitiesRaw } = await ctx.supabase
-        .from("events")
-        .select(
-          `
-          id,
-          starts_at,
-          activity_plan:activity_plans (*)
-        `,
-        )
-        .eq("profile_id", userId)
-        .eq("event_type", "planned_activity")
-        .gte("starts_at", today.toISOString())
-        .lt("starts_at", projectionEnd.toISOString())
-        .order("starts_at", { ascending: true });
-
-      const futureActivities = (futureActivitiesRaw || []).map((planned: any) => ({
-        ...planned,
-        scheduled_date: planned.starts_at?.split("T")[0] ?? "",
-      }));
+      const futureActivities = await listPlannedActivitiesInRange(db, {
+        profileId: userId,
+        startsAtGte: today,
+        startsAtLt: projectionEnd,
+      });
 
       const projectedFitness = [];
 
       // Process future activities with estimations
-      let futureWithEstimations = futureActivities || [];
+      let futureWithEstimations = futureActivities;
       if (futureWithEstimations.length > 0) {
         const futurePlans = futureWithEstimations
-          .map((pa: any) => pa.activity_plan)
+          .map((pa) => pa.activity_plan)
           .filter((p): p is NonNullable<typeof p> => !!p);
 
         if (futurePlans.length > 0) {
@@ -472,9 +532,9 @@ export const homeRouter = createTRPCRouter({
             estimationStore,
             userId,
           );
-          const futurePlansMap = new Map(futurePlansWithEstimation.map((p: any) => [p.id, p]));
+          const futurePlansMap = new Map(futurePlansWithEstimation.map((p) => [p.id, p]));
 
-          futureWithEstimations = futureWithEstimations.map((pa: any) => ({
+          futureWithEstimations = futureWithEstimations.map((pa) => ({
             ...pa,
             activity_plan:
               pa.activity_plan && futurePlansMap.get(pa.activity_plan.id)

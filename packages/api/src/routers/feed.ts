@@ -1,4 +1,6 @@
+import { type PublicActivitiesRow, type PublicCommentsRow, schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
@@ -55,6 +57,106 @@ const feedItemSchema = z.object({
   limit: z.number().min(1).max(50).default(20),
 });
 
+type FeedActivityRow = Pick<
+  PublicActivitiesRow,
+  | "id"
+  | "profile_id"
+  | "name"
+  | "type"
+  | "distance_meters"
+  | "duration_seconds"
+  | "moving_seconds"
+  | "avg_heart_rate"
+  | "max_heart_rate"
+  | "avg_power"
+  | "avg_cadence"
+  | "elevation_gain_meters"
+  | "calories"
+  | "polyline"
+  | "likes_count"
+  | "is_private"
+> & {
+  started_at: PublicActivitiesRow["started_at"] | string;
+  finished_at: PublicActivitiesRow["finished_at"] | string;
+  created_at: PublicActivitiesRow["created_at"] | string;
+  profile_username: string | null;
+  profile_avatar_url: string | null;
+};
+
+type FeedActivityDetailRow = FeedActivityRow &
+  Pick<
+    PublicActivitiesRow,
+    | "notes"
+    | "max_power"
+    | "max_cadence"
+    | "normalized_power"
+    | "elevation_loss_meters"
+    | "map_bounds"
+  > & {
+    viewer_follows_owner: boolean;
+  };
+
+type CommentCountRow = {
+  entity_id: string;
+  comments_count: number;
+};
+
+type ActivityCommentRow = Pick<PublicCommentsRow, "id" | "content" | "profile_id"> & {
+  created_at: PublicCommentsRow["created_at"] | string;
+  profile_username: string | null;
+  profile_avatar_url: string | null;
+};
+
+function toIsoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function mapFeedActivity(
+  activity: FeedActivityRow,
+  options: {
+    commentCounts: Map<string, number>;
+    derivedMap: Map<string, FeedActivity["derived"]>;
+    likedActivityIds: Set<string>;
+  },
+): FeedActivity {
+  return {
+    id: activity.id,
+    profile_id: activity.profile_id,
+    name: activity.name,
+    type: activity.type,
+    started_at: toIsoString(activity.started_at),
+    finished_at: toIsoString(activity.finished_at),
+    distance_meters: activity.distance_meters,
+    duration_seconds: activity.duration_seconds,
+    moving_seconds: activity.moving_seconds,
+    avg_heart_rate: activity.avg_heart_rate,
+    max_heart_rate: activity.max_heart_rate,
+    avg_power: activity.avg_power,
+    avg_cadence: activity.avg_cadence,
+    elevation_gain_meters: activity.elevation_gain_meters,
+    calories: activity.calories,
+    polyline: activity.polyline,
+    likes_count: activity.likes_count ?? 0,
+    comments_count: options.commentCounts.get(activity.id) ?? 0,
+    is_private: activity.is_private,
+    created_at: toIsoString(activity.created_at),
+    profile: {
+      id: activity.profile_id,
+      username: activity.profile_username,
+      avatar_url: activity.profile_avatar_url,
+    },
+    has_liked: options.likedActivityIds.has(activity.id),
+    derived: options.derivedMap.get(activity.id) ?? null,
+  };
+}
+
+function buildUuidInList(values: string[]) {
+  return sql.join(
+    values.map((value) => sql`${value}::uuid`),
+    sql`, `,
+  );
+}
+
 export const feedRouter = createTRPCRouter({
   /**
    * getFeed - Get paginated activity feed
@@ -67,147 +169,104 @@ export const feedRouter = createTRPCRouter({
    */
   getFeed: protectedProcedure.input(feedItemSchema).query(async ({ ctx, input }) => {
     const userId = ctx.session.user.id;
+    const db = getRequiredDb(ctx);
     const limit = input.limit ?? 20;
     const cursor = input.cursor;
 
     try {
-      // First, get IDs of users the current user follows
-      const { data: followingData, error: followingError } = await (ctx.supabase as any)
-        .from("follows")
-        .select("following_id")
-        .eq("follower_id", userId)
-        .eq("status", "accepted");
+      const cursorFilter = cursor ? sql`and a.started_at < ${new Date(cursor)}` : sql``;
 
-      if (followingError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: followingError.message,
-        });
-      }
-
-      // Get the IDs of followed users + own ID
-      const followedUserIds = (followingData || []).map((f: any) => f.following_id);
-      const allRelevantUserIds = [...followedUserIds, userId];
-
-      // Build the query for activities
-      let query = (ctx.supabase as any)
-        .from("activities")
-        .select(
-          `
-            id,
-            profile_id,
-            name,
-            type,
-            started_at,
-            finished_at,
-            distance_meters,
-            duration_seconds,
-            moving_seconds,
-            avg_heart_rate,
-            max_heart_rate,
-            avg_power,
-            avg_cadence,
-            elevation_gain_meters,
-            calories,
-            polyline,
-            likes_count,
-            is_private,
-            created_at,
-            profile:profiles!activities_profile_id_fkey(
-              id,
-              username,
-              avatar_url
+      const activitiesResult = await db.execute(sql<FeedActivityRow>`
+        select
+          a.id,
+          a.profile_id,
+          a.name,
+          a.type,
+          a.started_at,
+          a.finished_at,
+          a.distance_meters,
+          a.duration_seconds,
+          a.moving_seconds,
+          a.avg_heart_rate,
+          a.max_heart_rate,
+          a.avg_power,
+          a.avg_cadence,
+          a.elevation_gain_meters,
+          a.calories,
+          a.polyline,
+          a.likes_count,
+          a.is_private,
+          a.created_at,
+          p.username as profile_username,
+          p.avatar_url as profile_avatar_url
+        from activities a
+        left join profiles p on p.id = a.profile_id
+        where a.is_private = false
+          and (
+            a.profile_id = ${userId}::uuid
+            or exists (
+              select 1
+              from follows f
+              where f.follower_id = ${userId}::uuid
+                and f.following_id = a.profile_id
+                and f.status = 'accepted'
             )
-          `,
-        )
-        .in("profile_id", allRelevantUserIds)
-        .eq("is_private", false)
-        .order("started_at", { ascending: false })
-        .limit(limit + 1); // Fetch one extra to determine if there are more
+          )
+          ${cursorFilter}
+        order by a.started_at desc
+        limit ${limit + 1}
+      `);
 
-      // Apply cursor if provided
-      if (cursor) {
-        const cursorDate = new Date(cursor);
-        query = query.lt("started_at", cursorDate.toISOString());
-      }
-
-      const { data: activities, error: activitiesError } = await query;
-
-      if (activitiesError) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: activitiesError.message,
-        });
-      }
+      const activities = activitiesResult.rows as FeedActivityRow[];
 
       // Get user's likes for these activities
-      const activityIds = (activities || []).map((a: any) => a.id);
-      let userLikes: string[] = [];
+      const activityIds = activities.map((activity) => activity.id);
+      let likedActivityIds = new Set<string>();
 
       if (activityIds.length > 0) {
-        const { data: likesData } = await (ctx.supabase as any)
-          .from("likes")
-          .select("entity_id")
-          .eq("profile_id", userId)
-          .eq("entity_type", "activity")
-          .in("entity_id", activityIds);
+        const likesRows = await db
+          .select({ entity_id: schema.likes.entity_id })
+          .from(schema.likes)
+          .where(
+            and(
+              eq(schema.likes.profile_id, userId),
+              eq(schema.likes.entity_type, "activity"),
+              inArray(schema.likes.entity_id, activityIds),
+            ),
+          );
 
-        userLikes = (likesData || []).map((l: any) => l.entity_id);
+        likedActivityIds = new Set(likesRows.map((row) => row.entity_id));
       }
 
       const commentCounts = new Map<string, number>();
 
       if (activityIds.length > 0) {
-        const { data: commentRows } = await (ctx.supabase as any)
-          .from("comments")
-          .select("entity_id")
-          .eq("entity_type", "activity")
-          .in("entity_id", activityIds);
+        const commentRows = await db.execute(sql<CommentCountRow>`
+          select c.entity_id, count(*)::int as comments_count
+          from comments c
+          where c.entity_type = 'activity'
+            and c.entity_id in (${buildUuidInList(activityIds)})
+          group by c.entity_id
+        `);
 
-        for (const comment of commentRows || []) {
-          if (!comment.entity_id) continue;
-          commentCounts.set(comment.entity_id, (commentCounts.get(comment.entity_id) ?? 0) + 1);
+        for (const comment of commentRows.rows as CommentCountRow[]) {
+          commentCounts.set(comment.entity_id, comment.comments_count);
         }
       }
 
       const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(getRequiredDb(ctx)),
+        store: createActivityAnalysisStore(db),
         profileId: userId,
-        activities: (activities || []) as any,
+        activities: activities as any,
       });
 
-      // Transform the data
-      let feedItems: FeedActivity[] = (activities || []).map((a: any) => ({
-        id: a.id,
-        profile_id: a.profile_id,
-        name: a.name,
-        type: a.type,
-        started_at: a.started_at,
-        finished_at: a.finished_at,
-        distance_meters: a.distance_meters,
-        duration_seconds: a.duration_seconds,
-        moving_seconds: a.moving_seconds,
-        avg_heart_rate: a.avg_heart_rate,
-        max_heart_rate: a.max_heart_rate,
-        avg_power: a.avg_power,
-        avg_cadence: a.avg_cadence,
-        elevation_gain_meters: a.elevation_gain_meters,
-        calories: a.calories,
-        polyline: a.polyline,
-        likes_count: a.likes_count || 0,
-        comments_count: commentCounts.get(a.id) ?? 0,
-        is_private: a.is_private,
-        created_at: a.created_at,
-        profile: a.profile
-          ? {
-              id: a.profile.id,
-              username: a.profile.username,
-              avatar_url: a.profile.avatar_url,
-            }
-          : undefined,
-        has_liked: userLikes.includes(a.id),
-        derived: derivedMap.get(a.id) ?? null,
-      }));
+      let feedItems = activities.map((activity) =>
+        mapFeedActivity(activity, {
+          commentCounts,
+          derivedMap,
+          likedActivityIds,
+        }),
+      );
 
       // Determine if there are more items
       let nextCursor: string | null = null;
@@ -247,130 +306,144 @@ export const feedRouter = createTRPCRouter({
     .input(z.object({ activityId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
+      const db = getRequiredDb(ctx);
 
       try {
-        // First, get the activity to check authorization
-        const { data: activity, error: activityError } = await (ctx.supabase as any)
-          .from("activities")
-          .select("profile_id, is_private")
-          .eq("id", input.activityId)
-          .single();
+        const activityResult = await db.execute(sql<FeedActivityDetailRow>`
+          select
+            a.id,
+            a.profile_id,
+            a.name,
+            a.type,
+            a.notes,
+            a.started_at,
+            a.finished_at,
+            a.distance_meters,
+            a.duration_seconds,
+            a.moving_seconds,
+            a.avg_heart_rate,
+            a.max_heart_rate,
+            a.avg_power,
+            a.max_power,
+            a.avg_cadence,
+            a.max_cadence,
+            a.normalized_power,
+            a.elevation_gain_meters,
+            a.elevation_loss_meters,
+            a.calories,
+            a.polyline,
+            a.map_bounds,
+            a.likes_count,
+            a.is_private,
+            a.created_at,
+            p.username as profile_username,
+            p.avatar_url as profile_avatar_url,
+            exists (
+              select 1
+              from follows f
+              where f.follower_id = ${userId}::uuid
+                and f.following_id = a.profile_id
+                and f.status = 'accepted'
+            ) as viewer_follows_owner
+          from activities a
+          left join profiles p on p.id = a.profile_id
+          where a.id = ${input.activityId}::uuid
+          limit 1
+        `);
 
-        if (activityError || !activity) {
+        const activity = (activityResult.rows as FeedActivityDetailRow[])[0];
+
+        if (!activity) {
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Activity not found",
           });
         }
 
-        // Check authorization: owner, public, or following
         const isActivityOwner = activity.profile_id === userId;
 
-        if (!isActivityOwner && !activity.is_private) {
-          // Activity is public - allow access
-        } else if (!isActivityOwner && activity.is_private) {
-          // Activity is private - check if user follows the owner
-          const { data: followData } = await (ctx.supabase as any)
-            .from("follows")
-            .select("follower_id")
-            .eq("follower_id", userId)
-            .eq("following_id", activity.profile_id)
-            .eq("status", "accepted")
-            .maybeSingle();
-
-          if (!followData) {
-            throw new TRPCError({
-              code: "FORBIDDEN",
-              message: "You don't have permission to view this activity",
-            });
-          }
-        }
-
-        // Get the full activity data after authorization passes
-        const { data: fullActivity, error } = await (ctx.supabase as any)
-          .from("activities")
-          .select(
-            `
-            id,
-            profile_id,
-            name,
-            type,
-            notes,
-            started_at,
-            finished_at,
-            distance_meters,
-            duration_seconds,
-            moving_seconds,
-            avg_heart_rate,
-            max_heart_rate,
-            avg_power,
-            max_power,
-            avg_cadence,
-            max_cadence,
-            normalized_power,
-            elevation_gain_meters,
-            elevation_loss_meters,
-            calories,
-            polyline,
-            map_bounds,
-            likes_count,
-            is_private,
-            created_at,
-            profile:profiles!activities_profile_id_fkey(
-              id,
-              username,
-              avatar_url
-            )
-          `,
-          )
-          .eq("id", input.activityId)
-          .single();
-
-        if (error) {
+        if (activity.is_private && !isActivityOwner && !activity.viewer_follows_owner) {
           throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Activity not found",
+            code: "FORBIDDEN",
+            message: "You don't have permission to view this activity",
           });
         }
 
-        // Check if user has liked this activity
-        const { data: likeData } = await (ctx.supabase as any)
-          .from("likes")
-          .select("id")
-          .eq("profile_id", userId)
-          .eq("entity_id", input.activityId)
-          .eq("entity_type", "activity")
-          .maybeSingle();
-
-        // Get comments for this activity
-        const { data: commentsData } = await (ctx.supabase as any)
-          .from("comments")
-          .select(
-            `
-            id,
-            content,
-            created_at,
-            profile:profiles(
-              id,
-              username,
-              avatar_url
+        const [likeRows, commentsResult] = await Promise.all([
+          db
+            .select({ id: schema.likes.id })
+            .from(schema.likes)
+            .where(
+              and(
+                eq(schema.likes.profile_id, userId),
+                eq(schema.likes.entity_id, input.activityId),
+                eq(schema.likes.entity_type, "activity"),
+              ),
             )
-          `,
-          )
-          .eq("entity_id", input.activityId)
-          .eq("entity_type", "activity")
-          .order("created_at", { ascending: true });
+            .limit(1),
+          db.execute(sql<ActivityCommentRow>`
+            select
+              c.id,
+              c.content,
+              c.created_at,
+              p.id as profile_id,
+              p.username as profile_username,
+              p.avatar_url as profile_avatar_url
+            from comments c
+            left join profiles p on p.id = c.profile_id
+            where c.entity_id = ${input.activityId}::uuid
+              and c.entity_type = 'activity'
+            order by c.created_at asc
+          `),
+        ]);
+
+        const comments = (commentsResult.rows as ActivityCommentRow[]).map((comment) => ({
+          id: comment.id,
+          content: comment.content,
+          created_at: toIsoString(comment.created_at),
+          profile: comment.profile_id
+            ? {
+                id: comment.profile_id,
+                username: comment.profile_username,
+                avatar_url: comment.profile_avatar_url,
+              }
+            : null,
+        }));
 
         return {
-          ...fullActivity,
-          has_liked: !!likeData,
-          comments_count: commentsData?.length ?? 0,
-          comments: (commentsData || []).map((c: any) => ({
-            id: c.id,
-            content: c.content,
-            created_at: c.created_at,
-            profile: c.profile,
-          })),
+          id: activity.id,
+          profile_id: activity.profile_id,
+          name: activity.name,
+          type: activity.type,
+          notes: activity.notes,
+          started_at: toIsoString(activity.started_at),
+          finished_at: toIsoString(activity.finished_at),
+          distance_meters: activity.distance_meters,
+          duration_seconds: activity.duration_seconds,
+          moving_seconds: activity.moving_seconds,
+          avg_heart_rate: activity.avg_heart_rate,
+          max_heart_rate: activity.max_heart_rate,
+          avg_power: activity.avg_power,
+          max_power: activity.max_power,
+          avg_cadence: activity.avg_cadence,
+          max_cadence: activity.max_cadence,
+          normalized_power: activity.normalized_power,
+          elevation_gain_meters: activity.elevation_gain_meters,
+          elevation_loss_meters: activity.elevation_loss_meters,
+          calories: activity.calories,
+          polyline: activity.polyline,
+          map_bounds: activity.map_bounds,
+          likes_count: activity.likes_count ?? 0,
+          is_private: activity.is_private,
+          created_at: toIsoString(activity.created_at),
+          profile: {
+            id: activity.profile_id,
+            username: activity.profile_username,
+            avatar_url: activity.profile_avatar_url,
+          },
+          has_liked: likeRows.length > 0,
+          comments_count: comments.length,
+          comments,
         };
       } catch (error) {
         if (error instanceof TRPCError) {

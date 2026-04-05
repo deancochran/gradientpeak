@@ -42,7 +42,6 @@ import {
 import { api } from "@/lib/api";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { getServerConfig } from "@/lib/server-config";
 import { FitUploader } from "@/lib/services/fit/FitUploader";
 
 type IntegrationConfig = {
@@ -219,9 +218,7 @@ export default function IntegrationsScreen() {
         fileSize: selectedFitFile.size,
       });
 
-      const supabaseUrl = getServerConfig().supabaseUrl;
-      const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
-      const uploader = new FitUploader(supabaseUrl, supabaseAnonKey, "fit-files");
+      const uploader = new FitUploader(undefined, undefined, "fit-files");
 
       const uploadResult = await uploader.uploadToSignedUrl(
         selectedFitFile.uri,

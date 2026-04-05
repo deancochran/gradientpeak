@@ -30,8 +30,6 @@ import React from "react";
  * - record group is completely isolated
  */
 export default function InternalLayout() {
-  console.log("InternalLayout loaded");
-
   return (
     <Stack
       screenOptions={{

@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { type ActivityEffortInsert, activityEfforts } from "@repo/db";
+import { activityEfforts, publicActivityCategorySchema, publicEffortTypeSchema } from "@repo/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-
-type ActivityEffortCreateValues = ActivityEffortInsert;
 
 export const activityEffortsRouter = createTRPCRouter({
   getForProfile: protectedProcedure.query(async ({ ctx }) => {
@@ -22,9 +20,9 @@ export const activityEffortsRouter = createTRPCRouter({
     .input(
       z.object({
         activity_id: z.string().uuid().optional().nullable(),
-        activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
+        activity_category: publicActivityCategorySchema,
         duration_seconds: z.number().int().positive(),
-        effort_type: z.enum(["power", "speed"]),
+        effort_type: publicEffortTypeSchema,
         value: z.number(),
         unit: z.string(),
         start_offset: z.number().int().nonnegative().optional().nullable(),
@@ -42,7 +40,7 @@ export const activityEffortsRouter = createTRPCRouter({
           created_at: new Date(),
           profile_id: ctx.session.user.id,
           recorded_at: new Date(input.recorded_at),
-        } satisfies ActivityEffortCreateValues)
+        })
         .returning();
 
       return data;

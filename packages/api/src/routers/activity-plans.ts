@@ -1,9 +1,18 @@
+import { randomUUID } from "node:crypto";
 import {
   activityPlanCreateSchema,
   activityPlanStructureSchemaV2,
   activityPlanUpdateSchema,
 } from "@repo/core";
+import {
+  type ActivityPlanInsert,
+  type ActivityPlanRow,
+  activityPlans,
+  likes,
+  publicActivityCategorySchema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
@@ -15,13 +24,15 @@ import {
 } from "../utils/estimation-helpers";
 
 // Input schemas for queries
+const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
+
 const listActivityPlansSchema = z
   .object({
     includeOwnOnly: z.boolean().default(true),
     includeSystemTemplates: z.boolean().default(false),
     ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
     visibility: z.enum(["private", "public"]).optional(),
-    activityCategory: z.enum(["run", "bike", "swim", "strength", "other", "all"]).optional(),
+    activityCategory: activityCategoryFilterSchema.optional(),
     search: z.string().optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: z.string().optional(),
@@ -35,24 +46,23 @@ const getManyActivityPlansByIdsSchema = z
   })
   .strict();
 
-// Helper to validate V2 structure only
 function validateStructure(structure: unknown): void {
   activityPlanStructureSchemaV2.parse(structure);
 }
 
-function getEstimationStore(ctx: { session: { user: { id: string } } }) {
-  return createEventReadRepository(getRequiredDb(ctx as any));
+function getEstimationStore(ctx: { db?: unknown }) {
+  return createEventReadRepository(getRequiredDb(ctx as never));
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.extend({
-  structure: activityPlanStructureSchemaV2, // V2 structure only
+  structure: activityPlanStructureSchemaV2,
   template_visibility: z.enum(["private", "public"]).optional(),
   import_provider: z.string().min(1).max(64).optional(),
   import_external_id: z.string().min(1).max(255).optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.extend({
-  structure: activityPlanStructureSchemaV2.optional(), // V2 structure only
+  structure: activityPlanStructureSchemaV2.optional(),
   template_visibility: z.enum(["private", "public"]).optional(),
   import_provider: z.string().min(1).max(64).nullable().optional(),
   import_external_id: z.string().min(1).max(255).nullable().optional(),
@@ -68,12 +78,36 @@ const importedTemplateInput = z
   .object({
     external_id: z.string().min(1).max(255),
     name: z.string().min(1, "Plan name is required"),
-    activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
+    activity_category: publicActivityCategorySchema,
     description: z.string().max(1000).optional(),
     notes: z.string().max(2000).optional(),
     structure: activityPlanStructureSchemaV2,
   })
   .strict();
+
+function serializeActivityPlanRow(row: ActivityPlanRow) {
+  return {
+    ...row,
+    idx: row.idx ?? 0,
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  };
+}
+
+type SerializedActivityPlan = ReturnType<typeof serializeActivityPlanRow>;
+type EstimatedActivityPlan = Awaited<ReturnType<typeof addEstimationToPlan>>;
+
+function buildAccessiblePlanCondition(userId: string) {
+  return or(
+    eq(activityPlans.profile_id, userId),
+    eq(activityPlans.is_system_template, true),
+    eq(activityPlans.template_visibility, "public"),
+  );
+}
+
+function buildOwnedPlanCondition(userId: string) {
+  return eq(activityPlans.profile_id, userId);
+}
 
 function withIdentityFields<
   T extends {
@@ -94,22 +128,43 @@ function withIdentityFields<
   };
 }
 
+function buildCreateValues(
+  input: z.infer<typeof createActivityPlanInput>,
+  profileId: string,
+  metrics: Awaited<ReturnType<typeof computePlanMetrics>>,
+): ActivityPlanInsert {
+  const now = new Date();
+  const templateVisibility = input.template_visibility ?? "private";
+
+  return {
+    id: randomUUID(),
+    created_at: now,
+    updated_at: now,
+    profile_id: profileId,
+    route_id: input.route_id ?? null,
+    name: input.name,
+    description: input.description || "",
+    notes: input.notes ?? null,
+    activity_category: input.activity_category,
+    structure: input.structure,
+    version: "1.0",
+    template_visibility: templateVisibility,
+    import_provider: input.import_provider ?? null,
+    import_external_id: input.import_external_id ?? null,
+    is_system_template: false,
+    estimated_tss: metrics.estimated_tss,
+    estimated_duration_seconds: metrics.estimated_duration_seconds,
+    estimated_distance_meters: metrics.estimated_distance_meters,
+    is_public: templateVisibility === "public",
+  };
+}
+
 export const activityPlansRouter = createTRPCRouter({
-  // ------------------------------
-  // List activity plans
-  // ------------------------------
   list: protectedProcedure.input(listActivityPlansSchema).query(async ({ ctx, input }) => {
-    const estimationStore = getEstimationStore(ctx);
+    const db = getRequiredDb(ctx);
+    const estimationStore = createEventReadRepository(db);
     const limit = input.limit;
 
-    let query = ctx.supabase
-      .from("activity_plans")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: true }) // Secondary sort for stable pagination
-      .limit(limit + 1); // Fetch one extra to check if there's more
-
-    // Filter by ownership
     const ownerScope =
       input.ownerScope ??
       (input.includeOwnOnly && !input.includeSystemTemplates
@@ -120,121 +175,126 @@ export const activityPlansRouter = createTRPCRouter({
             ? "all"
             : "none");
 
-    if (ownerScope === "own") {
-      query = query.eq("profile_id", ctx.session.user.id);
-    } else if (ownerScope === "system") {
-      query = query.eq("is_system_template", true);
-    } else if (ownerScope === "public") {
-      query = query.eq("template_visibility", "public");
-    } else if (ownerScope === "all") {
-      query = query.or(
-        `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-      );
-    } else {
-      // Neither - return empty (shouldn't happen but defensive)
+    if (ownerScope === "none") {
       return { items: [], nextCursor: undefined };
     }
 
+    const conditions = [];
+
+    if (ownerScope === "own") {
+      conditions.push(buildOwnedPlanCondition(ctx.session.user.id));
+    } else if (ownerScope === "system") {
+      conditions.push(eq(activityPlans.is_system_template, true));
+    } else if (ownerScope === "public") {
+      conditions.push(eq(activityPlans.template_visibility, "public"));
+    } else if (ownerScope === "all") {
+      conditions.push(buildAccessiblePlanCondition(ctx.session.user.id));
+    }
+
     if (input.visibility) {
-      query = query.eq("template_visibility", input.visibility);
+      conditions.push(eq(activityPlans.template_visibility, input.visibility));
     }
 
-    // Apply activity type filter
     if (input.activityCategory && input.activityCategory !== "all") {
-      query = query.eq("activity_category", input.activityCategory);
+      conditions.push(eq(activityPlans.activity_category, input.activityCategory));
     }
 
-    // Apply search filter (name and description)
     if (input.search) {
-      query = query.or(`name.ilike.%${input.search}%,description.ilike.%${input.search}%`);
-    }
-
-    // Apply cursor (if provided, fetch items after this cursor)
-    if (input.cursor) {
-      const [cursorDate, cursorId] = input.cursor.split("_");
-      query = query.or(
-        `created_at.lt.${cursorDate},and(created_at.eq.${cursorDate},id.gt.${cursorId})`,
+      const pattern = `%${input.search}%`;
+      conditions.push(
+        or(ilike(activityPlans.name, pattern), ilike(activityPlans.description, pattern)),
       );
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
+    if (input.cursor) {
+      const [cursorDate, cursorId] = input.cursor.split("_");
+      if (cursorDate && cursorId) {
+        const cursorCreatedAt = new Date(cursorDate);
+        conditions.push(
+          or(
+            lt(activityPlans.created_at, cursorCreatedAt),
+            and(eq(activityPlans.created_at, cursorCreatedAt), gt(activityPlans.id, cursorId)),
+          ),
+        );
+      }
     }
 
-    // Check if there are more items
-    const hasMore = data.length > limit;
-    const items = hasMore ? data.slice(0, limit) : data;
+    const rows = await db
+      .select()
+      .from(activityPlans)
+      .where(and(...conditions))
+      .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
+      .limit(limit + 1);
 
-    // Add dynamic TSS estimation to each plan
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const items = pageRows.map(serializeActivityPlanRow);
+
     const itemsWithEstimation = await addEstimationToPlans(
       items,
       estimationStore,
       ctx.session.user.id,
     );
+    const planIds = itemsWithEstimation.map((plan) => plan.id);
 
-    // Generate next cursor from last item
-    let nextCursor: string | undefined;
-    if (hasMore && items.length > 0) {
-      const lastItem = items[items.length - 1];
-      if (!lastItem) throw new Error("Unexpected error");
-      nextCursor = `${lastItem.created_at}_${lastItem.id}`;
-    }
-
-    const planIds = itemsWithEstimation.map((p: any) => p.id) || [];
     let userLikes: string[] = [];
 
     if (planIds.length > 0) {
-      const { data: likesData } = await (ctx.supabase as any)
-        .from("likes")
-        .select("entity_id")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("entity_type", "activity_plan")
-        .in("entity_id", planIds);
+      const likeRows = await db
+        .select({ entity_id: likes.entity_id })
+        .from(likes)
+        .where(
+          and(
+            eq(likes.profile_id, ctx.session.user.id),
+            eq(likes.entity_type, "activity_plan"),
+            inArray(likes.entity_id, planIds),
+          ),
+        );
 
-      userLikes = likesData?.map((l: any) => l.entity_id) || [];
+      userLikes = likeRows.map((row) => row.entity_id);
+    }
+
+    let nextCursor: string | undefined;
+    if (hasMore && pageRows.length > 0) {
+      const lastItem = pageRows[pageRows.length - 1];
+      if (!lastItem) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Missing pagination row" });
+      }
+      nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
     }
 
     return {
-      items: itemsWithEstimation.map((plan: any) => ({
-        ...withIdentityFields(plan as any),
-        has_liked: userLikes.includes((plan as any).id),
+      items: itemsWithEstimation.map((plan) => ({
+        ...withIdentityFields(plan),
+        has_liked: userLikes.includes(plan.id),
       })),
       nextCursor,
     };
   }),
 
-  // ------------------------------
-  // Get single activity plan by ID
-  // ------------------------------
   getById: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      const estimationStore = getEstimationStore(ctx);
+      const db = getRequiredDb(ctx);
+      const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
 
-      // First, get the plan by ID
-      const { data: plan, error } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("id", input.id)
-        .single();
+      const [planRow] = await db
+        .select()
+        .from(activityPlans)
+        .where(eq(activityPlans.id, input.id))
+        .limit(1);
 
-      if (error || !plan) {
+      if (!planRow) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Activity plan not found",
         });
       }
 
-      // Check if user has access to view this plan
-      const isOwner = plan.profile_id === userId;
-      const isSystemTemplate = plan.is_system_template === true;
-      const isPublic = plan.template_visibility === "public";
+      const isOwner = planRow.profile_id === userId;
+      const isSystemTemplate = planRow.is_system_template === true;
+      const isPublic = planRow.template_visibility === "public";
 
       if (!isOwner && !isSystemTemplate && !isPublic) {
         throw new TRPCError({
@@ -243,105 +303,97 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      // Validate V2 structure on read (defensive programming)
+      const plan = serializeActivityPlanRow(planRow);
+
       try {
         if (plan.structure) {
           validateStructure(plan.structure);
         }
       } catch (validationError) {
         console.error("Invalid V2 structure in database for plan", input.id, validationError);
-        // Don't fail the query, but log the issue
       }
 
-      // Add dynamic TSS estimation
       const planWithEstimation = await addEstimationToPlan(plan, estimationStore, userId);
 
-      const { data: likeData } = await (ctx.supabase as any)
-        .from("likes")
-        .select("id")
-        .eq("profile_id", userId)
-        .eq("entity_type", "activity_plan")
-        .eq("entity_id", input.id)
-        .maybeSingle();
+      const [likeRow] = await db
+        .select({ id: likes.id })
+        .from(likes)
+        .where(
+          and(
+            eq(likes.profile_id, userId),
+            eq(likes.entity_type, "activity_plan"),
+            eq(likes.entity_id, input.id),
+          ),
+        )
+        .limit(1);
 
       return {
-        ...withIdentityFields(planWithEstimation as any),
-        has_liked: !!likeData,
+        ...withIdentityFields(planWithEstimation),
+        has_liked: !!likeRow,
       };
     }),
 
   getManyByIds: protectedProcedure
     .input(getManyActivityPlansByIdsSchema)
     .query(async ({ ctx, input }) => {
-      const estimationStore = getEstimationStore(ctx);
+      const db = getRequiredDb(ctx);
+      const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
       const ids = Array.from(new Set(input.ids));
 
-      const { data: plans, error } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .in("id", ids)
-        .or(`profile_id.eq.${userId},is_system_template.eq.true,template_visibility.eq.public`);
+      const planRows = await db
+        .select()
+        .from(activityPlans)
+        .where(and(inArray(activityPlans.id, ids), buildAccessiblePlanCondition(userId)));
 
-      if (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: error.message,
-        });
-      }
-
-      const planById = new Map((plans ?? []).map((plan: any) => [plan.id, plan]));
-      const orderedPlans = ids.map((id) => planById.get(id)).filter((plan): plan is any => !!plan);
+      const planById = new Map(planRows.map((plan) => [plan.id, serializeActivityPlanRow(plan)]));
+      const orderedPlans = ids
+        .map((id) => planById.get(id))
+        .filter((plan): plan is SerializedActivityPlan => !!plan);
 
       const itemsWithEstimation = await addEstimationToPlans(orderedPlans, estimationStore, userId);
+      const planIds = itemsWithEstimation.map((plan) => plan.id);
 
-      const planIds = itemsWithEstimation.map((plan: any) => plan.id);
       let userLikes: string[] = [];
 
       if (planIds.length > 0) {
-        const { data: likesData } = await (ctx.supabase as any)
-          .from("likes")
-          .select("entity_id")
-          .eq("profile_id", userId)
-          .eq("entity_type", "activity_plan")
-          .in("entity_id", planIds);
+        const likeRows = await db
+          .select({ entity_id: likes.entity_id })
+          .from(likes)
+          .where(
+            and(
+              eq(likes.profile_id, userId),
+              eq(likes.entity_type, "activity_plan"),
+              inArray(likes.entity_id, planIds),
+            ),
+          );
 
-        userLikes = likesData?.map((like: any) => like.entity_id) || [];
+        userLikes = likeRows.map((row) => row.entity_id);
       }
 
       return {
-        items: itemsWithEstimation.map((plan: any) => ({
-          ...withIdentityFields(plan as any),
-          has_liked: userLikes.includes((plan as any).id),
+        items: itemsWithEstimation.map((plan) => ({
+          ...withIdentityFields(plan),
+          has_liked: userLikes.includes(plan.id),
         })),
       };
     }),
 
-  // ------------------------------
-  // Get user's custom plans count
-  // ------------------------------
   getUserPlansCount: protectedProcedure.query(async ({ ctx }) => {
-    const { count, error } = await ctx.supabase
-      .from("activity_plans")
-      .select("*", { count: "exact", head: true })
-      .eq("profile_id", ctx.session.user.id);
+    const db = getRequiredDb(ctx);
 
-    if (error) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: error.message,
-      });
-    }
+    const [row] = await db
+      .select({ value: count() })
+      .from(activityPlans)
+      .where(eq(activityPlans.profile_id, ctx.session.user.id));
 
-    return count || 0;
+    return row?.value ?? 0;
   }),
 
-  // ------------------------------
-  // Create new activity plan
-  // ------------------------------
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
-    const estimationStore = getEstimationStore(ctx);
-    // Validate the V2 structure before saving to database
+    const db = getRequiredDb(ctx);
+    const estimationStore = createEventReadRepository(db);
+
     try {
       validateStructure(input.structure);
     } catch (validationError) {
@@ -352,74 +404,57 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    // Compute metrics before saving
     const metrics = await computePlanMetrics(
       {
         activity_category: input.activity_category,
         structure: input.structure,
         route_id: input.route_id,
       },
-      ctx.supabase,
-      ctx.session.user.id,
-    );
-
-    const { data, error } = await ctx.supabase
-      .from("activity_plans")
-      .insert({
-        ...input,
-        ...metrics,
-        description: input.description || "",
-        profile_id: ctx.session.user.id,
-        version: "1.0", // Default version
-        template_visibility: input.template_visibility ?? "private",
-        import_provider: input.import_provider ?? null,
-        import_external_id: input.import_external_id ?? null,
-      })
-      .select("*")
-      .single();
-
-    if (error) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: error.message,
-      });
-    }
-
-    // Add dynamic TSS estimation to created plan
-    const planWithEstimation = await addEstimationToPlan(
-      data,
       estimationStore,
       ctx.session.user.id,
     );
 
-    return withIdentityFields(planWithEstimation as any);
+    const [createdRow] = await db
+      .insert(activityPlans)
+      .values(buildCreateValues(input, ctx.session.user.id, metrics))
+      .returning();
+
+    if (!createdRow) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to create activity plan",
+      });
+    }
+
+    const planWithEstimation = await addEstimationToPlan(
+      serializeActivityPlanRow(createdRow),
+      estimationStore,
+      ctx.session.user.id,
+    );
+
+    return withIdentityFields(planWithEstimation);
   }),
 
-  // ------------------------------
-  // Update activity plan
-  // ------------------------------
   update: protectedProcedure
     .input(updateActivityPlanWithIdInput)
     .mutation(async ({ ctx, input }) => {
-      const estimationStore = getEstimationStore(ctx);
+      const db = getRequiredDb(ctx);
+      const estimationStore = createEventReadRepository(db);
       const { id, ...updates } = input;
 
-      // Check ownership
-      const { data: existing } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("id", id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const [existingRow] = await db
+        .select()
+        .from(activityPlans)
+        .where(and(eq(activityPlans.id, id), eq(activityPlans.profile_id, ctx.session.user.id)))
+        .limit(1);
 
-      if (!existing) {
+      if (!existingRow) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Activity plan not found or you don't have permission to edit it",
         });
       }
 
-      // Validate V2 structure if provided
       if (updates.structure) {
         try {
           validateStructure(updates.structure);
@@ -432,95 +467,88 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
-      // If structure or route or activity category changed, recompute metrics
-      let metricsUpdates = {};
+      let metricsUpdates: Partial<ActivityPlanInsert> = {};
       if (updates.structure || updates.route_id !== undefined || updates.activity_category) {
         const metrics = await computePlanMetrics(
           {
-            activity_category: updates.activity_category || existing.activity_category,
-            structure: updates.structure || existing.structure,
-            route_id: updates.route_id !== undefined ? updates.route_id : existing.route_id,
+            activity_category: updates.activity_category || existingRow.activity_category,
+            structure: updates.structure || existingRow.structure,
+            route_id: updates.route_id !== undefined ? updates.route_id : existingRow.route_id,
           },
-          ctx.supabase,
+          estimationStore,
           ctx.session.user.id,
         );
-        metricsUpdates = metrics;
+
+        metricsUpdates = {
+          estimated_tss: metrics.estimated_tss,
+          estimated_duration_seconds: metrics.estimated_duration_seconds,
+          estimated_distance_meters: metrics.estimated_distance_meters,
+        };
       }
 
-      // Handle description field - convert null to empty string if present
-      const sanitizedUpdates: typeof updates & { description?: string } = {
-        ...updates,
+      const updateValues: Partial<ActivityPlanInsert> = {
+        updated_at: new Date(),
+        name: updates.name,
+        description: updates.description === undefined ? undefined : (updates.description ?? ""),
+        notes: updates.notes,
+        activity_category: updates.activity_category,
+        structure: updates.structure,
+        version: updates.version,
+        route_id: updates.route_id,
+        template_visibility: updates.template_visibility,
+        import_provider: updates.import_provider,
+        import_external_id: updates.import_external_id,
+        is_public:
+          updates.template_visibility === undefined
+            ? undefined
+            : updates.template_visibility === "public",
         ...metricsUpdates,
-        description: updates.description === null ? "" : updates.description,
       };
 
-      const { data, error } = await ctx.supabase
-        .from("activity_plans")
-        .update(sanitizedUpdates)
-        .eq("id", id)
-        .select("*")
-        .single();
+      const [updatedRow] = await db
+        .update(activityPlans)
+        .set(updateValues)
+        .where(and(eq(activityPlans.id, id), eq(activityPlans.profile_id, ctx.session.user.id)))
+        .returning();
 
-      if (error) {
+      if (!updatedRow) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: error.message,
+          message: "Failed to update activity plan",
         });
       }
 
-      // Add dynamic TSS estimation to updated plan
       const planWithEstimation = await addEstimationToPlan(
-        data,
+        serializeActivityPlanRow(updatedRow),
         estimationStore,
         ctx.session.user.id,
       );
 
-      return withIdentityFields(planWithEstimation as any);
+      return withIdentityFields(planWithEstimation);
     }),
 
-  // ------------------------------
-  // Delete activity plan
-  // ------------------------------
   delete: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      // Check ownership first
-      const { data: existing, error: checkError } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("id", input.id)
-        .eq("profile_id", ctx.session.user.id)
-        .single();
+      const db = getRequiredDb(ctx);
 
-      if (checkError || !existing) {
-        console.error("Delete check error:", {
-          error: checkError,
-          existing,
-          inputId: input.id,
-          userId: ctx.session.user.id,
-        });
+      const deletedRows = await db
+        .delete(activityPlans)
+        .where(
+          and(eq(activityPlans.id, input.id), eq(activityPlans.profile_id, ctx.session.user.id)),
+        )
+        .returning({ id: activityPlans.id });
+
+      if (deletedRows.length === 0) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Activity plan not found or you don't have permission to delete it",
         });
       }
 
-      // Delete the plan - foreign key constraint will set events.activity_plan_id to null
-      const { error } = await ctx.supabase.from("activity_plans").delete().eq("id", input.id);
-
-      if (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: error.message,
-        });
-      }
-
       return { success: true };
     }),
 
-  // ------------------------------
-  // Duplicate activity plan
-  // ------------------------------
   duplicate: protectedProcedure
     .input(
       z.object({
@@ -529,25 +557,26 @@ export const activityPlansRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const estimationStore = getEstimationStore(ctx);
-      // Get the original plan
-      const { data: originalPlan, error: fetchError } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("id", input.id)
-        .or(
-          `profile_id.eq.${ctx.session.user.id},is_system_template.eq.true,template_visibility.eq.public`,
-        )
-        .single();
+      const db = getRequiredDb(ctx);
+      const estimationStore = createEventReadRepository(db);
 
-      if (fetchError || !originalPlan) {
+      const [originalRow] = await db
+        .select()
+        .from(activityPlans)
+        .where(
+          and(eq(activityPlans.id, input.id), buildAccessiblePlanCondition(ctx.session.user.id)),
+        )
+        .limit(1);
+
+      if (!originalRow) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Original activity plan not found",
         });
       }
 
-      // Validate the V2 structure from the original plan
+      const originalPlan = serializeActivityPlanRow(originalRow);
+
       try {
         if (originalPlan.structure) {
           validateStructure(originalPlan.structure);
@@ -560,70 +589,80 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      // Compute metrics for the duplicate
       const metrics = await computePlanMetrics(
         {
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
           route_id: originalPlan.route_id,
         },
-        ctx.supabase,
+        estimationStore,
         ctx.session.user.id,
       );
 
-      // Create the duplicate
-      const { data, error } = await ctx.supabase
-        .from("activity_plans")
-        .insert({
+      const now = new Date();
+      const [duplicatedRow] = await db
+        .insert(activityPlans)
+        .values({
+          id: randomUUID(),
+          created_at: now,
+          updated_at: now,
           name: input.newName?.trim() || `${originalPlan.name} (Copy)`,
           description: originalPlan.description,
-          notes: originalPlan.notes,
+          notes: originalRow.notes ?? null,
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
-          ...metrics,
+          estimated_tss: metrics.estimated_tss,
+          estimated_duration_seconds: metrics.estimated_duration_seconds,
+          estimated_distance_meters: metrics.estimated_distance_meters,
           version: originalPlan.version,
           route_id: originalPlan.route_id,
           profile_id: ctx.session.user.id,
           template_visibility: "private",
           import_provider: null,
           import_external_id: null,
+          is_system_template: false,
+          is_public: false,
         })
-        .select("*")
-        .single();
+        .returning();
 
-      if (error) {
+      if (!duplicatedRow) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: error.message,
+          message: "Failed to duplicate activity plan",
         });
       }
 
-      // Add dynamic TSS estimation to duplicated plan
       const planWithEstimation = await addEstimationToPlan(
-        data,
+        serializeActivityPlanRow(duplicatedRow),
         estimationStore,
         ctx.session.user.id,
       );
 
-      return withIdentityFields(planWithEstimation as any);
+      return withIdentityFields(planWithEstimation);
     }),
 
   importFromFitTemplate: protectedProcedure
     .input(importedTemplateInput)
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const estimationStore = getEstimationStore(ctx);
       const provider = "fit";
       const externalId = input.external_id.trim();
 
-      const { data: existing } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("import_provider", provider)
-        .eq("import_external_id", externalId)
-        .maybeSingle();
+      const [existingRow] = await db
+        .select()
+        .from(activityPlans)
+        .where(
+          and(
+            eq(activityPlans.profile_id, ctx.session.user.id),
+            eq(activityPlans.import_provider, provider),
+            eq(activityPlans.import_external_id, externalId),
+          ),
+        )
+        .limit(1);
 
-      const payload = {
+      const payload: Partial<ActivityPlanInsert> = {
+        updated_at: new Date(),
         name: input.name,
         description: input.description ?? "",
         notes: input.notes ?? null,
@@ -634,29 +673,42 @@ export const activityPlansRouter = createTRPCRouter({
         template_visibility: "private",
         import_provider: provider,
         import_external_id: externalId,
+        is_system_template: false,
+        is_public: false,
       };
 
-      const persisted = existing
-        ? await ctx.supabase
-            .from("activity_plans")
-            .update(payload)
-            .eq("id", existing.id)
-            .eq("profile_id", ctx.session.user.id)
-            .select("*")
-            .single()
-        : await ctx.supabase.from("activity_plans").insert(payload).select("*").single();
+      const [persistedRow] = existingRow
+        ? await db
+            .update(activityPlans)
+            .set(payload)
+            .where(
+              and(
+                eq(activityPlans.id, existingRow.id),
+                eq(activityPlans.profile_id, ctx.session.user.id),
+              ),
+            )
+            .returning()
+        : await db
+            .insert(activityPlans)
+            .values({
+              id: randomUUID(),
+              created_at: new Date(),
+              ...payload,
+            } as ActivityPlanInsert)
+            .returning();
 
-      if (persisted.error || !persisted.data) {
+      if (!persistedRow) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: persisted.error?.message ?? "Failed to import FIT template",
+          message: "Failed to import FIT template",
         });
       }
 
-      let withEstimation: any = persisted.data;
+      let withEstimation: SerializedActivityPlan | EstimatedActivityPlan =
+        serializeActivityPlanRow(persistedRow);
       try {
         withEstimation = await addEstimationToPlan(
-          persisted.data,
+          serializeActivityPlanRow(persistedRow),
           estimationStore,
           ctx.session.user.id,
         );
@@ -665,27 +717,33 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       return {
-        action: existing ? "updated" : "created",
-        item: withIdentityFields(withEstimation as any),
+        action: existingRow ? "updated" : "created",
+        item: withIdentityFields(withEstimation),
       };
     }),
 
   importFromZwoTemplate: protectedProcedure
     .input(importedTemplateInput)
     .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const estimationStore = getEstimationStore(ctx);
       const provider = "zwo";
       const externalId = input.external_id.trim();
 
-      const { data: existing } = await ctx.supabase
-        .from("activity_plans")
-        .select("*")
-        .eq("profile_id", ctx.session.user.id)
-        .eq("import_provider", provider)
-        .eq("import_external_id", externalId)
-        .maybeSingle();
+      const [existingRow] = await db
+        .select()
+        .from(activityPlans)
+        .where(
+          and(
+            eq(activityPlans.profile_id, ctx.session.user.id),
+            eq(activityPlans.import_provider, provider),
+            eq(activityPlans.import_external_id, externalId),
+          ),
+        )
+        .limit(1);
 
-      const payload = {
+      const payload: Partial<ActivityPlanInsert> = {
+        updated_at: new Date(),
         name: input.name,
         description: input.description ?? "",
         notes: input.notes ?? null,
@@ -696,29 +754,42 @@ export const activityPlansRouter = createTRPCRouter({
         template_visibility: "private",
         import_provider: provider,
         import_external_id: externalId,
+        is_system_template: false,
+        is_public: false,
       };
 
-      const persisted = existing
-        ? await ctx.supabase
-            .from("activity_plans")
-            .update(payload)
-            .eq("id", existing.id)
-            .eq("profile_id", ctx.session.user.id)
-            .select("*")
-            .single()
-        : await ctx.supabase.from("activity_plans").insert(payload).select("*").single();
+      const [persistedRow] = existingRow
+        ? await db
+            .update(activityPlans)
+            .set(payload)
+            .where(
+              and(
+                eq(activityPlans.id, existingRow.id),
+                eq(activityPlans.profile_id, ctx.session.user.id),
+              ),
+            )
+            .returning()
+        : await db
+            .insert(activityPlans)
+            .values({
+              id: randomUUID(),
+              created_at: new Date(),
+              ...payload,
+            } as ActivityPlanInsert)
+            .returning();
 
-      if (persisted.error || !persisted.data) {
+      if (!persistedRow) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: persisted.error?.message ?? "Failed to import ZWO template",
+          message: "Failed to import ZWO template",
         });
       }
 
-      let withEstimation: any = persisted.data;
+      let withEstimation: SerializedActivityPlan | EstimatedActivityPlan =
+        serializeActivityPlanRow(persistedRow);
       try {
         withEstimation = await addEstimationToPlan(
-          persisted.data,
+          serializeActivityPlanRow(persistedRow),
           estimationStore,
           ctx.session.user.id,
         );
@@ -727,8 +798,8 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       return {
-        action: existing ? "updated" : "created",
-        item: withIdentityFields(withEstimation as any),
+        action: existingRow ? "updated" : "created",
+        item: withIdentityFields(withEstimation),
       };
     }),
 });

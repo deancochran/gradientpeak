@@ -1,3 +1,4 @@
+import { buildMobileCallbackUrl } from "@repo/auth/callbacks";
 import { type NextRequest, NextResponse } from "next/server";
 
 const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://sign-in";
@@ -80,6 +81,10 @@ const getSafeFallbackTarget = (request: NextRequest, fallbackParam: string | nul
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const error = searchParams.get("error");
+  const intent = searchParams.get("intent");
+  const target = searchParams.get("target");
+  const token = searchParams.get("token") ?? undefined;
+  const code = searchParams.get("code") ?? undefined;
   const next = getSafeRedirectTarget(searchParams.get("next"));
   const fallback = getSafeFallbackTarget(request, searchParams.get("fallback"));
 
@@ -87,6 +92,34 @@ export async function GET(request: NextRequest) {
     const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
     errorUrl.searchParams.set("error", error);
     return NextResponse.redirect(errorUrl);
+  }
+
+  if (target === "mobile" && intent) {
+    const openUrl = new URL("/auth/open", getPublicWebAppUrl(request));
+    openUrl.searchParams.set(
+      "next",
+      buildMobileCallbackUrl(
+        {
+          intent: intent as "email-verification" | "password-reset" | "post-sign-in",
+          ...(token ? { token } : {}),
+          ...(code ? { code } : {}),
+          ...(error ? { error } : {}),
+        },
+        {
+          mobileScheme:
+            process.env.EXPO_PUBLIC_APP_SCHEME ?? process.env.APP_SCHEME ?? "gradientpeak",
+          mobileCallbackPath: "callback",
+        },
+      ),
+    );
+    openUrl.searchParams.set("fallback", fallback);
+    return NextResponse.redirect(openUrl);
+  }
+
+  if (target === "web") {
+    return NextResponse.redirect(
+      getSafeFallbackTarget(request, searchParams.get("next") ?? searchParams.get("fallback")),
+    );
   }
 
   if (searchParams.get("token") || searchParams.get("intent")) {

@@ -123,6 +123,7 @@ jest.mock("@/lib/utils/plan/dateGrouping", () => ({
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
+  ArrowUpRight: "ArrowUpRight",
   Calendar: "Calendar",
   CheckCircle2: "CheckCircle2",
   Clock: "Clock",

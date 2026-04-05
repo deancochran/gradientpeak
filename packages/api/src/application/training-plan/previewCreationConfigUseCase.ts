@@ -13,7 +13,6 @@ import {
   type ReadinessDeltaDiagnostics,
   type TrainingPlanCreationConfig,
 } from "@repo/core";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { TrainingPlanRepository } from "../../repositories";
 
@@ -42,6 +41,14 @@ type OverrideAudit = {
     unresolved_blocking_conflict_codes: string[];
     rationale_codes: string[];
   };
+};
+
+type ProjectionFeasibilityDiagnostics = {
+  tss_ramp_near_cap_weeks: number;
+  ctl_ramp_near_cap_weeks: number;
+  tss_ramp_clamp_weeks: number;
+  ctl_ramp_clamp_weeks: number;
+  recovery_weeks: number;
 };
 
 const OVERRIDABLE_BLOCKING_CONFLICT_CODES = new Set([
@@ -117,12 +124,20 @@ type EvaluateCreationConfigResult = {
 };
 
 export async function previewCreationConfigUseCase<
+  TCreationContextReader,
   TEvaluateCreationConfig extends (input: {
-    supabase: SupabaseClient;
+    creationContextReader: TCreationContextReader;
     profileId: string;
     creationInput: PreviewCreationConfigInput["creation_input"];
     asOfIso?: string;
   }) => Promise<EvaluateCreationConfigResult>,
+  TExpandedPlan extends Record<string, unknown> & {
+    name: string;
+    start_date: string;
+    end_date: string;
+    goals: unknown[];
+    blocks: unknown[];
+  },
   TProjectionChart extends {
     constraint_summary: ProjectionConstraintSummary;
     inferred_current_state?: InferredStateSnapshot;
@@ -132,8 +147,24 @@ export async function previewCreationConfigUseCase<
       predicted_fatigue_atl: number;
     }>;
     readiness_score?: number;
+    readiness_confidence?: unknown;
+    display_points?: unknown;
+    capacity_envelope?: unknown;
+    risk_flags?: unknown;
+    caps_applied?: unknown;
+    optimization_tradeoff_summary?: unknown;
+    projection_diagnostics?: {
+      effective_optimizer_config?: unknown;
+      clamp_counts?: unknown;
+      objective_contributions?: unknown;
+    };
     no_history?: unknown;
   },
+  TProjectionFeasibility extends {
+    state: "feasible" | "aggressive" | "unsafe";
+    reasons: string[];
+    diagnostics: ProjectionFeasibilityDiagnostics;
+  } & Record<string, unknown>,
   TBuildCreationProjectionArtifacts extends (input: {
     minimalPlan: PreviewCreationConfigInput["minimal_plan"];
     loadBootstrapState: LoadBootstrapState;
@@ -143,34 +174,25 @@ export async function previewCreationConfigUseCase<
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     contextSummary: Awaited<ReturnType<TEvaluateCreationConfig>>["contextSummary"];
   }) => {
-    expandedPlan: {
-      name: string;
-      start_date: string;
-      end_date: string;
-      goals: unknown[];
-      blocks: unknown[];
-    };
+    expandedPlan: TExpandedPlan;
     projectionChart: TProjectionChart;
-    projectionFeasibility: {
-      state: "feasible" | "aggressive" | "unsafe";
-      reasons: string[];
-    };
+    projectionFeasibility: TProjectionFeasibility;
   },
   TBuildCreationPreviewSnapshotToken extends (input: {
     minimalPlan: PreviewCreationConfigInput["minimal_plan"];
     finalConfig: Awaited<ReturnType<TEvaluateCreationConfig>>["finalConfig"];
     loadBootstrapState: LoadBootstrapState;
     projectionConstraintSummary: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["constraint_summary"];
-    projectionFeasibility: ReturnType<TBuildCreationProjectionArtifacts>["projectionFeasibility"];
+    projectionFeasibility: TProjectionFeasibility;
     noHistoryMetadata?: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["no_history"];
   }) => string,
   TDeriveProjectionDrivenConflicts extends (input: {
-    expandedPlan: ReturnType<TBuildCreationProjectionArtifacts>["expandedPlan"];
-    projectionChart: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"];
+    expandedPlan: TExpandedPlan;
+    projectionChart: TProjectionChart;
     postGoalRecoveryDays: number;
   }) => CreationConflictItem[],
 >(input: {
-  supabase: SupabaseClient;
+  creationContextReader: TCreationContextReader;
   profileId: string;
   params: PreviewCreationConfigInput;
   repository?: TrainingPlanRepository;
@@ -190,7 +212,7 @@ export async function previewCreationConfigUseCase<
   input.deps.enforceNoAutonomousPostCreateMutation(input.params.post_create_behavior);
 
   const evaluation = await input.deps.evaluateCreationConfig({
-    supabase: input.supabase,
+    creationContextReader: input.creationContextReader,
     profileId: input.profileId,
     creationInput: input.params.creation_input,
   });

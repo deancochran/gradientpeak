@@ -9,8 +9,17 @@
  * - Preparing metrics by merging user input with baseline
  */
 
-import type { PublicActivityPlansRow, PublicEventStatus, PublicEventType, PublicProfileMetricType, PublicActivityCategory, PublicEffortType } from "@repo/db";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
+import {
+  type ActivityEffortInsert,
+  activityEfforts,
+  type DrizzleDbClient,
+  type ProfileMetricInsert,
+  type PublicActivityCategory,
+  type PublicEffortType,
+  type PublicProfileMetricType,
+  profileMetrics,
+} from "@repo/db";
 
 // These specific calculation modules are new and might not be in the main exports yet
 // Import them directly from their source files until they're properly exported
@@ -106,13 +115,13 @@ type EffortType = PublicEffortType;
  * Handles formatting of timestamps and profile_id for all metrics,
  * reducing duplication in the main onboarding procedure.
  *
- * @param supabase - Supabase client
+ * @param db - Drizzle database client
  * @param profileId - User's profile ID
  * @param metrics - Array of metrics to insert
  * @returns Insert result
  */
 export async function batchInsertProfileMetrics(
-  supabase: SupabaseClient,
+  db: DrizzleDbClient,
   profileId: string,
   metrics: Array<{
     metric_type: ProfileMetricType;
@@ -122,19 +131,21 @@ export async function batchInsertProfileMetrics(
   }>,
 ) {
   if (metrics.length === 0) {
-    return { data: [], error: null };
+    return;
   }
 
   const metricsToInsert = metrics.map((m) => ({
+    id: randomUUID(),
+    created_at: new Date(),
     profile_id: profileId,
     metric_type: m.metric_type,
-    value: m.value,
+    value: String(m.value),
     unit: m.unit,
-    recorded_at: new Date().toISOString(),
+    recorded_at: new Date(),
     notes: m.source ? `Generated from ${m.source}` : null,
-  }));
+  })) satisfies ProfileMetricInsert[];
 
-  return supabase.from("profile_metrics").insert(metricsToInsert);
+  await db.insert(profileMetrics).values(metricsToInsert);
 }
 
 /**
@@ -143,26 +154,28 @@ export async function batchInsertProfileMetrics(
  * Handles formatting of timestamps, profile_id, and activity_id for all efforts,
  * reducing duplication across different sports.
  *
- * @param supabase - Supabase client
+ * @param db - Drizzle database client
  * @param profileId - User's profile ID
  * @param efforts - Array of derived efforts to insert
  * @param source - Source of the efforts (e.g., 'onboarding', 'baseline_beginner')
  * @returns Insert result
  */
 export async function batchInsertActivityEfforts(
-  supabase: SupabaseClient,
+  db: DrizzleDbClient,
   profileId: string,
   efforts: DerivedEffort[],
-  source: string = "onboarding",
+  _source: string = "onboarding",
   activityId: string | null = null,
 ) {
   if (efforts.length === 0) {
-    return { data: [], error: null };
+    return;
   }
 
   // Some deployments require non-null activity_id while newer schema allows null.
   // Use caller-provided activityId when available for compatibility.
   const effortsToInsert = efforts.map((e) => ({
+    id: randomUUID(),
+    created_at: new Date(),
     profile_id: profileId,
     activity_id: activityId,
     activity_category: e.activity_category as ActivityCategory,
@@ -170,12 +183,12 @@ export async function batchInsertActivityEfforts(
     effort_type: e.effort_type as EffortType,
     value: e.value,
     unit: e.unit,
-    recorded_at: new Date().toISOString(),
+    recorded_at: new Date(),
     start_offset: null,
     // source: source, // Uncomment if source column exists
-  }));
+  })) satisfies ActivityEffortInsert[];
 
-  return supabase.from("activity_efforts").insert(effortsToInsert);
+  await db.insert(activityEfforts).values(effortsToInsert);
 }
 
 /**

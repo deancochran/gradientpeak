@@ -7,18 +7,39 @@
 
 import { randomUUID } from "node:crypto";
 import {
-  createProfileMetricInputSchema,
-  profileMetricTypeSchema,
+  isProfileMetricValueWithinBusinessRange,
+  profileMetricNotesSchema,
+  profileMetricRecordedAtSchema,
   updateProfileMetricInputSchema,
 } from "@repo/core/schemas/profile-metrics";
-import { type ProfileMetricInsert, profileMetrics } from "@repo/db";
+import { profileMetrics, publicProfileMetricTypeSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-type ProfileMetricCreateValues = ProfileMetricInsert;
+const createProfileMetricInputSchema = z
+  .object({
+    metric_type: publicProfileMetricTypeSchema,
+    notes: profileMetricNotesSchema,
+    profile_id: z.string().uuid("Invalid profile ID"),
+    recorded_at: profileMetricRecordedAtSchema,
+    reference_activity_id: z.string().uuid("Invalid activity ID").nullable().optional(),
+    unit: z.string().min(1, "Unit is required"),
+    value: z.number(),
+  })
+  .superRefine((data, ctx) => {
+    if (isProfileMetricValueWithinBusinessRange(data.metric_type, data.value)) {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Value out of valid range for metric type",
+      path: ["value"],
+    });
+  });
 
 export const profileMetricsRouter = createTRPCRouter({
   /**
@@ -28,7 +49,7 @@ export const profileMetricsRouter = createTRPCRouter({
   list: protectedProcedure
     .input(
       z.object({
-        metric_type: profileMetricTypeSchema.optional(),
+        metric_type: publicProfileMetricTypeSchema.optional(),
         start_date: z.date().optional(),
         end_date: z.date().optional(),
         limit: z.number().min(1).max(100).default(50),
@@ -67,7 +88,7 @@ export const profileMetricsRouter = createTRPCRouter({
   getAtDate: protectedProcedure
     .input(
       z.object({
-        metric_type: profileMetricTypeSchema,
+        metric_type: publicProfileMetricTypeSchema,
         date: z.date(),
       }),
     )
@@ -136,7 +157,7 @@ export const profileMetricsRouter = createTRPCRouter({
           notes: input.notes || null,
           created_at: new Date(),
           recorded_at: new Date(input.recorded_at || new Date().toISOString()),
-        } satisfies ProfileMetricCreateValues)
+        })
         .returning();
 
       return data;

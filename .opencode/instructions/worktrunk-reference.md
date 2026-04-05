@@ -6,8 +6,8 @@ Focused guidance for using Worktrunk in this repository.
 
 - `wt` is installed locally at `/home/deancochran/.local/bin/wt`.
 - Bash shell integration is installed in `~/.bashrc`; a new shell session is needed before wrapper-based directory switching becomes active.
-- User Worktrunk config should set this repo to use `~/worktrees/{{ repo }}/{{ branch | sanitize }}`.
-- OpenCode should allow `~/worktrees/GradientPeak/**` via `external_directory` in global user config so agents can operate there normally.
+- User Worktrunk config should set this repo to use `{{ repo_path }}/.worktrees/{{ branch | sanitize }}`.
+- Because the standard layout stays inside the repo, OpenCode does not need a separate `external_directory` allowlist for normal worker worktrees.
 - This repository includes a shared `.config/wt.toml` with starter install, validation, and cleanup hooks.
 - There is public Claude Code plugin support for Worktrunk, but no documented first-party OpenCode plugin. In this repo, the Worktrunk skill and this reference file provide the OpenCode context bridge.
 
@@ -24,13 +24,13 @@ Preferred local layout:
 
 ```toml
 [projects."github.com/deancochran/gradientpeak"]
-worktree-path = "~/worktrees/{{ repo }}/{{ branch | sanitize }}"
+worktree-path = "{{ repo_path }}/.worktrees/{{ branch | sanitize }}"
 ```
 
-Optional cloud IDE fallback if a single mounted root makes external worktrees impractical:
+Legacy external-worktree alternative if you intentionally want sibling worktrees outside the repo:
 
 ```toml
-worktree-path = "{{ repo_path }}/.worktrees/{{ branch | sanitize }}"
+worktree-path = "~/worktrees/{{ repo }}/{{ branch | sanitize }}"
 ```
 
 User config lives in `~/.config/worktrunk/config.toml`.
@@ -87,7 +87,7 @@ This naming keeps worktrees grouped by spec, makes merge order easier to reason 
 
 If the worktree is launched from an IDE with multi-root support, add the created worktree as another root rather than digging through hidden folders.
 
-For local desktop use, keep the coordinator in `~/GradientPeak` and worker sessions under `~/worktrees/GradientPeak/<branch>`.
+For local desktop use, keep the coordinator in `~/GradientPeak` and worker sessions under `~/GradientPeak/.worktrees/<branch>`.
 
 ## Hooks
 
@@ -128,25 +128,14 @@ Keep this in user config unless the whole team standardizes on the same model/pr
 
 ## OpenCode External Directory Access
 
-Use user-level OpenCode config to allow the external worktree root:
+The default repo-scoped `.worktrees/` layout does not require any `external_directory` permissions because the worker trees stay under the project root.
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "permission": {
-    "external_directory": {
-      "~/worktrees/GradientPeak/**": "allow"
-    }
-  }
-}
-```
-
-This keeps repo config portable while letting local agents treat `~/worktrees/GradientPeak/**` as trusted workspace extensions.
+If you intentionally switch this repo back to an external sibling layout, add a user-level OpenCode config at `~/.config/opencode/opencode.json` with the matching allowlist for that external root.
 
 ## Cloud IDE Notes
 
-- In-repo `.worktrees/` is a compatibility fallback for single-root web IDEs, not the standard local workflow.
-- Multi-root workspaces are still preferred over browsing hidden folders directly.
+- In-repo `.worktrees/` is the standard workflow for this repo because it keeps worker trees project-scoped.
+- Multi-root workspaces are still useful, but sessions can also operate directly within the repo-scoped `.worktrees/` hierarchy.
 
 ## Verification And Troubleshooting
 

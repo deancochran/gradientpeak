@@ -3,29 +3,34 @@
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { MessageSquare } from "lucide-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { api } from "@/lib/api/client";
 
 export function MessagesButton() {
-  const router = useRouter();
-  // Placeholder for unread messages count
-  const unreadCount = 0;
+  const { data: unreadCount = 0 } = api.messaging.getUnreadCount.useQuery();
+  const label = unreadCount > 0 ? `Messages (${unreadCount} unread)` : "Messages";
 
   return (
     <Button
+      asChild
       variant="ghost"
       size="icon"
       className="relative"
-      onClick={() => router.push("/messages")}
+      aria-label={label}
+      title={label}
     >
-      <MessageSquare className="h-5 w-5" />
-      {unreadCount > 0 && (
-        <Badge
-          variant="destructive"
-          className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center rounded-full p-0 text-xs"
-        >
-          {unreadCount > 9 ? "9+" : unreadCount}
-        </Badge>
-      )}
+      <Link href="/messages">
+        <MessageSquare className="h-5 w-5" />
+        {unreadCount > 0 && (
+          <Badge
+            variant="destructive"
+            className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full p-0 text-xs"
+          >
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </Badge>
+        )}
+        <span className="sr-only">{label}</span>
+      </Link>
     </Button>
   );
 }

@@ -3,11 +3,9 @@ import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/reac
 import * as Network from "expo-network";
 import * as React from "react";
 import { Alert, AppState, Platform } from "react-native";
+import { api, createApiClient } from "../api";
 import { useServerConfig } from "../server-config";
 import { useAuthStore } from "../stores/auth-store";
-import { createApiClient, api } from "../api";
-
-const queryClient = createQueryClient();
 
 // Global error handler for 401/Unauthorized errors
 const handleGlobalError = (error: unknown) => {
@@ -21,8 +19,6 @@ const handleGlobalError = (error: unknown) => {
       (error as any).data?.code === "UNAUTHORIZED");
 
   if (isUnauthorized) {
-    console.log("🚨 Unauthorized error detected, clearing session...");
-    // Prevent infinite loops by checking if we're already logged out
     const { session } = useAuthStore.getState();
     if (session) {
       void useAuthStore.getState().clearSession();
@@ -57,11 +53,8 @@ export const setupFocusManager = () => {
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const { version } = useServerConfig();
+  const queryClient = React.useMemo(() => createQueryClient(), [version]);
   const apiClient = React.useMemo(() => createApiClient(), [version]);
-
-  React.useEffect(() => {
-    queryClient.clear();
-  }, [version]);
 
   React.useEffect(() => {
     const cleanupNetwork = setupNetworkListener();
@@ -99,7 +92,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       cleanupNetwork?.();
       cleanupFocus?.();
     };
-  }, []);
+  }, [queryClient]);
 
   return (
     <api.Provider client={apiClient} queryClient={queryClient}>

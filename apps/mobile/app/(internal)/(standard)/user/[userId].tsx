@@ -76,7 +76,6 @@ function UserDetailScreen() {
 
   const [isEmailUpdateVisible, setIsEmailUpdateVisible] = useState(false);
   const [newEmail, setNewEmail] = useState("");
-  const [emailPassword, setEmailPassword] = useState("");
   const [isPasswordChangeVisible, setIsPasswordChangeVisible] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -213,25 +212,20 @@ function UserDetailScreen() {
       Alert.alert("Error", "Please enter a new email address");
       return;
     }
-    if (!emailPassword.trim()) {
-      Alert.alert("Error", "Please enter your password to confirm");
-      return;
-    }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(newEmail)) {
       Alert.alert("Error", "Please enter a valid email address");
       return;
     }
 
-    void updateEmail({ newEmail, password: emailPassword })
+    void updateEmail({ newEmail })
       .then(() => {
         Alert.alert(
           "Verification Sent",
-          `Verification emails sent to both ${user?.email} and ${newEmail}. Please verify both to complete the email change.`,
+          `We sent email change instructions for ${newEmail}. Follow the link in your inbox to complete the update.`,
         );
         setIsEmailUpdateVisible(false);
         setNewEmail("");
-        setEmailPassword("");
       })
       .catch((error: unknown) => {
         Alert.alert("Error", error instanceof Error ? error.message : "Failed to update email");
@@ -578,8 +572,8 @@ function UserDetailScreen() {
               <View className="bg-card p-4 rounded-lg border border-border mb-4">
                 <Text className="text-sm font-medium mb-3">Update Email Address</Text>
                 <Text className="text-xs text-muted-foreground mb-3">
-                  You&apos;ll need to verify both your current and new email addresses to complete
-                  this change.
+                  We&apos;ll send a confirmation link to your new email address to complete this
+                  change.
                 </Text>
                 <Input
                   value={newEmail}
@@ -590,17 +584,8 @@ function UserDetailScreen() {
                   className="mb-3"
                   testID="account-email-input"
                 />
-                <Input
-                  value={emailPassword}
-                  onChangeText={setEmailPassword}
-                  placeholder="Enter your password to confirm"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  className="mb-3"
-                  testID="account-email-password-input"
-                />
                 <Button onPress={handleUpdateEmail} testID="account-email-submit-button">
-                  <Text>Send Verification Emails</Text>
+                  <Text>Send Verification Email</Text>
                 </Button>
               </View>
             )}
