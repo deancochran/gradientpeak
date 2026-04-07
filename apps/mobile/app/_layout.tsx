@@ -1,8 +1,8 @@
 // apps/native/app/_layout.tsx
 import "../polyfills";
+import { NATIVE_THEME_VARIABLES } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { NATIVE_THEME_VARIABLES } from "@repo/ui/theme/native";
 import "@/global.css";
 import { PortalHost } from "@rn-primitives/portal";
 import { router, Slot } from "expo-router";

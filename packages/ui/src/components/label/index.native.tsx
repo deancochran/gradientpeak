@@ -1,58 +1,32 @@
-import * as LabelPrimitive from "@rn-primitives/label";
+import * as React from "react";
 
-import { cn } from "../../lib/cn";
+import { Label as RegistryLabel } from "../../registry/native/label";
 import { getNativeTestProps } from "../../lib/test-props";
 import type { LabelTestProps } from "./shared";
 
-function labelRootClasses({
-  className,
-  disabled,
-}: {
-  className?: string;
-  disabled?: boolean;
-} = {}) {
-  return cn(
-    "flex select-none items-center gap-2",
-    "group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50",
-    disabled && "opacity-50",
-    className,
-  );
-}
-
-function labelTextClasses(className?: string) {
-  return cn("text-foreground text-sm font-medium", className);
-}
-
 function Label({
   accessibilityLabel,
-  className,
-  disabled,
   id,
-  onLongPress,
-  onPress,
-  onPressIn,
-  onPressOut,
+  nativeID,
   role,
   testId,
+  testID,
   ...props
-}: LabelPrimitive.TextProps & React.RefAttributes<LabelPrimitive.TextRef> & LabelTestProps) {
+}: React.ComponentProps<typeof RegistryLabel> & LabelTestProps) {
+  const { role: _unusedRole, ...nativeTestProps } = getNativeTestProps({
+    accessibilityLabel,
+    id,
+    role,
+    testId,
+  });
+
   return (
-    <LabelPrimitive.Root
-      className={labelRootClasses({ disabled })}
-      disabled={disabled}
-      {...(getNativeTestProps({
-        accessibilityLabel,
-        id,
-        role,
-        testId,
-      }) as Pick<LabelPrimitive.RootProps, "accessibilityLabel" | "nativeID" | "role" | "testID">)}
-      onLongPress={onLongPress}
-      onPress={onPress}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-    >
-      <LabelPrimitive.Text className={labelTextClasses(className)} {...props} />
-    </LabelPrimitive.Root>
+    <RegistryLabel
+      {...nativeTestProps}
+      nativeID={nativeID ?? nativeTestProps.nativeID}
+      testID={testID ?? nativeTestProps.testID}
+      {...props}
+    />
   );
 }
 

@@ -300,6 +300,17 @@ describe("homeRouter", () => {
     });
     expect(result.schedule).toEqual([
       {
+        id: "planned-today",
+        date: "2026-04-03",
+        isToday: true,
+        isCompleted: true,
+        activityName: "Threshold Ride",
+        activityType: "bike",
+        estimatedDuration: 3600,
+        estimatedDistance: 20000,
+        estimatedTSS: 90,
+      },
+      {
         id: "planned-tomorrow",
         date: "2026-04-04",
         isToday: false,
@@ -311,7 +322,17 @@ describe("homeRouter", () => {
         estimatedTSS: 60,
       },
     ]);
-    expect(result.todaysActivity).toBeNull();
+    expect(result.todaysActivity).toEqual({
+      id: "planned-today",
+      date: "2026-04-03",
+      isToday: true,
+      isCompleted: true,
+      activityName: "Threshold Ride",
+      activityType: "bike",
+      estimatedDuration: 3600,
+      estimatedDistance: 20000,
+      estimatedTSS: 90,
+    });
     expect(result.projectedFitness).toEqual([
       { date: "2026-04-04", ctl: 43.1, atl: 49.3, tsb: -6.2, plannedTss: 90 },
       { date: "2026-04-05", ctl: 44.6, atl: 48.2, tsb: -3.6, plannedTss: 60 },

@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, type Theme } from "@react-navigation/native";
-import { THEME } from "@repo/ui/theme/native";
+import { THEME } from "@repo/tailwindcss/native";
 import { Appearance, type ColorSchemeName } from "react-native";
 
 export type ThemePreference = "system" | "light" | "dark";

@@ -1,80 +1,20 @@
-import { Slot } from "@radix-ui/react-slot";
 import * as React from "react";
 
-import { cn } from "../../lib/cn";
+import { Button as RegistryButton, buttonVariants } from "../../registry/web/button";
 import { getWebTestProps } from "../../lib/test-props";
-import { type ButtonSize, type ButtonTestProps, type ButtonVariant } from "./shared";
 
-const buttonBaseClasses =
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium";
+type ButtonProps = React.ComponentProps<typeof RegistryButton> & {
+  accessibilityLabel?: string;
+  id?: string;
+  role?: string;
+  testId?: string;
+};
 
-const buttonWebBaseClasses =
-  "whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 aria-invalid:border-destructive dark:aria-invalid:ring-destructive/40";
-
-const buttonVariantClasses = {
-  default: "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
-  destructive:
-    "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
-  outline:
-    "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-  secondary: "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
-  ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-  link: "text-primary underline-offset-4 hover:underline",
-} satisfies Record<ButtonVariant, string>;
-
-const buttonSizeClasses = {
-  default: "h-9 px-4 py-2 has-[>svg]:px-3",
-  sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
-  lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-  icon: "size-9",
-} satisfies Record<ButtonSize, string>;
-
-function buttonVariants({
-  className,
-  size = "default",
-  variant = "default",
-}: {
-  className?: string;
-  size?: ButtonSize;
-  variant?: ButtonVariant;
-} = {}) {
-  return cn(
-    buttonBaseClasses,
-    buttonWebBaseClasses,
-    buttonVariantClasses[variant],
-    buttonSizeClasses[size],
-    className,
-  );
-}
-
-export type ButtonProps = React.ComponentProps<"button"> &
-  ButtonTestProps & {
-    asChild?: boolean;
-    size?: ButtonSize;
-    variant?: ButtonVariant;
-  };
-
-function Button({
-  accessibilityLabel,
-  asChild = false,
-  className,
-  id,
-  role,
-  size,
-  testId,
-  variant,
-  ...props
-}: ButtonProps) {
-  const Comp = asChild ? Slot : "button";
-
+function Button({ accessibilityLabel, id, role, testId, ...props }: ButtonProps) {
   return (
-    <Comp
-      data-slot="button"
-      className={buttonVariants({ className, size, variant })}
-      {...getWebTestProps({ accessibilityLabel, id, role, testId })}
-      {...props}
-    />
+    <RegistryButton {...getWebTestProps({ accessibilityLabel, id, role, testId })} {...props} />
   );
 }
 
 export { Button, buttonVariants };
+export type { ButtonProps };

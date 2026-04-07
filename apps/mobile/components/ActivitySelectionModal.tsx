@@ -159,7 +159,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
                   <ToggleGroup
                     type="single"
                     value={currentGpsRecordingEnabled ? "gps-on" : "gps-off"}
-                    onValueChange={(nextValue) => {
+                    onValueChange={(nextValue: string | undefined) => {
                       if (nextValue === "gps-on") {
                         handleGpsChange(true);
                       } else if (nextValue === "gps-off") {

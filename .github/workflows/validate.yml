@@ -13,6 +13,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  BETTER_AUTH_SECRET: ci-build-secret-gradientpeak-2026-validate-32chars
+
 jobs:
   format-and-lint:
     name: Format And Lint

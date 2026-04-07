@@ -127,12 +127,7 @@
       "react-native": "./src/testing/ui-preview/index.native.tsx",
       "default": "./src/testing/ui-preview/index.web.tsx"
     },
-    "./theme": "./src/theme/index.ts",
-    "./theme/native": "./src/theme/native.ts",
-    "./theme/native.css": "./src/theme/native.css",
-    "./theme/tokens.css": "./src/theme/tokens.css",
-    "./theme/web.css": "./src/theme/web.css",
-    "./theme/*": "./src/theme/*"
+    "./theme/web.css": "./src/theme/web.css"
   },
   "sideEffects": [
     "**/*.css"
@@ -142,15 +137,13 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
-    "generate:selectors": "bash ./scripts/run-strip-types.sh ./scripts/generate-selectors.ts",
-    "generate:ui-preview-manifest": "bash ./scripts/run-strip-types.sh ./scripts/generate-ui-preview-manifest.ts",
+    "generate:selectors": "node --experimental-strip-types ./scripts/generate-selectors.ts",
+    "generate:ui-preview-manifest": "node --experimental-strip-types ./scripts/generate-ui-preview-manifest.ts",
     "test": "pnpm run test:web && pnpm run test:native",
     "test:web": "vitest run",
     "test:native": "jest --config ./jest.config.mjs --runInBand",
-    "sync:shadcn-theme": "node ./scripts/sync-shadcn-theme.mjs",
-    "generate:theme": "node ./scripts/generate-theme.mjs",
-    "add:shadcn": "pnpm dlx shadcn@latest add",
-    "add:reusables": "pnpm dlx shadcn@latest add"
+    "add:shadcn": "node ./scripts/add-shadcn.mjs",
+    "add:reusables": "node ./scripts/add-reusables.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -205,6 +198,7 @@
     "lucide-react": "^0.541.0",
     "lucide-react-native": "^0.544.0",
     "nativewind": "5.0.0-preview.3",
+    "radix-ui": "^1.4.3",
     "react": "19.1.0",
     "react-hook-form": "^7.66.0",
     "react-native": "0.81.5",

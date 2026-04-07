@@ -45,7 +45,7 @@ export function TimeRangeSelector({ value, onChange, disabled = false }: TimeRan
         <ToggleGroup
           type="single"
           value={value}
-          onValueChange={(nextValue) => {
+          onValueChange={(nextValue: string | undefined) => {
             if (!disabled && nextValue) {
               onChange(nextValue as TimeRange);
             }

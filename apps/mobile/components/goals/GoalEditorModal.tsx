@@ -400,7 +400,7 @@ export function GoalEditorModal({
               <ToggleGroup
                 type="single"
                 value={draft.activityCategory ?? undefined}
-                onValueChange={(nextValue) => {
+                onValueChange={(nextValue: string | undefined) => {
                   if (nextValue) {
                     updateDraft({
                       activityCategory: nextValue as GoalEditorDraft["activityCategory"],
@@ -445,7 +445,7 @@ export function GoalEditorModal({
                   <ToggleGroup
                     type="single"
                     value={draft.raceDistanceKm == null ? undefined : String(draft.raceDistanceKm)}
-                    onValueChange={(nextValue) => {
+                    onValueChange={(nextValue: string | undefined) => {
                       if (nextValue) {
                         updateDraft({ raceDistanceKm: Number(nextValue) });
                       }

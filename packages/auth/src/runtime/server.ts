@@ -173,11 +173,10 @@ export function getGradientPeakAuth() {
   return authSingleton;
 }
 
-export const auth = getGradientPeakAuth();
-
 export async function resolveAuthSession(
   input: AuthSessionLookupInput,
 ): Promise<AuthSession | null> {
+  const auth = getGradientPeakAuth();
   const lookupInput = createAuthSessionLookupInputFromHeaders(
     createAuthHeadersFromSessionLookupInput(input),
   );

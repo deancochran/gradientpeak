@@ -77,10 +77,14 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
-jest.mock("@repo/ui/theme/native", () => ({
-  __esModule: true,
-  NATIVE_THEME_VARIABLES: { light: {}, dark: {} },
-}));
+jest.mock(
+  "@repo/tailwindcss/native",
+  () => ({
+    __esModule: true,
+    NATIVE_THEME_VARIABLES: { light: {}, dark: {} },
+  }),
+  { virtual: true },
+);
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,

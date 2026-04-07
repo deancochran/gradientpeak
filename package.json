@@ -4,6 +4,9 @@
     "@biomejs/biome": "^2.2.5",
     "@playwright/test": "^1.58.2",
     "chokidar-cli": "^3.0.0",
+    "concurrently": "^9.2.1",
+    "dotenv-cli": "^11.0.0",
+    "kill-port-cli": "^1.0.2",
     "lightningcss": "1.30.1",
     "turbo": "^2.6.3",
     "typescript": "5.9.2"
@@ -17,7 +20,8 @@
     "build": "turbo run build",
     "check": "biome check .",
     "dev": "turbo run dev",
-    "dev:clean": "bash ./scripts/dev-clean.sh",
+    "dev:logged": "mkdir -p .logs && concurrently --names web,mobile --prefix '[{time} {name}]' --timestamp-format HH:mm:ss --prefix-colors cyan,magenta \"pnpm --filter web dev 2>&1 | tee -a .logs/web-dev.log\" \"pnpm --filter mobile dev 2>&1 | tee -a .logs/mobile-dev.log\" | tee -a .logs/dev.log",
+    "dev:clean": "pnpm exec k 3000 3100 8081 8082 || true && pnpm run self-host:down >/dev/null 2>&1 || true && printf '[dev-clean] local web/mobile dev servers and Supabase stopped\n'",
     "dev:e2e": "turbo run dev:e2e --parallel --ui tui",
     "dev:web": "pnpm --filter web dev",
     "dev:mobile": "pnpm --filter mobile dev",
@@ -51,7 +55,8 @@
   },
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "tooling/*"
   ],
   "pnpm": {
     "overrides": {

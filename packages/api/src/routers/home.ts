@@ -433,9 +433,14 @@ export const homeRouter = createTRPCRouter({
       };
 
       // Planned
+      const startOfWeekStr = startOfWeek.toISOString().split("T")[0]!;
+      const endOfWeekStr = endOfWeek.toISOString().split("T")[0]!;
+
       const weeklyPlanned = activitiesWithEstimations.filter((pa: any) => {
-        const d = new Date(pa.scheduled_date);
-        return d >= startOfWeek && d <= endOfWeek;
+        const scheduledDate = pa.scheduled_date?.split("T")[0];
+        if (!scheduledDate) return false;
+
+        return scheduledDate >= startOfWeekStr && scheduledDate <= endOfWeekStr;
       });
 
       const weeklyPlannedStats = {
@@ -485,11 +490,15 @@ export const homeRouter = createTRPCRouter({
         }
       });
 
+      const scheduleEndStr = scheduleEnd.toISOString().split("T")[0]!;
+
       const schedule = activitiesWithEstimations
         .filter((pa: any) => {
-          const d = new Date(pa.scheduled_date);
-          // Include today + future
-          return d >= today && d < scheduleEnd;
+          const scheduledDate = pa.scheduled_date?.split("T")[0];
+          if (!scheduledDate) return false;
+
+          // Include today + future using stable date-only comparisons.
+          return scheduledDate >= todayStr && scheduledDate < scheduleEndStr;
         })
         .map((pa: any) => ({
           id: pa.id,

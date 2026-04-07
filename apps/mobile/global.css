@@ -2,4 +2,4 @@
 @source "./components/**/*.{ts,tsx}";
 @source "../../packages/ui/src/**/*.{ts,tsx}";
 
-@import "@repo/ui/theme/native.css";
+@import "@repo/tailwindcss/native.css";
