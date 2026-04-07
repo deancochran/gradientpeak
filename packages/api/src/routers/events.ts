@@ -1,4 +1,5 @@
 import {
+  editableEventPatchSchema,
   eventCreateSchema,
   eventMutationScopeSchema,
   eventTypeInputSchema,
@@ -81,6 +82,9 @@ type DbEventType = PublicEventType;
 type CoreEventType = z.infer<typeof eventTypeInputSchema>;
 type EventMutationScope = z.infer<typeof eventMutationScopeSchema>;
 type LegacyPlannedCreateInput = z.infer<typeof plannedActivityCreateSchema>;
+type EventCreateInput = z.infer<typeof eventCreateSchema>;
+type EventUpdateInput = z.infer<typeof eventUpdateSchema>;
+type EventCreateMutationInput = LegacyPlannedCreateInput | EventCreateInput;
 
 const plannedEventType = "planned_activity" as const;
 
@@ -200,9 +204,25 @@ const validateConstraintsSchema = z
   .strict();
 
 const plannedActivityCreateInputSchema = plannedActivityCreateSchema.strict();
-const eventCreateInputSchema = z.custom<
-  z.infer<typeof plannedActivityCreateSchema> | z.infer<typeof eventCreateSchema>
->();
+const eventCreateInputSchema = z.unknown().transform((value, ctx): EventCreateMutationInput => {
+  const schema =
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "scheduled_date" in value
+      ? plannedActivityCreateInputSchema
+      : eventCreateSchema;
+
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return parsed.data;
+
+  ctx.addIssue({
+    code: "custom",
+    message: parsed.error.issues[0]?.message ?? "Invalid event create payload",
+  });
+
+  return z.NEVER;
+});
 
 const plannedActivityUpdateWithIdInputSchema = plannedActivityUpdateSchema
   .extend({
@@ -211,9 +231,76 @@ const plannedActivityUpdateWithIdInputSchema = plannedActivityUpdateSchema
   })
   .strict();
 
-const eventUpdateInputSchema = z.custom<
-  z.infer<typeof plannedActivityUpdateWithIdInputSchema> | z.infer<typeof eventUpdateSchema>
->();
+type LegacyPlannedUpdateInput = z.infer<typeof plannedActivityUpdateWithIdInputSchema>;
+type EventUpdatePatchInput = z.infer<typeof editableEventPatchSchema>;
+type EventUpdateMutationInput = LegacyPlannedUpdateInput | EventUpdateInput;
+
+const eventUpdateInputSchema = z.unknown().transform((value, ctx): EventUpdateMutationInput => {
+  const schema =
+    typeof value === "object" && value !== null && !Array.isArray(value) && "patch" in value
+      ? eventUpdateSchema
+      : plannedActivityUpdateWithIdInputSchema;
+
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return parsed.data;
+
+  ctx.addIssue({
+    code: "custom",
+    message: parsed.error.issues[0]?.message ?? "Invalid event update payload",
+  });
+
+  return z.NEVER;
+});
+
+function isLegacyPlannedCreateInput(
+  input: EventCreateMutationInput,
+): input is LegacyPlannedCreateInput {
+  return "scheduled_date" in input;
+}
+
+function isLegacyPlannedUpdateInput(
+  input: EventUpdateMutationInput,
+): input is LegacyPlannedUpdateInput {
+  return !("patch" in input);
+}
+
+type NormalizedEventUpdatePatch = {
+  activity_plan_id?: string | null;
+  training_plan_id?: string | null;
+  notes?: string | null;
+  event_type?: CoreEventType;
+  recurrence?: EventUpdatePatchInput["recurrence"];
+  lifecycle?: EventUpdatePatchInput["lifecycle"];
+  title?: string;
+  description?: string | null;
+  all_day?: boolean;
+  timezone?: string;
+  starts_at?: string;
+  ends_at?: string | null;
+};
+
+function normalizeEventUpdatePatch(input: EventUpdateMutationInput): {
+  patch: NormalizedEventUpdatePatch;
+  scheduledDate: string | undefined;
+} {
+  if (isLegacyPlannedUpdateInput(input)) {
+    return {
+      patch: {
+        activity_plan_id: input.activity_plan_id,
+        notes: input.notes,
+        event_type: input.event_type,
+        recurrence: input.recurrence,
+        lifecycle: input.lifecycle,
+      },
+      scheduledDate: input.scheduled_date,
+    };
+  }
+
+  return {
+    patch: input.patch as NormalizedEventUpdatePatch,
+    scheduledDate: undefined,
+  };
+}
 
 const eventDeleteInputSchema = z
   .object({
@@ -789,8 +876,8 @@ export const eventsRouter = createTRPCRouter({
 
   create: protectedProcedure.input(eventCreateInputSchema).mutation(async ({ ctx, input }) => {
     const eventWriteRepository = getEventWriteRepository(ctx);
-    const legacyInput = "scheduled_date" in input ? (input as LegacyPlannedCreateInput) : null;
-    const normalizedEventType: CoreEventType = (input.event_type ?? "planned") as CoreEventType;
+    const legacyInput = isLegacyPlannedCreateInput(input) ? input : null;
+    const normalizedEventType: CoreEventType = input.event_type ?? "planned";
 
     assertRestDayWritesBlocked(normalizedEventType, "create");
 
@@ -843,16 +930,18 @@ export const eventsRouter = createTRPCRouter({
       }
     }
 
-    const domainInput = input as z.infer<typeof eventCreateSchema>;
+    let startsAt: string;
+    let endsAt: string | null;
 
-    const startsAt = legacyInput
-      ? toDayStartIso(legacyInput.scheduled_date)
-      : toCanonicalInstantIso(domainInput.starts_at);
-    const endsAt = legacyInput
-      ? toNextDayStartIso(legacyInput.scheduled_date)
-      : typeof domainInput.ends_at === "string"
-        ? toCanonicalInstantIso(domainInput.ends_at)
-        : null;
+    if (legacyInput) {
+      startsAt = toDayStartIso(legacyInput.scheduled_date);
+      endsAt = toNextDayStartIso(legacyInput.scheduled_date);
+    } else {
+      const domainInput = input as EventCreateInput;
+      startsAt = toCanonicalInstantIso(domainInput.starts_at);
+      endsAt =
+        typeof domainInput.ends_at === "string" ? toCanonicalInstantIso(domainInput.ends_at) : null;
+    }
     const title = "title" in input ? input.title : defaultTitleForEventType(normalizedEventType);
     const allDay = "all_day" in input ? input.all_day : true;
     const timezone = "timezone" in input ? input.timezone : "UTC";
@@ -870,8 +959,7 @@ export const eventsRouter = createTRPCRouter({
         startsAt,
         endsAt,
         status,
-        activityPlanId:
-          normalizedEventType === "rest_day" ? null : (input.activity_plan_id ?? null),
+        activityPlanId: input.activity_plan_id ?? null,
         trainingPlanId,
         notes: input.notes ?? null,
         description,
@@ -950,33 +1038,25 @@ export const eventsRouter = createTRPCRouter({
       });
     }
 
-    const patch = "patch" in input ? input.patch : input;
-    const patchAny = patch as any;
-    const scheduledDate = "scheduled_date" in input ? input.scheduled_date : undefined;
-    const targetEventType = (patchAny.event_type as CoreEventType | undefined) ?? existingEventType;
+    const { patch, scheduledDate } = normalizeEventUpdatePatch(input);
+    const targetEventType = patch.event_type ?? existingEventType;
 
     assertRestDayWritesBlocked(targetEventType, "update");
 
     const hasScheduledDateMove =
       scheduledDate !== undefined &&
       toDateKey(scheduledDate) !== toDateKey(existingEvent.starts_at);
-    const hasStartsAtMove = hasInstantChanged(
-      patchAny.starts_at as string | undefined,
-      existingEvent.starts_at,
-    );
-    const hasEndsAtMove = hasInstantChanged(
-      patchAny.ends_at as string | null | undefined,
-      existingEvent.ends_at,
-    );
+    const hasStartsAtMove = hasInstantChanged(patch.starts_at, existingEvent.starts_at);
+    const hasEndsAtMove = hasInstantChanged(patch.ends_at, existingEvent.ends_at);
     const isMoveRescheduleUpdate = hasScheduledDateMove || hasStartsAtMove || hasEndsAtMove;
     const isPlannedLikeEvent = existingEventType === "planned" || targetEventType === "planned";
     const hasCompletionLinkage =
       existingEvent.linked_activity_id !== null || existingEvent.status === "completed";
 
-    ensurePersistableRecurrence(patchAny.recurrence);
+    ensurePersistableRecurrence(patch.recurrence);
     const nextActivityPlanId =
-      patchAny.activity_plan_id !== undefined
-        ? (patchAny.activity_plan_id as string | null)
+      patch.activity_plan_id !== undefined
+        ? patch.activity_plan_id
         : existingEvent.activity_plan_id;
 
     if (targetEventType === "planned" && !nextActivityPlanId) {
@@ -986,9 +1066,9 @@ export const eventsRouter = createTRPCRouter({
       });
     }
 
-    if (typeof patchAny.activity_plan_id === "string") {
+    if (typeof patch.activity_plan_id === "string") {
       const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
-        activityPlanId: patchAny.activity_plan_id,
+        activityPlanId: patch.activity_plan_id,
         profileId: ctx.session.user.id,
       });
 
@@ -1000,10 +1080,10 @@ export const eventsRouter = createTRPCRouter({
       }
     }
 
-    if (typeof patchAny.training_plan_id === "string") {
+    if (typeof patch.training_plan_id === "string") {
       const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
         profileId: ctx.session.user.id,
-        trainingPlanId: patchAny.training_plan_id,
+        trainingPlanId: patch.training_plan_id,
       });
 
       if (!trainingPlan) {
@@ -1015,31 +1095,31 @@ export const eventsRouter = createTRPCRouter({
     }
 
     const eventUpdates: Record<string, unknown> = {
-      ...(patchAny.event_type !== undefined
-        ? { event_type: toDbEventType(patchAny.event_type as CoreEventType) }
+      ...(patch.event_type !== undefined
+        ? { event_type: toDbEventType(patch.event_type) }
         : {}),
-      ...(patchAny.activity_plan_id !== undefined
-        ? { activity_plan_id: patchAny.activity_plan_id as string | null }
+      ...(patch.activity_plan_id !== undefined
+        ? { activity_plan_id: patch.activity_plan_id }
         : {}),
-      ...(patchAny.notes !== undefined ? { notes: patchAny.notes as string | null } : {}),
-      ...(patchAny.lifecycle !== undefined
-        ? { status: toPersistableEventStatus(patchAny.lifecycle) }
+      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+      ...(patch.lifecycle !== undefined
+        ? { status: toPersistableEventStatus(patch.lifecycle) }
         : {}),
-      ...(patchAny.title !== undefined ? { title: patchAny.title as string } : {}),
-      ...(patchAny.description !== undefined
-        ? { description: patchAny.description as string | null }
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.description !== undefined
+        ? { description: patch.description }
         : {}),
-      ...(patchAny.all_day !== undefined ? { all_day: patchAny.all_day as boolean } : {}),
-      ...(patchAny.timezone !== undefined ? { timezone: patchAny.timezone as string } : {}),
-      ...(patchAny.training_plan_id !== undefined
-        ? { training_plan_id: patchAny.training_plan_id as string | null }
+      ...(patch.all_day !== undefined ? { all_day: patch.all_day } : {}),
+      ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
+      ...(patch.training_plan_id !== undefined
+        ? { training_plan_id: patch.training_plan_id }
         : {}),
-      ...(patchAny.starts_at !== undefined ? { starts_at: patchAny.starts_at as string } : {}),
-      ...(patchAny.ends_at !== undefined ? { ends_at: patchAny.ends_at as string | null } : {}),
-      ...(patchAny.recurrence !== undefined
+      ...(patch.starts_at !== undefined ? { starts_at: patch.starts_at } : {}),
+      ...(patch.ends_at !== undefined ? { ends_at: patch.ends_at } : {}),
+      ...(patch.recurrence !== undefined
         ? {
-            recurrence_rule: patchAny.recurrence.rule as string,
-            recurrence_timezone: patchAny.recurrence.timezone as string,
+            recurrence_rule: patch.recurrence.rule,
+            recurrence_timezone: patch.recurrence.timezone,
           }
         : {}),
     };
@@ -1050,15 +1130,15 @@ export const eventsRouter = createTRPCRouter({
     }
 
     const nextAllDay =
-      patchAny.all_day !== undefined ? Boolean(patchAny.all_day) : existingEvent.all_day;
+      patch.all_day !== undefined ? Boolean(patch.all_day) : existingEvent.all_day;
 
     if (
       nextAllDay &&
-      patchAny.starts_at !== undefined &&
-      patchAny.ends_at === undefined &&
+      patch.starts_at !== undefined &&
+      patch.ends_at === undefined &&
       scheduledDate === undefined
     ) {
-      eventUpdates.ends_at = toNextDayStartIso(toDateKey(patchAny.starts_at as string));
+      eventUpdates.ends_at = toNextDayStartIso(toDateKey(patch.starts_at));
     }
 
     if (isMoveRescheduleUpdate && isPlannedLikeEvent && hasCompletionLinkage) {

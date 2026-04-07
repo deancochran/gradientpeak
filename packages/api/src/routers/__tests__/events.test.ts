@@ -485,9 +485,40 @@ describe("eventsRouter generalization", () => {
         lifecycle: { status: "scheduled" },
         read_only: false,
       } as any),
-    ).rejects.toThrow(
-      /Cannot create rest_day events; rest is inferred from dates without scheduled planned events/,
-    );
+    ).rejects.toThrow(/Invalid input|Invalid event create payload|rest_day/);
+  });
+
+  it("create rejects mixed legacy and domain payload shapes", async () => {
+    const { caller, callLog } = createCaller({});
+
+    await expect(
+      caller.create({
+        activity_plan_id: "11111111-1111-4111-8111-111111111111",
+        scheduled_date: "2026-03-12",
+        title: "Unexpected domain field",
+      } as any),
+    ).rejects.toThrow(/Unrecognized key|Invalid event create payload|title/);
+
+    expect(callLog).toEqual([]);
+  });
+
+  it("create rejects malformed activity plan ids before repository writes", async () => {
+    const { caller, callLog } = createCaller({});
+
+    await expect(
+      caller.create({
+        event_type: "planned",
+        title: "Evening Run",
+        starts_at: "2026-03-12T23:30:00-05:00",
+        all_day: false,
+        timezone: "America/New_York",
+        activity_plan_id: "not-a-uuid",
+        lifecycle: { status: "scheduled" },
+        read_only: false,
+      } as any),
+    ).rejects.toThrow(/Invalid UUID|Invalid activity plan ID|Invalid event create payload/);
+
+    expect(callLog).toEqual([]);
   });
 
   it("getById hides legacy rest_day rows", async () => {
@@ -854,9 +885,20 @@ describe("eventsRouter generalization", () => {
         id: "00000000-0000-4000-8000-000000000042",
         patch: { event_type: "rest_day" as any },
       }),
-    ).rejects.toThrow(
-      /Cannot update rest_day events; rest is inferred from dates without scheduled planned events/,
-    );
+    ).rejects.toThrow(/Invalid option|Invalid event update payload|rest_day/);
+  });
+
+  it("update rejects malformed patch payloads before repository reads", async () => {
+    const { caller, callLog } = createCaller({});
+
+    await expect(
+      caller.update({
+        id: "00000000-0000-4000-8000-000000000042",
+        patch: { starts_at: 123 },
+      } as any),
+    ).rejects.toThrow(/Invalid input|Invalid event update payload/);
+
+    expect(callLog).toEqual([]);
   });
 
   it("links an event to a completed activity", async () => {
