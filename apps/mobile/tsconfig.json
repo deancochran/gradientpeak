@@ -1,7 +1,6 @@
 {
-  "extends": "expo/tsconfig.base",
+  "extends": "@repo/typescript-config/expo.json",
   "compilerOptions": {
-    "strict": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
@@ -16,6 +15,5 @@
       "@repo/auth/*": ["../../packages/auth/src/*"]
     }
   },
-
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "nativewind-env.d.ts"]
 }
