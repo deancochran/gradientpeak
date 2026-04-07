@@ -28,6 +28,7 @@ export interface CreateGradientPeakAuthOptions {
 
 let poolSingleton: Pool | null = null;
 let authSingleton: ReturnType<typeof createGradientPeakAuth> | null = null;
+let authSecretWarningLogged = false;
 
 function getPool(databaseUrl: string) {
   if (!poolSingleton) {
@@ -64,6 +65,28 @@ function createAdapterSchema() {
   } as any;
 }
 
+function resolveAuthSecret(explicitSecret?: string) {
+  if (explicitSecret) {
+    return explicitSecret;
+  }
+
+  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+  const isDevelopment = process.env.NODE_ENV === "development";
+
+  if (isBuildPhase || isDevelopment) {
+    if (isDevelopment && !authSecretWarningLogged) {
+      authSecretWarningLogged = true;
+      console.warn(
+        "[auth] BETTER_AUTH_SECRET is not set; using a local non-production fallback secret",
+      );
+    }
+
+    return `gradientpeak-${process.env.NODE_ENV ?? "unknown"}-fallback-auth-secret`;
+  }
+
+  return undefined;
+}
+
 export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
   const env = parseAuthRuntimeEnv({
     appUrl: options.appUrl,
@@ -98,8 +121,10 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     schema: createAdapterSchema(),
   });
 
+  const secret = resolveAuthSecret(options.secret);
+
   return betterAuth({
-    ...(options.secret ? { secret: options.secret } : {}),
+    ...(secret ? { secret } : {}),
     advanced: {
       database: {
         generateId: () => crypto.randomUUID(),
