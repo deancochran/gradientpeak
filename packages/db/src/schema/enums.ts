@@ -10,12 +10,25 @@ export const activityCategoryEnum = pgEnum("activity_category", [
 
 export const effortTypeEnum = pgEnum("effort_type", ["power", "speed"]);
 
+export const coachingInvitationStatusEnum = pgEnum("coaching_invitation_status", [
+  "pending",
+  "accepted",
+  "declined",
+]);
+
 export const integrationProviderEnum = pgEnum("integration_provider", [
   "strava",
   "wahoo",
   "trainingpeaks",
   "garmin",
   "zwift",
+]);
+
+export const likeEntityTypeEnum = pgEnum("like_entity_type", [
+  "activity",
+  "activity_plan",
+  "training_plan",
+  "route",
 ]);
 
 export const eventStatusEnum = pgEnum("event_status", ["scheduled", "completed", "cancelled"]);
@@ -43,6 +56,15 @@ export const profileMetricTypeEnum = pgEnum("profile_metric_type", [
   "wellness_score",
   "max_hr",
   "lthr",
+]);
+
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "new_message",
+  "coaching_invitation",
+  "coaching_invitation_accepted",
+  "coaching_invitation_declined",
+  "new_follower",
+  "follow_request",
 ]);
 
 export const trainingEffectLabelEnum = pgEnum("training_effect_label", [

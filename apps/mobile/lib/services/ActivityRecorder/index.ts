@@ -23,13 +23,13 @@ import {
   type MetricSourceSelection,
   type MetricSourceType,
   type PerformanceMetrics,
+  type RecordingActivityCategory,
   RecordingConfigResolver,
   type RecordingConfiguration,
   type RecordingLaunchIntent,
   RecordingServiceActivityPlan,
   resolveMetricSources as resolveCoreMetricSources,
 } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 import { EventEmitter } from "expo";
 import { LocationObject } from "expo-location";
 import { AppState, AppStateStatus } from "react-native";
@@ -55,6 +55,7 @@ import { type ConnectedSensor, SensorsManager } from "./sensors";
 import { RecordingSessionController } from "./sessionController";
 import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
 import {
+  type RecorderProfileRef,
   type RecordingMetadata,
   type RecordingPlanView,
   type RecordingRuntimeSourceState,
@@ -132,7 +133,7 @@ export interface ServiceEvents {
 
   // Unplanned activity was selected
   activitySelected: (data: {
-    category: PublicActivityCategory;
+    category: RecordingActivityCategory;
     gpsRecordingEnabled: boolean;
   }) => void;
 
@@ -192,7 +193,7 @@ type LoadedRoute = {
 export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Public State ===
   public state: RecordingState = "pending";
-  public selectedActivityCategory: PublicActivityCategory = "bike";
+  public selectedActivityCategory: RecordingActivityCategory = "bike";
   private _gpsRecordingEnabled: boolean = true;
   public recordingMetadata?: RecordingMetadata;
   private finalizedArtifact: RecordingSessionArtifact | null = null;
@@ -242,7 +243,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private lastLapTime: number = 0; // Moving time when last lap was recorded
 
   // === Profile ===
-  private profile: PublicProfilesRow;
+  private profile: RecorderProfileRef;
   private ftp?: number;
   private _baseFtp?: number;
   private _ftpScale: number = 1.0;
@@ -257,7 +258,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private _baseThresholdPaceSecondsPerKm?: number;
 
   constructor(
-    profile: PublicProfilesRow,
+    profile: RecorderProfileRef,
     metrics?: {
       ftp?: number;
       thresholdHr?: number;
@@ -1402,11 +1403,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     try {
       console.log("[Service] Loading route:", routeId);
 
-      // Import vanilla trpc client (for use outside React components)
-      const { getVanillaTrpcClient } = await import("@/lib/trpc");
+      // Import vanilla api client (for use outside React components)
+      const { getVanillaApiClient } = await import("@/lib/api");
 
       // Load full route with coordinates
-      const route = await getVanillaTrpcClient().routes.loadFull.query({
+      const route = await getVanillaApiClient().routes.loadFull.query({
         id: routeId,
       });
 
@@ -1529,7 +1530,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private getFitSport(
-    category: PublicActivityCategory,
+    category: RecordingActivityCategory,
     gpsRecordingEnabled: boolean,
   ): { sport: string; subSport: string } {
     switch (category) {
@@ -2102,7 +2103,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   updateActivityConfiguration(
-    category: PublicActivityCategory,
+    category: RecordingActivityCategory,
     gpsRecordingEnabled: boolean,
   ): void {
     if (!this.ensureMutableSessionIdentity("Activity configuration")) {
@@ -2117,7 +2118,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.publishSessionUpdate();
   }
 
-  selectUnplannedActivity(category: PublicActivityCategory, gpsRecordingEnabled: boolean): void {
+  selectUnplannedActivity(category: RecordingActivityCategory, gpsRecordingEnabled: boolean): void {
     if (!this.ensureMutableSessionIdentity("Activity selection")) {
       return;
     }

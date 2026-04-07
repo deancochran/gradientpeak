@@ -1,11 +1,21 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { expo } from "@better-auth/expo";
+import { resolveDatabaseUrl } from "@repo/db/client";
 import * as appSchema from "@repo/db/schema";
+import { compare, hash } from "bcryptjs";
 import { betterAuth } from "better-auth";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import type { AuthSession } from "../contracts/session";
-import { parseAuthRuntimeEnv } from "./env";
+import {
+  type AuthSession,
+  type AuthSessionLookupInput,
+  createAuthHeadersFromSessionLookupInput,
+  createAuthSessionLookupInputFromHeaders,
+  inferAuthSessionTransport,
+  normalizeAuthSession,
+} from "../contracts/session";
+import { authRuntimeEnvSchema, parseAuthRuntimeEnv } from "./env";
+import { createAuthMailer, type SendAuthEmailInput } from "./mailer";
 
 export interface CreateGradientPeakAuthOptions {
   appUrl: string;
@@ -18,6 +28,7 @@ export interface CreateGradientPeakAuthOptions {
 
 let poolSingleton: Pool | null = null;
 let authSingleton: ReturnType<typeof createGradientPeakAuth> | null = null;
+let authSecretWarningLogged = false;
 
 function getPool(databaseUrl: string) {
   if (!poolSingleton) {
@@ -39,15 +50,6 @@ function createTrustedOrigins(appUrl: string, mobileScheme: string, trustedOrigi
   );
 }
 
-function createNoopEmailSender(kind: string) {
-  return async ({ user, url }: { user: { email: string }; url: string }) => {
-    console.warn(`[auth] ${kind} email sender not configured`, {
-      email: user.email,
-      url,
-    });
-  };
-}
-
 function createDeleteCleanupHook() {
   return async (user: { id: string; email: string }) => {
     console.warn("[auth] delete-user cleanup hook not configured", {
@@ -63,29 +65,26 @@ function createAdapterSchema() {
   } as any;
 }
 
-function normalizeBetterAuthSession(
-  session: any,
-  transport: AuthSession["transport"],
-): AuthSession | null {
-  if (!session?.user?.id || !session?.user?.email || !session?.session?.id) {
-    return null;
+function resolveAuthSecret(explicitSecret?: string) {
+  if (explicitSecret) {
+    return explicitSecret;
   }
 
-  return {
-    sessionId: String(session.session.id),
-    user: {
-      id: String(session.user.id),
-      email: String(session.user.email),
-      emailVerified: Boolean(session.user.emailVerified),
-    },
-    transport,
-    expiresAt:
-      typeof session.session.expiresAt === "string"
-        ? session.session.expiresAt
-        : session.session.expiresAt instanceof Date
-          ? session.session.expiresAt.toISOString()
-          : undefined,
-  };
+  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+  const isDevelopment = process.env.NODE_ENV === "development";
+
+  if (isBuildPhase || isDevelopment) {
+    if (isDevelopment && !authSecretWarningLogged) {
+      authSecretWarningLogged = true;
+      console.warn(
+        "[auth] BETTER_AUTH_SECRET is not set; using a local non-production fallback secret",
+      );
+    }
+
+    return `gradientpeak-${process.env.NODE_ENV ?? "unknown"}-fallback-auth-secret`;
+  }
+
+  return undefined;
 }
 
 export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
@@ -93,15 +92,44 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     appUrl: options.appUrl,
     mobileScheme: options.mobileScheme,
     loginPath: "/auth/login",
+    webCallbackPath: "/auth/confirm",
     mobileCallbackPath: "callback",
+    emailMode: authRuntimeEnvSchema.shape.emailMode.parse(process.env.AUTH_EMAIL_MODE ?? "log"),
+    emailFrom: process.env.AUTH_EMAIL_FROM,
+    emailReplyTo: process.env.AUTH_EMAIL_REPLY_TO,
+    smtpHost: process.env.AUTH_SMTP_HOST,
+    smtpPort: process.env.AUTH_SMTP_PORT ? Number(process.env.AUTH_SMTP_PORT) : undefined,
+    smtpUser: process.env.AUTH_SMTP_USER,
+    smtpPass: process.env.AUTH_SMTP_PASS,
+    smtpSecure:
+      process.env.AUTH_SMTP_SECURE == null ? undefined : process.env.AUTH_SMTP_SECURE === "true",
   });
+
+  const mailer = createAuthMailer(env);
+
+  const sendAuthEmail = (input: SendAuthEmailInput) => {
+    void mailer.send(input).catch((error) => {
+      console.error("[auth-email] failed", {
+        kind: input.kind,
+        to: input.to,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
 
   const db = drizzle(getPool(options.databaseUrl), {
     schema: createAdapterSchema(),
   });
 
+  const secret = resolveAuthSecret(options.secret);
+
   return betterAuth({
-    ...(options.secret ? { secret: options.secret } : {}),
+    ...(secret ? { secret } : {}),
+    advanced: {
+      database: {
+        generateId: () => crypto.randomUUID(),
+      },
+    },
     baseURL: env.appUrl,
     database: drizzleAdapter(db, {
       provider: "pg",
@@ -111,15 +139,41 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
-      sendResetPassword: createNoopEmailSender("reset-password"),
+      password: {
+        hash: async (password) => hash(password, 10),
+        verify: async ({ hash: passwordHash, password }) => compare(password, passwordHash),
+      },
+      sendResetPassword: async ({ user, url }) => {
+        sendAuthEmail({
+          kind: "reset-password",
+          to: user.email,
+          actionUrl: url,
+          userEmail: user.email,
+        });
+      },
     },
     emailVerification: {
-      sendVerificationEmail: createNoopEmailSender("verification"),
+      sendVerificationEmail: async ({ user, url }) => {
+        sendAuthEmail({
+          kind: "verification",
+          to: user.email,
+          actionUrl: url,
+          userEmail: user.email,
+        });
+      },
     },
     user: {
       changeEmail: {
         enabled: true,
-        sendChangeEmailConfirmation: createNoopEmailSender("change-email"),
+        sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+          sendAuthEmail({
+            kind: "change-email-confirmation",
+            to: user.email,
+            actionUrl: url,
+            userEmail: user.email,
+            newEmail,
+          });
+        },
       },
       deleteUser: {
         enabled: true,
@@ -135,8 +189,7 @@ export function getGradientPeakAuth() {
   if (!authSingleton) {
     authSingleton = createGradientPeakAuth({
       appUrl: process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-      databaseUrl:
-        process.env.DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+      databaseUrl: resolveDatabaseUrl(process.env),
       secret: process.env.BETTER_AUTH_SECRET,
       mobileScheme: process.env.EXPO_PUBLIC_APP_SCHEME ?? process.env.APP_SCHEME ?? "gradientpeak",
     });
@@ -145,11 +198,20 @@ export function getGradientPeakAuth() {
   return authSingleton;
 }
 
-export const auth = getGradientPeakAuth();
+export async function resolveAuthSession(
+  input: AuthSessionLookupInput,
+): Promise<AuthSession | null> {
+  const auth = getGradientPeakAuth();
+  const lookupInput = createAuthSessionLookupInputFromHeaders(
+    createAuthHeadersFromSessionLookupInput(input),
+  );
+  const session = await auth.api.getSession({
+    headers: createAuthHeadersFromSessionLookupInput(lookupInput),
+  });
+
+  return normalizeAuthSession(session, inferAuthSessionTransport(lookupInput) ?? "cookie");
+}
 
 export async function resolveAuthSessionFromHeaders(headers: Headers): Promise<AuthSession | null> {
-  const session = await auth.api.getSession({ headers });
-  const transport = headers.get("authorization")?.startsWith("Bearer ") ? "bearer" : "cookie";
-
-  return normalizeBetterAuthSession(session, transport);
+  return resolveAuthSession(createAuthSessionLookupInputFromHeaders(headers));
 }

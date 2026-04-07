@@ -10,8 +10,7 @@
  * - paused: Resume | Discard | Finish buttons (3-column)
  */
 
-import type { RecordingState } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { RecordingActivityCategory, RecordingState } from "@repo/core";
 import React from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,7 +21,7 @@ import { RecordingControls } from "./RecordingControls";
 export interface FooterCollapsedProps {
   service: ActivityRecorderService | null;
   recordingState: RecordingState;
-  category: PublicActivityCategory;
+  category: RecordingActivityCategory;
   onStart: () => void;
   onPause: () => void;
   onResume: () => void;

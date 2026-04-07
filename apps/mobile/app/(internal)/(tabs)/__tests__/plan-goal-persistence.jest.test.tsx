@@ -117,9 +117,9 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
   }),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       goals: { list: { invalidate: jest.fn() } },
       events: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },

@@ -16,7 +16,7 @@ interface AuthGuardProps {
 export const AuthGuard = ({ children, redirectTo = "/auth/login", fallback }: AuthGuardProps) => {
   const { isLoading, isAuthenticated } = useRequireAuth(redirectTo);
 
-  if (isLoading) {
+  if (isLoading || !isAuthenticated) {
     return (
       fallback || (
         <div className="flex h-svh w-full items-center justify-center">
@@ -24,11 +24,6 @@ export const AuthGuard = ({ children, redirectTo = "/auth/login", fallback }: Au
         </div>
       )
     );
-  }
-
-  if (!isAuthenticated) {
-    // Component will redirect via useRequireAuth hook
-    return null;
   }
 
   return <>{children}</>;

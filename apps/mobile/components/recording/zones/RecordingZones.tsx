@@ -18,7 +18,6 @@
  * - When focused, zones overlay with absolute positioning
  */
 
-import type { PublicActivityCategory } from "@repo/supabase";
 import React, { useMemo } from "react";
 import { View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -32,7 +31,6 @@ import { ZoneC } from "./ZoneC";
 
 export interface RecordingZonesProps {
   service: ActivityRecorderService | null;
-  category: PublicActivityCategory;
   gpsRecordingEnabled: boolean;
   hasPlan: boolean;
   hasRoute: boolean;
@@ -43,7 +41,6 @@ export interface RecordingZonesProps {
  */
 export interface ZoneFocusOverlayProps {
   service: ActivityRecorderService | null;
-  category: PublicActivityCategory;
   gpsRecordingEnabled: boolean;
   hasPlan: boolean;
   hasRoute: boolean;
@@ -51,7 +48,6 @@ export interface ZoneFocusOverlayProps {
 
 export function RecordingZones({
   service,
-  category,
   gpsRecordingEnabled,
   hasPlan,
   hasRoute,
@@ -124,7 +120,6 @@ export function RecordingZones({
  */
 export function ZoneFocusOverlay({
   service,
-  category,
   gpsRecordingEnabled,
   hasPlan,
   hasRoute,

@@ -73,7 +73,7 @@ export const columns: ColumnDef<Athlete>[] = [
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
             <DropdownMenuItem asChild>
-              <Link href={`/coaching/athlete/${athlete.athlete_id}`}>View Profile</Link>
+              <Link href={`/user/${athlete.athlete_id}`}>View Profile</Link>
             </DropdownMenuItem>
             <DropdownMenuItem>Message</DropdownMenuItem>
             <DropdownMenuSeparator />

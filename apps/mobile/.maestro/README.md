@@ -29,8 +29,7 @@ Set the vars your flow needs before running Maestro:
 
 - `STANDARD_USER_EMAIL` / `STANDARD_USER_PASS`
 - `ONBOARDING_USER_EMAIL` / `ONBOARDING_USER_PASS`
-- `SIGNUP_PASSWORD`
-- optional `SIGNUP_EMAIL` if you want to reuse one sign-up account; otherwise the repo Maestro scripts generate a unique address
+- `SIGNUP_EMAIL` / `SIGNUP_PASSWORD`
 - `TARGET_USERNAME`
 
 Use `apps/mobile/.maestro/fixtures.env.example` as the template.

@@ -125,9 +125,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Gradle cache
-        uses: gradle/actions/setup-gradle@v5
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

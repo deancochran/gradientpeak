@@ -5,7 +5,7 @@ import { cn } from "@repo/ui/lib/cn";
 import { Heart } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 
 interface LikeButtonProps {
   entityId: string;
@@ -23,7 +23,7 @@ export function LikeButton({
   const [likesCount, setLikesCount] = useState(initialLikesCount);
   const [hasLiked, setHasLiked] = useState(initialHasLiked);
 
-  const toggleMutation = trpc.social.toggleLike.useMutation({
+  const toggleMutation = api.social.toggleLike.useMutation({
     onMutate: async () => {
       // Optimistic update
       setHasLiked(!hasLiked);

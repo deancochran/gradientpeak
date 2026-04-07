@@ -1,4 +1,4 @@
-import { invalidateSchedulingQueries, type SchedulingRefreshScope } from "@repo/trpc/client";
+import { invalidateSchedulingQueries, type SchedulingRefreshScope } from "@repo/api/client";
 import { QueryClient } from "@tanstack/react-query";
 
 export async function refreshScheduleViews(

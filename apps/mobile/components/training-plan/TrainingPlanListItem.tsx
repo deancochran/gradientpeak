@@ -5,8 +5,8 @@ import { useRouter } from "expo-router";
 import { Calendar, Heart } from "lucide-react-native";
 import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
+import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { trpc } from "@/lib/trpc";
 
 interface TrainingPlanListItemProps {
   plan: {
@@ -24,7 +24,7 @@ export function TrainingPlanListItem({ plan, onPress }: TrainingPlanListItemProp
   const [isLiked, setIsLiked] = useState(plan.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(plan.likes_count ?? 0);
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
       setIsLiked(plan.has_liked ?? false);
       setLikesCount(plan.likes_count ?? 0);

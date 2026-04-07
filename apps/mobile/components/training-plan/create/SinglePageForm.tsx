@@ -21,10 +21,7 @@ import { Button } from "@repo/ui/components/button";
 import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { DurationInput } from "@repo/ui/components/duration-input";
 import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
 import { NumberSliderInput } from "@repo/ui/components/number-slider-input";
-import { PaceInput } from "@repo/ui/components/pace-input";
-import { PercentSliderInput } from "@repo/ui/components/percent-slider-input";
 import {
   Select,
   SelectContent,
@@ -35,22 +32,23 @@ import {
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
-import {
-  Flag,
-  Gauge,
-  Heart,
-  Pencil,
-  Plus,
-  ShieldAlert,
-  Trash2,
-  Trophy,
-  Zap,
-} from "lucide-react-native";
+import { useZodForm } from "@repo/ui/hooks";
+import { Flag, Plus, ShieldAlert, Trash2, Trophy } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import type { UseFormReturn } from "react-hook-form";
+import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
-import { parseNumberOrUndefined } from "../../../lib/training-plan-form/input-parsers";
+import { AvailabilityConfigSection } from "./AvailabilityConfigSection";
+import { BehaviorControlsConfigSection } from "./BehaviorControlsConfigSection";
+import { ConstraintsConfigSection } from "./ConstraintsConfigSection";
 import { CreationProjectionChart } from "./CreationProjectionChart";
+import { type GoalTargetEditorContext, GoalTargetEditorModal } from "./GoalTargetEditorModal";
+import { GoalTargetsSection } from "./GoalTargetsSection";
+import { TrainingPlanMetadataSection } from "./TrainingPlanMetadataSection";
+import {
+  emptyTrainingPlanMetadataFormData,
+  trainingPlanMetadataFormSchema,
+} from "./trainingPlanMetadataForm";
 
 export type GoalTargetType =
   | "race_performance"
@@ -83,11 +81,6 @@ export interface TrainingPlanFormData {
   goals: GoalFormData[];
 }
 
-export interface TrainingPlanMetadataFormData {
-  name: string;
-  description: string;
-}
-
 export interface TrainingPlanConfigFormData {
   availabilityConfig: CreationAvailabilityConfig;
   availabilityProvenance: CreationProvenance;
@@ -114,8 +107,7 @@ export interface TrainingPlanConfigConflict {
 }
 
 interface SinglePageFormProps {
-  planMetadata?: TrainingPlanMetadataFormData;
-  onPlanMetadataChange?: (data: TrainingPlanMetadataFormData) => void;
+  metadataForm?: UseFormReturn<any>;
   initialTab?: FormTabKey;
   formData: TrainingPlanFormData;
   onFormDataChange: (data: TrainingPlanFormData) => void;
@@ -134,7 +126,7 @@ interface SinglePageFormProps {
   onConfigChange: (data: TrainingPlanConfigFormData) => void;
   onResetAvailability?: () => void;
   onResetLimits?: () => void;
-  onResetProjectionAll?: () => void;
+  onResetBehaviorControls?: () => void;
   errors?: Record<string, string>;
 }
 
@@ -202,126 +194,8 @@ const createEmptyGoal = (targetDate?: string): GoalFormData => ({
   targets: [createEmptyTarget()],
 });
 
-const raceDistancePresetsByCategory: Record<
-  "run" | "bike" | "swim" | "other",
-  { label: string; km: string }[]
-> = {
-  run: [
-    { label: "5K", km: "5" },
-    { label: "10K", km: "10" },
-    { label: "Half", km: "21.1" },
-    { label: "Marathon", km: "42.2" },
-  ],
-  bike: [
-    { label: "20K TT", km: "20" },
-    { label: "40K TT", km: "40" },
-    { label: "Gran Fondo", km: "100" },
-    { label: "Century", km: "160" },
-  ],
-  swim: [
-    { label: "400m", km: "0.4" },
-    { label: "800m", km: "0.8" },
-    { label: "1500m", km: "1.5" },
-    { label: "5K", km: "5" },
-  ],
-  other: [
-    { label: "1K", km: "1" },
-    { label: "5K", km: "5" },
-    { label: "10K", km: "10" },
-  ],
-};
-
-const targetTypeOptions: { value: GoalTargetType; label: string }[] = [
-  { value: "race_performance", label: "Race goal" },
-  { value: "pace_threshold", label: "Pace test" },
-  { value: "power_threshold", label: "Power test" },
-  { value: "hr_threshold", label: "Heart-rate threshold" },
-];
-
-const activityCategoryOptions: {
-  value: "run" | "bike" | "swim" | "other";
-  label: string;
-}[] = [
-  { value: "run", label: "Run" },
-  { value: "bike", label: "Bike" },
-  { value: "swim", label: "Swim" },
-  { value: "other", label: "Other" },
-];
-
-const weekDays: CreationAvailabilityConfig["days"][number]["day"][] = [
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-  "sunday",
-];
-
 const tabPanelClass = "gap-3 rounded-lg border border-border bg-card p-3";
-const sectionCardClass = "gap-2";
 const helperTextClass = "text-xs text-muted-foreground";
-
-const getWeekDayLabel = (day: string) => day.slice(0, 1).toUpperCase() + day.slice(1, 3);
-
-const getActivityCategoryLabel = (category?: GoalTargetFormData["activityCategory"]) =>
-  activityCategoryOptions.find((option) => option.value === category)?.label;
-
-const getTargetTypeLabel = (targetType: GoalTargetType) => {
-  return targetTypeOptions.find((option) => option.value === targetType)?.label;
-};
-
-const getTargetSummary = (target: GoalTargetFormData) => {
-  if (target.targetType === "race_performance") {
-    const parts = [];
-    const categoryLabel = getActivityCategoryLabel(target.activityCategory);
-    if (categoryLabel) {
-      parts.push(categoryLabel);
-    }
-    if (target.distanceKm?.trim()) {
-      parts.push(`${target.distanceKm.trim()} km`);
-    }
-    if (target.completionTimeHms?.trim()) {
-      parts.push(target.completionTimeHms.trim());
-    }
-    return parts.length > 0 ? parts.join(" - ") : "Distance + completion time";
-  }
-
-  if (target.targetType === "pace_threshold") {
-    const parts = [];
-    const categoryLabel = getActivityCategoryLabel(target.activityCategory);
-    if (categoryLabel) {
-      parts.push(categoryLabel);
-    }
-    if (target.paceMmSs?.trim()) {
-      parts.push(`${target.paceMmSs.trim()} /km`);
-    }
-    if (target.testDurationHms?.trim()) {
-      parts.push(`test ${target.testDurationHms.trim()}`);
-    }
-    return parts.length > 0 ? parts.join(" - ") : "Pace + test duration";
-  }
-
-  if (target.targetType === "power_threshold") {
-    const parts = [];
-    const categoryLabel = getActivityCategoryLabel(target.activityCategory);
-    if (categoryLabel) {
-      parts.push(categoryLabel);
-    }
-    if (target.targetWatts !== undefined) {
-      parts.push(`${target.targetWatts} W`);
-    }
-    if (target.testDurationHms?.trim()) {
-      parts.push(`test ${target.testDurationHms.trim()}`);
-    }
-    return parts.length > 0 ? parts.join(" - ") : "Watts + test duration";
-  }
-
-  if (target.targetLthrBpm !== undefined) {
-    return `${target.targetLthrBpm} bpm`;
-  }
-  return "LTHR bpm";
-};
 
 const formatFeasibilityBandLabel = (
   band: "feasible" | "stretch" | "aggressive" | "nearly_impossible" | "infeasible",
@@ -735,8 +609,7 @@ const toNoHistoryConfidenceLabel = (
 };
 
 export function SinglePageForm({
-  planMetadata,
-  onPlanMetadataChange,
+  metadataForm,
   initialTab,
   formData,
   onFormDataChange,
@@ -755,18 +628,16 @@ export function SinglePageForm({
   onConfigChange,
   onResetAvailability,
   onResetLimits,
-  onResetProjectionAll,
+  onResetBehaviorControls,
   errors = {},
 }: SinglePageFormProps) {
-  const resolvedPlanMetadata =
-    planMetadata ??
-    ({
-      name: "",
-      description: "",
-    } satisfies TrainingPlanMetadataFormData);
-  const handlePlanMetadataChange = (next: TrainingPlanMetadataFormData) => {
-    onPlanMetadataChange?.(next);
-  };
+  const fallbackMetadataForm = useZodForm({
+    schema: trainingPlanMetadataFormSchema,
+    defaultValues: emptyTrainingPlanMetadataFormData,
+    mode: "onChange",
+    reValidateMode: "onChange",
+  });
+  const resolvedMetadataForm = metadataForm ?? fallbackMetadataForm;
   const { height: windowHeight } = useWindowDimensions();
   const previewChartMaxHeight = Math.floor(windowHeight * 0.2);
   const [activeGoalId, setActiveGoalId] = useState<string | null>(
@@ -813,48 +684,6 @@ export function SinglePageForm({
     setActiveTab(tab);
   }, []);
 
-  const updateConfig = useCallback(
-    (updater: (draft: TrainingPlanConfigFormData) => void) => {
-      const next = {
-        ...configData,
-        constraints: {
-          ...configData.constraints,
-          hard_rest_days: [...configData.constraints.hard_rest_days],
-        },
-        locks: { ...configData.locks },
-        behaviorControlsV1: { ...configData.behaviorControlsV1 },
-        calibration: {
-          ...configData.calibration,
-          readiness_composite: {
-            ...configData.calibration.readiness_composite,
-          },
-          readiness_timeline: {
-            ...configData.calibration.readiness_timeline,
-          },
-          envelope_penalties: {
-            ...configData.calibration.envelope_penalties,
-          },
-          durability_penalties: {
-            ...configData.calibration.durability_penalties,
-          },
-          no_history: {
-            ...configData.calibration.no_history,
-          },
-          optimizer: {
-            ...configData.calibration.optimizer,
-          },
-        },
-        calibrationCompositeLocks: { ...configData.calibrationCompositeLocks },
-      };
-      updater(next);
-      onConfigChange(next);
-    },
-    [configData, onConfigChange],
-  );
-
-  const selectedAvailabilityDays = configData.availabilityConfig.days.filter(
-    (day) => day.windows.length > 0,
-  ).length;
   const noHistoryMetadata = projectionChart?.no_history;
   const noHistoryReasons = noHistoryMetadata?.fitness_inference_reasons ?? [];
   const projectionStartingState = projectionChart?.constraint_summary?.starting_state;
@@ -878,6 +707,14 @@ export function SinglePageForm({
   const noHistoryAccessibilitySummary = noHistoryMetadata
     ? `No-history cues. Confidence ${noHistoryConfidenceLabel}. Floor applied ${noHistoryFloorAppliedLabel}. Availability clamp ${noHistoryAvailabilityClampLabel}.${noHistoryFitnessSignal !== null ? ` Fitness signal ${noHistoryFitnessSignal} percent.` : ""}${noHistoryDemandScore !== null ? ` Goal demand ${noHistoryDemandScore} percent.` : ""}${projectionRiskScore !== null ? ` Risk score ${projectionRiskScore} percent.` : ""}`
     : undefined;
+
+  useEffect(() => {
+    if (metadataForm) {
+      return;
+    }
+
+    void fallbackMetadataForm.trigger();
+  }, [fallbackMetadataForm, metadataForm]);
 
   useEffect(() => {
     if (!formData.goals.length) {
@@ -906,7 +743,7 @@ export function SinglePageForm({
     }
   }, [editingTargetRef, formData.goals]);
 
-  const editingContext = useMemo(() => {
+  const editingContext = useMemo<GoalTargetEditorContext | null>(() => {
     if (!editingTargetRef) {
       return null;
     }
@@ -923,7 +760,7 @@ export function SinglePageForm({
     }
 
     return {
-      goal,
+      goalId: goal.id,
       goalIndex,
       target: goal.targets[targetIndex],
       targetIndex,
@@ -1056,8 +893,6 @@ export function SinglePageForm({
     );
   };
 
-  const closeTargetEditor = () => setEditingTargetRef(null);
-
   const activeGoal = useMemo(
     () => formData.goals.find((goal) => goal.id === activeGoalId) ?? formData.goals[0],
     [activeGoalId, formData.goals],
@@ -1065,6 +900,51 @@ export function SinglePageForm({
   const activeGoalIndex = activeGoal
     ? formData.goals.findIndex((goal) => goal.id === activeGoal.id)
     : -1;
+  const closeTargetEditor = () => setEditingTargetRef(null);
+
+  const getActiveGoalTargetRowError = useCallback(
+    (targetIndex: number) => {
+      if (activeGoalIndex < 0) {
+        return undefined;
+      }
+
+      return getTargetRowError(activeGoalIndex, targetIndex);
+    },
+    [activeGoalIndex],
+  );
+
+  const openActiveGoalTargetEditor = useCallback(
+    (targetId: string) => {
+      if (!activeGoal) {
+        return;
+      }
+
+      setEditingTargetRef({ goalId: activeGoal.id, targetId });
+    },
+    [activeGoal],
+  );
+
+  const addTargetToActiveGoal = useCallback(
+    (targetType: GoalTargetType) => {
+      if (!activeGoal) {
+        return;
+      }
+
+      addTargetWithType(activeGoal.id, targetType);
+    },
+    [activeGoal],
+  );
+
+  const removeTargetFromActiveGoal = useCallback(
+    (targetId: string) => {
+      if (!activeGoal) {
+        return;
+      }
+
+      removeTarget(activeGoal.id, targetId);
+    },
+    [activeGoal],
+  );
   const reviewNoticeCount = useMemo(() => {
     const blockingCount = blockingIssues.length;
     const cautionDriverCount = feasibilitySafetySummary
@@ -1078,7 +958,7 @@ export function SinglePageForm({
   }, [blockingIssues.length, feasibilitySafetySummary]);
   const tabIssueCounts = useMemo<TabIssueCounts>(() => {
     const counts: TabIssueCounts = {
-      plan: resolvedPlanMetadata.name.trim().length > 0 ? 0 : 1,
+      plan: resolvedMetadataForm.formState.errors.name ? 1 : 0,
       goals: 0,
       availability: 0,
       constraints: 0,
@@ -1098,7 +978,7 @@ export function SinglePageForm({
     }
 
     return counts;
-  }, [formValidationErrors, resolvedPlanMetadata.name, reviewNoticeCount]);
+  }, [formValidationErrors, resolvedMetadataForm.formState.errors.name, reviewNoticeCount]);
   const visibleTabs = useMemo(
     () => allFormTabs.filter((tab) => visibleTabKeys.includes(tab.key)),
     [visibleTabKeys],
@@ -1192,65 +1072,7 @@ export function SinglePageForm({
       </View>
 
       <ScrollView className="flex-1" contentContainerClassName="gap-3 px-4 pt-3 pb-8">
-        {activeTab === "plan" && (
-          <View className={tabPanelClass}>
-            <Text className="font-semibold">Plan details</Text>
-            <Text className={helperTextClass}>
-              Manage plan identity, lifecycle, and deletion from this section.
-            </Text>
-            <View className="gap-1.5">
-              <Label nativeID="plan-name-input">
-                <Text className="text-sm font-medium">
-                  Plan name<Text className="text-destructive">*</Text>
-                </Text>
-              </Label>
-              <Input
-                aria-labelledby="plan-name-input"
-                aria-label="Plan name"
-                placeholder="Enter plan name"
-                value={resolvedPlanMetadata.name}
-                testID="training-plan-name-input"
-                onChangeText={(name) => {
-                  handlePlanMetadataChange({
-                    ...resolvedPlanMetadata,
-                    name,
-                  });
-                }}
-                maxLength={120}
-                className={
-                  resolvedPlanMetadata.name.trim().length === 0
-                    ? "border-destructive bg-destructive/5"
-                    : undefined
-                }
-              />
-              {resolvedPlanMetadata.name.trim().length === 0 ? (
-                <Text className="text-xs text-destructive">Plan name is required.</Text>
-              ) : null}
-            </View>
-            <View className="gap-1.5">
-              <Label nativeID="plan-description-input">
-                <Text className="text-sm font-medium">Description</Text>
-              </Label>
-              <Textarea
-                aria-labelledby="plan-description-input"
-                aria-label="Plan description"
-                placeholder="Optional description"
-                value={resolvedPlanMetadata.description}
-                onChangeText={(description) => {
-                  handlePlanMetadataChange({
-                    ...resolvedPlanMetadata,
-                    description,
-                  });
-                }}
-                numberOfLines={3}
-                maxLength={500}
-              />
-            </View>
-            <Text className="text-xs text-muted-foreground">
-              Training plan activation is controlled when you apply a template to your schedule.
-            </Text>
-          </View>
-        )}
+        {activeTab === "plan" && <TrainingPlanMetadataSection form={resolvedMetadataForm} />}
 
         {showCreationConfig && (
           <>
@@ -1331,276 +1153,62 @@ export function SinglePageForm({
             ) : null}
 
             {activeTab === "availability" && (
-              <View className={tabPanelClass}>
-                <View className="flex-row items-center justify-between">
-                  <Text className="font-semibold">Availability</Text>
-                  <Button variant="outline" size="sm" onPress={() => onResetAvailability?.()}>
-                    <Text>Reset</Text>
-                  </Button>
-                </View>
-                <Text className={helperTextClass}>
-                  Set your plan start date and weekly availability.
-                </Text>
+              <AvailabilityConfigSection
+                planStartDate={formData.planStartDate}
+                availabilityConfig={configData.availabilityConfig}
+                availabilityProvenance={configData.availabilityProvenance}
+                planStartDateError={getError("planStartDate")}
+                onChange={({ planStartDate, availabilityConfig, availabilityProvenance }) => {
+                  onFormDataChange({
+                    ...formData,
+                    planStartDate,
+                  });
 
-                <DateField
-                  id="plan-start-date"
-                  label="Plan start date"
-                  value={formData.planStartDate}
-                  onChange={(nextDate) => {
-                    onFormDataChange({
-                      ...formData,
-                      planStartDate: nextDate,
+                  const availabilityChanged =
+                    JSON.stringify(availabilityConfig) !==
+                      JSON.stringify(configData.availabilityConfig) ||
+                    JSON.stringify(availabilityProvenance) !==
+                      JSON.stringify(configData.availabilityProvenance);
+
+                  if (availabilityChanged) {
+                    onConfigChange({
+                      ...configData,
+                      availabilityConfig,
+                      availabilityProvenance,
                     });
-                  }}
-                  placeholder="Use today (default)"
-                  clearable
-                  error={getError("planStartDate")}
-                  accessibilityHint="Sets your training plan start date. Format yyyy-mm-dd"
-                />
-
-                <View className="gap-1">
-                  <Text className="text-xs text-muted-foreground">
-                    Training days ({selectedAvailabilityDays}/7)
-                  </Text>
-                  <View className="flex-row flex-wrap gap-2">
-                    {weekDays.map((day) => {
-                      const dayConfig =
-                        configData.availabilityConfig.days.find((item) => item.day === day) ??
-                        configData.availabilityConfig.days[0];
-                      if (!dayConfig) {
-                        return null;
-                      }
-
-                      const isAvailable = dayConfig.windows.length > 0;
-                      return (
-                        <Button
-                          key={`availability-${day}`}
-                          variant={isAvailable ? "default" : "outline"}
-                          size="sm"
-                          onPress={() => {
-                            updateConfig((draft) => {
-                              draft.availabilityConfig = {
-                                ...draft.availabilityConfig,
-                                template: "custom",
-                                days: draft.availabilityConfig.days.map((candidate) =>
-                                  candidate.day === day
-                                    ? {
-                                        ...candidate,
-                                        windows: isAvailable
-                                          ? []
-                                          : [
-                                              {
-                                                start_minute_of_day: 360,
-                                                end_minute_of_day: 450,
-                                              },
-                                            ],
-                                        max_sessions: isAvailable ? 0 : 1,
-                                      }
-                                    : candidate,
-                                ),
-                              };
-                              draft.availabilityProvenance = {
-                                ...draft.availabilityProvenance,
-                                source: "user",
-                                updated_at: new Date().toISOString(),
-                              };
-                            });
-                          }}
-                        >
-                          <Text>{getWeekDayLabel(day)}</Text>
-                        </Button>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
+                  }
+                }}
+                onReset={onResetAvailability}
+              />
             )}
 
             {activeTab === "constraints" && (
-              <View className={tabPanelClass}>
-                <View className="flex-row items-center justify-between">
-                  <Text className="font-semibold">Limits</Text>
-                  <Button variant="outline" size="sm" onPress={() => onResetLimits?.()}>
-                    <Text>Reset</Text>
-                  </Button>
-                </View>
-                <View className={sectionCardClass}>
-                  <NumberSliderInput
-                    id="starting-ctl-assumption"
-                    label="Initial CTL (fitness)"
-                    value={
-                      configData.startingCtlAssumption ?? projectionStartingState?.starting_ctl ?? 0
-                    }
-                    min={0}
-                    max={250}
-                    step={0.5}
-                    decimals={1}
-                    unitLabel="CTL"
-                    helperText="Higher values raise your starting fitness line before progression is projected."
-                    onChange={(value) => {
-                      updateConfig((draft) => {
-                        draft.startingCtlAssumption = Number(value.toFixed(1));
-                      });
-                    }}
-                    showCurrentValueInRange={false}
-                  />
-                </View>
-
-                <View className={sectionCardClass}>
-                  <Text className="text-sm">Recovery days after goal</Text>
-                  <NumberSliderInput
-                    id="post-goal-recovery-days"
-                    value={configData.postGoalRecoveryDays}
-                    min={0}
-                    max={28}
-                    decimals={0}
-                    step={1}
-                    unitLabel="days"
-                    helperText="Adds easy days between goal peaks."
-                    onChange={(value) => {
-                      updateConfig((draft) => {
-                        draft.postGoalRecoveryDays = value;
-                      });
-                    }}
-                  />
-                </View>
-
-                <View className={sectionCardClass}>
-                  <Text className="text-xs text-muted-foreground">
-                    Safety caps are always enforced internally.
-                  </Text>
-                </View>
-              </View>
+              <ConstraintsConfigSection
+                postGoalRecoveryDays={configData.postGoalRecoveryDays}
+                projectionStartingCtl={projectionStartingState?.starting_ctl}
+                startingCtlAssumption={configData.startingCtlAssumption}
+                onChange={(values) => {
+                  onConfigChange({
+                    ...configData,
+                    postGoalRecoveryDays: values.postGoalRecoveryDays,
+                    startingCtlAssumption: values.startingCtlAssumption,
+                  });
+                }}
+                onReset={onResetLimits}
+              />
             )}
 
             {activeTab === "calibration" && (
-              <View className={tabPanelClass}>
-                <View className="flex-row items-center justify-between">
-                  <Text className="font-semibold">Tuning</Text>
-                  <Button variant="outline" size="sm" onPress={() => onResetProjectionAll?.()}>
-                    <Text>Reset</Text>
-                  </Button>
-                </View>
-                <View className={sectionCardClass}>
-                  <PercentSliderInput
-                    id="behavior-aggressiveness"
-                    label="Aggressiveness"
-                    value={configData.behaviorControlsV1.aggressiveness * 100}
-                    min={0}
-                    max={100}
-                    step={1}
-                    helperText="Higher values push progression harder."
-                    onChange={(percent) => {
-                      updateConfig((draft) => {
-                        draft.behaviorControlsV1.aggressiveness = Number(
-                          (percent / 100).toFixed(2),
-                        );
-                      });
-                    }}
-                    showNumericInput={false}
-                  />
-                  <PercentSliderInput
-                    id="behavior-variability"
-                    label="Variability"
-                    value={configData.behaviorControlsV1.variability * 100}
-                    min={0}
-                    max={100}
-                    step={1}
-                    helperText="Higher values allow more week-to-week variation."
-                    onChange={(percent) => {
-                      updateConfig((draft) => {
-                        draft.behaviorControlsV1.variability = Number((percent / 100).toFixed(2));
-                      });
-                    }}
-                    showNumericInput={false}
-                  />
-                  <PercentSliderInput
-                    id="behavior-spike-frequency"
-                    label="Spike frequency"
-                    value={configData.behaviorControlsV1.spike_frequency * 100}
-                    min={0}
-                    max={100}
-                    step={1}
-                    helperText="Higher values allow bigger peak weeks more often."
-                    onChange={(percent) => {
-                      updateConfig((draft) => {
-                        draft.behaviorControlsV1.spike_frequency = Number(
-                          (percent / 100).toFixed(2),
-                        );
-                      });
-                    }}
-                    showNumericInput={false}
-                  />
-                  <NumberSliderInput
-                    id="behavior-shape-target"
-                    label="Load shape target"
-                    value={configData.behaviorControlsV1.shape_target}
-                    min={-1}
-                    max={1}
-                    decimals={2}
-                    step={0.05}
-                    helperText="Negative values bias early load, positive values bias later load."
-                    onChange={(value) => {
-                      updateConfig((draft) => {
-                        draft.behaviorControlsV1.shape_target = Number(value.toFixed(2));
-                      });
-                    }}
-                  />
-                  <PercentSliderInput
-                    id="behavior-shape-strength"
-                    label="Load shape strength"
-                    value={configData.behaviorControlsV1.shape_strength * 100}
-                    min={0}
-                    max={100}
-                    step={1}
-                    helperText="Higher values enforce the selected load shape more strongly."
-                    onChange={(percent) => {
-                      updateConfig((draft) => {
-                        draft.behaviorControlsV1.shape_strength = Number(
-                          (percent / 100).toFixed(2),
-                        );
-                      });
-                    }}
-                    showNumericInput={false}
-                  />
-                  <NumberSliderInput
-                    id="behavior-recovery-priority"
-                    label="Recovery priority"
-                    value={configData.behaviorControlsV1.recovery_priority * 100}
-                    min={0}
-                    max={100}
-                    decimals={0}
-                    step={1}
-                    unitLabel="%"
-                    helperText="Higher values prioritize recovery over risk-taking."
-                    onChange={(value) => {
-                      updateConfig((draft) => {
-                        draft.behaviorControlsV1.recovery_priority = Number(
-                          (value / 100).toFixed(2),
-                        );
-                      });
-                    }}
-                  />
-                  <NumberSliderInput
-                    id="behavior-starting-fitness-confidence"
-                    label="Starting fitness confidence"
-                    value={configData.behaviorControlsV1.starting_fitness_confidence * 100}
-                    min={0}
-                    max={100}
-                    decimals={0}
-                    step={1}
-                    unitLabel="%"
-                    helperText="Lower values anchor early weeks more conservatively."
-                    onChange={(value) => {
-                      updateConfig((draft) => {
-                        draft.behaviorControlsV1.starting_fitness_confidence = Number(
-                          (value / 100).toFixed(2),
-                        );
-                      });
-                    }}
-                  />
-                </View>
-              </View>
+              <BehaviorControlsConfigSection
+                behaviorControls={configData.behaviorControlsV1}
+                onChange={(behaviorControlsV1) => {
+                  onConfigChange({
+                    ...configData,
+                    behaviorControlsV1,
+                  });
+                }}
+                onReset={onResetBehaviorControls}
+              />
             )}
 
             {activeTab === "review" && (
@@ -2028,548 +1636,25 @@ export function SinglePageForm({
                   error={getError(`goals.${activeGoalIndex}.priority`)}
                 />
 
-                <View className="gap-2 rounded-md border border-border bg-background/70 p-2">
-                  <View className="flex-row items-center justify-between">
-                    <Text className="text-xs text-muted-foreground">Targets</Text>
-                    <View className="flex-row gap-1.5">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onPress={() => addTargetWithType(activeGoal.id, "race_performance")}
-                        accessibilityLabel="Add race target"
-                      >
-                        <Flag size={14} className="text-muted-foreground" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onPress={() => addTargetWithType(activeGoal.id, "pace_threshold")}
-                        accessibilityLabel="Add pace target"
-                      >
-                        <Gauge size={14} className="text-muted-foreground" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onPress={() => addTargetWithType(activeGoal.id, "power_threshold")}
-                        accessibilityLabel="Add power target"
-                      >
-                        <Zap size={14} className="text-muted-foreground" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onPress={() => addTargetWithType(activeGoal.id, "hr_threshold")}
-                        accessibilityLabel="Add heart-rate target"
-                      >
-                        <Heart size={14} className="text-muted-foreground" />
-                      </Button>
-                    </View>
-                  </View>
-
-                  {activeGoal.targets.map((target, targetIndex) => {
-                    const rowError = getTargetRowError(activeGoalIndex, targetIndex);
-                    const icon =
-                      target.targetType === "race_performance" ? (
-                        <Flag size={13} className="text-muted-foreground" />
-                      ) : target.targetType === "pace_threshold" ? (
-                        <Gauge size={13} className="text-muted-foreground" />
-                      ) : target.targetType === "power_threshold" ? (
-                        <Zap size={13} className="text-muted-foreground" />
-                      ) : (
-                        <Heart size={13} className="text-muted-foreground" />
-                      );
-
-                    return (
-                      <View
-                        key={target.id}
-                        className={`gap-1 rounded-md border bg-background/80 px-2 py-2 ${rowError ? "border-destructive bg-destructive/5" : "border-border"}`}
-                      >
-                        <View className="flex-row items-center gap-2">
-                          {icon}
-                          <Pressable
-                            onPress={() =>
-                              setEditingTargetRef({
-                                goalId: activeGoal.id,
-                                targetId: target.id,
-                              })
-                            }
-                            className="flex-1 gap-0.5"
-                          >
-                            <Text className="text-xs font-medium">
-                              {getTargetTypeLabel(target.targetType)}
-                            </Text>
-                            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                              {getTargetSummary(target)}
-                            </Text>
-                          </Pressable>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onPress={() =>
-                              setEditingTargetRef({
-                                goalId: activeGoal.id,
-                                targetId: target.id,
-                              })
-                            }
-                            accessibilityLabel="Edit target"
-                          >
-                            <Pencil size={14} className="text-muted-foreground" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onPress={() => removeTarget(activeGoal.id, target.id)}
-                            disabled={activeGoal.targets.length <= 1}
-                            accessibilityLabel="Delete target"
-                          >
-                            <Trash2 size={14} className="text-muted-foreground" />
-                          </Button>
-                          {rowError ? (
-                            <Text className="text-[11px] font-medium text-destructive">Adjust</Text>
-                          ) : null}
-                        </View>
-
-                        {rowError && <Text className="text-xs text-destructive">{rowError}</Text>}
-                      </View>
-                    );
-                  })}
-                </View>
+                <GoalTargetsSection
+                  activeGoal={activeGoal}
+                  getTargetRowError={getActiveGoalTargetRowError}
+                  onAddTargetWithType={addTargetToActiveGoal}
+                  onEditTarget={openActiveGoalTargetEditor}
+                  onRemoveTarget={removeTargetFromActiveGoal}
+                />
               </View>
             ) : null}
           </View>
         )}
       </ScrollView>
 
-      <Modal
-        visible={Boolean(editingContext)}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={closeTargetEditor}
-      >
-        <View className="flex-1 bg-background">
-          <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
-            <Text className="text-base font-semibold">Edit Target</Text>
-            <Button variant="outline" size="sm" onPress={closeTargetEditor}>
-              <Text>Done</Text>
-            </Button>
-          </View>
-
-          {editingContext && (
-            <ScrollView className="flex-1" contentContainerClassName="gap-4 px-4 py-4 pb-10">
-              <View className="gap-2">
-                <Label nativeID="editor-target-type">
-                  <Text className="text-sm font-medium">
-                    Target Type<Text className="text-destructive">*</Text>
-                  </Text>
-                </Label>
-                <Select
-                  value={{
-                    value: editingContext.target.targetType,
-                    label: getTargetTypeLabel(editingContext.target.targetType) ?? "Target Type",
-                  }}
-                  onValueChange={(option) => {
-                    if (!option?.value) {
-                      return;
-                    }
-                    const nextType = option.value as GoalTargetType;
-                    const defaultCategory =
-                      nextType === "race_performance" || nextType === "pace_threshold"
-                        ? "run"
-                        : nextType === "power_threshold"
-                          ? "bike"
-                          : undefined;
-                    updateTarget(editingContext.goal.id, editingContext.target.id, {
-                      targetType: nextType,
-                      activityCategory:
-                        nextType === "race_performance" ||
-                        nextType === "pace_threshold" ||
-                        nextType === "power_threshold"
-                          ? (editingContext.target.activityCategory ?? defaultCategory)
-                          : undefined,
-                    });
-                  }}
-                >
-                  <SelectTrigger
-                    aria-labelledby="editor-target-type"
-                    className={
-                      getError(
-                        `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetType`,
-                      )
-                        ? "border-destructive bg-destructive/5"
-                        : undefined
-                    }
-                  >
-                    <SelectValue placeholder="Select target type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {targetTypeOptions.map((option) => (
-                      <SelectItem key={option.value} label={option.label} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {getError(
-                  `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetType`,
-                ) && (
-                  <Text className="text-xs text-destructive">
-                    {getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetType`,
-                    )}
-                  </Text>
-                )}
-              </View>
-
-              {editingContext.target.targetType === "race_performance" && (
-                <>
-                  <View className="gap-2">
-                    <Label nativeID="editor-race-category">
-                      <Text className="text-sm font-medium">
-                        Activity<Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Select
-                      value={
-                        editingContext.target.activityCategory
-                          ? {
-                              value: editingContext.target.activityCategory,
-                              label:
-                                getActivityCategoryLabel(editingContext.target.activityCategory) ??
-                                "Activity",
-                            }
-                          : undefined
-                      }
-                      onValueChange={(option) => {
-                        if (!option?.value) {
-                          return;
-                        }
-                        updateTarget(editingContext.goal.id, editingContext.target.id, {
-                          activityCategory: option.value as "run" | "bike" | "swim" | "other",
-                        });
-                      }}
-                    >
-                      <SelectTrigger
-                        aria-labelledby="editor-race-category"
-                        className={
-                          getError(
-                            `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                          )
-                            ? "border-destructive bg-destructive/5"
-                            : undefined
-                        }
-                      >
-                        <SelectValue placeholder="Select activity" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activityCategoryOptions.map((option) => (
-                          <SelectItem
-                            key={`race-${option.value}`}
-                            label={option.label}
-                            value={option.value}
-                          >
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                        )}
-                      </Text>
-                    )}
-                  </View>
-
-                  <BoundedNumberInput
-                    id="editor-distance"
-                    label="Distance"
-                    value={editingContext.target.distanceKm ?? ""}
-                    onChange={(nextValue) => {
-                      updateTarget(editingContext.goal.id, editingContext.target.id, {
-                        distanceKm: nextValue,
-                      });
-                    }}
-                    min={0.1}
-                    max={1000}
-                    decimals={2}
-                    unitLabel="km"
-                    placeholder="e.g., 21.1"
-                    helperText="Enter distance in kilometers"
-                    required
-                    presets={(
-                      raceDistancePresetsByCategory[
-                        editingContext.target.activityCategory ?? "run"
-                      ] ?? raceDistancePresetsByCategory.run
-                    ).map((preset) => ({
-                      label: preset.label,
-                      value: preset.km,
-                    }))}
-                    error={getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.distanceKm`,
-                    )}
-                    accessibilityHint="Enter distance in kilometers, for example 21.1"
-                  />
-
-                  <DurationInput
-                    id="editor-race-time"
-                    label="Completion Time"
-                    value={editingContext.target.completionTimeHms ?? ""}
-                    onChange={(nextValue) => {
-                      updateTarget(editingContext.goal.id, editingContext.target.id, {
-                        completionTimeHms: nextValue,
-                      });
-                    }}
-                    placeholder="e.g., 1:35:00"
-                    required
-                    error={getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.completionTimeHms`,
-                    )}
-                    accessibilityHint="Enter completion time in h:mm:ss format"
-                  />
-                </>
-              )}
-
-              {editingContext.target.targetType === "pace_threshold" && (
-                <>
-                  <View className="gap-2">
-                    <Label nativeID="editor-pace-category">
-                      <Text className="text-sm font-medium">
-                        Activity<Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Select
-                      value={
-                        editingContext.target.activityCategory
-                          ? {
-                              value: editingContext.target.activityCategory,
-                              label:
-                                getActivityCategoryLabel(editingContext.target.activityCategory) ??
-                                "Activity",
-                            }
-                          : undefined
-                      }
-                      onValueChange={(option) => {
-                        if (!option?.value) {
-                          return;
-                        }
-                        updateTarget(editingContext.goal.id, editingContext.target.id, {
-                          activityCategory: option.value as "run" | "bike" | "swim" | "other",
-                        });
-                      }}
-                    >
-                      <SelectTrigger
-                        aria-labelledby="editor-pace-category"
-                        className={
-                          getError(
-                            `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                          )
-                            ? "border-destructive bg-destructive/5"
-                            : undefined
-                        }
-                      >
-                        <SelectValue placeholder="Select activity" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activityCategoryOptions.map((option) => (
-                          <SelectItem
-                            key={`pace-${option.value}`}
-                            label={option.label}
-                            value={option.value}
-                          >
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                        )}
-                      </Text>
-                    )}
-                  </View>
-
-                  <PaceInput
-                    id="editor-pace"
-                    label="Target Pace"
-                    value={editingContext.target.paceMmSs ?? ""}
-                    onChange={(nextValue) => {
-                      updateTarget(editingContext.goal.id, editingContext.target.id, {
-                        paceMmSs: nextValue,
-                      });
-                    }}
-                    required
-                    error={getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.paceMmSs`,
-                    )}
-                    accessibilityHint="Enter pace in mm:ss per kilometer"
-                  />
-
-                  <DurationInput
-                    id="editor-pace-test-duration"
-                    label="Required Test Duration"
-                    value={editingContext.target.testDurationHms ?? ""}
-                    onChange={(nextValue) => {
-                      updateTarget(editingContext.goal.id, editingContext.target.id, {
-                        testDurationHms: nextValue,
-                      });
-                    }}
-                    placeholder="e.g., 0:20:00"
-                    required
-                    error={getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
-                    )}
-                    accessibilityHint="Enter test duration in h:mm:ss format"
-                  />
-                </>
-              )}
-
-              {editingContext.target.targetType === "power_threshold" && (
-                <>
-                  <View className="gap-2">
-                    <Label nativeID="editor-power-category">
-                      <Text className="text-sm font-medium">
-                        Activity<Text className="text-destructive">*</Text>
-                      </Text>
-                    </Label>
-                    <Select
-                      value={
-                        editingContext.target.activityCategory
-                          ? {
-                              value: editingContext.target.activityCategory,
-                              label:
-                                getActivityCategoryLabel(editingContext.target.activityCategory) ??
-                                "Activity",
-                            }
-                          : undefined
-                      }
-                      onValueChange={(option) => {
-                        if (!option?.value) {
-                          return;
-                        }
-                        updateTarget(editingContext.goal.id, editingContext.target.id, {
-                          activityCategory: option.value as "run" | "bike" | "swim" | "other",
-                        });
-                      }}
-                    >
-                      <SelectTrigger
-                        aria-labelledby="editor-power-category"
-                        className={
-                          getError(
-                            `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                          )
-                            ? "border-destructive bg-destructive/5"
-                            : undefined
-                        }
-                      >
-                        <SelectValue placeholder="Select activity" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activityCategoryOptions.map((option) => (
-                          <SelectItem
-                            key={`power-${option.value}`}
-                            label={option.label}
-                            value={option.value}
-                          >
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                    ) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(
-                          `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.activityCategory`,
-                        )}
-                      </Text>
-                    )}
-                  </View>
-
-                  <BoundedNumberInput
-                    id="editor-power-watts"
-                    label="Target Watts"
-                    value={
-                      editingContext.target.targetWatts === undefined
-                        ? ""
-                        : String(editingContext.target.targetWatts)
-                    }
-                    onChange={(value) => {
-                      updateTarget(editingContext.goal.id, editingContext.target.id, {
-                        targetWatts: parseNumberOrUndefined(value),
-                      });
-                    }}
-                    min={1}
-                    max={2000}
-                    decimals={0}
-                    unitLabel="W"
-                    required
-                    placeholder="e.g., 285"
-                    helperText="Enter whole watts"
-                    error={getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetWatts`,
-                    )}
-                    accessibilityHint="Enter target power in whole watts"
-                  />
-
-                  <DurationInput
-                    id="editor-power-test-duration"
-                    label="Required Test Duration"
-                    value={editingContext.target.testDurationHms ?? ""}
-                    onChange={(nextValue) => {
-                      updateTarget(editingContext.goal.id, editingContext.target.id, {
-                        testDurationHms: nextValue,
-                      });
-                    }}
-                    placeholder="e.g., 0:20:00"
-                    required
-                    error={getError(
-                      `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.testDurationHms`,
-                    )}
-                    accessibilityHint="Enter test duration in h:mm:ss format"
-                  />
-                </>
-              )}
-
-              {editingContext.target.targetType === "hr_threshold" && (
-                <BoundedNumberInput
-                  id="editor-lthr-bpm"
-                  label="LTHR"
-                  value={
-                    editingContext.target.targetLthrBpm === undefined
-                      ? ""
-                      : String(editingContext.target.targetLthrBpm)
-                  }
-                  onChange={(value) => {
-                    updateTarget(editingContext.goal.id, editingContext.target.id, {
-                      targetLthrBpm: parseNumberOrUndefined(value),
-                    });
-                  }}
-                  min={1}
-                  max={260}
-                  decimals={0}
-                  unitLabel="bpm"
-                  required
-                  placeholder="e.g., 168"
-                  helperText="Enter heart rate in beats per minute"
-                  error={getError(
-                    `goals.${editingContext.goalIndex}.targets.${editingContext.targetIndex}.targetLthrBpm`,
-                  )}
-                  accessibilityHint="Enter lactate threshold heart rate in bpm"
-                />
-              )}
-            </ScrollView>
-          )}
-        </View>
-      </Modal>
+      <GoalTargetEditorModal
+        editingContext={editingContext}
+        getError={getError}
+        onClose={closeTargetEditor}
+        onUpdateTarget={updateTarget}
+      />
     </View>
   );
 }

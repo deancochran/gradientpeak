@@ -123,6 +123,7 @@ jest.mock("@/lib/utils/plan/dateGrouping", () => ({
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
+  ArrowUpRight: "ArrowUpRight",
   Calendar: "Calendar",
   CheckCircle2: "CheckCircle2",
   Clock: "Clock",
@@ -132,9 +133,9 @@ jest.mock("lucide-react-native", () => ({
   Zap: "Zap",
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       events: {
         list: { invalidate: jest.fn() },

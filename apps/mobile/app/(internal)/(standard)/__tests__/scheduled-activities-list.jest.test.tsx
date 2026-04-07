@@ -51,9 +51,9 @@ jest.mock("lucide-react-native", () => ({
   Plus: createHost("Plus"),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({ trainingPlans: { invalidate: jest.fn(async () => undefined) } }),
     events: { list: { useQuery: eventsListUseQueryMock } },
   },

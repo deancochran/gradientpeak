@@ -1,5 +1,4 @@
-import { ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import { type ActivityCategory, ActivityPayload, getSampleActivitiesByCategory } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
@@ -25,7 +24,7 @@ const CATEGORIES = [
     name: "Running",
     icon: Footprints,
     color: "text-emerald-600",
-    category: "run" as PublicActivityCategory,
+    category: "run" as ActivityCategory,
     gpsRecordingEnabled: true,
   },
   {
@@ -33,7 +32,7 @@ const CATEGORIES = [
     name: "Cycling",
     icon: Bike,
     color: "text-blue-600",
-    category: "bike" as PublicActivityCategory,
+    category: "bike" as ActivityCategory,
     gpsRecordingEnabled: true,
   },
   {
@@ -41,7 +40,7 @@ const CATEGORIES = [
     name: "Indoor Cycling",
     icon: Bike,
     color: "text-orange-600",
-    category: "bike" as PublicActivityCategory,
+    category: "bike" as ActivityCategory,
     gpsRecordingEnabled: false,
   },
   {
@@ -49,7 +48,7 @@ const CATEGORIES = [
     name: "Treadmill",
     icon: Footprints,
     color: "text-purple-600",
-    category: "run" as PublicActivityCategory,
+    category: "run" as ActivityCategory,
     gpsRecordingEnabled: false,
   },
   {
@@ -57,7 +56,7 @@ const CATEGORIES = [
     name: "Strength",
     icon: Dumbbell,
     color: "text-red-600",
-    category: "strength" as PublicActivityCategory,
+    category: "strength" as ActivityCategory,
     gpsRecordingEnabled: false,
   },
   {
@@ -65,7 +64,7 @@ const CATEGORIES = [
     name: "Swimming",
     icon: Waves,
     color: "text-cyan-600",
-    category: "swim" as PublicActivityCategory,
+    category: "swim" as ActivityCategory,
     gpsRecordingEnabled: false,
   },
   {
@@ -73,7 +72,7 @@ const CATEGORIES = [
     name: "Other",
     icon: Activity,
     color: "text-gray-600",
-    category: "other" as PublicActivityCategory,
+    category: "other" as ActivityCategory,
     gpsRecordingEnabled: true,
   },
   // Conditionally spread the dev object into the array

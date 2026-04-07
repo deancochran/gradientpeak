@@ -8,8 +8,8 @@ import { Calendar, Heart, MapPin, Trash2, TrendingDown, TrendingUp } from "lucid
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { api } from "@/lib/api";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Outdoor Run",
@@ -21,12 +21,12 @@ const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
 export default function RouteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const mapRef = useRef<MapView>(null);
 
-  const { data: route, isLoading } = trpc.routes.get.useQuery({ id: id! }, { enabled: !!id });
+  const { data: route, isLoading } = api.routes.get.useQuery({ id: id! }, { enabled: !!id });
 
-  const deleteMutation = useReliableMutation(trpc.routes.delete, {
+  const deleteMutation = useReliableMutation(api.routes.delete, {
     invalidate: [utils.routes],
     success: "Route deleted successfully",
     onSuccess: () => router.back(),
@@ -36,7 +36,7 @@ export default function RouteDetailScreen() {
   const [isLiked, setIsLiked] = useState(route?.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(route?.has_liked ? 1 : 0);
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
       setIsLiked(route?.has_liked ?? false);
       setLikesCount(route?.has_liked ? 1 : 0);
@@ -68,7 +68,10 @@ export default function RouteDetailScreen() {
     }
   }, [route?.has_liked]);
 
-  const coordinates = useMemo(() => (route ? decodePolyline(route.polyline) : []), [route]);
+  const coordinates = useMemo(
+    () => (route?.polyline ? decodePolyline(route.polyline) : []),
+    [route],
+  );
 
   const handleDelete = () => {
     if (!route) return;
@@ -202,7 +205,7 @@ export default function RouteDetailScreen() {
             <View className="flex-row flex-wrap gap-2">
               <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                 <Text className="text-xs font-medium text-foreground">
-                  {formatDistance(route.total_distance)}
+                  {formatDistance(route.total_distance ?? 0)}
                 </Text>
               </View>
               {route.total_ascent != null && route.total_ascent > 0 ? (
@@ -231,7 +234,7 @@ export default function RouteDetailScreen() {
                     <MapPin size={20} className="text-muted-foreground" />
                     <Text className="text-muted-foreground">Distance</Text>
                   </View>
-                  <Text className="font-semibold">{formatDistance(route.total_distance)}</Text>
+                  <Text className="font-semibold">{formatDistance(route.total_distance ?? 0)}</Text>
                 </View>
 
                 {route.total_ascent != null && route.total_ascent > 0 && (

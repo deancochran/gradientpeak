@@ -5,7 +5,7 @@
  * and validation failures. Integrates seamlessly with React Hook Form.
  */
 
-import { FieldErrors } from "react-hook-form";
+import type { FieldErrors, FieldValues, Path, UseFormReturn } from "react-hook-form";
 import { Alert } from "react-native";
 import { ZodError } from "zod";
 
@@ -70,11 +70,11 @@ export function getErrorMessage(error: unknown): string {
     else return "An unexpected error occurred";
   }
 
-  // Handle tRPC/API errors with shape
+  // Handle API/API errors with shape
   if (typeof error === "object" && error !== null) {
     const err = error as any;
 
-    // tRPC error format
+    // API error format
     if (err.data?.code && ERROR_MESSAGE_MAP[err.data.code]) {
       return ERROR_MESSAGE_MAP[err.data.code];
     }
@@ -105,6 +105,99 @@ export function getErrorMessage(error: unknown): string {
 export function showErrorAlert(error: unknown, title = "Error") {
   const message = getErrorMessage(error);
   Alert.alert(title, message, [{ text: "OK" }]);
+}
+
+function getFieldErrorMessage(value: unknown): string | null {
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (typeof item === "string" && item.length > 0) {
+        return item;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function extractFieldErrors(error: unknown): Record<string, string> | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+
+  const typedError = error as {
+    data?: { zodError?: { fieldErrors?: Record<string, unknown> } };
+    field?: unknown;
+    message?: unknown;
+    errors?: Array<{ path?: unknown; message?: unknown }>;
+  };
+
+  const zodFieldErrors = typedError.data?.zodError?.fieldErrors;
+  if (zodFieldErrors) {
+    const mappedEntries = Object.entries(zodFieldErrors)
+      .map(([field, value]) => [field, getFieldErrorMessage(value)] as const)
+      .filter((entry): entry is readonly [string, string] => entry[1] !== null);
+
+    if (mappedEntries.length > 0) {
+      return Object.fromEntries(mappedEntries);
+    }
+  }
+
+  if (typeof typedError.field === "string") {
+    const message = getFieldErrorMessage(typedError.message);
+    if (message) {
+      return { [typedError.field]: message };
+    }
+  }
+
+  if (Array.isArray(typedError.errors)) {
+    const fieldErrors: Record<string, string> = {};
+
+    for (const entry of typedError.errors) {
+      const message = getFieldErrorMessage(entry.message);
+      if (!message) {
+        continue;
+      }
+
+      const field = Array.isArray(entry.path)
+        ? entry.path.map((segment) => String(segment)).join(".")
+        : typeof entry.path === "string"
+          ? entry.path
+          : null;
+
+      if (field) {
+        fieldErrors[field] = message;
+      }
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      return fieldErrors;
+    }
+  }
+
+  return null;
+}
+
+export function applyServerFormErrors<TFieldValues extends FieldValues>(
+  form: Pick<UseFormReturn<TFieldValues>, "setError">,
+  error: unknown,
+) {
+  const fieldErrors = extractFieldErrors(error);
+  if (!fieldErrors) {
+    return false;
+  }
+
+  for (const [field, message] of Object.entries(fieldErrors)) {
+    form.setError(field as Path<TFieldValues>, {
+      type: "server",
+      message,
+    });
+  }
+
+  return true;
 }
 
 /**

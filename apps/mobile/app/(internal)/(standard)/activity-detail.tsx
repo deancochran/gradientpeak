@@ -36,8 +36,8 @@ import {
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import { StreamChart } from "@/components/activity/charts/StreamChart";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 // Re-defining interface from StreamChart as it's not exported
@@ -114,10 +114,10 @@ function getStreamStats(values: number[]) {
 function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const queryClient = trpc.useUtils();
+  const queryClient = api.useUtils();
 
   // Fetch activity data
-  const { data: activityData, isLoading: isLoadingActivity } = trpc.activities.getById.useQuery(
+  const { data: activityData, isLoading: isLoadingActivity } = api.activities.getById.useQuery(
     { id: id! },
     { enabled: !!id },
   );
@@ -126,7 +126,7 @@ function ActivityDetailScreen() {
   const derived = activityData?.derived;
 
   // Fetch profile for header
-  const { data: profile } = trpc.profiles.getPublicById.useQuery(
+  const { data: profile } = api.profiles.getPublicById.useQuery(
     { id: activity?.profile_id },
     { enabled: !!activity?.profile_id },
   );
@@ -139,7 +139,7 @@ function ActivityDetailScreen() {
     data: streamsData,
     isLoading: isLoadingStreams,
     error: streamsError,
-  } = trpc.fitFiles.getStreams.useQuery(
+  } = api.fitFiles.getStreams.useQuery(
     {
       fitFilePath: fitFilePath!,
       activityId: activityId,
@@ -152,7 +152,7 @@ function ActivityDetailScreen() {
   );
 
   // Delete mutation
-  const deleteMutation = trpc.activities.delete.useMutation({
+  const deleteMutation = api.activities.delete.useMutation({
     onSuccess: () => {
       queryClient.activities.invalidate();
       queryClient.home.getDashboard.invalidate();
@@ -165,7 +165,7 @@ function ActivityDetailScreen() {
   });
 
   // Privacy toggle mutation
-  const updatePrivacyMutation = trpc.activities.update.useMutation({
+  const updatePrivacyMutation = api.activities.update.useMutation({
     onSuccess: () => {
       queryClient.activities.invalidate();
       queryClient.feed.getFeed.invalidate();
@@ -184,7 +184,7 @@ function ActivityDetailScreen() {
     setLikesCount(activity?.likes_count ?? 0);
   }, [activity?.likes_count, activityData?.has_liked]);
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onSuccess: (data) => {
       setLiked(data.liked);
       setLikesCount((prev: number) => (data.liked ? prev + 1 : prev - 1));
@@ -207,14 +207,14 @@ function ActivityDetailScreen() {
   const commentEntityId = typeof activity?.id === "string" ? activity.id.trim() : "";
 
   // Fetch comments
-  const { data: commentsData, refetch: refetchComments } = trpc.social.getComments.useQuery(
+  const { data: commentsData, refetch: refetchComments } = api.social.getComments.useQuery(
     isValidUuid(commentEntityId)
       ? { entity_id: commentEntityId, entity_type: "activity" }
       : skipToken,
   );
 
   // Add comment mutation
-  const addCommentMutation = trpc.social.addComment.useMutation({
+  const addCommentMutation = api.social.addComment.useMutation({
     onSuccess: () => {
       setNewComment("");
       refetchComments();

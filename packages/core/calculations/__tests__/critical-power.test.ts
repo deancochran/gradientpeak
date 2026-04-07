@@ -8,9 +8,6 @@ const createEffort = (
   value: number,
   overrides: Partial<BestEffort> = {},
 ): BestEffort => ({
-  id: "mock-id",
-  activity_id: "mock-activity",
-  profile_id: "mock-profile",
   activity_category: "bike",
   effort_type: "power",
   duration_seconds: duration,

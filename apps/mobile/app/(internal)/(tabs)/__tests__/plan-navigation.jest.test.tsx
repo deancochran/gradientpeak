@@ -241,9 +241,9 @@ jest.mock("@repo/core", () => ({
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       trainingPlans: { invalidate: jest.fn() },
       events: { list: { invalidate: jest.fn() }, invalidate: jest.fn() },

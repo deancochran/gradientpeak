@@ -6,33 +6,22 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { z } from "zod";
-import { getAuthClient } from "@/lib/auth/auth-client";
+import { authClient, signOutMobileAuth } from "@/lib/auth/client";
+import {
+  getAuthFormUnexpectedErrorMessage,
+  mapResetPasswordError,
+  setAuthFormError,
+} from "@/lib/auth/form-helpers";
+import { type ResetPasswordFields, resetPasswordSchema } from "@/lib/auth/form-schemas";
+import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-
-const resetPasswordSchema = z
-  .object({
-    password: z
-      .string()
-      .min(8, "Password must be at least 8 characters")
-      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-      .regex(/[0-9]/, "Password must contain at least one number"),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
-    path: ["confirmPassword"],
-  });
-
-type ResetPasswordFields = z.infer<typeof resetPasswordSchema>;
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const [isLoading, setIsLoading] = useState(false);
-  const resetToken = typeof params.token === "string" ? params.token : null;
+  const { token } = useLocalSearchParams<{ token?: string }>();
 
   const form = useZodForm({
     schema: resetPasswordSchema,
@@ -43,56 +32,40 @@ export default function ResetPasswordScreen() {
   });
 
   useEffect(() => {
-    const validateToken = async () => {
-      if (!resetToken) {
-        logMobileAction("auth.resetPasswordCallback", "failure", {
-          error: "missing_tokens",
-        });
-        console.warn("⚠️ No Better Auth reset token found in reset password callback");
-        Alert.alert(
-          "Invalid Link",
-          "This password reset link is invalid. Please request a new one.",
-          [
-            {
-              text: "OK",
-              onPress: () => router.replace("/(external)/forgot-password"),
-            },
-          ],
-        );
-      }
-    };
+    if (token) return;
 
-    void validateToken();
-  }, [resetToken, router]);
+    Alert.alert("Invalid Link", "This password reset link is invalid. Please request a new one.", [
+      { text: "OK", onPress: () => router.replace("/(external)/forgot-password") },
+    ]);
+  }, [router, token]);
 
   const onUpdatePassword = async (data: ResetPasswordFields) => {
-    if (!resetToken) {
+    if (!token) {
       form.setError("root", {
-        message: "Reset link is invalid. Please request a new one.",
+        message: "Reset token not found. Please request a new reset email.",
       });
       return;
     }
 
-    setIsLoading(true);
-
     try {
       logMobileAction("auth.updatePassword", "attempt", {});
-      console.log("🔄 Updating password...");
-      const authClient = getAuthClient();
-      const { error } = await authClient.resetPassword({
-        newPassword: data.password,
-        token: resetToken,
-      });
+      const result = await withAuthRequestTimeout(
+        authClient.resetPassword({
+          newPassword: data.password,
+          token: String(token),
+        }),
+      );
 
-      if (error) {
-        logMobileAction("auth.updatePassword", "failure", { error: error.message });
-        console.error("❌ Password update error:", error.message);
-        form.setError("root", { message: error.message });
+      if (result.error) {
+        logMobileAction("auth.updatePassword", "failure", { error: result.error.message });
+        setAuthFormError(form, mapResetPasswordError(result.error.message));
         return;
       }
 
-      console.log("✅ Password updated successfully");
       logMobileAction("auth.updatePassword", "success", {});
+
+      await signOutMobileAuth().catch(() => {});
+      await useAuthStore.getState().clearSession();
 
       Alert.alert(
         "Password Updated",
@@ -103,10 +76,10 @@ export default function ResetPasswordScreen() {
       logMobileAction("auth.updatePassword", "failure", {
         error: err instanceof Error ? err.message : String(err),
       });
-      console.error("💥 Unexpected password update error:", err);
-      form.setError("root", { message: "An unexpected error occurred" });
-    } finally {
-      setIsLoading(false);
+      setAuthFormError(form, {
+        name: "root",
+        message: getAuthFormUnexpectedErrorMessage(err),
+      });
     }
   };
 
@@ -139,10 +112,8 @@ export default function ResetPasswordScreen() {
           </CardHeader>
 
           <CardContent className="gap-6">
-            {/* Form */}
             <Form {...form}>
               <View className="gap-4" testID="reset-password-form">
-                {/* Password Input */}
                 <FormTextField
                   control={form.control}
                   label="New Password"
@@ -167,7 +138,6 @@ export default function ResetPasswordScreen() {
                   </Text>
                 </View>
 
-                {/* Confirm Password Input */}
                 <FormTextField
                   control={form.control}
                   label="Confirm Password"
@@ -177,7 +147,6 @@ export default function ResetPasswordScreen() {
                   testId="confirm-password-input"
                 />
 
-                {/* Root Error */}
                 {form.formState.errors.root && (
                   <UiAlert icon={AlertCircle} variant="destructive" testID="form-error">
                     <AlertDescription className="text-center">
@@ -188,22 +157,20 @@ export default function ResetPasswordScreen() {
               </View>
             </Form>
 
-            {/* Update Password Button */}
             <Button
               variant="default"
               size="lg"
               onPress={submitForm.handleSubmit}
-              disabled={isLoading || !resetToken}
+              disabled={submitForm.isSubmitting || !token}
               testID="update-password-button"
               className="w-full"
             >
-              <Text>{isLoading ? "Updating Password..." : "Update Password"}</Text>
+              <Text>{submitForm.isSubmitting ? "Updating Password..." : "Update Password"}</Text>
             </Button>
 
-            {/* Help Text */}
             <View className="pt-4" testID="help-container">
               <Text variant="muted" className="text-center text-xs">
-                After updating your password, you will be automatically signed in
+                After updating your password, you will need to sign in again.
               </Text>
             </View>
           </CardContent>

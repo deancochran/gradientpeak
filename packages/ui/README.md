@@ -47,8 +47,28 @@ Mobile preview ownership belongs to `apps/mobile` and should use app-owned devel
 From `packages/ui`:
 
 ```bash
-pnpm add:shadcn @shadcn/button
-pnpm add:reusables @rnr-nativewind/select
+pnpm add:shadcn button
+pnpm add:reusables select
 ```
 
-After generation, move the primitive into the shared contract above, keep shared logic in `shared.ts`, and verify the package export remains correct.
+The wrapper scripts intentionally keep each upstream CLI in its own mirror:
+
+- shadcn/ui writes to `src/registry/web/*`
+- react-native-reusables writes to `src/registry/native/*`
+
+If a component does not already have a public package entrypoint, the wrapper also scaffolds a thin platform entry file under `src/components/<name>/index.web.tsx` or `index.native.tsx` that re-exports from the mirror.
+
+This keeps three layers separate:
+
+- `src/registry/web/*` and `src/registry/native/*` are CLI-owned mirrors and should stay as close to upstream as practical.
+- `src/components/<name>/index.web.tsx` and `index.native.tsx` are the stable package entrypoints that downstream bundlers resolve automatically.
+- `shared.ts`, fixtures, stories, and tests remain package-owned when a component needs local contract logic above the registry mirror.
+
+Current primitives are not fully cut over to mirror-backed entrypoints yet. For now, use the mirror workflow for new additions and future incremental migrations.
+
+Useful flags still pass through to the upstream CLIs:
+
+```bash
+pnpm add:shadcn button -- --overwrite
+pnpm add:reusables select -- --yes --overwrite
+```

@@ -1,19 +1,6 @@
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "@repo/ui/theme/web.css";
-
-@custom-variant dark (&:is(.dark *));
+@import "@repo/tailwindcss/web.css";
 
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
 }

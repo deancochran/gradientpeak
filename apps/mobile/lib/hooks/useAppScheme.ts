@@ -5,7 +5,5 @@ export const getAppScheme = () => {
   const environment =
     (process.env.APP_ENV as "development" | "preview" | "production") || "development";
   const config = getDynamicAppConfig(environment);
-  const scheme = `${config.scheme}://`;
-
-  return scheme;
+  return config.scheme;
 };

@@ -15,7 +15,7 @@ import { useRouter } from "expo-router";
 import { MapPin, TrendingUp, Upload, X } from "lucide-react-native";
 import { View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 interface RouteSelectorProps {
   activityCategory: string;
@@ -31,7 +31,7 @@ export function RouteSelector({
   const router = useRouter();
 
   // Fetch routes filtered by activity category
-  const { data } = trpc.routes.list.useInfiniteQuery(
+  const { data } = api.routes.list.useInfiniteQuery(
     {
       activityCategory: activityCategory as any,
       limit: 50,
@@ -46,7 +46,7 @@ export function RouteSelector({
   const routeId =
     typeof selectedRouteId === "string" ? selectedRouteId : (selectedRouteId as any)?.value || null;
 
-  const { data: selectedRoute } = trpc.routes.get.useQuery(
+  const { data: selectedRoute } = api.routes.get.useQuery(
     { id: routeId! },
     { enabled: !!routeId && typeof routeId === "string" },
   );
@@ -156,7 +156,7 @@ export function RouteSelector({
                     <View className="flex-row items-center gap-1">
                       <MapPin size={14} className="text-muted-foreground" />
                       <Text className="text-xs">
-                        {formatDistance(selectedRoute.total_distance)}
+                        {formatDistance(selectedRoute.total_distance ?? 0)}
                       </Text>
                     </View>
                     {selectedRoute.total_ascent != null && selectedRoute.total_ascent > 0 && (

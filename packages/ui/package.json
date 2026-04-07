@@ -4,8 +4,6 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./components": "./src/components/index.ts",
     "./components/icon": {
       "react-native": "./src/components/icon/index.native.tsx",
       "default": "./src/components/icon/index.web.tsx"
@@ -129,12 +127,7 @@
       "react-native": "./src/testing/ui-preview/index.native.tsx",
       "default": "./src/testing/ui-preview/index.web.tsx"
     },
-    "./theme": "./src/theme/index.ts",
-    "./theme/native": "./src/theme/native.ts",
-    "./theme/native.css": "./src/theme/native.css",
-    "./theme/tokens.css": "./src/theme/tokens.css",
-    "./theme/web.css": "./src/theme/web.css",
-    "./theme/*": "./src/theme/*"
+    "./theme/web.css": "./src/theme/web.css"
   },
   "sideEffects": [
     "**/*.css"
@@ -144,19 +137,16 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
-    "generate:selectors": "bash ./scripts/run-strip-types.sh ./scripts/generate-selectors.ts",
-    "generate:ui-preview-manifest": "bash ./scripts/run-strip-types.sh ./scripts/generate-ui-preview-manifest.ts",
+    "generate:selectors": "node --experimental-strip-types ./scripts/generate-selectors.ts",
+    "generate:ui-preview-manifest": "node --experimental-strip-types ./scripts/generate-ui-preview-manifest.ts",
     "test": "pnpm run test:web && pnpm run test:native",
     "test:web": "vitest run",
     "test:native": "jest --config ./jest.config.mjs --runInBand",
-    "sync:shadcn-theme": "node ./scripts/sync-shadcn-theme.mjs",
-    "generate:theme": "node ./scripts/generate-theme.mjs",
-    "add:shadcn": "pnpm dlx shadcn@latest add",
-    "add:reusables": "pnpm dlx shadcn@latest add"
+    "add:shadcn": "node ./scripts/add-shadcn.mjs",
+    "add:reusables": "node ./scripts/add-reusables.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
-    "@repo/core": "workspace:*",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.10",
@@ -176,6 +166,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@react-native-community/datetimepicker": "^8.4.4",
     "@react-native-community/slider": "^5.1.1",
+    "@repo/core": "workspace:*",
     "@rn-primitives/accordion": "^1.2.0",
     "@rn-primitives/alert-dialog": "^1.2.0",
     "@rn-primitives/aspect-ratio": "^1.2.0",
@@ -207,6 +198,7 @@
     "lucide-react": "^0.541.0",
     "lucide-react-native": "^0.544.0",
     "nativewind": "5.0.0-preview.3",
+    "radix-ui": "^1.4.3",
     "react": "19.1.0",
     "react-hook-form": "^7.66.0",
     "react-native": "0.81.5",
@@ -216,15 +208,15 @@
     "react-resizable-panels": "^4.7.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
-    "zod": "^4.1.11"
+    "zod": "^4.2.1"
   },
   "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
     "@swc/core": "^1.13.12",
     "@swc/jest": "^0.2.39",
-    "@testing-library/react-native": "^13.3.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
-    "@repo/typescript-config": "workspace:*",
+    "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",
     "@types/react": "^19.2.7",
     "jest": "^30.2.0",

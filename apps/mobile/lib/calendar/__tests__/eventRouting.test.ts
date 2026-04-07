@@ -9,10 +9,7 @@ describe("calendar event routing", () => {
     );
   });
 
-  it("routes non-planned events to standard event detail", () => {
-    expect(buildOpenEventRoute({ id: "e-1", event_type: "rest_day" })).toBe(
-      ROUTES.PLAN.EVENT_DETAIL("e-1"),
-    );
+  it("routes supported fallback detail types to standard event detail", () => {
     expect(buildOpenEventRoute({ id: "e-2", event_type: "race_target" })).toBe(
       ROUTES.PLAN.EVENT_DETAIL("e-2"),
     );
@@ -27,7 +24,9 @@ describe("calendar event routing", () => {
     );
   });
 
-  it("keeps imported events out of editable routes", () => {
+  it("keeps imported and legacy rest-day events out of routed fallback paths", () => {
+    expect(buildOpenEventRoute({ id: "e-1", event_type: "rest_day" })).toBe(null);
+    expect(buildEditEventRoute({ id: "e-1", event_type: "rest_day" })).toBe(null);
     expect(buildOpenEventRoute({ id: "e-5", event_type: "imported" })).toBe(null);
     expect(buildEditEventRoute({ id: "e-5", event_type: "imported" })).toBe(null);
   });

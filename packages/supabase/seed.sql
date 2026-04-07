@@ -140,7 +140,7 @@ with check (bucket_id = 'fit-files');
 -- SYSTEM ACTIVITY PLAN TEMPLATES
 -- ============================================================================
 -- Templates are now seeded via TypeScript script for better maintainability.
--- Run: pnpm seed-templates
+-- Run: pnpm --filter @repo/db seed-templates
 --
--- See: packages/supabase/scripts/seed-templates.ts
+-- See: packages/db/scripts/seed-templates.ts
 -- Template definitions: packages/core/samples/index.ts

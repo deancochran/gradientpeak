@@ -6,7 +6,7 @@ import { Calendar, Smartphone } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 interface PlannedActivitiesListProps {
   onActivitySelect: (plannedActivity: any) => void;
@@ -17,8 +17,8 @@ interface PlannedActivitiesListProps {
 export function PlannedActivitiesList({ onActivitySelect }: PlannedActivitiesListProps) {
   const router = useRouter();
 
-  // Fetch today's planned activities using tRPC
-  const { data: plannedActivities, isLoading: loading } = trpc.events.getToday.useQuery();
+  // Fetch today's planned activities using API
+  const { data: plannedActivities, isLoading: loading } = api.events.getToday.useQuery();
 
   // Handle navigation to activity plan detail page
   const handleNavigateToDetail = (activity: any) => {

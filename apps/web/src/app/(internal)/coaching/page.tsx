@@ -3,14 +3,13 @@
 import type { CoachRosterEntry } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Plus } from "lucide-react";
-import Link from "next/link";
 import { DataTable } from "@/components/ui/data-table";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
 import type { Athlete } from "./columns";
 import { columns } from "./columns";
 
 export default function CoachingPage() {
-  const { data: roster = [], isLoading } = trpc.coaching.getRoster.useQuery();
+  const { data: roster = [], isLoading } = api.coaching.getRoster.useQuery();
   const tableRows: Athlete[] = roster.map((row: CoachRosterEntry) => ({
     athlete_id: row.athlete_id,
     profile: row.profile,
@@ -23,12 +22,11 @@ export default function CoachingPage() {
           <h2 className="text-2xl font-bold tracking-tight">Coaching Dashboard</h2>
           <p className="text-muted-foreground">Manage your athletes and training plans.</p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Button asChild>
-            <Link href="/coaching/invite">
-              <Plus className="mr-2 h-4 w-4" /> Invite Athlete
-            </Link>
+        <div className="flex flex-col items-end gap-2">
+          <Button disabled>
+            <Plus className="mr-2 h-4 w-4" /> Invite Athlete
           </Button>
+          <p className="text-sm text-muted-foreground">Invites are not available on web yet.</p>
         </div>
       </div>
 

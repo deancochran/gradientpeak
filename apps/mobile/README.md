@@ -14,7 +14,7 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 ### State Management & Data Flow
 - **Zustand 5.0.8** - Lightweight state management with middleware support
 - **TanStack React Query v5** - Server state management with caching, invalidation, and optimistic updates
-- **tRPC v11** - End-to-end type-safe API layer with React Query integration
+- **API v11** - End-to-end type-safe API layer with React Query integration
 - **Immer 10.1.3** - Immutable state updates with mutable syntax
 
 ### Styling & UI Components
@@ -32,7 +32,7 @@ A cross-platform fitness tracking mobile app built with Expo, React Native, and 
 - **Supabase** - PostgreSQL backend with real-time capabilities
 - **Supabase Auth** - Secure authentication with email/password and social providers
 - **Supabase Storage** - Secure file uploads and downloads
-- **tRPC Auth Integration** - Type-safe authentication procedures
+- **API Auth Integration** - Type-safe authentication procedures
 
 ### Bluetooth & Sensor Integration
 - **React Native BLE PLX v3** - Bluetooth Low Energy device communication

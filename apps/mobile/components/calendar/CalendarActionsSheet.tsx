@@ -8,10 +8,8 @@ type CalendarActionsSheetProps = {
   selectedDate: string;
   onClose: () => void;
   onCreatePlanned: () => void;
-  onCreateRestDay: () => void;
   onCreateRaceTarget: () => void;
   onCreateCustom: () => void;
-  onJumpToToday: () => void;
 };
 
 export function CalendarActionsSheet({
@@ -19,13 +17,11 @@ export function CalendarActionsSheet({
   selectedDate,
   onClose,
   onCreatePlanned,
-  onCreateRestDay,
   onCreateRaceTarget,
   onCreateCustom,
-  onJumpToToday,
 }: CalendarActionsSheetProps) {
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["48%"], []);
+  const snapPoints = useMemo(() => ["40%"], []);
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -54,16 +50,14 @@ export function CalendarActionsSheet({
         <View className="gap-1">
           <Text className="text-lg font-semibold text-foreground">Calendar actions</Text>
           <Text className="text-sm text-muted-foreground">
-            Create or jump from {selectedDate} without crowding the screen.
+            Create from {selectedDate} without crowding the screen.
           </Text>
         </View>
 
         {[
           ["Planned activity", onCreatePlanned, "create-type-planned"],
-          ["Rest day", onCreateRestDay, "create-type-rest-day"],
           ["Race target", onCreateRaceTarget, "create-type-race-target"],
           ["Custom event", onCreateCustom, "create-type-custom"],
-          ["Jump to today", onJumpToToday, "calendar-actions-today"],
         ].map(([label, onPress, testID]) => (
           <TouchableOpacity
             key={String(testID)}

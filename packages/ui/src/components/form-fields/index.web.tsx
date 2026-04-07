@@ -2,6 +2,7 @@
 
 import type { FieldPath, FieldPathValue, FieldValues } from "react-hook-form";
 
+import { cn } from "../../lib/cn";
 import { BoundedNumberInput } from "../bounded-number-input/index.web";
 import { DateInput } from "../date-input/index.web";
 import { DurationInput } from "../duration-input/index.web";
@@ -158,6 +159,7 @@ function FormNumberField<TFieldValues extends FieldValues, TName extends FieldPa
 }
 
 function FormSwitchField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
+  className,
   control,
   description,
   disabled,
@@ -173,9 +175,9 @@ function FormSwitchField<TFieldValues extends FieldValues, TName extends FieldPa
       name={name}
       rules={rules}
       render={({ field }) => (
-        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+        <FormItem className={cn("flex flex-row items-center justify-between gap-4", className)}>
           <div className="space-y-0.5">
-            <FormLabel className="text-base">{label}</FormLabel>
+            <FormLabel>{label}</FormLabel>
             {description ? <FormDescription>{description}</FormDescription> : null}
           </div>
           <FormControl>

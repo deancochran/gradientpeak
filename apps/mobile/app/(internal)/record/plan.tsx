@@ -13,27 +13,29 @@
  * - Recording continues in background
  */
 
-import type { RecordingServiceActivityPlan } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
-import type { AppRouter } from "@repo/trpc/client";
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import {
+  type ActivityCategory,
+  activityPlanStructureSchemaV2,
+  type RecordingServiceActivityPlan,
+} from "@repo/core";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
-import type { inferRouterOutputs } from "@trpc/server";
 import { router } from "expo-router";
 import { CalendarDays, Check, Search } from "lucide-react-native";
 import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { api } from "@/lib/api";
 import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import { trpc } from "@/lib/trpc";
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
 type PlannedActivity = RouterOutputs["events"]["getToday"][number];
 
 const CATEGORY_OPTIONS: {
-  value: PublicActivityCategory | "all";
+  value: ActivityCategory | "all";
   label: string;
 }[] = [
   { value: "all", label: "All Categories" },
@@ -47,14 +49,14 @@ const CATEGORY_OPTIONS: {
 export default function PlanPickerPage() {
   const service = useSharedActivityRecorder();
   const recordingState = useRecordingState(service);
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<PublicActivityCategory | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<ActivityCategory | "all">("all");
 
   // Fetch today's planned events
-  const { data: plannedActivities, isLoading } = trpc.events.getToday.useQuery();
+  const { data: plannedActivities, isLoading } = api.events.getToday.useQuery();
   const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
 
   // Filter planned activities by search and category filter
@@ -103,11 +105,14 @@ export default function PlanPickerPage() {
         return false;
       }
 
+      const parsedStructure = activityPlanStructureSchemaV2.parse(planData.structure);
+
       const selectedPlan: RecordingServiceActivityPlan = {
         name: planData.name,
-        description: planData.description ?? undefined,
-        structure: planData.structure,
-        activity_category: planData.activity_category || service.selectedActivityCategory,
+        description: planData.description ?? "",
+        structure: parsedStructure,
+        activity_category:
+          (planData.activity_category as ActivityCategory) || service.selectedActivityCategory,
         route_id: planData.route_id ?? null,
       };
 

@@ -1,21 +1,26 @@
-// auth-hooks.ts - Separate file for auth hooks that use tRPC
+// auth-hooks.ts - Separate file for auth hooks that use API
 
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppState } from "react-native";
-import { getAuthClient } from "@/lib/auth/auth-client";
+import {
+  deleteMobileAccount,
+  updateMobileEmail,
+  updateMobilePassword,
+} from "@/lib/auth/account-management";
+import { refreshMobileAuthSession } from "@/lib/auth/client";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { trpc } from "../trpc";
+import { api } from "../api";
 
 /**
  * useAuth - Primary auth hook with unified state management
  *
- * Combines Zustand store (session, user) with tRPC query (profile).
+ * Combines Zustand store (session, user) with API query (profile).
  * Profile data is synced to store to maintain single source of truth.
  */
 
 export const useAuth = () => {
   const store = useAuthStore();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const { session, user, ready, loading } = store;
 
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
@@ -33,16 +38,8 @@ export const useAuth = () => {
     return isEmailVerified ? ("verified" as const) : ("unverified" as const);
   }, [isAuthenticated, isEmailVerified]);
 
-  // FIX: Use store methods directly in useEffect, don't include them in deps
-  useEffect(() => {
-    if (!ready && !loading) {
-      store.initialize();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, loading]); // Only depend on primitive values
-
-  // Use tRPC query for profile data - this gives you caching, refetching, etc.
-  const profileQuery = trpc.profiles.get.useQuery(
+  // Use API query for profile data - this gives you caching, refetching, etc.
+  const profileQuery = api.profiles.get.useQuery(
     undefined, // or whatever parameters your profile query needs
     {
       enabled: ready && !!user && isAuthenticated, // Only fetch if auth store is ready and user is authenticated
@@ -52,18 +49,22 @@ export const useAuth = () => {
   );
 
   useEffect(() => {
+    if (!AppState?.addEventListener) {
+      return;
+    }
+
     const subscription = AppState.addEventListener("change", (state) => {
       if (state === "active" && isAuthenticated) {
-        void store.refreshSession();
+        void refreshMobileAuthSession();
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, [isAuthenticated, store]);
+  }, [isAuthenticated]);
 
-  // FIX: Sync profile from tRPC to store - use ref to track if we've already synced this data
+  // FIX: Sync profile from API to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
   const lastSyncedOnboarded = useRef<boolean | null>(null);
 
@@ -101,8 +102,8 @@ export const useAuth = () => {
   // FIX: Delete account - stable callback
   const deleteAccount = useCallback(async () => {
     try {
-      const { error } = await getAuthClient().deleteUser();
-      if (error) throw new Error(error.message);
+      const result = await deleteMobileAccount();
+      if (result.error) throw result.error;
       await useAuthStore.getState().clearSession();
     } catch (e) {
       console.error("Error deleting account:", e);
@@ -110,11 +111,46 @@ export const useAuth = () => {
     }
   }, []); // No dependencies needed
 
+  const updatePassword = useCallback(
+    async (input: { currentPassword?: string; newPassword: string }) => {
+      if (!user?.email) {
+        throw new Error("No authenticated user found");
+      }
+
+      if (!input.currentPassword) {
+        throw new Error("Current password is required");
+      }
+
+      const result = await updateMobilePassword({
+        currentPassword: input.currentPassword,
+        newPassword: input.newPassword,
+      });
+
+      if (result.error) {
+        throw result.error;
+      }
+    },
+    [user?.email],
+  );
+
+  const canUpdateEmail = true;
+  const updateEmailUnavailableReason = null;
+
+  const updateEmail = useCallback(async (input: { newEmail: string }) => {
+    const result = await updateMobileEmail(input);
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    return result;
+  }, []);
+
   // FIX: Complete onboarding - stable callback
   const completeOnboarding = useCallback(async () => {
     if (!user) return;
     try {
-      // Note: The DB update is now handled by the completeOnboarding TRPC mutation.
+      // Note: The DB update is now handled by the completeOnboarding API mutation.
       // This function simply updates the local store to reflect the change immediately
       // and prevent navigation loops while the profile query re-fetches.
       const currentStore = useAuthStore.getState();
@@ -138,10 +174,13 @@ export const useAuth = () => {
     // Auth state from Zustand (single source of truth)
     user,
     session,
-    profile: store.profile, // Now from store (synced from tRPC)
+    profile: store.profile ?? profileQuery.data,
     // Use computed email verification status for more reliable routing
     userStatus,
-    onboardingStatus: store.onboardingStatus,
+    onboardingStatus:
+      store.onboardingStatus === true
+        ? true
+        : (profileQuery.data?.onboarded ?? store.onboardingStatus),
     loading: store.loading,
     ready: store.ready,
     error: store.error,
@@ -150,7 +189,11 @@ export const useAuth = () => {
 
     // Actions
     deleteAccount,
+    updateEmail,
+    updatePassword,
     completeOnboarding,
+    canUpdateEmail,
+    updateEmailUnavailableReason,
 
     // Profile query status (for loading/error states)
     profileLoading: profileQuery.isLoading,

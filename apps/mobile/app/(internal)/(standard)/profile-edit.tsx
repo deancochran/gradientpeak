@@ -18,7 +18,7 @@ import {
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { File as ExpoFile } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
@@ -35,10 +35,9 @@ import {
 } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { supabase } from "@/lib/supabase/client";
-import { trpc } from "@/lib/trpc";
+import { applyServerFormErrors, showErrorAlert } from "@/lib/utils/formErrors";
 
 const profileEditSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").nullable(),
@@ -54,14 +53,22 @@ const profileEditSchema = z.object({
 
 type ProfileEditForm = z.infer<typeof profileEditSchema>;
 
+const AVATAR_MIME_TYPES: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
 function ProfileEditScreen() {
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
   const [avatarUploadLoading, setAvatarUploadLoading] = useState(false);
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   // Fetch estimated FTP
-  const { data: estimatedFTP } = trpc.analytics.predictPerformance.useQuery({
+  const { data: estimatedFTP } = api.analytics.predictPerformance.useQuery({
     activity_category: "bike",
     effort_type: "power",
     duration: 3600, // 1 hour for FTP
@@ -71,23 +78,13 @@ function ProfileEditScreen() {
   const [now] = useState(() => new Date());
 
   // Fetch LTHR from profile metrics
-  const { data: lthrMetric } = trpc.profileMetrics.getAtDate.useQuery({
+  const { data: lthrMetric } = api.profileMetrics.getAtDate.useQuery({
     metric_type: "lthr",
     date: now,
   });
 
-  const updateProfileMutation = useReliableMutation(trpc.profiles.update, {
-    invalidate: [utils.profiles],
-    success: "Profile updated successfully!",
-    onSuccess: async () => {
-      // Force refresh profile to update avatar in tabs
-      await refreshProfile();
-      // Only navigate back if not uploading avatar (avatar upload handles its own flow)
-      if (!avatarUploadLoading) {
-        router.back();
-      }
-    },
-  });
+  const updateProfileMutation = api.profiles.update.useMutation();
+  const createAvatarUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
 
   const form = useZodForm({
     schema: profileEditSchema,
@@ -104,21 +101,43 @@ function ProfileEditScreen() {
 
   const preferredWeightUnit = form.watch("preferred_units") === "imperial" ? "lbs" : "kg";
 
-  const onSubmit = async (data: ProfileEditForm) => {
-    try {
-      await updateProfileMutation.mutateAsync({
-        username: data.username || undefined,
-        bio: data.bio || undefined,
-        dob: data.dob || undefined,
-        weight_kg: data.weight_kg || undefined,
-        preferred_units: data.preferred_units || undefined,
-        language: data.language || undefined,
-        is_public: data.is_public ?? undefined,
-      });
-    } catch (error) {
-      console.error("Failed to update profile:", error);
+  const submitForm = useZodFormSubmit<ProfileEditForm>({
+    form,
+    onSubmit: async (data) => {
+      try {
+        await updateProfileMutation.mutateAsync({
+          username: data.username || undefined,
+          bio: data.bio || undefined,
+          dob: data.dob || undefined,
+          weight_kg: data.weight_kg || undefined,
+          preferred_units: data.preferred_units || undefined,
+          language: data.language || undefined,
+          is_public: data.is_public ?? undefined,
+        });
+
+        await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+        Alert.alert("Success", "Profile updated successfully!");
+
+        if (!avatarUploadLoading) {
+          router.back();
+        }
+      } catch (error) {
+        if (applyServerFormErrors(form, error)) {
+          return;
+        }
+
+        throw error;
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (submitForm.submitError) {
+      showErrorAlert(submitForm.submitError, "Failed to update profile");
     }
-  };
+  }, [submitForm.submitError]);
+
+  const isSavingProfile = submitForm.isSubmitting || updateProfileMutation.isPending;
 
   const handleAvatarUpload = async () => {
     // Request permissions
@@ -199,36 +218,40 @@ function ProfileEditScreen() {
       // Get file extension
       const ext = uri.split(".").pop()?.toLowerCase() || "jpg";
       const fileName = `${Date.now()}.${ext}`;
-      const filePath = `${profile?.id}/${fileName}`; // Store in user's folder
+      const fileType = AVATAR_MIME_TYPES[ext] ?? "image/jpeg";
 
-      // Create ExpoFile instance and get bytes
+      const { signedUrl, publicUrl } = await createAvatarUploadUrlMutation.mutateAsync({
+        fileName,
+        fileType,
+      });
+
+      // Create ExpoFile instance and ensure it exists before upload
       const file = new ExpoFile(uri);
-      const bytes = await file.bytes();
 
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from("profile-avatars")
-        .upload(filePath, bytes, {
-          contentType: `image/${ext}`,
-          upsert: true,
-        });
-
-      if (uploadError) {
-        throw uploadError;
+      if (!file.exists) {
+        throw new Error("Selected image could not be read");
       }
 
-      // Get public URL
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("profile-avatars").getPublicUrl(filePath);
+      const arrayBuffer = await fetch(file.uri).then((response) => response.arrayBuffer());
+
+      const uploadResponse = await fetch(signedUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": fileType,
+        },
+        body: arrayBuffer,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+      }
 
       // Update profile with new avatar URL
       await updateProfileMutation.mutateAsync({
         avatar_url: publicUrl,
       });
 
-      // Force immediate profile refresh to update UI
-      await refreshProfile();
+      await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
 
       Alert.alert("Success", "Avatar updated successfully!");
     } catch (error) {
@@ -240,24 +263,6 @@ function ProfileEditScreen() {
     } finally {
       setAvatarUploadLoading(false);
     }
-  };
-
-  // Helper function to convert base64 to blob
-  const base64ToBlob = (base64: string, contentType: string): Blob => {
-    const byteCharacters = atob(base64);
-    const byteArrays = [];
-
-    for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-      const slice = byteCharacters.slice(offset, offset + 512);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-
-    return new Blob(byteArrays, { type: contentType });
   };
 
   return (
@@ -395,11 +400,14 @@ function ProfileEditScreen() {
                 <View>
                   <Text className="text-sm font-medium mb-1">Threshold HR</Text>
                   <View className="bg-muted p-3 rounded-md">
-                    <Text className="text-foreground">
-                      {lthrMetric?.value
-                        ? `${Math.round(lthrMetric.value)} bpm`
-                        : "Not detected yet"}
-                    </Text>
+                    {(() => {
+                      const lthrValue = lthrMetric?.value == null ? null : Number(lthrMetric.value);
+                      return (
+                        <Text className="text-foreground">
+                          {lthrValue != null ? `${Math.round(lthrValue)} bpm` : "Not detected yet"}
+                        </Text>
+                      );
+                    })()}
                     <Text className="text-xs text-muted-foreground mt-1">
                       Read-only estimate from your strongest recent 20-minute heart rate effort.
                     </Text>
@@ -449,17 +457,17 @@ function ProfileEditScreen() {
             variant="outline"
             className="flex-1"
             onPress={() => router.back()}
-            disabled={updateProfileMutation.isPending}
+            disabled={isSavingProfile}
           >
             <Text>Cancel</Text>
           </Button>
           <Button
             className="flex-1"
-            onPress={form.handleSubmit(onSubmit)}
-            disabled={updateProfileMutation.isPending}
+            onPress={submitForm.handleSubmit}
+            disabled={isSavingProfile}
             testID="profile-edit-save-button"
           >
-            {updateProfileMutation.isPending ? (
+            {isSavingProfile ? (
               <>
                 <Icon as={Loader2} size={16} className="animate-spin mr-2" />
                 <Text>Saving...</Text>

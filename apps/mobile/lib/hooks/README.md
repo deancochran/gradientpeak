@@ -10,7 +10,7 @@ This system guarantees reliable form submissions across the entire app with zero
 
 **Before:**
 ```tsx
-const mutation = trpc.activities.create.useMutation({
+const mutation = api.activities.create.useMutation({
   onSuccess: () => {
     utils.activities.list.invalidate();
     utils.activities.getById.invalidate();
@@ -25,7 +25,7 @@ const mutation = trpc.activities.create.useMutation({
 
 **After:**
 ```tsx
-const mutation = useReliableMutation(trpc.activities.create, {
+const mutation = useReliableMutation(api.activities.create, {
   invalidate: [utils.activities],
   success: "Activity created!",
   onSuccess: () => router.back(),
@@ -49,7 +49,7 @@ useReliableMutation(mutation, options)
 
 #### 1. Simple Form Submission
 ```tsx
-const createActivity = useReliableMutation(trpc.activities.create, {
+const createActivity = useReliableMutation(api.activities.create, {
   invalidate: [utils.activities],
   success: "Activity created!",
   onSuccess: () => router.back(),
@@ -61,7 +61,7 @@ const onSubmit = (data) => createActivity.mutate(data);
 
 #### 2. Update with Multiple Invalidations
 ```tsx
-const updateProfile = useReliableMutation(trpc.profile.update, {
+const updateProfile = useReliableMutation(api.profile.update, {
   invalidate: [utils.profile, utils.trainingPlans],
   success: "Profile updated!",
 });
@@ -69,14 +69,14 @@ const updateProfile = useReliableMutation(trpc.profile.update, {
 
 #### 3. Silent Operation (No Success Message)
 ```tsx
-const getAuthUrl = useReliableMutation(trpc.integrations.getAuthUrl, {
+const getAuthUrl = useReliableMutation(api.integrations.getAuthUrl, {
   silent: true,
 });
 ```
 
 #### 4. Delete with Confirmation
 ```tsx
-const deleteActivity = useReliableMutation(trpc.activities.delete, {
+const deleteActivity = useReliableMutation(api.activities.delete, {
   invalidate: [utils.activities],
   success: "Activity deleted",
   onSuccess: () => {
@@ -118,7 +118,7 @@ import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 **Pattern 1: With onSuccess**
 ```tsx
 // BEFORE
-const mutation = trpc.foo.create.useMutation({
+const mutation = api.foo.create.useMutation({
   onSuccess: () => {
     utils.foo.list.invalidate();
     Alert.alert("Success", "Done!");
@@ -126,7 +126,7 @@ const mutation = trpc.foo.create.useMutation({
 });
 
 // AFTER
-const mutation = useReliableMutation(trpc.foo.create, {
+const mutation = useReliableMutation(api.foo.create, {
   invalidate: [utils.foo],
   success: "Done!",
 });
@@ -135,7 +135,7 @@ const mutation = useReliableMutation(trpc.foo.create, {
 **Pattern 2: With onError**
 ```tsx
 // BEFORE
-const mutation = trpc.foo.delete.useMutation({
+const mutation = api.foo.delete.useMutation({
   onSuccess: () => {
     utils.foo.invalidate();
   },
@@ -145,7 +145,7 @@ const mutation = trpc.foo.delete.useMutation({
 });
 
 // AFTER
-const mutation = useReliableMutation(trpc.foo.delete, {
+const mutation = useReliableMutation(api.foo.delete, {
   invalidate: [utils.foo],
   // Error handling is automatic!
 });
@@ -154,7 +154,7 @@ const mutation = useReliableMutation(trpc.foo.delete, {
 **Pattern 3: With Multiple Invalidations**
 ```tsx
 // BEFORE
-const mutation = trpc.foo.update.useMutation({
+const mutation = api.foo.update.useMutation({
   onSuccess: () => {
     utils.foo.list.invalidate();
     utils.foo.getById.invalidate();
@@ -163,7 +163,7 @@ const mutation = trpc.foo.update.useMutation({
 });
 
 // AFTER
-const mutation = useReliableMutation(trpc.foo.update, {
+const mutation = useReliableMutation(api.foo.update, {
   invalidate: [utils.foo, utils.bar],
   // All utils are invalidated automatically
 });
@@ -183,7 +183,7 @@ const mutation = useReliableMutation(trpc.foo.update, {
 ### Schedule Activity (Before: 18 lines → After: 5 lines)
 ```tsx
 // BEFORE: 18 lines
-const createMutation = trpc.plannedActivities.create.useMutation({
+const createMutation = api.plannedActivities.create.useMutation({
   onSuccess: () => {
     utils.plannedActivities.list.invalidate();
     utils.plannedActivities.getToday.invalidate();
@@ -193,7 +193,7 @@ const createMutation = trpc.plannedActivities.create.useMutation({
 });
 
 // AFTER: 5 lines
-const createMutation = useReliableMutation(trpc.plannedActivities.create, {
+const createMutation = useReliableMutation(api.plannedActivities.create, {
   invalidate: [utils.plannedActivities],
   success: "Activity scheduled!",
   onSuccess: () => router.back(),
@@ -203,7 +203,7 @@ const createMutation = useReliableMutation(trpc.plannedActivities.create, {
 ### Delete with Error Handling (Before: 14 lines → After: 4 lines)
 ```tsx
 // BEFORE: 14 lines
-const deleteMutation = trpc.routes.delete.useMutation({
+const deleteMutation = api.routes.delete.useMutation({
   onSuccess: () => {
     utils.routes.list.invalidate();
     Alert.alert("Success", "Route deleted successfully");
@@ -214,7 +214,7 @@ const deleteMutation = trpc.routes.delete.useMutation({
 });
 
 // AFTER: 4 lines
-const deleteMutation = useReliableMutation(trpc.routes.delete, {
+const deleteMutation = useReliableMutation(api.routes.delete, {
   invalidate: [utils.routes],
   success: "Route deleted successfully",
 });
@@ -223,7 +223,7 @@ const deleteMutation = useReliableMutation(trpc.routes.delete, {
 ## Troubleshooting
 
 ### Error: "utils is not defined"
-Make sure you have `const utils = trpc.useUtils();` at the component level.
+Make sure you have `const utils = api.useUtils();` at the component level.
 
 ### Error: "Cannot read property 'invalidate'"
 Check that you're passing the utils object correctly: `invalidate: [utils.activities]` not `invalidate: [utils.activities.list]`
@@ -243,7 +243,7 @@ onError: (error) => {
 
 ### Conditional Success Messages
 ```tsx
-const mutation = useReliableMutation(trpc.foo.update, {
+const mutation = useReliableMutation(api.foo.update, {
   invalidate: [utils.foo],
   onSuccess: (data) => {
     if (data.isNew) {
@@ -255,7 +255,7 @@ const mutation = useReliableMutation(trpc.foo.update, {
 
 ### Chaining Operations
 ```tsx
-const mutation = useReliableMutation(trpc.foo.create, {
+const mutation = useReliableMutation(api.foo.create, {
   invalidate: [utils.foo],
   onSuccess: async (data) => {
     // Perform additional operations
@@ -279,4 +279,4 @@ The system has been applied to all form submissions in:
 
 ## Summary
 
-Use `useReliableMutation` for **every** tRPC mutation. It guarantees reliability, reduces code, and provides consistent UX across your entire app.
+Use `useReliableMutation` for **every** API mutation. It guarantees reliability, reduces code, and provides consistent UX across your entire app.

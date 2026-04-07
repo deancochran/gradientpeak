@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 interface ActivityListModalProps {
   visible: boolean;
@@ -41,7 +41,7 @@ export function ActivityListModal({
   onActivityPress,
 }: ActivityListModalProps) {
   // Fetch activities for the date range
-  const { data: activities = [], isLoading } = trpc.activities.list.useQuery(
+  const { data: activities = [], isLoading } = api.activities.list.useQuery(
     {
       date_from: dateFrom,
       date_to: dateTo,
@@ -77,8 +77,8 @@ export function ActivityListModal({
       })
     : activities;
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+  const formatDate = (value: string | Date) => {
+    const date = value instanceof Date ? value : new Date(value);
     return date.toLocaleDateString("en-US", {
       weekday: "short",
       month: "short",

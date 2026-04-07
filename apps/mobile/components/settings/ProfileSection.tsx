@@ -1,4 +1,5 @@
-import { profileQuickUpdateSchema } from "@repo/core";
+import { type ProfileQuickUpdateData, profileQuickUpdateSchema } from "@repo/core";
+import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -9,11 +10,12 @@ import {
 } from "@repo/ui/components/card";
 import { Form, FormBoundedNumberField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
-import { useState } from "react";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
+import { AlertCircle } from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
+import { getErrorMessage } from "@/lib/utils/formErrors";
 
 interface ProfileSectionProps {
   profile: {
@@ -27,12 +29,20 @@ interface ProfileSectionProps {
 
 export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
+  const defaultValues = useMemo(
+    () => ({
+      username: profile?.username || "",
+      weight_kg: profile?.weight_kg || undefined,
+      ftp: profile?.ftp || undefined,
+      threshold_hr: profile?.threshold_hr || undefined,
+    }),
+    [profile?.username, profile?.weight_kg, profile?.ftp, profile?.threshold_hr],
+  );
 
-  const updateProfileMutation = useReliableMutation(trpc.profiles.update, {
-    invalidate: [utils.profiles, utils.trainingPlans],
-    success: "Profile updated!",
+  const updateProfileMutation = api.profiles.update.useMutation({
     onSuccess: async () => {
+      await Promise.all([utils.profiles.invalidate(), utils.trainingPlans.invalidate()]);
       await onRefreshProfile();
       setIsEditing(false);
     },
@@ -40,30 +50,44 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
 
   const form = useZodForm({
     schema: profileQuickUpdateSchema,
-    defaultValues: {
-      username: profile?.username || "",
-      weight_kg: profile?.weight_kg || undefined,
-      ftp: profile?.ftp || undefined,
-      threshold_hr: profile?.threshold_hr || undefined,
+    defaultValues,
+  });
+
+  useEffect(() => {
+    form.reset(defaultValues);
+  }, [defaultValues, form]);
+
+  const submitForm = useZodFormSubmit<ProfileQuickUpdateData>({
+    form,
+    onSubmit: async (data) => {
+      form.clearErrors("root");
+
+      try {
+        await updateProfileMutation.mutateAsync({
+          username: data.username || undefined,
+          weight_kg: data.weight_kg || undefined,
+          ftp: data.ftp || undefined,
+          threshold_hr: data.threshold_hr || undefined,
+        });
+      } catch (error) {
+        form.setError("root", {
+          message: getErrorMessage(error),
+        });
+      }
     },
   });
 
-  const onSubmit = async (data: any) => {
-    try {
-      await updateProfileMutation.mutateAsync({
-        username: data.username || undefined,
-        weight_kg: data.weight_kg || undefined,
-        ftp: data.ftp || undefined,
-        threshold_hr: data.threshold_hr || undefined,
-      });
-    } catch (error) {
-      console.error("Failed to update profile:", error);
-    }
-  };
+  const isSubmitting = updateProfileMutation.isPending || submitForm.isSubmitting;
 
   const onCancel = () => {
-    form.reset();
+    form.reset(defaultValues);
+    form.clearErrors("root");
     setIsEditing(false);
+  };
+
+  const onEdit = () => {
+    form.clearErrors("root");
+    setIsEditing(true);
   };
 
   return (
@@ -77,12 +101,7 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
             </CardDescription>
           </View>
           {!isEditing ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => setIsEditing(true)}
-              testId="edit-profile-button"
-            >
+            <Button variant="outline" size="sm" onPress={onEdit} testId="edit-profile-button">
               <Text>Edit</Text>
             </Button>
           ) : (
@@ -93,11 +112,11 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
               <Button
                 variant="default"
                 size="sm"
-                onPress={form.handleSubmit(onSubmit)}
-                disabled={updateProfileMutation.isPending}
+                onPress={submitForm.handleSubmit}
+                disabled={isSubmitting}
                 testId="save-button"
               >
-                <Text>{updateProfileMutation.isPending ? "Saving..." : "Save"}</Text>
+                <Text>{isSubmitting ? "Saving..." : "Save"}</Text>
               </Button>
             </View>
           )}
@@ -106,6 +125,12 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
       <CardContent className="gap-6">
         <Form {...form}>
           <View className="gap-4">
+            {form.formState.errors.root?.message ? (
+              <Alert icon={AlertCircle} variant="destructive" testID="profile-root-error">
+                <AlertDescription>{form.formState.errors.root.message}</AlertDescription>
+              </Alert>
+            ) : null}
+
             <FormTextField
               control={form.control}
               disabled={!isEditing}

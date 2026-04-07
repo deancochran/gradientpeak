@@ -1,18 +1,25 @@
-"use client";
+import { resolveAuthSessionFromHeaders } from "@repo/auth/server";
+import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { ExternalAuthGuard } from "@/components/auth/external-auth-guard";
+import { Navbar } from "@/components/nav-bar";
 
-import { Loader2 } from "lucide-react";
-import { useRedirectIfAuthenticated } from "@/components/providers/auth-provider";
+export const metadata: Metadata = {
+  title: "Account",
+};
 
-export default function ExternalLayout({ children }: { children: React.ReactNode }) {
-  const { isLoading } = useRedirectIfAuthenticated("/");
+export default async function ExternalLayout({ children }: { children: React.ReactNode }) {
+  const session = await resolveAuthSessionFromHeaders(new Headers(await headers()));
 
-  if (isLoading) {
-    return (
-      <div className="flex h-svh w-full items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
+  if (session?.user) {
+    redirect("/");
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <Navbar />
+      <ExternalAuthGuard>{children}</ExternalAuthGuard>
+    </>
+  );
 }

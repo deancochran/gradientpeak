@@ -1,4 +1,4 @@
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { CanonicalSport } from "@repo/core";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
 /**
@@ -47,16 +47,14 @@ export const ACTIVITY_CATEGORY_CONFIGS = {
  * Get activity configuration for category + location
  */
 export function getActivityCategoryConfig(category: string) {
-  return (
-    ACTIVITY_CATEGORY_CONFIGS[category as PublicActivityCategory] || ACTIVITY_CATEGORY_CONFIGS.other
-  );
+  return ACTIVITY_CATEGORY_CONFIGS[category as CanonicalSport] || ACTIVITY_CATEGORY_CONFIGS.other;
 }
 
 /**
  * Get display name for category + location combination
  */
 export function getActivityDisplayName(
-  category: PublicActivityCategory,
+  category: CanonicalSport,
   gpsRecordingEnabled: boolean,
 ): string {
   const categoryConfig = getActivityCategoryConfig(category);

@@ -1,11 +1,20 @@
 import { validateTrainingPlanForm } from "@repo/core/plan/formValidation";
+import { useZodForm } from "@repo/ui/hooks";
 import React from "react";
-import { fireEvent, renderNative } from "../../../../test/render-native";
+import { z } from "zod";
+import { fireEvent, renderNative, waitFor } from "../../../../test/render-native";
+import { AvailabilityConfigSection } from "../AvailabilityConfigSection";
+import { BehaviorControlsConfigSection } from "../BehaviorControlsConfigSection";
+import { ConstraintsConfigSection } from "../ConstraintsConfigSection";
 import {
   SinglePageForm,
   type TrainingPlanConfigFormData,
   type TrainingPlanFormData,
 } from "../SinglePageForm";
+import {
+  type TrainingPlanMetadataFormData,
+  trainingPlanMetadataFormSchema,
+} from "../trainingPlanMetadataForm";
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -19,6 +28,17 @@ jest.mock("react-native", () => ({
 jest.mock("@repo/core", () => ({
   __esModule: true,
   createEmptyGoalDraft: () => ({ targets: [] }),
+  creationBehaviorControlsV1Schema: z
+    .object({
+      aggressiveness: z.number().min(0).max(1),
+      variability: z.number().min(0).max(1),
+      spike_frequency: z.number().min(0).max(1),
+      shape_target: z.number().min(-1).max(1),
+      shape_strength: z.number().min(0).max(1),
+      recovery_priority: z.number().min(0).max(1),
+      starting_fitness_confidence: z.number().min(0).max(1),
+    })
+    .strict(),
   parseNumberOrUndefined: (value: unknown) => {
     if (value === "" || value === null || value === undefined) {
       return undefined;
@@ -288,34 +308,58 @@ const baseConfigData = {
   },
 } as unknown as TrainingPlanConfigFormData;
 
+function renderSinglePageForm(
+  props: Omit<React.ComponentProps<typeof SinglePageForm>, "metadataForm"> & {
+    metadataDefaults?: TrainingPlanMetadataFormData;
+  },
+) {
+  const TestScreen = () => {
+    const { metadataDefaults, ...singlePageFormProps } = props;
+    const metadataForm = useZodForm({
+      schema: trainingPlanMetadataFormSchema,
+      defaultValues: metadataDefaults ?? {
+        name: "",
+        description: "",
+      },
+      mode: "onChange",
+      reValidateMode: "onChange",
+    });
+
+    React.useEffect(() => {
+      void metadataForm.trigger();
+    }, [metadataForm]);
+
+    return <SinglePageForm {...singlePageFormProps} metadataForm={metadataForm} />;
+  };
+
+  return renderNative(<TestScreen />);
+}
+
 describe("SinglePageForm blocker surfacing", () => {
-  it("shows tab-level issue hints before submit", () => {
-    const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-        errors={validateTrainingPlanForm(baseFormData)}
-      />,
-    );
+  it("shows tab-level issue hints before submit", async () => {
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+      errors: validateTrainingPlanForm(baseFormData),
+    });
 
-    const textNodes = findMockNodes(rendered, "Text");
-    const allText = textNodes.map((node: any) => getNodeText(node.props.children)).join("\n");
-
-    expect(allText).toContain("Needs attention: Plan");
+    await waitFor(() => {
+      const textNodes = findMockNodes(rendered, "Text");
+      const allText = textNodes.map((node: any) => getNodeText(node.props.children)).join("\n");
+      expect(allText).toContain("Needs attention: Plan");
+    });
   });
 
   it("hides config-heavy tabs when creation config is disabled", () => {
-    const rendered = renderNative(
-      <SinglePageForm
-        showCreationConfig={false}
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-      />,
-    );
+    const rendered = renderSinglePageForm({
+      showCreationConfig: false,
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+    });
 
     const tabs = findMockNodes(rendered, "Pressable")
       .map((node: any) => node.props.accessibilityLabel)
@@ -331,61 +375,60 @@ describe("SinglePageForm blocker surfacing", () => {
   });
 
   it("wires plan tab metadata fields", () => {
-    const onPlanMetadataChange = jest.fn();
-
-    const rendered = renderNative(
-      <SinglePageForm
-        planMetadata={{
-          name: "Build Phase",
-          description: "Progressive block",
-        }}
-        onPlanMetadataChange={onPlanMetadataChange}
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-      />,
-    );
+    const rendered = renderSinglePageForm({
+      metadataDefaults: {
+        name: "Build Phase",
+        description: "Progressive block",
+      },
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+    });
 
     fireEvent.press(rendered.getByLabelText("Plan tab"));
 
     const planNameInput = findMockNodes(rendered, "Input").find(
-      (node: any) => node.props["aria-label"] === "Plan name",
+      (node: any) => node.props.accessibilityLabel === "Plan name",
     );
     fireEvent(planNameInput!, "changeText", "Peak Block");
 
-    expect(onPlanMetadataChange).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Peak Block" }),
+    const updatedPlanNameInput = findMockNodes(rendered, "Input").find(
+      (node: any) => node.props.accessibilityLabel === "Plan name",
     );
+
+    expect(updatedPlanNameInput?.props.value).toBe("Peak Block");
+    expect(updatedPlanNameInput?.props.maxLength).toBe(120);
+
+    const descriptionInput = findMockNodes(rendered, "Textarea").find(
+      (node: any) => node.props.accessibilityLabel === "Description",
+    );
+    expect(descriptionInput?.props.maxLength).toBe(500);
   });
 
-  it("applies invalid field styling when RHF errors are present", () => {
-    const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-        errors={{ plan: "Plan metadata required" }}
-      />,
-    );
+  it("shows metadata validation messaging from RHF wrappers", async () => {
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+    });
 
-    const planNameInput = findMockNodes(rendered, "Input").find(
-      (node: any) => node.props["aria-label"] === "Plan name",
-    );
+    await waitFor(() => {
+      const textNodes = findMockNodes(rendered, "Text");
+      const allText = textNodes.map((node: any) => getNodeText(node.props.children)).join("\n");
 
-    expect(planNameInput?.props.className).toContain("border-destructive");
+      expect(allText).toContain("Plan name is required.");
+    });
   });
 
   it("shows behavior controls inline without mode switching", () => {
-    const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-      />,
-    );
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+    });
 
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
 
@@ -398,18 +441,16 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(textNodes.some((text: string) => text.includes("Switch mode to Advanced"))).toBe(false);
   });
 
-  it("wires single projection reset action to tuning header", () => {
-    const onResetProjectionAll = jest.fn();
+  it("wires behavior-control reset action to tuning header", () => {
+    const onResetBehaviorControls = jest.fn();
 
-    const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-        onResetProjectionAll={onResetProjectionAll}
-      />,
-    );
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+      onResetBehaviorControls,
+    });
 
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
 
@@ -422,18 +463,16 @@ describe("SinglePageForm blocker surfacing", () => {
 
     fireEvent.press(reset);
 
-    expect(onResetProjectionAll).toHaveBeenCalledTimes(1);
+    expect(onResetBehaviorControls).toHaveBeenCalledTimes(1);
   });
 
   it("removes cap sliders from limits tab", () => {
-    const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-      />,
-    );
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+    });
 
     fireEvent.press(rendered.getByLabelText("Limits tab"));
 
@@ -446,15 +485,287 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(numberSliders.some((node: any) => node.props.id === "max-weekly-ctl-ramp")).toBe(false);
   });
 
-  it("uses behavior control sliders for default tuning", () => {
+  it("syncs limits slider edits back through the config callback", async () => {
+    const onConfigChange = jest.fn();
+
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange,
+    });
+
+    fireEvent.press(rendered.getByLabelText("Limits tab"));
+
+    const startingCtlSlider = findMockNodes(rendered, "NumberSliderInput").find(
+      (node: any) => node.props.id === "starting-ctl-assumption",
+    );
+
+    fireEvent(startingCtlSlider!, "onChange", 47.5);
+
+    await waitFor(() => {
+      expect(onConfigChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startingCtlAssumption: 47.5,
+          postGoalRecoveryDays: baseConfigData.postGoalRecoveryDays,
+        }),
+      );
+    });
+  });
+
+  it("syncs recovery-days slider edits back through the config callback", async () => {
+    const onConfigChange = jest.fn();
+
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange,
+    });
+
+    fireEvent.press(rendered.getByLabelText("Limits tab"));
+
+    const recoverySlider = findMockNodes(rendered, "NumberSliderInput").find(
+      (node: any) => node.props.id === "post-goal-recovery-days",
+    );
+
+    fireEvent(recoverySlider!, "onChange", 9);
+
+    await waitFor(() => {
+      expect(onConfigChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startingCtlAssumption: baseConfigData.startingCtlAssumption,
+          postGoalRecoveryDays: 9,
+        }),
+      );
+    });
+  });
+
+  it("does not promote projected CTL into an explicit override when only recovery days change", async () => {
+    const onConfigChange = jest.fn();
+
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange,
+      projectionChart: {
+        constraint_summary: {
+          starting_state: {
+            starting_ctl: 33,
+          },
+        },
+      } as any,
+    });
+
+    fireEvent.press(rendered.getByLabelText("Limits tab"));
+
+    const recoverySlider = findMockNodes(rendered, "NumberSliderInput").find(
+      (node: any) => node.props.id === "post-goal-recovery-days",
+    );
+
+    fireEvent(recoverySlider!, "onChange", 7);
+
+    await waitFor(() => {
+      expect(onConfigChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startingCtlAssumption: undefined,
+          postGoalRecoveryDays: 7,
+        }),
+      );
+    });
+  });
+
+  it("does not replay stale limits values back to parent when props reset", async () => {
+    const onChange = jest.fn();
+
     const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
+      <ConstraintsConfigSection
+        postGoalRecoveryDays={5}
+        projectionStartingCtl={20}
+        startingCtlAssumption={20}
+        onChange={onChange}
       />,
     );
+
+    const startingCtlSlider = findMockNodes(rendered, "NumberSliderInput").find(
+      (node: any) => node.props.id === "starting-ctl-assumption",
+    );
+
+    fireEvent(startingCtlSlider!, "onChange", 47.5);
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith({
+        startingCtlAssumption: 47.5,
+        postGoalRecoveryDays: 5,
+      });
+    });
+
+    onChange.mockClear();
+
+    rendered.rerender(
+      <ConstraintsConfigSection
+        postGoalRecoveryDays={5}
+        projectionStartingCtl={12}
+        startingCtlAssumption={12}
+        onChange={onChange}
+      />,
+    );
+
+    await waitFor(() => {
+      const refreshedSlider = findMockNodes(rendered, "NumberSliderInput").find(
+        (node: any) => node.props.id === "starting-ctl-assumption",
+      );
+      expect(refreshedSlider?.props.value).toBe(12);
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("syncs availability edits back through form and config callbacks", async () => {
+    const onFormDataChange = jest.fn();
+    const onConfigChange = jest.fn();
+
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange,
+      configData: baseConfigData,
+      onConfigChange,
+    });
+
+    fireEvent.press(rendered.getByLabelText("Availability tab"));
+
+    const dateField = findMockNodes(rendered, "DateField").find(
+      (node: any) => node.props.id === "plan-start-date",
+    );
+
+    fireEvent(dateField!, "onChange", "2026-03-01");
+
+    await waitFor(() => {
+      expect(onFormDataChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          planStartDate: "2026-03-01",
+        }),
+      );
+    });
+
+    expect(onConfigChange).not.toHaveBeenCalled();
+
+    onFormDataChange.mockClear();
+    onConfigChange.mockClear();
+
+    const tuesdayButton = findMockNodes(rendered, "Button").find(
+      (node: any) => getNodeText(node.props.children) === "Tue",
+    );
+
+    fireEvent.press(tuesdayButton!);
+
+    await waitFor(() => {
+      expect(onConfigChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          availabilityConfig: expect.objectContaining({
+            template: "custom",
+            days: expect.arrayContaining([
+              expect.objectContaining({
+                day: "tuesday",
+                max_sessions: 1,
+                windows: [
+                  expect.objectContaining({
+                    start_minute_of_day: 360,
+                    end_minute_of_day: 450,
+                  }),
+                ],
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
+  });
+
+  it("does not replay stale availability values back to parent when props reset", async () => {
+    const onChange = jest.fn();
+
+    const rendered = renderNative(
+      <AvailabilityConfigSection
+        planStartDate="2026-02-14"
+        availabilityConfig={baseConfigData.availabilityConfig}
+        availabilityProvenance={baseConfigData.availabilityProvenance}
+        onChange={onChange}
+      />,
+    );
+
+    const tuesdayButton = findMockNodes(rendered, "Button").find(
+      (node: any) => getNodeText(node.props.children) === "Tue",
+    );
+
+    fireEvent.press(tuesdayButton!);
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          planStartDate: "2026-02-14",
+          availabilityConfig: expect.objectContaining({
+            template: "custom",
+            days: expect.arrayContaining([
+              expect.objectContaining({
+                day: "tuesday",
+                max_sessions: 1,
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    onChange.mockClear();
+
+    rendered.rerender(
+      <AvailabilityConfigSection
+        planStartDate="2026-02-20"
+        availabilityConfig={{
+          ...baseConfigData.availabilityConfig,
+          template: "custom",
+          days: baseConfigData.availabilityConfig.days.map((day) =>
+            day.day === "friday"
+              ? {
+                  ...day,
+                  windows: [{ start_minute_of_day: 360, end_minute_of_day: 450 }],
+                  max_sessions: 1,
+                }
+              : { ...day, windows: [], max_sessions: 0 },
+          ),
+        }}
+        availabilityProvenance={{
+          ...baseConfigData.availabilityProvenance,
+          source: "user",
+        }}
+        onChange={onChange}
+      />,
+    );
+
+    await waitFor(() => {
+      const refreshedDateField = findMockNodes(rendered, "DateField").find(
+        (node: any) => node.props.id === "plan-start-date",
+      );
+      expect(refreshedDateField?.props.value).toBe("2026-02-20");
+
+      const refreshedFridayButton = findMockNodes(rendered, "Button").find(
+        (node: any) => getNodeText(node.props.children) === "Fri",
+      );
+      expect(refreshedFridayButton?.props.variant).toBe("default");
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("uses behavior control sliders for default tuning", () => {
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+    });
 
     fireEvent.press(rendered.getByLabelText("Tuning tab"));
 
@@ -484,27 +795,100 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(percentSliderIds).toContain("behavior-shape-strength");
   });
 
-  it("shows review observations without fix CTAs on review tab", () => {
+  it("syncs tuning slider edits back through the config callback", async () => {
+    const onConfigChange = jest.fn();
+
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange,
+    });
+
+    fireEvent.press(rendered.getByLabelText("Tuning tab"));
+
+    const aggressivenessSlider = findMockNodes(rendered, "PercentSliderInput").find(
+      (node: any) => node.props.id === "behavior-aggressiveness",
+    );
+
+    fireEvent(aggressivenessSlider!, "onChange", 62);
+
+    await waitFor(() => {
+      expect(onConfigChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          behaviorControlsV1: expect.objectContaining({
+            aggressiveness: 0.62,
+            variability: baseConfigData.behaviorControlsV1.variability,
+          }),
+        }),
+      );
+    });
+  });
+
+  it("does not replay stale tuning values back to parent when props reset", async () => {
+    const onChange = jest.fn();
+
     const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-        blockingIssues={[
-          {
-            code: "required_tss_ramp_exceeds_cap",
-            message: "Required weekly load exceeds cap",
-            suggestions: ["Lower target ramp"],
-          },
-          {
-            code: "min_sessions_exceeds_max",
-            message: "Min sessions exceeds max sessions",
-            suggestions: ["Raise max sessions"],
-          },
-        ]}
+      <BehaviorControlsConfigSection
+        behaviorControls={baseConfigData.behaviorControlsV1}
+        onChange={onChange}
       />,
     );
+
+    const aggressivenessSlider = findMockNodes(rendered, "PercentSliderInput").find(
+      (node: any) => node.props.id === "behavior-aggressiveness",
+    );
+
+    fireEvent(aggressivenessSlider!, "onChange", 68);
+
+    await waitFor(() => {
+      expect(onChange).toHaveBeenCalledWith({
+        ...baseConfigData.behaviorControlsV1,
+        aggressiveness: 0.68,
+      });
+    });
+
+    onChange.mockClear();
+
+    rendered.rerender(
+      <BehaviorControlsConfigSection
+        behaviorControls={{
+          ...baseConfigData.behaviorControlsV1,
+          aggressiveness: 0.41,
+        }}
+        onChange={onChange}
+      />,
+    );
+
+    await waitFor(() => {
+      const refreshedSlider = findMockNodes(rendered, "PercentSliderInput").find(
+        (node: any) => node.props.id === "behavior-aggressiveness",
+      );
+      expect(refreshedSlider?.props.value).toBe(41);
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("shows review observations without fix CTAs on review tab", () => {
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange: jest.fn(),
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+      blockingIssues: [
+        {
+          code: "required_tss_ramp_exceeds_cap",
+          message: "Required weekly load exceeds cap",
+          suggestions: ["Lower target ramp"],
+        },
+        {
+          code: "min_sessions_exceeds_max",
+          message: "Min sessions exceeds max sessions",
+          suggestions: ["Raise max sessions"],
+        },
+      ],
+    });
 
     fireEvent.press(rendered.getByLabelText("Review tab"));
 

@@ -75,7 +75,7 @@ jest.mock("expo-file-system", () => ({
 jest.mock("expo-linking", () => ({
   __esModule: true,
   addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-  createURL: jest.fn(() => "gradientpeak://integrations"),
+  createURL: jest.fn(() => "gradientpeak-dev://integrations"),
 }));
 
 jest.mock("expo-web-browser", () => ({
@@ -91,11 +91,6 @@ jest.mock("@/lib/hooks/useReliableMutation", () => ({
   }),
 }));
 
-jest.mock("@/lib/server-config", () => ({
-  __esModule: true,
-  getServerConfig: () => ({ supabaseUrl: "https://supabase.example.test" }),
-}));
-
 jest.mock("@/lib/services/fit/FitUploader", () => ({
   __esModule: true,
   FitUploader: jest.fn().mockImplementation(() => ({
@@ -103,9 +98,9 @@ jest.mock("@/lib/services/fit/FitUploader", () => ({
   })),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       activities: {
         invalidate: invalidateActivitiesMock,
@@ -145,7 +140,7 @@ jest.mock("@/lib/trpc", () => ({
   },
 }));
 
-jest.mock("@repo/trpc/client", () => ({
+jest.mock("@repo/api/client", () => ({
   __esModule: true,
   invalidatePostActivityIngestionQueries: invalidatePostActivityIngestionQueriesMock,
 }));

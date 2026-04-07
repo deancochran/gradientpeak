@@ -6,9 +6,8 @@ export interface CreateGradientPeakExpoAuthClientOptions {
   scheme: string;
   storagePrefix?: string;
   storage: {
-    getItemAsync(key: string): Promise<string | null>;
-    setItemAsync(key: string, value: string): Promise<void>;
-    deleteItemAsync(key: string): Promise<void>;
+    getItem(key: string): string | null;
+    setItem(key: string, value: string): void;
   };
 }
 

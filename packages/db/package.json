@@ -3,26 +3,48 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./index.ts",
   "exports": {
-    ".": "./index.ts",
-    "./client": "./src/client.ts",
-    "./schema": "./src/schema/index.ts",
-    "./validation": "./src/validation/index.ts"
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./src/client.ts"
+    },
+    "./schema": {
+      "types": "./src/schema.ts",
+      "default": "./src/schema.ts"
+    },
+    "./validation": {
+      "types": "./src/validation/index.ts",
+      "default": "./src/validation/index.ts"
+    }
   },
   "scripts": {
+    "build": "tsc",
     "check-types": "tsc --noEmit",
+    "dev": "tsc",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "seed-templates": "tsx scripts/seed-templates.ts",
+    "seed-training-plans": "tsx scripts/seed-training-plan-templates.ts",
+    "push": "pnpm drizzle-kit push",
+    "studio": "pnpm drizzle-kit studio"
   },
   "dependencies": {
-    "drizzle-orm": "^0.44.7",
+    "@repo/core": "workspace:*",
+    "@supabase/supabase-js": "^2.56.0",
+    "dotenv": "^17.2.3",
+    "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.8.3",
+    "pg": "^8.16.3",
     "zod": "^4.2.1"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31.4",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.20.6",
     "typescript": "^5.5.2"
   }
 }

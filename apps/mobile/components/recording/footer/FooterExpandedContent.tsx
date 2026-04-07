@@ -8,8 +8,7 @@
  * After start it switches to a locked session summary plus one adjustment surface.
  */
 
-import type { MetricFamily, RecordingState } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { MetricFamily, RecordingActivityCategory, RecordingState } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Text } from "@repo/ui/components/text";
 import { router } from "expo-router";
@@ -33,7 +32,7 @@ import { RecordingControls } from "./RecordingControls";
 export interface FooterExpandedContentProps {
   service: ActivityRecorderService | null;
   recordingState: RecordingState;
-  category: PublicActivityCategory;
+  category: RecordingActivityCategory;
   gpsRecordingEnabled: boolean;
   hasPlan: boolean;
   hasRoute: boolean;

@@ -1,5 +1,4 @@
-import type { PublicIntegrationProvider } from "@repo/supabase";
-import { invalidatePostActivityIngestionQueries } from "@repo/trpc/client";
+import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
@@ -40,13 +39,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { api } from "@/lib/api";
+import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { getServerConfig } from "@/lib/server-config";
 import { FitUploader } from "@/lib/services/fit/FitUploader";
-import { trpc } from "@/lib/trpc";
 
 type IntegrationConfig = {
-  provider: PublicIntegrationProvider;
+  provider: IntegrationProvider;
   name: string;
 };
 
@@ -122,10 +121,10 @@ export default function IntegrationsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [pendingByProvider, setPendingByProvider] = useState<
-    Partial<Record<PublicIntegrationProvider, "connect" | "disconnect">>
+    Partial<Record<IntegrationProvider, "connect" | "disconnect">>
   >({});
 
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const [historicalName, setHistoricalName] = useState("");
   const [historicalNotes, setHistoricalNotes] = useState("");
   const [historicalActivityType, setHistoricalActivityType] = useState<string>("bike");
@@ -140,22 +139,22 @@ export default function IntegrationsScreen() {
     fileName: string;
   } | null>(null);
 
-  // tRPC queries
+  // API queries
   const {
     data: integrations,
     refetch,
     isLoading: integrationsLoading,
-  } = trpc.integrations.list.useQuery();
-  const getAuthUrlMutation = useReliableMutation(trpc.integrations.getAuthUrl, {
+  } = api.integrations.list.useQuery();
+  const getAuthUrlMutation = useReliableMutation(api.integrations.getAuthUrl, {
     silent: true, // No success message for auth URL generation
   });
-  const disconnectMutation = useReliableMutation(trpc.integrations.disconnect, {
+  const disconnectMutation = useReliableMutation(api.integrations.disconnect, {
     invalidate: [utils.integrations],
     success: "Integration disconnected",
   });
 
-  const getSignedUrlMutation = trpc.fitFiles.getSignedUploadUrl.useMutation();
-  const processFitFileMutation = trpc.fitFiles.processFitFile.useMutation();
+  const getSignedUrlMutation = api.fitFiles.getSignedUploadUrl.useMutation();
+  const processFitFileMutation = api.fitFiles.processFitFile.useMutation();
 
   const isImporting = getSignedUrlMutation.isPending || processFitFileMutation.isPending;
 
@@ -219,9 +218,7 @@ export default function IntegrationsScreen() {
         fileSize: selectedFitFile.size,
       });
 
-      const supabaseUrl = getServerConfig().supabaseUrl;
-      const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
-      const uploader = new FitUploader(supabaseUrl, supabaseAnonKey, "fit-files");
+      const uploader = new FitUploader(undefined, undefined, "fit-files");
 
       const uploadResult = await uploader.uploadToSignedUrl(
         selectedFitFile.uri,
@@ -356,7 +353,7 @@ export default function IntegrationsScreen() {
     return () => backHandler?.remove?.();
   }, [handleClose]);
 
-  const handleConnect = async (provider: PublicIntegrationProvider) => {
+  const handleConnect = async (provider: IntegrationProvider) => {
     setPendingByProvider((prev) => ({ ...prev, [provider]: "connect" }));
 
     try {
@@ -389,7 +386,7 @@ export default function IntegrationsScreen() {
     }
   };
 
-  const handleDisconnect = async (provider: PublicIntegrationProvider) => {
+  const handleDisconnect = async (provider: IntegrationProvider) => {
     Alert.alert(
       "Disconnect Integration",
       `Are you sure you want to disconnect from ${getProviderDisplayName(provider)}?`,
@@ -422,11 +419,11 @@ export default function IntegrationsScreen() {
     );
   };
 
-  const isConnected = (provider: PublicIntegrationProvider) => {
+  const isConnected = (provider: IntegrationProvider) => {
     return integrations?.some((i) => i.provider === provider);
   };
 
-  const getProviderDisplayName = (provider: PublicIntegrationProvider) => {
+  const getProviderDisplayName = (provider: IntegrationProvider) => {
     return INTEGRATIONS.find((i) => i.provider === provider)?.name || provider;
   };
 

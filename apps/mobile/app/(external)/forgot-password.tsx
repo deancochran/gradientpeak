@@ -7,30 +7,24 @@ import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
-import { getAuthClient } from "@/lib/auth/auth-client";
+import { authClient, getPasswordResetCallbackUrl } from "@/lib/auth/client";
 import {
-  AuthRequestTimeoutError,
-  getAuthRequestTimeoutMessage,
-  withAuthRequestTimeout,
-} from "@/lib/auth/request-timeout";
+  applyPendingAuthServerOverride,
+  getAuthFormUnexpectedErrorMessage,
+  mapForgotPasswordError,
+  setAuthFormError,
+} from "@/lib/auth/form-helpers";
+import { type ForgotPasswordFields, forgotPasswordSchema } from "@/lib/auth/form-schemas";
+import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
-import { useAuthStore } from "@/lib/stores/auth-store";
-
-const forgotPasswordSchema = z.object({
-  email: z.string().email("Invalid email address"),
-});
-
-type ForgotPasswordFields = z.infer<typeof forgotPasswordSchema>;
+import { useServerConfig } from "@/lib/server-config";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
   const [emailSent, setEmailSent] = React.useState(false);
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
@@ -49,49 +43,28 @@ export default function ForgotPasswordScreen() {
   });
 
   const onSendResetEmail = async (data: ForgotPasswordFields) => {
-    setIsSubmitting(true);
     try {
-      if (isServerConfigExpanded) {
-        const nextUrl = serverUrlInput.trim();
-        const hostedApiUrl = getHostedApiUrl();
-        const { changed } = await setServerUrlOverride(
-          nextUrl.length === 0 || nextUrl === hostedApiUrl ? null : nextUrl,
-        );
-
-        if (changed) {
-          await useAuthStore.getState().clearSession();
-        }
-      }
+      await applyPendingAuthServerOverride({
+        expanded: isServerConfigExpanded,
+        serverUrlInput,
+      });
 
       logMobileAction("auth.resetPasswordForEmail", "attempt", { email: data.email });
 
-      const authClient = getAuthClient();
-      const { error } = await withAuthRequestTimeout(
+      const result = await withAuthRequestTimeout(
         authClient.requestPasswordReset({
           email: data.email,
-          redirectTo: Linking.createURL("/(external)/reset-password"),
+          redirectTo: getPasswordResetCallbackUrl(),
         }),
       );
+      const error = result.error;
 
       if (error) {
         logMobileAction("auth.resetPasswordForEmail", "failure", {
           email: data.email,
           error: error.message,
         });
-        console.log("Reset password error:", error.message);
-        if (error.message?.includes("User not found")) {
-          form.setError("email", {
-            message: "No account found with this email address",
-          });
-        } else if (error.message?.includes("Email rate limit")) {
-          form.setError("email", {
-            message: "Too many requests. Please try again later.",
-          });
-        } else {
-          form.setError("email", {
-            message: error.message || "Failed to send reset email",
-          });
-        }
+        setAuthFormError(form, mapForgotPasswordError(error.message));
       } else {
         logMobileAction("auth.resetPasswordForEmail", "success", { email: data.email });
         setEmailSent(true);
@@ -101,15 +74,10 @@ export default function ForgotPasswordScreen() {
         email: data.email,
         error: err instanceof Error ? err.message : String(err),
       });
-      console.log("Unexpected reset password error:", err);
-      form.setError("email", {
-        message:
-          err instanceof AuthRequestTimeoutError
-            ? getAuthRequestTimeoutMessage()
-            : "An unexpected error occurred. Please try again.",
+      setAuthFormError(form, {
+        name: "email",
+        message: `${getAuthFormUnexpectedErrorMessage(err)}. Please try again.`,
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -121,11 +89,11 @@ export default function ForgotPasswordScreen() {
     setEmailSent(false);
   };
 
-  const isLoading = authLoading || isSubmitting;
   const submitForm = useZodFormSubmit({
     form,
     onSubmit: onSendResetEmail,
   });
+  const isLoading = authLoading || submitForm.isSubmitting;
 
   if (emailSent) {
     return (

@@ -71,9 +71,9 @@ jest.mock("@repo/ui/components/card", () => ({
 }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       goals: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
       events: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },

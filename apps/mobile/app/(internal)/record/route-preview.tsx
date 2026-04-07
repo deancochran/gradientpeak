@@ -7,10 +7,10 @@ import { MapPin, Route } from "lucide-react-native";
 import React, { useMemo } from "react";
 import { Alert, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { api } from "@/lib/api";
 import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import { trpc } from "@/lib/trpc";
 
 function formatDistance(meters: number | null | undefined) {
   if (!meters) return "-";
@@ -25,7 +25,7 @@ export default function RoutePreviewScreen() {
   const { attachRoute, attachedRouteId } = useRecordingConfiguration(service);
   const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
 
-  const { data: route, isLoading } = trpc.routes.get.useQuery(
+  const { data: route, isLoading } = api.routes.get.useQuery(
     { id: routeId ?? "" },
     { enabled: Boolean(routeId) },
   );

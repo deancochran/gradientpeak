@@ -1,4 +1,7 @@
-const AUTH_REQUEST_TIMEOUT_MS = 10000;
+// Better Auth Expo can spend additional time processing auth cookies/session state
+// after the HTTP response returns, especially over device-to-local-network flows.
+// Keep this comfortably above the observed sign-in + session hydration time.
+const AUTH_REQUEST_TIMEOUT_MS = 20000;
 
 export class AuthRequestTimeoutError extends Error {
   constructor() {
@@ -8,12 +11,23 @@ export class AuthRequestTimeoutError extends Error {
 }
 
 export function withAuthRequestTimeout<T>(promise: Promise<T>): Promise<T> {
-  return Promise.race<T>([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new AuthRequestTimeoutError()), AUTH_REQUEST_TIMEOUT_MS);
-    }),
-  ]);
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(
+      () => reject(new AuthRequestTimeoutError()),
+      AUTH_REQUEST_TIMEOUT_MS,
+    );
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
 }
 
 export function getAuthRequestTimeoutMessage() {

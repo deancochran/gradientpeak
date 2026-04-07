@@ -1,4 +1,4 @@
-import { createGradientPeakExpoAuthClient } from "@repo/auth/expo-client";
+import { createGradientPeakExpoAuthClient } from "@repo/auth/client/expo";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { getServerConfig } from "@/lib/server-config";

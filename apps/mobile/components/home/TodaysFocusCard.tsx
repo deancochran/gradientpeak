@@ -2,7 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Activity, Calendar, Coffee, Play, Target, TrendingUp, Zap } from "lucide-react-native";
+import { Activity, Calendar, Play } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 
 interface TodaysActivity {
@@ -30,11 +30,6 @@ export function TodaysFocusCard({
   onViewPlan,
   onPress,
 }: TodaysFocusCardProps) {
-  // Check if it's a rest day (activity type is "Rest" or similar)
-  const isRestDay =
-    todaysActivity?.type?.toLowerCase().includes("rest") ||
-    todaysActivity?.title?.toLowerCase().includes("rest");
-
   if (!todaysActivity) {
     return (
       <Card className="bg-card border-border">
@@ -48,38 +43,6 @@ export function TodaysFocusCard({
           </Text>
           <Button variant="outline" onPress={onViewPlan}>
             <Text className="text-muted-foreground">View Plan</Text>
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // Rest day variant - uses card theme instead of gradient
-  if (isRestDay) {
-    return (
-      <Card className="bg-card border-border">
-        <CardHeader className="pb-3">
-          <View className="flex-row items-center justify-between">
-            <View className="flex-1">
-              <Text className="text-muted-foreground text-xs font-semibold uppercase tracking-wider mb-1">
-                Today&apos;s Focus
-              </Text>
-              <Text className="text-foreground text-2xl font-bold">{todaysActivity.title}</Text>
-            </View>
-            <View className="bg-primary/10 rounded-full p-3">
-              <Icon as={Coffee} size={24} className="text-primary" />
-            </View>
-          </View>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {todaysActivity.description && (
-            <Text className="text-muted-foreground text-sm mb-4">{todaysActivity.description}</Text>
-          )}
-          <Text className="text-foreground text-sm mb-4">
-            Recovery is just as important as training. Take time to rest and let your body adapt.
-          </Text>
-          <Button variant="outline" onPress={onViewPlan} className="w-full">
-            <Text>View Full Week</Text>
           </Button>
         </CardContent>
       </Card>

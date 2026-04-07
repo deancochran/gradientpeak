@@ -3,7 +3,7 @@ name: Validate
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
 
 concurrency:
@@ -12,6 +12,12 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  BETTER_AUTH_SECRET: ci-build-secret-gradientpeak-2026-validate-32chars
+  DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+  POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+  SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
 
 jobs:
   format-and-lint:
@@ -320,9 +326,6 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-
-      - name: Setup Gradle cache
-        uses: gradle/actions/setup-gradle@v5
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

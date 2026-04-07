@@ -62,7 +62,7 @@ interface ConstraintValidatorProps {
  *
  * Usage:
  * ```tsx
- * const { data: validation, isLoading } = trpc.events.validateConstraints.useQuery({
+ * const { data: validation, isLoading } = api.events.validateConstraints.useQuery({
  *   training_plan_id: planId,
  *   scheduled_date: date,
  *   activity: { estimated_tss: 100, intensity: "moderate" }

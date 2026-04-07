@@ -6,8 +6,8 @@ import { useRouter } from "expo-router";
 import { MapPin, Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react-native";
 import { Alert, FlatList, Pressable, View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
+import { api } from "@/lib/api";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Run",
@@ -18,16 +18,16 @@ const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
 
 export default function RoutesLibraryScreen() {
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const { data, isLoading, fetchNextPage, hasNextPage } = trpc.routes.list.useInfiniteQuery(
+  const { data, isLoading, fetchNextPage, hasNextPage } = api.routes.list.useInfiniteQuery(
     { limit: 20 },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
 
-  const deleteMutation = useReliableMutation(trpc.routes.delete, {
+  const deleteMutation = useReliableMutation(api.routes.delete, {
     invalidate: [utils.routes],
     success: "Route deleted successfully",
   });

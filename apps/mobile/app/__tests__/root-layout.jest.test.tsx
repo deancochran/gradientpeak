@@ -77,10 +77,14 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
-jest.mock("@repo/ui/theme/native", () => ({
-  __esModule: true,
-  NATIVE_THEME_VARIABLES: { light: {}, dark: {} },
-}));
+jest.mock(
+  "@repo/tailwindcss/native",
+  () => ({
+    __esModule: true,
+    NATIVE_THEME_VARIABLES: { light: {}, dark: {} },
+  }),
+  { virtual: true },
+);
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
@@ -115,7 +119,12 @@ jest.mock("@/lib/services/sentry", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: any) => selector({ clearSession: jest.fn(async () => undefined) }),
+  useAuthStore: (selector: any) =>
+    selector({
+      clearSession: jest.fn(async () => undefined),
+      initialize: jest.fn(async () => undefined),
+      ready: true,
+    }),
 }));
 
 jest.mock("@/lib/stores/theme-store", () => ({

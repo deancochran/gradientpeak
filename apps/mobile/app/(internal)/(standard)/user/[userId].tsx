@@ -1,4 +1,4 @@
-import { invalidateRelationshipQueries } from "@repo/trpc/react";
+import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
@@ -6,18 +6,16 @@ import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
-import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Clock, Edit3, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { getAuthClient } from "@/lib/auth/auth-client";
+import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
-import { trpc } from "@/lib/trpc";
 
 function calculateAge(dob: string | null | undefined): number | null {
   if (!dob) return null;
@@ -36,10 +34,18 @@ function calculateAge(dob: string | null | undefined): number | null {
 function UserDetailScreen() {
   const router = useRouter();
   const { userId } = useLocalSearchParams<{ userId: string }>();
-  const { user, profile } = useAuth();
+  const {
+    user,
+    profile,
+    deleteAccount,
+    updateEmail,
+    updatePassword,
+    canUpdateEmail,
+    updateEmailUnavailableReason,
+  } = useAuth();
   const authStore = useAuthStore();
   const { theme, setTheme } = useTheme();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const targetUserId = typeof userId === "string" ? userId : "";
   const isOwnProfile = !!user?.id && user?.id === targetUserId;
@@ -49,7 +55,7 @@ function UserDetailScreen() {
     data: targetProfile,
     isLoading,
     error,
-  } = trpc.profiles.getPublicById.useQuery(
+  } = api.profiles.getPublicById.useQuery(
     { id: targetUserId },
     { enabled: targetUserId.length > 0 },
   );
@@ -74,18 +80,19 @@ function UserDetailScreen() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
-  const followMutation = trpc.social.followUser.useMutation({
+  const followMutation = api.social.followUser.useMutation({
     onSuccess: async () => invalidateRelationshipQueries(utils, [targetUserId, user?.id]),
     onError: (err) => Alert.alert("Error", err.message || "Failed to follow"),
   });
 
-  const unfollowMutation = trpc.social.unfollowUser.useMutation({
+  const unfollowMutation = api.social.unfollowUser.useMutation({
     onSuccess: async () => invalidateRelationshipQueries(utils, [targetUserId, user?.id]),
     onError: (err) => Alert.alert("Error", err.message || "Failed to unfollow"),
   });
 
-  const messageMutation = trpc.messaging.getOrCreateDM.useMutation({
+  const messageMutation = api.messaging.getOrCreateDM.useMutation({
     onSuccess: (data) => {
       if (data && "id" in data) {
         router.push(`/messages/${(data as any).id}` as any);
@@ -101,14 +108,16 @@ function UserDetailScreen() {
         text: "Sign Out",
         style: "destructive",
         onPress: async () => {
-          const { error } = await getAuthClient().signOut();
-          if (error) {
-            Alert.alert("Error", error.message || "Failed to sign out");
-            return;
+          try {
+            setIsSigningOut(true);
+            await authStore.clearSession();
+            await utils.profiles.invalidate();
+            router.replace("/(external)/sign-in" as any);
+          } catch (error) {
+            Alert.alert("Error", error instanceof Error ? error.message : "Failed to sign out");
+          } finally {
+            setIsSigningOut(false);
           }
-          await authStore.clearSession();
-          utils.profiles.invalidate();
-          router.replace("/(external)/sign-in" as any);
         },
       },
     ]);
@@ -133,20 +142,26 @@ function UserDetailScreen() {
                   text: "Yes, Delete My Account",
                   style: "destructive",
                   onPress: async () => {
-                    const { error } = await getAuthClient().deleteUser();
-                    if (error) {
+                    try {
+                      await deleteAccount();
+                      await authStore.clearSession();
+                      await utils.profiles.invalidate();
+                      router.replace("/(external)/sign-in" as any);
+
+                      setTimeout(() => {
+                        Alert.alert(
+                          "Account Deleted",
+                          "Your account has been successfully deleted.",
+                        );
+                      }, 500);
+                    } catch (error) {
                       Alert.alert(
                         "Error",
-                        error.message || "Failed to delete account. Please contact support.",
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to delete account. Please contact support.",
                       );
-                      return;
                     }
-                    await authStore.clearSession();
-                    utils.profiles.invalidate();
-                    router.replace("/(external)/sign-in" as any);
-                    setTimeout(() => {
-                      Alert.alert("Account Deleted", "Your account has been successfully deleted.");
-                    }, 500);
                   },
                 },
               ],
@@ -155,31 +170,6 @@ function UserDetailScreen() {
         },
       ],
     );
-  };
-
-  const handleUpdateEmail = () => {
-    if (!newEmail.trim()) {
-      Alert.alert("Error", "Please enter a new email address");
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newEmail)) {
-      Alert.alert("Error", "Please enter a valid email address");
-      return;
-    }
-
-    void getAuthClient()
-      .changeEmail({ newEmail, callbackURL: Linking.createURL("/") })
-      .then(({ error }) => {
-        if (error) {
-          Alert.alert("Error", error.message || "Failed to update email");
-          return;
-        }
-
-        Alert.alert("Verification Sent", "Check your new email to finish the change.");
-        setIsEmailUpdateVisible(false);
-        setNewEmail("");
-      });
   };
 
   const handleUpdatePassword = () => {
@@ -204,19 +194,41 @@ function UserDetailScreen() {
       return;
     }
 
-    void getAuthClient()
-      .changePassword({ currentPassword, newPassword })
-      .then(({ error }) => {
-        if (error) {
-          Alert.alert("Error", error.message || "Failed to update password");
-          return;
-        }
-
+    void updatePassword({ currentPassword, newPassword })
+      .then(() => {
         Alert.alert("Password Updated", "Your password has been successfully changed.");
         setIsPasswordChangeVisible(false);
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
+      })
+      .catch((error) => {
+        Alert.alert("Error", error instanceof Error ? error.message : "Failed to update password");
+      });
+  };
+
+  const handleUpdateEmail = () => {
+    if (!newEmail.trim()) {
+      Alert.alert("Error", "Please enter a new email address");
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newEmail)) {
+      Alert.alert("Error", "Please enter a valid email address");
+      return;
+    }
+
+    void updateEmail({ newEmail })
+      .then(() => {
+        Alert.alert(
+          "Verification Sent",
+          `We sent email change instructions for ${newEmail}. Follow the link in your inbox to complete the update.`,
+        );
+        setIsEmailUpdateVisible(false);
+        setNewEmail("");
+      })
+      .catch((error: unknown) => {
+        Alert.alert("Error", error instanceof Error ? error.message : "Failed to update email");
       });
   };
 
@@ -540,9 +552,19 @@ function UserDetailScreen() {
               type="button"
               label="Email"
               description={user?.email || "Not set"}
-              buttonLabel={isEmailUpdateVisible ? "Cancel" : "Change"}
+              buttonLabel={canUpdateEmail ? "Change" : "Unavailable"}
               variant="outline"
-              onPress={() => setIsEmailUpdateVisible(!isEmailUpdateVisible)}
+              onPress={() => {
+                if (canUpdateEmail) {
+                  setIsEmailUpdateVisible((value) => !value);
+                } else {
+                  Alert.alert(
+                    "Temporarily unavailable",
+                    updateEmailUnavailableReason ?? "Email changes are currently unavailable.",
+                  );
+                }
+              }}
+              disabled={!canUpdateEmail}
               testID="update-email"
             />
 
@@ -550,8 +572,8 @@ function UserDetailScreen() {
               <View className="bg-card p-4 rounded-lg border border-border mb-4">
                 <Text className="text-sm font-medium mb-3">Update Email Address</Text>
                 <Text className="text-xs text-muted-foreground mb-3">
-                  We&apos;ll send a confirmation link to your new email address. Open it on any
-                  device to finish the change.
+                  We&apos;ll send a confirmation link to your new email address to complete this
+                  change.
                 </Text>
                 <Input
                   value={newEmail}
@@ -655,9 +677,10 @@ function UserDetailScreen() {
               type="button"
               label="Sign Out"
               description="Sign out of your account"
-              buttonLabel="Sign Out"
+              buttonLabel={isSigningOut ? "Signing out..." : "Sign Out"}
               variant="destructive"
               onPress={handleSignOut}
+              disabled={isSigningOut}
               testID="sign-out"
             />
 

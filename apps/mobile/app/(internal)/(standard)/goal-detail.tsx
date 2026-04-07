@@ -1,3 +1,4 @@
+import { invalidateGoalQueries } from "@repo/api/react";
 import {
   buildGoalDraftFromGoal,
   buildGoalUpdatePayload,
@@ -11,7 +12,6 @@ import {
   getGoalObjectiveSummary,
   parseProfileGoalRecord,
 } from "@repo/core";
-import { invalidateGoalQueries } from "@repo/trpc/react";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
@@ -19,11 +19,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import { GoalEditorModal } from "@/components/goals/GoalEditorModal";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 export default function GoalDetailScreen() {
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
   const [showEditor, setShowEditor] = useState(false);
@@ -32,7 +32,7 @@ export default function GoalDetailScreen() {
     data: goal,
     isLoading,
     refetch,
-  } = trpc.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
+  } = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
   const goalRecord = useMemo(() => {
     if (!goal) {
       return null;
@@ -44,12 +44,12 @@ export default function GoalDetailScreen() {
       return null;
     }
   }, [goal]);
-  const milestoneEventQuery = trpc.events.getById.useQuery(
+  const milestoneEventQuery = api.events.getById.useQuery(
     { id: goalRecord?.milestone_event_id ?? "" },
     { enabled: !!goalRecord?.milestone_event_id },
   );
 
-  const updateGoalMutation = trpc.goals.update.useMutation({
+  const updateGoalMutation = api.goals.update.useMutation({
     onSuccess: async () => {
       await Promise.all([
         invalidateGoalQueries(utils, { goalId, includeEventDetail: true }),
@@ -58,15 +58,15 @@ export default function GoalDetailScreen() {
       setShowEditor(false);
     },
   });
-  const createMilestoneEventMutation = trpc.events.create.useMutation();
-  const updateMilestoneEventMutation = trpc.events.update.useMutation();
-  const deleteMilestoneEventMutation = trpc.events.delete.useMutation({
+  const createMilestoneEventMutation = api.events.create.useMutation();
+  const updateMilestoneEventMutation = api.events.update.useMutation();
+  const deleteMilestoneEventMutation = api.events.delete.useMutation({
     onSuccess: async () => {
       await invalidateGoalQueries(utils, { includeGoalDetail: false });
       router.back();
     },
   });
-  const deleteGoalMutation = trpc.goals.delete.useMutation({
+  const deleteGoalMutation = api.goals.delete.useMutation({
     onSuccess: async () => {
       await invalidateGoalQueries(utils, { includeGoalDetail: false });
       router.back();
@@ -118,9 +118,11 @@ export default function GoalDetailScreen() {
       const milestoneEventId = goalRecord.milestone_event_id
         ? goalRecord.milestone_event_id
         : (
-            await createMilestoneEventMutation.mutateAsync(
-              buildMilestoneEventCreateInput({ draft }),
-            )
+            await createMilestoneEventMutation.mutateAsync({
+              ...buildMilestoneEventCreateInput({ draft }),
+              lifecycle: { status: "scheduled" },
+              read_only: false,
+            })
           ).id;
 
       if (goalRecord.milestone_event_id) {

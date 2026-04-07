@@ -14,14 +14,16 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
+      "@repo/core": ["../../packages/core/index.ts"],
       "@repo/api": ["../../packages/api/index.ts"],
       "@repo/api/*": ["../../packages/api/src/*"],
-      "@repo/auth": ["../../packages/auth/index.ts"],
-      "@repo/auth/account-deletion": ["../../packages/auth/src/contracts/account-deletion.ts"],
-      "@repo/auth/callbacks": ["../../packages/auth/src/contracts/callbacks.ts"],
-      "@repo/auth/env": ["../../packages/auth/src/runtime/env.ts"],
+      "@repo/auth/client": ["../../packages/auth/src/client.ts"],
+      "@repo/auth/client/*": ["../../packages/auth/src/client/*"],
+      "@repo/auth/server": ["../../packages/auth/src/server.ts"],
       "@repo/auth/session": ["../../packages/auth/src/contracts/session.ts"],
-      "@repo/core": ["../../packages/core/index.ts"]
+      "@repo/auth/callbacks": ["../../packages/auth/src/contracts/callbacks.ts"],
+      "@repo/auth/*": ["../../packages/auth/src/*"],
+      "@repo/db": ["../../packages/db/index.ts"]
     },
     "incremental": true,
     "target": "ES2017",

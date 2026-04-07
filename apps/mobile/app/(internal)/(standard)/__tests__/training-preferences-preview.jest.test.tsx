@@ -1,4 +1,4 @@
-import { act } from "@testing-library/react-native";
+import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
 
 import { renderNative, screen } from "../../../../test/render-native";
@@ -44,12 +44,14 @@ const settingsFixture = {
     progression_pace: 0.5,
     week_pattern_preference: 0.5,
     key_session_density_preference: 0.5,
+    strength_integration_priority: 0.5,
   },
   recovery_preferences: {
     recovery_priority: 0.5,
     post_goal_recovery_days: 5,
     double_day_tolerance: 0.25,
     long_session_fatigue_tolerance: 0.5,
+    systemic_fatigue_tolerance: 0.5,
   },
   adaptation_preferences: {
     recency_adaptation_preference: 0.5,
@@ -58,6 +60,12 @@ const settingsFixture = {
   goal_strategy_preferences: {
     target_surplus_preference: 0.15,
     priority_tradeoff_preference: 0.5,
+    taper_style_preference: 0.5,
+  },
+  baseline_fitness: {
+    is_enabled: false,
+    max_weekly_tss_ramp_pct: 10,
+    max_ctl_ramp_per_week: 5,
   },
 };
 
@@ -99,6 +107,18 @@ jest.mock("react-native", () => ({
   View: createHost("View"),
 }));
 
+jest.mock("@react-native-community/datetimepicker", () => {
+  const MockDateTimePicker = createHost("DateTimePicker");
+
+  return {
+    __esModule: true,
+    default: MockDateTimePicker,
+    DateTimePickerAndroid: {
+      open: jest.fn(),
+    },
+  };
+});
+
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
   PlanVsActualChart: createHost("PlanVsActualChart"),
@@ -115,6 +135,11 @@ jest.mock("@repo/ui/components/card", () => ({
   CardContent: createHost("CardContent"),
   CardHeader: createHost("CardHeader"),
   CardTitle: createHost("CardTitle"),
+}));
+
+jest.mock("@repo/ui/components/date-input", () => ({
+  __esModule: true,
+  DateInput: createHost("DateInput"),
 }));
 
 jest.mock("@repo/ui/components/input", () => ({
@@ -157,9 +182,9 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
   useTrainingPlanSnapshot: () => snapshotState,
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       profileSettings: {
         getForProfile: {
@@ -180,6 +205,10 @@ jest.mock("@/lib/trpc", () => ({
         useMutation: () => ({
           isPending: false,
           mutate: upsertMock,
+          mutateAsync: async (input: unknown) => {
+            upsertMock(input);
+            return undefined;
+          },
         }),
       },
     },
@@ -216,6 +245,9 @@ const getTab = (label: string) =>
 
 const getByTypeAndId = (type: string, id: string) =>
   (screen as any).UNSAFE_getAllByType(type).find((node: any) => node.props.id === id);
+
+const getByTypeAndTestId = (type: string, testId: string) =>
+  (screen as any).UNSAFE_getAllByType(type).find((node: any) => node.props.testId === testId);
 
 const getButtonByLabel = (label: string) =>
   (screen as any).UNSAFE_getAllByType("Button").find((node: any) => {
@@ -347,7 +379,7 @@ describe("training preferences projection preview", () => {
   it("blocks saving when schedule limits conflict", () => {
     renderNative(<TrainingPreferencesScreen />);
 
-    const minSessionsStepper = getByTypeAndId("IntegerStepper", "preferences-min-sessions");
+    const minSessionsStepper = getByTypeAndTestId("IntegerStepper", "preferences-min-sessions");
 
     act(() => {
       minSessionsStepper.props.onChange(8);
@@ -365,7 +397,7 @@ describe("training preferences projection preview", () => {
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
-  it("saves canonical preference sections including target surplus", () => {
+  it("resets back to fetched settings after form edits", async () => {
     renderNative(<TrainingPreferencesScreen />);
 
     act(() => {
@@ -378,22 +410,83 @@ describe("training preferences projection preview", () => {
       surplusSlider.props.onChange(60);
     });
 
-    act(() => {
-      getButtonByLabel("Save Preferences").props.onPress();
+    await waitFor(() => {
+      expect(getButtonByLabel("Save Preferences").props.disabled).toBe(false);
     });
 
-    expect(upsertMock).toHaveBeenCalledWith({
-      profile_id: "profile-1",
-      settings: expect.objectContaining({
-        availability: expect.any(Object),
-        dose_limits: expect.any(Object),
-        training_style: expect.any(Object),
-        recovery_preferences: expect.any(Object),
-        adaptation_preferences: expect.any(Object),
-        goal_strategy_preferences: expect.objectContaining({
-          target_surplus_preference: 0.6,
+    act(() => {
+      getButtonByLabel("Reset").props.onPress();
+    });
+
+    const resetSlider = getByTypeAndId("PercentSliderInput", "preferences-target-surplus");
+
+    expect(resetSlider.props.value).toBe(15);
+    expect(getButtonByLabel("Save Preferences").props.disabled).toBe(true);
+  });
+
+  it("saves canonical preference sections including target surplus", async () => {
+    renderNative(<TrainingPreferencesScreen />);
+
+    act(() => {
+      getTab("Goal strategy").props.onPress();
+    });
+
+    const surplusSlider = getByTypeAndId("PercentSliderInput", "preferences-target-surplus");
+
+    act(() => {
+      surplusSlider.props.onChange(60);
+    });
+
+    await act(async () => {
+      await getButtonByLabel("Save Preferences").props.onPress();
+    });
+
+    await waitFor(() => {
+      expect(upsertMock).toHaveBeenCalledWith({
+        profile_id: "profile-1",
+        settings: expect.objectContaining({
+          availability: expect.any(Object),
+          dose_limits: expect.any(Object),
+          training_style: expect.any(Object),
+          recovery_preferences: expect.any(Object),
+          adaptation_preferences: expect.any(Object),
+          goal_strategy_preferences: expect.objectContaining({
+            target_surplus_preference: 0.6,
+          }),
         }),
-      }),
+      });
+    });
+  });
+
+  it("saves baseline override dates as ISO values from date-only input", async () => {
+    renderNative(<TrainingPreferencesScreen />);
+
+    act(() => {
+      getTab("Baseline fitness").props.onPress();
+    });
+
+    act(() => {
+      getByTypeAndTestId("Switch", "preferences-baseline-enabled").props.onCheckedChange(true);
+    });
+
+    act(() => {
+      getByTypeAndTestId("DateInput", "preferences-baseline-date").props.onChange("2026-04-03");
+    });
+
+    await act(async () => {
+      await getButtonByLabel("Save Preferences").props.onPress();
+    });
+
+    await waitFor(() => {
+      expect(upsertMock).toHaveBeenCalledWith({
+        profile_id: "profile-1",
+        settings: expect.objectContaining({
+          baseline_fitness: expect.objectContaining({
+            is_enabled: true,
+            override_date: "2026-04-03T00:00:00.000Z",
+          }),
+        }),
+      });
     });
   });
 });

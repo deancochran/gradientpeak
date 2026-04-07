@@ -82,9 +82,9 @@ jest.mock("react-native", () => ({
   Alert: { alert: alertMock },
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       activityPlans: {
         list: { invalidate: jest.fn(async () => undefined) },

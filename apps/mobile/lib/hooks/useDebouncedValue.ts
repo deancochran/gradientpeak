@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from "react";
  *   const [search, setSearch] = useState("");
  *   const debouncedSearch = useDebouncedValue(search, 300);
  *
- *   const { data } = trpc.activities.search.useQuery(
+ *   const { data } = api.activities.search.useQuery(
  *     { query: debouncedSearch },
  *     { enabled: debouncedSearch.length > 0 }
  *   );

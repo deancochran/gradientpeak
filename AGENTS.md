@@ -109,8 +109,11 @@ Compaction rules:
 - Prefer small, focused diffs that match existing patterns.
 - Never duplicate business logic that belongs in `@repo/core`.
 - Keep `@repo/core` database-independent.
-- For local parallel agent work, prefer Worktrunk-managed worktrees under `~/worktrees/GradientPeak/<branch>` and keep the coordinator in the primary repo checkout.
+- Default to the `coordinator` primary agent for non-trivial work. Use `build` for direct implementation and `plan` for read-only analysis.
+- For local parallel agent work, prefer Worktrunk-managed worktrees under `{{ repo_path }}/.worktrees/<branch>` and keep the coordinator in the primary repo checkout.
 - For coordinator-created worker branches, use `spec/<spec-slug>/<lane>` as the default naming convention, where `<lane>` is a bounded slice like `db`, `api`, `ui`, `test`, `docs`, or `qa`.
+- Prefer the distilled agent lanes `mobile`, `backend`, `web`, `core`, `integrations`, `verify`, and `review` over narrower one-off specialists.
+- Recover narrow specialization through small lazy-loaded files in `.opencode/instructions/capabilities/`; load only the smallest relevant reference instead of rebuilding agent sprawl.
 - For shared UI work in `packages/ui`, prefer a TDD flow of `fixtures.ts` -> story -> `play` interaction -> package test as needed -> preview scenario/manifests -> runtime E2E only for app integration boundaries.
 - Treat generated selector and preview manifests as the source of truth for cross-runtime preview smoke assertions; avoid hand-maintained app-local selector copies.
 - Use the smallest relevant skill set instead of expanding always-on instructions.
@@ -152,7 +155,7 @@ pnpm check-types && pnpm lint && pnpm test
 Coverage targets:
 
 - `@repo/core`: 100%
-- `@repo/trpc`: 80%
+- `@repo/api`: 80%
 - `apps/mobile`: 60%
 - `apps/web`: 60%
 
@@ -172,6 +175,7 @@ When work is incomplete:
 ## Lazy Reference
 
 Read `.opencode/instructions/project-reference.md` only when you need detailed architecture, commands, stack versions, file locations, or domain-specific gotchas.
+Read `.opencode/instructions/capabilities/*.md` only when the current task enters a narrow subdomain such as recorder flows, forms, tRPC contracts, migrations, provider-specific integration work, or auth boundaries.
 Read `.opencode/instructions/workflow-lifecycle.md` when coordinating complex multi-step work.
 Read `.opencode/instructions/delegation-contract.md` when you need the standard task packet, return packet, or checkpoint template.
 Read `.opencode/instructions/worktrunk-reference.md` when provisioning, troubleshooting, or standardizing Worktrunk-based agent workflows.

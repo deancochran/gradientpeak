@@ -38,6 +38,18 @@ jest.mock("expo-router", () => ({
   router: { replace: replaceMock },
 }));
 
+jest.mock("expo-constants", () => ({
+  __esModule: true,
+  default: {
+    expoConfig: {
+      scheme: "gradientpeak-dev",
+      extra: {
+        redirectUri: "gradientpeak-dev://integrations",
+      },
+    },
+  },
+}));
+
 jest.mock("expo-web-browser", () => ({
   __esModule: true,
   openAuthSessionAsync: jest.fn(),
@@ -48,9 +60,9 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ completeOnboarding: completeOnboardingMock }),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     profiles: {
       get: {
         useQuery: () => ({ data: { id: "profile-1" } }),
@@ -160,6 +172,7 @@ describe("onboarding screen", () => {
     fireEvent.press(screen.getByText("Next"));
     fireEvent.press(screen.getByText("Next"));
     fireEvent.press(screen.getByText("Next"));
+    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
     fireEvent.press(screen.getByText("Finish"));
 
     await waitFor(() => {
@@ -194,15 +207,15 @@ describe("onboarding screen", () => {
 
     expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(false);
 
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+    for (let i = 0; i < 8; i += 1) {
+      fireEvent.press(screen.getByTestId("onboarding-skip-button"));
+    }
 
-    fireEvent.press(screen.getByText("Finish"));
+    await waitFor(() => {
+      expect(screen.getByTestId("onboarding-finish-button")).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId("onboarding-finish-button"));
 
     await waitFor(() => {
       expect(completeOnboardingMutationMock).toHaveBeenCalledWith({

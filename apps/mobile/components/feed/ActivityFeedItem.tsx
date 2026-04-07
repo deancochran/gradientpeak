@@ -8,8 +8,8 @@ import { useRouter } from "expo-router";
 import { Clock, Heart, MapPin, MessageCircle, TrendingUp, Zap } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
+import { api } from "@/lib/api";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
-import { trpc } from "@/lib/trpc";
 
 // ============================================
 // TYPES
@@ -69,7 +69,7 @@ export function ActivityFeedItem({
 
   const activityConfig = getActivityCategoryConfig(activity.type);
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onSuccess: (data) => {
       setIsLiked(data.liked);
       setLikesCount((prev) => (data.liked ? prev + 1 : prev - 1));

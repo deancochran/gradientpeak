@@ -9,32 +9,24 @@ import { useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
-import { getAuthClient } from "@/lib/auth/auth-client";
+import { authClient, refreshMobileAuthSession } from "@/lib/auth/client";
 import {
-  AuthRequestTimeoutError,
-  getAuthRequestTimeoutMessage,
-  withAuthRequestTimeout,
-} from "@/lib/auth/request-timeout";
+  applyPendingAuthServerOverride,
+  getAuthFormUnexpectedErrorMessage,
+  mapSignInError,
+  setAuthFormError,
+} from "@/lib/auth/form-helpers";
+import { type SignInFields, signInSchema } from "@/lib/auth/form-schemas";
+import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
+import { useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
-
-const signInSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z
-    .string({ message: "Password is required" })
-    .min(8, "Password must be at least 8 characters"),
-});
-
-type SignInFields = z.infer<typeof signInSchema>;
 
 export default function SignInScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
@@ -54,68 +46,51 @@ export default function SignInScreen() {
   });
 
   const onSignIn = async (data: SignInFields) => {
-    setIsSubmitting(true);
     try {
-      if (isServerConfigExpanded) {
-        const nextUrl = serverUrlInput.trim();
-        const hostedApiUrl = getHostedApiUrl();
-        const { changed } = await setServerUrlOverride(
-          nextUrl.length === 0 || nextUrl === hostedApiUrl ? null : nextUrl,
-        );
-
-        if (changed) {
-          await useAuthStore.getState().clearSession();
-        }
-      }
+      await applyPendingAuthServerOverride({
+        expanded: isServerConfigExpanded,
+        serverUrlInput,
+      });
 
       logMobileAction("auth.signIn", "attempt", { email: data.email });
 
-      const authClient = getAuthClient();
-      const { error } = await withAuthRequestTimeout(
+      const result = await withAuthRequestTimeout(
         authClient.signIn.email({
           email: data.email,
           password: data.password,
-          callbackURL: Linking.createURL("/(external)/verification-success"),
         }),
       );
+      const error = result.error;
 
       if (error) {
         logMobileAction("auth.signIn", "failure", { email: data.email, error: error.message });
-        console.log("Sign in error:", error.message);
-        if (error.message?.includes("Invalid login credentials")) {
-          form.setError("root", {
-            message: "Invalid email or password. Please try again.",
-          });
-        } else if (error.message?.includes("Email not confirmed")) {
+        const mappedError = mapSignInError(error.message);
+
+        if (mappedError.type === "verify-email") {
           router.push({
             pathname: "/(external)/verify",
             params: { email: data.email },
           });
-        } else {
-          form.setError("root", {
-            message: error.message || "An unexpected error occurred",
-          });
+          return;
         }
+
+        setAuthFormError(form, mappedError.error);
+        return;
       }
-      if (!error) {
-        await useAuthStore.getState().refreshSession();
-        logMobileAction("auth.signIn", "success", { email: data.email });
-        router.replace("/" as any);
-      }
+
+      logMobileAction("auth.signIn", "success", { email: data.email });
+      await refreshMobileAuthSession();
+      await useAuthStore.getState().refreshSession();
+      router.replace("/" as any);
     } catch (err) {
       logMobileAction("auth.signIn", "failure", {
         email: data.email,
         error: err instanceof Error ? err.message : String(err),
       });
-      console.log("Unexpected sign in error:", err);
-      form.setError("root", {
-        message:
-          err instanceof AuthRequestTimeoutError
-            ? getAuthRequestTimeoutMessage()
-            : "An unexpected error occurred",
+      setAuthFormError(form, {
+        name: "root",
+        message: getAuthFormUnexpectedErrorMessage(err),
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -127,11 +102,11 @@ export default function SignInScreen() {
     router.push("/(external)/forgot-password");
   };
 
-  const isLoading = authLoading || isSubmitting;
   const submitForm = useZodFormSubmit({
     form,
     onSubmit: onSignIn,
   });
+  const isLoading = authLoading || submitForm.isSubmitting;
 
   return (
     <KeyboardAvoidingView

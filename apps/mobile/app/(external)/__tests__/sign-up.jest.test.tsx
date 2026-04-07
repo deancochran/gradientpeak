@@ -3,12 +3,7 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-n
 
 const pushMock = jest.fn();
 const replaceMock = jest.fn();
-const signUpEmailMock = jest.fn();
-
-jest.mock("expo-linking", () => ({
-  __esModule: true,
-  createURL: jest.fn(() => "gradientpeak://verification-success"),
-}));
+const signUpMock = jest.fn();
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -18,6 +13,16 @@ jest.mock("expo-router", () => ({
 jest.mock("@/components/auth/ServerUrlOverride", () => ({
   __esModule: true,
   ServerUrlOverride: () => null,
+}));
+
+jest.mock("@/lib/auth/client", () => ({
+  __esModule: true,
+  authClient: {
+    signUp: {
+      email: (...args: any[]) => signUpMock(...args),
+    },
+  },
+  getEmailVerificationCallbackUrl: () => "gradientpeak-dev://callback",
 }));
 
 jest.mock("@/lib/auth/request-timeout", () => ({
@@ -32,6 +37,11 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ loading: false }),
 }));
 
+jest.mock("@/lib/logging/mobile-action-log", () => ({
+  __esModule: true,
+  logMobileAction: jest.fn(),
+}));
+
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
   getHostedApiUrl: () => "https://api.gradientpeak.test",
@@ -44,15 +54,6 @@ jest.mock("@/lib/stores/auth-store", () => ({
   useAuthStore: {
     getState: () => ({ clearSession: jest.fn(async () => undefined) }),
   },
-}));
-
-jest.mock("@/lib/auth/auth-client", () => ({
-  __esModule: true,
-  getAuthClient: () => ({
-    signUp: {
-      email: (...args: any[]) => signUpEmailMock(...args),
-    },
-  }),
 }));
 
 jest.mock("@repo/ui/components/alert", () => {
@@ -97,7 +98,6 @@ jest.mock("@repo/ui/components/card", () => {
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
   Form: ({ children }: any) => children,
-  FormMessage: ({ children }: any) => React.createElement("Text", null, children),
   FormTextField: ({ control, name, placeholder, testId }: any) =>
     React.createElement(
       React.Fragment,
@@ -139,6 +139,7 @@ jest.mock("@repo/ui/hooks", () => {
           },
         },
         formState: { errors },
+        clearErrors: jest.fn(),
         setError: (name: string, error: { message: string }) => {
           setErrors((current: Record<string, { message: string }>) => ({
             ...current,
@@ -148,6 +149,10 @@ jest.mock("@repo/ui/hooks", () => {
         handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
       };
     },
+    useZodFormSubmit: ({ form, onSubmit }: any) => ({
+      handleSubmit: form.handleSubmit(onSubmit),
+      isSubmitting: false,
+    }),
   };
 });
 
@@ -161,7 +166,7 @@ const SignUpScreen = require("../sign-up").default;
 describe("sign-up screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    signUpEmailMock.mockResolvedValue({ error: null });
+    signUpMock.mockResolvedValue({ error: null });
   });
 
   it("routes to verify after successful sign up", async () => {
@@ -173,11 +178,9 @@ describe("sign-up screen", () => {
     fireEvent.press(screen.getByTestId("sign-up-button"));
 
     await waitFor(() => {
-      expect(signUpEmailMock).toHaveBeenCalledWith(
+      expect(signUpMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          callbackURL: "gradientpeak://verification-success",
           email: "athlete@example.com",
-          name: "athlete",
           password: "Password123",
         }),
       );
@@ -189,7 +192,7 @@ describe("sign-up screen", () => {
   });
 
   it("maps duplicate-email errors onto the email field", async () => {
-    signUpEmailMock.mockResolvedValue({ error: { message: "User already registered" } });
+    signUpMock.mockResolvedValue({ error: { message: "User already registered" } });
 
     renderNative(<SignUpScreen />);
 

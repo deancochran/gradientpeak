@@ -6,6 +6,7 @@ import {
 import { SYSTEM_TEMPLATES, type SystemTemplate } from "../../samples";
 import type { SystemTrainingPlanTemplate } from "../../samples/training-plans";
 import { materializePlanToEvents } from "../materializePlanToEvents";
+import { aggregateWeeklyPlannedLoad } from "./aggregateWeeklyPlannedLoad";
 
 export interface MaterializeSystemPlanLoadEstimationContext {
   ftp?: number | null;
@@ -29,19 +30,14 @@ export interface MaterializeSystemPlanLoadInput {
   estimationContext?: MaterializeSystemPlanLoadEstimationContext;
 }
 
-export type MaterializedSystemPlanEstimationSource =
-  | "rest_day"
-  | "missing"
-  | "structure"
-  | "route"
-  | "template";
+export type MaterializedSystemPlanEstimationSource = "missing" | "structure" | "route" | "template";
 
 export interface MaterializedSystemPlanLoadSession {
   scheduled_date: string;
   starts_at: string;
   ends_at: string;
   title: string;
-  event_type: "planned" | "rest_day";
+  event_type: "planned";
   all_day: true;
   activity_plan_id: string | null;
   resolved_activity_template_id: string | null;
@@ -94,7 +90,7 @@ function estimateTemplateLoad(
 ): {
   estimated_tss: number;
   estimated_duration_seconds: number;
-  estimation_source: Exclude<MaterializedSystemPlanEstimationSource, "rest_day" | "missing">;
+  estimation_source: Exclude<MaterializedSystemPlanEstimationSource, "missing">;
   estimation_confidence: "high" | "medium" | "low";
 } {
   const context = {
@@ -147,18 +143,6 @@ export function materializeSystemPlanLoad(
   const unresolvedActivityPlanIds = new Set<string>();
 
   const sessions = materializedEvents.map<MaterializedSystemPlanLoadSession>((event) => {
-    if (event.event_type === "rest_day") {
-      return {
-        ...event,
-        resolved_activity_template_id: null,
-        activity_category: null,
-        estimated_tss: 0,
-        estimated_duration_seconds: 0,
-        estimation_source: "rest_day",
-        estimation_confidence: null,
-      };
-    }
-
     if (!event.activity_plan_id) {
       return {
         ...event,
@@ -195,6 +179,8 @@ export function materializeSystemPlanLoad(
     };
   });
 
+  const aggregatedWeeks = aggregateWeeklyPlannedLoad(sessions);
+
   return {
     system_plan_id: input.systemPlan.id,
     system_plan_name: input.systemPlan.name,
@@ -207,6 +193,6 @@ export function materializeSystemPlanLoad(
       0,
     ),
     total_planned_sessions: sessions.filter((session) => session.event_type === "planned").length,
-    total_rest_days: sessions.filter((session) => session.event_type === "rest_day").length,
+    total_rest_days: aggregatedWeeks.weeks.reduce((sum, week) => sum + week.rest_day_count, 0),
   };
 }

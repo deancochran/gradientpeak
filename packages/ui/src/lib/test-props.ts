@@ -3,7 +3,9 @@ import type { AccessibilityRole } from "react-native";
 export type TestProps = {
   accessibilityLabel?: string;
   id?: string;
+  nativeID?: string;
   role?: string;
+  testID?: string;
   testId?: string;
 };
 
@@ -28,10 +30,16 @@ function compactProps<T extends Record<string, string | undefined>>(props: T) {
   };
 }
 
-export function getWebTestProps({ accessibilityLabel, id, role, testId }: TestProps): WebTestProps {
+export function getWebTestProps({
+  accessibilityLabel,
+  id,
+  role,
+  testId,
+  testID,
+}: TestProps): WebTestProps {
   return compactProps({
     "aria-label": accessibilityLabel,
-    "data-testid": testId,
+    "data-testid": testId ?? testID,
     id,
     role,
   });
@@ -40,15 +48,17 @@ export function getWebTestProps({ accessibilityLabel, id, role, testId }: TestPr
 export function getNativeTestProps({
   accessibilityLabel,
   id,
+  nativeID,
   role,
+  testID,
   testId,
 }: TestProps): NativeTestProps {
   return compactProps({
     accessibilityLabel,
     accessibilityRole: role as AccessibilityRole | undefined,
-    nativeID: id,
+    nativeID: id ?? nativeID,
     role: role as AccessibilityRole | undefined,
-    testID: testId,
+    testID: testId ?? testID,
   });
 }
 

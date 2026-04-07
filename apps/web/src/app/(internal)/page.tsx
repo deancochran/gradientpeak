@@ -1,14 +1,18 @@
-"use client";
+import { resolveAuthSessionFromHeaders } from "@repo/auth/server";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
-import { useAuth } from "@/components/providers/auth-provider";
+export default async function ProtectedPage() {
+  const session = await resolveAuthSessionFromHeaders(new Headers(await headers()));
 
-export default function ProtectedPage() {
-  const { user } = useAuth();
+  if (!session?.user) {
+    redirect("/auth/login");
+  }
 
   return (
-    <div className="flex h-svh w-full items-center justify-center gap-2">
+    <div className="flex min-h-[50svh] w-full items-center justify-center gap-2 rounded-xl border bg-card p-8 text-card-foreground shadow-sm">
       <p>
-        Hello <span>{user?.email}</span>
+        Hello <span className="font-medium">{session.user.email}</span>
       </p>
     </div>
   );

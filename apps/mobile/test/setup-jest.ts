@@ -2,6 +2,25 @@ import React from "react";
 
 import "../../../packages/ui/src/test/setup-native";
 
+(globalThis as { __DEV__?: boolean }).__DEV__ = false;
+
+jest.mock("expo-constants", () => ({
+  __esModule: true,
+  default: {
+    expoConfig: {
+      scheme: "gradientpeak-dev",
+      extra: {
+        redirectUri: "gradientpeak-dev://integrations",
+      },
+    },
+  },
+}));
+
+jest.mock("expo-linking", () => ({
+  __esModule: true,
+  createURL: jest.fn((path = "") => `gradientpeak-dev://${String(path).replace(/^\//, "")}`),
+}));
+
 jest.mock("react-native-svg", () => {
   const MockSvg = ({ children, ...props }: any) => React.createElement("svg", props, children);
   const MockCircle = ({ children, ...props }: any) =>

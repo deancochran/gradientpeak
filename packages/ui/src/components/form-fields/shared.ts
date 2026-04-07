@@ -22,6 +22,7 @@ type SharedTextFieldInputProps = {
   className?: string;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   keyboardType?: TextInputProps["keyboardType"];
+  maxLength?: TextInputProps["maxLength"];
   placeholder?: TextInputProps["placeholder"];
   readOnly?: boolean;
   secureTextEntry?: TextInputProps["secureTextEntry"];
@@ -115,6 +116,7 @@ export type FormTextareaFieldProps<
 > = ControlledFieldProps<TFieldValues, TName> & {
   className?: string;
   formatValue?: (value: FieldPathValue<TFieldValues, TName>) => string;
+  maxLength?: TextInputProps["maxLength"];
   numberOfLines?: TextInputProps["numberOfLines"];
   parseValue?: (value: string) => FieldPathValue<TFieldValues, TName>;
   placeholder?: TextInputProps["placeholder"];

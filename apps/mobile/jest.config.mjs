@@ -5,8 +5,8 @@ export default {
     "^@/(.*)$": "<rootDir>/$1",
     "^@repo/core$": "<rootDir>/../../packages/core/index.ts",
     "^@repo/core/(.*)$": "<rootDir>/../../packages/core/$1",
-    "^@repo/supabase$": "<rootDir>/../../packages/supabase/index.ts",
-    "^@repo/trpc/(.*)$": "<rootDir>/../../packages/trpc/src/$1",
+    "^@repo/api$": "<rootDir>/../../packages/api/index.ts",
+    "^@repo/api/(.*)$": "<rootDir>/../../packages/api/src/$1",
     "^@repo/ui$": "<rootDir>/../../packages/ui/src/index.ts",
     "^@repo/ui/(.*)$": "<rootDir>/../../packages/ui/src/$1",
   },
@@ -17,7 +17,9 @@ export default {
     customExportConditions: ["react-native"],
   },
   testMatch: ["<rootDir>/**/*.jest.test.ts", "<rootDir>/**/*.jest.test.tsx"],
-  transformIgnorePatterns: ["node_modules/(?!(superjson|copy-anything|is-what)/)"],
+  transformIgnorePatterns: [
+    "node_modules/(?!(superjson|copy-anything|is-what|expo(nent)?|@expo|expo-modules-core|expo-asset|expo-file-system|expo-linking|expo-constants|expo-font|expo-crypto|expo-router|react-native|react-native-css-interop|nativewind|@react-native|@react-navigation)/)",
+  ],
   transform: {
     "^.+\\.(t|j)sx?$": [
       "@swc/jest",

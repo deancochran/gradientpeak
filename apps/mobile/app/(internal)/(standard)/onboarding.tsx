@@ -12,14 +12,16 @@ import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
 import { WeightInputField } from "@repo/ui/components/weight-input-field";
+import Constants from "expo-constants";
+import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { Activity, ArrowRight, Check, ChevronRight } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Alert, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
 
 type HealthKitPermissions = {
   permissions: {
@@ -59,6 +61,14 @@ interface OnboardingData {
   training_frequency: "1-2" | "3-4" | "5-6" | "7+" | null;
   equipment: string[];
   goals: string[];
+}
+
+function getMobileRedirectUri(): string {
+  if (Constants.expoConfig?.extra?.redirectUri) {
+    return Constants.expoConfig.extra.redirectUri;
+  }
+
+  return Linking.createURL("integrations");
 }
 
 const INITIAL_DATA: OnboardingData = {
@@ -368,7 +378,7 @@ const CssStep = ({ data, updateData }: StepProps) => (
 
 const IntegrationsStep = ({ data, updateData }: StepProps) => {
   const [connected, setConnected] = useState<string[]>([]);
-  const getAuthUrlMutation = trpc.integrations.getAuthUrl.useMutation();
+  const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
 
   const handleConnect = async (provider: string) => {
     if (provider === "Apple Health") {
@@ -432,12 +442,13 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
     }
 
     try {
+      const redirectUri = getMobileRedirectUri();
       const { url } = await getAuthUrlMutation.mutateAsync({
         provider: providerKey as any,
-        redirectUri: "gradientpeak://integrations",
+        redirectUri,
       });
 
-      const result = await WebBrowser.openAuthSessionAsync(url, "gradientpeak://integrations");
+      const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
 
       if (result.type === "success") {
         setConnected((prev) => [...prev, provider]);
@@ -572,8 +583,8 @@ export default function OnboardingScreen() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { completeOnboarding } = useAuth();
-  const { data: profile } = trpc.profiles.get.useQuery();
-  const completeOnboardingMutation = trpc.onboarding.completeOnboarding.useMutation();
+  const { data: profile } = api.profiles.get.useQuery();
+  const completeOnboardingMutation = api.onboarding.completeOnboarding.useMutation();
 
   const updateData = (updates: Partial<OnboardingData>) => {
     setData((prev) => ({ ...prev, ...updates }));

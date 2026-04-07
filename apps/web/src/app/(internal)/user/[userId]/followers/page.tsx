@@ -1,36 +1,66 @@
 "use client";
 
-import { invalidateRelationshipQueries } from "@repo/trpc/react";
+import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Loader2, Lock, UserMinus, UserRound } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/providers/auth-provider";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
+
+type FollowerProfile = {
+  id: string;
+  username: string | null;
+  avatar_url: string | null;
+  is_public: boolean | null;
+};
 
 export default function FollowersPage() {
   const params = useParams();
   const router = useRouter();
   const userId = params.userId as string;
   const { user } = useAuth();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   const [page, setPage] = useState(0);
+  const [loadedPages, setLoadedPages] = useState<Record<number, FollowerProfile[]>>({});
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const limit = 20;
 
   const {
     data: followersData,
     isLoading,
     isFetching,
-  } = trpc.social.getFollowers.useQuery(
+  } = api.social.getFollowers.useQuery(
     { user_id: userId, limit, offset: page * limit },
     { enabled: !!userId },
   );
 
-  const followMutation = trpc.social.followUser.useMutation({
+  useEffect(() => {
+    setPage(0);
+    setLoadedPages({});
+    setTotal(0);
+    setHasMore(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!followersData) {
+      return;
+    }
+
+    setLoadedPages((prev) => ({
+      ...prev,
+      [page]: followersData.users,
+    }));
+    setTotal(followersData.total);
+    setHasMore(followersData.hasMore);
+  }, [followersData, page]);
+
+  const followMutation = api.social.followUser.useMutation({
     onSuccess: async (_data, variables) => {
       await invalidateRelationshipQueries(utils, [userId, user?.id, variables.target_user_id]);
       toast.success("Followed user");
@@ -38,7 +68,7 @@ export default function FollowersPage() {
     onError: (err) => toast.error(err.message),
   });
 
-  const unfollowMutation = trpc.social.unfollowUser.useMutation({
+  const unfollowMutation = api.social.unfollowUser.useMutation({
     onSuccess: async (_data, variables) => {
       await invalidateRelationshipQueries(utils, [userId, user?.id, variables.target_user_id]);
       toast.success("Unfollowed user");
@@ -46,9 +76,22 @@ export default function FollowersPage() {
     onError: (err) => toast.error(err.message),
   });
 
-  const users = followersData?.users || [];
-  const total = followersData?.total || 0;
-  const hasMore = followersData?.hasMore || false;
+  const users = useMemo(() => {
+    const seenUserIds = new Set<string>();
+
+    return Object.keys(loadedPages)
+      .map(Number)
+      .sort((left, right) => left - right)
+      .flatMap((pageIndex) => loadedPages[pageIndex] ?? [])
+      .filter((profile) => {
+        if (seenUserIds.has(profile.id)) {
+          return false;
+        }
+
+        seenUserIds.add(profile.id);
+        return true;
+      });
+  }, [loadedPages]);
 
   const handleUserClick = (profileUserId: string) => {
     router.push(`/user/${profileUserId}`);
@@ -80,7 +123,7 @@ export default function FollowersPage() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading && users.length === 0) {
     return (
       <div className="flex h-[400px] w-full items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -105,59 +148,52 @@ export default function FollowersPage() {
             <p className="text-muted-foreground text-center py-8">No followers yet</p>
           ) : (
             <div className="space-y-4">
-              {users.map(
-                (profile: {
-                  id: string;
-                  username: string | null;
-                  avatar_url: string | null;
-                  is_public: boolean | null;
-                }) => {
-                  const isCurrentUser = user?.id === profile.id;
+              {users.map((profile: FollowerProfile) => {
+                const isCurrentUser = user?.id === profile.id;
 
-                  return (
-                    <div
-                      key={profile.id}
-                      className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors"
+                return (
+                  <div
+                    key={profile.id}
+                    className="flex items-center justify-between p-3 rounded-lg hover:bg-accent/50 transition-colors"
+                  >
+                    <button
+                      className="flex items-center gap-3 flex-1"
+                      onClick={() => handleUserClick(profile.id)}
                     >
-                      <button
-                        className="flex items-center gap-3 flex-1"
-                        onClick={() => handleUserClick(profile.id)}
-                      >
-                        <Avatar className="h-12 w-12">
-                          <AvatarImage
-                            src={profile.avatar_url || ""}
-                            alt={profile.username || "User"}
-                          />
-                          <AvatarFallback>
-                            <UserRound className="h-6 w-6" />
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="text-left">
-                          <div className="font-medium">{profile.username || "Unknown user"}</div>
-                          {profile.is_public === false && (
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <Lock className="h-3 w-3" />
-                              Private
-                            </div>
-                          )}
-                        </div>
-                      </button>
+                      <Avatar className="h-12 w-12">
+                        <AvatarImage
+                          src={profile.avatar_url || ""}
+                          alt={profile.username || "User"}
+                        />
+                        <AvatarFallback>
+                          <UserRound className="h-6 w-6" />
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="text-left">
+                        <div className="font-medium">{profile.username || "Unknown user"}</div>
+                        {profile.is_public === false && (
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Lock className="h-3 w-3" />
+                            Private
+                          </div>
+                        )}
+                      </div>
+                    </button>
 
-                      {!isCurrentUser && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleToggleFollow(profile.id, true)}
-                          disabled={followMutation.isPending || unfollowMutation.isPending}
-                        >
-                          <UserMinus className="mr-2 h-4 w-4" />
-                          Following
-                        </Button>
-                      )}
-                    </div>
-                  );
-                },
-              )}
+                    {!isCurrentUser && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleToggleFollow(profile.id, true)}
+                        disabled={followMutation.isPending || unfollowMutation.isPending}
+                      >
+                        <UserMinus className="mr-2 h-4 w-4" />
+                        Following
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

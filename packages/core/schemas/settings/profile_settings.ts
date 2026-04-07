@@ -7,6 +7,37 @@ import {
 } from "../training_plan_structure";
 
 const capabilityBoundedNumber = z.number().min(0).max(1);
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeDateOnlyToUtcDateTime(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  return dateOnlyPattern.test(value) ? `${value}T00:00:00.000Z` : value;
+}
+
+function normalizeDateTimeToDateOnly(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  if (dateOnlyPattern.test(value)) {
+    return value;
+  }
+
+  const datePrefixMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (datePrefixMatch?.[1]) {
+    return datePrefixMatch[1];
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
 
 function buildUniqueDayRefinement(path: string[]) {
   return (days: string[], ctx: z.RefinementCtx) => {
@@ -201,6 +232,38 @@ export const athletePreferenceProfileSchema = z
     baseline_fitness: athletePreferenceBaselineSchema.optional(),
   })
   .strict();
+
+const athletePreferenceBaselineFormInputSchema = z
+  .object({
+    is_enabled: z.boolean().default(false),
+    override_ctl: z.number().min(0).max(250).optional(),
+    override_atl: z.number().min(0).max(250).optional(),
+    override_date: z
+      .union([
+        z.string().regex(dateOnlyPattern, "Date must use YYYY-MM-DD format"),
+        z.string().datetime(),
+      ])
+      .optional(),
+    max_weekly_tss_ramp_pct: z.number().min(0).max(40).optional(),
+    max_ctl_ramp_per_week: z.number().min(0).max(12).optional(),
+  })
+  .strict();
+
+export const athleteTrainingSettingsFormInputSchema = athletePreferenceProfileSchema.extend({
+  baseline_fitness: athletePreferenceBaselineFormInputSchema.optional(),
+});
+
+export const athleteTrainingSettingsFormSchema = athleteTrainingSettingsFormInputSchema.transform(
+  (value) => ({
+    ...value,
+    baseline_fitness: value.baseline_fitness
+      ? {
+          ...value.baseline_fitness,
+          override_date: normalizeDateOnlyToUtcDateTime(value.baseline_fitness.override_date),
+        }
+      : value.baseline_fitness,
+  }),
+);
 
 export const athletePreferenceAvailabilityPatchSchema = z
   .object({
@@ -429,6 +492,21 @@ export const athleteTrainingSettingsPatchSchema = athletePreferenceProfilePatchS
 
 export type AthleteTrainingSettings = AthletePreferenceProfile;
 export type AthleteTrainingSettingsPatch = AthletePreferenceProfilePatch;
+export type AthleteTrainingSettingsFormInput = z.input<typeof athleteTrainingSettingsFormSchema>;
+
+export function toAthleteTrainingSettingsFormValues(
+  settings: AthleteTrainingSettings,
+): AthleteTrainingSettingsFormInput {
+  return athleteTrainingSettingsFormInputSchema.parse({
+    ...settings,
+    baseline_fitness: settings.baseline_fitness
+      ? {
+          ...settings.baseline_fitness,
+          override_date: normalizeDateTimeToDateOnly(settings.baseline_fitness.override_date),
+        }
+      : undefined,
+  });
+}
 
 /**
  * Resolves effective preferences by applying plan overrides to profile defaults.

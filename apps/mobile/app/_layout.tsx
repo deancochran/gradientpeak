@@ -1,18 +1,18 @@
 // apps/native/app/_layout.tsx
 import "../polyfills";
+import { NATIVE_THEME_VARIABLES } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { NATIVE_THEME_VARIABLES } from "@repo/ui/theme/native";
 import "@/global.css";
 import { PortalHost } from "@rn-primitives/portal";
-import { Redirect, router, Slot, useSegments } from "expo-router";
+import { router, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { vars } from "nativewind";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { useAuth } from "@/lib/hooks/useAuth";
+import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
@@ -55,105 +55,8 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
   );
 }
 
-// Main app content
-function AppContent() {
-  console.log("AppContent loaded");
-
-  const {
-    userStatus,
-    onboardingStatus,
-    isAuthenticated,
-    isFullyLoaded,
-    user,
-    profileLoading,
-    profileError,
-    refreshProfile,
-  } = useAuth();
+function AppShell() {
   const { theme, resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
-  const segments = useSegments();
-  const rootSegment = segments[0];
-  const childSegment = segments.at(1);
-  const grandchildSegment = segments.at(2);
-  const clearSession = useAuthStore((state) => state.clearSession);
-
-  const inInternalGroup = rootSegment === "(internal)";
-  const inExternalGroup = rootSegment === "(external)";
-  const isOnboardingScreen =
-    rootSegment === "(internal)" &&
-    childSegment === "(standard)" &&
-    grandchildSegment === "onboarding";
-  const isVerificationScreen = rootSegment === "(external)" && childSegment === "verify";
-  const isAuthCallbackScreen = rootSegment === "(external)" && childSegment === "callback";
-
-  const guardDecision = React.useMemo(() => {
-    if (!isFullyLoaded || !isThemeLoaded) {
-      return { type: "loading" as const };
-    }
-
-    // Not signed in: only external routes are allowed.
-    if (!isAuthenticated) {
-      return inExternalGroup
-        ? { type: "allow" as const }
-        : { type: "redirect" as const, to: "/(external)/sign-in" as const };
-    }
-
-    // Signed in but not verified: only verify/callback allowed.
-    if (userStatus !== "verified") {
-      if (isVerificationScreen || isAuthCallbackScreen) {
-        return { type: "allow" as const };
-      }
-
-      return {
-        type: "redirect" as const,
-        to: "/(external)/verify" as const,
-        params: { email: user?.email || "" },
-      };
-    }
-
-    // Verified but not onboarded: onboarding is mandatory before internal app.
-    if (onboardingStatus === null) {
-      if (profileLoading) {
-        return { type: "loading" as const };
-      }
-
-      if (profileError) {
-        return { type: "profile-error" as const, message: profileError.message };
-      }
-
-      return {
-        type: "redirect" as const,
-        to: "/(internal)/(standard)/onboarding" as const,
-      };
-    }
-
-    if (onboardingStatus !== true) {
-      return isOnboardingScreen
-        ? { type: "allow" as const }
-        : {
-            type: "redirect" as const,
-            to: "/(internal)/(standard)/onboarding" as const,
-          };
-    }
-
-    // Fully eligible users should stay in internal app shell.
-    if (!inInternalGroup || isOnboardingScreen) {
-      return { type: "redirect" as const, to: "/(internal)/(tabs)" as const };
-    }
-
-    return { type: "allow" as const };
-  }, [
-    inExternalGroup,
-    inInternalGroup,
-    isAuthCallbackScreen,
-    isAuthenticated,
-    isFullyLoaded,
-    isOnboardingScreen,
-    isThemeLoaded,
-    isVerificationScreen,
-    onboardingStatus,
-    user,
-    userStatus,
-  ]);
 
   const isDark = resolvedTheme === "dark";
   const themeVariables = React.useMemo(
@@ -161,40 +64,13 @@ function AppContent() {
     [resolvedTheme],
   );
 
-  if (guardDecision.type === "loading") {
+  if (!isThemeLoaded) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" className="text-foreground" />
       </View>
     );
   }
-
-  if (guardDecision.type === "profile-error") {
-    return (
-      <View className="flex-1 items-center justify-center gap-4 bg-background px-6">
-        <Text variant="h3" className="text-center text-foreground">
-          We couldn&apos;t finish loading your account
-        </Text>
-        <Text className="text-center text-muted-foreground">{guardDecision.message}</Text>
-        <Button onPress={() => void refreshProfile()} className="w-full max-w-xs">
-          <Text className="text-primary-foreground font-semibold">Try Again</Text>
-        </Button>
-        <Button variant="outline" onPress={() => void clearSession()} className="w-full max-w-xs">
-          <Text className="text-foreground">Sign Out</Text>
-        </Button>
-      </View>
-    );
-  }
-
-  if (guardDecision.type === "redirect") {
-    if (guardDecision.to === "/(external)/verify") {
-      return <Redirect href={{ pathname: guardDecision.to, params: guardDecision.params }} />;
-    }
-
-    return <Redirect href={guardDecision.to} />;
-  }
-
-  console.log("Rendering with theme:", theme, "resolvedTheme:", resolvedTheme, "isDark:", isDark);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -214,16 +90,9 @@ function AppContent() {
 }
 
 export default function RootLayout() {
-  console.log("RootLayout loaded");
   const { initialized } = useServerConfig();
-
-  React.useEffect(() => {
-    if (initialized) {
-      return;
-    }
-
-    void initializeServerConfig();
-  }, [initialized]);
+  const authReady = useAuthStore((state) => state.ready);
+  const initializeAuth = useAuthStore((state) => state.initialize);
 
   // Clean up any orphaned recording files on app startup
   React.useEffect(() => {
@@ -234,22 +103,23 @@ export default function RootLayout() {
     GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
       console.warn("Failed to cleanup orphaned FIT recordings:", error);
     });
-
-    // Note: Sentry is initialized at module level above to catch early errors
-    console.log("App initialization complete - Sentry active in production");
   }, []);
 
-  if (!initialized) {
-    return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" className="text-foreground" />
-      </View>
-    );
-  }
+  React.useEffect(() => {
+    void initializeServerConfig();
+  }, []);
+
+  React.useEffect(() => {
+    if (initialized && !authReady) {
+      void initializeAuth();
+    }
+  }, [authReady, initializeAuth, initialized]);
 
   return (
     <QueryProvider>
-      <AppContent />
+      <AppBootstrapGate>
+        <AppShell />
+      </AppBootstrapGate>
     </QueryProvider>
   );
 }

@@ -43,8 +43,7 @@
  * ```
  */
 
-import { getActivityDisplayName } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import { getActivityDisplayName, type RecordingActivityCategory } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupIcon, ToggleGroupItem } from "@repo/ui/components/toggle-group";
@@ -55,14 +54,14 @@ import { Modal, Pressable, ScrollView, View } from "react-native";
 interface ActivitySelectionModalProps {
   visible: boolean;
   onClose: () => void;
-  onActivitySelect: (category: PublicActivityCategory, gpsRecordingEnabled: boolean) => void;
-  currentCategory: PublicActivityCategory;
+  onActivitySelect: (category: RecordingActivityCategory, gpsRecordingEnabled: boolean) => void;
+  currentCategory: RecordingActivityCategory;
   currentGpsRecordingEnabled: boolean;
 }
 
 // Simplified activity configurations
 const QUICK_ACTIVITIES: {
-  category: PublicActivityCategory;
+  category: RecordingActivityCategory;
   icon: any;
   color: string;
   bgColor: string;
@@ -119,7 +118,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
 }: ActivitySelectionModalProps) {
   // No internal state - completely controlled by parent
 
-  const handleCategorySelect = (category: PublicActivityCategory) => {
+  const handleCategorySelect = (category: RecordingActivityCategory) => {
     // Immediately close and notify parent
     onClose();
     onActivitySelect(category, currentGpsRecordingEnabled);
@@ -160,7 +159,7 @@ export const ActivitySelectionModal = memo(function ActivitySelectionModal({
                   <ToggleGroup
                     type="single"
                     value={currentGpsRecordingEnabled ? "gps-on" : "gps-off"}
-                    onValueChange={(nextValue) => {
+                    onValueChange={(nextValue: string | undefined) => {
                       if (nextValue === "gps-on") {
                         handleGpsChange(true);
                       } else if (nextValue === "gps-off") {

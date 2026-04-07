@@ -1,4 +1,5 @@
 import {
+  type CanonicalSport,
   type ControlMode,
   type CurrentMetricValue as CoreCurrentMetricValue,
   type RecordingSessionArtifact as CoreRecordingSessionArtifact,
@@ -10,14 +11,18 @@ import {
   type MetricSourceSelection,
   type PublicActivityMetric,
   type PublicActivityMetricDataType,
+  type RecordingActivityCategory,
   type RecordingConfiguration,
   type RecordingControlPolicy,
   RecordingServiceActivityPlan,
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
 } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
+
+export interface RecorderProfileRef {
+  id: string;
+}
 
 /**
  * @deprecated Use getActivityDisplayName from @repo/core instead
@@ -35,7 +40,7 @@ export const ACTIVITY_NAMES = {
 /**
  * Get icon for activity category
  */
-export function getActivityIcon(category: PublicActivityCategory): any {
+export function getActivityIcon(category: CanonicalSport): any {
   switch (category) {
     case "run":
       return Footprints;
@@ -414,10 +419,10 @@ export interface LiveMetricsConfig {
 export interface RecordingMetadata {
   startedAt: string; // ISO timestamp
   endedAt?: string; // ISO timestamp (set on finish)
-  activityCategory: PublicActivityCategory;
+  activityCategory: RecordingActivityCategory;
   gpsRecordingEnabled: boolean;
   profileId: string;
-  profile: PublicProfilesRow;
+  profile: RecorderProfileRef;
   eventId?: string;
   activityPlan?: RecordingServiceActivityPlan;
   fitFilePath?: string;
@@ -470,7 +475,7 @@ export interface RecordingPlanView {
   hasPlan: boolean;
   name?: string;
   description?: string | null;
-  activityType?: PublicActivityCategory | null;
+  activityType?: RecordingActivityCategory | null;
   stepIndex: number;
   stepCount: number;
   currentStep?: IntervalStepV2;

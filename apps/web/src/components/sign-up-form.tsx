@@ -8,52 +8,49 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
+import { Form, FormTextField } from "@repo/ui/components/form";
+import { useZodForm } from "@repo/ui/hooks";
 import { cn } from "@repo/ui/lib/cn";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { authClient } from "@/lib/auth-client";
+import { authClient, toAbsoluteWebUrl } from "@/lib/auth/client";
+import { getSignUpFormError } from "@/lib/auth/form-errors";
+import { type SignUpFormValues, signUpFormSchema } from "@/lib/auth/form-schemas";
 
 export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [repeatPassword, setRepeatPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isPending, setIsPending] = useState(false);
   const router = useRouter();
+  const form = useZodForm({
+    schema: signUpFormSchema,
+    defaultValues: {
+      email: "",
+      password: "",
+      repeatPassword: "",
+    },
+  });
 
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (password !== repeatPassword) {
-      setError("Passwords do not match");
-      return;
-    }
+  const handleSignUp = async (values: SignUpFormValues) => {
+    form.clearErrors("root");
 
     try {
-      setIsPending(true);
-
-      const { error } = await authClient.signUp.email({
-        email,
-        password,
-        name: email.split("@")[0] || "GradientPeak User",
-        callbackURL: "/auth/sign-up-success",
+      const result = await authClient.signUp.email({
+        email: values.email,
+        password: values.password,
+        name: values.email.split("@")[0] || values.email,
+        callbackURL: toAbsoluteWebUrl("/auth/confirm"),
       });
 
-      if (error) {
-        throw new Error(error.message);
+      if (result.error) {
+        throw result.error;
       }
 
       router.push("/auth/sign-up-success");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to create account");
-    } finally {
-      setIsPending(false);
+    } catch (error: unknown) {
+      const formError = getSignUpFormError(error);
+      form.setError(formError.target, { message: formError.message });
     }
   };
+
+  const isPending = form.formState.isSubmitting;
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -63,55 +60,57 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
           <CardDescription>Create a new account</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSignUp}>
-            <div className="flex flex-col gap-6">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSignUp)}>
+              <div className="flex flex-col gap-6">
+                <FormTextField
+                  autoComplete="email"
+                  control={form.control}
+                  label="Email"
+                  name="email"
                   placeholder="m@example.com"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="email"
                 />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
+                <FormTextField
+                  autoComplete="new-password"
+                  control={form.control}
+                  label="Password"
+                  name="password"
+                  placeholder="Enter your password"
                   required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="repeat-password">Repeat Password</Label>
-                </div>
-                <Input
-                  id="repeat-password"
                   type="password"
-                  required
-                  value={repeatPassword}
-                  onChange={(e) => setRepeatPassword(e.target.value)}
                 />
+                <div className="-mt-2 space-y-1 text-xs text-muted-foreground">
+                  <p>Password must contain:</p>
+                  <p>• At least 8 characters</p>
+                  <p>• One uppercase letter</p>
+                  <p>• One number</p>
+                </div>
+                <FormTextField
+                  autoComplete="new-password"
+                  control={form.control}
+                  label="Repeat Password"
+                  name="repeatPassword"
+                  placeholder="Confirm your password"
+                  required
+                  type="password"
+                />
+                {form.formState.errors.root?.message ? (
+                  <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+                ) : null}
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? "Creating an account..." : "Sign up"}
+                </Button>
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" disabled={isPending}>
-                {isPending ? "Creating an account..." : "Sign up"}
-              </Button>
-            </div>
-            <div className="mt-4 text-center text-sm">
-              Already have an account?{" "}
-              <Link href="/auth/login" className="underline underline-offset-4">
-                Login
-              </Link>
-            </div>
-          </form>
+              <div className="mt-4 text-center text-sm">
+                Already have an account?{" "}
+                <Link href="/auth/login" className="underline underline-offset-4">
+                  Login
+                </Link>
+              </div>
+            </form>
+          </Form>
         </CardContent>
       </Card>
     </div>

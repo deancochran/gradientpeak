@@ -11,10 +11,21 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Calendar, CheckCircle2, Clock, Edit, Play, Trash2, Zap } from "lucide-react-native";
+import {
+  ArrowUpRight,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Edit,
+  Play,
+  Trash2,
+  Zap,
+} from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
+import { api } from "@/lib/api";
+import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import {
@@ -22,8 +33,6 @@ import {
   refreshScheduleWithCallbacks,
 } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { trpc } from "@/lib/trpc";
-import { scheduleAwareReadQueryOptions } from "@/lib/trpc/scheduleQueryOptions";
 import { getActivityBgClass, getActivityColor } from "@/lib/utils/plan/colors";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
@@ -90,7 +99,7 @@ export default function EventDetailScreen() {
     error,
     isLoading,
     refetch,
-  } = trpc.events.getById.useQuery(
+  } = api.events.getById.useQuery(
     { id: eventId },
     {
       ...scheduleAwareReadQueryOptions,
@@ -126,7 +135,7 @@ export default function EventDetailScreen() {
     );
   }, [event, startsInEditMode]);
 
-  const updateMutation = trpc.events.update.useMutation({
+  const updateMutation = api.events.update.useMutation({
     onSuccess: async () => {
       await refreshScheduleWithCallbacks({
         queryClient,
@@ -136,7 +145,7 @@ export default function EventDetailScreen() {
     },
   });
 
-  const deleteMutation = trpc.events.delete.useMutation({
+  const deleteMutation = api.events.delete.useMutation({
     onSuccess: async () => {
       await refreshScheduleViews(queryClient, "eventDeletionMutation");
       beginRedirect();
@@ -325,6 +334,23 @@ export default function EventDetailScreen() {
             </CardContent>
           </Card>
         ) : null}
+
+        <Card className="border-border bg-muted/20">
+          <CardContent className="p-4 gap-2">
+            <View className="flex-row items-start gap-3">
+              <View className="mt-0.5 h-9 w-9 items-center justify-center rounded-full bg-background">
+                <Icon as={ArrowUpRight} size={16} className="text-muted-foreground" />
+              </View>
+              <View className="flex-1 gap-1">
+                <Text className="text-sm font-semibold text-foreground">Advanced event detail</Text>
+                <Text className="text-sm text-muted-foreground" testID="event-detail-fallback-note">
+                  Calendar taps open the preview sheet first. Use this fallback screen for deeper
+                  edits, schedule changes, linked plan access, or deletion.
+                </Text>
+              </View>
+            </View>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="p-4 gap-4">
@@ -597,7 +623,7 @@ export default function EventDetailScreen() {
                 testID="event-detail-reschedule-button"
               >
                 <Icon as={Edit} size={16} className="mr-2 text-foreground" />
-                <Text>Reschedule</Text>
+                <Text>Open Schedule Editor</Text>
               </Button>
               <Button
                 variant="outline"

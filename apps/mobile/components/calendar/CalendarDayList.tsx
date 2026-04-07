@@ -15,7 +15,6 @@ type CalendarDayListProps = {
   draggingEventId: string | null;
   getCanStartPlannedEvent: (event: CalendarEvent) => boolean;
   onVisibleDateChange: (dateKey: string) => void;
-  onSelectDate: (dateKey: string) => void;
   onOpenEvent: (event: CalendarEvent) => void;
   onQuickActionPress: (event: CalendarEvent) => void;
   onDragStart: (event: CalendarEvent) => void;
@@ -31,7 +30,6 @@ export function CalendarDayList({
   draggingEventId,
   getCanStartPlannedEvent,
   onVisibleDateChange,
-  onSelectDate,
   onOpenEvent,
   onQuickActionPress,
   onDragStart,
@@ -67,69 +65,59 @@ export function CalendarDayList({
       renderItem={({ item }) => {
         const date = parseDateKey(item);
         const dayEvents = eventsByDate.get(item) ?? [];
+        const visibleEvents = dayEvents.filter((event) => event.event_type !== "rest_day");
+        const hasPlannedEvent = visibleEvents.some((event) => event.event_type === "planned");
+        const showInferredRestState = !hasPlannedEvent;
         const isActive = item === activeDate;
         const isToday = item === todayKey;
         const isDropTarget = !!draggingEventId;
 
         return (
           <View
-            className="bg-background px-4 pb-4 pt-3"
+            className="bg-background px-4 pb-4 pt-2"
             style={{ height: pageHeight }}
             testID={`calendar-day-page-${item}`}
           >
-            <TouchableOpacity
-              onPress={() => onSelectDate(item)}
-              className={`rounded-3xl border px-4 py-4 ${isActive ? "border-primary bg-primary/5" : "border-border bg-card"}`}
-              activeOpacity={0.9}
-              testID={`day-header-${item}`}
-            >
-              <View className="flex-row items-center justify-between gap-3">
-                <View>
-                  <Text
-                    className={`text-lg font-semibold ${isToday ? "text-primary" : "text-foreground"}`}
-                  >
-                    {format(date, "EEEE")}
-                  </Text>
-                  <Text className="text-sm text-muted-foreground">
-                    {format(date, "MMMM d, yyyy")}
-                  </Text>
-                </View>
-                <View className="rounded-full bg-background px-3 py-2">
-                  <Text className="text-xs font-medium text-muted-foreground">
-                    {dayEvents.length} {dayEvents.length === 1 ? "event" : "events"}
-                  </Text>
-                </View>
-              </View>
-            </TouchableOpacity>
+            <View className="px-1 pb-3 pt-1">
+              <Text
+                className={`text-lg font-semibold ${isToday ? "text-primary" : isActive ? "text-foreground" : "text-muted-foreground"}`}
+              >
+                {format(date, "EEEE")}
+              </Text>
+              <Text className="text-sm text-muted-foreground">{format(date, "MMMM d, yyyy")}</Text>
+            </View>
 
             <ScrollView
-              className="mt-4 flex-1"
-              contentContainerStyle={{ gap: 12, paddingBottom: 24 }}
+              className="flex-1"
+              contentContainerStyle={{ gap: 12, paddingBottom: 24, paddingTop: 4 }}
               nestedScrollEnabled
             >
-              {dayEvents.length > 0 ? (
-                dayEvents.map((event) => (
-                  <CalendarEventCard
-                    key={event.id}
-                    event={event}
-                    canStart={getCanStartPlannedEvent(event)}
-                    isDragging={draggingEventId === event.id}
-                    onPress={() => onOpenEvent(event)}
-                    onQuickActionPress={() => onQuickActionPress(event)}
-                    onDragStart={() => onDragStart(event)}
-                  />
-                ))
-              ) : (
+              {showInferredRestState ? (
                 <View
-                  className="rounded-3xl border border-dashed border-border bg-card px-5 py-6"
-                  testID={`calendar-empty-day-${item}`}
+                  className="rounded-3xl border border-border bg-card px-5 py-5"
+                  testID={`calendar-rest-day-state-${item}`}
                 >
-                  <Text className="text-sm font-semibold text-foreground">Nothing scheduled</Text>
+                  <Text className="text-sm font-semibold text-foreground">Rest day</Text>
                   <Text className="mt-1 text-sm text-muted-foreground">
-                    Keep the day open, or add something when you are ready.
+                    No planned activity is scheduled for this day. Keep it light, or add something
+                    if plans change.
                   </Text>
                 </View>
-              )}
+              ) : null}
+
+              {visibleEvents.length > 0
+                ? visibleEvents.map((event) => (
+                    <CalendarEventCard
+                      key={event.id}
+                      event={event}
+                      canStart={getCanStartPlannedEvent(event)}
+                      isDragging={draggingEventId === event.id}
+                      onPress={() => onOpenEvent(event)}
+                      onQuickActionPress={() => onQuickActionPress(event)}
+                      onDragStart={() => onDragStart(event)}
+                    />
+                  ))
+                : null}
 
               {isDropTarget ? (
                 <TouchableOpacity

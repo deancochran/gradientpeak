@@ -135,9 +135,9 @@ jest.mock("@/lib/constants/routes", () => ({
   },
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     activityPlans: {
       list: {
         useInfiniteQuery: jest.fn(() => ({

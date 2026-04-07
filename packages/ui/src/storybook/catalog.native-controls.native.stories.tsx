@@ -490,7 +490,7 @@ export const ToggleGroupStory: Story = {
     return (
       <NativeFrame>
         <ToggleGroup
-          onValueChange={(nextValue) => setValue(nextValue ?? "grid")}
+          onValueChange={(nextValue: string | undefined) => setValue(nextValue ?? "grid")}
           type="single"
           value={value}
           variant="outline"

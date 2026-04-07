@@ -98,21 +98,14 @@ jest.mock("@/lib/stores/theme-store", () => ({
   useTheme: () => ({ theme: "light", setTheme: jest.fn() }),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({
       profiles: { invalidate: jest.fn() },
-      auth: { getUser: { invalidate: jest.fn() } },
     }),
     profiles: {
       getPublicById: { useQuery: () => profileQueryState },
-    },
-    auth: {
-      signOut: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
-      deleteAccount: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
-      updateEmail: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
-      updatePassword: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
     social: {
       followUser: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },

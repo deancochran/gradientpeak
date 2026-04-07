@@ -1,9 +1,8 @@
-import { Database } from "@repo/supabase";
-import { appRouter } from "@repo/trpc/server";
-import { createServerClient } from "@supabase/ssr";
-import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
-import { cookies, headers } from "next/headers";
-import { createWebTrpcContext } from "@/lib/trpc/context";
+import { appRouter, createApiContext } from "@repo/api/server";
+import { resolveAuthSession } from "@repo/auth/server";
+import { db } from "@repo/db/client";
+import { fetchRequestHandler as fetchApiRequestHandler } from "@trpc/server/adapters/fetch";
+import { headers } from "next/headers";
 
 export const GET = handler;
 export const POST = handler;
@@ -13,40 +12,18 @@ const serverSupabaseUrl =
 
 async function handler(request: Request) {
   const headersList = await headers();
-  const cookieStore = await cookies();
 
-  // Create a Supabase client with SERVICE ROLE KEY for full database access
-  // This is safe because:
-  // 1. Service role key is only used server-side (never exposed to client)
-  // 2. tRPC protectedProcedure middleware validates authentication
-  // 3. All queries explicitly filter by ctx.session.user.id
-  const supabase = createServerClient<Database>(
-    serverSupabaseUrl!,
-    process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            );
-          } catch {
-            // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing
-            // user sessions.
-          }
-        },
-      },
-    },
-  );
-
-  return fetchRequestHandler({
+  return fetchApiRequestHandler({
     endpoint: "/api/trpc",
     req: request,
     router: appRouter,
-    createContext: () => createWebTrpcContext({ headers: headersList, supabase }),
+    createContext: async () =>
+      createApiContext({
+        headers: headersList,
+        auth: {
+          resolveSession: resolveAuthSession,
+        },
+        db,
+      }),
   });
 }

@@ -11,6 +11,8 @@
       "**",
       "!**/.expo",
       "!**/.next",
+      "!**/.worktrees",
+      "!**/.worktrees/**",
       "!**/.turbo",
       "!**/coverage",
       "!**/dist",

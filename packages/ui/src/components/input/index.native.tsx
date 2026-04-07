@@ -1,6 +1,5 @@
-import * as React from "react";
 import { cn } from "../../lib/cn";
-import { TextInput, type TextInputProps } from "../../lib/react-native";
+import { Input as RegistryInput } from "../../registry/native/input";
 import { getNativeTestProps } from "../../lib/test-props";
 import type { InputTestProps } from "./shared";
 
@@ -13,33 +12,19 @@ function inputVariants({ className, editable }: { className?: string; editable?:
   );
 }
 
-type InputProps = TextInputProps & React.RefAttributes<TextInput> & InputTestProps;
+type InputProps = Omit<React.ComponentProps<typeof RegistryInput>, "nativeID" | "testID"> &
+  InputTestProps;
 
-function Input({
-  accessibilityLabel,
-  className,
-  editable,
-  id,
-  role,
-  testId,
-  ...props
-}: InputProps) {
-  const nativeTestProps = getNativeTestProps({
+function Input({ accessibilityLabel, id, role, testId, ...props }: InputProps) {
+  const { role: _unusedRole, ...nativeTestProps } = getNativeTestProps({
     accessibilityLabel,
     id,
     role,
     testId,
-  }) as Pick<TextInputProps, "accessibilityLabel" | "nativeID" | "role" | "testID">;
+  });
 
-  return (
-    <TextInput
-      className={inputVariants({ className, editable })}
-      editable={editable}
-      {...nativeTestProps}
-      {...props}
-    />
-  );
+  return <RegistryInput {...nativeTestProps} {...props} className={inputVariants(props)} />;
 }
 
-export type { InputProps };
 export { Input, inputVariants };
+export type { InputProps };

@@ -12,8 +12,11 @@
  * - Simple data flow: Buffer -> Calculate -> Emit
  */
 
-import { GLOBAL_DEFAULTS, type PerformanceMetrics } from "@repo/core";
-import type { PublicActivityCategory, PublicProfilesRow } from "@repo/supabase";
+import {
+  GLOBAL_DEFAULTS,
+  type PerformanceMetrics,
+  type RecordingActivityCategory,
+} from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
@@ -23,6 +26,7 @@ import {
   LiveMetricsState,
   LocationReading,
   ProfileMetrics,
+  type RecorderProfileRef,
   SensorReading,
   SessionStats,
   ZoneConfig,
@@ -43,7 +47,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private metrics: LiveMetricsState;
   private isActive = false;
   private gpsRecordingEnabled = true;
-  private activityCategory?: PublicActivityCategory; // Track activity type for calorie calculation
+  private activityCategory?: RecordingActivityCategory; // Track activity type for calorie calculation
 
   // === Core Components ===
   private buffer: DataBuffer; // 60-second rolling window for calculations
@@ -88,7 +92,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private powerZoneTimes = [0, 0, 0, 0, 0, 0, 0]; // 7 zones
 
   constructor(
-    profile: PublicProfilesRow,
+    profile: RecorderProfileRef,
     metrics?: {
       ftp?: number;
       thresholdHr?: number;
@@ -123,7 +127,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Set activity category (bike, run, etc.)
    * Used for improved calorie estimation
    */
-  public setActivityCategory(category: PublicActivityCategory): void {
+  public setActivityCategory(category: RecordingActivityCategory): void {
     this.activityCategory = category;
     console.log("[LiveMetricsManager] Activity category set to:", category);
   }
@@ -1305,7 +1309,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Extract profile metrics
    */
   private extractProfileMetrics(
-    profile: PublicProfilesRow,
+    profile: RecorderProfileRef,
     metrics?: {
       ftp?: number;
       thresholdHr?: number;

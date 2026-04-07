@@ -1,5 +1,4 @@
 "use client";
-
 import {
   getProfileQuickUpdateDefaults,
   normalizeProfileSettingsView,
@@ -29,53 +28,27 @@ import {
 import { FileInput } from "@repo/ui/components/file-input";
 import { Form, FormSwitchField, FormTextField } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { type Resolver, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth } from "@/components/providers/auth-provider";
-import { authClient } from "@/lib/auth-client";
-import { trpc } from "@/lib/trpc/client";
+import { api } from "@/lib/api/client";
+import { authClient } from "@/lib/auth/client";
 
 const webProfileSettingsSchema = profileQuickUpdateSchema.pick({
   username: true,
   is_public: true,
 });
 
-type WebProfileSettingsFormData = Pick<
-  z.output<typeof webProfileSettingsSchema>,
-  "username" | "is_public"
->;
+type WebProfileSettingsFormData = z.output<typeof webProfileSettingsSchema>;
 
-const webProfileSettingsResolver = (async (values: WebProfileSettingsFormData) => {
-  const result = webProfileSettingsSchema.safeParse(values);
-
-  if (result.success) {
-    return {
-      values: result.data as WebProfileSettingsFormData,
-      errors: {},
-    };
-  }
-
-  const { fieldErrors } = z.flattenError(result.error);
-
-  return {
-    values: {} as never,
-    errors: Object.fromEntries(
-      Object.entries(fieldErrors).flatMap(([key, messages]) => {
-        const message = messages?.[0];
-
-        if (!message) {
-          return [];
-        }
-
-        return [[key, { type: "custom", message }]];
-      }),
-    ),
-  };
-}) as Resolver<WebProfileSettingsFormData>;
+const emptyProfileSettingsValues: z.input<typeof webProfileSettingsSchema> = {
+  username: "",
+  is_public: false,
+};
 
 export default function SettingsPage() {
   // Auth and Profile data
@@ -84,12 +57,12 @@ export default function SettingsPage() {
     data: profile,
     isLoading: profileLoading,
     refetch: refetchProfile,
-  } = trpc.profiles.get.useQuery(undefined, {
+  } = api.profiles.get.useQuery(undefined, {
     enabled: !!user,
   });
 
   // Mutations
-  const updateProfileMutation = trpc.profiles.update.useMutation({
+  const updateProfileMutation = api.profiles.update.useMutation({
     onSuccess: () => {
       refetchProfile();
       toast.success("Profile updated successfully");
@@ -99,36 +72,40 @@ export default function SettingsPage() {
       toast.error("Failed to update profile");
     },
   });
-  const createSignedUploadUrlMutation = trpc.storage.createSignedUploadUrl.useMutation();
+  const createSignedUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
   // Local state
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
-  const [updating, setUpdating] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const loading = authLoading || profileLoading;
 
   // Hooks
   const router = useRouter();
 
-  const form = useForm<WebProfileSettingsFormData>({
-    resolver: webProfileSettingsResolver,
-    defaultValues: {
-      username: "",
-      is_public: false,
-    },
+  const form = useZodForm({
+    schema: webProfileSettingsSchema,
+    defaultValues: emptyProfileSettingsValues,
   });
+  const isProfileDirty = form.formState.isDirty;
 
   // Update form when profile data loads
   useEffect(() => {
     if (profile) {
       const defaults = getProfileQuickUpdateDefaults(normalizeProfileSettingsView(profile));
-      form.reset(defaults as WebProfileSettingsFormData);
+
+      if (isProfileDirty) {
+        return;
+      }
+
+      form.reset({
+        username: defaults.username,
+        is_public: defaults.is_public,
+      });
     }
-  }, [profile, form]);
+  }, [form, isProfileDirty, profile]);
 
   // Get avatar URL when profile has avatar_url
-  const { data: avatarUrlData } = trpc.storage.getSignedUrl.useQuery(
+  const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
     { filePath: profile?.avatar_url || "" },
     {
       enabled: !!profile?.avatar_url,
@@ -162,21 +139,21 @@ export default function SettingsPage() {
   }, [avatarBlobUrl]);
 
   // Event handlers
-  const onSubmit = async (values: WebProfileSettingsFormData) => {
-    if (!user) return;
+  const submitProfile = useZodFormSubmit<WebProfileSettingsFormData>({
+    form,
+    onSubmit: async (values) => {
+      if (!user) {
+        return;
+      }
 
-    setUpdating(true);
-    try {
       await updateProfileMutation.mutateAsync({
         username: values.username,
         is_public: values.is_public,
       });
-    } catch {
-      // Error handling is done in mutation onError
-    } finally {
-      setUpdating(false);
-    }
-  };
+
+      form.reset(values);
+    },
+  });
 
   const handleAvatarUpload = async (
     files: Array<{ file?: File; name: string; type?: string | null; size?: number | null }>,
@@ -233,35 +210,22 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    if (!user) return;
-
-    setDeleting(true);
-    try {
-      const { error } = await authClient.deleteUser();
-      if (error) throw new Error(error.message);
-      await refreshSession();
-      router.push("/auth/login");
-      toast.success("Account deleted successfully");
-    } catch (error) {
-      console.error("Error deleting account:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to delete account");
-    } finally {
-      setDeleting(false);
-    }
-  };
-
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
-      const { error } = await authClient.signOut();
-      if (error) throw new Error(error.message);
+      const result = await authClient.signOut();
+
+      if (result.error) {
+        throw result.error;
+      }
+
       await refreshSession();
+      router.refresh();
       router.push("/auth/login");
       toast.success("Signed out successfully");
     } catch (error) {
       console.error("Error signing out:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to sign out");
+      toast.error("Failed to sign out");
     } finally {
       setSigningOut(false);
     }
@@ -347,7 +311,7 @@ export default function SettingsPage() {
 
             {/* Profile Form */}
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <form onSubmit={submitProfile.handleSubmit} className="space-y-4">
                 <FormTextField
                   control={form.control}
                   description="This is the username that will be displayed on your profile."
@@ -365,8 +329,8 @@ export default function SettingsPage() {
                   testId="profile-visibility-switch"
                 />
 
-                <Button type="submit" disabled={updating}>
-                  {updating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                <Button type="submit" disabled={submitProfile.isSubmitting || !isProfileDirty}>
+                  {submitProfile.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Update Profile
                 </Button>
               </form>
@@ -420,7 +384,7 @@ export default function SettingsPage() {
             <div className="flex flex-col sm:flex-row gap-4">
               <Button
                 variant="outline"
-                onClick={() => void handleSignOut()}
+                onClick={handleSignOut}
                 disabled={signingOut}
                 className="flex-1"
               >
@@ -430,28 +394,23 @@ export default function SettingsPage() {
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive" disabled={deleting} className="flex-1">
+                  <Button variant="destructive" className="flex-1">
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete Account
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogTitle>Account deletion is temporarily unavailable</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This action cannot be undone. This will permanently delete your account and
-                      remove all your data from our servers.
+                      We are finishing our authentication migration. If you need your account
+                      removed right now, please contact support and we will handle it manually.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDeleteAccount}
-                      disabled={deleting}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Delete Account
+                    <AlertDialogAction disabled className="bg-destructive">
+                      Delete Account Unavailable
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

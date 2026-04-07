@@ -139,7 +139,7 @@ GradientPeak uses shared repo-level tooling for formatting, linting, and workspa
 - **Type Definitions** - Shared interfaces across mobile and web
 - **Test Utilities** - Mock data generators and test helpers
 
-#### `@repo/trpc` - API Layer & Types
+#### `@repo/api` - API Layer & Types
 
 - **tRPC Routers** - Type-safe API endpoints for all data operations
 - **Shared Procedures** - Authentication, activities, profiles, analytics
@@ -309,7 +309,7 @@ Time-series data processed from JSON source through core package utilities:
 | -------------------- | ------------------------------- | ------------------------------- | ------------------------------ |
 | **Framework**        | Expo 54, React Native 0.81.5    | Next.js 15, React 19            | -                              |
 | **Business Logic**   | `@repo/core`                    | `@repo/core`                    | Core calculations & validation |
-| **API Layer**        | `@repo/trpc` + React Query      | `@repo/trpc` + React Query      | Type-safe API procedures       |
+| **API Layer**        | `@repo/api` + React Query       | `@repo/api` + React Query       | Type-safe API procedures       |
 | **State Management** | Zustand + AsyncStorage          | Zustand + React Query           | Persistent state patterns      |
 | **Local Storage**    | Expo SQLite + FileSystem        | -                               | JSON data structures           |
 | **Cloud Services**   | Supabase Auth + Storage         | Supabase Auth + PostgreSQL      | Real-time capabilities         |

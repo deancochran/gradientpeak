@@ -9,7 +9,7 @@ import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 
 // Type for conversation with message data (returned from getConversations query)
@@ -100,7 +100,7 @@ function ConversationItem({
 
 export default function MessagesScreen() {
   const router = useRouter();
-  const { data: conversations = [], isLoading } = trpc.messaging.getConversations.useQuery();
+  const { data: conversations = [], isLoading } = api.messaging.getConversations.useQuery();
 
   return (
     <View className="flex-1 bg-background" testID="messages-screen">

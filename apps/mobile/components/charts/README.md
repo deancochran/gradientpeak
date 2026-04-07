@@ -53,7 +53,7 @@ The charts were implemented as part of **Phase 2: Add Visual Charts** to enhance
 - **NativeWind**: Tailwind CSS styling
 
 ### Data Integration
-Charts integrate with existing tRPC queries:
+Charts integrate with existing API queries:
 - `getActualCurve`: Training load data for line chart
 - `getWeeklySummary`: Weekly completion data for bar chart  
 - `getIntensityDistribution`: Zone distribution data for donut chart

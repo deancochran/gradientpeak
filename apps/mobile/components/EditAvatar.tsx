@@ -1,7 +1,7 @@
 import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
 import { Alert, Button, Image, StyleSheet, View } from "react-native";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 interface Props {
   size: number;
@@ -18,7 +18,7 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
     if (url) downloadImage(url);
   }, [url]);
 
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
   async function downloadImage(path: string) {
     try {

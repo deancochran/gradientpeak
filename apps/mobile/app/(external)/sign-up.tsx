@@ -3,48 +3,28 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
-import * as Linking from "expo-linking";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { z } from "zod";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
-import { getAuthClient } from "@/lib/auth/auth-client";
+import { authClient, getEmailVerificationCallbackUrl } from "@/lib/auth/client";
 import {
-  AuthRequestTimeoutError,
-  getAuthRequestTimeoutMessage,
-  withAuthRequestTimeout,
-} from "@/lib/auth/request-timeout";
+  applyPendingAuthServerOverride,
+  getAuthFormUnexpectedErrorMessage,
+  mapSignUpError,
+  setAuthFormError,
+} from "@/lib/auth/form-helpers";
+import { getDisplayNameFromEmail, type SignUpFields, signUpSchema } from "@/lib/auth/form-schemas";
+import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { getHostedApiUrl, setServerUrlOverride, useServerConfig } from "@/lib/server-config";
-import { useAuthStore } from "@/lib/stores/auth-store";
-
-const signUpSchema = z
-  .object({
-    email: z.string().email("Invalid email address"),
-    password: z
-      .string({ message: "Password is required" })
-      .min(8, "Password must be at least 8 characters")
-      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-      .regex(/[0-9]/, "Password must contain at least one number"),
-    repeatPassword: z.string({ message: "Please confirm your password" }),
-  })
-  .refine((data) => data.password === data.repeatPassword, {
-    message: "Passwords do not match",
-    path: ["repeatPassword"],
-  });
-
-type SignUpFields = z.infer<typeof signUpSchema>;
-
-const getDisplayNameFromEmail = (email: string) => email.split("@")[0] || email;
+import { useServerConfig } from "@/lib/server-config";
 
 export default function SignUpScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
-  const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
@@ -57,59 +37,37 @@ export default function SignUpScreen() {
 
   const form = useZodForm({
     schema: signUpSchema,
+    defaultValues: {
+      email: "",
+      password: "",
+      repeatPassword: "",
+    },
   });
 
   const onSignUp = async (data: SignUpFields) => {
-    setIsSubmitting(true);
     try {
-      if (isServerConfigExpanded) {
-        const nextUrl = serverUrlInput.trim();
-        const hostedApiUrl = getHostedApiUrl();
-        const { changed } = await setServerUrlOverride(
-          nextUrl.length === 0 || nextUrl === hostedApiUrl ? null : nextUrl,
-        );
-
-        if (changed) {
-          await useAuthStore.getState().clearSession();
-        }
-      }
+      await applyPendingAuthServerOverride({
+        expanded: isServerConfigExpanded,
+        serverUrlInput,
+      });
 
       logMobileAction("auth.signUp", "attempt", { email: data.email });
 
-      const authClient = getAuthClient();
-      const { error } = await withAuthRequestTimeout(
+      const result = await withAuthRequestTimeout(
         authClient.signUp.email({
           email: data.email,
-          name: getDisplayNameFromEmail(data.email),
           password: data.password,
-          callbackURL: Linking.createURL("/(external)/verification-success"),
+          name: getDisplayNameFromEmail(data.email),
+          callbackURL: getEmailVerificationCallbackUrl(),
         }),
       );
+      const error = result.error;
 
       if (error) {
         logMobileAction("auth.signUp", "failure", { email: data.email, error: error.message });
-        console.log("Sign up error:", error.message);
-        if (error.message?.includes("User already registered")) {
-          form.setError("email", {
-            message: "An account with this email already exists",
-          });
-        } else if (error.message?.includes("Password should be")) {
-          form.setError("password", {
-            message: error.message,
-          });
-        } else if (error.message?.includes("Unable to validate email")) {
-          form.setError("email", {
-            message: "Please enter a valid email address",
-          });
-        } else {
-          form.setError("root", {
-            message: error.message || "An unexpected error occurred",
-          });
-        }
+        setAuthFormError(form, mapSignUpError(error.message));
       } else {
         logMobileAction("auth.signUp", "success", { email: data.email });
-        // Successfully signed up - show verification message
-        console.log("Successfully signed up:", data.email);
         router.push({
           pathname: "/(external)/verify",
           params: { email: data.email },
@@ -120,15 +78,10 @@ export default function SignUpScreen() {
         email: data.email,
         error: err instanceof Error ? err.message : String(err),
       });
-      console.log("Unexpected sign up error:", err);
-      form.setError("root", {
-        message:
-          err instanceof AuthRequestTimeoutError
-            ? getAuthRequestTimeoutMessage()
-            : "An unexpected error occurred",
+      setAuthFormError(form, {
+        name: "root",
+        message: getAuthFormUnexpectedErrorMessage(err),
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -136,7 +89,11 @@ export default function SignUpScreen() {
     router.replace("/(external)/sign-in");
   };
 
-  const isLoading = authLoading || isSubmitting;
+  const submitForm = useZodFormSubmit({
+    form,
+    onSubmit: onSignUp,
+  });
+  const isLoading = authLoading || submitForm.isSubmitting;
 
   return (
     <KeyboardAvoidingView
@@ -228,7 +185,7 @@ export default function SignUpScreen() {
             <Button
               variant="default"
               size="lg"
-              onPress={form.handleSubmit(onSignUp)}
+              onPress={submitForm.handleSubmit}
               disabled={isLoading}
               testID="sign-up-button"
               className="w-full"

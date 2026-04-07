@@ -8,7 +8,7 @@ import { ActivityIndicator, Dimensions, Pressable, ScrollView, View } from "reac
 import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ActivityHeader } from "@/components/activity/shared/ActivityHeader";
-import { trpc } from "@/lib/trpc";
+import { api } from "@/lib/api";
 
 interface PastActivityCardProps {
   activity: {
@@ -68,7 +68,7 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
   const [isLiked, setIsLiked] = useState(activity.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(activity.likes_count ?? 0);
 
-  const toggleLikeMutation = trpc.social.toggleLike.useMutation({
+  const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
       // Revert optimistic update on error
       setIsLiked(activity.has_liked ?? false);
@@ -87,7 +87,7 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
   };
 
   // Fetch user identity from profiles table (current username/avatar)
-  const { data: profile } = trpc.profiles.getPublicById.useQuery(
+  const { data: profile } = api.profiles.getPublicById.useQuery(
     { id: activity.profile_id },
     {
       staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -105,13 +105,13 @@ export function PastActivityCard({ activity, onPress }: PastActivityCardProps) {
   }, [activity.profile_id, profile]);
 
   // Fetch route data if route_id exists (pre-planned route)
-  const { data: route } = trpc.routes.get.useQuery(
+  const { data: route } = api.routes.get.useQuery(
     { id: activity.route_id! },
     { enabled: !!activity.route_id },
   );
 
   // Fetch activity plan data if activity_plan_id exists
-  const { data: activityPlan } = trpc.activityPlans.getById.useQuery(
+  const { data: activityPlan } = api.activityPlans.getById.useQuery(
     { id: activity.activity_plan_id! },
     { enabled: !!activity.activity_plan_id },
   );

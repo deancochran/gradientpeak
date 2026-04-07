@@ -5,8 +5,8 @@ import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
+import { api } from "@/lib/api";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { trpc } from "@/lib/trpc";
 import { type ActivityOption, ActivitySelector } from "./components/ActivitySelector";
 import { ConstraintValidator } from "./components/ConstraintValidator";
 
@@ -69,7 +69,7 @@ export function AddActivityModal({
     data: activitiesData,
     isLoading: activitiesLoading,
     error: activitiesError,
-  } = trpc.activityPlans.list.useQuery(
+  } = api.activityPlans.list.useQuery(
     {
       limit: 100,
     },
@@ -83,7 +83,7 @@ export function AddActivityModal({
     data: validation,
     isLoading: validationLoading,
     error: validationError,
-  } = trpc.events.validateConstraints.useQuery(
+  } = api.events.validateConstraints.useQuery(
     {
       training_plan_id: trainingPlanId,
       scheduled_date: selectedDate,
@@ -95,7 +95,7 @@ export function AddActivityModal({
   );
 
   // Schedule activity mutation
-  const scheduleMutation = useReliableMutation(trpc.events.create, {
+  const scheduleMutation = useReliableMutation(api.events.create, {
     refresh: "eventMutation",
     success: "Activity scheduled!",
     onSuccess: () => {

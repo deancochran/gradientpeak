@@ -7,10 +7,10 @@ import { useRouter } from "expo-router";
 import { Settings2, Sparkles, X } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
-import { trpc } from "@/lib/trpc";
 
 interface QuickAdjustSheetProps {
   visible: boolean;
@@ -26,9 +26,9 @@ export function QuickAdjustSheet({
   smartSuggestion,
 }: QuickAdjustSheetProps) {
   const router = useRouter();
-  const utils = trpc.useUtils();
+  const utils = api.useUtils();
 
-  const applyAdjustmentMutation = useReliableMutation(trpc.trainingPlans.applyQuickAdjustment, {
+  const applyAdjustmentMutation = useReliableMutation(api.trainingPlans.applyQuickAdjustment, {
     invalidate: [utils.trainingPlans],
     onSuccess: () => {
       Alert.alert("Success", "Training plan adjusted successfully");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   athleteCapabilitySnapshotSchema,
   athletePreferenceProfileSchema,
+  athleteTrainingSettingsFormSchema,
   defaultAthletePreferenceProfile,
   invalidateCapabilitySnapshot,
   plannerDerivedDiagnosticsSchema,
@@ -10,6 +11,7 @@ import {
   resolveCapabilitySnapshotFreshness,
   resolveEffectivePreferences,
   shouldInvalidateCapabilitySnapshot,
+  toAthleteTrainingSettingsFormValues,
 } from "../settings/profile_settings";
 
 const canonicalProfile = athletePreferenceProfileSchema.parse({
@@ -184,6 +186,43 @@ describe("athletePreferenceProfileSchema", () => {
         max_sessions_per_week: 6,
       });
     }
+  });
+
+  it("normalizes baseline override dates across form input and persisted settings", () => {
+    const normalizedFormValues = toAthleteTrainingSettingsFormValues({
+      ...defaultAthletePreferenceProfile,
+      baseline_fitness: {
+        ...defaultAthletePreferenceProfile.baseline_fitness,
+        is_enabled: true,
+        override_date: "2026-04-03T00:00:00.000Z",
+      },
+    });
+
+    expect(normalizedFormValues.baseline_fitness?.override_date).toBe("2026-04-03");
+
+    const parsed = athleteTrainingSettingsFormSchema.parse({
+      ...defaultAthletePreferenceProfile,
+      baseline_fitness: {
+        ...defaultAthletePreferenceProfile.baseline_fitness,
+        is_enabled: true,
+        override_date: "2026-04-03",
+      },
+    });
+
+    expect(parsed.baseline_fitness?.override_date).toBe("2026-04-03T00:00:00.000Z");
+  });
+
+  it("preserves the original calendar day when form values derive from offset timestamps", () => {
+    const normalizedFormValues = toAthleteTrainingSettingsFormValues({
+      ...defaultAthletePreferenceProfile,
+      baseline_fitness: {
+        ...defaultAthletePreferenceProfile.baseline_fitness,
+        is_enabled: true,
+        override_date: "2026-04-03T23:00:00-07:00",
+      },
+    });
+
+    expect(normalizedFormValues.baseline_fitness?.override_date).toBe("2026-04-03");
   });
 });
 

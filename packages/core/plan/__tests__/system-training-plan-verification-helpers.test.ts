@@ -69,8 +69,10 @@ describe("system training plan verification helpers", () => {
     expect(first).toEqual(second);
     expect(first.unresolved_activity_plan_ids).toEqual([]);
     expect(first.total_planned_sessions).toBe(30);
+    expect(first.total_rest_days).toBeGreaterThan(0);
     expect(first.total_estimated_tss).toBeGreaterThan(0);
     expect(first.sessions.every((session) => Number.isFinite(session.estimated_tss))).toBe(true);
+    expect(first.sessions.every((session) => session.event_type === "planned")).toBe(true);
     expect(first.sessions.some((session) => session.estimation_source === "structure")).toBe(true);
   });
 
@@ -106,8 +108,42 @@ describe("system training plan verification helpers", () => {
       "2026-03-16",
     ]);
     expect(aggregated.weeks.map((week) => week.planned_weekly_tss)).toEqual([60, 0, 55]);
+    expect(aggregated.weeks.map((week) => week.rest_day_count)).toEqual([5, 7, 6]);
     expect(aggregated.weeks[2]?.unresolved_session_count).toBe(1);
     expect(aggregated.total_planned_tss).toBe(115);
+  });
+
+  it("infers rest days from dates without planned sessions, not explicit rest rows", () => {
+    const aggregated = aggregateWeeklyPlannedLoad([
+      {
+        scheduled_date: "2026-03-02",
+        event_type: "planned",
+        estimated_tss: 40,
+        activity_plan_id: "a",
+        title: "AM Run",
+      },
+      {
+        scheduled_date: "2026-03-02",
+        event_type: "planned",
+        estimated_tss: 20,
+        activity_plan_id: "b",
+        title: "PM Strength",
+      },
+      {
+        scheduled_date: "2026-03-03",
+        event_type: "rest_day",
+        estimated_tss: 0,
+        activity_plan_id: null,
+        title: "Legacy Rest",
+      },
+    ]);
+
+    expect(aggregated.weeks).toHaveLength(1);
+    expect(aggregated.weeks[0]).toMatchObject({
+      planned_session_count: 2,
+      rest_day_count: 6,
+      planned_weekly_tss: 60,
+    });
   });
 
   it("compares plan load to heuristic targets with weekly and block metrics", () => {

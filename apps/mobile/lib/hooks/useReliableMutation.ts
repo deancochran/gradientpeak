@@ -1,5 +1,5 @@
 /**
- * useReliableMutation - Zero-overhead wrapper for tRPC mutations
+ * useReliableMutation - Zero-overhead wrapper for API mutations
  *
  * Drop-in replacement that guarantees reliability without changing your code.
  * Just wrap your existing useMutation() calls and get:
@@ -9,19 +9,19 @@
  * - ✅ Network retry
  *
  * BEFORE:
- * const mutation = trpc.activities.create.useMutation({
+ * const mutation = api.activities.create.useMutation({
  *   onSuccess: () => utils.activities.invalidate()
  * });
  *
  * AFTER:
- * const mutation = useReliableMutation(trpc.activities.create, {
+ * const mutation = useReliableMutation(api.activities.create, {
  *   invalidate: [utils.activities]
  * });
  *
  * Your existing code still works - just more reliable!
  */
 
-import { invalidateSchedulingQueries, type SchedulingRefreshScope } from "@repo/trpc/client";
+import { invalidateSchedulingQueries, type SchedulingRefreshScope } from "@repo/api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { showErrorAlert } from "@/lib/utils/formErrors";
@@ -66,7 +66,7 @@ export interface ReliableMutationOptions {
 }
 
 /**
- * Wraps tRPC useMutation with reliability guarantees
+ * Wraps API useMutation with reliability guarantees
  * Works with existing code patterns - no refactoring needed
  */
 export function useReliableMutation<T extends { useMutation: any }>(

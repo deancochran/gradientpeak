@@ -2,8 +2,8 @@
 
 import type { AuthUser } from "@repo/auth/session";
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect } from "react";
-import { authClient } from "@/lib/auth-client";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { authClient, normalizeWebAuthSession } from "@/lib/auth/client";
 
 type AuthState = {
   user: AuthUser | null;
@@ -12,43 +12,37 @@ type AuthState = {
   refreshSession: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthState>({
-  user: null,
-  isLoading: true,
-  isAuthenticated: false,
-  refreshSession: async () => {},
-});
+const AuthContext = createContext<AuthState | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const { data: session, isPending: isLoading, error, refetch } = authClient.useSession();
+  const { data, isPending, error, refetch } = authClient.useSession();
+
+  const session = normalizeWebAuthSession(data);
 
   const user = session?.user ?? null;
   const isAuthenticated = !!user;
 
-  // Monitor authentication state changes
   useEffect(() => {
-    if (!isLoading && error) {
-      // User is not authenticated, could redirect here if needed
+    if (!isPending && error) {
       console.log("Authentication lost:", error.message);
     }
-  }, [isLoading, error]);
+  }, [isPending, error]);
 
-  const refreshSession = async () => {
+  const refreshSession = useCallback(async () => {
     await refetch();
-  };
+  }, [refetch]);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user: user || null,
-        isLoading,
-        isAuthenticated,
-        refreshSession,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      user,
+      isLoading: isPending,
+      isAuthenticated,
+      refreshSession,
+    }),
+    [isAuthenticated, isPending, refreshSession, user],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
@@ -68,9 +62,9 @@ export const useRequireAuth = (redirectTo: string = "/auth/login") => {
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push(redirectTo);
+      router.replace(redirectTo);
     }
-  }, [isLoading, isAuthenticated, router, redirectTo]);
+  }, [isLoading, isAuthenticated, redirectTo, router]);
 
   return { user, isLoading, isAuthenticated };
 };
@@ -84,9 +78,9 @@ export const useRedirectIfAuthenticated = (redirectTo: string = "/") => {
 
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.push(redirectTo);
+      router.replace(redirectTo);
     }
-  }, [isLoading, isAuthenticated, router, redirectTo]);
+  }, [isAuthenticated, isLoading, redirectTo, router]);
 
   return { isLoading, isAuthenticated };
 };

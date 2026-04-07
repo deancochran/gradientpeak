@@ -9,8 +9,8 @@ import { ChevronRight, Eye, EyeOff, Plus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { trpc } from "@/lib/trpc";
 
 function TrainingPlansListScreen() {
   const router = useRouter();
@@ -20,7 +20,7 @@ function TrainingPlansListScreen() {
     data: plans,
     isLoading,
     refetch,
-  } = trpc.trainingPlans.list.useQuery({
+  } = api.trainingPlans.list.useQuery({
     ownerScope: "own",
     includeOwnOnly: true,
     includeSystemTemplates: false,

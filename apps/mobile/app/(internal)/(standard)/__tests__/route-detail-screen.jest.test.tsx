@@ -74,9 +74,9 @@ jest.mock("@/lib/hooks/useReliableMutation", () => ({
   }),
 }));
 
-jest.mock("@/lib/trpc", () => ({
+jest.mock("@/lib/api", () => ({
   __esModule: true,
-  trpc: {
+  api: {
     useUtils: () => ({ routes: {} }),
     routes: {
       get: {

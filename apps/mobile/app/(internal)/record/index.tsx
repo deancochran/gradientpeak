@@ -1,5 +1,4 @@
-import type { ActivityPayload, RecordingState } from "@repo/core";
-import type { PublicActivityCategory } from "@repo/supabase";
+import type { ActivityPayload, RecordingActivityCategory, RecordingState } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -20,6 +19,7 @@ import { ActivitySelectionModal } from "@/components/ActivitySelectionModal";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingFooter } from "@/components/recording/footer";
 import { RecordingZones, ZoneFocusOverlay } from "@/components/recording/zones";
+import { api } from "@/lib/api";
 import {
   useActivityStatus,
   useIntensityScale,
@@ -33,7 +33,6 @@ import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { trpc } from "@/lib/trpc";
 
 // Helper function to resolve power target
 function resolvePowerTarget(target: any, profile: any): number | null {
@@ -75,7 +74,7 @@ function RecordScreen() {
     useAllPermissionsGranted();
 
   // Fetch smart initialization data (derived metrics)
-  const { data: zones } = trpc.profiles.getZones.useQuery(undefined, {
+  const { data: zones } = api.profiles.getZones.useQuery(undefined, {
     enabled: !!user && !!service,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
@@ -164,7 +163,7 @@ function RecordScreen() {
 
   // Handle activity selection from modal (for quick start)
   const handleActivitySelect = useCallback(
-    (category: PublicActivityCategory, nextGpsRecordingEnabled: boolean) => {
+    (category: RecordingActivityCategory, nextGpsRecordingEnabled: boolean) => {
       if (!service) {
         Alert.alert("Error", "Service not initialized");
         return;
@@ -444,7 +443,6 @@ function RecordScreen() {
       <View className="flex-1" style={{ paddingTop: insets.top }}>
         <RecordingZones
           service={service}
-          category={activityCategory}
           gpsRecordingEnabled={gpsRecordingEnabled}
           hasPlan={plan.hasPlan}
           hasRoute={hasRoute}
@@ -453,7 +451,6 @@ function RecordScreen() {
         {/* Focused Zone Overlay - Renders inside zones container */}
         <ZoneFocusOverlay
           service={service}
-          category={activityCategory}
           gpsRecordingEnabled={gpsRecordingEnabled}
           hasPlan={plan.hasPlan}
           hasRoute={hasRoute}
