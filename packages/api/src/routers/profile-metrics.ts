@@ -12,7 +12,11 @@ import {
   profileMetricRecordedAtSchema,
   updateProfileMetricInputSchema,
 } from "@repo/core/schemas/profile-metrics";
-import { profileMetrics, publicProfileMetricTypeSchema } from "@repo/db";
+import {
+  profileMetrics,
+  publicProfileMetricsRowSchema,
+  publicProfileMetricTypeSchema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
@@ -29,6 +33,7 @@ const createProfileMetricInputSchema = z
     unit: z.string().min(1, "Unit is required"),
     value: z.number(),
   })
+  .strict()
   .superRefine((data, ctx) => {
     if (isProfileMetricValueWithinBusinessRange(data.metric_type, data.value)) {
       return;
@@ -41,21 +46,53 @@ const createProfileMetricInputSchema = z
     });
   });
 
+const listProfileMetricsInputSchema = z
+  .object({
+    metric_type: publicProfileMetricTypeSchema.optional(),
+    start_date: z.date().optional(),
+    end_date: z.date().optional(),
+    limit: z.number().min(1).max(100).default(50),
+    offset: z.number().min(0).default(0),
+  })
+  .strict();
+
+const getProfileMetricAtDateInputSchema = z
+  .object({
+    metric_type: publicProfileMetricTypeSchema,
+    date: z.date(),
+  })
+  .strict();
+
+const getProfileMetricByIdInputSchema = z.object({ id: z.string().uuid() }).strict();
+
+const deleteProfileMetricInputSchema = z.object({ id: z.string().uuid() }).strict();
+
+const strictUpdateProfileMetricInputSchema = updateProfileMetricInputSchema.strict();
+
+const profileMetricRowArraySchema = z.array(publicProfileMetricsRowSchema);
+const profileMetricListOutputSchema = z
+  .object({
+    items: profileMetricRowArraySchema,
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
+const deleteProfileMetricOutputSchema = z.object({ success: z.literal(true) }).strict();
+
+function parseProfileMetricRow(row: unknown) {
+  return publicProfileMetricsRowSchema.parse(row);
+}
+
+function parseNullableProfileMetricRow(row: unknown) {
+  return row ? parseProfileMetricRow(row) : null;
+}
+
 export const profileMetricsRouter = createTRPCRouter({
   /**
    * List all profile metric logs for current user.
    * Supports filtering by metric type and date range.
    */
   list: protectedProcedure
-    .input(
-      z.object({
-        metric_type: publicProfileMetricTypeSchema.optional(),
-        start_date: z.date().optional(),
-        end_date: z.date().optional(),
-        limit: z.number().min(1).max(100).default(50),
-        offset: z.number().min(0).default(0),
-      }),
-    )
+    .input(listProfileMetricsInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -73,10 +110,10 @@ export const profileMetricsRouter = createTRPCRouter({
         .limit(input.limit)
         .offset(input.offset);
 
-      return {
-        items: data || [],
+      return profileMetricListOutputSchema.parse({
+        items: profileMetricRowArraySchema.parse(data ?? []),
         total: data.length,
-      };
+      });
     }),
 
   /**
@@ -86,12 +123,7 @@ export const profileMetricsRouter = createTRPCRouter({
    * Used for weight-adjusted TSS calculations at activity date.
    */
   getAtDate: protectedProcedure
-    .input(
-      z.object({
-        metric_type: publicProfileMetricTypeSchema,
-        date: z.date(),
-      }),
-    )
+    .input(getProfileMetricAtDateInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -108,14 +140,14 @@ export const profileMetricsRouter = createTRPCRouter({
         .orderBy(desc(profileMetrics.recorded_at))
         .limit(1);
 
-      return data || null;
+      return parseNullableProfileMetricRow(data);
     }),
 
   /**
    * Get specific metric by ID.
    */
   getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(getProfileMetricByIdInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -127,7 +159,7 @@ export const profileMetricsRouter = createTRPCRouter({
         )
         .limit(1);
 
-      return data ?? null;
+      return parseNullableProfileMetricRow(data);
     }),
 
   /**
@@ -160,14 +192,14 @@ export const profileMetricsRouter = createTRPCRouter({
         })
         .returning();
 
-      return data;
+      return parseProfileMetricRow(data);
     }),
 
   /**
    * Update existing profile metric log.
    */
   update: protectedProcedure
-    .input(updateProfileMetricInputSchema)
+    .input(strictUpdateProfileMetricInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -184,14 +216,14 @@ export const profileMetricsRouter = createTRPCRouter({
         )
         .returning();
 
-      return data;
+      return data ? parseProfileMetricRow(data) : data;
     }),
 
   /**
    * Hard delete a metric.
    */
   delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(deleteProfileMetricInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -201,6 +233,6 @@ export const profileMetricsRouter = createTRPCRouter({
           and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
         );
 
-      return { success: true };
+      return deleteProfileMetricOutputSchema.parse({ success: true });
     }),
 });

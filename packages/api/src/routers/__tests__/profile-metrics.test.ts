@@ -151,6 +151,17 @@ describe("profileMetricsRouter", () => {
     );
   });
 
+  it("rejects unknown list input keys", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.list({
+        limit: 10,
+        extra: true,
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("gets the latest metric at or before a requested date", async () => {
     const row = createProfileMetricRow({
       id: "00000000-0000-4000-8000-000000000003",
@@ -221,6 +232,28 @@ describe("profileMetricsRouter", () => {
       }),
     );
     expect(result).toEqual(created);
+  });
+
+  it("fails when a returned db row does not match the public metric shape", async () => {
+    const { caller } = createCaller({
+      insertResult: [
+        createProfileMetricRow({
+          value: 70.25,
+        }),
+      ],
+    });
+
+    await expect(
+      caller.create({
+        profile_id: "11111111-1111-4111-8111-111111111111",
+        metric_type: "weight_kg",
+        recorded_at: "2026-03-18T06:30:00.000Z",
+        reference_activity_id: undefined,
+        unit: "kg",
+        notes: "post-session weigh-in",
+        value: 70.25,
+      }),
+    ).rejects.toThrow();
   });
 
   it("updates a metric with normalized payload values", async () => {
