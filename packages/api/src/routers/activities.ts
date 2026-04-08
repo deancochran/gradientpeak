@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { ActivityUploadSchema, analyzeActivityDerivedMetrics } from "@repo/core";
-import { activities, activityPlans, events, likes, publicActivityCategorySchema } from "@repo/db";
+import {
+  activities,
+  activityPlans,
+  events,
+  likes,
+  publicActivitiesRowSchema,
+  publicActivityCategorySchema,
+  publicActivityPlansRowSchema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -13,6 +21,112 @@ import {
   resolveActivityContextAsOf,
 } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+
+const isoDatetimeSchema = z.string().datetime({ offset: true });
+
+const activityTimestampSchema = z.coerce.date();
+
+const activityRowSchema = publicActivitiesRowSchema
+  .extend({
+    created_at: activityTimestampSchema,
+    updated_at: activityTimestampSchema,
+    started_at: activityTimestampSchema,
+    finished_at: activityTimestampSchema,
+  })
+  .strict();
+
+const activityPlanReferenceSchema = publicActivityPlansRowSchema
+  .extend({
+    created_at: isoDatetimeSchema,
+    updated_at: isoDatetimeSchema,
+  })
+  .strict();
+
+const activityListItemSchema = activityRowSchema
+  .extend({
+    has_liked: z.boolean(),
+    derived: z.unknown().nullable(),
+  })
+  .strict();
+
+const activityWithPlanSchema = activityRowSchema
+  .extend({
+    activity_plans: activityPlanReferenceSchema.nullable(),
+  })
+  .strict();
+
+const activityDerivedResponseSchema = z
+  .object({
+    activity: activityWithPlanSchema,
+    has_liked: z.boolean(),
+    derived: z.unknown(),
+  })
+  .strict();
+
+const activityListResponseSchema = activityListItemSchema.array();
+
+const listInputSchema = z
+  .object({
+    date_from: isoDatetimeSchema,
+    date_to: isoDatetimeSchema,
+  })
+  .strict();
+
+const listPaginatedInputSchema = z
+  .object({
+    limit: z.number().int().min(1).max(100).default(20),
+    offset: z.number().int().min(0).default(0),
+    activity_category: publicActivityCategorySchema.optional(),
+    date_from: isoDatetimeSchema.optional(),
+    date_to: isoDatetimeSchema.optional(),
+    sort_by: z.enum(["date", "distance", "duration", "tss"]).default("date"),
+    sort_order: z.enum(["asc", "desc"]).default("desc"),
+  })
+  .strict();
+
+const createInputSchema = ActivityUploadSchema.extend({
+  profile_id: z.string().uuid(),
+  eventId: z.string().uuid().optional().nullable(),
+  startedAt: isoDatetimeSchema,
+  finishedAt: isoDatetimeSchema,
+})
+  .strict()
+  .refine((data) => new Date(data.finishedAt) > new Date(data.startedAt), {
+    message: "finishedAt must be after startedAt",
+    path: ["finishedAt"],
+  });
+
+const getByIdInputSchema = z.object({ id: z.string().uuid() }).strict();
+
+const updateInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    normalized_power: z.number().finite().optional(),
+    name: z.string().optional(),
+    notes: z.string().nullable().optional(),
+    is_private: z.boolean().optional(),
+  })
+  .strict();
+
+const deleteInputSchema = z.object({ id: z.string().uuid() }).strict();
+
+const totalRowSchema = z.object({ total: z.union([z.number(), z.string()]) }).strict();
+
+const likeRowSchema = z.object({ entity_id: z.string().uuid() }).strict();
+
+const insertedActivityIdRowSchema = z.object({ id: z.string().uuid() }).strict();
+
+function parseActivityRow(value: unknown) {
+  return activityRowSchema.parse(value);
+}
+
+function parseActivityRows(value: unknown[]) {
+  return activityRowSchema.array().parse(value);
+}
+
+function toIsoString(value: Date | string) {
+  return value instanceof Date ? value.toISOString() : value;
+}
 
 /**
  * Check if a user has access to view an activity
@@ -62,27 +176,22 @@ async function checkActivityAccess(
 export const activitiesRouter = createTRPCRouter({
   // List activities by date range (legacy - for trends/analytics)
   list: protectedProcedure
-    .input(
-      z
-        .object({
-          date_from: z.string(),
-          date_to: z.string(),
-        })
-        .strict(),
-    )
+    .input(listInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const data = await db
-        .select()
-        .from(activities)
-        .where(
+      const data = parseActivityRows(
+        await db
+          .select()
+          .from(activities)
+          .where(
           and(
             eq(activities.profile_id, ctx.session.user.id),
             gte(activities.started_at, new Date(input.date_from)),
             lte(activities.started_at, new Date(input.date_to)),
           ),
         )
-        .orderBy(desc(activities.started_at));
+        .orderBy(desc(activities.started_at)),
+      );
 
       const derivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
@@ -104,32 +213,24 @@ export const activitiesRouter = createTRPCRouter({
             )
         : [];
 
-      const userLikes = new Set(likeRows.map((row) => row.entity_id));
+      const parsedLikeRows = likeRowSchema.array().parse(likeRows);
 
-      return data.map((activity) =>
-        mapActivityToListDerivedResponse({
-          activity,
-          has_liked: userLikes.has(activity.id),
-          derived: derivedMap.get(activity.id) ?? null,
-        }),
+      const userLikes = new Set(parsedLikeRows.map((row) => row.entity_id));
+
+      return activityListResponseSchema.parse(
+        data.map((activity) =>
+          mapActivityToListDerivedResponse({
+            activity,
+            has_liked: userLikes.has(activity.id),
+            derived: derivedMap.get(activity.id) ?? null,
+          }),
+        ),
       );
     }),
 
   // Paginated list of activities with filters
   listPaginated: protectedProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().min(1).max(100).default(20),
-          offset: z.number().min(0).default(0),
-          activity_category: publicActivityCategorySchema.optional(),
-          date_from: z.string().optional(),
-          date_to: z.string().optional(),
-          sort_by: z.enum(["date", "distance", "duration", "tss"]).default("date"),
-          sort_order: z.enum(["asc", "desc"]).default("desc"),
-        })
-        .strict(),
-    )
+    .input(listPaginatedInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const conditions = [eq(activities.profile_id, ctx.session.user.id)];
@@ -189,8 +290,9 @@ export const activitiesRouter = createTRPCRouter({
                   .limit(input.limit)
                   .offset(input.offset);
 
-      const [totalRows, data] = await Promise.all([totalPromise, dataPromise]);
-      const total = totalRows[0]?.total ?? 0;
+      const [totalRows, rawData] = await Promise.all([totalPromise, dataPromise]);
+      const total = Number(totalRowSchema.parse(totalRows[0] ?? { total: 0 }).total);
+      const data = parseActivityRows(rawData);
 
       const derivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
@@ -212,7 +314,9 @@ export const activitiesRouter = createTRPCRouter({
             )
         : [];
 
-      const userLikes = new Set(likeRows.map((row) => row.entity_id));
+      const parsedLikeRows = likeRowSchema.array().parse(likeRows);
+
+      const userLikes = new Set(parsedLikeRows.map((row) => row.entity_id));
 
       let items = data.map((activity) =>
         mapActivityToListDerivedResponse({
@@ -232,26 +336,23 @@ export const activitiesRouter = createTRPCRouter({
           .slice(input.offset, input.offset + input.limit);
       }
 
-      return {
-        items,
-        total,
-        hasMore: total > input.offset + input.limit,
-      };
+      return z
+        .object({
+          items: activityListItemSchema.array(),
+          total: z.number().int().nonnegative(),
+          hasMore: z.boolean(),
+        })
+        .strict()
+        .parse({
+          items,
+          total,
+          hasMore: total > input.offset + input.limit,
+        });
     }),
 
   // Simplified: Just create the activity first
   create: protectedProcedure
-    .input(
-      ActivityUploadSchema.extend({
-        profile_id: z.string(),
-        eventId: z.string().uuid().optional().nullable(),
-      })
-        .strict()
-        .refine((data) => new Date(data.finishedAt) > new Date(data.startedAt), {
-          message: "finishedAt must be after startedAt",
-          path: ["finishedAt"],
-        }),
-    )
+    .input(createInputSchema)
     .mutation(async ({ input, ctx }) => {
       const db = getRequiredDb(ctx);
       const duration_seconds =
@@ -329,37 +430,26 @@ export const activitiesRouter = createTRPCRouter({
         returning id
       `);
 
-      const createdActivityId = insertResult.rows[0]?.id;
+      const createdActivityId = insertedActivityIdRowSchema.parse(insertResult.rows[0]).id;
 
-      if (typeof createdActivityId !== "string") {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create activity",
-        });
-      }
-
-      const data = await db.query.activities.findFirst({
+      const createdActivity = await db.query.activities.findFirst({
         where: eq(activities.id, createdActivityId),
       });
 
-      if (!data) {
+      if (!createdActivity) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to load created activity",
         });
       }
 
+      const data = parseActivityRow(createdActivity);
+
       return data;
     }),
 
   getById: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().uuid(),
-        })
-        .strict(),
-    )
+    .input(getByIdInputSchema)
     .query(async ({ input, ctx }) => {
       const db = getRequiredDb(ctx);
       const userId = ctx.session.user.id;
@@ -400,17 +490,19 @@ export const activitiesRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
 
-      const data = {
-        ...row.activity,
+      const parsedActivity = parseActivityRow(row.activity);
+
+      const data = activityWithPlanSchema.parse({
+        ...parsedActivity,
         activity_plans: row.activityPlan
           ? {
               ...row.activityPlan,
               idx: row.activityPlan.idx ?? 0,
-              created_at: row.activityPlan.created_at.toISOString(),
-              updated_at: row.activityPlan.updated_at.toISOString(),
+              created_at: toIsoString(row.activityPlan.created_at),
+              updated_at: toIsoString(row.activityPlan.updated_at),
             }
           : null,
-      };
+      });
 
       const context = await resolveActivityContextAsOf({
         store: createActivityAnalysisStore(db),
@@ -440,26 +532,18 @@ export const activitiesRouter = createTRPCRouter({
         context,
       });
 
-      return mapActivityToDerivedResponse({
-        activity: data,
-        has_liked: !!likeData,
-        derived,
-      });
+      return activityDerivedResponseSchema.parse(
+        mapActivityToDerivedResponse({
+          activity: data,
+          has_liked: !!likeData,
+          derived,
+        }),
+      );
     }),
 
   // Update activity (e.g., to set metrics after calculation)
   update: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().uuid(),
-          normalized_power: z.number().optional(),
-          name: z.string().optional(),
-          notes: z.string().nullable().optional(),
-          is_private: z.boolean().optional(),
-        })
-        .strict(),
-    )
+    .input(updateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const { id, ...updates } = input;
@@ -477,19 +561,13 @@ export const activitiesRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
       }
 
-      return data;
+      return parseActivityRow(data);
     }),
 
   // Hard delete activity - permanently removes the record
   // Activity streams are automatically deleted via cascade
   delete: protectedProcedure
-    .input(
-      z
-        .object({
-          id: z.string().uuid(),
-        })
-        .strict(),
-    )
+    .input(deleteInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
