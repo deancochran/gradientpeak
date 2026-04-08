@@ -26,10 +26,7 @@ export function prepareDbEnv() {
     }
   }
 
-  const databaseUrl =
-    process.env.DATABASE_URL ??
-    process.env.POSTGRES_URL ??
-    defaultLocalDatabaseUrl;
+  const databaseUrl = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? defaultLocalDatabaseUrl;
 
   process.env.DATABASE_URL ??= databaseUrl;
   process.env.POSTGRES_URL ??= databaseUrl;
@@ -38,8 +35,8 @@ export function prepareDbEnv() {
 }
 
 export function runSupabaseCli(args: string[]) {
-  execFileSync("pnpm", ["exec", "supabase", ...args], {
-    cwd: supabaseCliRoot,
+  execFileSync("supabase", ["--workdir", supabaseCliRoot, ...args], {
+    cwd: repoRoot,
     env: process.env,
     stdio: "inherit",
   });
@@ -92,7 +89,9 @@ export function deepEqual(left: unknown, right: unknown): boolean {
       return false;
     }
 
-    if (!deepEqual((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key])) {
+    if (
+      !deepEqual((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key])
+    ) {
       return false;
     }
   }
