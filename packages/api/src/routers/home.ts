@@ -25,6 +25,260 @@ const upcomingDaysSchema = z.object({
   days: z.number().min(1).max(14).default(7),
 });
 
+const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const activityPlanBoundarySchema = z
+  .object({
+    id: z.string(),
+    name: z.string().nullable().optional(),
+    activity_category: z.string().nullable().optional(),
+    estimated_distance: z.number().nullable().optional(),
+    estimated_duration: z.number().nullable().optional(),
+    estimated_tss: z.number().nullable().optional(),
+  })
+  .passthrough();
+
+const profileTrainingSettingsRowSchema = z
+  .object({
+    settings: z.unknown(),
+  })
+  .strict();
+
+const dashboardTrainingPlanRowSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string().nullable(),
+    structure: z.unknown(),
+  })
+  .strict();
+
+const nextPlannedEventRowSchema = z
+  .object({
+    training_plan_id: z.string().nullable(),
+    starts_at: z.date(),
+  })
+  .strict();
+
+const profileRowSchema = z
+  .object({
+    dob: z.date().nullable().optional(),
+    gender: z.enum(["male", "female"]).nullable().optional(),
+  })
+  .strict();
+
+const activitySummaryRowSchema = z
+  .object({
+    id: z.string(),
+    type: z.string(),
+    started_at: z.date(),
+    finished_at: z.date().nullable(),
+    duration_seconds: z.number().nullable(),
+    moving_seconds: z.number().nullable(),
+    distance_meters: z.number().nullable(),
+    avg_heart_rate: z.number().nullable(),
+    max_heart_rate: z.number().nullable(),
+    avg_power: z.number().nullable(),
+    max_power: z.number().nullable(),
+    avg_speed_mps: z.number().nullable(),
+    max_speed_mps: z.number().nullable(),
+    normalized_power: z.number().nullable(),
+    normalized_speed_mps: z.number().nullable(),
+    normalized_graded_speed_mps: z.number().nullable(),
+  })
+  .strict();
+
+const plannedActivityRowSchema = z
+  .object({
+    id: z.string(),
+    starts_at: z.date(),
+    notes: z.string().nullable(),
+    activity_plan: activityPlanBoundarySchema.nullable(),
+    scheduled_date: isoDateSchema,
+  })
+  .strict();
+
+const planStructureSchema = z
+  .object({
+    periodization: z
+      .object({
+        currentPhase: z.string().nullable().optional(),
+      })
+      .partial()
+      .optional(),
+    periodization_template: z
+      .object({
+        starting_ctl: z.number().nullable().optional(),
+        target_ctl: z.number().nullable().optional(),
+        ramp_rate: z.number().nullable().optional(),
+        target_date: z.string().nullable().optional(),
+      })
+      .partial()
+      .optional(),
+    goals: z
+      .array(
+        z
+          .object({
+            targets: z
+              .array(
+                z
+                  .object({
+                    target_type: z.string().nullable().optional(),
+                  })
+                  .passthrough(),
+              )
+              .optional(),
+          })
+          .passthrough(),
+      )
+      .optional(),
+    goal: z
+      .object({
+        targetCTL: z.number().nullable().optional(),
+        targetDate: z.string().nullable().optional(),
+        description: z.string().nullable().optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const workloadEnvelopeSchema = z
+  .object({
+    value: z.number().nullable().optional(),
+    source: z.string().optional(),
+    status: z.string().optional(),
+    coverageDays: z.number().optional(),
+    requiredDays: z.number().optional(),
+    reasonCode: z.string().optional(),
+    current: z.number().optional(),
+    previous: z.number().optional(),
+  })
+  .strict();
+
+const scheduleItemSchema = z
+  .object({
+    id: z.string(),
+    date: isoDateSchema,
+    isToday: z.boolean(),
+    isCompleted: z.boolean(),
+    activityName: z.string(),
+    activityType: z.string(),
+    estimatedDuration: z.number(),
+    estimatedDistance: z.number(),
+    estimatedTSS: z.number(),
+  })
+  .strict();
+
+const dashboardResponseSchema = z
+  .object({
+    activePlan: z
+      .object({
+        id: z.string(),
+        name: z.string(),
+        phase: z.string().nullable(),
+        targetType: z.string().nullable().optional(),
+      })
+      .strict()
+      .nullable(),
+    currentStatus: z
+      .object({
+        ctl: z.number(),
+        atl: z.number(),
+        tsb: z.number(),
+        form: z.string(),
+      })
+      .strict(),
+    workload: z
+      .object({
+        acwr: workloadEnvelopeSchema,
+        monotony: workloadEnvelopeSchema,
+      })
+      .catchall(workloadEnvelopeSchema),
+    consistency: z
+      .object({
+        streak: z.number(),
+        weeklyCount: z.number(),
+      })
+      .strict(),
+    weeklySummary: z
+      .object({
+        actual: z
+          .object({
+            distance: z.number(),
+            duration: z.number(),
+            tss: z.number(),
+            count: z.number(),
+          })
+          .strict(),
+        planned: z
+          .object({
+            distance: z.number(),
+            duration: z.number(),
+            tss: z.number(),
+            count: z.number(),
+          })
+          .strict(),
+        adherence: z.number().nullable(),
+      })
+      .strict(),
+    schedule: z.array(scheduleItemSchema),
+    trends: z.array(
+      z
+        .object({
+          date: isoDateSchema,
+          ctl: z.number(),
+          atl: z.number(),
+          tsb: z.number(),
+        })
+        .strict(),
+    ),
+    projectedFitness: z.array(
+      z
+        .object({
+          date: isoDateSchema,
+          ctl: z.number(),
+          atl: z.number(),
+          tsb: z.number(),
+          plannedTss: z.number(),
+        })
+        .strict(),
+    ),
+    idealFitnessCurve: z.array(
+      z
+        .object({
+          date: isoDateSchema,
+          ctl: z.number(),
+        })
+        .strict(),
+    ),
+    goalMetrics: z
+      .object({
+        targetCTL: z.number().nullable(),
+        targetDate: z.string().nullable(),
+        description: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+    todaysActivity: scheduleItemSchema.nullable(),
+    personalizationTelemetry: z
+      .object({
+        flags: z
+          .object({
+            age_constants: z.boolean(),
+            gender_adjustment: z.boolean(),
+            training_quality: z.boolean(),
+            ramp_learning: z.boolean(),
+          })
+          .strict(),
+        user_age: z.number().nullable(),
+        user_gender: z.enum(["male", "female"]).nullable(),
+        training_quality: z.number().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
 type ActivitySummaryRow = Pick<
   ActivityRow,
   | "id"
@@ -63,7 +317,8 @@ async function getProfileTrainingSettings(db: ReturnType<typeof getRequiredDb>, 
     limit 1
   `);
 
-  return ((result as unknown as { rows: ProfileTrainingSettingsSqlRow[] }).rows ?? [])[0] ?? null;
+  const row = ((result as unknown as { rows: unknown[] }).rows ?? [])[0];
+  return row ? profileTrainingSettingsRowSchema.parse(row) : null;
 }
 
 async function getAccessibleTrainingPlan(
@@ -82,7 +337,8 @@ async function getAccessibleTrainingPlan(
     limit 1
   `);
 
-  return ((result as unknown as { rows: DashboardTrainingPlanRow[] }).rows ?? [])[0] ?? null;
+  const row = ((result as unknown as { rows: unknown[] }).rows ?? [])[0];
+  return row ? dashboardTrainingPlanRowSchema.parse(row) : null;
 }
 
 async function listPlannedActivitiesInRange(
@@ -112,11 +368,14 @@ async function listPlannedActivitiesInRange(
     )
     .orderBy(asc(schema.events.starts_at));
 
-  return rows.map((row) => ({
-    ...row,
-    activity_plan: (row.activity_plan as PublicActivityPlansRow | null) ?? null,
-    scheduled_date: row.starts_at.toISOString().split("T")[0] ?? "",
-  }));
+  return rows.map(
+    (row) =>
+      plannedActivityRowSchema.parse({
+        ...row,
+        activity_plan: (row.activity_plan as PublicActivityPlansRow | null) ?? null,
+        scheduled_date: row.starts_at.toISOString().split("T")[0] ?? "",
+      }) as PlannedActivityRow,
+  );
 }
 
 export const homeRouter = createTRPCRouter({
@@ -139,11 +398,13 @@ export const homeRouter = createTRPCRouter({
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const [profile] = await db
+      const [rawProfile] = await db
         .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
         .from(schema.profiles)
         .where(eq(schema.profiles.id, userId))
         .limit(1);
+
+      const profile = rawProfile ? profileRowSchema.parse(rawProfile) : null;
 
       const userAge = calculateAge(profile?.dob?.toISOString() ?? null);
       const userGender =
@@ -152,7 +413,7 @@ export const homeRouter = createTRPCRouter({
       const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
 
       // --- 1. Fetch Active Plan & Settings ---
-      const [nextPlannedEvent, profileSettingsData] = await Promise.all([
+      const [rawNextPlannedEvent, profileSettingsData] = await Promise.all([
         db
           .select({
             training_plan_id: schema.events.training_plan_id,
@@ -173,6 +434,10 @@ export const homeRouter = createTRPCRouter({
         getProfileTrainingSettings(db, userId),
       ]);
 
+      const nextPlannedEvent = rawNextPlannedEvent
+        ? nextPlannedEventRowSchema.parse(rawNextPlannedEvent)
+        : null;
+
       let plan: {
         id: string;
         name: string;
@@ -187,7 +452,7 @@ export const homeRouter = createTRPCRouter({
         });
       }
 
-      const planStructure = (plan?.structure as any) ?? null;
+      const planStructure = plan?.structure ? planStructureSchema.parse(plan.structure) : null;
 
       // Extract phase from structure if available
       const planPhase = planStructure?.periodization?.currentPhase ?? null;
@@ -217,7 +482,8 @@ export const homeRouter = createTRPCRouter({
 
       // --- 3. Fetch Activities (Actual) ---
       // Fetching enough history for trends and current week stats
-      const activities: ActivitySummaryRow[] = await db
+      const activities = activitySummaryRowSchema.array().parse(
+        await db
         .select({
           id: schema.activities.id,
           type: schema.activities.type,
@@ -244,7 +510,8 @@ export const homeRouter = createTRPCRouter({
             lte(schema.activities.started_at, today),
           ),
         )
-        .orderBy(asc(schema.activities.started_at));
+        .orderBy(asc(schema.activities.started_at)),
+      ) as ActivitySummaryRow[];
 
       const { byActivityId: derivedActivityMap, byDate: tssByDate } =
         await buildDynamicStressSeries({
@@ -676,15 +943,15 @@ export const homeRouter = createTRPCRouter({
         firstTargetType = planStructure.goals[0].targets[0].target_type;
       }
 
-      return {
-        activePlan: plan
-          ? {
-              id: plan.id,
-              name: plan.name || "Active Plan",
-              phase: planPhase,
-              targetType: firstTargetType,
-            }
-          : null,
+       return dashboardResponseSchema.parse({
+         activePlan: plan
+           ? {
+               id: plan.id,
+               name: plan.name || "Active Plan",
+               phase: planPhase,
+               targetType: firstTargetType,
+             }
+           : null,
         currentStatus: todayStatus,
         workload,
         consistency: {
@@ -702,17 +969,17 @@ export const homeRouter = createTRPCRouter({
         idealFitnessCurve, // Ideal CTL progression from training plan periodization
         goalMetrics, // User's fitness goal
         todaysActivity, // Convenience field
-        personalizationTelemetry: {
-          flags: {
-            age_constants: featureFlags.personalizationAgeConstants,
-            gender_adjustment: featureFlags.personalizationGenderAdjustment,
-            training_quality: featureFlags.personalizationTrainingQuality,
-            ramp_learning: featureFlags.personalizationRampLearning,
-          },
-          user_age: effectiveAge ?? null,
-          user_gender: effectiveGender ?? null,
-          training_quality: rollingTrainingQuality ?? null,
-        },
-      };
+         personalizationTelemetry: {
+           flags: {
+             age_constants: featureFlags.personalizationAgeConstants,
+             gender_adjustment: featureFlags.personalizationGenderAdjustment,
+             training_quality: featureFlags.personalizationTrainingQuality,
+             ramp_learning: featureFlags.personalizationRampLearning,
+           },
+           user_age: effectiveAge ?? null,
+           user_gender: effectiveGender ?? null,
+           training_quality: rollingTrainingQuality ?? null,
+         },
+       });
     }),
 });
