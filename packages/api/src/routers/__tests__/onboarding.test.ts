@@ -107,4 +107,17 @@ describe("onboardingRouter", () => {
       }),
     ).rejects.toThrow("Max HR must be greater than resting HR");
   });
+
+  it("rejects unexpected fields on estimateMetrics", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.estimateMetrics({
+        weight_kg: 70,
+        gender: "male",
+        age: 30,
+        unexpected: true,
+      } as any),
+    ).rejects.toThrow(/unrecognized/i);
+  });
 });
