@@ -94,6 +94,19 @@ import { addEstimationToPlans } from "../../../utils/estimation-helpers";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
+const trainingPlanTemplateVisibilitySchema = z.enum(["private", "public"]);
+const trainingPlanUpdateMutationInputSchema = trainingPlanUpdateInputSchema
+  .extend({
+    id: z.string().uuid(),
+    template_visibility: trainingPlanTemplateVisibilitySchema.optional(),
+  })
+  .strict();
+const applyQuickAdjustmentInputSchema = z
+  .object({
+    id: z.string().uuid(),
+    adjustedStructure: trainingPlanSchema,
+  })
+  .strict();
 const plannedEventType = "planned_activity" as const;
 const conservativeStarterWeeklyTss = 140;
 const conservativeStarterDailyTss = conservativeStarterWeeklyTss / 7;
@@ -139,6 +152,22 @@ const activitySummaryColumns = {
 
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
+}
+
+function parseTrainingPlanStructureOrThrow(input: {
+  value: unknown;
+  message: string;
+}): z.infer<typeof trainingPlanSchema> {
+  const parsed = trainingPlanSchema.safeParse(input.value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: input.message,
+    cause: parsed.error,
+  });
 }
 
 async function getAccessibleTrainingPlan(input: {
@@ -4354,56 +4383,52 @@ export const trainingPlansRouter = createTRPCRouter({
   // ------------------------------
   // Update training plan
   // ------------------------------
-  update: protectedProcedure.input(z.custom()).mutation(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-    const { id, template_visibility, ...updates } = input as {
-      id: string;
-      template_visibility?: "private" | "public";
-    } & z.infer<typeof trainingPlanUpdateInputSchema>;
+  update: protectedProcedure
+    .input(trainingPlanUpdateMutationInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      const { id, template_visibility, ...updates } = input as {
+        id: string;
+        template_visibility?: "private" | "public";
+      } & z.infer<typeof trainingPlanUpdateInputSchema>;
+      const structure =
+        updates.structure === undefined
+          ? undefined
+          : parseTrainingPlanStructureOrThrow({
+              value: updates.structure,
+              message: "Invalid training plan structure",
+            });
 
-    // Check ownership
-    const existing = await getOwnedTrainingPlan({
-      db,
-      planId: id,
-      profileId: ctx.session.user.id,
-    });
-
-    if (!existing) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Training plan not found or you don't have permission to edit it",
+      // Check ownership
+      const existing = await getOwnedTrainingPlan({
+        db,
+        planId: id,
+        profileId: ctx.session.user.id,
       });
-    }
 
-    // Validate structure if provided
-    if (updates.structure) {
-      try {
-        trainingPlanSchema.parse(updates.structure);
-      } catch (validationError) {
+      if (!existing) {
         throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid training plan structure",
-          cause: validationError,
+          code: "NOT_FOUND",
+          message: "Training plan not found or you don't have permission to edit it",
         });
       }
-    }
 
-    const data = await updateOwnedTrainingPlanRow({
-      db,
-      id,
-      profileId: ctx.session.user.id,
-      name: updates.name as string | undefined,
-      description: updates.description as string | null | undefined,
-      structure: updates.structure as Record<string, unknown> | undefined,
-      templateVisibility: template_visibility,
-    });
+      const data = await updateOwnedTrainingPlanRow({
+        db,
+        id,
+        profileId: ctx.session.user.id,
+        name: updates.name as string | undefined,
+        description: updates.description as string | null | undefined,
+        structure,
+        templateVisibility: template_visibility,
+      });
 
-    if (!data) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to update training plan" });
-    }
+      if (!data) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to update training plan" });
+      }
 
-    return data;
-  }),
+      return data;
+    }),
 
   // ------------------------------
   // Delete training plan (cascades to delete planned events)
@@ -5048,12 +5073,7 @@ export const trainingPlansRouter = createTRPCRouter({
   // Apply quick adjustment to training plan
   // ------------------------------
   applyQuickAdjustment: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        adjustedStructure: z.any(), // Will be validated by trainingPlanSchema
-      }),
-    )
+    .input(applyQuickAdjustmentInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       // Check ownership
@@ -5069,18 +5089,6 @@ export const trainingPlansRouter = createTRPCRouter({
           message: "Training plan not found or you don't have permission to edit it",
         });
       }
-
-      // Validate the adjusted structure
-      try {
-        trainingPlanSchema.parse(input.adjustedStructure);
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid adjusted structure",
-          cause: validationError,
-        });
-      }
-
       // Apply the adjustment
       const data = await updateOwnedTrainingPlanRow({
         db,
