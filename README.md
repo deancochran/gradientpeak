@@ -1,34 +1,17 @@
 # GradientPeak
 
-GradientPeak is a monorepo for the web, mobile, API, core domain logic, and database tooling that power the product.
+GradientPeak is a product monorepo for the web app, mobile app, shared UI, backend APIs, and core training logic.
 
-## Repository layout
+## What lives here
 
-- `apps/mobile` — Expo application
-- `apps/web` — Next.js application
-- `packages/api` — server procedures and backend-facing application logic
-- `packages/core` — database-independent domain logic, schemas, and calculations
-- `packages/db` — Drizzle schema, migrations, validation, seeds, and local database tooling
+- `apps/web` contains the web product.
+- `apps/mobile` contains the mobile product.
+- `packages/api` contains backend procedures and server-side application logic.
+- `packages/core` contains shared domain logic and calculations.
+- `packages/ui` contains reusable UI components.
+- `packages/db` contains database-related code and local data tooling.
 
-## Database ownership
-
-`packages/db` is the database source of truth.
-
-- Drizzle schema: `packages/db/src/schema/**`
-- Baseline migration: `packages/db/drizzle/0000_baseline.sql`
-- Local stack assets: `packages/db/supabase/**`
-
-Use these commands for database work:
-
-```bash
-pnpm db:migration:new <name>
-pnpm --filter @repo/db db:migrate
-pnpm db:reset
-pnpm self-host:up
-pnpm self-host:down
-```
-
-## Development
+## Getting started
 
 Install dependencies:
 
@@ -42,7 +25,7 @@ Start local development:
 pnpm dev
 ```
 
-Run verification:
+Run the main validation commands before opening a PR:
 
 ```bash
 pnpm check-types
@@ -50,14 +33,16 @@ pnpm lint
 pnpm test
 ```
 
-## Environment
+## Development workflow
 
-- Root application environment files live at the repo root or app level as appropriate.
-- Local Supabase CLI overrides, if needed, should live in `packages/db/supabase/.env` or `.env.local`.
-- Database tooling expects `DATABASE_URL` or `POSTGRES_URL`.
+1. Create a focused branch for one change.
+2. Make the smallest change that solves the problem.
+3. Run the relevant checks locally.
+4. Open a PR with a short summary of the user-facing outcome.
 
-## Notes
+## Important notes
 
-- Keep business logic in `packages/core` database-independent.
-- Keep relational schema and migration changes in `packages/db`.
-- App runtime Supabase usage for storage, auth, and provider integrations may still exist outside the DB package; that is separate from relational schema ownership.
+- Keep shared business logic in `packages/core` when it should work across apps.
+- Keep backend and data access changes aligned with `packages/api` and `packages/db`.
+- Prefer small, reviewable changes over broad refactors.
+- Treat the README as a high-level guide, not a full internal handbook.
