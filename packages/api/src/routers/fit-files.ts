@@ -127,8 +127,8 @@ const signedUploadUrlDataSchema = z.object({
 
 const signedDownloadUrlDataSchema = z.object({
   signedUrl: z.string().url(),
-  expiresAt: z.string().datetime({ offset: true }),
-});
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+}).passthrough();
 
 const analyzeFitFileResponseSchema = z.object({
   queued: z.boolean(),

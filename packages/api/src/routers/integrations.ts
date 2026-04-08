@@ -63,7 +63,7 @@ const oauthStateRepositoryRowSchema = z
     mobile_redirect_uri: z.string().min(1),
     created_at: z.date(),
   })
-  .strict();
+  .passthrough();
 
 const validatedOAuthStateResultSchema = z
   .object({
@@ -181,7 +181,7 @@ const refreshTokenProviderResponseSchema = z
       .optional()
       .nullable(),
   })
-  .strict();
+  .passthrough();
 
 function parseBoundaryValue<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const parsed = schema.safeParse(value);

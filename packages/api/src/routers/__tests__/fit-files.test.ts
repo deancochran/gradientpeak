@@ -1,5 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@repo/db", () => ({
+  activities: { id: "activities.id", profile_id: "activities.profile_id", is_private: "activities.is_private" },
+  activityEfforts: { table: "activity_efforts" },
+  profileMetrics: {
+    value: "profile_metrics.value",
+    profile_id: "profile_metrics.profile_id",
+    metric_type: "profile_metrics.metric_type",
+    recorded_at: "profile_metrics.recorded_at",
+  },
+}));
+
 const mocks = vi.hoisted(() => ({
   parseFitFileWithSDK: vi.fn(),
   calculateBestEfforts: vi.fn(),
@@ -444,6 +455,26 @@ describe("fitFilesRouter", () => {
         expiresIn: 600,
       }),
     ).rejects.toThrow("Access denied: You can only access your own files");
+  });
+
+  it("accepts signed download responses without expiresAt", async () => {
+    mocks.storage.createSignedUrl.mockResolvedValue({
+      data: {
+        signedUrl: "https://download.test/11111111-1111-4111-8111-111111111111/ride.fit",
+      },
+      error: null,
+    });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.getFitFileUrl({
+        filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+        expiresIn: 600,
+      }),
+    ).resolves.toEqual({
+      signedUrl: "https://download.test/11111111-1111-4111-8111-111111111111/ride.fit",
+    });
   });
 
   it("deletes an owned FIT file from storage", async () => {

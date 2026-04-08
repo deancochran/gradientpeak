@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 const SESSION_USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
@@ -59,6 +60,35 @@ vi.mock("../../infrastructure/repositories", () => ({
   createIcalFeedRepository: mocks.createIcalFeedRepository,
   createWahooRepository: mocks.createWahooRepository,
 }));
+
+vi.mock("@repo/db", () => {
+  const publicIntegrationProviderSchema = z.enum([
+    "strava",
+    "wahoo",
+    "trainingpeaks",
+    "garmin",
+    "zwift",
+  ]);
+
+  return {
+    publicIntegrationProviderSchema,
+    publicIntegrationsRowSchema: z
+      .object({
+        id: z.string().uuid(),
+        idx: z.number().int(),
+        profile_id: z.string().uuid(),
+        provider: publicIntegrationProviderSchema,
+        external_id: z.string().min(1),
+        access_token: z.string().min(1),
+        refresh_token: z.string().min(1).nullable(),
+        expires_at: z.date().nullable(),
+        scope: z.string().min(1).nullable(),
+        created_at: z.date(),
+        updated_at: z.date(),
+      })
+      .passthrough(),
+  };
+});
 
 vi.mock("../../storage-service", () => ({
   getApiStorageService: mocks.getApiStorageService,
@@ -273,6 +303,37 @@ describe("integrationsRouter", () => {
     );
   });
 
+  it("refreshToken tolerates extra provider token fields", async () => {
+    const caller = createCaller();
+    mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      refresh_token: "refresh-1",
+    });
+    mocks.repositories.integrations.updateTokensByProfileIdAndProvider.mockResolvedValue(undefined);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: "access-2",
+          refresh_token: "refresh-2",
+          expires_in: "3600",
+          token_type: "Bearer",
+          athlete: { id: 42 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(caller.refreshToken({ provider: "strava" })).resolves.toEqual({ success: true });
+    expect(mocks.repositories.integrations.updateTokensByProfileIdAndProvider).toHaveBeenCalledWith(
+      {
+        profileId: SESSION_USER_ID,
+        provider: "strava",
+        accessToken: "access-2",
+        refreshToken: "refresh-2",
+        expiresAt: expect.any(Date),
+      },
+    );
+  });
+
   it("refreshToken rejects malformed provider token payloads", async () => {
     const caller = createCaller();
     mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
@@ -316,6 +377,26 @@ describe("integrationsRouter", () => {
       provider: "wahoo",
       mobile_redirect_uri: "gradientpeak://callback",
       created_at: new Date("2026-04-01T12:00:00.000Z"),
+    });
+
+    await expect(caller.validateOAuthState({ state: STATE_ID })).resolves.toEqual({
+      userId: OTHER_USER_ID,
+      provider: "wahoo",
+      mobileRedirectUri: "gradientpeak://callback",
+      createdAt: "2026-04-01T12:00:00.000Z",
+    });
+  });
+
+  it("validateOAuthState tolerates extra repository row columns", async () => {
+    const caller = createCaller();
+    mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.repositories.oauthStates.findValidByState.mockResolvedValue({
+      profile_id: OTHER_USER_ID,
+      provider: "wahoo",
+      mobile_redirect_uri: "gradientpeak://callback",
+      created_at: new Date("2026-04-01T12:00:00.000Z"),
+      expires_at: new Date("2026-04-01T12:10:00.000Z"),
+      state: STATE_ID,
     });
 
     await expect(caller.validateOAuthState({ state: STATE_ID })).resolves.toEqual({
