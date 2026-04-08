@@ -704,7 +704,7 @@ export const activityCategorySchema = canonicalSportSchema;
  * - Description-only: Casual activity with no structure
  * - Combinations supported
  */
-export const activityPlanCreateFormSchema = activityPlanInsertShapeSchema
+const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
   .pick({
     name: true,
     description: true,
@@ -730,25 +730,26 @@ export const activityPlanCreateFormSchema = activityPlanInsertShapeSchema
       })
       .optional()
       .nullable(),
-  })
-  .refine(
-    (data) => {
-      // At least one of structure or route_id must be provided
-      // (description is always provided as it has a default empty string)
-      return data.structure !== null || data.route_id !== null;
-    },
-    {
-      message: "Activity plan must have either a structure or a route",
-      path: ["structure"],
-    },
-  );
+  });
+
+export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema.refine(
+  (data) => {
+    // At least one of structure or route_id must be provided
+    // (description is always provided as it has a default empty string)
+    return data.structure != null || data.route_id != null;
+  },
+  {
+    message: "Activity plan must have either a structure or a route",
+    path: ["structure"],
+  },
+);
 
 export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSchema>;
 
 /**
  * Activity Plan Update Form Schema
  */
-export const activityPlanUpdateFormSchema = activityPlanCreateFormSchema.partial().extend({
+export const activityPlanUpdateFormSchema = activityPlanFormFieldsSchema.partial().safeExtend({
   id: z.string().uuid("Invalid activity plan ID"),
 });
 
