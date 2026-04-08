@@ -204,6 +204,14 @@ describe("profilesRouter", () => {
     expect(result.language).toBeNull();
   });
 
+  it("getPublicById rejects unexpected input keys", async () => {
+    const { caller } = createCaller();
+
+    await expect(caller.getPublicById({ id: OTHER_USER_ID, extra: true } as any)).rejects.toMatchObject(
+      { code: "BAD_REQUEST" },
+    );
+  });
+
   it("update persists profile fields plus legacy fields and returns the refreshed profile", async () => {
     const { caller, calls } = createCaller({
       select: {

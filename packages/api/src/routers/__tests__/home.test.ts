@@ -355,4 +355,146 @@ describe("homeRouter", () => {
     });
     expect(homeMocks.addEstimationToPlans).toHaveBeenCalledTimes(2);
   });
+
+  it("getDashboard rejects invalid raw SQL plan rows", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+
+    homeMocks.calculateAge.mockReturnValue(36);
+    homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
+    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
+    homeMocks.buildDynamicStressSeries.mockResolvedValue({
+      byActivityId: new Map(),
+      byDate: new Map(),
+    });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue({
+      acwr: { current: 1.1 },
+      monotony: { current: 1.4 },
+    });
+    homeMocks.buildDailyTssByDateSeries.mockImplementation(({ tssByDate }) => tssByDate);
+    homeMocks.replayTrainingLoadByDate.mockReturnValue([]);
+    homeMocks.addEstimationToPlans.mockResolvedValue([]);
+
+    const { caller } = createCaller({
+      select: {
+        profiles: [[{ dob: new Date("1990-06-15T00:00:00.000Z"), gender: "female" }]],
+        events: [
+          [
+            {
+              training_plan_id: "plan-1",
+              starts_at: new Date("2026-04-04T08:00:00.000Z"),
+            },
+          ],
+          [],
+          [],
+        ],
+        activities: [[]],
+      },
+      execute: [[{ settings: {} }], [{ id: "plan-1", name: null, description: null, structure: {} }]],
+    });
+
+    await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
+
+  it("getDashboard rejects invalid assembled schedule payloads", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+
+    homeMocks.calculateAge.mockReturnValue(36);
+    homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
+    homeMocks.getFormStatus.mockReturnValue("productive");
+    homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
+    homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
+    homeMocks.buildDynamicStressSeries.mockResolvedValue({
+      byActivityId: new Map([["activity-today", { tss: 50, intensity_factor: 0.9 }]]),
+      byDate: new Map([["2026-04-03", 50]]),
+    });
+    homeMocks.addEstimationToPlans.mockImplementation(async (plans: Array<any>) =>
+      plans.map((plan) => ({
+        ...plan,
+        estimated_distance: 20000,
+        estimated_duration: "3600",
+        estimated_tss: 90,
+      })),
+    );
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue({
+      acwr: { current: 1.1, previous: 0.9 },
+      monotony: { current: 1.4 },
+    });
+    homeMocks.buildDailyTssByDateSeries.mockImplementation(({ tssByDate }) => tssByDate);
+    homeMocks.replayTrainingLoadByDate
+      .mockReturnValueOnce([{ date: "2026-04-03", ctl: 42.2, atl: 51.1, tsb: -8.9, tss: 50 }])
+      .mockReturnValueOnce([{ date: "2026-04-04", ctl: 43.1, atl: 49.3, tsb: -6.2, tss: 90 }]);
+
+    const { caller } = createCaller({
+      select: {
+        profiles: [[{ dob: new Date("1990-06-15T00:00:00.000Z"), gender: "female" }]],
+        events: [
+          [
+            {
+              training_plan_id: "plan-1",
+              starts_at: new Date("2026-04-04T08:00:00.000Z"),
+            },
+          ],
+          [
+            {
+              id: "planned-today",
+              starts_at: new Date("2026-04-03T08:00:00.000Z"),
+              notes: null,
+              scheduled_date: "2026-04-03",
+              activity_plan: { id: "plan-1", name: "Threshold Ride", activity_category: "bike" },
+            },
+          ],
+          [
+            {
+              id: "planned-today",
+              starts_at: new Date("2026-04-03T08:00:00.000Z"),
+              notes: null,
+              scheduled_date: "2026-04-03",
+              activity_plan: { id: "plan-1", name: "Threshold Ride", activity_category: "bike" },
+            },
+          ],
+        ],
+        activities: [
+          [
+            {
+              id: "activity-today",
+              type: "ride",
+              started_at: new Date("2026-04-03T07:00:00.000Z"),
+              finished_at: new Date("2026-04-03T08:00:00.000Z"),
+              duration_seconds: 3600,
+              moving_seconds: 3500,
+              distance_meters: 15000,
+              avg_heart_rate: 145,
+              max_heart_rate: 170,
+              avg_power: 220,
+              max_power: 340,
+              avg_speed_mps: 6.2,
+              max_speed_mps: 10.4,
+              normalized_power: 235,
+              normalized_speed_mps: 6.5,
+              normalized_graded_speed_mps: 6.6,
+            },
+          ],
+        ],
+      },
+      execute: [
+        [{ settings: {} }],
+        [
+          {
+            id: "plan-1",
+            name: "Build Block",
+            description: "Spring build",
+            structure: {},
+          },
+        ],
+      ],
+    });
+
+    await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+  });
 });

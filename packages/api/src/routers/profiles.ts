@@ -1,14 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { profileQuickUpdateSchema } from "@repo/core";
-import {
-  activities,
-  activityEfforts,
-  type PublicProfilesRow,
-  profileMetrics,
-  profiles,
-  publicFollowsRowSchema,
-  publicProfilesRowSchema,
-} from "@repo/db";
+import { activities, activityEfforts, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -21,33 +13,66 @@ const profileListFiltersSchema = z.object({
   username: z.string().optional(),
   limit: z.number().min(1).max(100).default(20),
   offset: z.number().min(0).default(0),
-});
+}).strict();
 
 const profileStatsSchema = z.object({
   period: z.number().min(1).max(365).default(30),
-});
+}).strict();
 
 const trainingZonesUpdateSchema = z.object({
   threshold_hr: z.number().int().positive().optional(),
   ftp: z.number().int().positive().optional(),
-});
+}).strict();
 
-const publicProfileSchema = publicProfilesRowSchema
-  .pick({
-    id: true,
-    username: true,
-    avatar_url: true,
-    bio: true,
-    gender: true,
-    preferred_units: true,
-    language: true,
-    is_public: true,
-  })
-  .extend({
-    follow_status: publicFollowsRowSchema.shape.status.nullable().optional(),
+const uuidSchema = z.string().uuid();
+const nullableAvatarUrlSchema = z.string().nullable();
+const nullableUsernameSchema = z.string().nullable();
+const nullableBioSchema = z.string().nullable();
+const nullableGenderSchema = z.string().nullable();
+const nullablePreferredUnitsSchema = z.enum(["metric", "imperial"]).nullable();
+const nullableLanguageSchema = z.string().nullable();
+const nullableFollowStatusSchema = z.enum(["pending", "accepted"]).nullable();
+
+const publicProfileSchema = z
+  .object({
+    id: uuidSchema,
+    username: nullableUsernameSchema,
+    avatar_url: nullableAvatarUrlSchema,
+    bio: nullableBioSchema,
+    gender: nullableGenderSchema,
+    preferred_units: nullablePreferredUnitsSchema,
+    language: nullableLanguageSchema,
+    is_public: z.boolean().nullable(),
+    follow_status: nullableFollowStatusSchema.optional(),
     followers_count: z.number().nullable().optional(),
     following_count: z.number().nullable().optional(),
-  });
+  })
+  .strict();
+
+const publicProfileRowSchema = z
+  .object({
+    id: uuidSchema,
+    username: nullableUsernameSchema,
+    avatar_url: nullableAvatarUrlSchema,
+    bio: nullableBioSchema,
+    gender: nullableGenderSchema,
+    preferred_units: nullablePreferredUnitsSchema,
+    language: nullableLanguageSchema,
+    is_public: z.boolean().nullable(),
+  })
+  .strict();
+
+const profileUpdateInputSchema = profileQuickUpdateSchema
+  .partial()
+  .extend({
+    avatar_url: z.string().nullable().optional(),
+    bio: z.string().max(500).nullable().optional(),
+    dob: z.string().nullable().optional(),
+    preferred_units: z.enum(["metric", "imperial"]).nullable().optional(),
+    language: z.string().max(10).nullable().optional(),
+    is_public: z.boolean().optional(),
+  })
+  .strict();
 
 const MANUAL_FTP_UNIT = "ftp_manual";
 
@@ -291,7 +316,7 @@ async function getFollowStatus(db: DbClient, followerId: string, followingId: st
     limit 1
   `);
 
-  return publicFollowsRowSchema.shape.status.nullable().parse(result.rows[0]?.status ?? null);
+  return nullableFollowStatusSchema.parse(result.rows[0]?.status ?? null);
 }
 
 async function getFollowersCount(db: DbClient, profileId: string) {
@@ -344,7 +369,7 @@ export const profilesRouter = createTRPCRouter({
   }),
 
   getPublicById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: uuidSchema }).strict())
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -371,6 +396,17 @@ export const profilesRouter = createTRPCRouter({
           });
         }
 
+        const parsedProfile = publicProfileRowSchema.parse({
+          id: profile.id,
+          username: profile.username,
+          avatar_url: profile.avatar_url,
+          bio: profile.bio,
+          gender: profile.gender,
+          preferred_units: profile.preferred_units,
+          language: profile.language,
+          is_public: profile.is_public,
+        });
+
         const [follow_status, followersCount, followingCount] = await Promise.all([
           getFollowStatus(db, ctx.session.user.id, input.id),
           getFollowersCount(db, input.id),
@@ -378,11 +414,11 @@ export const profilesRouter = createTRPCRouter({
         ]);
 
         const isSelf = ctx.session.user.id === input.id;
-        const isPrivate = profile.is_public === false;
+        const isPrivate = parsedProfile.is_public === false;
         const isAcceptedFollower = follow_status === "accepted";
 
         const resultProfile: z.input<typeof publicProfileSchema> = {
-          ...profile,
+          ...parsedProfile,
           follow_status,
           followers_count: followersCount,
           following_count: followingCount,
@@ -408,16 +444,7 @@ export const profilesRouter = createTRPCRouter({
     }),
 
   update: protectedProcedure
-    .input(
-      profileQuickUpdateSchema.partial().extend({
-        avatar_url: z.string().nullable().optional(),
-        bio: z.string().max(500).nullable().optional(),
-        dob: z.string().nullable().optional(),
-        preferred_units: z.enum(["metric", "imperial"]).nullable().optional(),
-        language: z.string().max(10).nullable().optional(),
-        is_public: z.boolean().optional(),
-      }),
-    )
+    .input(profileUpdateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 

@@ -10,6 +10,7 @@ import {
   activityPlans,
   likes,
   publicActivityCategorySchema,
+  publicActivityPlansRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or } from "drizzle-orm";
@@ -24,6 +25,8 @@ import {
 } from "../utils/estimation-helpers";
 
 // Input schemas for queries
+const uuidSchema = z.string().uuid();
+const templateVisibilitySchema = z.enum(["private", "public"]);
 const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
 
 const listActivityPlansSchema = z
@@ -42,9 +45,42 @@ const listActivityPlansSchema = z
 
 const getManyActivityPlansByIdsSchema = z
   .object({
-    ids: z.array(z.string().uuid()).min(1).max(200),
+    ids: z.array(uuidSchema).min(1).max(200),
   })
   .strict();
+
+const activityPlanIdInputSchema = z.object({ id: uuidSchema }).strict();
+
+const duplicateActivityPlanInputSchema = z
+  .object({
+    id: uuidSchema,
+    newName: z.string().min(1, "Plan name is required").optional(),
+  })
+  .strict();
+
+const activityPlanLikeRowSchema = z.object({ entity_id: uuidSchema }).strict();
+
+const activityPlanCountRowSchema = z
+  .object({
+    value: z.coerce.number().int().nonnegative(),
+  })
+  .strict();
+
+const activityPlanLikeLookupRowSchema = z.object({ id: uuidSchema }).strict();
+
+const activityPlanRowSchema = publicActivityPlansRowSchema
+  .safeExtend({
+    created_at: z.date(),
+    updated_at: z.date(),
+  })
+  .strict();
+
+const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
+  ...row,
+  idx: row.idx ?? 0,
+  created_at: row.created_at.toISOString(),
+  updated_at: row.updated_at.toISOString(),
+}));
 
 function validateStructure(structure: unknown): void {
   activityPlanStructureSchemaV2.parse(structure);
@@ -54,23 +90,23 @@ function getEstimationStore(ctx: { db?: unknown }) {
   return createEventReadRepository(getRequiredDb(ctx as never));
 }
 
-const createActivityPlanInput = activityPlanCreateSchema.extend({
+const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   structure: activityPlanStructureSchemaV2,
-  template_visibility: z.enum(["private", "public"]).optional(),
+  template_visibility: templateVisibilitySchema.optional(),
   import_provider: z.string().min(1).max(64).optional(),
   import_external_id: z.string().min(1).max(255).optional(),
 });
 
-const updateActivityPlanInput = activityPlanUpdateSchema.extend({
+const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
   structure: activityPlanStructureSchemaV2.optional(),
-  template_visibility: z.enum(["private", "public"]).optional(),
+  template_visibility: templateVisibilitySchema.optional(),
   import_provider: z.string().min(1).max(64).nullable().optional(),
   import_external_id: z.string().min(1).max(255).nullable().optional(),
 });
 
 const updateActivityPlanWithIdInput = updateActivityPlanInput
-  .extend({
-    id: z.string().uuid(),
+  .safeExtend({
+    id: uuidSchema,
   })
   .strict();
 
@@ -85,16 +121,11 @@ const importedTemplateInput = z
   })
   .strict();
 
-function serializeActivityPlanRow(row: ActivityPlanRow) {
-  return {
-    ...row,
-    idx: row.idx ?? 0,
-    created_at: row.created_at.toISOString(),
-    updated_at: row.updated_at.toISOString(),
-  };
+function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
+  return serializedActivityPlanSchema.parse(row);
 }
 
-type SerializedActivityPlan = ReturnType<typeof serializeActivityPlanRow>;
+type SerializedActivityPlan = z.output<typeof serializedActivityPlanSchema>;
 type EstimatedActivityPlan = Awaited<ReturnType<typeof addEstimationToPlan>>;
 
 function buildAccessiblePlanCondition(userId: string) {
@@ -226,8 +257,10 @@ export const activityPlansRouter = createTRPCRouter({
       .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
       .limit(limit + 1);
 
-    const hasMore = rows.length > limit;
-    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const parsedRows = z.array(activityPlanRowSchema).parse(rows);
+
+    const hasMore = parsedRows.length > limit;
+    const pageRows = hasMore ? parsedRows.slice(0, limit) : parsedRows;
     const items = pageRows.map(serializeActivityPlanRow);
 
     const itemsWithEstimation = await addEstimationToPlans(
@@ -251,7 +284,7 @@ export const activityPlansRouter = createTRPCRouter({
           ),
         );
 
-      userLikes = likeRows.map((row) => row.entity_id);
+      userLikes = z.array(activityPlanLikeRowSchema).parse(likeRows).map((row) => row.entity_id);
     }
 
     let nextCursor: string | undefined;
@@ -273,24 +306,26 @@ export const activityPlansRouter = createTRPCRouter({
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(activityPlanIdInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
 
-      const [planRow] = await db
+      const [rawPlanRow] = await db
         .select()
         .from(activityPlans)
         .where(eq(activityPlans.id, input.id))
         .limit(1);
 
-      if (!planRow) {
+      if (!rawPlanRow) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Activity plan not found",
         });
       }
+
+      const planRow = activityPlanRowSchema.parse(rawPlanRow);
 
       const isOwner = planRow.profile_id === userId;
       const isSystemTemplate = planRow.is_system_template === true;
@@ -315,7 +350,7 @@ export const activityPlansRouter = createTRPCRouter({
 
       const planWithEstimation = await addEstimationToPlan(plan, estimationStore, userId);
 
-      const [likeRow] = await db
+      const [rawLikeRow] = await db
         .select({ id: likes.id })
         .from(likes)
         .where(
@@ -326,6 +361,8 @@ export const activityPlansRouter = createTRPCRouter({
           ),
         )
         .limit(1);
+
+      const likeRow = rawLikeRow ? activityPlanLikeLookupRowSchema.parse(rawLikeRow) : null;
 
       return {
         ...withIdentityFields(planWithEstimation),
@@ -346,7 +383,11 @@ export const activityPlansRouter = createTRPCRouter({
         .from(activityPlans)
         .where(and(inArray(activityPlans.id, ids), buildAccessiblePlanCondition(userId)));
 
-      const planById = new Map(planRows.map((plan) => [plan.id, serializeActivityPlanRow(plan)]));
+      const parsedPlanRows = z.array(activityPlanRowSchema).parse(planRows);
+
+      const planById = new Map(
+        parsedPlanRows.map((plan) => [plan.id, serializeActivityPlanRow(plan)]),
+      );
       const orderedPlans = ids
         .map((id) => planById.get(id))
         .filter((plan): plan is SerializedActivityPlan => !!plan);
@@ -368,7 +409,7 @@ export const activityPlansRouter = createTRPCRouter({
             ),
           );
 
-        userLikes = likeRows.map((row) => row.entity_id);
+        userLikes = z.array(activityPlanLikeRowSchema).parse(likeRows).map((row) => row.entity_id);
       }
 
       return {
@@ -387,7 +428,7 @@ export const activityPlansRouter = createTRPCRouter({
       .from(activityPlans)
       .where(eq(activityPlans.profile_id, ctx.session.user.id));
 
-    return row?.value ?? 0;
+    return activityPlanCountRowSchema.parse(row ?? { value: 0 }).value;
   }),
 
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
@@ -528,7 +569,7 @@ export const activityPlansRouter = createTRPCRouter({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(activityPlanIdInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -550,12 +591,7 @@ export const activityPlansRouter = createTRPCRouter({
     }),
 
   duplicate: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        newName: z.string().min(1, "Plan name is required").optional(),
-      }),
-    )
+    .input(duplicateActivityPlanInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const estimationStore = createEventReadRepository(db);

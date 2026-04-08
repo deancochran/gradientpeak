@@ -260,6 +260,17 @@ describe("activityPlansRouter", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
   });
 
+  it("getById rejects unexpected input fields", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.getById({
+        id: "99999999-9999-4999-8999-999999999999",
+        extra: true,
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+  });
+
   it("getManyByIds preserves input order for accessible plans", async () => {
     const ownPlan = createActivityPlanRow({ id: "11111111-1111-4111-8111-111111111111" });
     const publicPlan = createActivityPlanRow({
@@ -284,10 +295,10 @@ describe("activityPlansRouter", () => {
     expect(result.items[1]?.has_liked).toBe(false);
   });
 
-  it("getUserPlansCount returns the current user's count", async () => {
+  it("getUserPlansCount coerces the current user's count from the DB", async () => {
     const { caller } = createCaller({
       state: {
-        "select:activity_plans": [[{ value: 3 }]],
+        "select:activity_plans": [[{ value: "3" }]],
       },
     });
 
@@ -389,6 +400,17 @@ describe("activityPlansRouter", () => {
     expect(result).toEqual({ success: true });
   });
 
+  it("delete rejects unexpected input fields", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.delete({
+        id: "77777777-7777-4777-8777-777777777777",
+        extra: true,
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+  });
+
   it("duplicate creates a private copy from an accessible public plan", async () => {
     const originalRow = createActivityPlanRow({
       id: "88888888-8888-4888-8888-888888888888",
@@ -426,6 +448,17 @@ describe("activityPlansRouter", () => {
       is_public: false,
     });
     expect(result).toMatchObject({ id: duplicatedRow.id, visibility: "private" });
+  });
+
+  it("duplicate rejects unexpected input fields", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.duplicate({
+        id: "88888888-8888-4888-8888-888888888888",
+        extra: true,
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
   it("importFromFitTemplate updates an existing imported plan", async () => {

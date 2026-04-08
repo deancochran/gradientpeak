@@ -168,9 +168,11 @@ export type OnboardingStep3 = z.infer<typeof onboardingStep3Schema>;
  * Combines all steps into a single payload for the completeOnboarding mutation.
  * All fields except Step 1 are optional.
  */
-export const completeOnboardingSchema = onboardingStep1Schema
-  .merge(onboardingStep2Schema)
-  .merge(onboardingStep3Schema);
+export const completeOnboardingSchema = z.object({
+  ...onboardingStep1Schema.shape,
+  ...onboardingStep2Schema.shape,
+  ...onboardingStep3Schema.shape,
+});
 
 export type CompleteOnboarding = z.infer<typeof completeOnboardingSchema>;
 

@@ -323,6 +323,14 @@ describe("socialRouter", () => {
     });
   });
 
+  it("searchUsers rejects unexpected input keys", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.searchUsers({ query: "target", limit: 1, offset: 0, extra: true } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("addComment stores trimmed content and serializes the timestamp", async () => {
     const createdAt = new Date("2026-04-03T12:30:00.000Z");
     const { caller } = createCaller({

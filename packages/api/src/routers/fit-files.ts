@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { StandardActivity } from "@repo/core";
 import { parseFitFileWithSDK } from "@repo/core";
 import {
   calculateAerobicDecoupling,
@@ -34,27 +33,126 @@ const storageService = getApiStorageService();
 const FIT_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
 const FIT_FILE_TYPES = [".fit"];
 
+const FIT_FILE_NAME_PATTERN = /^[^/\\\0]+$/;
+const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+const fitFileNameSchema = z
+  .string()
+  .trim()
+  .min(1, "File name is required")
+  .max(255, "File name is too long")
+  .refine((value) => FIT_FILE_NAME_PATTERN.test(value), {
+    message: "File name must not include path separators or null bytes",
+  })
+  .refine((value) => FIT_FILE_TYPES.some((ext) => value.toLowerCase().endsWith(ext)), {
+    message: `File type must be one of: ${FIT_FILE_TYPES.join(", ")}`,
+  });
+
+const fitStoragePathSchema = z
+  .string()
+  .trim()
+  .min(1, "File path is required")
+  .refine((value) => !value.startsWith("/") && !value.includes(".."), {
+    message: "File path must be a relative storage path",
+  });
+
+const base64FileDataSchema = z
+  .string()
+  .min(1, "File data is required")
+  .refine((value) => value.length % 4 === 0 && BASE64_PATTERN.test(value), {
+    message: "File data must be valid base64",
+  });
+
+const blobLikeSchema = z
+  .object({
+    size: z.number().finite().nonnegative(),
+    type: z.string().optional(),
+    arrayBuffer: z.custom<() => Promise<ArrayBuffer>>((value) => typeof value === "function", {
+      message: "Downloaded file is missing arrayBuffer()",
+    }),
+  })
+  .passthrough();
+
+const fitRecordSchema = z
+  .object({
+    timestamp: z.date().optional(),
+    power: z.number().finite().optional(),
+    heartRate: z.number().finite().optional(),
+    cadence: z.number().finite().optional(),
+    altitude: z.number().finite().optional(),
+    speed: z.number().finite().optional(),
+    temperature: z.number().finite().optional(),
+    positionLat: z.number().finite().optional(),
+    positionLong: z.number().finite().optional(),
+  })
+  .passthrough();
+
+const fitSummarySchema = z
+  .object({
+    totalTime: z.number().finite(),
+    totalDistance: z.number().finite(),
+    calories: z.number().finite().optional(),
+    totalAscent: z.number().finite().optional(),
+    avgHeartRate: z.number().finite().optional(),
+    maxHeartRate: z.number().finite().optional(),
+    avgPower: z.number().finite().optional(),
+    maxPower: z.number().finite().optional(),
+    avgCadence: z.number().finite().optional(),
+    maxCadence: z.number().finite().optional(),
+    avgSpeed: z.number().finite().optional(),
+    maxSpeed: z.number().finite().optional(),
+  })
+  .passthrough();
+
+const parsedFitActivitySchema = z
+  .object({
+    metadata: z
+      .object({
+        type: z.string().trim().min(1),
+        startTime: z.date(),
+      })
+      .passthrough(),
+    summary: fitSummarySchema,
+    records: z.array(fitRecordSchema),
+    laps: z.array(z.unknown()).optional().default([]),
+    lengths: z.array(z.unknown()).optional().default([]),
+  })
+  .passthrough();
+
+const signedUploadUrlDataSchema = z.object({
+  signedUrl: z.string().url(),
+  token: z.string().min(1),
+  path: z.string().min(1),
+});
+
+const signedDownloadUrlDataSchema = z.object({
+  signedUrl: z.string().url(),
+  expiresAt: z.string().datetime({ offset: true }).optional(),
+}).passthrough();
+
+const analyzeFitFileResponseSchema = z.object({
+  queued: z.boolean(),
+}).passthrough();
+
 const uploadFitFileInput = z.object({
-  fileName: z.string().min(1, "File name is required"),
+  fileName: fitFileNameSchema,
   fileSize: z
     .number()
+    .int("File size must be an integer")
+    .positive("File size must be greater than zero")
     .max(
       FIT_FILE_SIZE_LIMIT,
       `File size must be less than ${FIT_FILE_SIZE_LIMIT / (1024 * 1024)}MB`,
     ),
-  fileType: z
-    .string()
-    .refine((type) => FIT_FILE_TYPES.some((ext) => type.toLowerCase().endsWith(ext)), {
-      message: `File type must be one of: ${FIT_FILE_TYPES.join(", ")}`,
-    }),
-  fileData: z.string(), // Base64 encoded file data
-});
+  fileType: fitFileNameSchema,
+  fileData: base64FileDataSchema,
+}).strict();
 
 const analyzeFitFileInput = z.object({
   activityId: z.string().uuid(),
-  filePath: z.string().min(1, "File path is required"),
-  bucketName: z.string().default("fit-files"),
-});
+  filePath: fitStoragePathSchema,
+  bucketName: z.literal("fit-files").default("fit-files"),
+}).strict();
 
 const manualHistoricalImportProvenanceSchema = z.object({
   import_source: z.literal("manual_historical"),
@@ -63,12 +161,12 @@ const manualHistoricalImportProvenanceSchema = z.object({
 });
 
 const processFitFileInput = z.object({
-  fitFilePath: z.string().min(1, "File path is required"),
-  name: z.string().min(1, "Activity name is required"),
-  notes: z.string().optional(),
-  activityType: z.string().min(1, "Activity type is required"),
+  fitFilePath: fitStoragePathSchema,
+  name: z.string().trim().min(1, "Activity name is required"),
+  notes: z.string().trim().optional(),
+  activityType: z.string().trim().min(1, "Activity type is required"),
   importProvenance: manualHistoricalImportProvenanceSchema.optional(),
-});
+}).strict();
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -76,6 +174,45 @@ function toNumberOrNull(value: number | string | null | undefined): number | nul
   if (value === null || value === undefined) return null;
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return "Unknown error";
+}
+
+function getErrorDetails(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      errorMessage: error.message,
+      errorStack: error.stack,
+      errorName: error.name,
+    };
+  }
+
+  return {
+    errorMessage: undefined,
+    errorStack: undefined,
+    errorName: undefined,
+  };
+}
+
+function isOwnedFitFilePath(userId: string, filePath: string): boolean {
+  return filePath.startsWith(`${userId}/`) || filePath.startsWith(`activities/${userId}/`);
+}
+
+type BlobLike = Blob & { arrayBuffer: () => Promise<ArrayBuffer> };
+
+function requireBlobLike(blob: unknown): BlobLike {
+  return blobLikeSchema.parse(blob) && (blob as BlobLike);
+}
+
+async function toBufferFromBlobLike(blob: BlobLike): Promise<Buffer> {
+  const arrayBuffer = await blob.arrayBuffer.call(blob);
+  return Buffer.from(arrayBuffer);
 }
 
 async function getLatestProfileMetricValue(
@@ -276,8 +413,8 @@ export const fitFilesRouter = createTRPCRouter({
   getSignedUploadUrl: protectedProcedure
     .input(
       z.object({
-        fileName: z.string().min(1),
-        fileSize: z.number().max(FIT_FILE_SIZE_LIMIT),
+        fileName: fitFileNameSchema,
+        fileSize: z.number().int().positive().max(FIT_FILE_SIZE_LIMIT),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -309,15 +446,17 @@ export const fitFilesRouter = createTRPCRouter({
           throw new Error(`Failed to create signed upload URL: ${error.message}`);
         }
 
+        const signedUploadData = signedUploadUrlDataSchema.parse(data);
+
         return {
-          signedUrl: data.signedUrl,
-          token: data.token,
-          path: data.path,
+          signedUrl: signedUploadData.signedUrl,
+          token: signedUploadData.token,
+          path: signedUploadData.path,
           filePath: filePath, // Return the full path so the client knows where it went
         };
       } catch (error) {
         console.error("Get signed upload URL error:", error);
-        throw new Error(`Failed to generate upload URL: ${(error as Error).message}`);
+        throw new Error(`Failed to generate upload URL: ${getErrorMessage(error)}`);
       }
     }),
 
@@ -382,11 +521,12 @@ export const fitFilesRouter = createTRPCRouter({
       // ========================================================================
       // T-304, T-305: Parse FIT file using @repo/core
       // ========================================================================
-      let parsedData: StandardActivity;
+      let parsedData: z.infer<typeof parsedFitActivitySchema>;
       try {
         console.log("[processFitFile] Parsing FIT file with SDK...");
-        const buffer = Buffer.from(await fitFile.arrayBuffer());
-        parsedData = parseFitFileWithSDK(buffer);
+        const fitFileBlob = requireBlobLike(fitFile);
+        const buffer = await toBufferFromBlobLike(fitFileBlob);
+        parsedData = parsedFitActivitySchema.parse(parseFitFileWithSDK(buffer));
         console.log("[processFitFile] FIT file parsed successfully:", {
           sport: parsedData.metadata.type,
           duration: parsedData.summary.totalTime,
@@ -398,8 +538,7 @@ export const fitFilesRouter = createTRPCRouter({
         // Log error and notify admins
         console.error("[processFitFile] Failed to parse FIT file:", {
           error: parseError,
-          errorMessage: (parseError as Error).message,
-          errorStack: (parseError as Error).stack,
+          ...getErrorDetails(parseError),
           fitFilePath,
           fileSize: fitFile.size,
         });
@@ -410,7 +549,7 @@ export const fitFilesRouter = createTRPCRouter({
 
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: `Failed to parse FIT file: ${(parseError as Error).message}`,
+          message: `Failed to parse FIT file: ${getErrorMessage(parseError)}`,
         });
       }
 
@@ -692,7 +831,7 @@ export const fitFilesRouter = createTRPCRouter({
         // T-316: Cleanup uploaded file on failure
         console.error("[processFitFile] Failed to insert activity record:", {
           error: insertError,
-          errorMessage: (insertError as Error | undefined)?.message,
+          errorMessage: getErrorMessage(insertError),
           activityData: {
             profile_id: userId,
             name,
@@ -708,7 +847,7 @@ export const fitFilesRouter = createTRPCRouter({
 
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to create activity record: ${(insertError as Error | undefined)?.message || "Unknown error"}`,
+          message: `Failed to create activity record: ${getErrorMessage(insertError)}`,
           cause: insertError,
         });
       }
@@ -841,9 +980,7 @@ export const fitFilesRouter = createTRPCRouter({
       // Log unexpected errors with full context
       console.error("[processFitFile] Unexpected error:", {
         error,
-        errorMessage: (error as Error).message,
-        errorStack: (error as Error).stack,
-        errorName: (error as Error).name,
+        ...getErrorDetails(error),
         fitFilePath,
         userId,
         name,
@@ -860,7 +997,7 @@ export const fitFilesRouter = createTRPCRouter({
 
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: `FIT file processing failed: ${(error as Error).message}`,
+        message: `FIT file processing failed: ${getErrorMessage(error)}`,
         cause: error,
       });
     }
@@ -870,7 +1007,7 @@ export const fitFilesRouter = createTRPCRouter({
    * Upload a FIT file to Supabase Storage
    */
   uploadFitFile: protectedProcedure.input(uploadFitFileInput).mutation(async ({ ctx, input }) => {
-    const { fileName, fileSize, fileData } = input;
+      const { fileName, fileSize, fileData, fileType } = input;
     const userId = ctx.session?.user?.id;
     const supabase = storageService;
 
@@ -880,9 +1017,13 @@ export const fitFilesRouter = createTRPCRouter({
 
     try {
       // Validate file type again (double security)
-      if (!fileName.toLowerCase().endsWith(".fit")) {
-        throw new Error("Only .fit files are supported");
-      }
+        if (fileType.toLowerCase() !== fileName.toLowerCase()) {
+          throw new Error("File type must match file name");
+        }
+
+        if (!fileName.toLowerCase().endsWith(".fit")) {
+          throw new Error("Only .fit files are supported");
+        }
 
       // Convert base64 to buffer
       const binaryString = atob(fileData);
@@ -909,11 +1050,11 @@ export const fitFilesRouter = createTRPCRouter({
         filePath,
         size: fileSize,
       };
-    } catch (error) {
-      console.error("FIT file upload error:", error);
-      throw new Error(`FIT file upload failed: ${(error as Error).message}`);
-    }
-  }),
+      } catch (error) {
+        console.error("FIT file upload error:", error);
+        throw new Error(`FIT file upload failed: ${getErrorMessage(error)}`);
+      }
+    }),
 
   /**
    * Trigger FIT file analysis via edge function
@@ -942,10 +1083,10 @@ export const fitFilesRouter = createTRPCRouter({
         throw new Error(`Edge function error: ${error.message}`);
       }
 
-      return data;
+      return analyzeFitFileResponseSchema.parse(data);
     } catch (error) {
       console.error("FIT file analysis error:", error);
-      throw new Error(`FIT file analysis failed: ${(error as Error).message}`);
+      throw new Error(`FIT file analysis failed: ${getErrorMessage(error)}`);
     }
   }),
 
@@ -990,7 +1131,7 @@ export const fitFilesRouter = createTRPCRouter({
         };
       } catch (error) {
         console.error("FIT file status error:", error);
-        throw new Error(`Failed to get FIT file status: ${(error as Error).message}`);
+        throw new Error(`Failed to get FIT file status: ${getErrorMessage(error)}`);
       }
     }),
 
@@ -1001,7 +1142,7 @@ export const fitFilesRouter = createTRPCRouter({
     .input(
       z.object({
         pageSize: z.number().min(1).max(100).default(20),
-        cursor: z.string().optional(),
+        cursor: z.string().datetime({ offset: true }).optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -1040,7 +1181,7 @@ export const fitFilesRouter = createTRPCRouter({
         };
       } catch (error) {
         console.error("List FIT files error:", error);
-        throw new Error(`Failed to list FIT files: ${(error as Error).message}`);
+        throw new Error(`Failed to list FIT files: ${getErrorMessage(error)}`);
       }
     }),
 
@@ -1050,8 +1191,8 @@ export const fitFilesRouter = createTRPCRouter({
   getFitFileUrl: protectedProcedure
     .input(
       z.object({
-        filePath: z.string().min(1, "File path is required"),
-        expiresIn: z.number().min(60).max(3600).default(3600), // 1 hour default
+        filePath: fitStoragePathSchema,
+        expiresIn: z.number().int().min(60).max(3600).default(3600), // 1 hour default
       }),
     )
     .query(async ({ ctx, input }) => {
@@ -1065,7 +1206,7 @@ export const fitFilesRouter = createTRPCRouter({
 
       try {
         // Verify user owns this file (check file path starts with user ID)
-        if (!filePath.startsWith(`${userId}/`)) {
+        if (!isOwnedFitFilePath(userId, filePath)) {
           throw new Error("Access denied: You can only access your own files");
         }
 
@@ -1078,13 +1219,10 @@ export const fitFilesRouter = createTRPCRouter({
           throw new Error(`Failed to generate download URL: ${error.message}`);
         }
 
-        return {
-          signedUrl: (data as any)?.signedUrl,
-          expiresAt: (data as any)?.expiresAt,
-        };
+        return signedDownloadUrlDataSchema.parse(data);
       } catch (error) {
         console.error("Get FIT file URL error:", error);
-        throw new Error(`Failed to generate download URL: ${(error as Error).message}`);
+        throw new Error(`Failed to generate download URL: ${getErrorMessage(error)}`);
       }
     }),
 
@@ -1094,7 +1232,7 @@ export const fitFilesRouter = createTRPCRouter({
   deleteFitFile: protectedProcedure
     .input(
       z.object({
-        filePath: z.string().min(1, "File path is required"),
+        filePath: fitStoragePathSchema,
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -1108,7 +1246,7 @@ export const fitFilesRouter = createTRPCRouter({
 
       try {
         // Verify user owns this file
-        if (!filePath.startsWith(`${userId}/`)) {
+        if (!isOwnedFitFilePath(userId, filePath)) {
           throw new Error("Access denied: You can only delete your own files");
         }
 
@@ -1122,7 +1260,7 @@ export const fitFilesRouter = createTRPCRouter({
         return { success: true };
       } catch (error) {
         console.error("FIT file deletion error:", error);
-        throw new Error(`FIT file deletion failed: ${(error as Error).message}`);
+        throw new Error(`FIT file deletion failed: ${getErrorMessage(error)}`);
       }
     }),
 
@@ -1133,7 +1271,7 @@ export const fitFilesRouter = createTRPCRouter({
   getStreams: protectedProcedure
     .input(
       z.object({
-        fitFilePath: z.string().min(1, "File path is required"),
+        fitFilePath: fitStoragePathSchema,
         activityId: z.string().uuid().optional(),
       }),
     )
@@ -1154,10 +1292,7 @@ export const fitFilesRouter = createTRPCRouter({
         } else {
           // Fallback: legacy behavior - check file path ownership directly
           const cleanPath = fitFilePath.trim();
-          const isOwnFile =
-            cleanPath.startsWith(`${userId}/`) ||
-            cleanPath.startsWith(`${userId} `) ||
-            cleanPath.includes(userId);
+          const isOwnFile = isOwnedFitFilePath(userId, cleanPath);
 
           if (!isOwnFile) {
             throw new Error("Access denied: You can only access your own files");
@@ -1178,8 +1313,9 @@ export const fitFilesRouter = createTRPCRouter({
         }
 
         // Parse FIT file
-        const buffer = Buffer.from(await fitFile.arrayBuffer());
-        const parsedData = parseFitFileWithSDK(buffer);
+        const fitFileBlob = requireBlobLike(fitFile);
+        const buffer = await toBufferFromBlobLike(fitFileBlob);
+        const parsedData = parsedFitActivitySchema.parse(parseFitFileWithSDK(buffer));
 
         // Extract streams in a format suitable for frontend charting
         // We return the raw records, the frontend can map them to arrays
@@ -1197,7 +1333,7 @@ export const fitFilesRouter = createTRPCRouter({
         console.error("Get streams error:", error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message: `Failed to retrieve streams: ${(error as Error).message}`,
+          message: `Failed to retrieve streams: ${getErrorMessage(error)}`,
         });
       }
     }),

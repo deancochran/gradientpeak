@@ -14,6 +14,24 @@ import { activityEffortsRouter } from "../activity-efforts";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 
+function buildEffortRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "22222222-2222-4222-8222-222222222222",
+    created_at: new Date("2026-03-03T00:00:00.000Z"),
+    updated_at: null,
+    profile_id: userId,
+    activity_id: null,
+    recorded_at: new Date("2026-03-01T10:00:00.000Z"),
+    activity_category: "run" as const,
+    effort_type: "speed" as const,
+    duration_seconds: 600,
+    start_offset: 30,
+    unit: "m/s",
+    value: 4.2,
+    ...overrides,
+  };
+}
+
 function createCaller(options?: {
   selectResult?: unknown;
   insertResult?: unknown[];
@@ -68,15 +86,7 @@ function createCaller(options?: {
 
 describe("activityEffortsRouter", () => {
   it("gets the current profile's efforts", async () => {
-    const efforts = [
-      {
-        id: "effort-1",
-        profile_id: userId,
-        activity_category: "run",
-        effort_type: "speed",
-        recorded_at: new Date("2026-03-01T10:00:00.000Z"),
-      },
-    ];
+    const efforts = [buildEffortRow()];
     const { caller, spies } = createCaller({ selectResult: efforts });
 
     const result = await caller.getForProfile();
@@ -99,13 +109,12 @@ describe("activityEffortsRouter", () => {
       start_offset: 30,
       recorded_at: "2026-03-02T12:34:56.000Z",
     };
-    const insertedRow = {
+    const insertedRow = buildEffortRow({
       id: randomUuidState.next,
       ...input,
-      profile_id: userId,
       created_at: new Date("2026-03-03T00:00:00.000Z"),
       recorded_at: new Date(input.recorded_at),
-    };
+    });
     const { caller, spies } = createCaller({ insertResult: [insertedRow] });
 
     const result = await caller.create(input);
@@ -141,5 +150,33 @@ describe("activityEffortsRouter", () => {
     expect(result).toEqual({ success: true, deletedId: id });
     expect(spies.delete).toHaveBeenCalledOnce();
     expect(spies.whereForDelete).toHaveBeenCalledOnce();
+  });
+
+  it("rejects unexpected create input keys at the router boundary", async () => {
+    const { caller, spies } = createCaller();
+
+    await expect(
+      caller.create({
+        activity_id: null,
+        activity_category: "run",
+        duration_seconds: 600,
+        effort_type: "speed",
+        value: 4.2,
+        unit: "m/s",
+        start_offset: 30,
+        recorded_at: "2026-03-02T12:34:56.000Z",
+        extra: true,
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(spies.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed effort rows before returning them", async () => {
+    const { caller } = createCaller({
+      selectResult: [buildEffortRow({ id: "not-a-uuid" })],
+    });
+
+    await expect(caller.getForProfile()).rejects.toThrow();
   });
 });

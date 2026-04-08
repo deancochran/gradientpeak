@@ -252,7 +252,7 @@ export type ActivityPlanStructure = z.infer<typeof activityPlanStructureSchema>;
 // ==============================
 // COMPLETE ACTIVITY PLAN
 // ==============================
-export const activityPlanSchema = z
+const activityPlanObjectSchema = z
   .object({
     name: z
       .string()
@@ -268,18 +268,19 @@ export const activityPlanSchema = z
     route_id: z.string().uuid().optional(),
     notes: z.string().max(1000, { message: "Notes cannot exceed 1000 characters" }).optional(),
   })
-  .strict()
-  .refine(
-    (data) => {
-      const hasSteps = data.structure.steps && data.structure.steps.length > 0;
-      const hasRoute = !!data.route_id;
-      return hasSteps || hasRoute;
-    },
-    {
-      message: "Plan must have steps, route, or both",
-      path: ["structure"],
-    },
-  );
+  .strict();
+
+export const activityPlanSchema = activityPlanObjectSchema.refine(
+  (data) => {
+    const hasSteps = (data.structure.steps?.length ?? 0) > 0;
+    const hasRoute = !!data.route_id;
+    return hasSteps || hasRoute;
+  },
+  {
+    message: "Plan must have steps, route, or both",
+    path: ["structure"],
+  },
+);
 
 export type ActivityPlan = z.infer<typeof activityPlanSchema>;
 
@@ -291,7 +292,7 @@ export type ActivityPlan = z.infer<typeof activityPlanSchema>;
 export const createActivityPlanSchema = activityPlanSchema;
 
 // For updating an existing plan (partial updates allowed)
-export const updateActivityPlanSchema = activityPlanSchema.partial().extend({
+export const updateActivityPlanSchema = activityPlanObjectSchema.partial().safeExtend({
   id: z.string().uuid({ message: "Invalid plan ID format" }),
 });
 

@@ -194,7 +194,10 @@ beforeEach(() => {
 
   loadMocks.buildDailyTssByDateSeries.mockReturnValue("daily-tss-series");
   loadMocks.replayTrainingLoadByDate.mockReturnValue([]);
-  workloadMocks.buildWorkloadEnvelopes.mockReturnValue({ acute: [90], chronic: [75] });
+  workloadMocks.buildWorkloadEnvelopes.mockReturnValue({
+    acwr: { current: 1.1, source: "tss" },
+    monotony: { current: 1.4, source: "tss" },
+  });
 
   analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(new Map());
   analysisMocks.buildDynamicStressSeries.mockResolvedValue({
@@ -259,6 +262,68 @@ describe("trendsRouter", () => {
     });
   });
 
+  it("accepts date-only range inputs and treats end dates as inclusive", async () => {
+    const { caller } = createCaller([
+      [
+        createActivityRow({
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          started_at: new Date("2026-04-10T23:30:00.000Z"),
+          distance_meters: 12000,
+          moving_seconds: 3600,
+        }),
+      ],
+    ]);
+
+    const result = await caller.getVolumeTrends({
+      start_date: "2026-04-10",
+      end_date: "2026-04-10",
+      groupBy: "day",
+    });
+
+    expect(result).toEqual({
+      dataPoints: [
+        {
+          date: "2026-04-10",
+          totalDistance: 12000,
+          totalTime: 3600,
+          activityCount: 1,
+        },
+      ],
+      totals: {
+        totalDistance: 12000,
+        totalTime: 3600,
+        totalActivities: 1,
+      },
+    });
+  });
+
+  it("rejects malformed ISO date inputs at the procedure boundary", async () => {
+    const { caller, callLog } = createCaller([[]]);
+
+    await expect(
+      caller.getVolumeTrends({
+        start_date: "2026-02-30",
+        end_date: "2026-04-10T23:59:59.000Z",
+        groupBy: "week",
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(callLog).toEqual([]);
+  });
+
+  it("rejects reversed date ranges before querying the database", async () => {
+    const { caller, callLog } = createCaller([[]]);
+
+    await expect(
+      caller.getPerformanceTrends({
+        start_date: "2026-04-30T23:59:59.000Z",
+        end_date: "2026-04-01T00:00:00.000Z",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(callLog).toEqual([]);
+  });
+
   it("returns performance trend datapoints for each activity", async () => {
     const activity = createActivityRow({
       id: "22222222-2222-4222-8222-222222222222",
@@ -291,6 +356,23 @@ describe("trendsRouter", () => {
         },
       ],
     });
+  });
+
+  it("rejects malformed activity rows returned from the database", async () => {
+    const { caller } = createCaller([
+      [
+        createActivityRow({
+          id: "not-a-uuid",
+        }),
+      ],
+    ]);
+
+    await expect(
+      caller.getPerformanceTrends({
+        start_date: "2026-04-01T00:00:00.000Z",
+        end_date: "2026-04-30T23:59:59.000Z",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
   });
 
   it("returns training load trends with personalization telemetry and workload", async () => {
@@ -353,7 +435,10 @@ describe("trendsRouter", () => {
         tsb: -13.9,
         form: "productive",
       },
-      workload: { acute: [90], chronic: [75] },
+      workload: {
+        acwr: { current: 1.1, source: "tss" },
+        monotony: { current: 1.4, source: "tss" },
+      },
       personalizationTelemetry: {
         flags: {
           age_constants: true,

@@ -238,6 +238,14 @@ describe("messagingRouter", () => {
     expect(calls.inserts).toHaveLength(0);
   });
 
+  it("getOrCreateDM rejects unexpected input keys", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.getOrCreateDM({ target_user_id: PEER_ID, extra: true } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("createConversation creates participants, the initial message, and updates the summary timestamp", async () => {
     const { caller, calls } = createCaller({
       insertedConversationRows: [

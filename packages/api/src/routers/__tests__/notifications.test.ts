@@ -76,4 +76,12 @@ describe("notificationsRouter", () => {
     ).resolves.toEqual({ success: true });
     expect(execute).toHaveBeenCalledTimes(1);
   });
+
+  it("markRead rejects unexpected input keys", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.markRead({ notification_ids: [NOTIFICATION_ID], extra: true } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
 });

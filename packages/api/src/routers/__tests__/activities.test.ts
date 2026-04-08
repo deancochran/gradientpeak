@@ -47,6 +47,90 @@ const ACTIVITY_ID_3 = "55555555-5555-4555-8555-555555555555";
 const EVENT_ID = "66666666-6666-4666-8666-666666666666";
 const PLAN_ID = "77777777-7777-4777-8777-777777777777";
 
+function buildActivityRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ACTIVITY_ID,
+    idx: 1,
+    created_at: new Date("2026-01-01T00:00:00.000Z"),
+    updated_at: new Date("2026-01-01T00:00:00.000Z"),
+    profile_id: OWNER_ID,
+    activity_plan_id: null,
+    name: "Morning Run",
+    type: "run",
+    provider: null,
+    external_id: null,
+    started_at: new Date("2026-01-10T08:00:00.000Z"),
+    finished_at: new Date("2026-01-10T08:45:00.000Z"),
+    duration_seconds: 2700,
+    moving_seconds: 2650,
+    distance_meters: 9000,
+    elevation_gain_meters: null,
+    elevation_loss_meters: null,
+    calories: null,
+    avg_heart_rate: null,
+    max_heart_rate: null,
+    avg_power: null,
+    max_power: null,
+    normalized_power: null,
+    avg_cadence: null,
+    max_cadence: null,
+    avg_speed_mps: 3.3,
+    max_speed_mps: 4.8,
+    normalized_speed_mps: null,
+    normalized_graded_speed_mps: null,
+    avg_temperature: null,
+    avg_swolf: null,
+    efficiency_factor: null,
+    aerobic_decoupling: null,
+    pool_length: null,
+    total_strokes: null,
+    device_manufacturer: null,
+    device_product: null,
+    fit_file_path: null,
+    fit_file_size: null,
+    import_source: null,
+    import_file_type: null,
+    import_original_file_name: null,
+    notes: null,
+    polyline: null,
+    laps: null,
+    map_bounds: null,
+    likes_count: null,
+    is_private: false,
+    ...overrides,
+  };
+}
+
+function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: PLAN_ID,
+    idx: null,
+    created_at: new Date("2026-01-01T00:00:00.000Z"),
+    updated_at: new Date("2026-01-02T00:00:00.000Z"),
+    profile_id: OWNER_ID,
+    route_id: null,
+    name: "Planned Run",
+    description: null,
+    notes: null,
+    activity_category: "run",
+    structure: null,
+    version: null,
+    template_visibility: null,
+    import_provider: null,
+    import_external_id: null,
+    is_system_template: null,
+    estimated_tss: null,
+    estimated_duration_seconds: null,
+    estimated_distance_meters: null,
+    sessions_per_week_target: null,
+    duration_hours: null,
+    likes_count: null,
+    tss_target: null,
+    is_public: false,
+    ...overrides,
+  };
+}
+
 function createCaller(db: any, userId = OWNER_ID) {
   return activitiesRouter.createCaller({
     db,
@@ -162,17 +246,8 @@ beforeEach(() => {
 
 describe("activitiesRouter", () => {
   it("lists owned activities with like and derived summaries", async () => {
-    const startedAt = new Date("2026-01-10T08:00:00.000Z");
-    const finishedAt = new Date("2026-01-10T08:45:00.000Z");
     const rows = [
-      {
-        id: ACTIVITY_ID,
-        profile_id: OWNER_ID,
-        name: "Morning Run",
-        type: "run",
-        started_at: startedAt,
-        finished_at: finishedAt,
-      },
+      buildActivityRow(),
     ];
     const derived = { tss: 72 };
     const db = createDbMock({
@@ -207,30 +282,9 @@ describe("activitiesRouter", () => {
 
   it("sorts paginated results by derived tss before slicing", async () => {
     const rows = [
-      {
-        id: ACTIVITY_ID,
-        profile_id: OWNER_ID,
-        name: "Easy Run",
-        type: "run",
-        started_at: new Date("2026-01-12T08:00:00.000Z"),
-        finished_at: new Date("2026-01-12T08:30:00.000Z"),
-      },
-      {
-        id: ACTIVITY_ID_2,
-        profile_id: OWNER_ID,
-        name: "Big Ride",
-        type: "bike",
-        started_at: new Date("2026-01-11T08:00:00.000Z"),
-        finished_at: new Date("2026-01-11T10:00:00.000Z"),
-      },
-      {
-        id: ACTIVITY_ID_3,
-        profile_id: OWNER_ID,
-        name: "Tempo Run",
-        type: "run",
-        started_at: new Date("2026-01-10T08:00:00.000Z"),
-        finished_at: new Date("2026-01-10T08:50:00.000Z"),
-      },
+      buildActivityRow({ id: ACTIVITY_ID, name: "Easy Run", started_at: new Date("2026-01-12T08:00:00.000Z"), finished_at: new Date("2026-01-12T08:30:00.000Z") }),
+      buildActivityRow({ id: ACTIVITY_ID_2, name: "Big Ride", type: "bike", started_at: new Date("2026-01-11T08:00:00.000Z"), finished_at: new Date("2026-01-11T10:00:00.000Z") }),
+      buildActivityRow({ id: ACTIVITY_ID_3, name: "Tempo Run", started_at: new Date("2026-01-10T08:00:00.000Z"), finished_at: new Date("2026-01-10T08:50:00.000Z") }),
     ];
     const db = createDbMock({
       activityRows: rows,
@@ -259,12 +313,13 @@ describe("activitiesRouter", () => {
   });
 
   it("creates an activity linked to a planned-activity event", async () => {
-    const createdActivity = {
+    const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
       profile_id: OWNER_ID,
       activity_plan_id: PLAN_ID,
       name: "Long Ride",
-    };
+      type: "bike",
+    });
     const db = createDbMock({
       queryEventsFindFirst: [{ activity_plan_id: PLAN_ID }],
       executeRows: [{ id: ACTIVITY_ID }],
@@ -293,35 +348,17 @@ describe("activitiesRouter", () => {
 
   it("returns a derived activity response for an accessible activity", async () => {
     const finishedAt = new Date("2026-01-09T08:45:00.000Z");
-    const startedAt = new Date("2026-01-09T08:00:00.000Z");
-    const activity = {
+    const activity = buildActivityRow({
       id: ACTIVITY_ID,
       profile_id: OTHER_ID,
       activity_plan_id: PLAN_ID,
       name: "Shared Run",
-      type: "run",
-      started_at: startedAt,
+      started_at: new Date("2026-01-09T08:00:00.000Z"),
       finished_at: finishedAt,
-      duration_seconds: 2700,
-      moving_seconds: 2650,
-      distance_meters: 9000,
       avg_heart_rate: 150,
       max_heart_rate: 175,
-      avg_power: null,
-      max_power: null,
-      avg_speed_mps: 3.3,
-      max_speed_mps: 4.8,
-      normalized_power: null,
-      normalized_speed_mps: null,
-      normalized_graded_speed_mps: null,
-    };
-    const activityPlan = {
-      id: PLAN_ID,
-      idx: null,
-      created_at: new Date("2026-01-01T00:00:00.000Z"),
-      updated_at: new Date("2026-01-02T00:00:00.000Z"),
-      name: "Planned Run",
-    };
+    });
+    const activityPlan = buildActivityPlanRow();
     const derived = { tss: 88, intensity_factor: 0.91 };
     const db = createDbMock({
       queryActivitiesFindFirst: [
@@ -362,13 +399,13 @@ describe("activitiesRouter", () => {
   });
 
   it("updates an owned activity", async () => {
-    const updated = {
+    const updated = buildActivityRow({
       id: ACTIVITY_ID,
       profile_id: OWNER_ID,
       name: "Renamed Run",
       notes: "Felt strong",
       is_private: true,
-    };
+    });
     const db = createDbMock({
       updatedRows: [updated],
     });
@@ -400,5 +437,55 @@ describe("activitiesRouter", () => {
 
     expect(result).toEqual({ success: true, deletedActivityId: ACTIVITY_ID });
     expect(db.__spies.deleteWhere).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects non-ISO list date filters at the router boundary", async () => {
+    const caller = createCaller(createDbMock({}));
+
+    await expect(
+      caller.list({
+        date_from: "not-a-date",
+        date_to: "2026-01-31T23:59:59.999Z",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("rejects non-ISO activity upload timestamps", async () => {
+    const caller = createCaller(createDbMock({}));
+
+    await expect(
+      caller.create({
+        profile_id: OWNER_ID,
+        eventId: null,
+        name: "Long Ride",
+        notes: null,
+        type: "bike",
+        startedAt: "2026-01-15",
+        finishedAt: "2026-01-15T11:00:00.000Z",
+        durationSeconds: 7200,
+        movingSeconds: 7100,
+        distanceMeters: 50000,
+        metrics: {},
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("rejects malformed activity rows before returning list results", async () => {
+    const db = createDbMock({
+      activityRows: [
+        {
+          ...buildActivityRow(),
+          id: "not-a-uuid",
+        },
+      ],
+    });
+    const caller = createCaller(db);
+
+    await expect(
+      caller.list({
+        date_from: "2026-01-01T00:00:00.000Z",
+        date_to: "2026-01-31T23:59:59.999Z",
+      }),
+    ).rejects.toThrow();
   });
 });

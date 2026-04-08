@@ -1,11 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 const SESSION_USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
 const EVENT_ID = "33333333-3333-4333-8333-333333333333";
 const FEED_ID = "44444444-4444-4444-8444-444444444444";
 const STATE_ID = "55555555-5555-4555-8555-555555555555";
+const SYNC_ID = "66666666-6666-4666-8666-666666666666";
 
 const mocks = vi.hoisted(() => {
   const repositories = {
@@ -58,6 +60,35 @@ vi.mock("../../infrastructure/repositories", () => ({
   createIcalFeedRepository: mocks.createIcalFeedRepository,
   createWahooRepository: mocks.createWahooRepository,
 }));
+
+vi.mock("@repo/db", () => {
+  const publicIntegrationProviderSchema = z.enum([
+    "strava",
+    "wahoo",
+    "trainingpeaks",
+    "garmin",
+    "zwift",
+  ]);
+
+  return {
+    publicIntegrationProviderSchema,
+    publicIntegrationsRowSchema: z
+      .object({
+        id: z.string().uuid(),
+        idx: z.number().int(),
+        profile_id: z.string().uuid(),
+        provider: publicIntegrationProviderSchema,
+        external_id: z.string().min(1),
+        access_token: z.string().min(1),
+        refresh_token: z.string().min(1).nullable(),
+        expires_at: z.date().nullable(),
+        scope: z.string().min(1).nullable(),
+        created_at: z.date(),
+        updated_at: z.date(),
+      })
+      .passthrough(),
+  };
+});
 
 vi.mock("../../storage-service", () => ({
   getApiStorageService: mocks.getApiStorageService,
@@ -166,7 +197,21 @@ describe("integrationsRouter", () => {
 
   it("list removes expired states before returning integrations", async () => {
     const caller = createCaller();
-    const rows = [{ provider: "strava", external_id: "ext-1" }];
+    const rows = [
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        idx: 1,
+        profile_id: SESSION_USER_ID,
+        provider: "strava",
+        external_id: "ext-1",
+        access_token: "access-1",
+        refresh_token: "refresh-1",
+        expires_at: new Date("2026-04-01T12:00:00.000Z"),
+        scope: "activity:read_all",
+        created_at: new Date("2026-04-01T10:00:00.000Z"),
+        updated_at: new Date("2026-04-01T11:00:00.000Z"),
+      },
+    ];
 
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(2);
     mocks.repositories.integrations.listByProfileId.mockResolvedValue(rows);
@@ -204,6 +249,14 @@ describe("integrationsRouter", () => {
       createdAt: expect.any(Date),
       expiresAt: expect.any(Date),
     });
+  });
+
+  it("getAuthUrl rejects unexpected input keys", async () => {
+    const caller = createCaller();
+
+    await expect(
+      caller.getAuthUrl({ provider: "strava", redirectUri: "https://example.com", extra: true } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
   });
 
   it("disconnect deletes the integration for the current user", async () => {
@@ -250,6 +303,53 @@ describe("integrationsRouter", () => {
     );
   });
 
+  it("refreshToken tolerates extra provider token fields", async () => {
+    const caller = createCaller();
+    mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      refresh_token: "refresh-1",
+    });
+    mocks.repositories.integrations.updateTokensByProfileIdAndProvider.mockResolvedValue(undefined);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: "access-2",
+          refresh_token: "refresh-2",
+          expires_in: "3600",
+          token_type: "Bearer",
+          athlete: { id: 42 },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(caller.refreshToken({ provider: "strava" })).resolves.toEqual({ success: true });
+    expect(mocks.repositories.integrations.updateTokensByProfileIdAndProvider).toHaveBeenCalledWith(
+      {
+        profileId: SESSION_USER_ID,
+        provider: "strava",
+        accessToken: "access-2",
+        refreshToken: "refresh-2",
+        expiresAt: expect.any(Date),
+      },
+    );
+  });
+
+  it("refreshToken rejects malformed provider token payloads", async () => {
+    const caller = createCaller();
+    mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      refresh_token: "refresh-1",
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ refresh_token: "refresh-2" }), { status: 200 }),
+    );
+
+    await expect(caller.refreshToken({ provider: "strava" })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to refresh integration token",
+    } satisfies Partial<TRPCError>);
+    expect(mocks.repositories.integrations.updateTokensByProfileIdAndProvider).not.toHaveBeenCalled();
+  });
+
   it("cleanupExpiredStates sums both cleanup strategies", async () => {
     const caller = createCaller();
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(2);
@@ -285,6 +385,42 @@ describe("integrationsRouter", () => {
       mobileRedirectUri: "gradientpeak://callback",
       createdAt: "2026-04-01T12:00:00.000Z",
     });
+  });
+
+  it("validateOAuthState tolerates extra repository row columns", async () => {
+    const caller = createCaller();
+    mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.repositories.oauthStates.findValidByState.mockResolvedValue({
+      profile_id: OTHER_USER_ID,
+      provider: "wahoo",
+      mobile_redirect_uri: "gradientpeak://callback",
+      created_at: new Date("2026-04-01T12:00:00.000Z"),
+      expires_at: new Date("2026-04-01T12:10:00.000Z"),
+      state: STATE_ID,
+    });
+
+    await expect(caller.validateOAuthState({ state: STATE_ID })).resolves.toEqual({
+      userId: OTHER_USER_ID,
+      provider: "wahoo",
+      mobileRedirectUri: "gradientpeak://callback",
+      createdAt: "2026-04-01T12:00:00.000Z",
+    });
+  });
+
+  it("validateOAuthState rejects malformed oauth state rows", async () => {
+    const caller = createCaller();
+    mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.repositories.oauthStates.findValidByState.mockResolvedValue({
+      profile_id: OTHER_USER_ID,
+      provider: "not-a-provider",
+      mobile_redirect_uri: "gradientpeak://callback",
+      created_at: new Date("2026-04-01T12:00:00.000Z"),
+    });
+
+    await expect(caller.validateOAuthState({ state: STATE_ID })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "OAuth state repository returned invalid data",
+    } satisfies Partial<TRPCError>);
   });
 
   it("storeIntegration upserts the integration and deletes the consumed state", async () => {
@@ -364,6 +500,23 @@ describe("integrationsRouter", () => {
     expect(mocks.ical.listFeeds).toHaveBeenCalledWith(SESSION_USER_ID);
   });
 
+  it("ical.listFeeds rejects malformed service output", async () => {
+    const caller = createCaller();
+    mocks.ical.listFeeds.mockResolvedValue([
+      {
+        feed_id: FEED_ID,
+        feed_url: "https://example.com/calendar.ics",
+        event_count: "3",
+        last_event_updated_at: "2026-04-01T10:00:00.000Z",
+      },
+    ]);
+
+    await expect(caller.ical.listFeeds({})).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "iCal sync service returned invalid feed list data",
+    } satisfies Partial<TRPCError>);
+  });
+
   it("ical.updateFeed maps sync errors to TRPC errors", async () => {
     const caller = createCaller();
     mocks.ical.syncFeed.mockRejectedValue(new IcalSyncError("Invalid iCal feed", "BAD_REQUEST"));
@@ -430,15 +583,35 @@ describe("integrationsRouter", () => {
 
   it("wahoo.getEventSyncStatus returns sync status details", async () => {
     const caller = createCaller();
-    const status = {
+    mocks.wahoo.getEventSyncStatus.mockResolvedValue({
+      id: SYNC_ID,
+      externalId: "workout-1",
+      updatedAt: new Date("2026-04-03T09:15:00.000Z"),
+    });
+
+    await expect(caller.wahoo.getEventSyncStatus({ eventId: EVENT_ID })).resolves.toEqual({
       synced: true,
       provider: "wahoo",
       externalId: "workout-1",
-    };
-    mocks.wahoo.getEventSyncStatus.mockResolvedValue(status);
-
-    await expect(caller.wahoo.getEventSyncStatus({ eventId: EVENT_ID })).resolves.toEqual(status);
+      id: SYNC_ID,
+      updatedAt: "2026-04-03T09:15:00.000Z",
+      syncedAt: null,
+    });
     expect(mocks.wahoo.getEventSyncStatus).toHaveBeenCalledWith(EVENT_ID, SESSION_USER_ID);
+  });
+
+  it("wahoo.syncEvent rejects malformed sync results", async () => {
+    const caller = createCaller();
+    mocks.wahoo.syncEvent.mockResolvedValue({
+      success: true,
+      action: "created",
+      workoutId: 42,
+    });
+
+    await expect(caller.wahoo.syncEvent({ eventId: EVENT_ID })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Wahoo sync service returned invalid sync data",
+    } satisfies Partial<TRPCError>);
   });
 
   it("wahoo.testSync returns sync diagnostics with a timestamp", async () => {

@@ -1,34 +1,61 @@
 import { randomUUID } from "node:crypto";
-import { activityEfforts, publicActivityCategorySchema, publicEffortTypeSchema } from "@repo/db";
+import {
+  activityEfforts,
+  publicActivityCategorySchema,
+  publicActivityEffortsRowSchema,
+  publicEffortTypeSchema,
+} from "@repo/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
+const activityEffortRowSchema = publicActivityEffortsRowSchema;
+
+const getForProfileOutputSchema = z.array(activityEffortRowSchema);
+
+const createActivityEffortInputSchema = z
+  .object({
+    activity_id: z.string().uuid().optional().nullable(),
+    activity_category: publicActivityCategorySchema,
+    duration_seconds: z.number().int().positive(),
+    effort_type: publicEffortTypeSchema,
+    value: z.number(),
+    unit: z.string().min(1),
+    start_offset: z.number().int().nonnegative().optional().nullable(),
+    recorded_at: z.string().datetime(),
+  })
+  .strict();
+
+const deleteActivityEffortInputSchema = z
+  .object({
+    id: z.string().uuid(),
+  })
+  .strict();
+
+const deleteActivityEffortOutputSchema = z
+  .object({
+    success: z.literal(true),
+    deletedId: z.string().uuid(),
+  })
+  .strict();
+
 export const activityEffortsRouter = createTRPCRouter({
-  getForProfile: protectedProcedure.query(async ({ ctx }) => {
+  getForProfile: protectedProcedure.output(getForProfileOutputSchema).query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
 
-    return await db
+    const rows = await db
       .select()
       .from(activityEfforts)
       .where(eq(activityEfforts.profile_id, ctx.session.user.id))
       .orderBy(desc(activityEfforts.recorded_at));
+
+    return getForProfileOutputSchema.parse(rows);
   }),
 
   create: protectedProcedure
-    .input(
-      z.object({
-        activity_id: z.string().uuid().optional().nullable(),
-        activity_category: publicActivityCategorySchema,
-        duration_seconds: z.number().int().positive(),
-        effort_type: publicEffortTypeSchema,
-        value: z.number(),
-        unit: z.string(),
-        start_offset: z.number().int().nonnegative().optional().nullable(),
-        recorded_at: z.string(),
-      }),
-    )
+    .input(createActivityEffortInputSchema)
+    .output(activityEffortRowSchema)
     .mutation(async ({ input, ctx }) => {
       const db = getRequiredDb(ctx);
 
@@ -43,15 +70,12 @@ export const activityEffortsRouter = createTRPCRouter({
         })
         .returning();
 
-      return data;
+      return activityEffortRowSchema.parse(data);
     }),
 
   delete: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-      }),
-    )
+    .input(deleteActivityEffortInputSchema)
+    .output(deleteActivityEffortOutputSchema)
     .mutation(async ({ input, ctx }) => {
       const db = getRequiredDb(ctx);
 
@@ -64,6 +88,6 @@ export const activityEffortsRouter = createTRPCRouter({
           ),
         );
 
-      return { success: true, deletedId: input.id };
+      return deleteActivityEffortOutputSchema.parse({ success: true, deletedId: input.id });
     }),
 });

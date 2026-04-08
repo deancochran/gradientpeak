@@ -6,9 +6,20 @@ import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-const notificationRowSchema = publicNotificationsRowSchema.extend({
-  read_at: z.union([z.string(), z.date()]).nullable(),
-  created_at: z.union([z.string(), z.date()]),
+const notificationTimestampSchema = z.union([z.string(), z.date()]);
+
+const getRecentInputSchema = z.object({ limit: z.number().min(1).max(100).default(20) }).strict();
+
+const markReadInputSchema = Schemas.MarkNotificationReadSchema.strict();
+
+const notificationRowSchema = z.object({
+  id: publicNotificationsRowSchema.shape.id,
+  user_id: publicNotificationsRowSchema.shape.user_id,
+  actor_id: publicNotificationsRowSchema.shape.actor_id,
+  type: publicNotificationsRowSchema.shape.type,
+  entity_id: publicNotificationsRowSchema.shape.entity_id,
+  read_at: notificationTimestampSchema.nullable(),
+  created_at: notificationTimestampSchema,
   is_read: z.boolean(),
 });
 
@@ -44,7 +55,7 @@ function toDatabaseErrorMessage(error: unknown) {
 
 export const notificationsRouter = createTRPCRouter({
   getRecent: protectedProcedure
-    .input(z.object({ limit: z.number().min(1).max(100).default(20) }))
+    .input(getRecentInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -97,7 +108,7 @@ export const notificationsRouter = createTRPCRouter({
   }),
 
   markRead: protectedProcedure
-    .input(Schemas.MarkNotificationReadSchema)
+    .input(markReadInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 

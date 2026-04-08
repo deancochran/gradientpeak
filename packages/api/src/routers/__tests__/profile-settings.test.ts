@@ -126,6 +126,22 @@ describe("profileSettingsRouter", () => {
     expect(calls.select).toBe(0);
   });
 
+  it("rejects unknown keys on getForProfile input", async () => {
+    const { caller, calls } = createCaller();
+
+    await expect(
+      caller.getForProfile({
+        profile_id: PROFILE_ID,
+        extra: true,
+      } as Parameters<typeof caller.getForProfile>[0]),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    } as Partial<TRPCError>);
+
+    expect(calls.execute).toHaveLength(0);
+    expect(calls.select).toBe(0);
+  });
+
   it("coerces legacy stored settings into canonical profile preferences", async () => {
     const { caller } = createCaller({
       plan: {
@@ -223,5 +239,22 @@ describe("profileSettingsRouter", () => {
     expect(result.profile_id).toBe(PROFILE_ID);
     expect(result.updated_at).toBe("2026-03-06T00:00:00.000Z");
     expect(result.cache_tags).toEqual(["profileSettings.getForProfile", "goals.list"]);
+  });
+
+  it("rejects unknown keys on upsert input", async () => {
+    const { caller, calls } = createCaller({ userId: COACH_ID });
+
+    await expect(
+      caller.upsert({
+        profile_id: PROFILE_ID,
+        settings: baseSettings,
+        extra: true,
+      } as Parameters<typeof caller.upsert>[0]),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    } as Partial<TRPCError>);
+
+    expect(calls.execute).toHaveLength(0);
+    expect(calls.insertValues).toHaveLength(0);
   });
 });

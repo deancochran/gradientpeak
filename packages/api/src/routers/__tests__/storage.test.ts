@@ -59,6 +59,86 @@ describe("storageRouter", () => {
     expect(result.publicUrl).toBe(`https://public.test/${result.path}`);
   });
 
+  it("rejects upload requests when file extension does not match MIME type", async () => {
+    const caller = createCaller();
+
+    await expect(
+      caller.createSignedUploadUrl({
+        fileName: "avatar.png",
+        fileType: "image/jpeg",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+
+    expect(storageState.createSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects upload requests with path separators in the file name", async () => {
+    const caller = createCaller();
+
+    await expect(
+      caller.createSignedUploadUrl({
+        fileName: "nested/avatar.png",
+        fileType: "image/png",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+
+    expect(storageState.createSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed signed upload responses from storage", async () => {
+    storageState.createSignedUploadUrl.mockResolvedValueOnce({
+      data: { signedUrl: "https://upload.test/bad", path: "../avatar.png" },
+      error: null,
+    });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.createSignedUploadUrl({
+        fileName: "avatar.png",
+        fileType: "image/png",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" } as Partial<TRPCError>);
+
+    expect(storageState.getPublicUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects signed upload responses for another user's path", async () => {
+    storageState.createSignedUploadUrl.mockResolvedValueOnce({
+      data: {
+        signedUrl: "https://upload.test/22222222-2222-4222-8222-222222222222/avatar.png",
+        path: "22222222-2222-4222-8222-222222222222/avatar.png",
+      },
+      error: null,
+    });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.createSignedUploadUrl({
+        fileName: "avatar.png",
+        fileType: "image/png",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
+
+    expect(storageState.getPublicUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed public URL responses from storage", async () => {
+    storageState.getPublicUrl.mockReturnValueOnce({
+      data: { publicUrl: "not-a-valid-url" },
+    });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.createSignedUploadUrl({
+        fileName: "avatar.png",
+        fileType: "image/png",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" } as Partial<TRPCError>);
+  });
+
   it("returns a signed download URL for the current user's avatar", async () => {
     const caller = createCaller();
     const filePath = "11111111-1111-4111-8111-111111111111/avatar.png";
@@ -95,6 +175,18 @@ describe("storageRouter", () => {
     await expect(
       caller.deleteFile({
         filePath: "22222222-2222-4222-8222-222222222222/avatar.png",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
+
+    expect(storageState.remove).not.toHaveBeenCalled();
+  });
+
+  it("rejects deletion requests for paths that only share a user id prefix", async () => {
+    const caller = createCaller();
+
+    await expect(
+      caller.deleteFile({
+        filePath: "11111111-1111-4111-8111-111111111111-malicious/avatar.png",
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
 

@@ -4,12 +4,7 @@ import {
   activityPlans,
   likes,
   profiles,
-  publicCommentsRowSchema,
-  publicFollowsRowSchema,
-  publicLikesRowSchema,
   publicNotificationTypeSchema,
-  publicProfilesRowSchema,
-  publicTrainingPlansRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
@@ -19,68 +14,82 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
-const followStatusSchema = publicFollowsRowSchema.shape.status;
-const entityTypeSchema = publicLikesRowSchema.shape.entity_type;
+const uuidSchema = z.string().uuid();
+const nullableAvatarUrlSchema = z.string().nullable();
+const nullableUsernameSchema = z.string().nullable();
+const followStatusSchema = z.enum(["pending", "accepted"]);
+const entityTypeSchema = z.enum(["activity", "training_plan", "activity_plan"]);
 type FollowNotificationType = Extract<
   z.infer<typeof publicNotificationTypeSchema>,
   "follow_request" | "new_follower"
 >;
 
-const followRecordSchema = publicFollowsRowSchema.pick({
-  follower_id: true,
-  following_id: true,
-  status: true,
-});
+const followRecordSchema = z
+  .object({
+    follower_id: uuidSchema,
+    following_id: uuidSchema,
+    status: followStatusSchema,
+  })
+  .strict();
 
-const followerRelationshipRowSchema = publicFollowsRowSchema.pick({
-  follower_id: true,
-  status: true,
-});
+const followerRelationshipRowSchema = z
+  .object({
+    follower_id: uuidSchema,
+    status: followStatusSchema,
+  })
+  .strict();
 
-const followingRelationshipRowSchema = publicFollowsRowSchema.pick({
-  following_id: true,
-  status: true,
-});
+const followingRelationshipRowSchema = z
+  .object({
+    following_id: uuidSchema,
+    status: followStatusSchema,
+  })
+  .strict();
 
-const profileListItemSchema = publicProfilesRowSchema.pick({
-  id: true,
-  username: true,
-  avatar_url: true,
-  is_public: true,
-});
+const profileListItemSchema = z
+  .object({
+    id: uuidSchema,
+    username: nullableUsernameSchema,
+    avatar_url: nullableAvatarUrlSchema,
+    is_public: z.boolean().nullable(),
+  })
+  .strict();
 
 const countRowSchema = z.object({
   value: z.union([z.number(), z.string()]),
 });
 
-const commentInsertRowSchema = publicCommentsRowSchema.pick({
-  id: true,
-  profile_id: true,
-  entity_id: true,
-  entity_type: true,
-  content: true,
-  created_at: true,
-});
-
-const commentOwnerRowSchema = publicCommentsRowSchema.pick({ profile_id: true });
-
-const commentListRowSchema = publicCommentsRowSchema
-  .pick({
-    id: true,
-    content: true,
-    created_at: true,
-    profile_id: true,
+const commentInsertRowSchema = z
+  .object({
+    id: uuidSchema,
+    profile_id: uuidSchema,
+    entity_id: uuidSchema,
+    entity_type: entityTypeSchema,
+    content: z.string(),
+    created_at: z.union([z.date(), z.string()]),
   })
-  .extend({
-    profile_username: publicProfilesRowSchema.shape.username,
-    profile_avatar_url: publicProfilesRowSchema.shape.avatar_url,
-  });
+  .strict();
 
-const trainingPlanAccessRowSchema = publicTrainingPlansRowSchema.pick({
-  profile_id: true,
-  is_system_template: true,
-  template_visibility: true,
-});
+const commentOwnerRowSchema = z.object({ profile_id: uuidSchema }).strict();
+
+const commentListRowSchema = z
+  .object({
+    id: uuidSchema,
+    content: z.string(),
+    created_at: z.union([z.date(), z.string()]),
+    profile_id: uuidSchema.nullable(),
+    profile_username: nullableUsernameSchema,
+    profile_avatar_url: nullableAvatarUrlSchema,
+  })
+  .strict();
+
+const trainingPlanAccessRowSchema = z
+  .object({
+    profile_id: uuidSchema,
+    is_system_template: z.boolean(),
+    template_visibility: z.enum(["private", "public"]),
+  })
+  .strict();
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;

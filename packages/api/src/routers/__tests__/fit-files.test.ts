@@ -1,5 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@repo/db", () => ({
+  activities: { id: "activities.id", profile_id: "activities.profile_id", is_private: "activities.is_private" },
+  activityEfforts: { table: "activity_efforts" },
+  profileMetrics: {
+    value: "profile_metrics.value",
+    profile_id: "profile_metrics.profile_id",
+    metric_type: "profile_metrics.metric_type",
+    recorded_at: "profile_metrics.recorded_at",
+  },
+}));
+
 const mocks = vi.hoisted(() => ({
   parseFitFileWithSDK: vi.fn(),
   calculateBestEfforts: vi.fn(),
@@ -197,6 +208,19 @@ describe("fitFilesRouter", () => {
     });
   });
 
+  it("rejects malformed signed upload responses from storage", async () => {
+    mocks.storage.createSignedUploadUrl.mockResolvedValue({
+      data: { path: "activities/test/ride.fit", signedUrl: "https://upload.test/ride.fit" },
+      error: null,
+    });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.getSignedUploadUrl({ fileName: "ride.fit", fileSize: 1234 }),
+    ).rejects.toThrow("Failed to generate upload URL");
+  });
+
   it("processes FIT uploads through ctx.db and records derived side effects", async () => {
     const startTime = new Date("2025-05-10T10:00:00.000Z");
     const finishedAt = new Date("2025-05-10T11:00:00.000Z");
@@ -328,6 +352,20 @@ describe("fitFilesRouter", () => {
     expect(result).toEqual({ queued: true });
   });
 
+  it("rejects malformed analyze-fit-file responses", async () => {
+    mocks.functionsInvoke.mockResolvedValue({ data: { ok: true }, error: null });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.analyzeFitFile({
+        activityId: "22222222-2222-4222-8222-222222222222",
+        filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+        bucketName: "fit-files",
+      }),
+    ).rejects.toThrow("FIT file analysis failed");
+  });
+
   it("returns serialized activity details for FIT processing status", async () => {
     const activityId = "33333333-3333-4333-8333-333333333333";
     const createdAt = new Date("2026-01-01T12:00:00.000Z");
@@ -419,6 +457,26 @@ describe("fitFilesRouter", () => {
     ).rejects.toThrow("Access denied: You can only access your own files");
   });
 
+  it("accepts signed download responses without expiresAt", async () => {
+    mocks.storage.createSignedUrl.mockResolvedValue({
+      data: {
+        signedUrl: "https://download.test/11111111-1111-4111-8111-111111111111/ride.fit",
+      },
+      error: null,
+    });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.getFitFileUrl({
+        filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+        expiresIn: 600,
+      }),
+    ).resolves.toEqual({
+      signedUrl: "https://download.test/11111111-1111-4111-8111-111111111111/ride.fit",
+    });
+  });
+
   it("deletes an owned FIT file from storage", async () => {
     const caller = createCaller();
 
@@ -432,6 +490,16 @@ describe("fitFilesRouter", () => {
     expect(result).toEqual({ success: true });
   });
 
+  it("rejects FIT stream access when the path only contains the user id", async () => {
+    const caller = createCaller();
+
+    await expect(
+      caller.getStreams({
+        fitFilePath: "tmp/11111111-1111-4111-8111-111111111111-ride.fit",
+      }),
+    ).rejects.toThrow("Failed to retrieve streams: Access denied");
+  });
+
   it("returns parsed streams for an owned activity", async () => {
     const activityId = "66666666-6666-4666-8666-666666666666";
     const { db } = createDbMock({
@@ -439,6 +507,7 @@ describe("fitFilesRouter", () => {
     });
 
     mocks.parseFitFileWithSDK.mockReturnValue({
+      metadata: { type: "cycling", startTime: new Date("2026-03-01T10:00:00.000Z") },
       records: [{ timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240 }],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
@@ -457,5 +526,30 @@ describe("fitFilesRouter", () => {
       lengths: [],
       summary: { totalTime: 1800, totalDistance: 20000 },
     });
+  });
+
+  it("cleans up malformed parsed FIT data during processing", async () => {
+    const { db } = createDbMock();
+
+    mocks.parseFitFileWithSDK.mockReturnValue({
+      metadata: { type: "cycling", startTime: "2025-05-10T10:00:00.000Z" },
+      summary: { totalTime: 3600, totalDistance: 40250 },
+      records: [],
+      laps: [],
+      lengths: [],
+    });
+
+    const caller = createCaller({ db });
+
+    await expect(
+      caller.processFitFile({
+        fitFilePath: "activities/user/uploads/123_history.fit",
+        name: "Morning Ride",
+        notes: "Imported",
+        activityType: "bike",
+      }),
+    ).rejects.toThrow("Failed to parse FIT file");
+
+    expect(mocks.storage.remove).toHaveBeenCalledWith(["activities/user/uploads/123_history.fit"]);
   });
 });

@@ -73,12 +73,17 @@ function createRouteRow(overrides: Record<string, unknown> = {}) {
     name: "River Loop",
     description: "Steady weekend route",
     activity_category: "bike",
+    estimated_distance_meters: null,
+    estimated_duration_seconds: null,
+    elevation_gain_meters: null,
+    elevation_loss_meters: null,
     file_path: `${OWNER_ID}/route.gpx`,
     total_distance: 42195,
     total_ascent: 550,
     total_descent: 540,
     polyline: "encoded-preview",
     elevation_polyline: "encoded-elevation",
+    likes_count: null,
     source: "manual",
     is_public: false,
     created_at: new Date("2026-02-01T10:00:00.000Z"),
@@ -180,6 +185,18 @@ describe("routesRouter", () => {
     });
   });
 
+  it("rejects unknown list input keys at the boundary", async () => {
+    const db = {
+      select: vi.fn(),
+    };
+
+    const caller = createCaller(db);
+
+    await expect(
+      caller.list({ limit: 2, activityCategory: "bike", unexpected: true } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("gets a single owned route with like state", async () => {
     const route = createRouteRow();
     const db = {
@@ -228,6 +245,29 @@ describe("routesRouter", () => {
       totalAscent: 550,
       totalDescent: 540,
       activityCategory: "bike",
+    });
+  });
+
+  it("rejects invalid parsed coordinates from stored route files", async () => {
+    const route = createRouteRow();
+    const fileData = {
+      text: vi.fn().mockResolvedValue("<gpx>route</gpx>"),
+    };
+
+    mockStorage.download.mockResolvedValue({ error: null, data: fileData });
+    mockRouteParser.parseRoute.mockReturnValue({
+      coordinates: [{ latitude: 40.1, longitude: -74.1, altitude: Number.NaN }],
+    });
+
+    const db = {
+      select: vi.fn().mockImplementationOnce(() => createSelectWithLimit([route])),
+    };
+
+    const caller = createCaller(db);
+
+    await expect(caller.loadFull({ id: ROUTE_ID })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Stored route file contained invalid route data",
     });
   });
 
