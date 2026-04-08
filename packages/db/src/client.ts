@@ -35,7 +35,7 @@ export function assertDatabaseUrl(url: string | undefined): string {
 
 export function resolveDatabaseUrl(
   env: Record<string, string | undefined>,
-  keys: readonly string[] = ["DATABASE_URL", "POSTGRES_URL", "SUPABASE_DB_URL"],
+  keys: readonly string[] = ["DATABASE_URL", "POSTGRES_URL"],
 ): string {
   for (const key of keys) {
     const value = env[key];

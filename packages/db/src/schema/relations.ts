@@ -5,8 +5,6 @@ import {
   activityEfforts,
   activityPlans,
   activityRoutes,
-  coachesAthletes,
-  coachingInvitations,
   comments,
   conversationParticipants,
   conversations,
@@ -23,20 +21,13 @@ import {
   profileTrainingSettings,
   syncedEvents,
   trainingPlans,
+  userTrainingPlans,
 } from "./tables";
 
 export const profilesRelations = relations(profiles, ({ many }) => ({
   activities: many(activities),
   activityPlans: many(activityPlans),
   activityRoutes: many(activityRoutes),
-  coachingInvitationsReceived: many(coachingInvitations, {
-    relationName: "coachingInvitationAthlete",
-  }),
-  coachingInvitationsSent: many(coachingInvitations, {
-    relationName: "coachingInvitationCoach",
-  }),
-  coachedAthleteLinks: many(coachesAthletes, { relationName: "coachAthleteCoach" }),
-  coachLink: many(coachesAthletes, { relationName: "coachAthleteAthlete" }),
   conversationParticipants: many(conversationParticipants),
   conversationsStarted: many(messages, { relationName: "messageSender" }),
   events: many(events),
@@ -54,6 +45,7 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   profileTrainingSettings: many(profileTrainingSettings),
   syncedEvents: many(syncedEvents),
   trainingPlans: many(trainingPlans),
+  userTrainingPlans: many(userTrainingPlans),
 }));
 
 export const activityRoutesRelations = relations(activityRoutes, ({ one, many }) => ({
@@ -84,6 +76,19 @@ export const trainingPlansRelations = relations(trainingPlans, ({ one, many }) =
     references: [profiles.id],
   }),
   events: many(events),
+  userTrainingPlans: many(userTrainingPlans),
+}));
+
+export const userTrainingPlansRelations = relations(userTrainingPlans, ({ one, many }) => ({
+  profile: one(profiles, {
+    fields: [userTrainingPlans.profile_id],
+    references: [profiles.id],
+  }),
+  trainingPlan: one(trainingPlans, {
+    fields: [userTrainingPlans.training_plan_id],
+    references: [trainingPlans.id],
+  }),
+  events: many(events),
 }));
 
 export const eventsRelations = relations(events, ({ one, many }) => ({
@@ -102,6 +107,10 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
   route: one(activityRoutes, {
     fields: [events.route_id],
     references: [activityRoutes.id],
+  }),
+  userTrainingPlan: one(userTrainingPlans, {
+    fields: [events.user_training_plan_id],
+    references: [userTrainingPlans.id],
   }),
   syncedEvents: many(syncedEvents),
 }));
@@ -203,32 +212,6 @@ export const notificationsRelations = relations(notifications, ({ one }) => ({
   }),
 }));
 
-export const coachingInvitationsRelations = relations(coachingInvitations, ({ one }) => ({
-  athlete: one(profiles, {
-    relationName: "coachingInvitationAthlete",
-    fields: [coachingInvitations.athlete_id],
-    references: [profiles.id],
-  }),
-  coach: one(profiles, {
-    relationName: "coachingInvitationCoach",
-    fields: [coachingInvitations.coach_id],
-    references: [profiles.id],
-  }),
-}));
-
-export const coachesAthletesRelations = relations(coachesAthletes, ({ one }) => ({
-  coach: one(profiles, {
-    relationName: "coachAthleteCoach",
-    fields: [coachesAthletes.coach_id],
-    references: [profiles.id],
-  }),
-  athlete: one(profiles, {
-    relationName: "coachAthleteAthlete",
-    fields: [coachesAthletes.athlete_id],
-    references: [profiles.id],
-  }),
-}));
-
 export const conversationsRelations = relations(conversations, ({ many }) => ({
   participants: many(conversationParticipants),
   messages: many(messages),
@@ -282,6 +265,7 @@ export const relationsSchema = {
   activityRoutesRelations,
   activityPlansRelations,
   trainingPlansRelations,
+  userTrainingPlansRelations,
   eventsRelations,
   activitiesRelations,
   activityEffortsRelations,
@@ -293,8 +277,6 @@ export const relationsSchema = {
   syncedEventsRelations,
   likesRelations,
   notificationsRelations,
-  coachingInvitationsRelations,
-  coachesAthletesRelations,
   conversationsRelations,
   conversationParticipantsRelations,
   messagesRelations,

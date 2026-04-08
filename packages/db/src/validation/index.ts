@@ -3,7 +3,6 @@ import { z } from "zod";
 
 import {
   activityCategoryEnum,
-  coachingInvitationStatusEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
@@ -18,8 +17,6 @@ import {
   activityEfforts,
   activityPlans,
   activityRoutes,
-  coachesAthletes,
-  coachingInvitations,
   comments,
   conversationParticipants,
   conversations,
@@ -39,7 +36,6 @@ import {
 } from "../schema/tables";
 
 export const publicActivityCategorySchema = z.enum(activityCategoryEnum.enumValues);
-export const publicCoachingInvitationStatusSchema = z.enum(coachingInvitationStatusEnum.enumValues);
 export const publicEffortTypeSchema = z.enum(effortTypeEnum.enumValues);
 export const publicEventStatusSchema = z.enum(eventStatusEnum.enumValues);
 export const publicEventTypeSchema = z.enum(eventTypeEnum.enumValues);
@@ -118,14 +114,6 @@ export const publicNotificationsRowSchema = createSelectSchema(notifications);
 export const publicNotificationsInsertSchema = createInsertSchema(notifications);
 export const publicNotificationsUpdateSchema = createUpdateSchema(notifications);
 
-export const publicCoachingInvitationsRowSchema = createSelectSchema(coachingInvitations);
-export const publicCoachingInvitationsInsertSchema = createInsertSchema(coachingInvitations);
-export const publicCoachingInvitationsUpdateSchema = createUpdateSchema(coachingInvitations);
-
-export const publicCoachesAthletesRowSchema = createSelectSchema(coachesAthletes);
-export const publicCoachesAthletesInsertSchema = createInsertSchema(coachesAthletes);
-export const publicCoachesAthletesUpdateSchema = createUpdateSchema(coachesAthletes);
-
 export const publicConversationsRowSchema = createSelectSchema(conversations);
 export const publicConversationsInsertSchema = createInsertSchema(conversations);
 export const publicConversationsUpdateSchema = createUpdateSchema(conversations);
@@ -149,7 +137,6 @@ export const publicCommentsInsertSchema = createInsertSchema(comments);
 export const publicCommentsUpdateSchema = createUpdateSchema(comments);
 
 export type PublicActivityCategory = z.infer<typeof publicActivityCategorySchema>;
-export type PublicCoachingInvitationStatus = z.infer<typeof publicCoachingInvitationStatusSchema>;
 export type PublicEffortType = z.infer<typeof publicEffortTypeSchema>;
 export type PublicEventStatus = z.infer<typeof publicEventStatusSchema>;
 export type PublicEventType = z.infer<typeof publicEventTypeSchema>;
@@ -210,12 +197,6 @@ export type PublicLikesUpdate = z.infer<typeof publicLikesUpdateSchema>;
 export type PublicNotificationsRow = z.infer<typeof publicNotificationsRowSchema>;
 export type PublicNotificationsInsert = z.infer<typeof publicNotificationsInsertSchema>;
 export type PublicNotificationsUpdate = z.infer<typeof publicNotificationsUpdateSchema>;
-export type PublicCoachingInvitationsRow = z.infer<typeof publicCoachingInvitationsRowSchema>;
-export type PublicCoachingInvitationsInsert = z.infer<typeof publicCoachingInvitationsInsertSchema>;
-export type PublicCoachingInvitationsUpdate = z.infer<typeof publicCoachingInvitationsUpdateSchema>;
-export type PublicCoachesAthletesRow = z.infer<typeof publicCoachesAthletesRowSchema>;
-export type PublicCoachesAthletesInsert = z.infer<typeof publicCoachesAthletesInsertSchema>;
-export type PublicCoachesAthletesUpdate = z.infer<typeof publicCoachesAthletesUpdateSchema>;
 export type PublicConversationsRow = z.infer<typeof publicConversationsRowSchema>;
 export type PublicConversationsInsert = z.infer<typeof publicConversationsInsertSchema>;
 export type PublicConversationsUpdate = z.infer<typeof publicConversationsUpdateSchema>;

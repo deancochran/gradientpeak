@@ -1,5 +1,9 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
+  date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -11,12 +15,14 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
+import { users } from "../auth-schema";
+
 import {
   activityCategoryEnum,
-  coachingInvitationStatusEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
@@ -27,169 +33,367 @@ import {
   profileMetricTypeEnum,
 } from "./enums";
 
-export const profiles = pgTable("profiles", {
-  id: uuid("id").primaryKey(),
-  idx: integer("idx"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
-  email: text("email"),
-  full_name: text("full_name"),
-  username: text("username"),
-  avatar_url: text("avatar_url"),
-  bio: text("bio"),
-  dob: timestamp("dob", { withTimezone: true, mode: "date" }),
-  gender: genderEnum("gender"),
-  language: text("language"),
-  preferred_units: text("preferred_units", { enum: ["metric", "imperial"] }),
-  onboarded: boolean("onboarded"),
-  is_public: boolean("is_public").notNull(),
-});
+export const profiles = pgTable(
+  "profiles",
+  {
+    id: uuid("id").primaryKey(),
+    idx: integer("idx"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+    email: text("email"),
+    full_name: text("full_name"),
+    username: text("username"),
+    avatar_url: text("avatar_url"),
+    bio: text("bio"),
+    dob: timestamp("dob", { withTimezone: true, mode: "date" }),
+    gender: genderEnum("gender"),
+    language: text("language"),
+    preferred_units: text("preferred_units", { enum: ["metric", "imperial"] }),
+    onboarded: boolean("onboarded"),
+    is_public: boolean("is_public").notNull(),
+  },
+  (table) => [
+    uniqueIndex("profiles_username_unique_idx").on(table.username),
+    uniqueIndex("profiles_email_unique_idx")
+      .on(table.email)
+      .where(sql`${table.email} is not null`),
+    foreignKey({
+      columns: [table.id],
+      foreignColumns: [users.id],
+      name: "profiles_id_fkey",
+    }).onDelete("cascade"),
+  ],
+);
 
-export const activityRoutes = pgTable("activity_routes", {
-  id: uuid("id").primaryKey(),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
-  profile_id: uuid("profile_id")
-    .notNull()
-    .references(() => profiles.id),
-  name: text("name").notNull(),
-  description: text("description"),
-  activity_category: activityCategoryEnum("activity_category").notNull(),
-  estimated_distance_meters: real("estimated_distance_meters"),
-  estimated_duration_seconds: integer("estimated_duration_seconds"),
-  elevation_gain_meters: real("elevation_gain_meters"),
-  elevation_loss_meters: real("elevation_loss_meters"),
-  file_path: text("file_path"),
-  total_distance: real("total_distance"),
-  total_ascent: real("total_ascent"),
-  total_descent: real("total_descent"),
-  source: text("source"),
-  elevation_polyline: text("elevation_polyline"),
-  polyline: text("polyline"),
-  likes_count: integer("likes_count"),
-  is_public: boolean("is_public").notNull(),
-});
+export const activityRoutes = pgTable(
+  "activity_routes",
+  {
+    id: uuid("id").primaryKey(),
+    idx: serial("idx").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
+    file_path: text("file_path").notNull(),
+    total_distance: integer("total_distance").notNull(),
+    total_ascent: integer("total_ascent"),
+    total_descent: integer("total_descent"),
+    source: text("source"),
+    elevation_polyline: text("elevation_polyline"),
+    polyline: text("polyline").notNull(),
+    likes_count: integer("likes_count").default(0),
+  },
+  (table) => [
+    uniqueIndex("activity_routes_idx_key").on(table.idx),
+    check("activity_routes_total_distance_check", sql`${table.total_distance} >= 0`),
+    check("activity_routes_total_ascent_check", sql`${table.total_ascent} >= 0`),
+    check("activity_routes_total_descent_check", sql`${table.total_descent} >= 0`),
+    index("idx_routes_profile_id").on(table.profile_id),
+    index("idx_routes_name").on(table.name),
+    index("idx_routes_activity_category").on(table.activity_category),
+    index("idx_routes_created_at").on(table.created_at),
+  ],
+);
 
-export const activityPlans = pgTable("activity_plans", {
-  id: uuid("id").primaryKey(),
-  idx: integer("idx"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
-  profile_id: uuid("profile_id").references(() => profiles.id),
-  route_id: uuid("route_id").references(() => activityRoutes.id),
-  name: text("name").notNull(),
-  description: text("description"),
-  notes: text("notes"),
-  activity_category: activityCategoryEnum("activity_category").notNull(),
-  structure: jsonb("structure"),
-  version: text("version"),
-  template_visibility: text("template_visibility"),
-  import_provider: text("import_provider"),
-  import_external_id: text("import_external_id"),
-  is_system_template: boolean("is_system_template"),
-  estimated_tss: real("estimated_tss"),
-  estimated_duration_seconds: integer("estimated_duration_seconds"),
-  estimated_distance_meters: real("estimated_distance_meters"),
-  sessions_per_week_target: integer("sessions_per_week_target"),
-  duration_hours: integer("duration_hours"),
-  likes_count: integer("likes_count"),
-  tss_target: real("tss_target"),
-  is_public: boolean("is_public").notNull(),
-});
+export const activityPlans = pgTable(
+  "activity_plans",
+  {
+    id: uuid("id").primaryKey(),
+    idx: serial("idx").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    profile_id: uuid("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
+    route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    notes: text("notes"),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
+    structure: jsonb("structure"),
+    version: text("version").notNull().default("1.0"),
+    template_visibility: text("template_visibility").notNull().default("private"),
+    import_provider: text("import_provider"),
+    import_external_id: text("import_external_id"),
+    is_system_template: boolean("is_system_template").notNull().default(false),
+    likes_count: integer("likes_count").default(0),
+  },
+  (table) => [
+    uniqueIndex("activity_plans_idx_key").on(table.idx),
+    check(
+      "activity_plans_template_visibility_check",
+      sql`${table.template_visibility} = any(array['private'::text, 'public'::text])`,
+    ),
+    check(
+      "activity_plans_import_provider_non_empty_check",
+      sql`${table.import_provider} is null or btrim(${table.import_provider}) <> ''`,
+    ),
+    check(
+      "activity_plans_import_external_id_non_empty_check",
+      sql`${table.import_external_id} is null or btrim(${table.import_external_id}) <> ''`,
+    ),
+    check(
+      "activity_plans_system_templates_public_check",
+      sql`${table.is_system_template} = false or ${table.template_visibility} = 'public'`,
+    ),
+    check(
+      "activity_plans_system_template_check",
+      sql`(${table.is_system_template} = true and ${table.profile_id} is null) or (${table.is_system_template} = false and ${table.profile_id} is not null)`,
+    ),
+    check(
+      "activity_plans_has_content",
+      sql`${table.structure} is not null or ${table.route_id} is not null`,
+    ),
+    index("idx_activity_plans_profile_id")
+      .on(table.profile_id)
+      .where(sql`${table.profile_id} is not null`),
+    index("idx_activity_plans_system_templates")
+      .on(table.is_system_template)
+      .where(sql`${table.is_system_template} = true`),
+    index("idx_activity_plans_route_id").on(table.route_id).where(sql`${table.route_id} is not null`),
+    index("idx_activity_plans_visibility").on(table.template_visibility),
+    uniqueIndex("idx_activity_plans_import_identity")
+      .on(table.profile_id, table.import_provider, table.import_external_id)
+      .where(sql`${table.import_provider} is not null and ${table.import_external_id} is not null`),
+  ],
+);
 
 export const trainingPlans = pgTable("training_plans", {
   id: uuid("id").primaryKey(),
-  idx: integer("idx"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
-  profile_id: uuid("profile_id").references(() => profiles.id),
-  name: text("name").notNull(),
-  description: text("description"),
-  structure: jsonb("structure"),
-  template_visibility: text("template_visibility"),
-  is_public: boolean("is_public").notNull(),
-  is_system_template: boolean("is_system_template").notNull(),
-  sessions_per_week_target: integer("sessions_per_week_target"),
-  duration_hours: numeric("duration_hours", { precision: 12, scale: 2 }),
-  likes_count: integer("likes_count"),
-});
+    idx: serial("idx").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    profile_id: uuid("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    structure: jsonb("structure").notNull(),
+    template_visibility: text("template_visibility").notNull().default("private"),
+    is_public: boolean("is_public").notNull().default(false),
+    is_system_template: boolean("is_system_template").notNull().default(false),
+    sessions_per_week_target: integer("sessions_per_week_target"),
+    duration_hours: numeric("duration_hours", { precision: 12, scale: 2 }),
+    likes_count: integer("likes_count").default(0),
+  },
+  (table) => [
+    uniqueIndex("training_plans_idx_key").on(table.idx),
+    check(
+      "training_plans_template_visibility_check",
+      sql`${table.template_visibility} = any(array['private'::text, 'public'::text])`,
+    ),
+    check(
+      "training_plans_system_templates_public_check",
+      sql`${table.is_system_template} = false or ${table.template_visibility} = 'public'`,
+    ),
+    check(
+      "training_plans_template_profile_check",
+      sql`(${table.is_system_template} = true and ${table.profile_id} is null) or (${table.is_system_template} = false and ${table.profile_id} is not null)`,
+    ),
+    index("idx_training_plans_profile_id")
+      .on(table.profile_id)
+      .where(sql`${table.profile_id} is not null`),
+    index("idx_training_plans_is_system_template")
+      .on(table.is_system_template)
+      .where(sql`${table.is_system_template} = true`),
+    index("idx_training_plans_name").on(table.name),
+    index("idx_training_plans_visibility").on(table.template_visibility),
+  ],
+);
 
-export const events = pgTable("events", {
-  id: uuid("id").primaryKey(),
-  idx: integer("idx"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
-  profile_id: uuid("profile_id")
-    .notNull()
-    .references(() => profiles.id),
-  training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id),
-  activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id),
-  linked_activity_id: uuid("linked_activity_id").references(() => activities.id),
-  event_type: eventTypeEnum("event_type").notNull(),
-  status: eventStatusEnum("status"),
-  title: text("title"),
-  description: text("description"),
-  notes: text("notes"),
-  all_day: boolean("all_day"),
-  timezone: text("timezone"),
-  recurrence_rule: text("recurrence_rule"),
-  recurrence_timezone: text("recurrence_timezone"),
-  series_id: uuid("series_id"),
-  source_provider: text("source_provider"),
-  occurrence_key: text("occurrence_key"),
-  original_starts_at: timestamp("original_starts_at", { withTimezone: true, mode: "date" }),
-  integration_account_id: uuid("integration_account_id").references(() => integrations.id),
-  external_calendar_id: text("external_calendar_id"),
-  external_event_id: text("external_event_id"),
-  schedule_batch_id: text("schedule_batch_id"),
-  user_training_plan_id: uuid("user_training_plan_id").references(() => trainingPlans.id),
-  starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
-  ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
-  scheduled_date: text("scheduled_date"),
-  read_only: boolean("read_only"),
-  lifecycle: jsonb("lifecycle"),
-  recurrence: jsonb("recurrence"),
-  payload: jsonb("payload"),
-  route_id: uuid("route_id").references(() => activityRoutes.id),
-});
+export const userTrainingPlans = pgTable(
+  "user_training_plans",
+  {
+    id: uuid("id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    training_plan_id: uuid("training_plan_id")
+      .notNull()
+      .references(() => trainingPlans.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["active", "paused", "completed", "abandoned"] })
+      .notNull()
+      .default("active"),
+    start_date: date("start_date").notNull(),
+    target_date: date("target_date"),
+    snapshot_structure: jsonb("snapshot_structure"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    index("idx_user_training_plans_profile_id").on(table.profile_id),
+    index("idx_user_training_plans_training_plan_id").on(table.training_plan_id),
+    index("idx_user_training_plans_status")
+      .on(table.profile_id)
+      .where(sql`${table.status} = 'active'`),
+  ],
+);
+
+export const events = pgTable(
+  "events",
+  {
+    id: uuid("id").primaryKey(),
+    idx: serial("idx").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
+      onDelete: "set null",
+    }),
+    activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
+      onDelete: "set null",
+    }),
+    linked_activity_id: uuid("linked_activity_id").references(() => activities.id),
+    event_type: eventTypeEnum("event_type").notNull(),
+    status: eventStatusEnum("status").notNull().default("scheduled"),
+    title: text("title").notNull(),
+    description: text("description"),
+    notes: text("notes"),
+    all_day: boolean("all_day").notNull().default(false),
+    timezone: text("timezone").notNull().default("UTC"),
+    recurrence_rule: text("recurrence_rule"),
+    recurrence_timezone: text("recurrence_timezone"),
+    series_id: uuid("series_id"),
+    source_provider: text("source_provider"),
+    occurrence_key: text("occurrence_key").notNull().default(""),
+    original_starts_at: timestamp("original_starts_at", { withTimezone: true, mode: "date" }),
+    integration_account_id: uuid("integration_account_id").references(() => integrations.id),
+    external_calendar_id: text("external_calendar_id"),
+    external_event_id: text("external_event_id"),
+    schedule_batch_id: uuid("schedule_batch_id"),
+    user_training_plan_id: uuid("user_training_plan_id").references(() => userTrainingPlans.id, {
+      onDelete: "set null",
+    }),
+    starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
+    ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
+    scheduled_date: text("scheduled_date"),
+    read_only: boolean("read_only"),
+    lifecycle: jsonb("lifecycle"),
+    recurrence: jsonb("recurrence"),
+    payload: jsonb("payload"),
+    route_id: uuid("route_id").references(() => activityRoutes.id),
+  },
+  (table) => [
+    uniqueIndex("events_idx_key").on(table.idx),
+    foreignKey({
+      columns: [table.series_id],
+      foreignColumns: [table.id],
+      name: "events_series_id_fkey",
+    }).onDelete("cascade"),
+    check(
+      "events_external_calendar_non_empty",
+      sql`${table.external_calendar_id} is null or btrim(${table.external_calendar_id}) <> ''`,
+    ),
+    check(
+      "events_external_event_non_empty",
+      sql`${table.external_event_id} is null or btrim(${table.external_event_id}) <> ''`,
+    ),
+    check(
+      "events_recurrence_timezone_requires_rule",
+      sql`${table.recurrence_timezone} is null or ${table.recurrence_rule} is not null`,
+    ),
+    check("events_series_not_self", sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`),
+    check(
+      "events_series_occurrence_key_required",
+      sql`${table.series_id} is null or btrim(${table.occurrence_key}) <> ''`,
+    ),
+    check(
+      "events_source_identity_complete",
+      sql`(
+        ${table.source_provider} is null
+        and ${table.integration_account_id} is null
+        and ${table.external_calendar_id} is null
+        and ${table.external_event_id} is null
+      ) or (
+        ${table.source_provider} is not null
+        and ${table.integration_account_id} is not null
+        and ${table.external_calendar_id} is not null
+        and ${table.external_event_id} is not null
+      )`,
+    ),
+    check(
+      "events_source_provider_non_empty",
+      sql`${table.source_provider} is null or btrim(${table.source_provider}) <> ''`,
+    ),
+    check("events_time_window", sql`${table.ends_at} is null or ${table.ends_at} > ${table.starts_at}`),
+    index("idx_events_activity_plan")
+      .on(table.activity_plan_id)
+      .where(sql`${table.activity_plan_id} is not null`),
+    index("idx_events_event_type_starts_at").on(table.event_type, table.starts_at),
+    uniqueIndex("idx_events_external_identity_unique")
+      .on(
+        table.source_provider,
+        table.integration_account_id,
+        table.external_calendar_id,
+        table.external_event_id,
+        table.occurrence_key,
+      )
+      .where(
+        sql`${table.source_provider} is not null and ${table.integration_account_id} is not null and ${table.external_calendar_id} is not null and ${table.external_event_id} is not null`,
+      ),
+    index("idx_events_integration_calendar_updated")
+      .on(table.integration_account_id, table.external_calendar_id, table.updated_at)
+      .where(
+        sql`${table.integration_account_id} is not null and ${table.external_calendar_id} is not null`,
+      ),
+    index("idx_events_profile_starts_at").on(table.profile_id, table.starts_at),
+    index("idx_events_profile_status_starts_at").on(table.profile_id, table.status, table.starts_at),
+    uniqueIndex("idx_events_series_occurrence_unique")
+      .on(table.series_id, table.occurrence_key)
+      .where(sql`${table.series_id} is not null`),
+    index("idx_events_training_plan")
+      .on(table.training_plan_id)
+      .where(sql`${table.training_plan_id} is not null`),
+    index("idx_events_schedule_batch")
+      .on(table.profile_id, table.schedule_batch_id)
+      .where(sql`${table.schedule_batch_id} is not null`),
+    index("idx_events_user_training_plan")
+      .on(table.user_training_plan_id)
+      .where(sql`${table.user_training_plan_id} is not null`),
+  ],
+);
 
 export const activities = pgTable("activities", {
   id: uuid("id").primaryKey(),
-  idx: integer("idx").notNull(),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  idx: serial("idx").notNull(),
+  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
   profile_id: uuid("profile_id")
     .notNull()
-    .references(() => profiles.id),
-  activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id),
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
+    onDelete: "set null",
+  }),
   name: text("name").notNull(),
   type: text("type").notNull(),
   provider: integrationProviderEnum("provider"),
   external_id: text("external_id"),
   started_at: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull(),
   finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }).notNull(),
-  duration_seconds: integer("duration_seconds").notNull(),
-  moving_seconds: integer("moving_seconds").notNull(),
-  distance_meters: real("distance_meters").notNull(),
-  elevation_gain_meters: real("elevation_gain_meters"),
-  elevation_loss_meters: real("elevation_loss_meters"),
-  calories: real("calories"),
-  avg_heart_rate: real("avg_heart_rate"),
-  max_heart_rate: real("max_heart_rate"),
-  avg_power: real("avg_power"),
-  max_power: real("max_power"),
-  normalized_power: real("normalized_power"),
-  avg_cadence: real("avg_cadence"),
-  max_cadence: real("max_cadence"),
-  avg_speed_mps: real("avg_speed_mps"),
-  max_speed_mps: real("max_speed_mps"),
-  normalized_speed_mps: real("normalized_speed_mps"),
-  normalized_graded_speed_mps: real("normalized_graded_speed_mps"),
-  avg_temperature: real("avg_temperature"),
-  avg_swolf: real("avg_swolf"),
-  efficiency_factor: real("efficiency_factor"),
-  aerobic_decoupling: real("aerobic_decoupling"),
-  pool_length: real("pool_length"),
+  duration_seconds: integer("duration_seconds").notNull().default(0),
+  moving_seconds: integer("moving_seconds").notNull().default(0),
+  distance_meters: integer("distance_meters").notNull().default(0),
+  elevation_gain_meters: numeric("elevation_gain_meters", { precision: 10, scale: 2 }),
+  elevation_loss_meters: numeric("elevation_loss_meters", { precision: 10, scale: 2 }),
+  calories: integer("calories"),
+  avg_heart_rate: integer("avg_heart_rate"),
+  max_heart_rate: integer("max_heart_rate"),
+  avg_power: integer("avg_power"),
+  max_power: integer("max_power"),
+  normalized_power: integer("normalized_power"),
+  avg_cadence: integer("avg_cadence"),
+  max_cadence: integer("max_cadence"),
+  avg_speed_mps: numeric("avg_speed_mps", { precision: 6, scale: 2 }),
+  max_speed_mps: numeric("max_speed_mps", { precision: 6, scale: 2 }),
+  normalized_speed_mps: numeric("normalized_speed_mps", { precision: 6, scale: 2 }),
+  normalized_graded_speed_mps: numeric("normalized_graded_speed_mps", { precision: 6, scale: 2 }),
+  avg_temperature: numeric("avg_temperature"),
+  avg_swolf: numeric("avg_swolf"),
+  efficiency_factor: numeric("efficiency_factor"),
+  aerobic_decoupling: numeric("aerobic_decoupling"),
+  pool_length: numeric("pool_length"),
   total_strokes: integer("total_strokes"),
   device_manufacturer: text("device_manufacturer"),
   device_product: text("device_product"),
@@ -202,9 +406,42 @@ export const activities = pgTable("activities", {
   polyline: text("polyline"),
   laps: jsonb("laps"),
   map_bounds: jsonb("map_bounds"),
-  likes_count: integer("likes_count"),
-  is_private: boolean("is_private").notNull(),
-});
+  likes_count: integer("likes_count").default(0),
+  is_private: boolean("is_private").notNull().default(true),
+}, (table) => [
+  uniqueIndex("activities_idx_key").on(table.idx),
+  check("activities_distance_meters_check", sql`${table.distance_meters} >= 0`),
+  check("activities_duration_seconds_check", sql`${table.duration_seconds} >= 0`),
+  check("activities_moving_seconds_check", sql`${table.moving_seconds} >= 0`),
+  check(
+    "chk_moving_time",
+    sql`${table.moving_seconds} >= 0 and ${table.moving_seconds} <= ${table.duration_seconds}`,
+  ),
+  check(
+    "activities_import_file_type_non_empty_check",
+    sql`${table.import_file_type} is null or btrim(${table.import_file_type}) <> ''`,
+  ),
+  check(
+    "activities_import_original_file_name_non_empty_check",
+    sql`${table.import_original_file_name} is null or btrim(${table.import_original_file_name}) <> ''`,
+  ),
+  check(
+    "activities_import_source_check",
+    sql`${table.import_source} is null or ${table.import_source} = 'manual_historical'`,
+  ),
+  index("idx_activities_activity_plan")
+    .on(table.activity_plan_id)
+    .where(sql`${table.activity_plan_id} is not null`),
+  uniqueIndex("idx_activities_external_unique")
+    .on(table.provider, table.external_id)
+    .where(sql`${table.external_id} is not null and ${table.provider} is not null`),
+  index("idx_activities_provider_external")
+    .on(table.provider, table.external_id)
+    .where(sql`${table.external_id} is not null`),
+  index("idx_activities_profile_started").on(table.profile_id, table.started_at),
+  index("idx_activities_started").on(table.started_at),
+  index("idx_activities_type").on(table.type),
+]);
 
 export const activityEfforts = pgTable("activity_efforts", {
   id: uuid("id").primaryKey(),
@@ -255,18 +492,34 @@ export const integrations = pgTable(
 
 export const profileMetrics = pgTable("profile_metrics", {
   id: uuid("id").primaryKey(),
-  idx: integer("idx"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+  idx: serial("idx").notNull(),
+  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
   profile_id: uuid("profile_id")
     .notNull()
-    .references(() => profiles.id),
+    .references(() => profiles.id, { onDelete: "cascade" }),
   metric_type: profileMetricTypeEnum("metric_type").notNull(),
   recorded_at: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
-  unit: text("unit"),
+  unit: text("unit").notNull(),
   notes: text("notes"),
-  reference_activity_id: uuid("reference_activity_id").references(() => activities.id),
-  value: numeric("value", { precision: 12, scale: 4 }).notNull(),
-});
+  reference_activity_id: uuid("reference_activity_id").references(() => activities.id, {
+    onDelete: "set null",
+  }),
+  value: numeric("value").notNull(),
+}, (table) => [
+  uniqueIndex("profile_metrics_idx_key").on(table.idx),
+  check("profile_metrics_value_check", sql`${table.value} >= 0`),
+  index("idx_profile_metrics_profile").on(table.profile_id, table.recorded_at),
+  index("idx_profile_metrics_recorded_at").on(table.recorded_at),
+  index("idx_profile_metrics_reference_activity")
+    .on(table.reference_activity_id)
+    .where(sql`${table.reference_activity_id} is not null`),
+  index("idx_profile_metrics_temporal_lookup").on(
+    table.profile_id,
+    table.metric_type,
+    table.recorded_at,
+  ),
+]);
 
 export const profileTrainingSettings = pgTable("profile_training_settings", {
   profile_id: uuid("profile_id")
@@ -289,6 +542,7 @@ export const profileGoals = pgTable(
     title: text("title").notNull(),
     priority: integer("priority").notNull(),
     activity_category: text("activity_category"),
+    target_date: date("target_date"),
     target_payload: jsonb("target_payload"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
@@ -321,21 +575,30 @@ export const oauthStates = pgTable(
   ],
 );
 
-export const syncedEvents = pgTable("synced_events", {
-  id: uuid("id").primaryKey(),
-  idx: integer("idx"),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
-  synced_at: timestamp("synced_at", { withTimezone: true, mode: "date" }),
-  profile_id: uuid("profile_id")
-    .notNull()
-    .references(() => profiles.id),
-  event_id: uuid("event_id")
-    .notNull()
-    .references(() => events.id),
-  provider: integrationProviderEnum("provider").notNull(),
-  external_id: text("external_id").notNull(),
-});
+export const syncedEvents = pgTable(
+  "synced_events",
+  {
+    id: uuid("id").primaryKey(),
+    idx: integer("idx"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
+    synced_at: timestamp("synced_at", { withTimezone: true, mode: "date" }),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id),
+    event_id: uuid("event_id")
+      .notNull()
+      .references(() => events.id),
+    provider: integrationProviderEnum("provider").notNull(),
+    external_id: text("external_id").notNull(),
+  },
+  (table) => [
+    unique("unique_event_per_provider").on(table.event_id, table.provider),
+    index("idx_synced_events_profile").on(table.profile_id),
+    index("idx_synced_events_event").on(table.event_id),
+    index("idx_synced_events_provider").on(table.provider, table.external_id),
+  ],
+);
 
 export const notifications = pgTable(
   "notifications",
@@ -355,50 +618,6 @@ export const notifications = pgTable(
   (table) => [
     index("idx_notifications_user_id").on(table.user_id),
     index("idx_notifications_read_at").on(table.read_at),
-  ],
-);
-
-export const coachingInvitations = pgTable(
-  "coaching_invitations",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    athlete_id: uuid("athlete_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    coach_id: uuid("coach_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    status: coachingInvitationStatusEnum("status").notNull().default("pending"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    unique("coaching_invitations_athlete_id_coach_id_unique").on(table.athlete_id, table.coach_id),
-    index("idx_coaching_invitations_athlete_id").on(table.athlete_id),
-    index("idx_coaching_invitations_coach_id").on(table.coach_id),
-  ],
-);
-
-export const coachesAthletes = pgTable(
-  "coaches_athletes",
-  {
-    coach_id: uuid("coach_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    athlete_id: uuid("athlete_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.coach_id, table.athlete_id] }),
-    unique("coaches_athletes_athlete_id_unique").on(table.athlete_id),
   ],
 );
 
@@ -467,15 +686,22 @@ export const follows = pgTable(
   ],
 );
 
-export const likes = pgTable("likes", {
-  id: uuid("id").primaryKey(),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  profile_id: uuid("profile_id")
-    .notNull()
-    .references(() => profiles.id),
-  entity_id: uuid("entity_id").notNull(),
-  entity_type: likeEntityTypeEnum("entity_type").notNull(),
-});
+export const likes = pgTable(
+  "likes",
+  {
+    id: uuid("id").primaryKey(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id),
+    entity_id: uuid("entity_id").notNull(),
+    entity_type: likeEntityTypeEnum("entity_type").notNull(),
+  },
+  (table) => [
+    unique("likes_profile_entity_unique").on(table.profile_id, table.entity_type, table.entity_id),
+    index("idx_likes_entity").on(table.entity_type, table.entity_id),
+  ],
+);
 
 export const comments = pgTable(
   "comments",

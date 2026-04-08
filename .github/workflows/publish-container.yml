@@ -8,7 +8,7 @@ on:
       - "apps/web/**"
       - "packages/core/**"
       - "packages/api/**"
-      - "packages/supabase/**"
+      - "packages/db/**"
       - "pnpm-lock.yaml"
       - ".github/workflows/publish-container.yml"
   workflow_dispatch:

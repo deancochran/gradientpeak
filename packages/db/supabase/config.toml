@@ -208,21 +208,21 @@ otp_expiry = 3600
 # Uncomment to customize email template
 [auth.email.template.confirmation]
 subject = "Please confirm your email for {{ .SiteName }}"
-content_path = "./supabase/templates/confirmation.html"
+content_path = "./templates/confirmation.html"
 
 # Uncomment to customize email template
 [auth.email.template.invite]
 subject = "You've been invited to join {{ .SiteName }}!"
-content_path = "./supabase/templates/invite.html"
+content_path = "./templates/invite.html"
 
 # Uncomment to customize email template
 [auth.email.template.recovery]
 subject = "Reset your password for {{ .SiteName }}"
-content_path = "./supabase/templates/recovery.html"
+content_path = "./templates/recovery.html"
 
 [auth.email.template.email_change]
 subject = "Confirm your email change for {{ .SiteName }}"
-content_path = "./supabase/templates/email_change.html"
+content_path = "./templates/email_change.html"
 
 # Security Notifications
 [auth.email.notification.password_changed]

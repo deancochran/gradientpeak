@@ -10,12 +10,6 @@ export const activityCategoryEnum = pgEnum("activity_category", [
 
 export const effortTypeEnum = pgEnum("effort_type", ["power", "speed"]);
 
-export const coachingInvitationStatusEnum = pgEnum("coaching_invitation_status", [
-  "pending",
-  "accepted",
-  "declined",
-]);
-
 export const integrationProviderEnum = pgEnum("integration_provider", [
   "strava",
   "wahoo",

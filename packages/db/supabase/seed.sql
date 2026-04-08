@@ -71,8 +71,8 @@ using (bucket_id = 'profile-avatars');
 -- GPX ROUTES BUCKET
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-  'profile-routes',
-  'profile-routes',
+  'gpx-routes',
+  'gpx-routes',
   false,  -- keep private by default
   10485760,  -- 10MB limit
   array['application/gpx+xml', 'application/xml']::text[]
@@ -87,11 +87,11 @@ create policy "Users can manage their own routes"
 on storage.objects
 for all
 using (
-  bucket_id = 'profile-routes'
+  bucket_id = 'gpx-routes'
   and auth.uid()::text = (storage.foldername(name))[1]
 )
 with check (
-  bucket_id = 'profile-routes'
+  bucket_id = 'gpx-routes'
   and auth.uid()::text = (storage.foldername(name))[1]
 );
 

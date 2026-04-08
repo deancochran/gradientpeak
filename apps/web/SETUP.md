@@ -13,7 +13,7 @@ cp .env.example .env.local
 1. **Supabase Configuration**
    - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` - Public anon key
-   - `SUPABASE_SERVICE_ROLE_KEY` - **Critical:** Service role key (never expose to client!)
+   - `SUPABASE_SERVICE_ROLE_KEY` - Service role key for server-only usage
 
 2. **OAuth Providers** (configure as needed)
    - Strava, Wahoo, TrainingPeaks, Garmin, Zwift credentials
@@ -24,47 +24,52 @@ cp .env.example .env.local
 
 ## Database Setup
 
-### Single Source of Truth: `packages/supabase/schemas/init.sql`
+Relational schema ownership lives in `packages/db`.
 
-All database schema changes should be made in the `init.sql` file. This ensures consistency and makes it easy to recreate the database from scratch.
+Key locations:
 
-### Making Database Changes
+- Drizzle schema: `packages/db/src/schema/**`
+- Baseline migration: `packages/db/drizzle/0000_baseline.sql`
+- Local stack assets: `packages/db/supabase/**`
 
-1. **Edit `packages/supabase/schemas/init.sql`**
-   - Add/modify tables, columns, indexes, etc.
-   - Update RLS policies if needed
+### Database workflow
 
-2. **Generate Migration**
-   ```bash
-   cd packages/supabase
-   npx supabase db diff --schema public --file your_migration_name
-   ```
+1. Edit `packages/db/src/schema/**`
+2. Generate a migration:
 
-3. **Apply to Remote Database**
-   ```bash
-   # Option 1: Push migration files
-   npx supabase db push
-   
-   # Option 2: Run SQL directly in Supabase Dashboard
-   # Copy the migration SQL and run it in SQL Editor
-   ```
+```bash
+pnpm db:migration:new your_migration_name
+```
+
+3. Apply the migration:
+
+```bash
+pnpm db:migrate
+```
+
+4. Use the local stack when needed:
+
+```bash
+pnpm self-host:up
+pnpm self-host:down
+```
 
 ### Current Architecture: Service Role Key (No RLS)
 
-This application uses **Service Role Key** for database access, which means:
+This application uses a service role key for server-side database access.
 
-- ✅ **Row Level Security (RLS) is DISABLED** on all tables
-- ✅ Authorization is handled at the **application layer** via tRPC `protectedProcedure`
-- ✅ All queries explicitly filter by `profile_id = ctx.session.user.id`
-- ✅ Simpler development and debugging
-- ✅ Faster queries (no RLS policy checks)
+- Row Level Security is not the primary application authorization boundary.
+- Authorization is enforced in application code.
+- Server-side queries explicitly scope data to the authenticated user where required.
 
-**Why this is secure:**
+Why this is acceptable in the current architecture:
+
 - Service role key is **never exposed** to clients (server-side only)
-- Authentication middleware validates **every request**
-- Business logic enforces **data isolation**
+- Authentication middleware validates requests
+- Business logic enforces data isolation
 
-**When you'd need RLS:**
+RLS becomes more important if you introduce:
+
 - Direct database access from clients (we don't do this)
 - Multiple backend services accessing the same DB
 - Third-party integrations with DB access
@@ -87,9 +92,9 @@ pnpm build
 
 ### Service Role Key Security
 
-⚠️ **NEVER** commit `.env.local` to git
-⚠️ **NEVER** use `SUPABASE_SERVICE_ROLE_KEY` in client-side code
-⚠️ **NEVER** prefix it with `NEXT_PUBLIC_` (that exposes it to the browser)
+- Never commit `.env.local`.
+- Never use `SUPABASE_SERVICE_ROLE_KEY` in client-side code.
+- Never prefix it with `NEXT_PUBLIC_`.
 
 The service role key should **only** be used in:
 - Server-side API routes (`app/api/**`)
