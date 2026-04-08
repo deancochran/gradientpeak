@@ -172,6 +172,19 @@ describe("goalsRouter", () => {
     expect(result).toEqual([goal]);
   });
 
+  it("rejects list input with unexpected keys", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.list({
+        profile_id: OWNER_ID,
+        limit: 20,
+        offset: 0,
+        extra: true,
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+  });
+
   it("allows an authorized coach to fetch a goal by id", async () => {
     const goal = createGoalRow();
     const { caller } = createCaller({
@@ -288,6 +301,20 @@ describe("goalsRouter", () => {
     });
   });
 
+  it("rejects update input with unexpected keys", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.update({
+        id: GOAL_ID,
+        data: {
+          title: "Updated Goal",
+          extra: true,
+        },
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+  });
+
   it("deletes an existing goal and returns a success payload", async () => {
     const { caller, callLog } = createCaller({
       queryMap: {
@@ -302,6 +329,17 @@ describe("goalsRouter", () => {
       cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
     });
     expect(callLog).toContainEqual({ operation: "delete" });
+  });
+
+  it("rejects delete input with unexpected keys", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.delete({
+        id: GOAL_ID,
+        extra: true,
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
   it("rejects unauthorized profile goal reads", async () => {

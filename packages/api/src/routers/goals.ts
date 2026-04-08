@@ -32,11 +32,15 @@ function toSafeDbErrorMessage(error: unknown): string {
   return `${code}${message}`;
 }
 
-const goalsListInputSchema = z.object({
-  profile_id: z.string().uuid(),
-  limit: z.number().int().min(1).max(100).default(20),
-  offset: z.number().int().min(0).default(0),
-});
+const goalIdSchema = z.string().uuid();
+
+const goalsListInputSchema = z
+  .object({
+    profile_id: z.string().uuid(),
+    limit: z.number().int().min(1).max(100).default(20),
+    offset: z.number().int().min(0).default(0),
+  })
+  .strict();
 
 const profileGoalWriteSchema = profileGoalCreateSchema;
 const profileGoalUpdateDataSchema = z
@@ -47,7 +51,17 @@ const profileGoalUpdateDataSchema = z
     activity_category: canonicalGoalActivityCategorySchema,
     target_payload: canonicalGoalObjectiveSchema,
   })
-  .partial();
+  .partial()
+  .strict();
+
+const goalIdInputSchema = z.object({ id: goalIdSchema }).strict();
+
+const profileGoalUpdateInputSchema = z
+  .object({
+    id: goalIdSchema,
+    data: profileGoalUpdateDataSchema,
+  })
+  .strict();
 
 type ProfileGoalRecord = z.infer<typeof profileGoalRecordSchema>;
 
@@ -191,7 +205,7 @@ export const goalsRouter = createTRPCRouter({
   }),
 
   getById: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(goalIdInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -252,12 +266,7 @@ export const goalsRouter = createTRPCRouter({
   }),
 
   update: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        data: profileGoalUpdateDataSchema,
-      }),
-    )
+    .input(profileGoalUpdateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -313,7 +322,7 @@ export const goalsRouter = createTRPCRouter({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
+    .input(goalIdInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
