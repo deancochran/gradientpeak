@@ -262,12 +262,47 @@ describe("trendsRouter", () => {
     });
   });
 
+  it("accepts date-only range inputs and treats end dates as inclusive", async () => {
+    const { caller } = createCaller([
+      [
+        createActivityRow({
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          started_at: new Date("2026-04-10T23:30:00.000Z"),
+          distance_meters: 12000,
+          moving_seconds: 3600,
+        }),
+      ],
+    ]);
+
+    const result = await caller.getVolumeTrends({
+      start_date: "2026-04-10",
+      end_date: "2026-04-10",
+      groupBy: "day",
+    });
+
+    expect(result).toEqual({
+      dataPoints: [
+        {
+          date: "2026-04-10",
+          totalDistance: 12000,
+          totalTime: 3600,
+          activityCount: 1,
+        },
+      ],
+      totals: {
+        totalDistance: 12000,
+        totalTime: 3600,
+        totalActivities: 1,
+      },
+    });
+  });
+
   it("rejects malformed ISO date inputs at the procedure boundary", async () => {
     const { caller, callLog } = createCaller([[]]);
 
     await expect(
       caller.getVolumeTrends({
-        start_date: "2026-03-30",
+        start_date: "2026-02-30",
         end_date: "2026-04-10T23:59:59.000Z",
         groupBy: "week",
       } as any),

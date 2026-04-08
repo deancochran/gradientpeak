@@ -18,13 +18,69 @@ import { buildWorkloadEnvelopes } from "../utils/workload";
 const activityTypeSchema = publicActivityCategorySchema;
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected ISO date (YYYY-MM-DD)");
+const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const workloadSourceSchema = z.enum(["trimp", "tss", "mixed", "none"]);
 const activityTimestampSchema = z.coerce.date();
 
+function normalizeTrendBoundary(value: string, boundary: "start" | "end") {
+  if (isoDatePattern.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    const normalized =
+      boundary === "start"
+        ? new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0))
+        : new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, day ?? 1, 23, 59, 59, 999));
+
+    if (
+      normalized.getUTCFullYear() !== year ||
+      normalized.getUTCMonth() !== (month ?? 1) - 1 ||
+      normalized.getUTCDate() !== day
+    ) {
+      return null;
+    }
+
+    return normalized;
+  }
+
+  if (!isoDatetimeSchema.safeParse(value).success) {
+    return null;
+  }
+
+  const normalized = new Date(value);
+  return Number.isNaN(normalized.getTime()) ? null : normalized;
+}
+
+const startDateInputSchema = z.string().transform((value, ctx) => {
+  const normalized = normalizeTrendBoundary(value, "start");
+
+  if (!normalized) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Expected ISO datetime with offset or ISO date (YYYY-MM-DD)",
+    });
+    return z.NEVER;
+  }
+
+  return normalized.toISOString();
+});
+
+const endDateInputSchema = z.string().transform((value, ctx) => {
+  const normalized = normalizeTrendBoundary(value, "end");
+
+  if (!normalized) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Expected ISO datetime with offset or ISO date (YYYY-MM-DD)",
+    });
+    return z.NEVER;
+  }
+
+  return normalized.toISOString();
+});
+
 const dateRangeSchema = z
   .object({
-    start_date: isoDatetimeSchema,
-    end_date: isoDatetimeSchema,
+    start_date: startDateInputSchema,
+    end_date: endDateInputSchema,
   })
   .strict()
   .refine(({ start_date, end_date }) => new Date(end_date) >= new Date(start_date), {
