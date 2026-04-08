@@ -17,15 +17,34 @@ import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-const conversationRowSchema = publicConversationsRowSchema.extend({
-  created_at: z.union([z.date(), z.string()]),
-  last_message_at: z.union([z.date(), z.string()]).nullable(),
+const timestampSchema = z.union([z.date(), z.string()]);
+
+const getOrCreateDMInputSchema = z.object({ target_user_id: z.string().uuid() }).strict();
+
+const createConversationInputSchema = CreateConversationSchema.strict();
+
+const getMessagesInputSchema = z.object({ conversation_id: z.string().uuid() }).strict();
+
+const createMessageInputSchema = CreateMessageSchema.strict();
+
+const markAsReadInputSchema = z.object({ conversation_id: z.string().uuid() }).strict();
+
+const conversationRowSchema = z.object({
+  id: publicConversationsRowSchema.shape.id,
+  is_group: publicConversationsRowSchema.shape.is_group,
+  group_name: publicConversationsRowSchema.shape.group_name,
+  created_at: timestampSchema,
+  last_message_at: timestampSchema.nullable(),
 });
 
-const messageRowSchema = publicMessagesRowSchema.extend({
-  created_at: z.union([z.date(), z.string()]),
-  deleted_at: z.union([z.date(), z.string()]).nullable().optional(),
-  read_at: z.union([z.date(), z.string()]).nullable().optional(),
+const messageRowSchema = z.object({
+  id: publicMessagesRowSchema.shape.id,
+  conversation_id: publicMessagesRowSchema.shape.conversation_id,
+  sender_id: publicMessagesRowSchema.shape.sender_id,
+  content: publicMessagesRowSchema.shape.content,
+  created_at: timestampSchema,
+  deleted_at: timestampSchema.nullable().optional(),
+  read_at: timestampSchema.nullable().optional(),
 });
 
 const conversationSummaryRowSchema = z.object({
@@ -105,7 +124,7 @@ async function requireConversationParticipant(
 
 export const messagingRouter = createTRPCRouter({
   getOrCreateDM: protectedProcedure
-    .input(z.object({ target_user_id: z.string().uuid() }))
+    .input(getOrCreateDMInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -186,7 +205,7 @@ export const messagingRouter = createTRPCRouter({
     }),
 
   createConversation: protectedProcedure
-    .input(CreateConversationSchema)
+    .input(createConversationInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -350,7 +369,7 @@ export const messagingRouter = createTRPCRouter({
   }),
 
   getMessages: protectedProcedure
-    .input(z.object({ conversation_id: z.string().uuid() }))
+    .input(getMessagesInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -390,7 +409,7 @@ export const messagingRouter = createTRPCRouter({
       }
     }),
 
-  sendMessage: protectedProcedure.input(CreateMessageSchema).mutation(async ({ ctx, input }) => {
+  sendMessage: protectedProcedure.input(createMessageInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
 
     try {
@@ -427,7 +446,7 @@ export const messagingRouter = createTRPCRouter({
   }),
 
   markAsRead: protectedProcedure
-    .input(z.object({ conversation_id: z.string().uuid() }))
+    .input(markAsReadInputSchema)
     .mutation(async ({ ctx, input }) => {
       void input;
       void ctx;
