@@ -86,6 +86,45 @@ describe("storageRouter", () => {
   });
 
   it("rejects malformed signed upload responses from storage", async () => {
+    storageState.createSignedUploadUrl.mockResolvedValueOnce({
+      data: { signedUrl: "https://upload.test/bad", path: "../avatar.png" },
+      error: null,
+    });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.createSignedUploadUrl({
+        fileName: "avatar.png",
+        fileType: "image/png",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" } as Partial<TRPCError>);
+
+    expect(storageState.getPublicUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects signed upload responses for another user's path", async () => {
+    storageState.createSignedUploadUrl.mockResolvedValueOnce({
+      data: {
+        signedUrl: "https://upload.test/22222222-2222-4222-8222-222222222222/avatar.png",
+        path: "22222222-2222-4222-8222-222222222222/avatar.png",
+      },
+      error: null,
+    });
+
+    const caller = createCaller();
+
+    await expect(
+      caller.createSignedUploadUrl({
+        fileName: "avatar.png",
+        fileType: "image/png",
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
+
+    expect(storageState.getPublicUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed public URL responses from storage", async () => {
     storageState.getPublicUrl.mockReturnValueOnce({
       data: { publicUrl: "not-a-valid-url" },
     });

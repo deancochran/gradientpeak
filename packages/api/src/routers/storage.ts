@@ -110,6 +110,7 @@ export const storageRouter = createTRPCRouter({
         }
 
         const signedUploadData = signedUploadUrlDataSchema.parse(data);
+        assertOwnedFilePath(ctx.session.user.id, signedUploadData.path);
 
         const {
           data: publicUrlData,
