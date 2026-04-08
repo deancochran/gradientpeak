@@ -24,15 +24,16 @@ function getSqlRows<T>(result: unknown) {
 }
 
 function normalizeProfileSettingsRow(row: ProfileTrainingSettingsSqlRow) {
-  return {
-    ...row,
+  return profileSettingsRecordDtoSchema.parse({
+    profile_id: row.profile_id,
+    settings: row.settings,
     updated_at:
       row.updated_at instanceof Date
         ? row.updated_at.toISOString()
         : typeof row.updated_at === "string"
           ? row.updated_at
-          : undefined,
-  };
+        : undefined,
+  });
 }
 
 async function getProfileTrainingSettingsRow(db: DbClient, profileId: string) {
@@ -163,23 +164,50 @@ function parseProfileSettingsRecord(data: unknown) {
   }
 
   return profileTrainingSettingsRecordSchema.safeParse({
-    ...record,
+    profile_id: record.profile_id,
     settings: coercedSettings,
+    updated_at: record.updated_at,
   });
 }
 
-const profileSettingsInputSchema = z.object({
-  profile_id: z.string().uuid(),
-});
+const profileIdSchema = z.string().uuid();
 
-const profileSettingsUpsertInputSchema = z.object({
-  profile_id: z.string().uuid(),
-  settings: athleteTrainingSettingsSchema,
-});
+const profileSettingsRecordDtoSchema = z
+  .object({
+    profile_id: profileIdSchema,
+    settings: z.unknown(),
+    updated_at: z.string().datetime().optional(),
+  })
+  .strict();
+
+const profileSettingsInputSchema = z
+  .object({
+    profile_id: profileIdSchema,
+  })
+  .strict();
+
+const profileSettingsUpsertInputSchema = z
+  .object({
+    profile_id: profileIdSchema,
+    settings: athleteTrainingSettingsSchema,
+  })
+  .strict();
+
+const profileSettingsGetOutputSchema = profileTrainingSettingsRecordSchema.nullable();
+
+const profileSettingsUpsertOutputSchema = profileTrainingSettingsRecordSchema
+  .extend({
+    cache_tags: z.tuple([
+      z.literal("profileSettings.getForProfile"),
+      z.literal("goals.list"),
+    ]),
+  })
+  .strict();
 
 export const profileSettingsRouter = createTRPCRouter({
   getForProfile: protectedProcedure
     .input(profileSettingsInputSchema)
+    .output(profileSettingsGetOutputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -208,6 +236,7 @@ export const profileSettingsRouter = createTRPCRouter({
 
   upsert: protectedProcedure
     .input(profileSettingsUpsertInputSchema)
+    .output(profileSettingsUpsertOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
@@ -234,9 +263,11 @@ export const profileSettingsRouter = createTRPCRouter({
         });
       }
 
-      return {
-        ...parsed.data,
+      return profileSettingsUpsertOutputSchema.parse({
+        profile_id: parsed.data.profile_id,
+        settings: parsed.data.settings,
+        updated_at: parsed.data.updated_at,
         cache_tags: ["profileSettings.getForProfile", "goals.list"],
-      };
+      });
     }),
 });
