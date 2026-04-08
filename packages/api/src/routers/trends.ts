@@ -16,33 +16,251 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
 
 const activityTypeSchema = publicActivityCategorySchema;
+const isoDatetimeSchema = z.string().datetime({ offset: true });
+const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected ISO date (YYYY-MM-DD)");
+const workloadSourceSchema = z.enum(["trimp", "tss", "mixed", "none"]);
+const activityTimestampSchema = z.coerce.date();
 
-// Input schemas
 const dateRangeSchema = z
   .object({
-    start_date: z.string(),
-    end_date: z.string(),
+    start_date: isoDatetimeSchema,
+    end_date: isoDatetimeSchema,
+  })
+  .strict()
+  .refine(({ start_date, end_date }) => new Date(end_date) >= new Date(start_date), {
+    message: "end_date must be on or after start_date",
+    path: ["end_date"],
+  });
+
+const volumeTrendsSchema = dateRangeSchema
+  .extend({
+    groupBy: z.enum(["day", "week", "month"]).default("week"),
+    type: activityTypeSchema.optional(),
   })
   .strict();
 
-const volumeTrendsSchema = dateRangeSchema.extend({
-  groupBy: z.enum(["day", "week", "month"]).default("week"),
-  type: activityTypeSchema.optional(),
-});
+const performanceTrendsSchema = dateRangeSchema
+  .extend({
+    type: activityTypeSchema.optional(),
+  })
+  .strict();
 
-const performanceTrendsSchema = dateRangeSchema.extend({
-  type: activityTypeSchema.optional(),
-});
+const zoneDistributionTrendsSchema = dateRangeSchema
+  .extend({
+    metric: z.enum(["power", "heartrate"]).default("power"),
+  })
+  .strict();
 
-const zoneDistributionTrendsSchema = dateRangeSchema.extend({
-  metric: z.enum(["power", "heartrate"]).default("power"),
-});
+const peakPerformancesSchema = z
+  .object({
+    type: activityTypeSchema.optional(),
+    metric: z.enum(["distance", "speed", "power", "duration", "tss"]),
+    limit: z.number().int().min(1).max(50).default(10),
+  })
+  .strict();
 
-const peakPerformancesSchema = z.object({
-  type: activityTypeSchema.optional(),
-  metric: z.enum(["distance", "speed", "power", "duration", "tss"]),
-  limit: z.number().min(1).max(50).default(10),
-});
+const trendActivityRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    type: activityTypeSchema,
+    started_at: activityTimestampSchema,
+    distance_meters: z.number().nullable(),
+    moving_seconds: z.number().nullable(),
+    duration_seconds: z.number().nullable(),
+    avg_speed_mps: z.number().nullable(),
+    avg_power: z.number().nullable(),
+    avg_heart_rate: z.number().nullable(),
+  })
+  .strict();
+
+const profileTelemetryRowSchema = z
+  .object({
+    dob: activityTimestampSchema.nullable().optional(),
+    gender: z.string().nullable().optional(),
+  })
+  .strict();
+
+const replayedTrainingLoadPointSchema = z
+  .object({
+    date: isoDateSchema,
+    ctl: z.number().finite(),
+    atl: z.number().finite(),
+    tsb: z.number().finite(),
+    tss: z.number().finite(),
+  })
+  .strict();
+
+const volumeTrendDataPointSchema = z
+  .object({
+    date: isoDateSchema,
+    totalDistance: z.number().finite(),
+    totalTime: z.number().finite(),
+    activityCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const volumeTrendsOutputSchema = z
+  .object({
+    dataPoints: z.array(volumeTrendDataPointSchema),
+    totals: z
+      .object({
+        totalDistance: z.number().finite(),
+        totalTime: z.number().finite(),
+        totalActivities: z.number().int().nonnegative(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+const performanceTrendDataPointSchema = z
+  .object({
+    date: isoDatetimeSchema,
+    activityId: z.string().uuid(),
+    activityName: z.string(),
+    avgSpeed: z.number().nullable(),
+    avgPower: z.number().nullable(),
+    avgHeartRate: z.number().nullable(),
+    distance: z.number().finite(),
+    duration: z.number().finite(),
+  })
+  .strict();
+
+const performanceTrendsOutputSchema = z
+  .object({
+    dataPoints: z.array(performanceTrendDataPointSchema),
+  })
+  .strict();
+
+const trainingLoadTrendDataPointSchema = z
+  .object({
+    date: isoDateSchema,
+    ctl: z.number().finite(),
+    atl: z.number().finite(),
+    tsb: z.number().finite(),
+    tss: z.number().finite(),
+  })
+  .strict();
+
+const workloadMetricSchema = z
+  .object({
+    source: workloadSourceSchema.optional(),
+  })
+  .passthrough();
+
+const workloadEnvelopeSchema = z
+  .object({
+    acwr: workloadMetricSchema,
+    monotony: workloadMetricSchema,
+  })
+  .strict();
+
+const trainingLoadTrendsOutputSchema = z
+  .object({
+    dataPoints: z.array(trainingLoadTrendDataPointSchema),
+    currentStatus: z
+      .object({
+        ctl: z.number().finite(),
+        atl: z.number().finite(),
+        tsb: z.number().finite(),
+        form: z.string(),
+      })
+      .strict()
+      .nullable(),
+    workload: workloadEnvelopeSchema,
+    personalizationTelemetry: z
+      .object({
+        flags: z
+          .object({
+            age_constants: z.boolean(),
+            gender_adjustment: z.boolean(),
+            training_quality: z.boolean(),
+            ramp_learning: z.boolean(),
+          })
+          .strict(),
+        user_age: z.number().finite().nullable(),
+        user_gender: z.union([z.literal("male"), z.literal("female")]).nullable(),
+        training_quality: z.number().finite().nullable(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const intensityZoneSchema = z.enum([
+  "recovery",
+  "endurance",
+  "tempo",
+  "threshold",
+  "vo2max",
+  "anaerobic",
+  "neuromuscular",
+]);
+
+const zoneDistributionOutputSchema = z
+  .object({
+    weeklyData: z.array(
+      z
+        .object({
+          weekStart: isoDateSchema,
+          totalTSS: z.number().finite(),
+          zones: z.record(intensityZoneSchema, z.number().finite()),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+const consistencyMetricsOutputSchema = z
+  .object({
+    activityDays: z.array(isoDateSchema),
+    weeklyAvg: z.number().finite(),
+    currentStreak: z.number().int().nonnegative(),
+    longestStreak: z.number().int().nonnegative(),
+    totalActivities: z.number().int().nonnegative(),
+    totalDays: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const peakPerformanceItemSchema = z
+  .object({
+    activityId: z.string().uuid(),
+    activityName: z.string(),
+    date: isoDatetimeSchema,
+    value: z.number().finite(),
+    unit: z.string(),
+    category: activityTypeSchema,
+    rank: z.number().int().positive(),
+  })
+  .strict();
+
+const peakPerformancesOutputSchema = z
+  .object({
+    performances: z.array(peakPerformanceItemSchema),
+  })
+  .strict();
+
+function parseTrendActivityRows(rows: ActivityRow[]) {
+  return trendActivityRowSchema.array().parse(
+    rows.map((activity) => ({
+      id: activity.id,
+      name: activity.name,
+      type: activity.type,
+      started_at: activity.started_at,
+      distance_meters: activity.distance_meters,
+      moving_seconds: activity.moving_seconds,
+      duration_seconds: activity.duration_seconds,
+      avg_speed_mps: activity.avg_speed_mps,
+      avg_power: activity.avg_power,
+      avg_heart_rate: activity.avg_heart_rate,
+    })),
+  );
+}
+
+function toDateKey(value: Date) {
+  return value.toISOString().split("T")[0] ?? "";
+}
 
 export const trendsRouter = createTRPCRouter({
   // ------------------------------
@@ -60,14 +278,16 @@ export const trendsRouter = createTRPCRouter({
       conditions.push(eq(activities.type, input.type));
     }
 
-    const activityRows = await db
-      .select()
-      .from(activities)
-      .where(and(...conditions))
-      .orderBy(asc(activities.started_at));
+    const activityRows = parseTrendActivityRows(
+      await db
+        .select()
+        .from(activities)
+        .where(and(...conditions))
+        .orderBy(asc(activities.started_at)),
+    );
 
     if (activityRows.length === 0) {
-      return { dataPoints: [], totals: null };
+      return volumeTrendsOutputSchema.parse({ dataPoints: [], totals: null });
     }
 
     // Group activities by time period
@@ -87,13 +307,13 @@ export const trendsRouter = createTRPCRouter({
 
       switch (input.groupBy) {
         case "day":
-          groupKey = date.toISOString().split("T")[0] || "";
+          groupKey = toDateKey(date);
           break;
         case "week": {
           // Get Monday of the week
           const weekStart = new Date(date);
           weekStart.setDate(date.getDate() - date.getDay() + 1);
-          groupKey = weekStart.toISOString().split("T")[0] || "";
+          groupKey = toDateKey(weekStart);
           break;
         }
         case "month":
@@ -131,7 +351,7 @@ export const trendsRouter = createTRPCRouter({
       totalActivities: activityRows.length,
     };
 
-    return { dataPoints, totals };
+    return volumeTrendsOutputSchema.parse({ dataPoints, totals });
   }),
 
   // ------------------------------
@@ -151,14 +371,16 @@ export const trendsRouter = createTRPCRouter({
         conditions.push(eq(activities.type, input.type));
       }
 
-      const activityRows = await db
+      const activityRows = parseTrendActivityRows(
+        await db
         .select()
         .from(activities)
         .where(and(...conditions))
-        .orderBy(asc(activities.started_at));
+        .orderBy(asc(activities.started_at)),
+      );
 
       if (activityRows.length === 0) {
-        return { dataPoints: [] };
+        return performanceTrendsOutputSchema.parse({ dataPoints: [] });
       }
 
       const dataPoints = activityRows.map((activity) => {
@@ -174,7 +396,7 @@ export const trendsRouter = createTRPCRouter({
         };
       });
 
-      return { dataPoints };
+      return performanceTrendsOutputSchema.parse({ dataPoints });
     }),
 
   // ------------------------------
@@ -185,11 +407,13 @@ export const trendsRouter = createTRPCRouter({
     const startDate = new Date(input.start_date);
     const endDate = new Date(input.end_date);
 
-    const [profile] = await db
+    const [rawProfile] = await db
       .select({ dob: profiles.dob, gender: profiles.gender })
       .from(profiles)
       .where(eq(profiles.id, ctx.session.user.id))
       .limit(1);
+
+    const profile = rawProfile ? profileTelemetryRowSchema.parse(rawProfile) : null;
 
     const userAge = calculateAge(profile?.dob?.toISOString() ?? null);
     const userGender =
@@ -201,7 +425,7 @@ export const trendsRouter = createTRPCRouter({
     const extendedStart = new Date(startDate);
     extendedStart.setDate(startDate.getDate() - 42);
 
-    const activityRows = await db
+    const rawActivityRows: ActivityRow[] = await db
       .select()
       .from(activities)
       .where(
@@ -213,20 +437,22 @@ export const trendsRouter = createTRPCRouter({
       )
       .orderBy(asc(activities.started_at));
 
+    const activityRows = parseTrendActivityRows(rawActivityRows);
+
     if (activityRows.length === 0) {
-      const workload = buildWorkloadEnvelopes([], startDate, endDate);
-      return {
+      const workload = workloadEnvelopeSchema.parse(buildWorkloadEnvelopes([], startDate, endDate));
+      return trainingLoadTrendsOutputSchema.parse({
         dataPoints: [],
         currentStatus: null,
         workload,
-      };
+      });
     }
 
     const { byActivityId: derivedActivityMap, byDate: activitiesByDate } =
       await buildDynamicStressSeries({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: activityRows,
+        activities: rawActivityRows,
       });
 
     const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
@@ -239,18 +465,20 @@ export const trendsRouter = createTRPCRouter({
         )
       : undefined;
 
-    const replayed = replayTrainingLoadByDate({
-      dailyTss: buildDailyTssByDateSeries({
-        startDate: extendedStart.toISOString().split("T")[0]!,
-        endDate: endDate.toISOString().split("T")[0]!,
-        tssByDate: activitiesByDate,
+    const replayed = replayedTrainingLoadPointSchema.array().parse(
+      replayTrainingLoadByDate({
+        dailyTss: buildDailyTssByDateSeries({
+          startDate: toDateKey(extendedStart),
+          endDate: toDateKey(endDate),
+          tssByDate: activitiesByDate,
+        }),
+        initialCTL: 0,
+        initialATL: 0,
+        userAge: effectiveAge,
+        userGender: effectiveGender,
+        trainingQuality: rollingTrainingQuality,
       }),
-      initialCTL: 0,
-      initialATL: 0,
-      userAge: effectiveAge,
-      userGender: effectiveGender,
-      trainingQuality: rollingTrainingQuality,
-    });
+    );
 
     // Filter to requested date range and create data points
     const dataPoints = [];
@@ -289,16 +517,18 @@ export const trendsRouter = createTRPCRouter({
 
     const workloadWindowStart = new Date(endDate);
     workloadWindowStart.setDate(endDate.getDate() - 27);
-    const workload = buildWorkloadEnvelopes(
-      activityRows.map((activity) => ({
-        started_at: activity.started_at.toISOString(),
-        tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-      })),
-      workloadWindowStart,
-      endDate,
+    const workload = workloadEnvelopeSchema.parse(
+      buildWorkloadEnvelopes(
+        activityRows.map((activity) => ({
+          started_at: activity.started_at.toISOString(),
+          tss: derivedActivityMap.get(activity.id)?.tss ?? null,
+        })),
+        workloadWindowStart,
+        endDate,
+      ),
     );
 
-    return {
+    return trainingLoadTrendsOutputSchema.parse({
       dataPoints,
       currentStatus,
       workload,
@@ -313,7 +543,7 @@ export const trendsRouter = createTRPCRouter({
         user_gender: effectiveGender ?? null,
         training_quality: rollingTrainingQuality ?? null,
       },
-    };
+    });
   }),
 
   // ------------------------------
@@ -327,7 +557,7 @@ export const trendsRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
 
       // Get activities with intensity factor and TSS
-      const activityRows = await db
+      const rawActivityRows: ActivityRow[] = await db
         .select()
         .from(activities)
         .where(
@@ -339,14 +569,16 @@ export const trendsRouter = createTRPCRouter({
         )
         .orderBy(asc(activities.started_at));
 
+      const activityRows = parseTrendActivityRows(rawActivityRows);
+
       if (activityRows.length === 0) {
-        return { weeklyData: [] };
+        return zoneDistributionOutputSchema.parse({ weeklyData: [] });
       }
 
       const derivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: activityRows,
+        activities: rawActivityRows,
       });
 
       // Group by week
@@ -380,7 +612,7 @@ export const trendsRouter = createTRPCRouter({
         // Get Monday of the week
         const weekStart = new Date(date);
         weekStart.setDate(date.getDate() - date.getDay() + 1);
-        const weekKey = weekStart.toISOString().split("T")[0] || "";
+        const weekKey = toDateKey(weekStart);
 
         if (!weeklyData.has(weekKey)) {
           weeklyData.set(weekKey, {
@@ -430,11 +662,11 @@ export const trendsRouter = createTRPCRouter({
         };
       });
 
-      return {
+      return zoneDistributionOutputSchema.parse({
         weeklyData: weeklyDataArray.sort(
           (a, b) => new Date(a.weekStart).getTime() - new Date(b.weekStart).getTime(),
         ),
-      };
+      });
     }),
 
   // ------------------------------
@@ -442,7 +674,8 @@ export const trendsRouter = createTRPCRouter({
   // ------------------------------
   getConsistencyMetrics: protectedProcedure.input(dateRangeSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
-    const activityRows = await db
+    const activityRows = parseTrendActivityRows(
+      await db
       .select()
       .from(activities)
       .where(
@@ -452,23 +685,24 @@ export const trendsRouter = createTRPCRouter({
           lte(activities.started_at, new Date(input.end_date)),
         ),
       )
-      .orderBy(asc(activities.started_at));
+      .orderBy(asc(activities.started_at)),
+    );
 
     if (activityRows.length === 0) {
-      return {
+      return consistencyMetricsOutputSchema.parse({
         activityDays: [],
         weeklyAvg: 0,
         currentStreak: 0,
         longestStreak: 0,
         totalActivities: 0,
         totalDays: 0,
-      };
+      });
     }
 
     // Get unique activity days
     const activityDaysSet = new Set<string>();
     for (const activity of activityRows) {
-      const dateStr = new Date(activity.started_at).toISOString().split("T")[0];
+      const dateStr = toDateKey(new Date(activity.started_at));
       if (dateStr) activityDaysSet.add(dateStr);
     }
 
@@ -479,10 +713,10 @@ export const trendsRouter = createTRPCRouter({
     let longestStreak = 0;
     let tempStreak = 1;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = toDateKey(new Date());
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split("T")[0];
+    const yesterdayStr = toDateKey(yesterday);
 
     // Check if current streak is active
     if (activityDays.includes(today || "") || activityDays.includes(yesterdayStr || "")) {
@@ -530,14 +764,14 @@ export const trendsRouter = createTRPCRouter({
     const totalWeeks = totalDays / 7;
     const weeklyAvg = totalWeeks > 0 ? Math.round((activityRows.length / totalWeeks) * 10) / 10 : 0;
 
-    return {
+    return consistencyMetricsOutputSchema.parse({
       activityDays,
       weeklyAvg,
       currentStreak,
       longestStreak,
       totalActivities: activityRows.length,
       totalDays,
-    };
+    });
   }),
 
   // ------------------------------
@@ -590,8 +824,10 @@ export const trendsRouter = createTRPCRouter({
                     .orderBy(desc(activities.started_at))
                     .limit(input.limit * 10);
 
-      if (activityRows.length === 0) {
-        return { performances: [] };
+      const parsedActivityRows = parseTrendActivityRows(activityRows);
+
+      if (parsedActivityRows.length === 0) {
+        return peakPerformancesOutputSchema.parse({ performances: [] });
       }
 
       const derivedMap =
@@ -604,7 +840,7 @@ export const trendsRouter = createTRPCRouter({
           : null;
 
       // Map activities to performances with extracted values
-      const allPerformances = activityRows
+      const allPerformances = parsedActivityRows
         .map((activity) => {
           let value: number | null = null;
           let unit = "";
@@ -654,6 +890,6 @@ export const trendsRouter = createTRPCRouter({
         rank: index + 1,
       }));
 
-      return { performances };
+      return peakPerformancesOutputSchema.parse({ performances });
     }),
 });
