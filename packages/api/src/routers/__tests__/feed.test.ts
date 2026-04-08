@@ -212,6 +212,86 @@ describe("feedRouter", () => {
     );
   });
 
+  it("getFeed rejects malformed SQL activity rows", async () => {
+    const { caller } = createCaller({
+      execute: [
+        [
+          {
+            id: "not-a-uuid",
+            profile_id: OWNER_ID,
+            name: "Broken Ride",
+            type: "ride",
+            started_at: new Date("2026-04-03T10:00:00.000Z"),
+            finished_at: new Date("2026-04-03T11:00:00.000Z"),
+            distance_meters: 32000,
+            duration_seconds: 3600,
+            moving_seconds: 3500,
+            avg_heart_rate: 150,
+            max_heart_rate: 178,
+            avg_power: 220,
+            avg_cadence: 88,
+            elevation_gain_meters: 450,
+            calories: 900,
+            polyline: null,
+            likes_count: 4,
+            is_private: false,
+            created_at: new Date("2026-04-03T11:05:00.000Z"),
+            profile_username: "owner",
+            profile_avatar_url: "https://example.com/owner.png",
+          },
+        ],
+      ],
+    });
+
+    await expect(caller.getFeed({ limit: 1 })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to fetch feed",
+    });
+  });
+
+  it("getFeed rejects malformed derived summaries at the DTO boundary", async () => {
+    analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(
+      new Map([[ACTIVITY_ID, { tss: 82, intensity_factor: 0.91, computed_as_of: 123 }]]),
+    );
+
+    const { caller } = createCaller({
+      execute: [
+        [
+          {
+            id: ACTIVITY_ID,
+            profile_id: OWNER_ID,
+            name: "Morning Ride",
+            type: "ride",
+            started_at: new Date("2026-04-03T10:00:00.000Z"),
+            finished_at: new Date("2026-04-03T11:00:00.000Z"),
+            distance_meters: 32000,
+            duration_seconds: 3600,
+            moving_seconds: 3500,
+            avg_heart_rate: 150,
+            max_heart_rate: 178,
+            avg_power: 220,
+            avg_cadence: 88,
+            elevation_gain_meters: 450,
+            calories: 900,
+            polyline: null,
+            likes_count: 4,
+            is_private: false,
+            created_at: new Date("2026-04-03T11:05:00.000Z"),
+            profile_username: "owner",
+            profile_avatar_url: "https://example.com/owner.png",
+          },
+        ],
+        [],
+      ],
+      feedLikeRows: [{ entity_id: ACTIVITY_ID }],
+    });
+
+    await expect(caller.getFeed({ limit: 1 })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to fetch feed",
+    });
+  });
+
   it("getActivity returns detail data including likes and ordered comments", async () => {
     const startedAt = new Date("2026-04-03T10:00:00.000Z");
 
@@ -354,6 +434,61 @@ describe("feedRouter", () => {
     await expect(caller.getActivity({ activityId: ACTIVITY_ID })).rejects.toMatchObject({
       code: "FORBIDDEN",
       message: "You don't have permission to view this activity",
+    });
+  });
+
+  it("getActivity rejects malformed SQL comment rows", async () => {
+    const { caller } = createCaller({
+      execute: [
+        [
+          {
+            id: ACTIVITY_ID,
+            profile_id: OWNER_ID,
+            name: "Morning Ride",
+            type: "ride",
+            notes: null,
+            started_at: new Date("2026-04-03T10:00:00.000Z"),
+            finished_at: new Date("2026-04-03T11:00:00.000Z"),
+            distance_meters: 32000,
+            duration_seconds: 3600,
+            moving_seconds: 3500,
+            avg_heart_rate: 150,
+            max_heart_rate: 178,
+            avg_power: 220,
+            max_power: 510,
+            avg_cadence: 88,
+            max_cadence: 105,
+            normalized_power: 240,
+            elevation_gain_meters: 450,
+            elevation_loss_meters: 445,
+            calories: 900,
+            polyline: null,
+            map_bounds: null,
+            likes_count: 4,
+            is_private: false,
+            created_at: new Date("2026-04-03T11:05:00.000Z"),
+            profile_username: "owner",
+            profile_avatar_url: "https://example.com/owner.png",
+            viewer_follows_owner: false,
+          },
+        ],
+        [
+          {
+            id: "bad-comment-id",
+            content: "Nice work!",
+            created_at: new Date("2026-04-03T12:00:00.000Z"),
+            profile_id: VIEWER_ID,
+            profile_username: "viewer",
+            profile_avatar_url: null,
+          },
+        ],
+      ],
+      activityLikeRows: [{ id: "77777777-7777-4777-8777-777777777777" }],
+    });
+
+    await expect(caller.getActivity({ activityId: ACTIVITY_ID })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to fetch activity",
     });
   });
 });

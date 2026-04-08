@@ -1,4 +1,8 @@
-import { type PublicActivitiesRow, type PublicCommentsRow, schema } from "@repo/db";
+import {
+  publicActivitiesRowSchema,
+  publicCommentsRowSchema,
+  schema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -7,105 +11,135 @@ import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-/**
- * Feed Item Types
- *
- * The feed contains completed activities from:
- * - The current user's own activities
- * - Users that the current user follows
- */
-export interface FeedActivity {
-  id: string;
-  profile_id: string;
-  name: string;
-  type: string;
-  started_at: string;
-  finished_at: string;
-  distance_meters: number;
-  duration_seconds: number;
-  moving_seconds: number;
-  avg_heart_rate: number | null;
-  max_heart_rate: number | null;
-  avg_power: number | null;
-  avg_cadence: number | null;
-  elevation_gain_meters: number | null;
-  calories: number | null;
-  polyline: string | null;
-  likes_count: number;
-  comments_count: number;
-  is_private: boolean;
-  created_at: string;
+const timestampSchema = z.union([z.date(), z.string()]);
 
-  // Joined profile data
-  profile?: {
-    id: string;
-    username: string | null;
-    avatar_url: string | null;
-  };
+const feedDerivedSchema = z
+  .object({
+    tss: z.number().nullable(),
+    intensity_factor: z.number().nullable(),
+    computed_as_of: z.string(),
+  })
+  .nullable();
 
-  // User's like status for this activity
-  has_liked: boolean;
-  derived?: {
-    tss: number | null;
-    intensity_factor: number | null;
-    computed_as_of: string;
-  } | null;
-}
+const feedProfileSchema = z.object({
+  id: z.string().uuid(),
+  username: z.string().nullable(),
+  avatar_url: z.string().nullable(),
+});
 
 const feedItemSchema = z.object({
-  cursor: z.string().nullish(),
+  cursor: z.string().datetime({ offset: true }).nullish(),
   limit: z.number().min(1).max(50).default(20),
 });
 
-type FeedActivityRow = Pick<
-  PublicActivitiesRow,
-  | "id"
-  | "profile_id"
-  | "name"
-  | "type"
-  | "distance_meters"
-  | "duration_seconds"
-  | "moving_seconds"
-  | "avg_heart_rate"
-  | "max_heart_rate"
-  | "avg_power"
-  | "avg_cadence"
-  | "elevation_gain_meters"
-  | "calories"
-  | "polyline"
-  | "likes_count"
-  | "is_private"
-> & {
-  started_at: PublicActivitiesRow["started_at"] | string;
-  finished_at: PublicActivitiesRow["finished_at"] | string;
-  created_at: PublicActivitiesRow["created_at"] | string;
-  profile_username: string | null;
-  profile_avatar_url: string | null;
-};
+const feedActivityRowSchema = publicActivitiesRowSchema
+  .pick({
+    id: true,
+    profile_id: true,
+    name: true,
+    type: true,
+    distance_meters: true,
+    duration_seconds: true,
+    moving_seconds: true,
+    avg_heart_rate: true,
+    max_heart_rate: true,
+    avg_power: true,
+    avg_cadence: true,
+    elevation_gain_meters: true,
+    calories: true,
+    polyline: true,
+    likes_count: true,
+    is_private: true,
+  })
+  .extend({
+    started_at: timestampSchema,
+    finished_at: timestampSchema,
+    created_at: timestampSchema,
+    profile_username: z.string().nullable(),
+    profile_avatar_url: z.string().nullable(),
+  });
 
-type FeedActivityDetailRow = FeedActivityRow &
-  Pick<
-    PublicActivitiesRow,
-    | "notes"
-    | "max_power"
-    | "max_cadence"
-    | "normalized_power"
-    | "elevation_loss_meters"
-    | "map_bounds"
-  > & {
-    viewer_follows_owner: boolean;
-  };
+const feedActivityDetailRowSchema = feedActivityRowSchema.extend({
+  notes: publicActivitiesRowSchema.shape.notes,
+  max_power: publicActivitiesRowSchema.shape.max_power,
+  max_cadence: publicActivitiesRowSchema.shape.max_cadence,
+  normalized_power: publicActivitiesRowSchema.shape.normalized_power,
+  elevation_loss_meters: publicActivitiesRowSchema.shape.elevation_loss_meters,
+  map_bounds: publicActivitiesRowSchema.shape.map_bounds,
+  viewer_follows_owner: z.boolean(),
+});
 
-type CommentCountRow = {
-  entity_id: string;
-  comments_count: number;
-};
+const commentCountRowSchema = z.object({
+  entity_id: z.string().uuid(),
+  comments_count: z.coerce.number().int().nonnegative(),
+});
 
-type ActivityCommentRow = Pick<PublicCommentsRow, "id" | "content" | "profile_id"> & {
-  created_at: PublicCommentsRow["created_at"] | string;
-  profile_username: string | null;
-  profile_avatar_url: string | null;
-};
+const activityCommentRowSchema = publicCommentsRowSchema
+  .pick({
+    id: true,
+    content: true,
+    created_at: true,
+  })
+  .extend({
+    created_at: timestampSchema,
+    profile_id: z.string().uuid().nullable(),
+    profile_username: z.string().nullable(),
+    profile_avatar_url: z.string().nullable(),
+  });
+
+const feedActivityDtoSchema = z.object({
+  id: z.string().uuid(),
+  profile_id: z.string().uuid(),
+  name: z.string(),
+  type: z.string(),
+  started_at: z.string(),
+  finished_at: z.string(),
+  distance_meters: z.number(),
+  duration_seconds: z.number(),
+  moving_seconds: z.number(),
+  avg_heart_rate: z.number().nullable(),
+  max_heart_rate: z.number().nullable(),
+  avg_power: z.number().nullable(),
+  avg_cadence: z.number().nullable(),
+  elevation_gain_meters: z.number().nullable(),
+  calories: z.number().nullable(),
+  polyline: z.string().nullable(),
+  likes_count: z.number(),
+  comments_count: z.number().int().nonnegative(),
+  is_private: z.boolean(),
+  created_at: z.string(),
+  profile: feedProfileSchema,
+  has_liked: z.boolean(),
+  derived: feedDerivedSchema,
+});
+
+const feedResponseSchema = z.object({
+  items: z.array(feedActivityDtoSchema),
+  nextCursor: z.string().nullable(),
+  hasMore: z.boolean(),
+});
+
+const activityCommentDtoSchema = z.object({
+  id: z.string().uuid(),
+  content: z.string(),
+  created_at: z.string(),
+  profile: feedProfileSchema.nullable(),
+});
+
+const feedActivityDetailDtoSchema = feedActivityDtoSchema.omit({ derived: true }).extend({
+  notes: z.string().nullable(),
+  max_power: z.number().nullable(),
+  max_cadence: z.number().nullable(),
+  normalized_power: z.number().nullable(),
+  elevation_loss_meters: z.number().nullable(),
+  map_bounds: publicActivitiesRowSchema.shape.map_bounds,
+  comments_count: z.number().int().nonnegative(),
+  comments: z.array(activityCommentDtoSchema),
+});
+
+export type FeedActivity = z.infer<typeof feedActivityDtoSchema>;
+type FeedActivityRow = z.infer<typeof feedActivityRowSchema>;
+type FeedActivityDetailRow = z.infer<typeof feedActivityDetailRowSchema>;
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -119,7 +153,7 @@ function mapFeedActivity(
     likedActivityIds: Set<string>;
   },
 ): FeedActivity {
-  return {
+  return feedActivityDtoSchema.parse({
     id: activity.id,
     profile_id: activity.profile_id,
     name: activity.name,
@@ -147,7 +181,7 @@ function mapFeedActivity(
     },
     has_liked: options.likedActivityIds.has(activity.id),
     derived: options.derivedMap.get(activity.id) ?? null,
-  };
+  });
 }
 
 function buildUuidInList(values: string[]) {
@@ -217,7 +251,7 @@ export const feedRouter = createTRPCRouter({
         limit ${limit + 1}
       `);
 
-      const activities = activitiesResult.rows as FeedActivityRow[];
+      const activities = z.array(feedActivityRowSchema).parse(activitiesResult.rows);
 
       // Get user's likes for these activities
       const activityIds = activities.map((activity) => activity.id);
@@ -241,7 +275,7 @@ export const feedRouter = createTRPCRouter({
       const commentCounts = new Map<string, number>();
 
       if (activityIds.length > 0) {
-        const commentRows = await db.execute(sql<CommentCountRow>`
+        const commentRows = await db.execute(sql`
           select c.entity_id, count(*)::int as comments_count
           from comments c
           where c.entity_type = 'activity'
@@ -249,7 +283,7 @@ export const feedRouter = createTRPCRouter({
           group by c.entity_id
         `);
 
-        for (const comment of commentRows.rows as CommentCountRow[]) {
+        for (const comment of z.array(commentCountRowSchema).parse(commentRows.rows)) {
           commentCounts.set(comment.entity_id, comment.comments_count);
         }
       }
@@ -278,11 +312,11 @@ export const feedRouter = createTRPCRouter({
         feedItems = feedItems.slice(0, limit);
       }
 
-      return {
+      return feedResponseSchema.parse({
         items: feedItems,
         nextCursor,
         hasMore: nextCursor !== null,
-      };
+      });
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
@@ -351,7 +385,9 @@ export const feedRouter = createTRPCRouter({
           limit 1
         `);
 
-        const activity = (activityResult.rows as FeedActivityDetailRow[])[0];
+        const activity = activityResult.rows[0]
+          ? feedActivityDetailRowSchema.parse(activityResult.rows[0])
+          : null;
 
         if (!activity) {
           throw new TRPCError({
@@ -381,7 +417,7 @@ export const feedRouter = createTRPCRouter({
               ),
             )
             .limit(1),
-          db.execute(sql<ActivityCommentRow>`
+          db.execute(sql`
             select
               c.id,
               c.content,
@@ -397,20 +433,22 @@ export const feedRouter = createTRPCRouter({
           `),
         ]);
 
-        const comments = (commentsResult.rows as ActivityCommentRow[]).map((comment) => ({
-          id: comment.id,
-          content: comment.content,
-          created_at: toIsoString(comment.created_at),
-          profile: comment.profile_id
-            ? {
-                id: comment.profile_id,
-                username: comment.profile_username,
-                avatar_url: comment.profile_avatar_url,
-              }
-            : null,
-        }));
+        const comments = z.array(activityCommentDtoSchema).parse(
+          z.array(activityCommentRowSchema).parse(commentsResult.rows).map((comment) => ({
+            id: comment.id,
+            content: comment.content,
+            created_at: toIsoString(comment.created_at),
+            profile: comment.profile_id
+              ? {
+                  id: comment.profile_id,
+                  username: comment.profile_username,
+                  avatar_url: comment.profile_avatar_url,
+                }
+              : null,
+          })),
+        );
 
-        return {
+        return feedActivityDetailDtoSchema.parse({
           id: activity.id,
           profile_id: activity.profile_id,
           name: activity.name,
@@ -444,7 +482,7 @@ export const feedRouter = createTRPCRouter({
           has_liked: likeRows.length > 0,
           comments_count: comments.length,
           comments,
-        };
+        });
       } catch (error) {
         if (error instanceof TRPCError) {
           throw error;
