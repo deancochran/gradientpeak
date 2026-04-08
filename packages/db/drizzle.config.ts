@@ -1,7 +1,6 @@
 import type { Config } from "drizzle-kit";
 
-const databaseUrl =
-  process.env.POSTGRES_URL ?? process.env.DATABASE_URL ?? process.env.SUPABASE_DB_URL;
+const databaseUrl = process.env.POSTGRES_URL ?? process.env.DATABASE_URL;
 
 if (!databaseUrl) {
   throw new Error("Missing POSTGRES_URL");

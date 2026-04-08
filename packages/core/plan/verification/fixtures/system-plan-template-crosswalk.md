@@ -4,7 +4,7 @@ Primary source of truth for system training plans: `packages/core/samples/traini
 
 Primary source of truth for linked system activity templates: `packages/core/samples/index.ts`
 
-Current seeded DB snapshot for curated training-plan templates: `packages/supabase/migrations/20260308173500_remake_system_training_plan_templates.sql`
+Current seeded DB snapshot for curated training-plan templates: `packages/db/drizzle/0000_baseline.sql`
 
 Known drift to keep visible in verification:
 

@@ -5,8 +5,6 @@ import {
   activityEfforts,
   activityPlans,
   activityRoutes,
-  coachesAthletes,
-  coachingInvitations,
   comments,
   conversationParticipants,
   conversations,
@@ -23,6 +21,7 @@ import {
   profileTrainingSettings,
   syncedEvents,
   trainingPlans,
+  userTrainingPlans,
 } from "./tables";
 
 export type ProfileRow = InferSelectModel<typeof profiles>;
@@ -36,6 +35,9 @@ export type ActivityPlanInsert = InferInsertModel<typeof activityPlans>;
 
 export type TrainingPlanRow = InferSelectModel<typeof trainingPlans>;
 export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
+
+export type UserTrainingPlanRow = InferSelectModel<typeof userTrainingPlans>;
+export type UserTrainingPlanInsert = InferInsertModel<typeof userTrainingPlans>;
 
 export type ActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
@@ -69,12 +71,6 @@ export type LikeInsert = InferInsertModel<typeof likes>;
 
 export type NotificationRow = InferSelectModel<typeof notifications>;
 export type NotificationInsert = InferInsertModel<typeof notifications>;
-
-export type CoachingInvitationRow = InferSelectModel<typeof coachingInvitations>;
-export type CoachingInvitationInsert = InferInsertModel<typeof coachingInvitations>;
-
-export type CoachAthleteRow = InferSelectModel<typeof coachesAthletes>;
-export type CoachAthleteInsert = InferInsertModel<typeof coachesAthletes>;
 
 export type ConversationRow = InferSelectModel<typeof conversations>;
 export type ConversationInsert = InferInsertModel<typeof conversations>;

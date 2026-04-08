@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const supabaseDir = path.resolve(scriptDir, "../../../packages/supabase");
+const supabaseDir = path.resolve(scriptDir, "../../../packages/db/supabase");
 
 const statusOutput = execFileSync("supabase", ["status", "-o", "env"], {
   cwd: supabaseDir,

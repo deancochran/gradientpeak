@@ -1,149 +1,59 @@
 #!/usr/bin/env tsx
-/**
- * Seed script to upload system training plan templates to the database
- *
- * Usage:
- *   pnpm seed-training-plans                    # Sync all training plan templates
- *   pnpm seed-training-plans --dry-run          # Preview changes without applying
- *   pnpm seed-training-plans --no-delete        # Don't delete templates not in code
- *
- * This script uses a "smart sync" approach:
- * 1. Fetches existing system training plan templates from the database
- * 2. Compares them with the local code definitions (by static ID)
- * 3. Creates new templates if they don't exist
- * 4. Updates existing templates if fields (structure, description, etc.) have changed
- * 5. Deletes database templates that are no longer in the code (unless --no-delete is used)
- */
 
-import { createClient } from "@supabase/supabase-js";
-import { config } from "dotenv";
-import { resolve } from "path";
+import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+
 import { ALL_SAMPLE_PLANS } from "../../core/samples";
+import { trainingPlans } from "../src/schema/tables";
+import { deepEqual, prepareDbEnv } from "./_helpers";
 
-// Load environment variables from root .env.local
-config({ path: resolve(__dirname, "../../supabase/.env.local") });
-
-// Parse CLI arguments
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 
-// Environment variables
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SECRET_KEY =
-  process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const databaseUrl = prepareDbEnv();
+const pool = new Pool({ connectionString: databaseUrl });
+const db = drizzle({ client: pool, casing: "snake_case" });
 
-if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
-  console.error("❌ Missing environment variables: SUPABASE_URL or SUPABASE_SECRET_KEY");
-  console.error("   Please check your .env.local file.");
-  process.exit(1);
-}
+const templates = ALL_SAMPLE_PLANS;
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
+type ExistingTrainingPlanTemplate = typeof trainingPlans.$inferSelect;
 
-const TEMPLATES = ALL_SAMPLE_PLANS;
+function hasChanges(local: (typeof ALL_SAMPLE_PLANS)[number], remote: ExistingTrainingPlanTemplate): boolean {
+  if (local.name !== remote.name) return true;
+  if ((local.description ?? null) !== (remote.description ?? null)) return true;
+  if (local.sessions_per_week_target !== remote.sessions_per_week_target) return true;
+  if (`${local.duration_hours}` !== `${remote.duration_hours ?? ""}`) return true;
 
-/**
- * Deep equality check for objects and arrays
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function deepEqual(a: any, b: any): boolean {
-  if (a === b) return true;
+  const localStructure = JSON.parse(JSON.stringify(local));
 
-  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") {
-    return false;
-  }
-
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
-
-  if (keysA.length !== keysB.length) return false;
-
-  for (const key of keysA) {
-    if (!keysB.includes(key)) return false;
-    if (!deepEqual(a[key], b[key])) return false;
-  }
-
-  return true;
-}
-
-/**
- * Check if a local template differs from the remote DB record
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasChanges(local: (typeof ALL_SAMPLE_PLANS)[number], remote: any): boolean {
-  // Normalize fields (DB might return null for undefined)
-  const localDescription = local.description ?? null;
-  const remoteDescription = remote.description ?? null;
-
-  // Compare core metadata
-  if (local.name !== remote.name) {
-    console.log(`   Field change: name`);
-    return true;
-  }
-
-  if (localDescription !== remoteDescription) {
-    console.log(`   Field change: description`);
-    return true;
-  }
-
-  if (local.sessions_per_week_target !== remote.sessions_per_week_target) {
-    console.log(`   Field change: sessions_per_week_target`);
-    return true;
-  }
-
-  if (local.duration_hours !== remote.duration_hours) {
-    console.log(`   Field change: duration_hours`);
-    return true;
-  }
-
-  // Sanitize local structure to match JSON behavior
-  // The new schema uses goals/blocks at top level, store entire plan as JSON in structure column
-  const localStructureJson = JSON.parse(JSON.stringify(local));
-
-  // Compare structure object deeply
-  if (!deepEqual(localStructureJson, remote.structure)) {
-    console.log(`   Field change: structure`);
-    return true;
-  }
-
-  return false;
+  return !deepEqual(localStructure, remote.structure);
 }
 
 async function seedTrainingPlanTemplates() {
   console.log("🌱 Starting training plan template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
-  console.log(`   Filter: all`);
-  console.log(`   Local Templates: ${TEMPLATES.length}\n`);
+  console.log("   Filter: all");
+  console.log(`   Local Templates: ${templates.length}\n`);
 
-  // 1. Fetch existing system templates from DB
-  let query = supabase.from("training_plans").select("*").eq("is_system_template", true);
+  const existingTemplates = await db
+    .select()
+    .from(trainingPlans)
+    .where(eq(trainingPlans.is_system_template, true));
 
-  // We always sync the full curated training-plan template set.
-
-  const { data: existingTemplates, error } = await query;
-
-  if (error) {
-    console.error("❌ Failed to fetch existing templates:", error.message);
-    process.exit(1);
+  const idCounts = new Map<string, number>();
+  for (const template of existingTemplates) {
+    idCounts.set(template.id, (idCounts.get(template.id) ?? 0) + 1);
   }
 
-  // Check for duplicate IDs in DB
-  const idCounts = new Map<string, number>();
-  existingTemplates.forEach((t) => {
-    idCounts.set(t.id, (idCounts.get(t.id) || 0) + 1);
-  });
-
-  for (const [id, count] of idCounts.entries()) {
+  for (const [id, count] of idCounts) {
     if (count > 1) {
       console.warn(`⚠️  WARNING: Duplicate template ID found in DB: "${id}" (${count} occurrences)`);
     }
   }
 
-  // Map for quick lookup: ID -> DB Record
-  const existingMap = new Map(existingTemplates.map((t) => [t.id, t]));
+  const existingMap = new Map(existingTemplates.map((template) => [template.id, template]));
   const processedIds = new Set<string>();
 
   let createdCount = 0;
@@ -152,11 +62,10 @@ async function seedTrainingPlanTemplates() {
   let deletedCount = 0;
   let errorCount = 0;
 
-  // 2. Iterate through local templates to Create or Update
-  for (const template of TEMPLATES) {
+  for (const template of templates) {
     if (!template.id) {
       console.error(`❌ Template "${template.name}" is missing a static ID. Skipping.`);
-      errorCount++;
+      errorCount += 1;
       continue;
     }
 
@@ -165,84 +74,81 @@ async function seedTrainingPlanTemplates() {
 
     try {
       if (existing) {
-        // Template exists - check if it needs update
         if (hasChanges(template, existing)) {
           console.log(`📝 Updating "${template.name}" (${template.id})...`);
+
           if (!isDryRun) {
-            const { error: updateError } = await supabase
-              .from("training_plans")
-              .update({
+            await db
+              .update(trainingPlans)
+              .set({
                 name: template.name,
-                description: template.description,
+                description: template.description ?? null,
                 structure: template.structure,
                 sessions_per_week_target: template.sessions_per_week_target,
-                duration_hours: template.duration_hours,
+                duration_hours: template.duration_hours?.toString() ?? null,
                 is_public: true,
                 template_visibility: "public",
-                updated_at: new Date().toISOString(),
+                updated_at: new Date(),
               })
-              .eq("id", existing.id);
-
-            if (updateError) throw updateError;
+              .where(eq(trainingPlans.id, existing.id));
           }
-          updatedCount++;
+
+          updatedCount += 1;
         } else {
-          // No changes
-          skippedCount++;
+          skippedCount += 1;
         }
       } else {
-        // Template does not exist - Create it
         console.log(`✨ Creating "${template.name}" (${template.id})...`);
+
         if (!isDryRun) {
-          const { error: insertError } = await supabase.from("training_plans").insert({
-            id: template.id, // Use the static ID
+          const now = new Date();
+
+          await db.insert(trainingPlans).values({
+            id: template.id,
             profile_id: null,
             is_system_template: true,
-            template_visibility: "public", // System templates must be public
+            template_visibility: "public",
             is_public: true,
             name: template.name,
-            description: template.description,
+            description: template.description ?? null,
             structure: template.structure,
             sessions_per_week_target: template.sessions_per_week_target,
-            duration_hours: template.duration_hours,
+            duration_hours: template.duration_hours?.toString() ?? null,
+            created_at: now,
+            updated_at: now,
           });
-
-          if (insertError) throw insertError;
         }
-        createdCount++;
+
+        createdCount += 1;
       }
-    } catch (err) {
-      console.error(`❌ Error processing "${template.name}":`, err);
-      errorCount++;
+    } catch (error) {
+      console.error(`❌ Error processing "${template.name}":`, error);
+      errorCount += 1;
     }
   }
 
-  // 3. Handle Deletions
-  // Any existing template that was not processed means it's no longer in the local code
-  const staleTemplates = existingTemplates.filter((t) => !processedIds.has(t.id));
+  const staleTemplates = existingTemplates.filter((template) => !processedIds.has(template.id));
 
   if (staleTemplates.length > 0) {
     console.log(`\nFound ${staleTemplates.length} stale template(s).`);
+
     if (noDelete) {
       console.log("   Skipping deletion (--no-delete active).");
     } else {
       for (const stale of staleTemplates) {
         console.log(`🗑️  Deleting "${stale.name}" (${stale.id})...`);
-        if (!isDryRun) {
-          const { error: deleteError } = await supabase
-            .from("training_plans")
-            .delete()
-            .eq("id", stale.id);
 
-          if (deleteError) {
-            console.error(`❌ Failed to delete "${stale.name}":`, deleteError.message);
-            errorCount++;
-          } else {
-            deletedCount++;
+        if (!isDryRun) {
+          try {
+            await db.delete(trainingPlans).where(eq(trainingPlans.id, stale.id));
+          } catch (error) {
+            console.error(`❌ Failed to delete "${stale.name}":`, error);
+            errorCount += 1;
+            continue;
           }
-        } else {
-          deletedCount++;
         }
+
+        deletedCount += 1;
       }
     }
   }
@@ -255,16 +161,16 @@ async function seedTrainingPlanTemplates() {
   console.log(`   ❌ Errors:  ${errorCount}`);
 
   if (errorCount > 0) {
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 
-seedTrainingPlanTemplates()
-  .then(() => {
-    console.log("\n✨ Sync complete!");
-    process.exit(0);
-  })
-  .catch((err) => {
-    console.error("\n💥 Sync failed:", err);
-    process.exit(1);
-  });
+try {
+  await seedTrainingPlanTemplates();
+  console.log("\n✨ Sync complete!");
+} catch (error) {
+  console.error("\n💥 Sync failed:", error);
+  process.exitCode = 1;
+} finally {
+  await pool.end();
+}

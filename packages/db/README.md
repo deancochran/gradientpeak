@@ -1,21 +1,28 @@
 # @repo/db
 
-`@repo/db` is the Drizzle-owned relational boundary for the replatform.
+`@repo/db` owns the relational database contract and local database tooling.
 
-## Public contract
+## Exports
 
 - `@repo/db`: package-level convenience export for client helpers, schema, and validation.
 - `@repo/db/client`: environment and client-shape helpers used by downstream packages.
 - `@repo/db/schema`: Drizzle enums, tables, relations, and inferred row types.
-- `@repo/db/validation`: Drizzle-Zod schemas for the current app-owned relational slice.
+- `@repo/db/validation`: Drizzle-Zod schemas for the current relational slice.
 
-## Source-of-truth rules
+## Source of truth
 
-- Drizzle schema in `src/schema/**` is the future relational source of truth.
-- `drizzle/baseline-strategy.md` defines the fresh-baseline cutover policy.
-- `packages/supabase` remains the owner of Supabase CLI config, functions, policies, templates, and other provider-specific assets.
-- `packages/supabase` generated relational types and schemas are temporary compatibility artifacts during migration, not the long-term contract.
+- Drizzle schema in `src/schema/**` is the relational source of truth.
+- `drizzle/0000_baseline.sql` is the fresh-environment baseline generated from that schema.
+- `drizzle/baseline-strategy.md` documents the baseline cutover policy.
+- `supabase/` holds the retained local Supabase CLI assets used by DB-owned local workflows.
 
-## Current schema coverage
+## Common commands
 
-Wave 1 intentionally ports the most commonly shared public tables first so `packages/api` can start consuming Drizzle-owned enums, row shapes, and validation without waiting for the entire schema port.
+```bash
+pnpm --filter @repo/db db:migration:new <name>
+pnpm --filter @repo/db db:migrate
+pnpm --filter @repo/db seed-templates
+pnpm --filter @repo/db seed-training-plans
+pnpm --filter @repo/db self-host:up
+pnpm --filter @repo/db self-host:down
+```
