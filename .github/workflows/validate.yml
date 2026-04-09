@@ -28,7 +28,7 @@ jobs:
     name: Changes
     runs-on: ubuntu-latest
     outputs:
-      docs_only: ${{ steps.filter.outputs.docs_only }}
+      docs_only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.non_docs != 'true' }}
 
     steps:
       - name: Checkout
@@ -38,13 +38,18 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          predicate-quantifier: every
           filters: |
-            docs_only:
+            docs:
               - '**/*.md'
               - '**/*.mdx'
               - 'docs/**'
               - '.github/workflows/validate.yml'
+            non_docs:
+              - '**'
+              - '!**/*.md'
+              - '!**/*.mdx'
+              - '!docs/**'
+              - '!.github/workflows/validate.yml'
 
   docs-only:
     name: Docs Only
