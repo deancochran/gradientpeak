@@ -162,7 +162,7 @@ function withIdentityFields<
 function buildCreateValues(
   input: z.infer<typeof createActivityPlanInput>,
   profileId: string,
-  metrics: Awaited<ReturnType<typeof computePlanMetrics>>,
+  _metrics: Awaited<ReturnType<typeof computePlanMetrics>>,
 ): ActivityPlanInsert {
   const now = new Date();
   const templateVisibility = input.template_visibility ?? "private";
@@ -183,9 +183,6 @@ function buildCreateValues(
     import_provider: input.import_provider ?? null,
     import_external_id: input.import_external_id ?? null,
     is_system_template: false,
-    estimated_tss: metrics.estimated_tss,
-    estimated_duration_seconds: metrics.estimated_duration_seconds,
-    estimated_distance_meters: metrics.estimated_distance_meters,
     is_public: templateVisibility === "public",
   };
 }
@@ -284,7 +281,10 @@ export const activityPlansRouter = createTRPCRouter({
           ),
         );
 
-      userLikes = z.array(activityPlanLikeRowSchema).parse(likeRows).map((row) => row.entity_id);
+      userLikes = z
+        .array(activityPlanLikeRowSchema)
+        .parse(likeRows)
+        .map((row) => row.entity_id);
     }
 
     let nextCursor: string | undefined;
@@ -305,70 +305,68 @@ export const activityPlansRouter = createTRPCRouter({
     };
   }),
 
-  getById: protectedProcedure
-    .input(activityPlanIdInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const estimationStore = createEventReadRepository(db);
-      const userId = ctx.session.user.id;
+  getById: protectedProcedure.input(activityPlanIdInputSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
+    const estimationStore = createEventReadRepository(db);
+    const userId = ctx.session.user.id;
 
-      const [rawPlanRow] = await db
-        .select()
-        .from(activityPlans)
-        .where(eq(activityPlans.id, input.id))
-        .limit(1);
+    const [rawPlanRow] = await db
+      .select()
+      .from(activityPlans)
+      .where(eq(activityPlans.id, input.id))
+      .limit(1);
 
-      if (!rawPlanRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Activity plan not found",
-        });
+    if (!rawPlanRow) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Activity plan not found",
+      });
+    }
+
+    const planRow = activityPlanRowSchema.parse(rawPlanRow);
+
+    const isOwner = planRow.profile_id === userId;
+    const isSystemTemplate = planRow.is_system_template === true;
+    const isPublic = planRow.template_visibility === "public";
+
+    if (!isOwner && !isSystemTemplate && !isPublic) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "You don't have permission to view this activity plan",
+      });
+    }
+
+    const plan = serializeActivityPlanRow(planRow);
+
+    try {
+      if (plan.structure) {
+        validateStructure(plan.structure);
       }
+    } catch (validationError) {
+      console.error("Invalid V2 structure in database for plan", input.id, validationError);
+    }
 
-      const planRow = activityPlanRowSchema.parse(rawPlanRow);
+    const planWithEstimation = await addEstimationToPlan(plan, estimationStore, userId);
 
-      const isOwner = planRow.profile_id === userId;
-      const isSystemTemplate = planRow.is_system_template === true;
-      const isPublic = planRow.template_visibility === "public";
+    const [rawLikeRow] = await db
+      .select({ id: likes.id })
+      .from(likes)
+      .where(
+        and(
+          eq(likes.profile_id, userId),
+          eq(likes.entity_type, "activity_plan"),
+          eq(likes.entity_id, input.id),
+        ),
+      )
+      .limit(1);
 
-      if (!isOwner && !isSystemTemplate && !isPublic) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You don't have permission to view this activity plan",
-        });
-      }
+    const likeRow = rawLikeRow ? activityPlanLikeLookupRowSchema.parse(rawLikeRow) : null;
 
-      const plan = serializeActivityPlanRow(planRow);
-
-      try {
-        if (plan.structure) {
-          validateStructure(plan.structure);
-        }
-      } catch (validationError) {
-        console.error("Invalid V2 structure in database for plan", input.id, validationError);
-      }
-
-      const planWithEstimation = await addEstimationToPlan(plan, estimationStore, userId);
-
-      const [rawLikeRow] = await db
-        .select({ id: likes.id })
-        .from(likes)
-        .where(
-          and(
-            eq(likes.profile_id, userId),
-            eq(likes.entity_type, "activity_plan"),
-            eq(likes.entity_id, input.id),
-          ),
-        )
-        .limit(1);
-
-      const likeRow = rawLikeRow ? activityPlanLikeLookupRowSchema.parse(rawLikeRow) : null;
-
-      return {
-        ...withIdentityFields(planWithEstimation),
-        has_liked: !!likeRow,
-      };
-    }),
+    return {
+      ...withIdentityFields(planWithEstimation),
+      has_liked: !!likeRow,
+    };
+  }),
 
   getManyByIds: protectedProcedure
     .input(getManyActivityPlansByIdsSchema)
@@ -409,7 +407,10 @@ export const activityPlansRouter = createTRPCRouter({
             ),
           );
 
-        userLikes = z.array(activityPlanLikeRowSchema).parse(likeRows).map((row) => row.entity_id);
+        userLikes = z
+          .array(activityPlanLikeRowSchema)
+          .parse(likeRows)
+          .map((row) => row.entity_id);
       }
 
       return {
@@ -510,7 +511,7 @@ export const activityPlansRouter = createTRPCRouter({
 
       let metricsUpdates: Partial<ActivityPlanInsert> = {};
       if (updates.structure || updates.route_id !== undefined || updates.activity_category) {
-        const metrics = await computePlanMetrics(
+        await computePlanMetrics(
           {
             activity_category: updates.activity_category || existingRow.activity_category,
             structure: updates.structure || existingRow.structure,
@@ -519,12 +520,6 @@ export const activityPlansRouter = createTRPCRouter({
           estimationStore,
           ctx.session.user.id,
         );
-
-        metricsUpdates = {
-          estimated_tss: metrics.estimated_tss,
-          estimated_duration_seconds: metrics.estimated_duration_seconds,
-          estimated_distance_meters: metrics.estimated_distance_meters,
-        };
       }
 
       const updateValues: Partial<ActivityPlanInsert> = {
@@ -568,27 +563,23 @@ export const activityPlansRouter = createTRPCRouter({
       return withIdentityFields(planWithEstimation);
     }),
 
-  delete: protectedProcedure
-    .input(activityPlanIdInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
+  delete: protectedProcedure.input(activityPlanIdInputSchema).mutation(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
 
-      const deletedRows = await db
-        .delete(activityPlans)
-        .where(
-          and(eq(activityPlans.id, input.id), eq(activityPlans.profile_id, ctx.session.user.id)),
-        )
-        .returning({ id: activityPlans.id });
+    const deletedRows = await db
+      .delete(activityPlans)
+      .where(and(eq(activityPlans.id, input.id), eq(activityPlans.profile_id, ctx.session.user.id)))
+      .returning({ id: activityPlans.id });
 
-      if (deletedRows.length === 0) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Activity plan not found or you don't have permission to delete it",
-        });
-      }
+    if (deletedRows.length === 0) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Activity plan not found or you don't have permission to delete it",
+      });
+    }
 
-      return { success: true };
-    }),
+    return { success: true };
+  }),
 
   duplicate: protectedProcedure
     .input(duplicateActivityPlanInputSchema)
@@ -625,7 +616,7 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      const metrics = await computePlanMetrics(
+      await computePlanMetrics(
         {
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
@@ -647,9 +638,6 @@ export const activityPlansRouter = createTRPCRouter({
           notes: originalRow.notes ?? null,
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
-          estimated_tss: metrics.estimated_tss,
-          estimated_duration_seconds: metrics.estimated_duration_seconds,
-          estimated_distance_meters: metrics.estimated_distance_meters,
           version: originalPlan.version,
           route_id: originalPlan.route_id,
           profile_id: ctx.session.user.id,

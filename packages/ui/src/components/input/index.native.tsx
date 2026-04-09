@@ -1,6 +1,6 @@
 import { cn } from "../../lib/cn";
-import { Input as RegistryInput } from "../../registry/native/input";
 import { getNativeTestProps } from "../../lib/test-props";
+import { Input as RegistryInput } from "../../registry/native/input";
 import type { InputTestProps } from "./shared";
 
 function inputVariants({ className, editable }: { className?: string; editable?: boolean } = {}) {
@@ -26,5 +26,5 @@ function Input({ accessibilityLabel, id, role, testId, ...props }: InputProps) {
   return <RegistryInput {...nativeTestProps} {...props} className={inputVariants(props)} />;
 }
 
-export { Input, inputVariants };
 export type { InputProps };
+export { Input, inputVariants };

@@ -1,13 +1,12 @@
 import * as React from "react";
-
+import { cn } from "../../lib/cn";
+import { getNativeTestProps } from "../../lib/test-props";
 import {
   Tabs as RegistryTabs,
   TabsContent as RegistryTabsContent,
   TabsList as RegistryTabsList,
   TabsTrigger as RegistryTabsTrigger,
 } from "../../registry/native/tabs";
-import { cn } from "../../lib/cn";
-import { getNativeTestProps } from "../../lib/test-props";
 import type {
   TabsContentOptions,
   TabsListOptions,

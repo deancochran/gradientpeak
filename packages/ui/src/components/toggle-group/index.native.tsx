@@ -1,11 +1,10 @@
 import * as React from "react";
-
+import { getNativeTestProps } from "../../lib/test-props";
 import {
   ToggleGroup as RegistryToggleGroup,
-  ToggleGroupIcon,
   ToggleGroupItem as RegistryToggleGroupItem,
+  ToggleGroupIcon,
 } from "../../registry/native/toggle-group";
-import { getNativeTestProps } from "../../lib/test-props";
 import type { ToggleSize, ToggleVariant } from "../toggle/shared";
 import type { ToggleGroupTestProps } from "./shared";
 

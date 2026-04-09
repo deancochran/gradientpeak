@@ -1,10 +1,9 @@
 "use client";
 
 import * as React from "react";
-
-import { Label as RegistryLabel } from "../../registry/web/label";
-import { getWebTestProps } from "../../lib/test-props";
 import type { TestProps } from "../../lib/test-props";
+import { getWebTestProps } from "../../lib/test-props";
+import { Label as RegistryLabel } from "../../registry/web/label";
 
 function Label({
   accessibilityLabel,

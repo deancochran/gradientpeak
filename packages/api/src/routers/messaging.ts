@@ -368,48 +368,7 @@ export const messagingRouter = createTRPCRouter({
     }
   }),
 
-  getMessages: protectedProcedure
-    .input(getMessagesInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      try {
-        await requireConversationParticipant(db, {
-          conversationId: input.conversation_id,
-          userId: ctx.session.user.id,
-        });
-
-        const rows = await db
-          .select({
-            id: messages.id,
-            conversation_id: messages.conversation_id,
-            sender_id: messages.sender_id,
-            content: messages.content,
-            created_at: messages.created_at,
-            deleted_at: messages.deleted_at,
-            read_at: messages.read_at,
-          })
-          .from(messages)
-          .where(
-            and(eq(messages.conversation_id, input.conversation_id), isNull(messages.deleted_at)),
-          )
-          .orderBy(asc(messages.created_at));
-
-        return normalizeMessageList(rows.map((row) => toMessage(messageRowSchema.parse(row))));
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to load messages.",
-          cause: error,
-        });
-      }
-    }),
-
-  sendMessage: protectedProcedure.input(createMessageInputSchema).mutation(async ({ ctx, input }) => {
+  getMessages: protectedProcedure.input(getMessagesInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
 
     try {
@@ -418,20 +377,23 @@ export const messagingRouter = createTRPCRouter({
         userId: ctx.session.user.id,
       });
 
-      await db.transaction(async (tx) => {
-        await tx.insert(messages).values({
-          conversation_id: input.conversation_id,
-          sender_id: ctx.session.user.id,
-          content: input.content,
-        });
+      const rows = await db
+        .select({
+          id: messages.id,
+          conversation_id: messages.conversation_id,
+          sender_id: messages.sender_id,
+          content: messages.content,
+          created_at: messages.created_at,
+          deleted_at: messages.deleted_at,
+          read_at: messages.read_at,
+        })
+        .from(messages)
+        .where(
+          and(eq(messages.conversation_id, input.conversation_id), isNull(messages.deleted_at)),
+        )
+        .orderBy(asc(messages.created_at));
 
-        await tx
-          .update(conversations)
-          .set({ last_message_at: new Date() })
-          .where(eq(conversations.id, input.conversation_id));
-      });
-
-      return { success: true };
+      return normalizeMessageList(rows.map((row) => toMessage(messageRowSchema.parse(row))));
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
@@ -439,19 +401,55 @@ export const messagingRouter = createTRPCRouter({
 
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to send message.",
+        message: "Failed to load messages.",
         cause: error,
       });
     }
   }),
 
-  markAsRead: protectedProcedure
-    .input(markAsReadInputSchema)
+  sendMessage: protectedProcedure
+    .input(createMessageInputSchema)
     .mutation(async ({ ctx, input }) => {
-      void input;
-      void ctx;
-      return { success: true };
+      const db = getRequiredDb(ctx);
+
+      try {
+        await requireConversationParticipant(db, {
+          conversationId: input.conversation_id,
+          userId: ctx.session.user.id,
+        });
+
+        await db.transaction(async (tx) => {
+          await tx.insert(messages).values({
+            conversation_id: input.conversation_id,
+            sender_id: ctx.session.user.id,
+            content: input.content,
+          });
+
+          await tx
+            .update(conversations)
+            .set({ last_message_at: new Date() })
+            .where(eq(conversations.id, input.conversation_id));
+        });
+
+        return { success: true };
+      } catch (error) {
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to send message.",
+          cause: error,
+        });
+      }
     }),
+
+  markAsRead: protectedProcedure.input(markAsReadInputSchema).mutation(async ({ ctx, input }) => {
+    void input;
+    void ctx;
+    return { success: true };
+  }),
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);

@@ -20,7 +20,10 @@ const templates = ALL_SAMPLE_PLANS;
 
 type ExistingTrainingPlanTemplate = typeof trainingPlans.$inferSelect;
 
-function hasChanges(local: (typeof ALL_SAMPLE_PLANS)[number], remote: ExistingTrainingPlanTemplate): boolean {
+function hasChanges(
+  local: (typeof ALL_SAMPLE_PLANS)[number],
+  remote: ExistingTrainingPlanTemplate,
+): boolean {
   if (local.name !== remote.name) return true;
   if ((local.description ?? null) !== (remote.description ?? null)) return true;
   if (local.sessions_per_week_target !== remote.sessions_per_week_target) return true;
@@ -85,7 +88,7 @@ async function seedTrainingPlanTemplates() {
                 description: template.description ?? null,
                 structure: template.structure,
                 sessions_per_week_target: template.sessions_per_week_target,
-                duration_hours: template.duration_hours?.toString() ?? null,
+                duration_hours: template.duration_hours ?? null,
                 is_public: true,
                 template_visibility: "public",
                 updated_at: new Date(),
@@ -113,7 +116,7 @@ async function seedTrainingPlanTemplates() {
             description: template.description ?? null,
             structure: template.structure,
             sessions_per_week_target: template.sessions_per_week_target,
-            duration_hours: template.duration_hours?.toString() ?? null,
+            duration_hours: template.duration_hours ?? null,
             created_at: now,
             updated_at: now,
           });

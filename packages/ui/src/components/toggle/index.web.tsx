@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-
-import { Toggle as RegistryToggle, toggleVariants } from "../../registry/web/toggle";
 import { getWebTestProps } from "../../lib/test-props";
+import { Toggle as RegistryToggle, toggleVariants } from "../../registry/web/toggle";
 import type { ToggleVariantOptions } from "./shared";
 
 function Toggle({

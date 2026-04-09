@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-
-import { RadioGroup as RegistryRadioGroup, RadioGroupItem } from "../../registry/web/radio-group";
 import { getWebTestProps } from "../../lib/test-props";
+import { RadioGroupItem, RadioGroup as RegistryRadioGroup } from "../../registry/web/radio-group";
 import type { RadioGroupTestProps } from "./shared";
 
 function RadioGroup({

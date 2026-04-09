@@ -53,13 +53,15 @@ const profileEditSchema = z.object({
 
 type ProfileEditForm = z.infer<typeof profileEditSchema>;
 
-const AVATAR_MIME_TYPES: Record<string, string> = {
+const AVATAR_MIME_TYPES = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   png: "image/png",
   gif: "image/gif",
   webp: "image/webp",
-};
+} as const;
+
+type AvatarMimeType = (typeof AVATAR_MIME_TYPES)[keyof typeof AVATAR_MIME_TYPES];
 
 function ProfileEditScreen() {
   const router = useRouter();
@@ -218,7 +220,8 @@ function ProfileEditScreen() {
       // Get file extension
       const ext = uri.split(".").pop()?.toLowerCase() || "jpg";
       const fileName = `${Date.now()}.${ext}`;
-      const fileType = AVATAR_MIME_TYPES[ext] ?? "image/jpeg";
+      const fileType: AvatarMimeType =
+        AVATAR_MIME_TYPES[ext as keyof typeof AVATAR_MIME_TYPES] ?? "image/jpeg";
 
       const { signedUrl, publicUrl } = await createAvatarUploadUrlMutation.mutateAsync({
         fileName,

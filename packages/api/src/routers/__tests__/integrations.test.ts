@@ -255,7 +255,11 @@ describe("integrationsRouter", () => {
     const caller = createCaller();
 
     await expect(
-      caller.getAuthUrl({ provider: "strava", redirectUri: "https://example.com", extra: true } as any),
+      caller.getAuthUrl({
+        provider: "strava",
+        redirectUri: "https://example.com",
+        extra: true,
+      } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
   });
 
@@ -347,7 +351,9 @@ describe("integrationsRouter", () => {
       code: "INTERNAL_SERVER_ERROR",
       message: "Failed to refresh integration token",
     } satisfies Partial<TRPCError>);
-    expect(mocks.repositories.integrations.updateTokensByProfileIdAndProvider).not.toHaveBeenCalled();
+    expect(
+      mocks.repositories.integrations.updateTokensByProfileIdAndProvider,
+    ).not.toHaveBeenCalled();
   });
 
   it("cleanupExpiredStates sums both cleanup strategies", async () => {

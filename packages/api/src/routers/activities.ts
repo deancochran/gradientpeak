@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { ActivityUploadSchema, analyzeActivityDerivedMetrics } from "@repo/core";
+import {
+  ActivityUploadSchema,
+  activityDerivedMetricsSchema,
+  activityListDerivedSummarySchema,
+  analyzeActivityDerivedMetrics,
+} from "@repo/core";
 import {
   activities,
   activityPlans,
@@ -45,7 +50,7 @@ const activityPlanReferenceSchema = publicActivityPlansRowSchema
 const activityListItemSchema = activityRowSchema
   .extend({
     has_liked: z.boolean(),
-    derived: z.unknown().nullable(),
+    derived: activityListDerivedSummarySchema.nullable(),
   })
   .strict();
 
@@ -59,7 +64,7 @@ const activityDerivedResponseSchema = z
   .object({
     activity: activityWithPlanSchema,
     has_liked: z.boolean(),
-    derived: z.unknown(),
+    derived: activityDerivedMetricsSchema,
   })
   .strict();
 
@@ -175,15 +180,13 @@ async function checkActivityAccess(
 
 export const activitiesRouter = createTRPCRouter({
   // List activities by date range (legacy - for trends/analytics)
-  list: protectedProcedure
-    .input(listInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const data = parseActivityRows(
-        await db
-          .select()
-          .from(activities)
-          .where(
+  list: protectedProcedure.input(listInputSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
+    const data = parseActivityRows(
+      await db
+        .select()
+        .from(activities)
+        .where(
           and(
             eq(activities.profile_id, ctx.session.user.id),
             gte(activities.started_at, new Date(input.date_from)),
@@ -191,42 +194,42 @@ export const activitiesRouter = createTRPCRouter({
           ),
         )
         .orderBy(desc(activities.started_at)),
-      );
+    );
 
-      const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(db),
-        profileId: ctx.session.user.id,
-        activities: data || [],
-      });
+    const derivedMap = await buildActivityDerivedSummaryMap({
+      store: createActivityAnalysisStore(db),
+      profileId: ctx.session.user.id,
+      activities: data || [],
+    });
 
-      const activityIds = data.map((activity) => activity.id);
-      const likeRows = activityIds.length
-        ? await db
-            .select({ entity_id: likes.entity_id })
-            .from(likes)
-            .where(
-              and(
-                eq(likes.profile_id, ctx.session.user.id),
-                eq(likes.entity_type, "activity"),
-                inArray(likes.entity_id, activityIds),
-              ),
-            )
-        : [];
+    const activityIds = data.map((activity) => activity.id);
+    const likeRows = activityIds.length
+      ? await db
+          .select({ entity_id: likes.entity_id })
+          .from(likes)
+          .where(
+            and(
+              eq(likes.profile_id, ctx.session.user.id),
+              eq(likes.entity_type, "activity"),
+              inArray(likes.entity_id, activityIds),
+            ),
+          )
+      : [];
 
-      const parsedLikeRows = likeRowSchema.array().parse(likeRows);
+    const parsedLikeRows = likeRowSchema.array().parse(likeRows);
 
-      const userLikes = new Set(parsedLikeRows.map((row) => row.entity_id));
+    const userLikes = new Set(parsedLikeRows.map((row) => row.entity_id));
 
-      return activityListResponseSchema.parse(
-        data.map((activity) =>
-          mapActivityToListDerivedResponse({
-            activity,
-            has_liked: userLikes.has(activity.id),
-            derived: derivedMap.get(activity.id) ?? null,
-          }),
-        ),
-      );
-    }),
+    return activityListResponseSchema.parse(
+      data.map((activity) =>
+        mapActivityToListDerivedResponse({
+          activity,
+          has_liked: userLikes.has(activity.id),
+          derived: derivedMap.get(activity.id) ?? null,
+        }),
+      ),
+    );
+  }),
 
   // Paginated list of activities with filters
   listPaginated: protectedProcedure
@@ -351,49 +354,47 @@ export const activitiesRouter = createTRPCRouter({
     }),
 
   // Simplified: Just create the activity first
-  create: protectedProcedure
-    .input(createInputSchema)
-    .mutation(async ({ input, ctx }) => {
-      const db = getRequiredDb(ctx);
-      const duration_seconds =
-        (new Date(input.finishedAt).getTime() - new Date(input.startedAt).getTime()) / 1000;
+  create: protectedProcedure.input(createInputSchema).mutation(async ({ input, ctx }) => {
+    const db = getRequiredDb(ctx);
+    const duration_seconds =
+      (new Date(input.finishedAt).getTime() - new Date(input.startedAt).getTime()) / 1000;
 
-      if (duration_seconds <= 0) {
+    if (duration_seconds <= 0) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Activity duration must be positive.",
+      });
+    }
+
+    if (input.profile_id !== ctx.session.user.id) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Cannot create activities for other profiles",
+      });
+    }
+
+    let linkedActivityPlanId: string | null = null;
+    if (input.eventId) {
+      const linkedEvent = await db.query.events.findFirst({
+        columns: { activity_plan_id: true },
+        where: and(
+          eq(events.id, input.eventId),
+          eq(events.profile_id, ctx.session.user.id),
+          eq(events.event_type, "planned_activity"),
+        ),
+      });
+
+      if (!linkedEvent) {
         throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Activity duration must be positive.",
+          code: "NOT_FOUND",
+          message: "Linked event not found.",
         });
       }
 
-      if (input.profile_id !== ctx.session.user.id) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Cannot create activities for other profiles",
-        });
-      }
+      linkedActivityPlanId = linkedEvent.activity_plan_id;
+    }
 
-      let linkedActivityPlanId: string | null = null;
-      if (input.eventId) {
-        const linkedEvent = await db.query.events.findFirst({
-          columns: { activity_plan_id: true },
-          where: and(
-            eq(events.id, input.eventId),
-            eq(events.profile_id, ctx.session.user.id),
-            eq(events.event_type, "planned_activity"),
-          ),
-        });
-
-        if (!linkedEvent) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Linked event not found.",
-          });
-        }
-
-        linkedActivityPlanId = linkedEvent.activity_plan_id;
-      }
-
-      const insertResult = await db.execute(sql`
+    const insertResult = await db.execute(sql`
         insert into activities (
           id,
           profile_id,
@@ -430,162 +431,156 @@ export const activitiesRouter = createTRPCRouter({
         returning id
       `);
 
-      const createdActivityId = insertedActivityIdRowSchema.parse(insertResult.rows[0]).id;
+    const createdActivityId = insertedActivityIdRowSchema.parse(insertResult.rows[0]).id;
 
-      const createdActivity = await db.query.activities.findFirst({
-        where: eq(activities.id, createdActivityId),
+    const createdActivity = await db.query.activities.findFirst({
+      where: eq(activities.id, createdActivityId),
+    });
+
+    if (!createdActivity) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to load created activity",
       });
+    }
 
-      if (!createdActivity) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to load created activity",
-        });
-      }
+    const data = parseActivityRow(createdActivity);
 
-      const data = parseActivityRow(createdActivity);
+    return data;
+  }),
 
-      return data;
-    }),
+  getById: protectedProcedure.input(getByIdInputSchema).query(async ({ input, ctx }) => {
+    const db = getRequiredDb(ctx);
+    const userId = ctx.session.user.id;
 
-  getById: protectedProcedure
-    .input(getByIdInputSchema)
-    .query(async ({ input, ctx }) => {
-      const db = getRequiredDb(ctx);
-      const userId = ctx.session.user.id;
+    // Check authorization
+    const hasAccess = await checkActivityAccess(db, input.id, userId);
 
-      // Check authorization
-      const hasAccess = await checkActivityAccess(db, input.id, userId);
-
-      if (!hasAccess) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You don't have permission to view this activity",
-        });
-      }
-
-      const [activityRecord, likeData] = await Promise.all([
-        db
-          .select({
-            activity: activities,
-            activityPlan: activityPlans,
-          })
-          .from(activities)
-          .leftJoin(activityPlans, eq(activities.activity_plan_id, activityPlans.id))
-          .where(eq(activities.id, input.id))
-          .limit(1),
-        db.query.likes.findFirst({
-          columns: { id: true },
-          where: and(
-            eq(likes.profile_id, userId),
-            eq(likes.entity_type, "activity"),
-            eq(likes.entity_id, input.id),
-          ),
-        }),
-      ]);
-
-      const row = activityRecord[0];
-
-      if (!row) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
-      }
-
-      const parsedActivity = parseActivityRow(row.activity);
-
-      const data = activityWithPlanSchema.parse({
-        ...parsedActivity,
-        activity_plans: row.activityPlan
-          ? {
-              ...row.activityPlan,
-              idx: row.activityPlan.idx ?? 0,
-              created_at: toIsoString(row.activityPlan.created_at),
-              updated_at: toIsoString(row.activityPlan.updated_at),
-            }
-          : null,
+    if (!hasAccess) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "You don't have permission to view this activity",
       });
+    }
 
-      const context = await resolveActivityContextAsOf({
-        store: createActivityAnalysisStore(db),
-        profileId: data.profile_id,
-        activityTimestamp: data.finished_at,
-      });
+    const [activityRecord, likeData] = await Promise.all([
+      db
+        .select({
+          activity: activities,
+          activityPlan: activityPlans,
+        })
+        .from(activities)
+        .leftJoin(activityPlans, eq(activities.activity_plan_id, activityPlans.id))
+        .where(eq(activities.id, input.id))
+        .limit(1),
+      db.query.likes.findFirst({
+        columns: { id: true },
+        where: and(
+          eq(likes.profile_id, userId),
+          eq(likes.entity_type, "activity"),
+          eq(likes.entity_id, input.id),
+        ),
+      }),
+    ]);
 
-      const derived = analyzeActivityDerivedMetrics({
-        activity: {
-          id: data.id,
-          type: data.type,
-          started_at: data.started_at.toISOString(),
-          finished_at: data.finished_at.toISOString(),
-          duration_seconds: data.duration_seconds,
-          moving_seconds: data.moving_seconds,
-          distance_meters: data.distance_meters,
-          avg_heart_rate: data.avg_heart_rate,
-          max_heart_rate: data.max_heart_rate,
-          avg_power: data.avg_power,
-          max_power: data.max_power,
-          avg_speed_mps: data.avg_speed_mps,
-          max_speed_mps: data.max_speed_mps,
-          normalized_power: data.normalized_power,
-          normalized_speed_mps: data.normalized_speed_mps,
-          normalized_graded_speed_mps: data.normalized_graded_speed_mps,
-        },
-        context,
-      });
+    const row = activityRecord[0];
 
-      return activityDerivedResponseSchema.parse(
-        mapActivityToDerivedResponse({
-          activity: data,
-          has_liked: !!likeData,
-          derived,
-        }),
-      );
-    }),
+    if (!row) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+    }
+
+    const parsedActivity = parseActivityRow(row.activity);
+
+    const data = activityWithPlanSchema.parse({
+      ...parsedActivity,
+      activity_plans: row.activityPlan
+        ? {
+            ...row.activityPlan,
+            idx: row.activityPlan.idx ?? 0,
+            created_at: toIsoString(row.activityPlan.created_at),
+            updated_at: toIsoString(row.activityPlan.updated_at),
+          }
+        : null,
+    });
+
+    const context = await resolveActivityContextAsOf({
+      store: createActivityAnalysisStore(db),
+      profileId: data.profile_id,
+      activityTimestamp: data.finished_at,
+    });
+
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: data.id,
+        type: data.type,
+        started_at: data.started_at.toISOString(),
+        finished_at: data.finished_at.toISOString(),
+        duration_seconds: data.duration_seconds,
+        moving_seconds: data.moving_seconds,
+        distance_meters: data.distance_meters,
+        avg_heart_rate: data.avg_heart_rate,
+        max_heart_rate: data.max_heart_rate,
+        avg_power: data.avg_power,
+        max_power: data.max_power,
+        avg_speed_mps: data.avg_speed_mps,
+        max_speed_mps: data.max_speed_mps,
+        normalized_power: data.normalized_power,
+        normalized_speed_mps: data.normalized_speed_mps,
+        normalized_graded_speed_mps: data.normalized_graded_speed_mps,
+      },
+      context,
+    });
+
+    return activityDerivedResponseSchema.parse(
+      mapActivityToDerivedResponse({
+        activity: data,
+        has_liked: !!likeData,
+        derived,
+      }),
+    );
+  }),
 
   // Update activity (e.g., to set metrics after calculation)
-  update: protectedProcedure
-    .input(updateInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const { id, ...updates } = input;
+  update: protectedProcedure.input(updateInputSchema).mutation(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
+    const { id, ...updates } = input;
 
-      const [data] = await db
-        .update(activities)
-        .set({
-          ...updates,
-          updated_at: new Date(),
-        })
-        .where(and(eq(activities.id, id), eq(activities.profile_id, ctx.session.user.id)))
-        .returning();
+    const [data] = await db
+      .update(activities)
+      .set({
+        ...updates,
+        updated_at: new Date(),
+      })
+      .where(and(eq(activities.id, id), eq(activities.profile_id, ctx.session.user.id)))
+      .returning();
 
-      if (!data) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
-      }
+    if (!data) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+    }
 
-      return parseActivityRow(data);
-    }),
+    return parseActivityRow(data);
+  }),
 
   // Hard delete activity - permanently removes the record
   // Activity streams are automatically deleted via cascade
-  delete: protectedProcedure
-    .input(deleteInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
+  delete: protectedProcedure.input(deleteInputSchema).mutation(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
 
-      const activity = await db.query.activities.findFirst({
-        where: and(eq(activities.id, input.id), eq(activities.profile_id, ctx.session.user.id)),
+    const activity = await db.query.activities.findFirst({
+      where: and(eq(activities.id, input.id), eq(activities.profile_id, ctx.session.user.id)),
+    });
+
+    if (!activity) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Activity not found or you do not have permission to delete it.",
       });
+    }
 
-      if (!activity) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Activity not found or you do not have permission to delete it.",
-        });
-      }
+    await db
+      .delete(activities)
+      .where(and(eq(activities.id, input.id), eq(activities.profile_id, ctx.session.user.id)));
 
-      await db
-        .delete(activities)
-        .where(and(eq(activities.id, input.id), eq(activities.profile_id, ctx.session.user.id)));
-
-      return { success: true, deletedActivityId: input.id };
-    }),
+    return { success: true, deletedActivityId: input.id };
+  }),
 });

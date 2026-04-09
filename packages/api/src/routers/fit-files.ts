@@ -125,34 +125,42 @@ const signedUploadUrlDataSchema = z.object({
   path: z.string().min(1),
 });
 
-const signedDownloadUrlDataSchema = z.object({
-  signedUrl: z.string().url(),
-  expiresAt: z.string().datetime({ offset: true }).optional(),
-}).passthrough();
+const signedDownloadUrlDataSchema = z
+  .object({
+    signedUrl: z.string().url(),
+    expiresAt: z.string().datetime({ offset: true }).optional(),
+  })
+  .passthrough();
 
-const analyzeFitFileResponseSchema = z.object({
-  queued: z.boolean(),
-}).passthrough();
+const analyzeFitFileResponseSchema = z
+  .object({
+    queued: z.boolean(),
+  })
+  .passthrough();
 
-const uploadFitFileInput = z.object({
-  fileName: fitFileNameSchema,
-  fileSize: z
-    .number()
-    .int("File size must be an integer")
-    .positive("File size must be greater than zero")
-    .max(
-      FIT_FILE_SIZE_LIMIT,
-      `File size must be less than ${FIT_FILE_SIZE_LIMIT / (1024 * 1024)}MB`,
-    ),
-  fileType: fitFileNameSchema,
-  fileData: base64FileDataSchema,
-}).strict();
+const uploadFitFileInput = z
+  .object({
+    fileName: fitFileNameSchema,
+    fileSize: z
+      .number()
+      .int("File size must be an integer")
+      .positive("File size must be greater than zero")
+      .max(
+        FIT_FILE_SIZE_LIMIT,
+        `File size must be less than ${FIT_FILE_SIZE_LIMIT / (1024 * 1024)}MB`,
+      ),
+    fileType: fitFileNameSchema,
+    fileData: base64FileDataSchema,
+  })
+  .strict();
 
-const analyzeFitFileInput = z.object({
-  activityId: z.string().uuid(),
-  filePath: fitStoragePathSchema,
-  bucketName: z.literal("fit-files").default("fit-files"),
-}).strict();
+const analyzeFitFileInput = z
+  .object({
+    activityId: z.string().uuid(),
+    filePath: fitStoragePathSchema,
+    bucketName: z.literal("fit-files").default("fit-files"),
+  })
+  .strict();
 
 const manualHistoricalImportProvenanceSchema = z.object({
   import_source: z.literal("manual_historical"),
@@ -160,13 +168,15 @@ const manualHistoricalImportProvenanceSchema = z.object({
   import_original_file_name: z.string().trim().min(1, "Original file name is required"),
 });
 
-const processFitFileInput = z.object({
-  fitFilePath: fitStoragePathSchema,
-  name: z.string().trim().min(1, "Activity name is required"),
-  notes: z.string().trim().optional(),
-  activityType: z.string().trim().min(1, "Activity type is required"),
-  importProvenance: manualHistoricalImportProvenanceSchema.optional(),
-}).strict();
+const processFitFileInput = z
+  .object({
+    fitFilePath: fitStoragePathSchema,
+    name: z.string().trim().min(1, "Activity name is required"),
+    notes: z.string().trim().optional(),
+    activityType: z.string().trim().min(1, "Activity type is required"),
+    importProvenance: manualHistoricalImportProvenanceSchema.optional(),
+  })
+  .strict();
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -1007,7 +1017,7 @@ export const fitFilesRouter = createTRPCRouter({
    * Upload a FIT file to Supabase Storage
    */
   uploadFitFile: protectedProcedure.input(uploadFitFileInput).mutation(async ({ ctx, input }) => {
-      const { fileName, fileSize, fileData, fileType } = input;
+    const { fileName, fileSize, fileData, fileType } = input;
     const userId = ctx.session?.user?.id;
     const supabase = storageService;
 
@@ -1017,13 +1027,13 @@ export const fitFilesRouter = createTRPCRouter({
 
     try {
       // Validate file type again (double security)
-        if (fileType.toLowerCase() !== fileName.toLowerCase()) {
-          throw new Error("File type must match file name");
-        }
+      if (fileType.toLowerCase() !== fileName.toLowerCase()) {
+        throw new Error("File type must match file name");
+      }
 
-        if (!fileName.toLowerCase().endsWith(".fit")) {
-          throw new Error("Only .fit files are supported");
-        }
+      if (!fileName.toLowerCase().endsWith(".fit")) {
+        throw new Error("Only .fit files are supported");
+      }
 
       // Convert base64 to buffer
       const binaryString = atob(fileData);
@@ -1050,11 +1060,11 @@ export const fitFilesRouter = createTRPCRouter({
         filePath,
         size: fileSize,
       };
-      } catch (error) {
-        console.error("FIT file upload error:", error);
-        throw new Error(`FIT file upload failed: ${getErrorMessage(error)}`);
-      }
-    }),
+    } catch (error) {
+      console.error("FIT file upload error:", error);
+      throw new Error(`FIT file upload failed: ${getErrorMessage(error)}`);
+    }
+  }),
 
   /**
    * Trigger FIT file analysis via edge function

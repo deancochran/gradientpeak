@@ -1,12 +1,11 @@
 "use client";
 
 import * as React from "react";
-
+import { getWebTestProps } from "../../lib/test-props";
 import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
-  AlertDialogContent as RegistryAlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
@@ -15,8 +14,8 @@ import {
   AlertDialogPortal,
   AlertDialogTitle,
   AlertDialogTrigger,
+  AlertDialogContent as RegistryAlertDialogContent,
 } from "../../registry/web/alert-dialog";
-import { getWebTestProps } from "../../lib/test-props";
 import type { AlertDialogContentTestProps } from "./shared";
 
 function AlertDialogContent({

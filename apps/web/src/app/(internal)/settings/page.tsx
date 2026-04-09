@@ -165,10 +165,12 @@ export default function SettingsPage() {
       setUploadingAvatar(true);
 
       // Validate file type
-      if (!file.type.startsWith("image/")) {
+      if (!allowedAvatarMimeTypes.includes(file.type as AllowedAvatarMimeType)) {
         toast.error("Please select an image file");
         return;
       }
+
+      const fileType = file.type as AllowedAvatarMimeType;
 
       // Validate file size (5MB limit)
       if (file.size > 5 * 1024 * 1024) {
@@ -179,7 +181,7 @@ export default function SettingsPage() {
       // Get signed upload URL
       const { signedUrl, path: filePath } = await createSignedUploadUrlMutation.mutateAsync({
         fileName: file.name,
-        fileType: file.type,
+        fileType,
       });
 
       // Upload file directly to the signed URL
@@ -187,7 +189,7 @@ export default function SettingsPage() {
         method: "PUT",
         body: file,
         headers: {
-          "Content-Type": file.type,
+          "Content-Type": fileType,
         },
       });
 
@@ -422,3 +424,12 @@ export default function SettingsPage() {
     </div>
   );
 }
+const allowedAvatarMimeTypes = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+] as const;
+
+type AllowedAvatarMimeType = (typeof allowedAvatarMimeTypes)[number];

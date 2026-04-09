@@ -1,7 +1,6 @@
 import * as React from "react";
-
-import { Textarea as RegistryTextarea } from "../../registry/web/textarea";
 import { getWebTestProps } from "../../lib/test-props";
+import { Textarea as RegistryTextarea } from "../../registry/web/textarea";
 import type { TextareaTestProps } from "./shared";
 
 function Textarea({

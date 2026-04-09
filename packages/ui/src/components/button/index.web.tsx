@@ -1,7 +1,6 @@
 import * as React from "react";
-
-import { Button as RegistryButton, buttonVariants } from "../../registry/web/button";
 import { getWebTestProps } from "../../lib/test-props";
+import { buttonVariants, Button as RegistryButton } from "../../registry/web/button";
 
 type ButtonProps = React.ComponentProps<typeof RegistryButton> & {
   accessibilityLabel?: string;
@@ -16,5 +15,5 @@ function Button({ accessibilityLabel, id, role, testId, ...props }: ButtonProps)
   );
 }
 
-export { Button, buttonVariants };
 export type { ButtonProps };
+export { Button, buttonVariants };

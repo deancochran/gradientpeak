@@ -204,30 +204,28 @@ export const goalsRouter = createTRPCRouter({
     }
   }),
 
-  getById: protectedProcedure
-    .input(goalIdInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
+  getById: protectedProcedure.input(goalIdInputSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
 
-      const goal = await getProfileGoalById({
-        db,
-        id: input.id,
+    const goal = await getProfileGoalById({
+      db,
+      id: input.id,
+    });
+
+    if (!goal) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Goal not found",
       });
+    }
 
-      if (!goal) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Goal not found",
-        });
-      }
+    await assertProfileAccess({
+      ctx,
+      profileId: goal.profile_id,
+    });
 
-      await assertProfileAccess({
-        ctx,
-        profileId: goal.profile_id,
-      });
-
-      return goal;
-    }),
+    return goal;
+  }),
 
   create: protectedProcedure.input(profileGoalWriteSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
@@ -321,43 +319,41 @@ export const goalsRouter = createTRPCRouter({
       };
     }),
 
-  delete: protectedProcedure
-    .input(goalIdInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
+  delete: protectedProcedure.input(goalIdInputSchema).mutation(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
 
-      const existingGoal = await getProfileGoalById({
+    const existingGoal = await getProfileGoalById({
+      db,
+      id: input.id,
+    });
+
+    if (!existingGoal) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Goal not found",
+      });
+    }
+
+    await assertProfileAccess({
+      ctx,
+      profileId: existingGoal.profile_id,
+    });
+
+    try {
+      await deleteProfileGoal({
         db,
         id: input.id,
       });
-
-      if (!existingGoal) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Goal not found",
-        });
-      }
-
-      await assertProfileAccess({
-        ctx,
-        profileId: existingGoal.profile_id,
+    } catch {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to delete goal",
       });
+    }
 
-      try {
-        await deleteProfileGoal({
-          db,
-          id: input.id,
-        });
-      } catch {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to delete goal",
-        });
-      }
-
-      return {
-        success: true,
-        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
-      };
-    }),
+    return {
+      success: true,
+      cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+    };
+  }),
 });

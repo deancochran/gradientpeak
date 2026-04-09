@@ -1,5 +1,5 @@
-import { Switch as RegistrySwitch } from "../../registry/native/switch";
 import { getNativeTestProps } from "../../lib/test-props";
+import { Switch as RegistrySwitch } from "../../registry/native/switch";
 import type { SwitchTestProps } from "./shared";
 
 type SwitchProps = Omit<React.ComponentProps<typeof RegistrySwitch>, "nativeID" | "testID"> &

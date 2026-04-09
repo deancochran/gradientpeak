@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  createActivityPlanSchema,
-  updateActivityPlanSchema,
-} from "../activity_plan_structure";
-import {
-  activityPlanCreateFormSchema,
-  activityPlanUpdateFormSchema,
-} from "../form-schemas";
+import { createActivityPlanSchema, updateActivityPlanSchema } from "../activity_plan_structure";
+import { activityPlanCreateFormSchema, activityPlanUpdateFormSchema } from "../form-schemas";
 
 describe("activity plan schema composition", () => {
   it("keeps create activity plans subject to plan-level refinement", () => {

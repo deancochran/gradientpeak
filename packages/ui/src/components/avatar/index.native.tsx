@@ -1,11 +1,10 @@
 import * as React from "react";
-
+import { getNativeTestProps } from "../../lib/test-props";
 import {
-  Avatar as RegistryAvatar,
   AvatarFallback,
   AvatarImage,
+  Avatar as RegistryAvatar,
 } from "../../registry/native/avatar";
-import { getNativeTestProps } from "../../lib/test-props";
 import type { AvatarTestProps } from "./shared";
 
 function Avatar({

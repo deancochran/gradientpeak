@@ -21,9 +21,9 @@ const storageService = getApiStorageService();
 
 const providerSchema = publicIntegrationProviderSchema;
 
-const timestampStringSchema = z.union([z.string(), z.date()]).transform((value) =>
-  value instanceof Date ? value.toISOString() : value,
-);
+const timestampStringSchema = z
+  .union([z.string(), z.date()])
+  .transform((value) => (value instanceof Date ? value.toISOString() : value));
 
 const strictSuccessSchema = z.object({ success: z.literal(true) }).strict();
 
@@ -265,18 +265,24 @@ function getWahooSyncService(ctx: Context) {
   });
 }
 
-const getAuthUrlInputSchema = z.object({
-  provider: providerSchema,
-  redirectUri: z.string().url().optional(), // Mobile app provides its redirect URI
-}).strict();
+const getAuthUrlInputSchema = z
+  .object({
+    provider: providerSchema,
+    redirectUri: z.string().url().optional(), // Mobile app provides its redirect URI
+  })
+  .strict();
 
-const disconnectInputSchema = z.object({
-  provider: providerSchema,
-}).strict();
+const disconnectInputSchema = z
+  .object({
+    provider: providerSchema,
+  })
+  .strict();
 
-const refreshTokenInputSchema = z.object({
-  provider: providerSchema,
-}).strict();
+const refreshTokenInputSchema = z
+  .object({
+    provider: providerSchema,
+  })
+  .strict();
 
 export const integrationsRouter = createTRPCRouter({
   // List all integrations for current user
@@ -332,7 +338,11 @@ export const integrationsRouter = createTRPCRouter({
       authUrl: authUrl,
     });
 
-    return parseBoundaryValue(authUrlResultSchema, { url: authUrl, state }, "OAuth URL was invalid");
+    return parseBoundaryValue(
+      authUrlResultSchema,
+      { url: authUrl, state },
+      "OAuth URL was invalid",
+    );
   }),
 
   // Disconnect integration
@@ -413,10 +423,14 @@ export const integrationsRouter = createTRPCRouter({
         before: new Date(Date.now() - 24 * 60 * 60 * 1000),
       });
 
-      return parseBoundaryValue(cleanupExpiredStatesResultSchema, {
-        success: true,
-        cleaned: expiredCount + oldCount,
-      }, "OAuth state cleanup returned invalid data");
+      return parseBoundaryValue(
+        cleanupExpiredStatesResultSchema,
+        {
+          success: true,
+          cleaned: expiredCount + oldCount,
+        },
+        "OAuth state cleanup returned invalid data",
+      );
     }),
 
   // Validate OAuth state and retrieve stored data
@@ -437,16 +451,20 @@ export const integrationsRouter = createTRPCRouter({
         return null;
       }
 
-      return parseBoundaryValue(validatedOAuthStateResultSchema, {
-        userId: data.profile_id,
-        provider: parseBoundaryValue(
-          oauthStateRepositoryRowSchema,
-          data,
-          "OAuth state repository returned invalid data",
-        ).provider,
-        mobileRedirectUri: data.mobile_redirect_uri,
-        createdAt: data.created_at.toISOString(),
-      }, "OAuth state normalization returned invalid data");
+      return parseBoundaryValue(
+        validatedOAuthStateResultSchema,
+        {
+          userId: data.profile_id,
+          provider: parseBoundaryValue(
+            oauthStateRepositoryRowSchema,
+            data,
+            "OAuth state repository returned invalid data",
+          ).provider,
+          mobileRedirectUri: data.mobile_redirect_uri,
+          createdAt: data.created_at.toISOString(),
+        },
+        "OAuth state normalization returned invalid data",
+      );
     }),
 
   // Store integration after successful OAuth (used by callback)
@@ -489,9 +507,11 @@ export const integrationsRouter = createTRPCRouter({
   ical: createTRPCRouter({
     addFeed: protectedProcedure
       .input(
-        z.object({
-          url: z.string().url(),
-        }).strict(),
+        z
+          .object({
+            url: z.string().url(),
+          })
+          .strict(),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = getIcalSyncService(ctx);
@@ -556,10 +576,12 @@ export const integrationsRouter = createTRPCRouter({
 
     updateFeed: protectedProcedure
       .input(
-        z.object({
-          feed_id: z.string().uuid(),
-          url: z.string().url(),
-        }).strict(),
+        z
+          .object({
+            feed_id: z.string().uuid(),
+            url: z.string().url(),
+          })
+          .strict(),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = getIcalSyncService(ctx);
@@ -595,10 +617,12 @@ export const integrationsRouter = createTRPCRouter({
 
     removeFeed: protectedProcedure
       .input(
-        z.object({
-          feed_id: z.string().uuid(),
-          purge_events: z.boolean().optional().default(true),
-        }).strict(),
+        z
+          .object({
+            feed_id: z.string().uuid(),
+            purge_events: z.boolean().optional().default(true),
+          })
+          .strict(),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = getIcalSyncService(ctx);
@@ -641,9 +665,11 @@ export const integrationsRouter = createTRPCRouter({
   wahoo: createTRPCRouter({
     syncEvent: protectedProcedure
       .input(
-        z.object({
-          eventId: z.string().uuid(),
-        }).strict(),
+        z
+          .object({
+            eventId: z.string().uuid(),
+          })
+          .strict(),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = getWahooSyncService(ctx);
@@ -665,9 +691,11 @@ export const integrationsRouter = createTRPCRouter({
     // Unsync (remove) an event from Wahoo
     unsyncEvent: protectedProcedure
       .input(
-        z.object({
-          eventId: z.string().uuid(),
-        }).strict(),
+        z
+          .object({
+            eventId: z.string().uuid(),
+          })
+          .strict(),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = getWahooSyncService(ctx);
@@ -689,9 +717,11 @@ export const integrationsRouter = createTRPCRouter({
     // Get sync status for an event
     getEventSyncStatus: protectedProcedure
       .input(
-        z.object({
-          eventId: z.string().uuid(),
-        }).strict(),
+        z
+          .object({
+            eventId: z.string().uuid(),
+          })
+          .strict(),
       )
       .query(async ({ ctx, input }) => {
         const syncService = getWahooSyncService(ctx);
@@ -705,9 +735,11 @@ export const integrationsRouter = createTRPCRouter({
     // Test sync with detailed diagnostics
     testSync: protectedProcedure
       .input(
-        z.object({
-          eventId: z.string().uuid(),
-        }).strict(),
+        z
+          .object({
+            eventId: z.string().uuid(),
+          })
+          .strict(),
       )
       .mutation(async ({ ctx, input }) => {
         const syncService = getWahooSyncService(ctx);
@@ -722,14 +754,18 @@ export const integrationsRouter = createTRPCRouter({
         console.log("[Wahoo Test Sync] Sync result:", result);
 
         // Return detailed result including warnings
-        return parseBoundaryValue(wahooTestSyncResultSchema, {
-          success: result.success,
-          action: result.action,
-          workoutId: result.workoutId,
-          error: result.error,
-          warnings: result.warnings,
-          timestamp: new Date().toISOString(),
-        }, "Wahoo test sync normalization returned invalid data");
+        return parseBoundaryValue(
+          wahooTestSyncResultSchema,
+          {
+            success: result.success,
+            action: result.action,
+            workoutId: result.workoutId,
+            error: result.error,
+            warnings: result.warnings,
+            timestamp: new Date().toISOString(),
+          },
+          "Wahoo test sync normalization returned invalid data",
+        );
       }),
   }),
 });

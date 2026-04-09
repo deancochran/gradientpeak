@@ -5,6 +5,8 @@ import {
   activityEfforts,
   activityPlans,
   activityRoutes,
+  coachesAthletes,
+  coachingInvitations,
   comments,
   conversationParticipants,
   conversations,
@@ -29,6 +31,12 @@ export type ProfileInsert = InferInsertModel<typeof profiles>;
 
 export type ActivityRouteRow = InferSelectModel<typeof activityRoutes>;
 export type ActivityRouteInsert = InferInsertModel<typeof activityRoutes>;
+
+export type CoachingInvitationRow = InferSelectModel<typeof coachingInvitations>;
+export type CoachingInvitationInsert = InferInsertModel<typeof coachingInvitations>;
+
+export type CoachAthleteRow = InferSelectModel<typeof coachesAthletes>;
+export type CoachAthleteInsert = InferInsertModel<typeof coachesAthletes>;
 
 export type ActivityPlanRow = InferSelectModel<typeof activityPlans>;
 export type ActivityPlanInsert = InferInsertModel<typeof activityPlans>;

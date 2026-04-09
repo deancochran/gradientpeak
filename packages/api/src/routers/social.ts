@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   activities,
   activityPlans,
+  activityRoutes,
   likes,
   profiles,
   publicNotificationTypeSchema,
@@ -18,7 +19,7 @@ const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
 const nullableUsernameSchema = z.string().nullable();
 const followStatusSchema = z.enum(["pending", "accepted"]);
-const entityTypeSchema = z.enum(["activity", "training_plan", "activity_plan"]);
+const entityTypeSchema = z.enum(["activity", "training_plan", "activity_plan", "route"]);
 type FollowNotificationType = Extract<
   z.infer<typeof publicNotificationTypeSchema>,
   "follow_request" | "new_follower"
@@ -255,6 +256,22 @@ async function checkPlanAccess(
   return plan.template_visibility === "public";
 }
 
+async function checkRouteAccess(db: DbClient, routeId: string, userId: string): Promise<boolean> {
+  const route = await db.query.activityRoutes.findFirst({
+    columns: {
+      profile_id: true,
+      is_public: true,
+    },
+    where: eq(activityRoutes.id, routeId),
+  });
+
+  if (!route) {
+    return false;
+  }
+
+  return route.profile_id === userId || route.is_public;
+}
+
 export const socialRouter = createTRPCRouter({
   followUser: protectedProcedure
     .input(z.object({ target_user_id: z.string().uuid() }).strict())
@@ -456,6 +473,17 @@ export const socialRouter = createTRPCRouter({
           throw new TRPCError({
             code: "FORBIDDEN",
             message: `You don't have permission to like this ${input.entity_type}`,
+          });
+        }
+      }
+
+      if (input.entity_type === "route") {
+        const hasAccess = await checkRouteAccess(db, input.entity_id, userId);
+
+        if (!hasAccess) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You don't have permission to like this route",
           });
         }
       }
@@ -765,6 +793,17 @@ export const socialRouter = createTRPCRouter({
         }
       }
 
+      if (input.entity_type === "route") {
+        const hasAccess = await checkRouteAccess(db, input.entity_id, userId);
+
+        if (!hasAccess) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You don't have permission to comment on this route",
+          });
+        }
+      }
+
       const insertResult = await db.execute(sql`
         insert into comments (profile_id, entity_id, entity_type, content)
         values (
@@ -855,6 +894,17 @@ export const socialRouter = createTRPCRouter({
           throw new TRPCError({
             code: "FORBIDDEN",
             message: `You don't have permission to view comments on this ${input.entity_type}`,
+          });
+        }
+      }
+
+      if (input.entity_type === "route") {
+        const hasAccess = await checkRouteAccess(db, input.entity_id, userId);
+
+        if (!hasAccess) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You don't have permission to view comments on this route",
           });
         }
       }

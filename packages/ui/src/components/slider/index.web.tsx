@@ -3,8 +3,8 @@
 import * as React from "react";
 
 import { cn } from "../../lib/cn";
-import { Slider as RegistrySlider } from "../../registry/web/slider";
 import { getWebTestProps } from "../../lib/test-props";
+import { Slider as RegistrySlider } from "../../registry/web/slider";
 import type { SliderProps } from "./shared";
 
 function Slider({

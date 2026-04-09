@@ -1,12 +1,11 @@
 "use client";
 
 import * as React from "react";
-
+import { getWebTestProps } from "../../lib/test-props";
 import {
   ToggleGroup as RegistryToggleGroup,
   ToggleGroupItem as RegistryToggleGroupItem,
 } from "../../registry/web/toggle-group";
-import { getWebTestProps } from "../../lib/test-props";
 import type { ToggleGroupTestProps } from "./shared";
 
 function ToggleGroup({

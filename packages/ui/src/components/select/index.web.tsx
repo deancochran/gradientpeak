@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-
+import { getWebTestProps } from "../../lib/test-props";
 import {
+  SelectTrigger as RegistrySelectTrigger,
   Select,
   SelectContent,
   SelectGroup,
@@ -11,10 +12,8 @@ import {
   SelectScrollDownButton,
   SelectScrollUpButton,
   SelectSeparator,
-  SelectTrigger as RegistrySelectTrigger,
   SelectValue,
 } from "../../registry/web/select";
-import { getWebTestProps } from "../../lib/test-props";
 import type { Option, SelectTriggerSize } from "./shared";
 
 function SelectTrigger({
