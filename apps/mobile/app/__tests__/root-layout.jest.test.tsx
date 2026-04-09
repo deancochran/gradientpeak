@@ -27,7 +27,7 @@ jest.mock("@/global.css", () => ({}), { virtual: true });
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   ActivityIndicator: createHost("ActivityIndicator"),
   View: createHost("View"),
 }));

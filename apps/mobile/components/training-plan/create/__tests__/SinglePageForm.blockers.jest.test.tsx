@@ -18,7 +18,7 @@ import {
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   Modal: (props: any) => React.createElement("Modal", props, props.children),
   Pressable: (props: any) => React.createElement("Pressable", props, props.children),
   ScrollView: (props: any) => React.createElement("ScrollView", props, props.children),

@@ -100,7 +100,7 @@ let snapshotState = {
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   ActivityIndicator: createHost("ActivityIndicator"),
   Pressable: createHost("Pressable"),
   ScrollView: createHost("ScrollView"),

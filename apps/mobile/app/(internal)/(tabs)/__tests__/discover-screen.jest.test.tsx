@@ -35,7 +35,7 @@ jest.useFakeTimers();
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   FlatList: ({ ListHeaderComponent, ListFooterComponent, ...props }: any) =>
     React.createElement("View", props, ListHeaderComponent, ListFooterComponent),
   ScrollView: createHost("ScrollView"),

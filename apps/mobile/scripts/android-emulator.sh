@@ -175,13 +175,17 @@ install_app() {
 }
 
 build_e2e_apk() {
-  CI=1 \
-  EXPO_NO_DOTENV=1 \
-  EXPO_PUBLIC_API_URL="http://127.0.0.1:3000" \
-  EXPO_PUBLIC_SUPABASE_URL="http://127.0.0.1:54321" \
-  EXPO_PUBLIC_APP_URL="http://127.0.0.1:3000" \
-  EXPO_PUBLIC_REDIRECT_URI="gradientpeak://integrations" \
-  pnpm exec expo prebuild --platform android
+  if [ ! -d "$APP_DIR/android" ] || [ ! -f "$APP_DIR/android/gradlew" ]; then
+    CI=1 \
+    EXPO_NO_DOTENV=1 \
+    EXPO_PUBLIC_API_URL="http://127.0.0.1:3000" \
+    EXPO_PUBLIC_SUPABASE_URL="http://127.0.0.1:54321" \
+    EXPO_PUBLIC_APP_URL="http://127.0.0.1:3000" \
+    EXPO_PUBLIC_REDIRECT_URI="gradientpeak://integrations" \
+    pnpm exec expo prebuild --platform android
+  else
+    echo "[mobile-android] reusing cached android project; skipping expo prebuild"
+  fi
 
   EXPO_NO_DOTENV=1 \
   EXPO_PUBLIC_API_URL="http://127.0.0.1:3000" \

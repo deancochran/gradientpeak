@@ -17,7 +17,7 @@ jest.mock("../GoalTargetEditorModal", () => ({
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   Pressable: (props: any) => React.createElement("Pressable", props, props.children),
   View: (props: any) => React.createElement("View", props, props.children),
 }));

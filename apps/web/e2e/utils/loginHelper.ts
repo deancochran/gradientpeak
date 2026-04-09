@@ -17,27 +17,19 @@ type UserRole = keyof typeof USER_CREDENTIALS;
  */
 export async function loginAs(page: Page, userRole: UserRole) {
   const credentials = USER_CREDENTIALS[userRole];
+  const emailInput = page.getByTestId("login-email-input");
+  const passwordInput = page.getByTestId("login-password-input");
 
   // Navigate to login page
   await page.goto("/auth/login");
   await page.waitForURL("**/auth/login", { timeout: 10000 });
 
-  if (
-    !(await page
-      .getByTestId("login-email-input")
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await page.getByRole("link", { name: /^login$/i }).click();
-    await page.waitForURL("**/auth/login", { timeout: 10000 });
-  }
-
-  await expect(page.getByTestId("login-email-input")).toBeVisible();
-  await expect(page.getByTestId("login-password-input")).toBeVisible();
+  await expect(emailInput).toBeVisible({ timeout: 10000 });
+  await expect(passwordInput).toBeVisible();
 
   // Fill in email and password
-  await page.getByTestId("login-email-input").fill(credentials.email);
-  await page.getByTestId("login-password-input").fill(credentials.password);
+  await emailInput.fill(credentials.email);
+  await passwordInput.fill(credentials.password);
 
   // Click the login button
   await page.getByTestId("login-submit-button").click();
@@ -71,9 +63,9 @@ export async function loginAs(page: Page, userRole: UserRole) {
     // Now that user is created, log them in
     await page.goto("/auth/login");
     await page.waitForURL("**/auth/login", { timeout: 10000 });
-    await expect(page.getByTestId("login-email-input")).toBeVisible();
-    await page.getByTestId("login-email-input").fill(credentials.email);
-    await page.getByTestId("login-password-input").fill(credentials.password);
+    await expect(emailInput).toBeVisible({ timeout: 10000 });
+    await emailInput.fill(credentials.email);
+    await passwordInput.fill(credentials.password);
     await page.getByTestId("login-submit-button").click();
   }
 

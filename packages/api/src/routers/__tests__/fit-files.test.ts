@@ -311,7 +311,7 @@ describe("fitFilesRouter", () => {
           values: expect.objectContaining({
             metric_type: "lthr",
             recorded_at: finishedAt,
-            value: "175",
+            value: 175,
           }),
         }),
       ]),

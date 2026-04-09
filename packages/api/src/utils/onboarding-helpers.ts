@@ -139,7 +139,7 @@ export async function batchInsertProfileMetrics(
     created_at: new Date(),
     profile_id: profileId,
     metric_type: m.metric_type,
-    value: String(m.value),
+    value: m.value,
     unit: m.unit,
     recorded_at: new Date(),
     notes: m.source ? `Generated from ${m.source}` : null,

@@ -17,7 +17,7 @@ function createHost(type: string) {
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   RefreshControl: createHost("RefreshControl"),
   ScrollView: createHost("ScrollView"),
   TouchableOpacity: createHost("TouchableOpacity"),

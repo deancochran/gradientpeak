@@ -1,6 +1,16 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["**/.env.*local"],
+  "globalEnv": [
+    "BETTER_AUTH_SECRET",
+    "DATABASE_URL",
+    "NEXT_PRIVATE_SUPABASE_SECRET_KEY",
+    "NEXT_PRIVATE_SUPABASE_URL",
+    "NEXT_PUBLIC_SUPABASE_URL",
+    "POSTGRES_URL",
+    "SUPABASE_DB_URL",
+    "SUPABASE_SERVICE_ROLE_KEY"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

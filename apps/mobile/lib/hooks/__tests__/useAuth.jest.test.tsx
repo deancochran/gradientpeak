@@ -8,7 +8,7 @@ const refreshMobileAuthSessionMock = jest.fn(async () => null);
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   AppState: {
     addEventListener: jest.fn(() => ({ remove: jest.fn() })),
   },

@@ -169,7 +169,7 @@ jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: mockAlert },
   NativeModules: { BlobModule: {} },
   Platform: { OS: "ios", Version: "17", select: (values: Record<string, unknown>) => values.ios },

@@ -4,7 +4,7 @@ import { renderNative, screen } from "../../../../test/render-native";
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   View: createHost("View"),
 }));
 
