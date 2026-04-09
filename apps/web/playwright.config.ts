@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = process.env.PORT || 3000;
-const baseURL = `http://localhost:${PORT}`;
+const baseURL = `http://127.0.0.1:${PORT}`;
 const localDatabaseUrl = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
 export default defineConfig({

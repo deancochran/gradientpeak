@@ -303,6 +303,9 @@ jobs:
       - name: Wait for Supabase
         run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
 
+      - name: Apply local app schema migrations
+        run: pnpm --filter @repo/db db:migrate
+
       - name: Export local test environment
         run: bash ./scripts/ci-export-local-env.sh >> "$GITHUB_ENV"
 
@@ -375,6 +378,9 @@ jobs:
 
       - name: Wait for Supabase
         run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
+
+      - name: Apply local app schema migrations
+        run: pnpm --filter @repo/db db:migrate
 
       - name: Export local test environment
         run: bash ./scripts/ci-export-local-env.sh >> "$GITHUB_ENV"
