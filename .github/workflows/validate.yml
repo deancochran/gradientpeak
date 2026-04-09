@@ -29,7 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.non_docs != 'true' }}
-      mobile_related: ${{ steps.filter.outputs.mobile_related }}
+      mobile_runtime_related: ${{ steps.filter.outputs.mobile_runtime_related }}
+      mobile_test_related: ${{ steps.filter.outputs.mobile_test_related }}
       web_related: ${{ steps.filter.outputs.web_related }}
 
     steps:
@@ -52,8 +53,13 @@ jobs:
               - '!**/*.mdx'
               - '!docs/**'
               - '!.github/workflows/validate.yml'
-            mobile_related:
+            mobile_runtime_related:
               - 'apps/mobile/**'
+              - '!apps/mobile/.maestro/**'
+              - '!apps/mobile/scripts/generate-maestro-preview-flow.mts'
+              - '!apps/mobile/scripts/maestro-local.sh'
+              - '!apps/mobile/scripts/prepare-maestro-device.sh'
+              - '!apps/mobile/scripts/run-maestro-lane.mjs'
               - 'packages/api/**'
               - 'packages/auth/**'
               - 'packages/core/**'
@@ -65,6 +71,14 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
+            mobile_test_related:
+              - 'apps/mobile/.maestro/**'
+              - 'apps/mobile/scripts/generate-maestro-preview-flow.mts'
+              - 'apps/mobile/scripts/maestro-local.sh'
+              - 'apps/mobile/scripts/prepare-maestro-device.sh'
+              - 'apps/mobile/scripts/run-maestro-lane.mjs'
+              - 'scripts/ci-export-local-env.sh'
+              - 'scripts/test-e2e.sh'
             web_related:
               - 'apps/web/**'
               - 'packages/api/**'
@@ -208,7 +222,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_related == 'true'
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_runtime_related == 'true'
 
     steps:
       - name: Checkout
@@ -252,7 +266,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_related == 'true'
+    if: needs.changes.outputs.docs_only != 'true' && (needs.changes.outputs.mobile_runtime_related == 'true' || needs.changes.outputs.mobile_test_related == 'true')
 
     steps:
       - name: Checkout
@@ -282,12 +296,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/mobile/android
-          key: mobile-android-project-${{ runner.os }}-${{ hashFiles('apps/mobile/app.config.ts', 'apps/mobile/package.json', 'pnpm-lock.yaml') }}
+          key: mobile-android-project-${{ runner.os }}-${{ hashFiles('apps/mobile/app.config.ts', 'apps/mobile/package.json', 'apps/mobile/scripts/android-emulator.sh', 'pnpm-lock.yaml') }}
+
+      - name: Restore Android E2E APK cache
+        id: mobile-e2e-apk-cache
+        uses: actions/cache@v4
+        with:
+          path: apps/mobile/android/app/build/outputs/apk/release
+          key: mobile-e2e-apk-${{ runner.os }}-${{ hashFiles('apps/mobile/app.config.ts', 'apps/mobile/package.json', 'apps/mobile/scripts/android-emulator.sh', 'pnpm-lock.yaml') }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build bundled Android E2E APK
+        if: needs.changes.outputs.mobile_runtime_related == 'true' || steps.mobile-e2e-apk-cache.outputs.cache-hit != 'true'
         run: pnpm --filter mobile android:e2e:build
 
       - name: Upload Android E2E APK
@@ -376,7 +398,7 @@ jobs:
       - full-validation-suite
       - mobile-component-and-jest
       - mobile-e2e-build
-    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_related == 'true'
+    if: needs.changes.outputs.docs_only != 'true' && (needs.changes.outputs.mobile_runtime_related == 'true' || needs.changes.outputs.mobile_test_related == 'true')
 
     steps:
       - name: Checkout
