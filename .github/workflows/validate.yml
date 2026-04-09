@@ -20,9 +20,44 @@ env:
   SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
 
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect docs-only changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            docs_only:
+              - 'README.md'
+              - 'docs/**'
+              - '.github/workflows/validate.yml'
+
+  docs-only:
+    name: Docs Only
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.docs_only == 'true'
+
+    steps:
+      - name: Skip full validation for docs-only changes
+        run: |
+          printf 'Docs-only change detected; skipping full validation suite.\n'
+
   format-and-lint:
     name: Format And Lint
     runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -48,6 +83,9 @@ jobs:
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -73,6 +111,9 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -98,6 +139,9 @@ jobs:
   unit-and-integration:
     name: Unit And Integration
     runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -123,6 +167,9 @@ jobs:
   mobile-component-and-jest:
     name: Mobile Component And Jest
     runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -149,11 +196,13 @@ jobs:
     name: Full Validation Suite
     runs-on: ubuntu-latest
     needs:
+      - changes
       - format-and-lint
       - typecheck
       - build
       - unit-and-integration
       - mobile-component-and-jest
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -180,12 +229,14 @@ jobs:
     name: Mobile E2E Build
     runs-on: ubuntu-latest
     needs:
+      - changes
       - format-and-lint
       - typecheck
       - build
       - unit-and-integration
       - mobile-component-and-jest
       - full-validation-suite
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -229,12 +280,14 @@ jobs:
     name: Web E2E
     runs-on: ubuntu-latest
     needs:
+      - changes
       - format-and-lint
       - typecheck
       - build
       - unit-and-integration
       - mobile-component-and-jest
       - full-validation-suite
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -298,6 +351,7 @@ jobs:
     name: Mobile E2E
     runs-on: ubuntu-latest
     needs:
+      - changes
       - format-and-lint
       - typecheck
       - build
@@ -305,6 +359,7 @@ jobs:
       - mobile-component-and-jest
       - full-validation-suite
       - mobile-e2e-build
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
