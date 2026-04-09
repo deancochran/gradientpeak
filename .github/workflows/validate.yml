@@ -278,6 +278,12 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Restore generated Android project cache
+        uses: actions/cache@v4
+        with:
+          path: apps/mobile/android
+          key: mobile-android-project-${{ runner.os }}-${{ hashFiles('apps/mobile/app.config.ts', 'apps/mobile/package.json', 'pnpm-lock.yaml') }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -289,6 +295,7 @@ jobs:
         with:
           name: mobile-e2e-apk
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          compression-level: 0
           retention-days: 3
           if-no-files-found: error
 
