@@ -1,7 +1,6 @@
 import * as React from "react";
-
-import { Text as RegistryText, TextClassContext } from "../../registry/native/text";
 import { getNativeTestProps } from "../../lib/test-props";
+import { Text as RegistryText, TextClassContext } from "../../registry/native/text";
 import type { TextTestProps, TextVariant, TextVariantProps } from "./shared";
 
 type TextProps = React.ComponentProps<typeof RegistryText> &

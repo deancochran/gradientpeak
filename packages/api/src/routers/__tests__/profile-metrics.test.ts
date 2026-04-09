@@ -19,13 +19,14 @@ function createProfileMetricRow(overrides: Record<string, unknown> = {}) {
     id: "00000000-0000-4000-8000-000000000001",
     idx: 1,
     created_at: new Date("2026-03-01T00:00:00.000Z"),
+    updated_at: new Date("2026-03-01T00:00:00.000Z"),
     profile_id: "11111111-1111-4111-8111-111111111111",
     metric_type: "weight_kg",
     recorded_at: new Date("2026-03-10T07:00:00.000Z"),
     unit: "kg",
     notes: null,
     reference_activity_id: null,
-    value: "72.4",
+    value: 72.4,
     ...overrides,
   };
 }
@@ -126,7 +127,7 @@ describe("profileMetricsRouter", () => {
       createProfileMetricRow({
         id: "00000000-0000-4000-8000-000000000002",
         recorded_at: new Date("2026-03-09T07:00:00.000Z"),
-        value: "71.9",
+        value: 71.9,
       }),
     ];
     const { caller, callLog } = createCaller({ selectResult: rows });
@@ -167,7 +168,7 @@ describe("profileMetricsRouter", () => {
       id: "00000000-0000-4000-8000-000000000003",
       metric_type: "resting_hr",
       unit: "bpm",
-      value: "49",
+      value: 49,
     });
     const { caller, callLog } = createCaller({ selectResult: [row] });
 
@@ -201,11 +202,11 @@ describe("profileMetricsRouter", () => {
     );
   });
 
-  it("creates a metric and persists stringified numeric values", async () => {
+  it("creates a metric and persists numeric values with timestamps", async () => {
     const created = createProfileMetricRow({
       id: "00000000-0000-4000-8000-000000000004",
       notes: "post-session weigh-in",
-      value: "70.25",
+      value: 70.25,
     });
     const { caller, callLog } = createCaller({ insertResult: [created] });
 
@@ -224,11 +225,12 @@ describe("profileMetricsRouter", () => {
       expect.objectContaining({
         profile_id: "11111111-1111-4111-8111-111111111111",
         metric_type: "weight_kg",
-        value: "70.25",
+        value: 70.25,
         unit: "kg",
         notes: "post-session weigh-in",
         reference_activity_id: null,
         recorded_at: new Date("2026-03-18T06:30:00.000Z"),
+        updated_at: expect.any(Date),
       }),
     );
     expect(result).toEqual(created);
@@ -238,7 +240,7 @@ describe("profileMetricsRouter", () => {
     const { caller } = createCaller({
       insertResult: [
         createProfileMetricRow({
-          value: 70.25,
+          value: "70.25",
         }),
       ],
     });
@@ -259,7 +261,7 @@ describe("profileMetricsRouter", () => {
   it("updates a metric with normalized payload values", async () => {
     const updated = createProfileMetricRow({
       id: "00000000-0000-4000-8000-000000000005",
-      value: "68.8",
+      value: 68.8,
       notes: "cutback week",
     });
     const { caller, callLog } = createCaller({ updateResult: [updated] });
@@ -274,10 +276,11 @@ describe("profileMetricsRouter", () => {
 
     const updateCall = callLog.find((call) => call.operation === "update.set");
     expect(updateCall?.payload).toEqual({
-      value: "68.8",
+      value: 68.8,
       unit: "kg",
       notes: "cutback week",
       recorded_at: new Date("2026-03-20T07:15:00.000Z"),
+      updated_at: expect.any(Date),
     });
     expect(result).toEqual(updated);
   });

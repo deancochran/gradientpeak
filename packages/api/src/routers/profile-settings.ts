@@ -32,7 +32,7 @@ function normalizeProfileSettingsRow(row: ProfileTrainingSettingsSqlRow) {
         ? row.updated_at.toISOString()
         : typeof row.updated_at === "string"
           ? row.updated_at
-        : undefined,
+          : undefined,
   });
 }
 
@@ -197,10 +197,7 @@ const profileSettingsGetOutputSchema = profileTrainingSettingsRecordSchema.nulla
 
 const profileSettingsUpsertOutputSchema = profileTrainingSettingsRecordSchema
   .extend({
-    cache_tags: z.tuple([
-      z.literal("profileSettings.getForProfile"),
-      z.literal("goals.list"),
-    ]),
+    cache_tags: z.tuple([z.literal("profileSettings.getForProfile"), z.literal("goals.list")]),
   })
   .strict();
 

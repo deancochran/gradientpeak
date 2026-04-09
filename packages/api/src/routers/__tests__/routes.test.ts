@@ -69,14 +69,11 @@ function createCaller(db: any, userId = OWNER_ID) {
 function createRouteRow(overrides: Record<string, unknown> = {}) {
   return {
     id: ROUTE_ID,
+    idx: 1,
     profile_id: OWNER_ID,
     name: "River Loop",
     description: "Steady weekend route",
     activity_category: "bike",
-    estimated_distance_meters: null,
-    estimated_duration_seconds: null,
-    elevation_gain_meters: null,
-    elevation_loss_meters: null,
     file_path: `${OWNER_ID}/route.gpx`,
     total_distance: 42195,
     total_ascent: 550,

@@ -484,33 +484,33 @@ export const homeRouter = createTRPCRouter({
       // Fetching enough history for trends and current week stats
       const activities = activitySummaryRowSchema.array().parse(
         await db
-        .select({
-          id: schema.activities.id,
-          type: schema.activities.type,
-          started_at: schema.activities.started_at,
-          finished_at: schema.activities.finished_at,
-          duration_seconds: schema.activities.duration_seconds,
-          moving_seconds: schema.activities.moving_seconds,
-          distance_meters: schema.activities.distance_meters,
-          avg_heart_rate: schema.activities.avg_heart_rate,
-          max_heart_rate: schema.activities.max_heart_rate,
-          avg_power: schema.activities.avg_power,
-          max_power: schema.activities.max_power,
-          avg_speed_mps: schema.activities.avg_speed_mps,
-          max_speed_mps: schema.activities.max_speed_mps,
-          normalized_power: schema.activities.normalized_power,
-          normalized_speed_mps: schema.activities.normalized_speed_mps,
-          normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
-        })
-        .from(schema.activities)
-        .where(
-          and(
-            eq(schema.activities.profile_id, userId),
-            gte(schema.activities.started_at, historyStart),
-            lte(schema.activities.started_at, today),
-          ),
-        )
-        .orderBy(asc(schema.activities.started_at)),
+          .select({
+            id: schema.activities.id,
+            type: schema.activities.type,
+            started_at: schema.activities.started_at,
+            finished_at: schema.activities.finished_at,
+            duration_seconds: schema.activities.duration_seconds,
+            moving_seconds: schema.activities.moving_seconds,
+            distance_meters: schema.activities.distance_meters,
+            avg_heart_rate: schema.activities.avg_heart_rate,
+            max_heart_rate: schema.activities.max_heart_rate,
+            avg_power: schema.activities.avg_power,
+            max_power: schema.activities.max_power,
+            avg_speed_mps: schema.activities.avg_speed_mps,
+            max_speed_mps: schema.activities.max_speed_mps,
+            normalized_power: schema.activities.normalized_power,
+            normalized_speed_mps: schema.activities.normalized_speed_mps,
+            normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
+          })
+          .from(schema.activities)
+          .where(
+            and(
+              eq(schema.activities.profile_id, userId),
+              gte(schema.activities.started_at, historyStart),
+              lte(schema.activities.started_at, today),
+            ),
+          )
+          .orderBy(asc(schema.activities.started_at)),
       ) as ActivitySummaryRow[];
 
       const { byActivityId: derivedActivityMap, byDate: tssByDate } =
@@ -943,15 +943,15 @@ export const homeRouter = createTRPCRouter({
         firstTargetType = planStructure.goals[0].targets[0].target_type;
       }
 
-       return dashboardResponseSchema.parse({
-         activePlan: plan
-           ? {
-               id: plan.id,
-               name: plan.name || "Active Plan",
-               phase: planPhase,
-               targetType: firstTargetType,
-             }
-           : null,
+      return dashboardResponseSchema.parse({
+        activePlan: plan
+          ? {
+              id: plan.id,
+              name: plan.name || "Active Plan",
+              phase: planPhase,
+              targetType: firstTargetType,
+            }
+          : null,
         currentStatus: todayStatus,
         workload,
         consistency: {
@@ -969,17 +969,17 @@ export const homeRouter = createTRPCRouter({
         idealFitnessCurve, // Ideal CTL progression from training plan periodization
         goalMetrics, // User's fitness goal
         todaysActivity, // Convenience field
-         personalizationTelemetry: {
-           flags: {
-             age_constants: featureFlags.personalizationAgeConstants,
-             gender_adjustment: featureFlags.personalizationGenderAdjustment,
-             training_quality: featureFlags.personalizationTrainingQuality,
-             ramp_learning: featureFlags.personalizationRampLearning,
-           },
-           user_age: effectiveAge ?? null,
-           user_gender: effectiveGender ?? null,
-           training_quality: rollingTrainingQuality ?? null,
-         },
-       });
+        personalizationTelemetry: {
+          flags: {
+            age_constants: featureFlags.personalizationAgeConstants,
+            gender_adjustment: featureFlags.personalizationGenderAdjustment,
+            training_quality: featureFlags.personalizationTrainingQuality,
+            ramp_learning: featureFlags.personalizationRampLearning,
+          },
+          user_age: effectiveAge ?? null,
+          user_gender: effectiveGender ?? null,
+          training_quality: rollingTrainingQuality ?? null,
+        },
+      });
     }),
 });

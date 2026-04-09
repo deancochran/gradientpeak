@@ -1,7 +1,10 @@
 import * as React from "react";
 import { Platform, ScrollView } from "react-native";
-
+import { cn } from "../../lib/cn";
+import { getNativeTestProps } from "../../lib/test-props";
+import type { Option } from "../../registry/native/select";
 import {
+  SelectTrigger as RegistrySelectTrigger,
   Select,
   SelectContent,
   SelectGroup,
@@ -10,12 +13,8 @@ import {
   SelectScrollDownButton,
   SelectScrollUpButton,
   SelectSeparator,
-  SelectTrigger as RegistrySelectTrigger,
   SelectValue,
 } from "../../registry/native/select";
-import { cn } from "../../lib/cn";
-import { getNativeTestProps } from "../../lib/test-props";
-import type { Option } from "../../registry/native/select";
 import type { SelectTriggerSize } from "./shared";
 
 function SelectTrigger({

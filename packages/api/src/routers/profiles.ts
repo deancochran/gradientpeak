@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { profileQuickUpdateSchema } from "@repo/core";
-import { activities, activityEfforts, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
+import {
+  activities,
+  activityEfforts,
+  type PublicProfilesRow,
+  profileMetrics,
+  profiles,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -9,20 +15,26 @@ import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
-const profileListFiltersSchema = z.object({
-  username: z.string().optional(),
-  limit: z.number().min(1).max(100).default(20),
-  offset: z.number().min(0).default(0),
-}).strict();
+const profileListFiltersSchema = z
+  .object({
+    username: z.string().optional(),
+    limit: z.number().min(1).max(100).default(20),
+    offset: z.number().min(0).default(0),
+  })
+  .strict();
 
-const profileStatsSchema = z.object({
-  period: z.number().min(1).max(365).default(30),
-}).strict();
+const profileStatsSchema = z
+  .object({
+    period: z.number().min(1).max(365).default(30),
+  })
+  .strict();
 
-const trainingZonesUpdateSchema = z.object({
-  threshold_hr: z.number().int().positive().optional(),
-  ftp: z.number().int().positive().optional(),
-}).strict();
+const trainingZonesUpdateSchema = z
+  .object({
+    threshold_hr: z.number().int().positive().optional(),
+    ftp: z.number().int().positive().optional(),
+  })
+  .strict();
 
 const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
@@ -443,83 +455,80 @@ export const profilesRouter = createTRPCRouter({
       }
     }),
 
-  update: protectedProcedure
-    .input(profileUpdateInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
+  update: protectedProcedure.input(profileUpdateInputSchema).mutation(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
 
-      try {
-        const profileUpdate = {
-          avatar_url: input.avatar_url,
-          bio: input.bio,
-          dob:
-            input.dob === undefined ? undefined : input.dob === null ? null : new Date(input.dob),
-          is_public: input.is_public,
-          updated_at: new Date(),
-        };
+    try {
+      const profileUpdate = {
+        avatar_url: input.avatar_url,
+        bio: input.bio,
+        dob: input.dob === undefined ? undefined : input.dob === null ? null : new Date(input.dob),
+        is_public: input.is_public,
+        updated_at: new Date(),
+      };
 
-        if (Object.values(profileUpdate).some((value) => value !== undefined)) {
-          await db.update(profiles).set(profileUpdate).where(eq(profiles.id, ctx.session.user.id));
-        }
+      if (Object.values(profileUpdate).some((value) => value !== undefined)) {
+        await db.update(profiles).set(profileUpdate).where(eq(profiles.id, ctx.session.user.id));
+      }
 
-        const legacySetClauses = [] as ReturnType<typeof sql>[];
+      const legacySetClauses = [] as ReturnType<typeof sql>[];
 
-        if (input.username !== undefined) {
-          legacySetClauses.push(sql`"username" = ${input.username}`);
-        }
-        if (input.language !== undefined) {
-          legacySetClauses.push(sql`"language" = ${input.language}`);
-        }
-        if (input.preferred_units !== undefined) {
-          legacySetClauses.push(sql`"preferred_units" = ${input.preferred_units}`);
-        }
+      if (input.username !== undefined) {
+        legacySetClauses.push(sql`"username" = ${input.username}`);
+      }
+      if (input.language !== undefined) {
+        legacySetClauses.push(sql`"language" = ${input.language}`);
+      }
+      if (input.preferred_units !== undefined) {
+        legacySetClauses.push(sql`"preferred_units" = ${input.preferred_units}`);
+      }
 
-        if (legacySetClauses.length > 0) {
-          await db.execute(sql`
+      if (legacySetClauses.length > 0) {
+        await db.execute(sql`
             update "profiles"
             set ${sql.join([...legacySetClauses, sql`"updated_at" = now()`], sql`, `)}
             where "id" = ${ctx.session.user.id}
           `);
-        }
+      }
 
-        await Promise.all([
-          syncProfileMetric(db, {
-            profileId: ctx.session.user.id,
-            metricType: "weight_kg",
-            value: input.weight_kg,
-          }),
-          syncProfileMetric(db, {
-            profileId: ctx.session.user.id,
-            metricType: "lthr",
-            value: input.threshold_hr,
-          }),
-          syncManualFtp(db, {
-            profileId: ctx.session.user.id,
-            value: input.ftp,
-          }),
-        ]);
+      await Promise.all([
+        syncProfileMetric(db, {
+          profileId: ctx.session.user.id,
+          metricType: "weight_kg",
+          value: input.weight_kg,
+        }),
+        syncProfileMetric(db, {
+          profileId: ctx.session.user.id,
+          metricType: "lthr",
+          value: input.threshold_hr,
+        }),
+        syncManualFtp(db, {
+          profileId: ctx.session.user.id,
+          value: input.ftp,
+        }),
+      ]);
 
-        const profile = await getSerializedProfile(db, ctx.session.user.id);
+      const profile = await getSerializedProfile(db, ctx.session.user.id);
 
-        if (!profile) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Profile not found",
-          });
-        }
-
-        return profile;
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
+      if (!profile) {
         throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to update profile",
+          code: "NOT_FOUND",
+          message: "Profile not found",
         });
       }
-    }),
+
+      return profile;
+    } catch (error) {
+      if (error instanceof TRPCError) {
+        throw error;
+      }
+
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to update profile",
+      });
+    }
+  }),
 
   list: protectedProcedure.input(profileListFiltersSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);

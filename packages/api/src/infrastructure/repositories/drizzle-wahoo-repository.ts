@@ -113,7 +113,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .insert(schema.activities)
         .values({
           id: randomUUID(),
-          idx: 0,
           created_at: new Date(),
           updated_at: new Date(),
           is_private: false,

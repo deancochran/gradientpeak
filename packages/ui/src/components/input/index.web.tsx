@@ -1,7 +1,6 @@
 import * as React from "react";
-
-import { Input as RegistryInput } from "../../registry/web/input";
 import { getWebTestProps } from "../../lib/test-props";
+import { Input as RegistryInput } from "../../registry/web/input";
 import type { InputTestProps } from "./shared";
 
 function inputVariants({ className }: { className?: string } = {}) {

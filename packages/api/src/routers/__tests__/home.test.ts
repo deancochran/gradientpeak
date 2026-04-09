@@ -390,7 +390,10 @@ describe("homeRouter", () => {
         ],
         activities: [[]],
       },
-      execute: [[{ settings: {} }], [{ id: "plan-1", name: null, description: null, structure: {} }]],
+      execute: [
+        [{ settings: {} }],
+        [{ id: "plan-1", name: null, description: null, structure: {} }],
+      ],
     });
 
     await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({

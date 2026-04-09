@@ -6,7 +6,13 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 const storageService = getApiStorageService();
 
 const BUCKET_NAME = "profile-avatars";
-const ALLOWED_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"] as const;
+const ALLOWED_MIME_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+] as const;
 const MIME_TYPE_TO_EXTENSIONS = {
   "image/jpeg": ["jpg", "jpeg"],
   "image/jpg": ["jpg", "jpeg"],
@@ -41,9 +47,15 @@ const filePathSchema = z
   .refine((value) => !value.includes("\\"), {
     message: "File path must not include backslashes",
   })
-  .refine((value) => !value.split("/").some((segment) => segment.length === 0 || segment === "." || segment === ".."), {
-    message: "File path contains invalid path segments",
-  });
+  .refine(
+    (value) =>
+      !value
+        .split("/")
+        .some((segment) => segment.length === 0 || segment === "." || segment === ".."),
+    {
+      message: "File path contains invalid path segments",
+    },
+  );
 
 const signedUploadUrlDataSchema = z.object({
   signedUrl: z.string().min(1),
@@ -112,9 +124,9 @@ export const storageRouter = createTRPCRouter({
         const signedUploadData = signedUploadUrlDataSchema.parse(data);
         assertOwnedFilePath(ctx.session.user.id, signedUploadData.path);
 
-        const {
-          data: publicUrlData,
-        } = storageService.storage.from(BUCKET_NAME).getPublicUrl(signedUploadData.path);
+        const { data: publicUrlData } = storageService.storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(signedUploadData.path);
         const { publicUrl } = publicUrlDataSchema.parse(publicUrlData);
 
         return {

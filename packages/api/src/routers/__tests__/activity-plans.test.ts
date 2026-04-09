@@ -6,16 +6,16 @@ const { estimationState } = vi.hoisted(() => ({
   estimationState: {
     addEstimationToPlan: vi.fn(async (plan: any) => ({
       ...plan,
-      estimated_tss: plan.estimated_tss ?? 88,
-      estimated_duration_seconds: plan.estimated_duration_seconds ?? 3600,
-      estimated_distance_meters: plan.estimated_distance_meters ?? 12000,
+      estimated_tss: 88,
+      estimated_duration_seconds: 3600,
+      estimated_distance_meters: 12000,
     })),
     addEstimationToPlans: vi.fn(async (plans: any[]) =>
       plans.map((plan) => ({
         ...plan,
-        estimated_tss: plan.estimated_tss ?? 88,
-        estimated_duration_seconds: plan.estimated_duration_seconds ?? 3600,
-        estimated_distance_meters: plan.estimated_distance_meters ?? 12000,
+        estimated_tss: 88,
+        estimated_duration_seconds: 3600,
+        estimated_distance_meters: 12000,
       })),
     ),
     computePlanMetrics: vi.fn(async () => ({
@@ -90,13 +90,7 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     import_provider: null,
     import_external_id: null,
     is_system_template: false,
-    estimated_tss: null,
-    estimated_duration_seconds: null,
-    estimated_distance_meters: null,
-    sessions_per_week_target: null,
-    duration_hours: null,
     likes_count: null,
-    tss_target: null,
     is_public: false,
     ...overrides,
   };
@@ -311,9 +305,6 @@ describe("activityPlansRouter", () => {
       name: "Created Plan",
       template_visibility: "public",
       is_public: true,
-      estimated_tss: 88,
-      estimated_duration_seconds: 3600,
-      estimated_distance_meters: 12000,
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -336,9 +327,6 @@ describe("activityPlansRouter", () => {
       profile_id: USER_ID,
       template_visibility: "public",
       is_public: true,
-      estimated_tss: 88,
-      estimated_duration_seconds: 3600,
-      estimated_distance_meters: 12000,
     });
     expect(result).toMatchObject({
       id: createdRow.id,
@@ -357,9 +345,6 @@ describe("activityPlansRouter", () => {
       name: "After Update",
       template_visibility: "public",
       is_public: true,
-      estimated_tss: 88,
-      estimated_duration_seconds: 3600,
-      estimated_distance_meters: 12000,
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -380,9 +365,6 @@ describe("activityPlansRouter", () => {
       name: "After Update",
       template_visibility: "public",
       is_public: true,
-      estimated_tss: 88,
-      estimated_duration_seconds: 3600,
-      estimated_distance_meters: 12000,
     });
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
   });
@@ -425,9 +407,6 @@ describe("activityPlansRouter", () => {
       name: "Shared Workout (Copy)",
       template_visibility: "private",
       is_public: false,
-      estimated_tss: 88,
-      estimated_duration_seconds: 3600,
-      estimated_distance_meters: 12000,
     });
     const { caller, callLog } = createCaller({
       state: {

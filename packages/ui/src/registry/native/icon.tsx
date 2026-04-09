@@ -1,7 +1,7 @@
-import { TextClassContext } from "./text";
-import { cn } from "../../lib/cn";
 import { styled } from "nativewind";
 import * as React from "react";
+import { cn } from "../../lib/cn";
+import { TextClassContext } from "./text";
 
 type IconProps = {
   as: React.ComponentType<any>;

@@ -1,14 +1,13 @@
 "use client";
 
 import * as React from "react";
-
+import { getWebTestProps } from "../../lib/test-props";
 import {
   Accordion,
   AccordionContent,
-  AccordionItem as RegistryAccordionItem,
   AccordionTrigger,
+  AccordionItem as RegistryAccordionItem,
 } from "../../registry/web/accordion";
-import { getWebTestProps } from "../../lib/test-props";
 import type { AccordionTestProps } from "./shared";
 
 function AccordionItem({

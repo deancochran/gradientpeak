@@ -91,30 +91,28 @@ export const profileMetricsRouter = createTRPCRouter({
    * List all profile metric logs for current user.
    * Supports filtering by metric type and date range.
    */
-  list: protectedProcedure
-    .input(listProfileMetricsInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
+  list: protectedProcedure.input(listProfileMetricsInputSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
 
-      const conditions = [eq(profileMetrics.profile_id, ctx.session.user.id)];
+    const conditions = [eq(profileMetrics.profile_id, ctx.session.user.id)];
 
-      if (input.metric_type) conditions.push(eq(profileMetrics.metric_type, input.metric_type));
-      if (input.start_date) conditions.push(gte(profileMetrics.recorded_at, input.start_date));
-      if (input.end_date) conditions.push(lte(profileMetrics.recorded_at, input.end_date));
+    if (input.metric_type) conditions.push(eq(profileMetrics.metric_type, input.metric_type));
+    if (input.start_date) conditions.push(gte(profileMetrics.recorded_at, input.start_date));
+    if (input.end_date) conditions.push(lte(profileMetrics.recorded_at, input.end_date));
 
-      const data = await db
-        .select()
-        .from(profileMetrics)
-        .where(and(...conditions))
-        .orderBy(desc(profileMetrics.recorded_at))
-        .limit(input.limit)
-        .offset(input.offset);
+    const data = await db
+      .select()
+      .from(profileMetrics)
+      .where(and(...conditions))
+      .orderBy(desc(profileMetrics.recorded_at))
+      .limit(input.limit)
+      .offset(input.offset);
 
-      return profileMetricListOutputSchema.parse({
-        items: profileMetricRowArraySchema.parse(data ?? []),
-        total: data.length,
-      });
-    }),
+    return profileMetricListOutputSchema.parse({
+      items: profileMetricRowArraySchema.parse(data ?? []),
+      total: data.length,
+    });
+  }),
 
   /**
    * Get profile metric at a specific date.
@@ -183,11 +181,12 @@ export const profileMetricsRouter = createTRPCRouter({
           id: randomUUID(),
           profile_id: input.profile_id,
           metric_type: input.metric_type,
-          value: String(input.value),
+          value: input.value,
           unit: input.unit,
           reference_activity_id: input.reference_activity_id || null,
           notes: input.notes || null,
           created_at: new Date(),
+          updated_at: new Date(),
           recorded_at: new Date(input.recorded_at || new Date().toISOString()),
         })
         .returning();
@@ -206,10 +205,11 @@ export const profileMetricsRouter = createTRPCRouter({
       const [data] = await db
         .update(profileMetrics)
         .set({
-          value: input.value !== undefined ? String(input.value) : undefined,
+          value: input.value,
           unit: input.unit,
           notes: input.notes,
           recorded_at: input.recorded_at ? new Date(input.recorded_at) : undefined,
+          updated_at: new Date(),
         })
         .where(
           and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),

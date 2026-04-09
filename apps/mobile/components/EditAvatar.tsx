@@ -3,6 +3,16 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Image, StyleSheet, View } from "react-native";
 import { api } from "@/lib/api";
 
+const allowedAvatarMimeTypes = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+] as const;
+
+type AllowedAvatarMimeType = (typeof allowedAvatarMimeTypes)[number];
+
 interface Props {
   size: number;
   url: string | null;
@@ -59,7 +69,11 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
 
       const fileExt = image.uri?.split(".").pop()?.toLowerCase() ?? "jpeg";
       const fileName = `${Date.now()}.${fileExt}`;
-      const fileType = image.mimeType ?? "image/jpeg";
+      const fileType: AllowedAvatarMimeType = allowedAvatarMimeTypes.includes(
+        image.mimeType as AllowedAvatarMimeType,
+      )
+        ? (image.mimeType as AllowedAvatarMimeType)
+        : "image/jpeg";
 
       // Get signed upload URL
       const { signedUrl, path } = await utils.client.storage.createSignedUploadUrl.mutate({

@@ -94,10 +94,11 @@ const parsedRouteSchema = z
 const serializedActivityRouteSchema = z
   .object({
     ...publicActivityRoutesRowSchema.shape,
+    idx: z.number().int().nonnegative().default(0),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })
-  .strict();
+  .strip();
 
 const activityRouteWithLikeSchema = serializedActivityRouteSchema
   .extend({
@@ -149,6 +150,7 @@ const uploadRouteSchema = z
 function serializeActivityRouteRow(row: ActivityRouteRow) {
   return serializedActivityRouteSchema.parse({
     ...row,
+    idx: row.idx ?? 0,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
   });
@@ -532,11 +534,13 @@ export const routesRouter = createTRPCRouter({
   // ------------------------------
   update: protectedProcedure
     .input(
-      z.object({
-        id: routeIdSchema,
-        name: z.string().min(1).max(100).optional(),
-        description: z.string().max(1000).optional(),
-      }).strict(),
+      z
+        .object({
+          id: routeIdSchema,
+          name: z.string().min(1).max(100).optional(),
+          description: z.string().max(1000).optional(),
+        })
+        .strict(),
     )
     .output(serializedActivityRouteSchema)
     .mutation(async ({ ctx, input }) => {

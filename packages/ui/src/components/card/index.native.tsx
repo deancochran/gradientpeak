@@ -1,14 +1,13 @@
 import * as React from "react";
-
+import { getNativeTestProps } from "../../lib/test-props";
 import {
-  Card as RegistryCard,
   CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
+  Card as RegistryCard,
 } from "../../registry/native/card";
-import { getNativeTestProps } from "../../lib/test-props";
 
 type CardProps = React.ComponentProps<typeof RegistryCard> & {
   accessibilityLabel?: string;
@@ -28,5 +27,5 @@ function Card({ accessibilityLabel, id, role, testId, ...props }: CardProps) {
   );
 }
 
-export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle };
 export type { CardProps };
+export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle };

@@ -1,16 +1,15 @@
 "use client";
 
 import * as React from "react";
-
+import { getWebTestProps } from "../../lib/test-props";
 import {
-  Avatar as RegistryAvatar,
   AvatarBadge,
   AvatarFallback,
   AvatarGroup,
   AvatarGroupCount,
   AvatarImage,
+  Avatar as RegistryAvatar,
 } from "../../registry/web/avatar";
-import { getWebTestProps } from "../../lib/test-props";
 import type { AvatarTestProps } from "./shared";
 
 function Avatar({

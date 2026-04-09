@@ -1,5 +1,5 @@
-import { nativeRegistryComponents, webRegistryComponents } from "./registry-component-catalog.mjs";
 import { syncRegistryMirrors } from "./registry-cli-utils.mjs";
+import { nativeRegistryComponents, webRegistryComponents } from "./registry-component-catalog.mjs";
 
 await syncRegistryMirrors({
   components: webRegistryComponents,

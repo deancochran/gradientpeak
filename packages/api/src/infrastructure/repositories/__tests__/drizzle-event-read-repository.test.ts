@@ -384,6 +384,11 @@ describe("drizzle-event-read-repository", () => {
         original_starts_at: null,
         updated_at: "2026-04-02T11:00:00.000Z",
         activity_plan: null,
+        all_day: false,
+        occurrence_key: "",
+        status: "scheduled",
+        timezone: "UTC",
+        title: "",
       },
     ]);
   });

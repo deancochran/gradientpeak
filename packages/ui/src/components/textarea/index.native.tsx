@@ -1,5 +1,5 @@
-import { Textarea as RegistryTextarea } from "../../registry/native/textarea";
 import { getNativeTestProps } from "../../lib/test-props";
+import { Textarea as RegistryTextarea } from "../../registry/native/textarea";
 import type { TextareaTestProps } from "./shared";
 
 function Textarea({

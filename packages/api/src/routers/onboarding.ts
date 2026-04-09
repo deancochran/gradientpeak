@@ -305,11 +305,7 @@ export const onboardingRouter = createTRPCRouter({
       const effectiveExperienceLevel =
         input.experience_level === "skip" ? "intermediate" : input.experience_level;
 
-      estimatedFTP = estimateFTPFromWeight(
-        input.weight_kg,
-        input.gender,
-        effectiveExperienceLevel,
-      );
+      estimatedFTP = estimateFTPFromWeight(input.weight_kg, input.gender, effectiveExperienceLevel);
 
       estimatedThresholdPace = estimateThresholdPaceFromGender(
         input.gender,

@@ -1,8 +1,4 @@
-import {
-  publicActivitiesRowSchema,
-  publicCommentsRowSchema,
-  schema,
-} from "@repo/db";
+import { publicActivitiesRowSchema, publicCommentsRowSchema, schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -434,18 +430,21 @@ export const feedRouter = createTRPCRouter({
         ]);
 
         const comments = z.array(activityCommentDtoSchema).parse(
-          z.array(activityCommentRowSchema).parse(commentsResult.rows).map((comment) => ({
-            id: comment.id,
-            content: comment.content,
-            created_at: toIsoString(comment.created_at),
-            profile: comment.profile_id
-              ? {
-                  id: comment.profile_id,
-                  username: comment.profile_username,
-                  avatar_url: comment.profile_avatar_url,
-                }
-              : null,
-          })),
+          z
+            .array(activityCommentRowSchema)
+            .parse(commentsResult.rows)
+            .map((comment) => ({
+              id: comment.id,
+              content: comment.content,
+              created_at: toIsoString(comment.created_at),
+              profile: comment.profile_id
+                ? {
+                    id: comment.profile_id,
+                    username: comment.profile_username,
+                    avatar_url: comment.profile_avatar_url,
+                  }
+                : null,
+            })),
         );
 
         return feedActivityDetailDtoSchema.parse({

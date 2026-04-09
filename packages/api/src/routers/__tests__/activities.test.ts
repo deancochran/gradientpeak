@@ -104,28 +104,22 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
 function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
   return {
     id: PLAN_ID,
-    idx: null,
+    idx: 0,
     created_at: new Date("2026-01-01T00:00:00.000Z"),
     updated_at: new Date("2026-01-02T00:00:00.000Z"),
     profile_id: OWNER_ID,
     route_id: null,
     name: "Planned Run",
-    description: null,
+    description: "",
     notes: null,
     activity_category: "run",
     structure: null,
-    version: null,
-    template_visibility: null,
+    version: "1.0",
+    template_visibility: "private",
     import_provider: null,
     import_external_id: null,
-    is_system_template: null,
-    estimated_tss: null,
-    estimated_duration_seconds: null,
-    estimated_distance_meters: null,
-    sessions_per_week_target: null,
-    duration_hours: null,
+    is_system_template: false,
     likes_count: null,
-    tss_target: null,
     is_public: false,
     ...overrides,
   };
@@ -239,17 +233,20 @@ beforeEach(() => {
   mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(new Map());
   mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({});
   mockActivityAnalysis.analyzeActivityDerivedMetrics.mockReturnValue({
-    tss: 50,
-    intensity_factor: 0.8,
+    stress: {
+      tss: 50,
+      intensity_factor: 0.8,
+      trimp: null,
+    },
+    zones: { hr: [], power: [] },
+    computed_as_of: "2026-01-01T00:00:00.000Z",
   });
 });
 
 describe("activitiesRouter", () => {
   it("lists owned activities with like and derived summaries", async () => {
-    const rows = [
-      buildActivityRow(),
-    ];
-    const derived = { tss: 72 };
+    const rows = [buildActivityRow()];
+    const derived = { tss: 72, intensity_factor: 0.81, computed_as_of: "2026-01-10T09:00:00.000Z" };
     const db = createDbMock({
       activityRows: rows,
       likeRows: [{ entity_id: ACTIVITY_ID }],
@@ -282,9 +279,25 @@ describe("activitiesRouter", () => {
 
   it("sorts paginated results by derived tss before slicing", async () => {
     const rows = [
-      buildActivityRow({ id: ACTIVITY_ID, name: "Easy Run", started_at: new Date("2026-01-12T08:00:00.000Z"), finished_at: new Date("2026-01-12T08:30:00.000Z") }),
-      buildActivityRow({ id: ACTIVITY_ID_2, name: "Big Ride", type: "bike", started_at: new Date("2026-01-11T08:00:00.000Z"), finished_at: new Date("2026-01-11T10:00:00.000Z") }),
-      buildActivityRow({ id: ACTIVITY_ID_3, name: "Tempo Run", started_at: new Date("2026-01-10T08:00:00.000Z"), finished_at: new Date("2026-01-10T08:50:00.000Z") }),
+      buildActivityRow({
+        id: ACTIVITY_ID,
+        name: "Easy Run",
+        started_at: new Date("2026-01-12T08:00:00.000Z"),
+        finished_at: new Date("2026-01-12T08:30:00.000Z"),
+      }),
+      buildActivityRow({
+        id: ACTIVITY_ID_2,
+        name: "Big Ride",
+        type: "bike",
+        started_at: new Date("2026-01-11T08:00:00.000Z"),
+        finished_at: new Date("2026-01-11T10:00:00.000Z"),
+      }),
+      buildActivityRow({
+        id: ACTIVITY_ID_3,
+        name: "Tempo Run",
+        started_at: new Date("2026-01-10T08:00:00.000Z"),
+        finished_at: new Date("2026-01-10T08:50:00.000Z"),
+      }),
     ];
     const db = createDbMock({
       activityRows: rows,
@@ -294,8 +307,18 @@ describe("activitiesRouter", () => {
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([
         [ACTIVITY_ID, { tss: 20 }],
-        [ACTIVITY_ID_2, { tss: 95 }],
-        [ACTIVITY_ID_3, { tss: 60 }],
+        [
+          ACTIVITY_ID_2,
+          { tss: 95, intensity_factor: 0.92, computed_as_of: "2026-01-11T10:00:00.000Z" },
+        ],
+        [
+          ACTIVITY_ID_3,
+          { tss: 60, intensity_factor: 0.78, computed_as_of: "2026-01-10T09:00:00.000Z" },
+        ],
+        [
+          ACTIVITY_ID,
+          { tss: 20, intensity_factor: 0.65, computed_as_of: "2026-01-12T09:00:00.000Z" },
+        ],
       ]),
     );
 
@@ -359,7 +382,11 @@ describe("activitiesRouter", () => {
       max_heart_rate: 175,
     });
     const activityPlan = buildActivityPlanRow();
-    const derived = { tss: 88, intensity_factor: 0.91 };
+    const derived = {
+      stress: { tss: 88, intensity_factor: 0.91, trimp: null },
+      zones: { hr: [], power: [] },
+      computed_as_of: "2026-01-10T09:00:00.000Z",
+    };
     const db = createDbMock({
       queryActivitiesFindFirst: [
         {

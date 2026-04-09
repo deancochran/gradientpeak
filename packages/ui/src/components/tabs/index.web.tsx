@@ -1,15 +1,14 @@
 "use client";
 
 import * as React from "react";
-
+import { getWebTestProps } from "../../lib/test-props";
 import {
   Tabs as RegistryTabs,
   TabsContent as RegistryTabsContent,
   TabsList as RegistryTabsList,
-  tabsListVariants,
   TabsTrigger as RegistryTabsTrigger,
+  tabsListVariants,
 } from "../../registry/web/tabs";
-import { getWebTestProps } from "../../lib/test-props";
 import type {
   TabsContentOptions,
   TabsListOptions,
@@ -76,4 +75,4 @@ function TabsContent({
 }
 
 export type { TabsListVariant };
-export { Tabs, TabsContent, TabsList, tabsListVariants, TabsTrigger };
+export { Tabs, TabsContent, TabsList, TabsTrigger, tabsListVariants };

@@ -26,7 +26,8 @@ export function prepareDbEnv() {
     }
   }
 
-  const databaseUrl = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? defaultLocalDatabaseUrl;
+  const databaseUrl =
+    process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? defaultLocalDatabaseUrl;
 
   process.env.DATABASE_URL ??= databaseUrl;
   process.env.POSTGRES_URL ??= databaseUrl;

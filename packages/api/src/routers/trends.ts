@@ -429,10 +429,10 @@ export const trendsRouter = createTRPCRouter({
 
       const activityRows = parseTrendActivityRows(
         await db
-        .select()
-        .from(activities)
-        .where(and(...conditions))
-        .orderBy(asc(activities.started_at)),
+          .select()
+          .from(activities)
+          .where(and(...conditions))
+          .orderBy(asc(activities.started_at)),
       );
 
       if (activityRows.length === 0) {
@@ -732,16 +732,16 @@ export const trendsRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
     const activityRows = parseTrendActivityRows(
       await db
-      .select()
-      .from(activities)
-      .where(
-        and(
-          eq(activities.profile_id, ctx.session.user.id),
-          gte(activities.started_at, new Date(input.start_date)),
-          lte(activities.started_at, new Date(input.end_date)),
-        ),
-      )
-      .orderBy(asc(activities.started_at)),
+        .select()
+        .from(activities)
+        .where(
+          and(
+            eq(activities.profile_id, ctx.session.user.id),
+            gte(activities.started_at, new Date(input.start_date)),
+            lte(activities.started_at, new Date(input.end_date)),
+          ),
+        )
+        .orderBy(asc(activities.started_at)),
     );
 
     if (activityRows.length === 0) {

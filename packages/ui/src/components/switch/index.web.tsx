@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-
-import { Switch as RegistrySwitch } from "../../registry/web/switch";
 import { getWebTestProps } from "../../lib/test-props";
+import { Switch as RegistrySwitch } from "../../registry/web/switch";
 import type { SwitchTestProps } from "./shared";
 
 function Switch({

@@ -1,9 +1,8 @@
 "use client";
 
 import * as React from "react";
-
-import { Checkbox as RegistryCheckbox } from "../../registry/web/checkbox";
 import { getWebTestProps } from "../../lib/test-props";
+import { Checkbox as RegistryCheckbox } from "../../registry/web/checkbox";
 import type { CheckboxClassNameOverrides, CheckboxTestProps } from "./shared";
 
 function Checkbox({

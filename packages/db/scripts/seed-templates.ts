@@ -49,7 +49,10 @@ async function seedTemplates() {
     .from(activityPlans)
     .where(
       category
-        ? and(eq(activityPlans.is_system_template, true), eq(activityPlans.activity_category, category))
+        ? and(
+            eq(activityPlans.is_system_template, true),
+            eq(activityPlans.activity_category, category),
+          )
         : eq(activityPlans.is_system_template, true),
     );
 

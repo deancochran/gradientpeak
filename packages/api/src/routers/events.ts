@@ -1095,25 +1095,17 @@ export const eventsRouter = createTRPCRouter({
     }
 
     const eventUpdates: Record<string, unknown> = {
-      ...(patch.event_type !== undefined
-        ? { event_type: toDbEventType(patch.event_type) }
-        : {}),
-      ...(patch.activity_plan_id !== undefined
-        ? { activity_plan_id: patch.activity_plan_id }
-        : {}),
+      ...(patch.event_type !== undefined ? { event_type: toDbEventType(patch.event_type) } : {}),
+      ...(patch.activity_plan_id !== undefined ? { activity_plan_id: patch.activity_plan_id } : {}),
       ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
       ...(patch.lifecycle !== undefined
         ? { status: toPersistableEventStatus(patch.lifecycle) }
         : {}),
       ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.description !== undefined
-        ? { description: patch.description }
-        : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
       ...(patch.all_day !== undefined ? { all_day: patch.all_day } : {}),
       ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
-      ...(patch.training_plan_id !== undefined
-        ? { training_plan_id: patch.training_plan_id }
-        : {}),
+      ...(patch.training_plan_id !== undefined ? { training_plan_id: patch.training_plan_id } : {}),
       ...(patch.starts_at !== undefined ? { starts_at: patch.starts_at } : {}),
       ...(patch.ends_at !== undefined ? { ends_at: patch.ends_at } : {}),
       ...(patch.recurrence !== undefined
@@ -1129,8 +1121,7 @@ export const eventsRouter = createTRPCRouter({
       eventUpdates.ends_at = toNextDayStartIso(scheduledDate);
     }
 
-    const nextAllDay =
-      patch.all_day !== undefined ? Boolean(patch.all_day) : existingEvent.all_day;
+    const nextAllDay = patch.all_day !== undefined ? Boolean(patch.all_day) : existingEvent.all_day;
 
     if (
       nextAllDay &&

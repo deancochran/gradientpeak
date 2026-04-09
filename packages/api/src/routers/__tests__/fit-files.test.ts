@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/db", () => ({
-  activities: { id: "activities.id", profile_id: "activities.profile_id", is_private: "activities.is_private" },
+  activities: {
+    id: "activities.id",
+    profile_id: "activities.profile_id",
+    is_private: "activities.is_private",
+  },
   activityEfforts: { table: "activity_efforts" },
   profileMetrics: {
     value: "profile_metrics.value",

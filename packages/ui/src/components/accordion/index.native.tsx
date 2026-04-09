@@ -1,12 +1,11 @@
 import * as React from "react";
-
-import {
-  Accordion as RegistryAccordion,
-  AccordionContent,
-  AccordionItem as RegistryAccordionItem,
-  AccordionTrigger,
-} from "../../registry/native/accordion";
 import { getNativeTestProps } from "../../lib/test-props";
+import {
+  AccordionContent,
+  AccordionTrigger,
+  Accordion as RegistryAccordion,
+  AccordionItem as RegistryAccordionItem,
+} from "../../registry/native/accordion";
 import type { AccordionTestProps } from "./shared";
 
 function Accordion(props: React.ComponentProps<typeof RegistryAccordion>) {

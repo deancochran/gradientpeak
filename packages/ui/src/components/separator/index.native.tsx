@@ -1,7 +1,6 @@
 import * as React from "react";
-
-import { Separator as RegistrySeparator } from "../../registry/native/separator";
 import { getNativeTestProps } from "../../lib/test-props";
+import { Separator as RegistrySeparator } from "../../registry/native/separator";
 import type { SeparatorTestProps } from "./shared";
 
 function Separator({

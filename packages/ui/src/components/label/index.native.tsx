@@ -1,7 +1,6 @@
 import * as React from "react";
-
-import { Label as RegistryLabel } from "../../registry/native/label";
 import { getNativeTestProps } from "../../lib/test-props";
+import { Label as RegistryLabel } from "../../registry/native/label";
 import type { LabelTestProps } from "./shared";
 
 function Label({

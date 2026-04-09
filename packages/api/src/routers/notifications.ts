@@ -54,13 +54,11 @@ function toDatabaseErrorMessage(error: unknown) {
 }
 
 export const notificationsRouter = createTRPCRouter({
-  getRecent: protectedProcedure
-    .input(getRecentInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
+  getRecent: protectedProcedure.input(getRecentInputSchema).query(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
 
-      try {
-        const result = await db.execute(sql<NotificationRow>`
+    try {
+      const result = await db.execute(sql<NotificationRow>`
           select
             "id",
             "user_id",
@@ -76,15 +74,15 @@ export const notificationsRouter = createTRPCRouter({
           limit ${input.limit}
         `);
 
-        return notificationRowSchema.array().parse(result.rows).map(normalizeNotificationRow);
-      } catch (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: toDatabaseErrorMessage(error),
-          cause: error,
-        });
-      }
-    }),
+      return notificationRowSchema.array().parse(result.rows).map(normalizeNotificationRow);
+    } catch (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: toDatabaseErrorMessage(error),
+        cause: error,
+      });
+    }
+  }),
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
@@ -107,17 +105,15 @@ export const notificationsRouter = createTRPCRouter({
     }
   }),
 
-  markRead: protectedProcedure
-    .input(markReadInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
+  markRead: protectedProcedure.input(markReadInputSchema).mutation(async ({ ctx, input }) => {
+    const db = getRequiredDb(ctx);
 
-      if (input.notification_ids.length === 0) {
-        return { success: true };
-      }
+    if (input.notification_ids.length === 0) {
+      return { success: true };
+    }
 
-      try {
-        await db.execute(sql`
+    try {
+      await db.execute(sql`
           update "notifications"
           set "read_at" = coalesce("read_at", now())
           where "user_id" = ${ctx.session.user.id}::uuid
@@ -127,13 +123,13 @@ export const notificationsRouter = createTRPCRouter({
             )})
         `);
 
-        return { success: true };
-      } catch (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: toDatabaseErrorMessage(error),
-          cause: error,
-        });
-      }
-    }),
+      return { success: true };
+    } catch (error) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: toDatabaseErrorMessage(error),
+        cause: error,
+      });
+    }
+  }),
 });

@@ -30,6 +30,12 @@ function serializeCreatedEvent(row: {
 }) {
   return {
     ...row,
+    idx: row.idx ?? 0,
+    all_day: row.all_day ?? false,
+    occurrence_key: row.occurrence_key ?? "",
+    status: row.status ?? "scheduled",
+    timezone: row.timezone ?? "UTC",
+    title: row.title ?? "",
     created_at: row.created_at.toISOString(),
     starts_at: row.starts_at.toISOString(),
     ends_at: row.ends_at?.toISOString() ?? null,
