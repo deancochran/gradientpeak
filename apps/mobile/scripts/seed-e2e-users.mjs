@@ -6,8 +6,8 @@ import { createClient } from "@supabase/supabase-js";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const supabaseDir = path.resolve(scriptDir, "../../../packages/db/supabase");
 
-const statusOutput = execFileSync("supabase", ["status", "-o", "env"], {
-  cwd: supabaseDir,
+const statusOutput = execFileSync("supabase", ["--workdir", supabaseDir, "status", "-o", "env"], {
+  cwd: scriptDir,
   encoding: "utf8",
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -80,7 +80,38 @@ const USERS = [
     onboarded: true,
     isPublic: true,
   },
+  {
+    email: "admin@test.com",
+    password: "TestPass123!",
+    firstName: "Admin",
+    lastName: "User",
+    username: "admintest",
+    onboarded: true,
+    isPublic: true,
+  },
+  {
+    email: "coach@test.com",
+    password: "TestPass123!",
+    firstName: "Coach",
+    lastName: "User",
+    username: "coachtest",
+    onboarded: true,
+    isPublic: true,
+  },
+  {
+    email: "athlete@test.com",
+    password: "TestPass123!",
+    firstName: "Athlete",
+    lastName: "User",
+    username: "athletetest",
+    onboarded: true,
+    isPublic: true,
+  },
 ];
+
+function shouldIgnoreProfileError(error) {
+  return error?.code === "PGRST205";
+}
 
 async function ensureUser(user) {
   const { data: listed, error: listError } = await supabase.auth.admin.listUsers();
@@ -128,7 +159,13 @@ async function ensureUser(user) {
     onConflict: "id",
   });
 
-  if (profileError) throw profileError;
+  if (profileError && !shouldIgnoreProfileError(profileError)) {
+    throw profileError;
+  }
+
+  if (shouldIgnoreProfileError(profileError)) {
+    console.warn(`[e2e-seed] skipped profile upsert for ${user.email}: profiles not available yet`);
+  }
 
   console.log(`[e2e-seed] ready ${user.email} (${user.username})`);
 }
