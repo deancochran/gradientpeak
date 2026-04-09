@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.non_docs != 'true' }}
+      mobile_related: ${{ steps.filter.outputs.mobile_related }}
+      web_related: ${{ steps.filter.outputs.web_related }}
 
     steps:
       - name: Checkout
@@ -50,6 +52,32 @@ jobs:
               - '!**/*.mdx'
               - '!docs/**'
               - '!.github/workflows/validate.yml'
+            mobile_related:
+              - 'apps/mobile/**'
+              - 'packages/api/**'
+              - 'packages/auth/**'
+              - 'packages/core/**'
+              - 'packages/db/**'
+              - 'packages/tailwindcss/**'
+              - 'packages/ui/**'
+              - 'tooling/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+            web_related:
+              - 'apps/web/**'
+              - 'packages/api/**'
+              - 'packages/auth/**'
+              - 'packages/core/**'
+              - 'packages/db/**'
+              - 'packages/tailwindcss/**'
+              - 'packages/ui/**'
+              - 'tooling/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
 
   docs-only:
     name: Docs Only
@@ -180,7 +208,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_related == 'true'
 
     steps:
       - name: Checkout
@@ -212,7 +240,6 @@ jobs:
       - typecheck
       - build
       - unit-and-integration
-      - mobile-component-and-jest
     if: needs.changes.outputs.docs_only != 'true'
 
     steps:
@@ -226,7 +253,8 @@ jobs:
     needs:
       - changes
       - full-validation-suite
-    if: needs.changes.outputs.docs_only != 'true'
+      - mobile-component-and-jest
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_related == 'true'
 
     steps:
       - name: Checkout
@@ -272,7 +300,7 @@ jobs:
     needs:
       - changes
       - full-validation-suite
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.web_related == 'true'
 
     steps:
       - name: Checkout
@@ -341,8 +369,9 @@ jobs:
     needs:
       - changes
       - full-validation-suite
+      - mobile-component-and-jest
       - mobile-e2e-build
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_related == 'true'
 
     steps:
       - name: Checkout
