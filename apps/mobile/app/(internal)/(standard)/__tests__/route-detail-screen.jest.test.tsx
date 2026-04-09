@@ -33,7 +33,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
 }));
 

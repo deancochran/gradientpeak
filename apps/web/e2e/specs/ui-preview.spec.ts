@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import path from "node:path";
+import { createRequire } from "node:module";
 
 import { buttonFixtures } from "@repo/ui/components/button/fixtures";
 import { cardFixtures } from "@repo/ui/components/card/fixtures";
@@ -9,11 +9,10 @@ import { uiPreviewFormFields } from "@repo/ui/testing/ui-preview/contract";
 
 import { expect, test } from "../fixtures";
 
+const require = createRequire(import.meta.url);
+
 const uiPreviewManifest = JSON.parse(
-  readFileSync(
-    path.resolve(process.cwd(), "../../packages/ui/src/testing/ui-preview/manifest.generated.json"),
-    "utf8",
-  ),
+  readFileSync(require.resolve("@repo/ui/testing/ui-preview/manifest.generated.json"), "utf8"),
 ) as {
   rootTestId: string;
   scenarios: Array<{ key: string; selectors: string[]; testId: string }>;

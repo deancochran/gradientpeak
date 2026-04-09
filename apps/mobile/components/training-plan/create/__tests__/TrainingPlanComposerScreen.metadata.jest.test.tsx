@@ -40,7 +40,7 @@ jest.mock("@repo/ui/hooks", () => ({
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
   KeyboardAvoidingView: (props: any) =>
     React.createElement("KeyboardAvoidingView", props, props.children),

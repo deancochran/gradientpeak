@@ -960,7 +960,7 @@ export const fitFilesRouter = createTRPCRouter({
             created_at: new Date(),
             profile_id: userId,
             metric_type: "lthr",
-            value: String(detectedLTHR),
+            value: detectedLTHR,
             unit: "bpm",
             recorded_at: new Date(activityCompletedAtIso),
           });

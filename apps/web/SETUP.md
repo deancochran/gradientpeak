@@ -2,10 +2,12 @@
 
 ## Environment Variables
 
-Copy `.env.example` to `.env.local` and fill in your values:
+Keep web env files under `apps/web/`.
+
+Copy `apps/web/.env.example` to `apps/web/.env.local` and fill in your values:
 
 ```bash
-cp .env.example .env.local
+cp apps/web/.env.example apps/web/.env.local
 ```
 
 ### Required Variables
@@ -92,7 +94,7 @@ pnpm build
 
 ### Service Role Key Security
 
-- Never commit `.env.local`.
+- Never commit `apps/web/.env.local`.
 - Never use `SUPABASE_SERVICE_ROLE_KEY` in client-side code.
 - Never prefix it with `NEXT_PUBLIC_`.
 

@@ -274,7 +274,7 @@ async function syncProfileMetric(
     unit: input.metricType === "weight_kg" ? "kg" : "bpm",
     notes: null,
     reference_activity_id: null,
-    value: String(input.value),
+    value: input.value,
   });
 }
 

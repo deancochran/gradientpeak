@@ -50,7 +50,7 @@ import {
   type PlanExecutionStepInfo,
 } from "./planExecution";
 import { type PlanValidationResult, validatePlanRequirements } from "./planValidation";
-import { SimplifiedMetrics } from "./SimplifiedMetrics";
+import type { SimplifiedMetrics } from "./SimplifiedMetrics";
 import { type ConnectedSensor, SensorsManager } from "./sensors";
 import { RecordingSessionController } from "./sessionController";
 import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
@@ -69,7 +69,7 @@ import {
   SensorReading,
 } from "./types";
 
-export { SimplifiedMetrics };
+export type { SimplifiedMetrics };
 
 // ================================
 // Types

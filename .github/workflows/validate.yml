@@ -18,6 +18,10 @@ env:
   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
   POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
   SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+  NEXT_PRIVATE_SUPABASE_URL: https://example.supabase.co
+  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+  NEXT_PRIVATE_SUPABASE_SECRET_KEY: ci-build-service-role-key
+  SUPABASE_SERVICE_ROLE_KEY: ci-build-service-role-key
 
 jobs:
   changes:
@@ -34,9 +38,11 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          predicate-quantifier: every
           filters: |
             docs_only:
-              - 'README.md'
+              - '**/*.md'
+              - '**/*.mdx'
               - 'docs/**'
               - '.github/workflows/validate.yml'
 
@@ -205,36 +211,15 @@ jobs:
     if: needs.changes.outputs.docs_only != 'true'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run full validation suite
-        run: pnpm check-types && pnpm lint && pnpm test
+      - name: Validation gate passed
+        run: |
+          printf 'All prerequisite validation jobs passed.\n'
 
   mobile-e2e-build:
     name: Mobile E2E Build
     runs-on: ubuntu-latest
     needs:
       - changes
-      - format-and-lint
-      - typecheck
-      - build
-      - unit-and-integration
-      - mobile-component-and-jest
       - full-validation-suite
     if: needs.changes.outputs.docs_only != 'true'
 
@@ -281,11 +266,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - format-and-lint
-      - typecheck
-      - build
-      - unit-and-integration
-      - mobile-component-and-jest
       - full-validation-suite
     if: needs.changes.outputs.docs_only != 'true'
 
@@ -352,11 +332,6 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - format-and-lint
-      - typecheck
-      - build
-      - unit-and-integration
-      - mobile-component-and-jest
       - full-validation-suite
       - mobile-e2e-build
     if: needs.changes.outputs.docs_only != 'true'

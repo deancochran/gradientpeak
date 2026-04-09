@@ -82,7 +82,7 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   FlatList: createHost("FlatList"),
   Modal: createModalHost("Modal"),
   ScrollView: createHost("ScrollView"),
