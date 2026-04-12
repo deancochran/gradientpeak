@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { createMiddleware } from "@tanstack/react-start";
 
 import { ProtectedHeader } from "../components/protected/protected-header";

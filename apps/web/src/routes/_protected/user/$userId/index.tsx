@@ -9,16 +9,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import {
-  Clock,
-  Loader2,
-  Lock,
-  MessageSquare,
-  UserCheck,
-  UserMinus,
-  UserPlus,
-} from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { Clock, Loader2, Lock, MessageSquare, UserCheck, UserMinus, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "../../../../components/providers/auth-provider";
@@ -33,7 +25,10 @@ function UserProfilePage() {
   const navigate = useNavigate();
   const { userId } = Route.useParams();
   const utils = api.useUtils();
-  const profileQuery = api.profiles.getPublicById.useQuery({ id: userId }, { enabled: Boolean(userId) });
+  const profileQuery = api.profiles.getPublicById.useQuery(
+    { id: userId },
+    { enabled: Boolean(userId) },
+  );
   const profile = normalizePublicProfileView(profileQuery.data);
   const isSelf = user?.id === userId;
 
@@ -115,18 +110,34 @@ function UserProfilePage() {
                 {isPrivate ? <Lock className="h-4 w-4 text-muted-foreground" /> : null}
               </div>
 
-              {canViewDetails && profile.bio ? <p className="text-muted-foreground">{profile.bio}</p> : null}
+              {canViewDetails && profile.bio ? (
+                <p className="text-muted-foreground">{profile.bio}</p>
+              ) : null}
 
               {canViewDetails ? (
                 <div className="flex items-center justify-center gap-4 text-sm md:justify-start">
-                  <Button asChild variant="ghost" className="h-auto p-0 text-muted-foreground hover:text-foreground">
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                  >
                     <Link to="/user/$userId/followers" params={{ userId }}>
-                      <span className="font-semibold text-foreground">{profile.followers_count ?? 0}</span> followers
+                      <span className="font-semibold text-foreground">
+                        {profile.followers_count ?? 0}
+                      </span>{" "}
+                      followers
                     </Link>
                   </Button>
-                  <Button asChild variant="ghost" className="h-auto p-0 text-muted-foreground hover:text-foreground">
+                  <Button
+                    asChild
+                    variant="ghost"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                  >
                     <Link to="/user/$userId/following" params={{ userId }}>
-                      <span className="font-semibold text-foreground">{profile.following_count ?? 0}</span> following
+                      <span className="font-semibold text-foreground">
+                        {profile.following_count ?? 0}
+                      </span>{" "}
+                      following
                     </Link>
                   </Button>
                 </div>
@@ -143,7 +154,9 @@ function UserProfilePage() {
 
                   <div className="flex flex-wrap items-center justify-center gap-3 md:justify-start">
                     <Button
-                      variant={isAcceptedFollower ? "outline" : isPendingFollower ? "secondary" : "default"}
+                      variant={
+                        isAcceptedFollower ? "outline" : isPendingFollower ? "secondary" : "default"
+                      }
                       onClick={handleFollowToggle}
                       disabled={followMutation.isPending || unfollowMutation.isPending}
                       className="w-32"
@@ -166,7 +179,12 @@ function UserProfilePage() {
                       )}
                     </Button>
 
-                    <Button variant="outline" onClick={handleMessage} disabled={messageMutation.isPending} className="w-32">
+                    <Button
+                      variant="outline"
+                      onClick={handleMessage}
+                      disabled={messageMutation.isPending}
+                      className="w-32"
+                    >
                       <MessageSquare className="mr-2 h-4 w-4" />
                       Message
                     </Button>
@@ -183,7 +201,9 @@ function UserProfilePage() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Lock className="mb-4 h-12 w-12 text-muted-foreground" />
             <h2 className="mb-2 text-xl font-semibold">This account is private</h2>
-            <p className="text-muted-foreground">Follow this account to see their activities and stats.</p>
+            <p className="text-muted-foreground">
+              Follow this account to see their activities and stats.
+            </p>
           </CardContent>
         </Card>
       ) : (

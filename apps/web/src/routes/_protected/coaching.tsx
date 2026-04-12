@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@repo/ui/components/table";
-import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { MoreHorizontal, Plus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -82,7 +82,14 @@ function CoachingPage() {
                 </TableHeader>
                 <TableBody>
                   {roster.map((entry) => (
-                    <RosterRow key={entry.athlete_id} entry={entry} onMessage={() => toast.info("Messaging starts from the Messages view today.")} onViewProfile={() => navigate({ to: "/user/$userId", params: { userId: entry.athlete_id } })} />
+                    <RosterRow
+                      key={entry.athlete_id}
+                      entry={entry}
+                      onMessage={() => toast.info("Messaging starts from the Messages view today.")}
+                      onViewProfile={() =>
+                        navigate({ to: "/user/$userId", params: { userId: entry.athlete_id } })
+                      }
+                    />
                   ))}
                 </TableBody>
               </Table>

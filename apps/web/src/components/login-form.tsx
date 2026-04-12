@@ -11,11 +11,10 @@ import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-
-import { useAuth } from "./providers/auth-provider";
 import { authClient } from "../lib/auth/client";
 import { getLoginFormError } from "../lib/auth/form-errors";
 import { type LoginFormValues, loginFormSchema } from "../lib/auth/form-schemas";
+import { useAuth } from "./providers/auth-provider";
 
 export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
   const navigate = useNavigate();
@@ -90,7 +89,10 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <Label htmlFor="login-password">Password *</Label>
-                  <Link to="/auth/forgot-password" className="ml-auto inline-block text-sm underline-offset-4 hover:underline">
+                  <Link
+                    to="/auth/forgot-password"
+                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
+                  >
                     Forgot your password?
                   </Link>
                 </div>
@@ -102,7 +104,9 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
                   onChange={(event) => setPassword(event.currentTarget.value)}
                   aria-invalid={Boolean(errors.password)}
                 />
-                {errors.password ? <p className="text-destructive text-sm">{errors.password}</p> : null}
+                {errors.password ? (
+                  <p className="text-destructive text-sm">{errors.password}</p>
+                ) : null}
               </div>
 
               {errors.root ? <p className="text-destructive text-sm">{errors.root}</p> : null}
@@ -122,7 +126,10 @@ export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRe
       </Card>
 
       <p className="text-center text-sm text-muted-foreground">
-        Returning to the main app? <Link to="/" className="underline underline-offset-4">Go back</Link>
+        Returning to the main app?{" "}
+        <Link to="/" className="underline underline-offset-4">
+          Go back
+        </Link>
       </p>
     </div>
   );

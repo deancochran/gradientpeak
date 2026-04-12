@@ -1,7 +1,4 @@
-import {
-  getProfileQuickUpdateDefaults,
-  normalizeProfileSettingsView,
-} from "@repo/core/profile";
+import { getProfileQuickUpdateDefaults, normalizeProfileSettingsView } from "@repo/core/profile";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,7 +33,13 @@ import { useAuth } from "../../components/providers/auth-provider";
 import { api } from "../../lib/api/client";
 import { authClient } from "../../lib/auth/client";
 
-const allowedAvatarMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"] as const;
+const allowedAvatarMimeTypes = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+] as const;
 type AllowedAvatarMimeType = (typeof allowedAvatarMimeTypes)[number];
 
 export const Route = createFileRoute("/_protected/settings")({
@@ -46,7 +49,11 @@ export const Route = createFileRoute("/_protected/settings")({
 function SettingsPage() {
   const navigate = useNavigate();
   const { user, isLoading: authLoading, refreshSession } = useAuth();
-  const { data: profile, isLoading: profileLoading, refetch: refetchProfile } = api.profiles.get.useQuery(undefined, {
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    refetch: refetchProfile,
+  } = api.profiles.get.useQuery(undefined, {
     enabled: Boolean(user),
   });
 
@@ -123,7 +130,10 @@ function SettingsPage() {
 
       if (!uploadResponse.ok) throw new Error("Upload failed");
 
-      await updateProfileMutation.mutateAsync({ username: profile?.username || "", avatar_url: filePath });
+      await updateProfileMutation.mutateAsync({
+        username: profile?.username || "",
+        avatar_url: filePath,
+      });
       toast.success("Avatar updated successfully");
     } catch (error) {
       console.error("Error:", error);
@@ -150,11 +160,19 @@ function SettingsPage() {
   };
 
   if (loading) {
-    return <div className="flex min-h-[400px] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
   }
 
   const createdAt = profile?.created_at
-    ? new Date(profile.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+    ? new Date(profile.created_at).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
     : "Unknown";
 
   return (
@@ -166,7 +184,10 @@ function SettingsPage() {
         </div>
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><UserRound className="h-5 w-5" />Profile Information</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <UserRound className="h-5 w-5" />
+              Profile Information
+            </CardTitle>
             <CardDescription>Update your profile information and avatar.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -174,36 +195,70 @@ function SettingsPage() {
               <div className="group relative">
                 <Avatar className="h-20 w-20 cursor-pointer transition-all duration-200 group-hover:opacity-70">
                   <AvatarImage src={avatarBlobUrl || ""} alt="User" />
-                  <AvatarFallback className="text-lg"><UserRound className="h-8 w-8" /></AvatarFallback>
+                  <AvatarFallback className="text-lg">
+                    <UserRound className="h-8 w-8" />
+                  </AvatarFallback>
                 </Avatar>
                 <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                  {uploadingAvatar ? <Loader2 className="h-6 w-6 animate-spin text-white" /> : <Camera className="h-6 w-6 text-white" />}
+                  {uploadingAvatar ? (
+                    <Loader2 className="h-6 w-6 animate-spin text-white" />
+                  ) : (
+                    <Camera className="h-6 w-6 text-white" />
+                  )}
                 </div>
                 <div className="absolute inset-0 opacity-0">
-                  <FileInput accept="image/*" buttonLabel="Upload avatar" label="Avatar upload" onFilesChange={handleAvatarUpload} />
+                  <FileInput
+                    accept="image/*"
+                    buttonLabel="Upload avatar"
+                    label="Avatar upload"
+                    onFilesChange={handleAvatarUpload}
+                  />
                 </div>
               </div>
               <div>
                 <h3 className="font-medium">{profile?.username || "No name set"}</h3>
                 <p className="text-sm text-muted-foreground">{user?.email}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Click avatar to change picture (max 5MB)</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Click avatar to change picture (max 5MB)
+                </p>
               </div>
             </div>
             <form onSubmit={handleProfileSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="settings-username">Username</Label>
-                <Input id="settings-username" value={username} placeholder="Enter your username" onChange={(event) => { setUsername(event.currentTarget.value); setIsProfileDirty(true); }} />
-                <p className="text-sm text-muted-foreground">This is the username that will be displayed on your profile.</p>
+                <Input
+                  id="settings-username"
+                  value={username}
+                  placeholder="Enter your username"
+                  onChange={(event) => {
+                    setUsername(event.currentTarget.value);
+                    setIsProfileDirty(true);
+                  }}
+                />
+                <p className="text-sm text-muted-foreground">
+                  This is the username that will be displayed on your profile.
+                </p>
               </div>
               <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
                 <div className="space-y-1">
                   <Label htmlFor="settings-public-account">Public Account</Label>
-                  <p className="text-sm text-muted-foreground">Make your profile and activities visible to everyone.</p>
+                  <p className="text-sm text-muted-foreground">
+                    Make your profile and activities visible to everyone.
+                  </p>
                 </div>
-                <Switch id="settings-public-account" checked={isPublic} onCheckedChange={(checked) => { setIsPublic(checked); setIsProfileDirty(true); }} />
+                <Switch
+                  id="settings-public-account"
+                  checked={isPublic}
+                  onCheckedChange={(checked) => {
+                    setIsPublic(checked);
+                    setIsProfileDirty(true);
+                  }}
+                />
               </div>
               <Button type="submit" disabled={updateProfileMutation.isPending || !isProfileDirty}>
-                {updateProfileMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {updateProfileMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
                 Update Profile
               </Button>
             </form>
@@ -211,32 +266,71 @@ function SettingsPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Mail className="h-5 w-5" />Account Information</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5" />
+              Account Information
+            </CardTitle>
             <CardDescription>View your account details and status.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div><Label className="text-sm font-medium">Email</Label><p className="text-sm text-muted-foreground">{user?.email}</p></div>
-              <div><Label className="text-sm font-medium">Email Verified</Label><div className="mt-1 flex items-center gap-2"><Badge variant={user?.emailVerified ? "default" : "secondary"}>{user?.emailVerified ? "Verified" : "Unverified"}</Badge></div></div>
-              <div><Label className="text-sm font-medium">Account Created</Label><p className="flex items-center gap-1 text-sm text-muted-foreground"><Calendar className="h-4 w-4" />{createdAt}</p></div>
+              <div>
+                <Label className="text-sm font-medium">Email</Label>
+                <p className="text-sm text-muted-foreground">{user?.email}</p>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Email Verified</Label>
+                <div className="mt-1 flex items-center gap-2">
+                  <Badge variant={user?.emailVerified ? "default" : "secondary"}>
+                    {user?.emailVerified ? "Verified" : "Unverified"}
+                  </Badge>
+                </div>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Account Created</Label>
+                <p className="flex items-center gap-1 text-sm text-muted-foreground">
+                  <Calendar className="h-4 w-4" />
+                  {createdAt}
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
         <Card className="border-destructive">
-          <CardHeader><CardTitle className="text-destructive">Danger Zone</CardTitle><CardDescription>Irreversible and destructive actions.</CardDescription></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+            <CardDescription>Irreversible and destructive actions.</CardDescription>
+          </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row">
-              <Button variant="outline" onClick={handleSignOut} disabled={signingOut} className="flex-1">{signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Sign Out</Button>
+              <Button
+                variant="outline"
+                onClick={handleSignOut}
+                disabled={signingOut}
+                className="flex-1"
+              >
+                {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Sign Out
+              </Button>
               <AlertDialog>
-                <AlertDialogTrigger asChild><Button variant="destructive" className="flex-1"><Trash2 className="mr-2 h-4 w-4" />Delete Account</Button></AlertDialogTrigger>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" className="flex-1">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Account
+                  </Button>
+                </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Account deletion is temporarily unavailable</AlertDialogTitle>
-                    <AlertDialogDescription>We are finishing our authentication migration. If you need your account removed right now, please contact support and we will handle it manually.</AlertDialogDescription>
+                    <AlertDialogDescription>
+                      We are finishing our authentication migration. If you need your account
+                      removed right now, please contact support and we will handle it manually.
+                    </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction disabled className="bg-destructive">Delete Account Unavailable</AlertDialogAction>
+                    <AlertDialogAction disabled className="bg-destructive">
+                      Delete Account Unavailable
+                    </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>

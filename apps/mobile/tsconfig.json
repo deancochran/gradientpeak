@@ -3,7 +3,14 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@repo/auth": ["../../packages/auth/src/client.ts"],
+      "@repo/auth/*": [
+        "../../packages/auth/src/*",
+        "../../packages/auth/src/contracts/*",
+        "../../packages/auth/src/client/*",
+        "../../packages/auth/src/runtime/*"
+      ]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "nativewind-env.d.ts"]

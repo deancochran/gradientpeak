@@ -139,17 +139,26 @@ export const Route = createFileRoute("/api/integrations/callback/$provider")({
           process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
 
         if (!isSupportedProvider(provider)) {
-          return Response.redirect(buildRedirectUrl(fallbackRedirect, { error: "invalid_provider" }), 302);
+          return Response.redirect(
+            buildRedirectUrl(fallbackRedirect, { error: "invalid_provider" }),
+            302,
+          );
         }
 
         if (!state) {
-          return Response.redirect(buildRedirectUrl(fallbackRedirect, { error: "missing_state" }), 302);
+          return Response.redirect(
+            buildRedirectUrl(fallbackRedirect, { error: "missing_state" }),
+            302,
+          );
         }
 
         const storedState = await caller.integrations.validateOAuthState({ state });
 
         if (!storedState) {
-          return Response.redirect(buildRedirectUrl(fallbackRedirect, { error: "invalid_state" }), 302);
+          return Response.redirect(
+            buildRedirectUrl(fallbackRedirect, { error: "invalid_state" }),
+            302,
+          );
         }
 
         const { userId, mobileRedirectUri } = storedState;
@@ -161,7 +170,10 @@ export const Route = createFileRoute("/api/integrations/callback/$provider")({
 
         if (!code) {
           await caller.integrations.deleteOAuthState({ state });
-          return Response.redirect(buildRedirectUrl(mobileRedirectUri, { error: "missing_code" }), 302);
+          return Response.redirect(
+            buildRedirectUrl(mobileRedirectUri, { error: "missing_code" }),
+            302,
+          );
         }
 
         try {
@@ -235,7 +247,9 @@ export const Route = createFileRoute("/api/integrations/callback/$provider")({
           );
         } catch (caughtError) {
           const detail =
-            caughtError instanceof OAuthTokenExchangeError ? caughtError.detail || "unknown" : "unknown";
+            caughtError instanceof OAuthTokenExchangeError
+              ? caughtError.detail || "unknown"
+              : "unknown";
 
           console.error("OAuth callback error", {
             provider,

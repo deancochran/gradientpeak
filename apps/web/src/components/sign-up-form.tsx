@@ -11,9 +11,8 @@ import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-
-import { authClient } from "../lib/auth/client";
 import { toAbsoluteAppUrl } from "../lib/app-url";
+import { authClient } from "../lib/auth/client";
 import { getSignUpFormError } from "../lib/auth/form-errors";
 import { type SignUpFormValues, signUpFormSchema } from "../lib/auth/form-schemas";
 
@@ -108,7 +107,9 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
                   <p>• One uppercase letter</p>
                   <p>• One number</p>
                 </div>
-                {errors.password ? <p className="text-destructive text-sm">{errors.password}</p> : null}
+                {errors.password ? (
+                  <p className="text-destructive text-sm">{errors.password}</p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
@@ -135,7 +136,10 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
             </div>
 
             <div className="mt-4 text-center text-sm">
-              Already have an account? <Link to="/auth/login" className="underline underline-offset-4">Login</Link>
+              Already have an account?{" "}
+              <Link to="/auth/login" className="underline underline-offset-4">
+                Login
+              </Link>
             </div>
           </form>
         </CardContent>

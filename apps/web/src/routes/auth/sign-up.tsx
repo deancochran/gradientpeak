@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-
-import { SignUpForm } from "../../components/sign-up-form";
 import { useRedirectIfAuthenticated } from "../../components/providers/auth-provider";
+import { SignUpForm } from "../../components/sign-up-form";
 
 export const Route = createFileRoute("/auth/sign-up")({
   component: SignUpPage,

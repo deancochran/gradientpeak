@@ -34,7 +34,9 @@ function getAllowedDeepLinkPrefixes() {
     .map((value) => extractSchemePrefix(value))
     .filter((value): value is string => Boolean(value));
 
-  return [...new Set(["gradientpeak://", "gradientpeak-dev://", "gradientpeak-prev://", ...envPrefixes])];
+  return [
+    ...new Set(["gradientpeak://", "gradientpeak-dev://", "gradientpeak-prev://", ...envPrefixes]),
+  ];
 }
 
 function getDefaultDeepLinkTarget() {
@@ -124,7 +126,10 @@ export const Route = createFileRoute("/auth/confirm")({
 
         if (target === "web") {
           return Response.redirect(
-            getSafeFallbackTarget(request, searchParams.get("next") ?? searchParams.get("fallback")),
+            getSafeFallbackTarget(
+              request,
+              searchParams.get("next") ?? searchParams.get("fallback"),
+            ),
             302,
           );
         }

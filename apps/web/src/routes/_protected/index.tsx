@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, Bell, CalendarDays, MessageSquare, Settings } from "lucide-react";
 
 import { useAuth } from "../../components/providers/auth-provider";
@@ -31,9 +31,7 @@ function DashboardPage() {
         </p>
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
-          <p className="mt-2 text-muted-foreground">
-            {user?.email ?? "Athlete"}
-          </p>
+          <p className="mt-2 text-muted-foreground">{user?.email ?? "Athlete"}</p>
         </div>
       </section>
 
@@ -41,25 +39,41 @@ function DashboardPage() {
         <MetricCard
           title="Current Form"
           value={dashboard ? dashboard.currentStatus.form : "..."}
-          description={dashboard ? `CTL ${dashboard.currentStatus.ctl} / ATL ${dashboard.currentStatus.atl}` : "Loading dashboard status"}
+          description={
+            dashboard
+              ? `CTL ${dashboard.currentStatus.ctl} / ATL ${dashboard.currentStatus.atl}`
+              : "Loading dashboard status"
+          }
           icon={<Activity className="h-4 w-4" />}
         />
         <MetricCard
           title="Consistency"
           value={dashboard ? `${dashboard.consistency.streak} days` : "..."}
-          description={dashboard ? `${dashboard.consistency.weeklyCount} activities this week` : "Loading consistency"}
+          description={
+            dashboard
+              ? `${dashboard.consistency.weeklyCount} activities this week`
+              : "Loading consistency"
+          }
           icon={<CalendarDays className="h-4 w-4" />}
         />
         <MetricCard
           title="This Week"
           value={dashboard ? `${dashboard.weeklySummary.actual.count} sessions` : "..."}
-          description={dashboard ? `${Math.round(dashboard.weeklySummary.actual.tss)} TSS completed` : "Loading weekly summary"}
+          description={
+            dashboard
+              ? `${Math.round(dashboard.weeklySummary.actual.tss)} TSS completed`
+              : "Loading weekly summary"
+          }
           icon={<Activity className="h-4 w-4" />}
         />
         <MetricCard
           title="Active Plan"
           value={dashboard?.activePlan?.name ?? "No active plan"}
-          description={dashboard?.activePlan?.phase ? `Phase: ${dashboard.activePlan.phase}` : "Create or assign a plan to see progress here"}
+          description={
+            dashboard?.activePlan?.phase
+              ? `Phase: ${dashboard.activePlan.phase}`
+              : "Create or assign a plan to see progress here"
+          }
           icon={<CalendarDays className="h-4 w-4" />}
         />
       </section>
@@ -76,7 +90,10 @@ function DashboardPage() {
             ) : schedule.length > 0 ? (
               <div className="space-y-3">
                 {schedule.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between rounded-lg border p-3">
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between rounded-lg border p-3"
+                  >
                     <div>
                       <p className="font-medium">{item.activityName}</p>
                       <p className="text-sm text-muted-foreground">
@@ -102,8 +119,16 @@ function DashboardPage() {
             <CardDescription>Jump into the migrated areas of the app.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <QuickLink to="/messages" icon={<MessageSquare className="h-4 w-4" />} label="Messages" />
-            <QuickLink to="/notifications" icon={<Bell className="h-4 w-4" />} label="Notifications" />
+            <QuickLink
+              to="/messages"
+              icon={<MessageSquare className="h-4 w-4" />}
+              label="Messages"
+            />
+            <QuickLink
+              to="/notifications"
+              icon={<Bell className="h-4 w-4" />}
+              label="Notifications"
+            />
             <QuickLink to="/settings" icon={<Settings className="h-4 w-4" />} label="Settings" />
           </CardContent>
         </Card>

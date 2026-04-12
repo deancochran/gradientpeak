@@ -1,6 +1,6 @@
 import type { AuthUser } from "@repo/auth/session";
-import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 
 import { authClient, normalizeWebAuthSession } from "../../lib/auth/client";
 

@@ -2,8 +2,8 @@ import {
   normalizeGradientPeakAuthClientSession,
   resolveGradientPeakAuthBaseUrl,
 } from "@repo/auth/client";
-import type { AuthSession } from "@repo/auth/session";
 import { createGradientPeakWebAuthClient } from "@repo/auth/client/web";
+import type { AuthSession } from "@repo/auth/session";
 
 import { getAppBaseUrl } from "../app-url";
 

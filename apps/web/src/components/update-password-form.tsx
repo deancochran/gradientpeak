@@ -98,7 +98,9 @@ export function UpdatePasswordForm({
                   <p>• One uppercase letter</p>
                   <p>• One number</p>
                 </div>
-                {errors.password ? <p className="text-destructive text-sm">{errors.password}</p> : null}
+                {errors.password ? (
+                  <p className="text-destructive text-sm">{errors.password}</p>
+                ) : null}
               </div>
 
               <div className="space-y-2">

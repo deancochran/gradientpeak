@@ -80,7 +80,9 @@ export function NotificationsButton() {
                 <div className="text-xs text-muted-foreground">
                   {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ""}
                 </div>
-                {item.isUnread ? <div className="absolute right-3 top-3 h-2 w-2 rounded-full bg-blue-500" /> : null}
+                {item.isUnread ? (
+                  <div className="absolute right-3 top-3 h-2 w-2 rounded-full bg-blue-500" />
+                ) : null}
               </DropdownMenuItem>
             );
           })

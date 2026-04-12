@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Lock, Loader2, UserRound } from "lucide-react";
+import { Loader2, Lock, UserRound } from "lucide-react";
 
 type RelationshipProfile = {
   avatar_url: string | null;
@@ -58,7 +58,10 @@ export function RelationshipList({
                 key={profile.id}
                 className="flex items-center justify-between gap-3 rounded-lg p-3 transition-colors hover:bg-accent/50"
               >
-                <button className="flex flex-1 items-center gap-3 text-left" onClick={() => onOpenProfile(profile.id)}>
+                <button
+                  className="flex flex-1 items-center gap-3 text-left"
+                  onClick={() => onOpenProfile(profile.id)}
+                >
                   <Avatar className="h-12 w-12">
                     <AvatarImage src={profile.avatar_url || ""} alt={profile.username || "User"} />
                     <AvatarFallback>

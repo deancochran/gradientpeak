@@ -92,7 +92,10 @@ function FollowersPage() {
   return (
     <div className="container max-w-3xl space-y-6 py-8">
       <div className="flex justify-end">
-        <Button variant="ghost" onClick={() => navigate({ to: "/user/$userId", params: { userId } })}>
+        <Button
+          variant="ghost"
+          onClick={() => navigate({ to: "/user/$userId", params: { userId } })}
+        >
           Back
         </Button>
       </div>
@@ -110,7 +113,9 @@ function FollowersPage() {
             setPage((currentPage) => currentPage + 1);
           }
         }}
-        onOpenProfile={(profileUserId) => navigate({ to: "/user/$userId", params: { userId: profileUserId } })}
+        onOpenProfile={(profileUserId) =>
+          navigate({ to: "/user/$userId", params: { userId: profileUserId } })
+        }
         action={(profile) => {
           const isCurrentUser = user?.id === profile.id;
           const isFollowing = profile.follow_status === "accepted";

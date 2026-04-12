@@ -23,7 +23,8 @@ function SignUpSuccessPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                You&apos;ve successfully signed up. Please check your email to confirm your account before signing in.
+                You&apos;ve successfully signed up. Please check your email to confirm your account
+                before signing in.
               </p>
             </CardContent>
           </Card>

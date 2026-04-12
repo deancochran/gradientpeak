@@ -8,7 +8,8 @@ import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
 import crypto from "crypto";
 
-const serverSupabaseUrl = process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+const serverSupabaseUrl =
+  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const WAHOO_WEBHOOK_TOKEN = process.env.WAHOO_WEBHOOK_TOKEN;
 
 interface WahooWebhookPayload {
@@ -75,16 +76,21 @@ async function processWorkoutSummary(
   }
 
   try {
-    const supabase = createClient(serverSupabaseUrl!, process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!);
+    const supabase = createClient(
+      serverSupabaseUrl!,
+      process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
+    );
 
     const importer = createActivityImporter({
       repository: createWahooRepository({ db }),
       fitFileStorage: createWahooImportFitFileStorage({
         async uploadFitFile(input) {
-          const { error } = await supabase.storage.from("fit-files").upload(input.path, input.bytes, {
-            contentType: input.contentType,
-            upsert: false,
-          });
+          const { error } = await supabase.storage
+            .from("fit-files")
+            .upload(input.path, input.bytes, {
+              contentType: input.contentType,
+              upsert: false,
+            });
 
           if (error) {
             throw error;

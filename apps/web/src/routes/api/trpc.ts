@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
 import { appRouter, createApiContext } from "@repo/api/server";
 import { resolveAuthSession } from "@repo/auth/server";
 import { db } from "@repo/db/client";
+import { createFileRoute } from "@tanstack/react-router";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 
 export const Route = createFileRoute("/api/trpc")({

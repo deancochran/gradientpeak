@@ -1,7 +1,17 @@
 import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/api/react";
-import { getNotificationViewModel, getUnreadNotificationIds, normalizeNotificationListItem } from "@repo/core/notifications";
+import {
+  getNotificationViewModel,
+  getUnreadNotificationIds,
+  normalizeNotificationListItem,
+} from "@repo/core/notifications";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@repo/ui/components/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
 import { ScrollArea } from "@repo/ui/components/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { cn } from "@repo/ui/lib/cn";
@@ -15,13 +25,24 @@ import { api } from "../../lib/api/client";
 export const Route = createFileRoute("/_protected/notifications")({ component: NotificationsPage });
 
 function NotificationsPage() {
-  const { data: notifications = [], isLoading } = api.notifications.getRecent.useQuery({ limit: 50 });
+  const { data: notifications = [], isLoading } = api.notifications.getRecent.useQuery({
+    limit: 50,
+  });
   const normalizedNotifications = notifications
     .map((notification) => normalizeNotificationListItem(notification))
-    .filter((notification): notification is NonNullable<ReturnType<typeof normalizeNotificationListItem>> => notification !== null);
+    .filter(
+      (
+        notification,
+      ): notification is NonNullable<ReturnType<typeof normalizeNotificationListItem>> =>
+        notification !== null,
+    );
   const utils = api.useUtils();
-  const markReadMutation = api.notifications.markRead.useMutation({ onSuccess: async () => invalidateNotificationQueries(utils) });
-  const unreadNotifications = normalizedNotifications.filter((notification) => getNotificationViewModel(notification).isUnread);
+  const markReadMutation = api.notifications.markRead.useMutation({
+    onSuccess: async () => invalidateNotificationQueries(utils),
+  });
+  const unreadNotifications = normalizedNotifications.filter(
+    (notification) => getNotificationViewModel(notification).isUnread,
+  );
   const handleReadAll = () => {
     const unreadIds = getUnreadNotificationIds(normalizedNotifications);
     if (unreadIds.length > 0) markReadMutation.mutate({ notification_ids: unreadIds });
@@ -30,17 +51,52 @@ function NotificationsPage() {
   return (
     <div className="flex h-full flex-1 flex-col space-y-8">
       <div className="flex items-center justify-between space-y-2">
-        <div><h2 className="text-2xl font-bold tracking-tight">Notifications</h2><p className="text-muted-foreground">Manage your notifications and alerts.</p></div>
-        <Button onClick={handleReadAll} disabled={unreadNotifications.length === 0}>Mark all as read</Button>
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Notifications</h2>
+          <p className="text-muted-foreground">Manage your notifications and alerts.</p>
+        </div>
+        <Button onClick={handleReadAll} disabled={unreadNotifications.length === 0}>
+          Mark all as read
+        </Button>
       </div>
       <Card>
-        <CardHeader><CardTitle>Your Notifications</CardTitle><CardDescription>You have {unreadNotifications.length} unread notifications.</CardDescription></CardHeader>
+        <CardHeader>
+          <CardTitle>Your Notifications</CardTitle>
+          <CardDescription>
+            You have {unreadNotifications.length} unread notifications.
+          </CardDescription>
+        </CardHeader>
         <CardContent className="p-0">
           <Tabs defaultValue="all">
-            <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-6"><TabsTrigger value="all">All</TabsTrigger><TabsTrigger value="unread">Unread</TabsTrigger></TabsList>
+            <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-6">
+              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="unread">Unread</TabsTrigger>
+            </TabsList>
             <ScrollArea className="h-[calc(100vh-22rem)]">
-              <TabsContent value="all">{isLoading ? <div className="p-8 text-center text-muted-foreground">Loading...</div> : normalizedNotifications.length > 0 ? normalizedNotifications.map((notification) => <NotificationItem key={notification.id} notification={notification} />) : <div className="p-8 text-center text-muted-foreground">No notifications yet.</div>}</TabsContent>
-              <TabsContent value="unread">{isLoading ? <div className="p-8 text-center text-muted-foreground">Loading...</div> : unreadNotifications.length > 0 ? unreadNotifications.map((notification) => <NotificationItem key={notification.id} notification={notification} />) : <div className="p-8 text-center text-muted-foreground">No unread notifications.</div>}</TabsContent>
+              <TabsContent value="all">
+                {isLoading ? (
+                  <div className="p-8 text-center text-muted-foreground">Loading...</div>
+                ) : normalizedNotifications.length > 0 ? (
+                  normalizedNotifications.map((notification) => (
+                    <NotificationItem key={notification.id} notification={notification} />
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-muted-foreground">No notifications yet.</div>
+                )}
+              </TabsContent>
+              <TabsContent value="unread">
+                {isLoading ? (
+                  <div className="p-8 text-center text-muted-foreground">Loading...</div>
+                ) : unreadNotifications.length > 0 ? (
+                  unreadNotifications.map((notification) => (
+                    <NotificationItem key={notification.id} notification={notification} />
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-muted-foreground">
+                    No unread notifications.
+                  </div>
+                )}
+              </TabsContent>
             </ScrollArea>
           </Tabs>
         </CardContent>
@@ -49,7 +105,11 @@ function NotificationsPage() {
   );
 }
 
-function NotificationItem({ notification }: { notification: NonNullable<ReturnType<typeof normalizeNotificationListItem>> }) {
+function NotificationItem({
+  notification,
+}: {
+  notification: NonNullable<ReturnType<typeof normalizeNotificationListItem>>;
+}) {
   const [handled, setHandled] = useState(false);
   const itemUtils = api.useUtils();
   const item = getNotificationViewModel(notification);
@@ -57,7 +117,10 @@ function NotificationItem({ notification }: { notification: NonNullable<ReturnTy
     onSuccess: async () => {
       toast.success("Follow request accepted");
       setHandled(true);
-      await Promise.all([invalidateNotificationQueries(itemUtils), invalidateRelationshipQueries(itemUtils, [item.actorId])]);
+      await Promise.all([
+        invalidateNotificationQueries(itemUtils),
+        invalidateRelationshipQueries(itemUtils, [item.actorId]),
+      ]);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -65,7 +128,10 @@ function NotificationItem({ notification }: { notification: NonNullable<ReturnTy
     onSuccess: async () => {
       toast.success("Follow request rejected");
       setHandled(true);
-      await Promise.all([invalidateNotificationQueries(itemUtils), invalidateRelationshipQueries(itemUtils, [item.actorId])]);
+      await Promise.all([
+        invalidateNotificationQueries(itemUtils),
+        invalidateRelationshipQueries(itemUtils, [item.actorId]),
+      ]);
     },
     onError: (err) => toast.error(err.message),
   });
@@ -73,17 +139,54 @@ function NotificationItem({ notification }: { notification: NonNullable<ReturnTy
   let Icon = Bell;
   let title = "Notification";
   let description = "Tap to view details.";
-  if (item.type === "new_message") { Icon = Mail; title = item.title; description = item.description; }
-  else if (item.type === "coaching_invitation" || item.type === "new_follower" || item.type === "follow_request") { Icon = UserPlus; title = item.title; description = item.description; }
+  if (item.type === "new_message") {
+    Icon = Mail;
+    title = item.title;
+    description = item.description;
+  } else if (
+    item.type === "coaching_invitation" ||
+    item.type === "new_follower" ||
+    item.type === "follow_request"
+  ) {
+    Icon = UserPlus;
+    title = item.title;
+    description = item.description;
+  }
 
   return (
     <div className="flex items-start gap-4 border-b p-4">
-      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-muted"><Icon className="h-5 w-5 text-muted-foreground" /></div>
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-muted">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
       <div className="flex-1">
         <p className={cn("font-medium", item.isUnread && "font-bold")}>{title}</p>
         <p className="text-sm text-muted-foreground">{description}</p>
-        {item.requiresFollowRequestAction && !handled ? <div className="mt-2 flex gap-2"><Button size="sm" onClick={() => item.actorId ? acceptMutation.mutate({ follower_id: item.actorId }) : undefined} disabled={acceptMutation.isPending || rejectMutation.isPending}>Accept</Button><Button size="sm" variant="outline" onClick={() => item.actorId ? rejectMutation.mutate({ follower_id: item.actorId }) : undefined} disabled={acceptMutation.isPending || rejectMutation.isPending}>Reject</Button></div> : null}
-        <p className="mt-1 text-xs text-muted-foreground">{item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}</p>
+        {item.requiresFollowRequestAction && !handled ? (
+          <div className="mt-2 flex gap-2">
+            <Button
+              size="sm"
+              onClick={() =>
+                item.actorId ? acceptMutation.mutate({ follower_id: item.actorId }) : undefined
+              }
+              disabled={acceptMutation.isPending || rejectMutation.isPending}
+            >
+              Accept
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                item.actorId ? rejectMutation.mutate({ follower_id: item.actorId }) : undefined
+              }
+              disabled={acceptMutation.isPending || rejectMutation.isPending}
+            >
+              Reject
+            </Button>
+          </div>
+        ) : null}
+        <p className="mt-1 text-xs text-muted-foreground">
+          {item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}
+        </p>
       </div>
       {item.isUnread ? <div className="mt-1 h-2 w-2 rounded-full bg-primary" /> : null}
     </div>

@@ -11,9 +11,8 @@ import {
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bell, Home, LogOut, MessageSquare, Settings, UserRound, Users } from "lucide-react";
 import { useState } from "react";
-
-import { useAuth } from "../providers/auth-provider";
 import { authClient } from "../../lib/auth/client";
+import { useAuth } from "../providers/auth-provider";
 
 function getInitials(email: string | null | undefined) {
   if (!email) return "GP";
@@ -97,7 +96,11 @@ export function UserNav() {
           ))}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={isPending} onClick={() => void handleSignOut()} className="cursor-pointer">
+        <DropdownMenuItem
+          disabled={isPending}
+          onClick={() => void handleSignOut()}
+          className="cursor-pointer"
+        >
           <LogOut className="mr-2 h-4 w-4" />
           <span>{isPending ? "Logging out..." : "Log out"}</span>
         </DropdownMenuItem>
