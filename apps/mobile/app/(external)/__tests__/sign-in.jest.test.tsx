@@ -188,4 +188,23 @@ describe("sign-in screen", () => {
       expect(screen.getByTestId("root-error-container")).toBeTruthy();
     });
   });
+
+  it("routes to verify when the account email is not verified", async () => {
+    signInMock.mockResolvedValue({
+      error: { message: "The email of this account is not verified" },
+    });
+
+    renderNative(<SignInScreen />);
+
+    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    fireEvent.press(screen.getByTestId("sign-in-button"));
+
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith({
+        pathname: "/(external)/verify",
+        params: { email: "athlete@example.com" },
+      });
+    });
+  });
 });

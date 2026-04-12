@@ -43,6 +43,8 @@ export function setAuthFormError<TFieldValues extends FieldValues>(
 }
 
 export function mapSignInError(message?: string | null) {
+  const normalizedMessage = message?.toLowerCase();
+
   if (message?.includes("Invalid login credentials")) {
     return {
       type: "form-error" as const,
@@ -53,7 +55,14 @@ export function mapSignInError(message?: string | null) {
     };
   }
 
-  if (message?.includes("Email not confirmed")) {
+  if (
+    normalizedMessage?.includes("email not confirmed") ||
+    normalizedMessage?.includes("email not verified") ||
+    normalizedMessage?.includes("email isn't verified") ||
+    normalizedMessage?.includes("email is not verified") ||
+    ((normalizedMessage?.includes("verify") || normalizedMessage?.includes("verified")) &&
+      normalizedMessage?.includes("email"))
+  ) {
     return { type: "verify-email" as const };
   }
 

@@ -5,6 +5,35 @@ const setOnboardingStatusMock = jest.fn();
 const refetchProfileMock = jest.fn();
 const invalidateProfileMock = jest.fn();
 const refreshMobileAuthSessionMock = jest.fn(async () => null);
+const profileQueryUseQueryMock = jest.fn();
+
+const authStoreState = {
+  session: { user: { id: "user-1" } },
+  user: { id: "user-1", email: "athlete@test.com", emailVerified: true },
+  ready: true,
+  loading: false,
+  error: null,
+  onboardingStatus: true,
+  profile: {
+    id: "profile-1",
+    onboarded: true,
+    full_name: "Optimistic Name",
+  },
+  setProfile: setProfileMock,
+  setOnboardingStatus: setOnboardingStatusMock,
+};
+
+const profileQueryResult = {
+  data: {
+    id: "profile-1",
+    onboarded: false,
+    full_name: "Stale Name",
+  },
+  isLoading: false,
+  isError: false,
+  error: null,
+  refetch: refetchProfileMock,
+};
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -35,21 +64,7 @@ jest.mock("@/lib/auth/client", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: () => ({
-    session: { user: { id: "user-1" } },
-    user: { id: "user-1", email: "athlete@test.com", emailVerified: true },
-    ready: true,
-    loading: false,
-    error: null,
-    onboardingStatus: true,
-    profile: {
-      id: "profile-1",
-      onboarded: true,
-      full_name: "Optimistic Name",
-    },
-    setProfile: setProfileMock,
-    setOnboardingStatus: setOnboardingStatusMock,
-  }),
+  useAuthStore: () => authStoreState,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -62,17 +77,7 @@ jest.mock("@/lib/api", () => ({
     }),
     profiles: {
       get: {
-        useQuery: () => ({
-          data: {
-            id: "profile-1",
-            onboarded: false,
-            full_name: "Stale Name",
-          },
-          isLoading: false,
-          isError: false,
-          error: null,
-          refetch: refetchProfileMock,
-        }),
+        useQuery: (...args: any[]) => profileQueryUseQueryMock(...args),
       },
     },
   },
@@ -87,6 +92,9 @@ describe("useAuth optimistic onboarding precedence", () => {
     refetchProfileMock.mockClear();
     invalidateProfileMock.mockClear();
     refreshMobileAuthSessionMock.mockClear();
+    profileQueryUseQueryMock.mockReset();
+    profileQueryUseQueryMock.mockReturnValue(profileQueryResult);
+    authStoreState.user = { id: "user-1", email: "athlete@test.com", emailVerified: true };
   });
 
   it("keeps optimistic onboarding and profile over stale profile query data", () => {
@@ -100,5 +108,16 @@ describe("useAuth optimistic onboarding precedence", () => {
     });
     expect(setOnboardingStatusMock).not.toHaveBeenCalled();
     expect(setProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("does not fetch the profile for unverified users", () => {
+    authStoreState.user = { id: "user-1", email: "athlete@test.com", emailVerified: false };
+
+    renderHook(() => useAuth());
+
+    expect(profileQueryUseQueryMock).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ enabled: false }),
+    );
   });
 });

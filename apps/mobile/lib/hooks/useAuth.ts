@@ -38,11 +38,13 @@ export const useAuth = () => {
     return isEmailVerified ? ("verified" as const) : ("unverified" as const);
   }, [isAuthenticated, isEmailVerified]);
 
+  const shouldFetchProfile = ready && !!user && isAuthenticated && userStatus === "verified";
+
   // Use API query for profile data - this gives you caching, refetching, etc.
   const profileQuery = api.profiles.get.useQuery(
     undefined, // or whatever parameters your profile query needs
     {
-      enabled: ready && !!user && isAuthenticated, // Only fetch if auth store is ready and user is authenticated
+      enabled: shouldFetchProfile, // Verified users should have profile access; unverified users stay on verify flow.
       staleTime: 5 * 60 * 1000, // Consider data stale after 5 minutes
       retry: false,
     },
