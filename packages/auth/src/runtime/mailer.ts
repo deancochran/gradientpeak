@@ -95,7 +95,6 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
         to: maskEmail(input.to),
         smtpHost: env.smtpHost,
         smtpPort: env.smtpPort,
-        actionUrl: input.actionUrl,
       });
 
       await transporter.sendMail({
