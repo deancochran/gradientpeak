@@ -51,12 +51,35 @@ function getDeviceName() {
 }
 
 function getActorSnapshot() {
-  const session = useAuthStore.getState().session;
+  const authState = useAuthStore.getState();
+  const session = authState.session;
 
   return {
     actorType: session?.user ? "authenticated" : "guest",
     userId: session?.user?.id ?? null,
     email: session?.user?.email ?? null,
+    authReady: authState.ready,
+    authLoading: authState.loading,
+  };
+}
+
+function getAppMetadata() {
+  const expoConstants = getExpoConstants();
+  const expoConfig = (expoConstants as { expoConfig?: Record<string, unknown> } | null)?.expoConfig;
+
+  return {
+    appVersion:
+      typeof expoConfig?.version === "string"
+        ? expoConfig.version
+        : typeof expoConfig?.version === "number"
+          ? String(expoConfig.version)
+          : null,
+    appScheme:
+      typeof expoConfig?.scheme === "string"
+        ? expoConfig.scheme
+        : Array.isArray(expoConfig?.scheme)
+          ? expoConfig.scheme.join(",")
+          : null,
   };
 }
 
@@ -91,7 +114,10 @@ export function logMobileAction(
     platform: Platform.OS,
     deviceKind: inferDeviceKind(),
     deviceName: getDeviceName(),
+    ...getAppMetadata(),
     apiHost: getApiHost(),
+    apiUrl: getServerConfig().apiUrl,
+    serverOverride: getServerConfig().overrideUrl,
     action,
     phase,
     ...getActorSnapshot(),

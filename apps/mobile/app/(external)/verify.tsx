@@ -36,7 +36,9 @@ export default function VerifyScreen() {
       if (result.error) {
         setResendMessage(result.error.message || "Failed to resend verification email");
       } else {
-        setResendMessage("Verification email sent!");
+        setResendMessage(
+          "Verification email request accepted. Refresh your inbox or Mailpit and try again in a few seconds.",
+        );
       }
     } catch {
       setResendMessage("Failed to resend verification email");
@@ -71,8 +73,8 @@ export default function VerifyScreen() {
           <CardContent className="gap-6">
             <Alert icon={AlertCircle}>
               <AlertDescription className="text-center">
-                Open the verification email on this device or use the resend action below to get a
-                new link.
+                Open the verification email on this device. If you do not see it yet, use resend
+                below and then check your inbox or Mailpit again after a short delay.
               </AlertDescription>
             </Alert>
 
