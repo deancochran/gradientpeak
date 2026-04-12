@@ -1,12 +1,45 @@
 #!/usr/bin/env tsx
 
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
-import { prepareDbEnv, runSupabaseCli } from "./_helpers";
+import { prepareDbEnv, runSupabaseCli, supabaseCliRoot } from "./_helpers";
 
 const mailpitSmtpProxyContainerName = "gradientpeak-mailpit-smtp-proxy";
 const mailpitSmtpProxyImage = "alpine/socat:latest";
-const supabaseMailpitContainerName = "supabase_inbucket_supabase";
+
+function getSupabaseProjectId() {
+  const configToml = readFileSync(`${supabaseCliRoot}/config.toml`, "utf8");
+  const match = configToml.match(/^project_id\s*=\s*"([^"]+)"/m);
+
+  if (!match?.[1]) {
+    throw new Error(
+      "Unable to determine Supabase project_id from packages/db/supabase/config.toml",
+    );
+  }
+
+  return match[1];
+}
+
+function readSupabaseConfigToml() {
+  return readFileSync(`${supabaseCliRoot}/config.toml`, "utf8");
+}
+
+function getConfiguredInbucketSmtpPort() {
+  const configToml = readSupabaseConfigToml();
+  const inbucketSection = configToml.match(/\[inbucket\]([\s\S]*?)(?:\n\[|$)/m)?.[1];
+  const match = inbucketSection?.match(/^smtp_port\s*=\s*(\d+)/m);
+
+  if (!match?.[1]) {
+    return null;
+  }
+
+  return Number(match[1]);
+}
+
+function getSupabaseMailpitContainerName() {
+  return `supabase_inbucket_${getSupabaseProjectId()}`;
+}
 
 function runDocker(args: string[], quiet = false) {
   return execFileSync("docker", args, {
@@ -34,6 +67,7 @@ function isContainerRunning(name: string) {
 }
 
 function getSupabaseMailpitNetwork() {
+  const supabaseMailpitContainerName = getSupabaseMailpitContainerName();
   const output = runDocker(
     [
       "inspect",
@@ -52,6 +86,15 @@ function getSupabaseMailpitNetwork() {
 }
 
 function startMailpitSmtpProxy() {
+  const configuredInbucketSmtpPort = getConfiguredInbucketSmtpPort();
+
+  if (configuredInbucketSmtpPort) {
+    console.info(
+      `Supabase Inbucket SMTP is already exposed on 127.0.0.1:${configuredInbucketSmtpPort}; skipping SMTP proxy.`,
+    );
+    return;
+  }
+
   if (isContainerRunning(mailpitSmtpProxyContainerName)) {
     console.info("Mailpit SMTP proxy is already running.");
     return;
@@ -66,6 +109,7 @@ function startMailpitSmtpProxy() {
   }
 
   console.info("Creating Mailpit SMTP proxy...");
+  const supabaseMailpitContainerName = getSupabaseMailpitContainerName();
   runDocker([
     "run",
     "-d",
@@ -82,6 +126,10 @@ function startMailpitSmtpProxy() {
 }
 
 function stopMailpitSmtpProxy() {
+  if (getConfiguredInbucketSmtpPort()) {
+    return;
+  }
+
   if (!hasContainer(mailpitSmtpProxyContainerName)) {
     return;
   }
@@ -95,8 +143,17 @@ function stopMailpitSmtpProxy() {
 }
 
 function showMailpitStatus() {
+  const supabaseMailpitContainerName = getSupabaseMailpitContainerName();
   const supabaseMailpitRunning = isContainerRunning(supabaseMailpitContainerName);
+  const configuredInbucketSmtpPort = getConfiguredInbucketSmtpPort();
   console.info(`Supabase Mailpit UI: ${supabaseMailpitRunning ? "running" : "stopped"}`);
+
+  if (configuredInbucketSmtpPort) {
+    console.info(
+      `Mailpit SMTP: 127.0.0.1:${configuredInbucketSmtpPort} (direct from Supabase Inbucket)`,
+    );
+    return;
+  }
 
   if (!hasContainer(mailpitSmtpProxyContainerName)) {
     console.info("Mailpit SMTP proxy: not created");
