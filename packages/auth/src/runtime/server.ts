@@ -1,7 +1,7 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { expo } from "@better-auth/expo";
 import { resolveDatabaseUrl } from "@repo/db/client";
-import * as appSchema from "@repo/db/schema";
+import { relationalSchema, schema } from "@repo/db/schema";
 import { compare, hash } from "bcryptjs";
 import { betterAuth } from "better-auth";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -60,9 +60,7 @@ function createDeleteCleanupHook() {
 }
 
 function createAdapterSchema() {
-  return {
-    ...appSchema,
-  } as any;
+  return schema as any;
 }
 
 function resolveAuthSecret(explicitSecret?: string) {
@@ -118,7 +116,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
   };
 
   const db = drizzle(getPool(options.databaseUrl), {
-    schema: createAdapterSchema(),
+    schema: relationalSchema,
   });
 
   const secret = resolveAuthSecret(options.secret);
