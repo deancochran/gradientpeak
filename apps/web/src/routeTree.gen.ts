@@ -20,13 +20,13 @@ import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
 import { Route as AuthErrorRouteImport } from './routes/auth/error'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
-import { Route as ApiTrpcRouteImport } from './routes/api/trpc'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
 import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/notifications'
 import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
 import { Route as ProtectedCoachingRouteImport } from './routes/_protected/coaching'
 import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/wahoo'
+import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ProtectedUserUserIdIndexRouteImport } from './routes/_protected/user/$userId/index'
 import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
@@ -87,11 +87,6 @@ const AuthConfirmRoute = AuthConfirmRouteImport.update({
   path: '/auth/confirm',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiTrpcRoute = ApiTrpcRouteImport.update({
-  id: '/api/trpc',
-  path: '/api/trpc',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -120,6 +115,11 @@ const ProtectedCoachingRoute = ProtectedCoachingRouteImport.update({
 const ApiWebhooksWahooRoute = ApiWebhooksWahooRouteImport.update({
   id: '/api/webhooks/wahoo',
   path: '/api/webhooks/wahoo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
+  id: '/api/trpc/$',
+  path: '/api/trpc/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -160,7 +160,6 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof ProtectedNotificationsRoute
   '/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
-  '/api/trpc': typeof ApiTrpcRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -170,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/auth/sign-up-success': typeof AuthSignUpSuccessRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
   '/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
@@ -183,7 +183,6 @@ export interface FileRoutesByTo {
   '/notifications': typeof ProtectedNotificationsRoute
   '/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
-  '/api/trpc': typeof ApiTrpcRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -194,6 +193,7 @@ export interface FileRoutesByTo {
   '/auth/update-password': typeof AuthUpdatePasswordRoute
   '/': typeof ProtectedIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
   '/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
@@ -209,7 +209,6 @@ export interface FileRoutesById {
   '/_protected/notifications': typeof ProtectedNotificationsRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
-  '/api/trpc': typeof ApiTrpcRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -220,6 +219,7 @@ export interface FileRoutesById {
   '/auth/update-password': typeof AuthUpdatePasswordRoute
   '/_protected/': typeof ProtectedIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
   '/_protected/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/_protected/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
@@ -236,7 +236,6 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/settings'
     | '/api/health'
-    | '/api/trpc'
     | '/auth/confirm'
     | '/auth/error'
     | '/auth/forgot-password'
@@ -246,6 +245,7 @@ export interface FileRouteTypes {
     | '/auth/sign-up-success'
     | '/auth/update-password'
     | '/api/auth/$'
+    | '/api/trpc/$'
     | '/api/webhooks/wahoo'
     | '/user/$userId/followers'
     | '/user/$userId/following'
@@ -259,7 +259,6 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/settings'
     | '/api/health'
-    | '/api/trpc'
     | '/auth/confirm'
     | '/auth/error'
     | '/auth/forgot-password'
@@ -270,6 +269,7 @@ export interface FileRouteTypes {
     | '/auth/update-password'
     | '/'
     | '/api/auth/$'
+    | '/api/trpc/$'
     | '/api/webhooks/wahoo'
     | '/user/$userId/followers'
     | '/user/$userId/following'
@@ -284,7 +284,6 @@ export interface FileRouteTypes {
     | '/_protected/notifications'
     | '/_protected/settings'
     | '/api/health'
-    | '/api/trpc'
     | '/auth/confirm'
     | '/auth/error'
     | '/auth/forgot-password'
@@ -295,6 +294,7 @@ export interface FileRouteTypes {
     | '/auth/update-password'
     | '/_protected/'
     | '/api/auth/$'
+    | '/api/trpc/$'
     | '/api/webhooks/wahoo'
     | '/_protected/user/$userId/followers'
     | '/_protected/user/$userId/following'
@@ -306,7 +306,6 @@ export interface RootRouteChildren {
   ProtectedRoute: typeof ProtectedRouteWithChildren
   AboutRoute: typeof AboutRoute
   ApiHealthRoute: typeof ApiHealthRoute
-  ApiTrpcRoute: typeof ApiTrpcRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthErrorRoute: typeof AuthErrorRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
@@ -316,6 +315,7 @@ export interface RootRouteChildren {
   AuthSignUpSuccessRoute: typeof AuthSignUpSuccessRoute
   AuthUpdatePasswordRoute: typeof AuthUpdatePasswordRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   ApiWebhooksWahooRoute: typeof ApiWebhooksWahooRoute
   ApiIntegrationsCallbackProviderRoute: typeof ApiIntegrationsCallbackProviderRoute
 }
@@ -399,13 +399,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthConfirmRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/trpc': {
-      id: '/api/trpc'
-      path: '/api/trpc'
-      fullPath: '/api/trpc'
-      preLoaderRoute: typeof ApiTrpcRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -446,6 +439,13 @@ declare module '@tanstack/react-router' {
       path: '/api/webhooks/wahoo'
       fullPath: '/api/webhooks/wahoo'
       preLoaderRoute: typeof ApiWebhooksWahooRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/trpc/$': {
+      id: '/api/trpc/$'
+      path: '/api/trpc/$'
+      fullPath: '/api/trpc/$'
+      preLoaderRoute: typeof ApiTrpcSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -516,7 +516,6 @@ const rootRouteChildren: RootRouteChildren = {
   ProtectedRoute: ProtectedRouteWithChildren,
   AboutRoute: AboutRoute,
   ApiHealthRoute: ApiHealthRoute,
-  ApiTrpcRoute: ApiTrpcRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthErrorRoute: AuthErrorRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
@@ -526,6 +525,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthSignUpSuccessRoute: AuthSignUpSuccessRoute,
   AuthUpdatePasswordRoute: AuthUpdatePasswordRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   ApiWebhooksWahooRoute: ApiWebhooksWahooRoute,
   ApiIntegrationsCallbackProviderRoute: ApiIntegrationsCallbackProviderRoute,
 }

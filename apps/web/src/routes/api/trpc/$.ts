@@ -4,7 +4,7 @@ import { db } from "@repo/db/client";
 import { createFileRoute } from "@tanstack/react-router";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 
-export const Route = createFileRoute("/api/trpc")({
+export const Route = createFileRoute("/api/trpc/$")({
   server: {
     handlers: {
       GET: ({ request }) =>
