@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-import * as schema from "./schema";
+import { relationalSchema, schema } from "./schema";
 
 export type DbSchema = typeof schema;
 
@@ -11,7 +11,7 @@ export const pool = new Pool({
 
 export const db = drizzle({
   client: pool,
-  schema,
+  schema: relationalSchema,
   casing: "snake_case",
 });
 
