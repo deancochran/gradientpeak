@@ -24,10 +24,14 @@ function getTransporter(env: AuthRuntimeEnv) {
     host: env.smtpHost,
     port: env.smtpPort,
     secure: env.smtpSecure ?? env.smtpPort === 465,
-    auth: {
-      user: env.smtpUser,
-      pass: env.smtpPass,
-    },
+    ...(env.smtpUser && env.smtpPass
+      ? {
+          auth: {
+            user: env.smtpUser,
+            pass: env.smtpPass,
+          },
+        }
+      : {}),
   });
 
   return transporterSingleton;
@@ -77,8 +81,10 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
         return;
       }
 
-      if (!env.emailFrom || !env.smtpHost || !env.smtpPort || !env.smtpUser || !env.smtpPass) {
-        throw new Error("SMTP email mode requires AUTH_EMAIL_FROM and SMTP credentials");
+      if (!env.emailFrom || !env.smtpHost || !env.smtpPort) {
+        throw new Error(
+          "SMTP email mode requires AUTH_EMAIL_FROM, AUTH_SMTP_HOST, and AUTH_SMTP_PORT",
+        );
       }
 
       const message = buildMessage(input);

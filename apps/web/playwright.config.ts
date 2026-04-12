@@ -7,7 +7,7 @@ const localDatabaseUrl = "postgresql://postgres:postgres@127.0.0.1:54322/postgre
 export default defineConfig({
   timeout: 30 * 1000,
   testDir: "./e2e/specs",
-  retries: 2,
+  retries: 1,
   outputDir: "test-results/",
   globalSetup: "./e2e/setup.ts",
   webServer: {

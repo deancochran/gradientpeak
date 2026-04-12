@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -8,31 +6,40 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Form, FormTextField } from "@repo/ui/components/form";
-import { useZodForm } from "@repo/ui/hooks";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
-import Link from "next/link";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient, toAbsoluteWebUrl } from "@/lib/auth/client";
-import { getForgotPasswordFormError } from "@/lib/auth/form-errors";
-import { type ForgotPasswordFormValues, forgotPasswordFormSchema } from "@/lib/auth/form-schemas";
+import { toAbsoluteAppUrl } from "../lib/app-url";
+import { authClient } from "../lib/auth/client";
+import { getForgotPasswordFormError } from "../lib/auth/form-errors";
+import { type ForgotPasswordFormValues, forgotPasswordFormSchema } from "../lib/auth/form-schemas";
 
 export function ForgotPasswordForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const form = useZodForm({
-    schema: forgotPasswordFormSchema,
-    defaultValues: {
-      email: "",
-    },
-  });
+  const [isPending, setIsPending] = useState(false);
 
-  const handleForgotPassword = async (values: ForgotPasswordFormValues) => {
-    form.clearErrors();
+  const handleForgotPassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const parsed = forgotPasswordFormSchema.safeParse({ email });
+
+    if (!parsed.success) {
+      setEmailError(parsed.error.flatten().fieldErrors.email?.[0] ?? "Enter a valid email address");
+      return;
+    }
+
+    const values: ForgotPasswordFormValues = parsed.data;
+    setEmailError(null);
+    setIsPending(true);
 
     try {
       const result = await authClient.requestPasswordReset({
         email: values.email,
-        redirectTo: toAbsoluteWebUrl("/auth/update-password"),
+        redirectTo: toAbsoluteAppUrl("/auth/update-password"),
       });
 
       if (result.error) {
@@ -42,11 +49,11 @@ export function ForgotPasswordForm({ className, ...props }: React.ComponentProps
       setSuccess(true);
     } catch (error: unknown) {
       const formError = getForgotPasswordFormError(error);
-      form.setError(formError.target, { message: formError.message });
+      setEmailError(formError.message);
+    } finally {
+      setIsPending(false);
     }
   };
-
-  const isPending = form.formState.isSubmitting;
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -72,30 +79,33 @@ export function ForgotPasswordForm({ className, ...props }: React.ComponentProps
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleForgotPassword)}>
-                <div className="flex flex-col gap-6">
-                  <FormTextField
+            <form onSubmit={handleForgotPassword}>
+              <div className="flex flex-col gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="forgot-password-email">Email *</Label>
+                  <Input
+                    id="forgot-password-email"
                     autoComplete="email"
-                    control={form.control}
-                    label="Email"
-                    name="email"
-                    placeholder="m@example.com"
-                    required
                     type="email"
+                    placeholder="m@example.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.currentTarget.value)}
+                    aria-invalid={Boolean(emailError)}
                   />
-                  <Button type="submit" disabled={isPending}>
-                    {isPending ? "Sending..." : "Send reset email"}
-                  </Button>
+                  {emailError ? <p className="text-destructive text-sm">{emailError}</p> : null}
                 </div>
-                <div className="mt-4 text-center text-sm">
-                  Already have an account?{" "}
-                  <Link href="/auth/login" className="underline underline-offset-4">
-                    Login
-                  </Link>
-                </div>
-              </form>
-            </Form>
+
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? "Sending..." : "Send reset email"}
+                </Button>
+              </div>
+              <div className="mt-4 text-center text-sm">
+                Already have an account?{" "}
+                <Link to="/auth/login" className="underline underline-offset-4">
+                  Login
+                </Link>
+              </div>
+            </form>
           </CardContent>
         </Card>
       )}

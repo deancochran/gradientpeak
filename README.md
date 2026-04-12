@@ -4,7 +4,7 @@ GradientPeak is a product monorepo for the web app, mobile app, shared UI, backe
 
 ## What lives here
 
-- `apps/web` contains the web product.
+- `apps/web` contains the active web product.
 - `apps/mobile` contains the mobile product.
 - `packages/api` contains backend procedures and server-side application logic.
 - `packages/core` contains shared domain logic and calculations.
@@ -62,3 +62,4 @@ Environment files should live with the owning app or package, not at the repo ro
 - Keep backend and data access changes aligned with `packages/api` and `packages/db`.
 - Prefer small, reviewable changes over broad refactors.
 - Treat the README as a high-level guide, not a full internal handbook.
+- Production web deployment now targets the TanStack Start app in `apps/web`.

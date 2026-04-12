@@ -16,7 +16,8 @@
       "!**/.turbo",
       "!**/coverage",
       "!**/dist",
-      "!**/storybook-static"
+      "!**/storybook-static",
+      "!**/routeTree.gen.ts"
     ]
   },
   "formatter": {

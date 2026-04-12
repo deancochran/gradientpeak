@@ -49,12 +49,12 @@ export default function ResetPasswordScreen() {
 
     try {
       logMobileAction("auth.updatePassword", "attempt", {});
-      const result = await withAuthRequestTimeout(
+      const result = (await withAuthRequestTimeout(
         authClient.resetPassword({
           newPassword: data.password,
           token: String(token),
         }),
-      );
+      )) as { error?: { message: string } | null };
 
       if (result.error) {
         logMobileAction("auth.updatePassword", "failure", { error: result.error.message });

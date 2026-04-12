@@ -51,12 +51,12 @@ export default function ForgotPasswordScreen() {
 
       logMobileAction("auth.resetPasswordForEmail", "attempt", { email: data.email });
 
-      const result = await withAuthRequestTimeout(
+      const result = (await withAuthRequestTimeout(
         authClient.requestPasswordReset({
           email: data.email,
           redirectTo: getPasswordResetCallbackUrl(),
         }),
-      );
+      )) as { error?: { message: string } | null };
       const error = result.error;
 
       if (error) {

@@ -10,7 +10,8 @@
     "./expo.json": "./expo.json",
     "./internal-package.json": "./internal-package.json",
     "./nextjs.json": "./nextjs.json",
-    "./react-library.json": "./react-library.json"
+    "./react-library.json": "./react-library.json",
+    "./tanstack-start.json": "./tanstack-start.json"
   },
   "license": "MIT",
   "publishConfig": {
