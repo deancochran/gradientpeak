@@ -90,6 +90,14 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
       const message = buildMessage(input);
       const transporter = getTransporter(env);
 
+      console.info("[auth-email] smtp delivery attempt", {
+        kind: input.kind,
+        to: maskEmail(input.to),
+        smtpHost: env.smtpHost,
+        smtpPort: env.smtpPort,
+        actionUrl: input.actionUrl,
+      });
+
       await transporter.sendMail({
         from: env.emailFrom,
         to: input.to,
@@ -97,6 +105,13 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
         subject: message.subject,
         text: message.text,
         html: message.html,
+      });
+
+      console.info("[auth-email] smtp delivery success", {
+        kind: input.kind,
+        to: maskEmail(input.to),
+        smtpHost: env.smtpHost,
+        smtpPort: env.smtpPort,
       });
     },
   };
