@@ -1,11 +1,3 @@
-import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 
@@ -60,31 +52,8 @@ function OpenAuthTargetPage() {
   }, [fallbackTarget, nextTarget]);
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center py-6 md:py-10">
-      <div className="w-full max-w-sm">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Opening GradientPeak...</CardTitle>
-            <CardDescription>
-              We are trying to open the app. If it does not open, continue on web.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <Button
-              onClick={() => {
-                if (nextTarget && isDeepLink(nextTarget)) {
-                  window.location.assign(nextTarget);
-                }
-              }}
-            >
-              Open Mobile App
-            </Button>
-            <Button variant="outline" onClick={() => window.location.assign(fallbackTarget)}>
-              Continue on Web
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+    <div className="sr-only" aria-live="polite">
+      Opening GradientPeak...
     </div>
   );
 }

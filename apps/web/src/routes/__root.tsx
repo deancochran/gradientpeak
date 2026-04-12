@@ -23,6 +23,7 @@ export const Route = createRootRoute({
     ],
   }),
   shellComponent: RootDocument,
+  notFoundComponent: NotFoundPage,
 });
 
 function RootDocument({ children }: { children: ReactNode }) {
@@ -52,5 +53,17 @@ function RootDocument({ children }: { children: ReactNode }) {
         <Scripts />
       </body>
     </html>
+  );
+}
+
+function NotFoundPage() {
+  return (
+    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
+      <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">404</p>
+      <h1 className="text-3xl font-semibold tracking-tight">Page not found</h1>
+      <p className="max-w-md text-sm text-muted-foreground sm:text-base">
+        The page you requested does not exist or may have moved.
+      </p>
+    </div>
   );
 }
