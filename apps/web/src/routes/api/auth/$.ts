@@ -1,23 +1,31 @@
 import { getGradientPeakAuth } from "@repo/auth/server";
 import { createFileRoute } from "@tanstack/react-router";
 
+import { logServerEvent } from "../../../lib/server-log";
+
 export const Route = createFileRoute("/api/auth/$")({
   server: {
     handlers: {
       GET: ({ request }) => {
-        console.info("[auth-route] request", {
-          method: request.method,
-          path: new URL(request.url).pathname,
-        });
+        logServerEvent(
+          "auth.route.request",
+          {
+            routeType: "better-auth",
+          },
+          { request },
+        );
         const auth = getGradientPeakAuth();
 
         return auth.handler(request);
       },
       POST: ({ request }) => {
-        console.info("[auth-route] request", {
-          method: request.method,
-          path: new URL(request.url).pathname,
-        });
+        logServerEvent(
+          "auth.route.request",
+          {
+            routeType: "better-auth",
+          },
+          { request },
+        );
         const auth = getGradientPeakAuth();
 
         return auth.handler(request);

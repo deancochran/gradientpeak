@@ -67,16 +67,37 @@ function maskEmail(email: string) {
   return `${name.slice(0, 2)}***@${domain}`;
 }
 
+function logAuthEmailEvent(
+  event: string,
+  details: {
+    kind: AuthEmailKind;
+    to: string;
+    smtpHost?: string;
+    smtpPort?: number;
+    error?: string;
+  },
+) {
+  console.info(
+    `[web-log] ${JSON.stringify({
+      ts: new Date().toISOString(),
+      source: "web",
+      event,
+      details,
+    })}`,
+  );
+}
+
 export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
   return {
     async send(input) {
       if (env.emailMode === "disabled") return;
 
       if (env.emailMode === "log") {
-        console.info("[auth-email] log delivery", {
+        logAuthEmailEvent("auth.email.log_delivery", {
           kind: input.kind,
           to: maskEmail(input.to),
-          actionUrl: input.actionUrl,
+          smtpHost: env.smtpHost,
+          smtpPort: env.smtpPort,
         });
         return;
       }
@@ -90,7 +111,7 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
       const message = buildMessage(input);
       const transporter = getTransporter(env);
 
-      console.info("[auth-email] smtp delivery attempt", {
+      logAuthEmailEvent("auth.email.smtp_attempt", {
         kind: input.kind,
         to: maskEmail(input.to),
         smtpHost: env.smtpHost,
@@ -106,7 +127,7 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
         html: message.html,
       });
 
-      console.info("[auth-email] smtp delivery success", {
+      logAuthEmailEvent("auth.email.smtp_success", {
         kind: input.kind,
         to: maskEmail(input.to),
         smtpHost: env.smtpHost,
