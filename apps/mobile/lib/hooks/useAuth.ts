@@ -38,6 +38,16 @@ export const useAuth = () => {
     return isEmailVerified ? ("verified" as const) : ("unverified" as const);
   }, [isAuthenticated, isEmailVerified]);
 
+  const authState = useMemo(() => {
+    if (!isAuthenticated) {
+      return "anonymous" as const;
+    }
+
+    return isEmailVerified
+      ? ("authenticated-verified" as const)
+      : ("authenticated-unverified" as const);
+  }, [isAuthenticated, isEmailVerified]);
+
   const shouldFetchProfile = ready && !!user && isAuthenticated && userStatus === "verified";
 
   // Use API query for profile data - this gives you caching, refetching, etc.
@@ -176,6 +186,7 @@ export const useAuth = () => {
     // Auth state from Zustand (single source of truth)
     user,
     session,
+    authState,
     profile: store.profile ?? profileQuery.data,
     // Use computed email verification status for more reliable routing
     userStatus,

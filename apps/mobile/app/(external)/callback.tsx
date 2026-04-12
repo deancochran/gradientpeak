@@ -62,13 +62,30 @@ export default function AuthCallbackScreen() {
           return;
         }
 
-        await refreshMobileAuthSession();
+        const session = await refreshMobileAuthSession();
 
         if (intent === "post-sign-in") {
           if (!isCancelled) {
             router.replace("/");
           }
           return;
+        }
+
+        if (intent === "email-verification") {
+          if (!isCancelled) {
+            if (session?.user?.emailVerified) {
+              router.replace("/");
+              return;
+            }
+
+            if (session?.user?.email) {
+              router.replace({
+                pathname: "/(external)/verify",
+                params: { email: session.user.email },
+              });
+              return;
+            }
+          }
         }
 
         if (!isCancelled) {
