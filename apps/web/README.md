@@ -87,6 +87,10 @@ Email delivery for Better Auth:
 - `AUTH_SMTP_PASS`
 - `AUTH_SMTP_SECURE`
 
+For local Supabase Inbucket delivery, set `AUTH_EMAIL_MODE=smtp` and point SMTP to the local
+Inbucket listener. `AUTH_SMTP_USER` and `AUTH_SMTP_PASS` are optional for unauthenticated local
+SMTP sinks.
+
 ## Production Cutover Checklist
 
 1. Point the public web hostname at the TanStack Start container built from `apps/web/Dockerfile`.
