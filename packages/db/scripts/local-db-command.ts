@@ -1,12 +1,8 @@
 #!/usr/bin/env tsx
 
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { prepareDbEnv, runSupabaseCli, supabaseCliRoot } from "./_helpers";
-
-const mailpitSmtpProxyContainerName = "gradientpeak-mailpit-smtp-proxy";
-const mailpitSmtpProxyImage = "alpine/socat:latest";
 
 function getSupabaseProjectId() {
   const configToml = readFileSync(`${supabaseCliRoot}/config.toml`, "utf8");
@@ -41,105 +37,18 @@ function getSupabaseMailpitContainerName() {
   return `supabase_inbucket_${getSupabaseProjectId()}`;
 }
 
-function runDocker(args: string[], quiet = false) {
-  return execFileSync("docker", args, {
-    stdio: quiet ? "pipe" : "inherit",
-    encoding: "utf8",
-  });
-}
-
-function hasContainer(name: string) {
-  try {
-    const output = runDocker(["ps", "-aq", "-f", `name=^${name}$`], true).trim();
-    return output.length > 0;
-  } catch {
-    return false;
-  }
-}
-
 function isContainerRunning(name: string) {
   try {
-    const output = runDocker(["ps", "-q", "-f", `name=^${name}$`], true).trim();
+    const output = require("node:child_process")
+      .execFileSync("docker", ["ps", "-q", "-f", `name=^${name}$`], {
+        stdio: "pipe",
+        encoding: "utf8",
+      })
+      .trim();
     return output.length > 0;
   } catch {
     return false;
   }
-}
-
-function getSupabaseMailpitNetwork() {
-  const supabaseMailpitContainerName = getSupabaseMailpitContainerName();
-  const output = runDocker(
-    [
-      "inspect",
-      "--format",
-      "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}",
-      supabaseMailpitContainerName,
-    ],
-    true,
-  ).trim();
-
-  if (!output) {
-    throw new Error("Supabase Mailpit container is not available");
-  }
-
-  return output;
-}
-
-function startMailpitSmtpProxy() {
-  const configuredInbucketSmtpPort = getConfiguredInbucketSmtpPort();
-
-  if (configuredInbucketSmtpPort) {
-    console.info(
-      `Supabase Inbucket SMTP is already exposed on 127.0.0.1:${configuredInbucketSmtpPort}; skipping SMTP proxy.`,
-    );
-    return;
-  }
-
-  if (isContainerRunning(mailpitSmtpProxyContainerName)) {
-    console.info("Mailpit SMTP proxy is already running.");
-    return;
-  }
-
-  const networkName = getSupabaseMailpitNetwork();
-
-  if (hasContainer(mailpitSmtpProxyContainerName)) {
-    console.info("Starting Mailpit SMTP proxy...");
-    runDocker(["start", mailpitSmtpProxyContainerName]);
-    return;
-  }
-
-  console.info("Creating Mailpit SMTP proxy...");
-  const supabaseMailpitContainerName = getSupabaseMailpitContainerName();
-  runDocker([
-    "run",
-    "-d",
-    "--name",
-    mailpitSmtpProxyContainerName,
-    "--network",
-    networkName,
-    "-p",
-    "54325:54325",
-    mailpitSmtpProxyImage,
-    "TCP-LISTEN:54325,fork,reuseaddr",
-    `TCP:${supabaseMailpitContainerName}:1025`,
-  ]);
-}
-
-function stopMailpitSmtpProxy() {
-  if (getConfiguredInbucketSmtpPort()) {
-    return;
-  }
-
-  if (!hasContainer(mailpitSmtpProxyContainerName)) {
-    return;
-  }
-
-  if (!isContainerRunning(mailpitSmtpProxyContainerName)) {
-    return;
-  }
-
-  console.info("Stopping Mailpit SMTP proxy...");
-  runDocker(["stop", mailpitSmtpProxyContainerName]);
 }
 
 function showMailpitStatus() {
@@ -152,19 +61,10 @@ function showMailpitStatus() {
     console.info(
       `Mailpit SMTP: 127.0.0.1:${configuredInbucketSmtpPort} (direct from Supabase Inbucket)`,
     );
-    return;
+  } else {
+    console.info("Mailpit SMTP: not exposed by Supabase config");
   }
-
-  if (!hasContainer(mailpitSmtpProxyContainerName)) {
-    console.info("Mailpit SMTP proxy: not created");
-    return;
-  }
-
-  console.info(
-    `Mailpit SMTP proxy: ${isContainerRunning(mailpitSmtpProxyContainerName) ? "running" : "stopped"}`,
-  );
   console.info("Mailpit UI: http://127.0.0.1:54324");
-  console.info("Mailpit SMTP: 127.0.0.1:54325");
 }
 
 prepareDbEnv();
@@ -174,9 +74,7 @@ const command = args[0];
 
 if (command === "start") {
   runSupabaseCli(args);
-  startMailpitSmtpProxy();
 } else if (command === "stop") {
-  stopMailpitSmtpProxy();
   runSupabaseCli(args);
 } else if (command === "status") {
   runSupabaseCli(args);
