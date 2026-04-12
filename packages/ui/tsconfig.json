@@ -1,11 +1,7 @@
 {
   "extends": "@repo/typescript-config/react-library.json",
   "compilerOptions": {
-    "target": "ESNext",
-    "baseUrl": ".",
-    "paths": {
-      "@repo/core": ["../core/index.ts"]
-    }
+    "target": "ESNext"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", ".storybook/**/*.ts", ".storybook/**/*.tsx", "*.d.ts"]
 }

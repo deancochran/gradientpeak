@@ -78,7 +78,7 @@ RUN useradd --uid 1001 --create-home --shell /usr/sbin/nologin nodeapp
 
 WORKDIR /app
 
-COPY --from=builder /app/apps/web-start/.output /app/.output
+COPY --from=builder /app/apps/web/.output /app/.output
 
 USER 1001
 

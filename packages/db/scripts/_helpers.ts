@@ -13,8 +13,8 @@ export const supabaseCliRoot = resolve(dbPackageRoot, "supabase");
 export const defaultLocalDatabaseUrl = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
 const defaultEnvFiles = [
-  resolve(repoRoot, ".env.local"),
-  resolve(repoRoot, ".env"),
+  resolve(dbPackageRoot, ".env.local"),
+  resolve(dbPackageRoot, ".env"),
   resolve(supabaseCliRoot, ".env.local"),
   resolve(supabaseCliRoot, ".env"),
 ];

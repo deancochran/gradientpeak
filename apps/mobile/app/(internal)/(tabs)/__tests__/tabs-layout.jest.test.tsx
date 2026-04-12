@@ -9,7 +9,7 @@ const ButtonHost = createButtonComponent();
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   TouchableOpacity: ({ children, onPress, ...props }: any) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),

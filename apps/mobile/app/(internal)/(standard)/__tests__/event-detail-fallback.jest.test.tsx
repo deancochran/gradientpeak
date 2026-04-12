@@ -34,7 +34,7 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   ActivityIndicator: createHost("ActivityIndicator"),
   Alert: { alert: jest.fn() },
   ScrollView: createHost("ScrollView"),

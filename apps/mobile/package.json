@@ -53,6 +53,7 @@
     "@react-navigation/elements": "^2.8.1",
     "@react-navigation/native": "^7.1.19",
     "@repo/api": "workspace:*",
+    "@repo/auth": "workspace:*",
     "@repo/core": "workspace:*",
     "@repo/tailwindcss": "workspace:*",
     "@repo/ui": "workspace:*",

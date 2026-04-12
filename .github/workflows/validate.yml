@@ -18,13 +18,20 @@ env:
   DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
   POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
   SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+  NEXT_PRIVATE_SUPABASE_URL: https://example.supabase.co
+  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+  NEXT_PRIVATE_SUPABASE_SECRET_KEY: ci-build-service-role-key
+  SUPABASE_SERVICE_ROLE_KEY: ci-build-service-role-key
 
 jobs:
   changes:
     name: Changes
     runs-on: ubuntu-latest
     outputs:
-      docs_only: ${{ steps.filter.outputs.docs_only }}
+      docs_only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.non_docs != 'true' }}
+      mobile_runtime_related: ${{ steps.filter.outputs.mobile_runtime_related }}
+      mobile_test_related: ${{ steps.filter.outputs.mobile_test_related }}
+      web_related: ${{ steps.filter.outputs.web_related }}
 
     steps:
       - name: Checkout
@@ -35,10 +42,56 @@ jobs:
         uses: dorny/paths-filter@v3
         with:
           filters: |
-            docs_only:
-              - 'README.md'
+            docs:
+              - '**/*.md'
+              - '**/*.mdx'
               - 'docs/**'
               - '.github/workflows/validate.yml'
+            non_docs:
+              - '**'
+              - '!**/*.md'
+              - '!**/*.mdx'
+              - '!docs/**'
+              - '!.github/workflows/validate.yml'
+            mobile_runtime_related:
+              - 'apps/mobile/**'
+              - '!apps/mobile/.maestro/**'
+              - '!apps/mobile/scripts/generate-maestro-preview-flow.mts'
+              - '!apps/mobile/scripts/maestro-local.sh'
+              - '!apps/mobile/scripts/prepare-maestro-device.sh'
+              - '!apps/mobile/scripts/run-maestro-lane.mjs'
+              - 'packages/api/**'
+              - 'packages/auth/**'
+              - 'packages/core/**'
+              - 'packages/db/**'
+              - 'packages/tailwindcss/**'
+              - 'packages/ui/**'
+              - 'tooling/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+            mobile_test_related:
+              - 'apps/mobile/.maestro/**'
+              - 'apps/mobile/scripts/generate-maestro-preview-flow.mts'
+              - 'apps/mobile/scripts/maestro-local.sh'
+              - 'apps/mobile/scripts/prepare-maestro-device.sh'
+              - 'apps/mobile/scripts/run-maestro-lane.mjs'
+              - 'scripts/ci-export-local-env.sh'
+              - 'scripts/test-e2e.sh'
+            web_related:
+              - 'apps/web/**'
+              - 'packages/api/**'
+              - 'packages/auth/**'
+              - 'packages/core/**'
+              - 'packages/db/**'
+              - 'packages/tailwindcss/**'
+              - 'packages/ui/**'
+              - 'tooling/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
 
   docs-only:
     name: Docs Only
@@ -169,7 +222,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_runtime_related == 'true'
 
     steps:
       - name: Checkout
@@ -201,42 +254,19 @@ jobs:
       - typecheck
       - build
       - unit-and-integration
-      - mobile-component-and-jest
     if: needs.changes.outputs.docs_only != 'true'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run full validation suite
-        run: pnpm check-types && pnpm lint && pnpm test
+      - name: Validation gate passed
+        run: |
+          printf 'All prerequisite validation jobs passed.\n'
 
   mobile-e2e-build:
     name: Mobile E2E Build
     runs-on: ubuntu-latest
     needs:
       - changes
-      - format-and-lint
-      - typecheck
-      - build
-      - unit-and-integration
-      - mobile-component-and-jest
-      - full-validation-suite
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.docs_only != 'true' && (needs.changes.outputs.mobile_runtime_related == 'true' || needs.changes.outputs.mobile_test_related == 'true')
 
     steps:
       - name: Checkout
@@ -262,10 +292,24 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Restore generated Android project cache
+        uses: actions/cache@v4
+        with:
+          path: apps/mobile/android
+          key: mobile-android-project-${{ runner.os }}-${{ hashFiles('apps/mobile/app.config.ts', 'apps/mobile/package.json', 'apps/mobile/scripts/android-emulator.sh', 'pnpm-lock.yaml') }}
+
+      - name: Restore Android E2E APK cache
+        id: mobile-e2e-apk-cache
+        uses: actions/cache@v4
+        with:
+          path: apps/mobile/android/app/build/outputs/apk/release
+          key: mobile-e2e-apk-${{ runner.os }}-${{ hashFiles('apps/mobile/app.config.ts', 'apps/mobile/package.json', 'apps/mobile/scripts/android-emulator.sh', 'pnpm-lock.yaml') }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build bundled Android E2E APK
+        if: needs.changes.outputs.mobile_runtime_related == 'true' || steps.mobile-e2e-apk-cache.outputs.cache-hit != 'true'
         run: pnpm --filter mobile android:e2e:build
 
       - name: Upload Android E2E APK
@@ -273,6 +317,7 @@ jobs:
         with:
           name: mobile-e2e-apk
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          compression-level: 0
           retention-days: 3
           if-no-files-found: error
 
@@ -281,13 +326,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - format-and-lint
-      - typecheck
-      - build
-      - unit-and-integration
-      - mobile-component-and-jest
       - full-validation-suite
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.web_related == 'true'
 
     steps:
       - name: Checkout
@@ -317,6 +357,9 @@ jobs:
 
       - name: Wait for Supabase
         run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
+
+      - name: Apply local app schema migrations
+        run: pnpm --filter @repo/db db:migrate
 
       - name: Export local test environment
         run: bash ./scripts/ci-export-local-env.sh >> "$GITHUB_ENV"
@@ -352,14 +395,10 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-      - format-and-lint
-      - typecheck
-      - build
-      - unit-and-integration
-      - mobile-component-and-jest
       - full-validation-suite
+      - mobile-component-and-jest
       - mobile-e2e-build
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.docs_only != 'true' && (needs.changes.outputs.mobile_runtime_related == 'true' || needs.changes.outputs.mobile_test_related == 'true')
 
     steps:
       - name: Checkout
@@ -395,6 +434,9 @@ jobs:
 
       - name: Wait for Supabase
         run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
+
+      - name: Apply local app schema migrations
+        run: pnpm --filter @repo/db db:migrate
 
       - name: Export local test environment
         run: bash ./scripts/ci-export-local-env.sh >> "$GITHUB_ENV"

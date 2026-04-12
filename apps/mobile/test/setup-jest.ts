@@ -1,6 +1,6 @@
 import React from "react";
 
-import "../../../packages/ui/src/test/setup-native";
+import "@repo/ui/test/setup-native";
 
 (globalThis as { __DEV__?: boolean }).__DEV__ = false;
 

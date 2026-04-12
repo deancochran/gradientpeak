@@ -18,6 +18,8 @@
 
 ## Common commands
 
+Keep DB env files under `packages/db/`. Use `packages/db/.env.example` as the local template when you need explicit DB connection values.
+
 ```bash
 pnpm --filter @repo/db db:migration:new <name>
 pnpm --filter @repo/db db:migrate

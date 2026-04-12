@@ -1,7 +1,6 @@
 import { Text } from "@repo/ui/components/text";
+import { renderNative, screen } from "@repo/ui/test/render-native";
 import React from "react";
-
-import { renderNative, screen } from "../../../packages/ui/src/test/render-native";
 
 describe("mobile jest setup", () => {
   it("renders a shared native UI component", () => {

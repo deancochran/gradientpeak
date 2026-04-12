@@ -25,10 +25,12 @@ Start local development:
 pnpm dev
 ```
 
-Start only the active web app:
+Use package-specific entrypoints when you only need one surface:
 
 ```bash
 pnpm --filter web dev
+pnpm --filter mobile dev
+pnpm self-host:up
 ```
 
 Run the main validation commands before opening a PR:
@@ -45,6 +47,14 @@ pnpm test
 2. Make the smallest change that solves the problem.
 3. Run the relevant checks locally.
 4. Open a PR with a short summary of the user-facing outcome.
+
+## Where to go next
+
+- `apps/web/README.md` covers web-specific setup and commands.
+- `apps/mobile/README.md` covers mobile-specific setup, testing, and E2E entrypoints.
+- `packages/db/README.md` covers database ownership and local DB tooling.
+
+Environment files should live with the owning app or package, not at the repo root.
 
 ## Important notes
 

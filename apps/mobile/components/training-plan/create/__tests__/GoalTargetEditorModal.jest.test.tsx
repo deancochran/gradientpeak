@@ -16,7 +16,7 @@ jest.mock("../../../../lib/training-plan-form/input-parsers", () => ({
 
 jest.mock("react-native", () => ({
   __esModule: true,
-  ...jest.requireActual("../../../../../../packages/ui/src/test/react-native"),
+  ...jest.requireActual("@repo/ui/test/react-native"),
   Modal: (props: any) => React.createElement("Modal", props, props.children),
   ScrollView: (props: any) => React.createElement("ScrollView", props, props.children),
   View: (props: any) => React.createElement("View", props, props.children),
