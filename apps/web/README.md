@@ -1,252 +1,108 @@
-# GradientPeak Web Dashboard
+# Web App
 
-A modern fitness analytics dashboard built with Next.js 15, React 19, and Tailwind CSS. Provides comprehensive training analysis, performance tracking, and data visualization for the GradientPeak fitness platform.
+This is the active web product for GradientPeak.
 
-## 🌐 Overview
+- Workspace package name: `web`
+- Framework: TanStack Start
+- Default local port: `3000`
+- Production container entrypoint: `.output/server/index.mjs`
 
-The GradientPeak web dashboard serves as the analytical companion to the mobile app, offering detailed insights into training data, performance trends, and comprehensive activity analysis. Built with server-side rendering and optimized for fast data visualization.
+## Local Development
 
-## 🚀 Tech Stack
-
-### Core Framework
-- **Next.js 15** - React framework with Turbopack for fast builds
-- **React 19** - Latest React with concurrent features
-- **TypeScript 5** - Type safety and developer experience
-- **Turbopack** - Ultra-fast bundler for development and production
-
-### Backend & Database
-- **Supabase** - PostgreSQL backend with real-time subscriptions
-- **tRPC** - TypeScript-first RPC framework
-- **Row Level Security** - JWT-based data access control
-- **Server Components** - Optimized data fetching with caching
-
-### Styling & UI
-- **Tailwind CSS 4** - Utility-first styling with latest features
-- **Radix UI** - Accessible component primitives
-- **Shadcn/ui** - Beautiful component library built on Radix
-- **Lucide React** - Consistent icon library
-- **Class Variance Authority** - Type-safe component variants
-
-### Data & State
-- **React Query/TanStack Query** - Server state management and caching
-- **React Hook Form** - Form handling with validation
-- **Zod** - Schema validation and type generation
-- **@repo/core** - Shared business logic and calculations
-
-
-## 🎯 Key Features
-
-### 📊 Advanced Analytics Dashboard
-- **Training Load Analysis** - CTL/ATL/TSB progression charts
-- **Performance Trends** - Power/speed progression over time
-- **Zone Distribution** - Heart rate and power zone analysis
-- **Activity Comparisons** - Side-by-side performance analysis
-- **Personal Records** - PR tracking and historical analysis
-
-### 📱 Activity Management
-- **Activity Library** - Comprehensive activity history with search/filter
-- **Detailed Analysis** - Individual activity breakdowns with maps
-- **Bulk Operations** - Multi-select for editing/deleting activities
-- **Data Export** - Export activities in multiple formats (JSON, TCX, CSV)
-
-### 📋 Training Plan Management
-- **Plan Library** - Browse and assign training plans
-- **Plan Progress** - Visual progress tracking and compliance scoring
-- **Plan Customization** - Modify plans based on performance
-- **Scheduled Activities** - Calendar view of planned activities
-
-### 🔐 User Management
-- **Profile Settings** - FTP, zones, preferences, and goals
-- **Data Privacy** - Granular privacy controls for activities
-- **Account Management** - Subscription and billing (future)
-- **Data Backup** - Export all user data
-
-## 🔧 Development
-
-### Prerequisites
-- **Node.js 18+** (recommended: use with npm)
-- **npm** package manager
-- **Supabase** account and project
-- **PostgreSQL** database (via Supabase)
-
-### Environment Setup
-
-Create `.env.local` in the web app root:
+Install dependencies from the workspace root:
 
 ```bash
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
-NEXT_PRIVATE_SUPABASE_SECRET_KEY=your_NEXT_PRIVATE_SUPABASE_SECRET_KEY
-
-# Next.js Configuration
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=your_nextauth_secret
-
-# Optional: Analytics
-NEXT_PUBLIC_GA_ID=your_google_analytics_id
+pnpm install
 ```
 
-### Development Commands
+Run the web app:
 
 ```bash
-# Start development server with Turbopack
-npm dev
-
-# Build for production with Turbopack
-npm build
-
-# Start production server
-npm start
-
-# Lint code
-npm lint
-
-# Type checking
-npm run check-types
+pnpm --filter web dev
 ```
 
-### Database Integration
-
-
-```typescript
-
-// Type-safe database queries
-const userActivities = await db
-  .select()
-  .from(activities)
-  .where(eq(activities.userId, userId));
-```
-
-## 🎨 Component Architecture
-
-### Atomic Design Principles
-- **Atoms** - Basic UI elements (buttons, inputs, icons)
-- **Molecules** - Simple component combinations (search bars, cards)
-- **Organisms** - Complex components (charts, forms, tables)
-- **Templates** - Page layouts and structure
-- **Pages** - Complete page implementations
-
-### Shared Components
-Components are built for reusability across dashboard sections:
-
-```typescript
-// Example: Reusable metric card
-<MetricCard
-  title="Training Stress Score"
-  value={tss}
-  trend={tssChange}
-  format="number"
-  icon={<TrendingUp />}
-/>
-```
-
-## 📈 Performance Optimization
-
-### Next.js 15 Features
-- **Turbopack** - Ultra-fast bundling for development and builds
-- **Server Components** - Reduced client-side JavaScript
-- **Streaming** - Progressive page loading with Suspense
-- **Image Optimization** - Automatic image optimization and lazy loading
-
-### Data Optimization
-- **React Query** - Intelligent caching and background updates
-- **Pagination** - Efficient large dataset handling
-- **Virtual Scrolling** - Performance for large activity lists
-- **Optimistic Updates** - Immediate UI feedback
-
-### Analytics Integration
-- **Real-time Calculations** - Client-side metrics using `@repo/core`
-- **Background Processing** - Heavy calculations moved to server
-- **Caching Strategy** - Multi-level caching for fast page loads
-
-## 🔒 Security & Authentication
-
-### Authentication Flow
-1. **Supabase Auth** - JWT-based authentication
-2. **Middleware Protection** - Route-level access control
-3. **Row Level Security** - Database-level data protection
-4. **Session Management** - Secure token refresh
-
-### Data Privacy
-- **User Consent** - Granular privacy controls
-- **Data Encryption** - Encrypted sensitive data at rest
-- **Audit Logging** - Complete access and modification tracking
-- **GDPR Compliance** - Data export and deletion capabilities
-
-## 🧪 Testing Strategy
-
-### Component Testing
-```bash
-# Unit tests for components
-npm test:unit
-
-# Integration tests for API routes
-npm test:integration
-
-# E2E tests (future: Playwright)
-npm test:e2e
-```
-
-### Performance Testing
-- **Lighthouse** - Core web vitals monitoring
-- **Bundle Analysis** - JavaScript bundle size optimization
-- **Database Query Analysis** - Query performance monitoring
-
-## 🚀 Deployment
-
-### Vercel Deployment (Recommended)
-- **Automatic Deployment** - Push to main branch deploys automatically
-- **Preview Deployments** - Every PR gets a preview URL
-- **Edge Runtime** - Global performance optimization
-- **Analytics** - Built-in performance monitoring
+Run the main checks:
 
 ```bash
-# Manual deployment
-vercel --prod
+pnpm --filter web check-types
+pnpm --filter web build
+pnpm --filter web test:e2e
 ```
 
-### Alternative Deployment
-The app can be deployed to any Node.js hosting provider:
+## Required Environment
 
-```bash
-# Build and start
-npm build && npm start
-```
+Core web origin and auth:
 
-## 🔄 Integration with Mobile App
+- `APP_URL`
+- `NEXT_PUBLIC_APP_URL`
+- `BETTER_AUTH_SECRET`
 
-### Data Synchronization
-- **Real-time Sync** - Activities from mobile sync immediately to web
-- **Conflict Resolution** - Smart merging of local and server data
-- **Offline Handling** - Graceful handling of mobile offline periods
+Database and Supabase:
 
-### Shared Business Logic
-- **@repo/core Package** - Consistent calculations across platforms
-- **Type Safety** - Shared TypeScript types prevent inconsistencies
-- **Schema Validation** - Unified data validation with Zod
+- `DATABASE_URL`
+- `POSTGRES_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PRIVATE_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `NEXT_PRIVATE_SUPABASE_SECRET_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-## 📚 Additional Resources
+Supabase auth redirect configuration:
 
-- [Next.js 15 Documentation](https://nextjs.org/docs)
-- [Supabase Documentation](https://supabase.com/docs)
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
-- [Radix UI Documentation](https://www.radix-ui.com/docs)
-- [GradientPeak Core Package](../packages/core/README.md)
-- [Database Schema](../packages/drizzle/README.md)
+- `SUPABASE_AUTH_SITE_URL`
+- `SUPABASE_AUTH_WEB_REDIRECT_URL`
+- `SUPABASE_AUTH_WEB_REDIRECT_URL_SECURE`
 
-## 🤝 Contributing
+OAuth and webhook providers:
 
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with appropriate tests
-4. Run quality checks: `npm lint && npm test`
-5. Submit a pull request
+- `OAUTH_CALLBACK_BASE_URL`
+- `STRAVA_CLIENT_ID`
+- `STRAVA_CLIENT_SECRET`
+- `WAHOO_CLIENT_ID`
+- `WAHOO_CLIENT_SECRET`
+- `WAHOO_WEBHOOK_TOKEN`
+- `TRAININGPEAKS_CLIENT_ID`
+- `TRAININGPEAKS_CLIENT_SECRET`
+- `GARMIN_CLIENT_ID`
+- `GARMIN_CLIENT_SECRET`
+- `ZWIFT_CLIENT_ID`
+- `ZWIFT_CLIENT_SECRET`
 
-## 📝 License
+Mobile callback and deep-link bridging:
 
-This project is part of the GradientPeak platform and follows the same MIT license as the monorepo.
+- `NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI`
+- `NEXT_PUBLIC_MOBILE_REDIRECT_URI`
+- `NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK`
+- `AUTH_ALLOWED_DEEP_LINK_PREFIXES`
+- `EXPO_PUBLIC_APP_SCHEME` or `APP_SCHEME`
 
----
+Email delivery for Better Auth:
 
-**GradientPeak Web Dashboard** - Comprehensive fitness analytics for serious athletes 📊
+- `AUTH_EMAIL_MODE`
+- `AUTH_EMAIL_FROM`
+- `AUTH_EMAIL_REPLY_TO`
+- `AUTH_SMTP_HOST`
+- `AUTH_SMTP_PORT`
+- `AUTH_SMTP_USER`
+- `AUTH_SMTP_PASS`
+- `AUTH_SMTP_SECURE`
+
+## Production Cutover Checklist
+
+1. Point the public web hostname at the TanStack Start container built from `apps/web/Dockerfile`.
+2. Set `APP_URL` and `NEXT_PUBLIC_APP_URL` to the final public web origin.
+3. Set `OAUTH_CALLBACK_BASE_URL` to the same public origin unless a provider-specific callback host is required.
+4. Update provider dashboards so OAuth callbacks target `/api/integrations/callback/<provider>` on the new origin.
+5. Update Wahoo webhook delivery to `/api/webhooks/wahoo` on the new origin.
+6. Update Better Auth email links and Supabase auth redirect settings to the new origin.
+7. Run Playwright smoke tests with real service-role credentials before and after the DNS or ingress switch.
+
+## Container Publishing
+
+The production container workflow is defined in:
+
+- `.github/workflows/publish-container.yml`
+
+It now builds:
+
+- `apps/web/Dockerfile`

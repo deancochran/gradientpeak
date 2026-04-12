@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -8,49 +6,66 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Form, FormTextField } from "@repo/ui/components/form";
-import { useZodForm } from "@repo/ui/hooks";
+import { Input } from "@repo/ui/components/input";
+import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { authClient, toAbsoluteWebUrl } from "@/lib/auth/client";
-import { getSignUpFormError } from "@/lib/auth/form-errors";
-import { type SignUpFormValues, signUpFormSchema } from "@/lib/auth/form-schemas";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+
+import { authClient } from "../lib/auth/client";
+import { toAbsoluteAppUrl } from "../lib/app-url";
+import { getSignUpFormError } from "../lib/auth/form-errors";
+import { type SignUpFormValues, signUpFormSchema } from "../lib/auth/form-schemas";
 
 export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
-  const router = useRouter();
-  const form = useZodForm({
-    schema: signUpFormSchema,
-    defaultValues: {
-      email: "",
-      password: "",
-      repeatPassword: "",
-    },
-  });
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [repeatPassword, setRepeatPassword] = useState("");
+  const [errors, setErrors] = useState<
+    Partial<Record<"email" | "password" | "repeatPassword" | "root", string>>
+  >({});
+  const [isPending, setIsPending] = useState(false);
 
-  const handleSignUp = async (values: SignUpFormValues) => {
-    form.clearErrors("root");
+  const handleSignUp = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const parsed = signUpFormSchema.safeParse({ email, password, repeatPassword });
+
+    if (!parsed.success) {
+      const fieldErrors = parsed.error.flatten().fieldErrors;
+      setErrors({
+        email: fieldErrors.email?.[0],
+        password: fieldErrors.password?.[0],
+        repeatPassword: fieldErrors.repeatPassword?.[0],
+      });
+      return;
+    }
+
+    const values: SignUpFormValues = parsed.data;
+    setErrors({});
+    setIsPending(true);
 
     try {
       const result = await authClient.signUp.email({
         email: values.email,
         password: values.password,
         name: values.email.split("@")[0] || values.email,
-        callbackURL: toAbsoluteWebUrl("/auth/confirm"),
+        callbackURL: toAbsoluteAppUrl("/auth/confirm"),
       });
 
       if (result.error) {
         throw result.error;
       }
 
-      router.push("/auth/sign-up-success");
+      await navigate({ to: "/auth/sign-up-success" });
     } catch (error: unknown) {
       const formError = getSignUpFormError(error);
-      form.setError(formError.target, { message: formError.message });
+      setErrors((current) => ({ ...current, [formError.target]: formError.message }));
+    } finally {
+      setIsPending(false);
     }
   };
-
-  const isPending = form.formState.isSubmitting;
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -60,57 +75,69 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
           <CardDescription>Create a new account</CardDescription>
         </CardHeader>
         <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSignUp)}>
-              <div className="flex flex-col gap-6">
-                <FormTextField
+          <form onSubmit={handleSignUp}>
+            <div className="flex flex-col gap-6">
+              <div className="space-y-2">
+                <Label htmlFor="sign-up-email">Email *</Label>
+                <Input
+                  id="sign-up-email"
                   autoComplete="email"
-                  control={form.control}
-                  label="Email"
-                  name="email"
-                  placeholder="m@example.com"
-                  required
                   type="email"
+                  placeholder="m@example.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.currentTarget.value)}
+                  aria-invalid={Boolean(errors.email)}
                 />
-                <FormTextField
+                {errors.email ? <p className="text-destructive text-sm">{errors.email}</p> : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="sign-up-password">Password *</Label>
+                <Input
+                  id="sign-up-password"
                   autoComplete="new-password"
-                  control={form.control}
-                  label="Password"
-                  name="password"
-                  placeholder="Enter your password"
-                  required
                   type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(event) => setPassword(event.currentTarget.value)}
+                  aria-invalid={Boolean(errors.password)}
                 />
-                <div className="-mt-2 space-y-1 text-xs text-muted-foreground">
+                <div className="space-y-1 text-xs text-muted-foreground">
                   <p>Password must contain:</p>
                   <p>• At least 8 characters</p>
                   <p>• One uppercase letter</p>
                   <p>• One number</p>
                 </div>
-                <FormTextField
+                {errors.password ? <p className="text-destructive text-sm">{errors.password}</p> : null}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="sign-up-repeat-password">Repeat Password *</Label>
+                <Input
+                  id="sign-up-repeat-password"
                   autoComplete="new-password"
-                  control={form.control}
-                  label="Repeat Password"
-                  name="repeatPassword"
-                  placeholder="Confirm your password"
-                  required
                   type="password"
+                  placeholder="Confirm your password"
+                  value={repeatPassword}
+                  onChange={(event) => setRepeatPassword(event.currentTarget.value)}
+                  aria-invalid={Boolean(errors.repeatPassword)}
                 />
-                {form.formState.errors.root?.message ? (
-                  <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+                {errors.repeatPassword ? (
+                  <p className="text-destructive text-sm">{errors.repeatPassword}</p>
                 ) : null}
-                <Button type="submit" disabled={isPending}>
-                  {isPending ? "Creating an account..." : "Sign up"}
-                </Button>
               </div>
-              <div className="mt-4 text-center text-sm">
-                Already have an account?{" "}
-                <Link href="/auth/login" className="underline underline-offset-4">
-                  Login
-                </Link>
-              </div>
-            </form>
-          </Form>
+
+              {errors.root ? <p className="text-destructive text-sm">{errors.root}</p> : null}
+
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Creating an account..." : "Sign up"}
+              </Button>
+            </div>
+
+            <div className="mt-4 text-center text-sm">
+              Already have an account? <Link to="/auth/login" className="underline underline-offset-4">Login</Link>
+            </div>
+          </form>
         </CardContent>
       </Card>
     </div>

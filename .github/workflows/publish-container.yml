@@ -6,9 +6,14 @@ on:
       - main
     paths:
       - "apps/web/**"
+      - "packages/auth/**"
       - "packages/core/**"
       - "packages/api/**"
       - "packages/db/**"
+      - "packages/ui/**"
+      - "tooling/**"
+      - "package.json"
+      - "turbo.json"
       - "pnpm-lock.yaml"
       - ".github/workflows/publish-container.yml"
   workflow_dispatch:

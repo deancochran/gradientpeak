@@ -6,9 +6,7 @@ const emailSchema = z
   .min(1, "Email is required")
   .email("Enter a valid email address");
 
-const requiredPasswordSchema = z
-  .string({ message: "Password is required" })
-  .min(1, "Password is required");
+const requiredPasswordSchema = z.string({ message: "Password is required" }).min(1, "Password is required");
 
 const strongPasswordSchema = z
   .string({ message: "Password is required" })

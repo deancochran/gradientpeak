@@ -1,12 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = process.env.PORT || 3000;
-const baseURL = `http://localhost:${PORT}`;
+const baseURL = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
   timeout: 30 * 1000,
   testDir: "./e2e/specs",
-  retries: 2,
+  retries: 1,
   outputDir: "test-results/",
   globalSetup: "./e2e/setup.ts",
   webServer: {

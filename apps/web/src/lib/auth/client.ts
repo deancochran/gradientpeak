@@ -1,18 +1,11 @@
-"use client";
-
 import {
   normalizeGradientPeakAuthClientSession,
   resolveGradientPeakAuthBaseUrl,
 } from "@repo/auth/client";
+import type { AuthSession } from "@repo/auth/session";
 import { createGradientPeakWebAuthClient } from "@repo/auth/client/web";
 
-function getAppBaseUrl() {
-  if (typeof window !== "undefined") {
-    return window.location.origin;
-  }
-
-  return process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? "http://localhost:3000";
-}
+import { getAppBaseUrl } from "../app-url";
 
 export const authClient = createGradientPeakWebAuthClient({
   baseURL: resolveGradientPeakAuthBaseUrl({
@@ -21,9 +14,10 @@ export const authClient = createGradientPeakWebAuthClient({
 });
 
 export function normalizeWebAuthSession(session: unknown) {
-  return normalizeGradientPeakAuthClientSession(session as any, "cookie");
+  return normalizeGradientPeakAuthClientSession(session as never, "cookie");
 }
 
-export function toAbsoluteWebUrl(path: string) {
-  return new URL(path, getAppBaseUrl()).toString();
+export async function getWebAuthSession(): Promise<AuthSession | null> {
+  const result = await authClient.getSession();
+  return normalizeWebAuthSession(result.data);
 }
