@@ -91,7 +91,7 @@ export default function VerifyScreen() {
               {resendMessage && (
                 <Text
                   className={`text-center text-xs ${
-                    resendMessage.includes("sent") ? "text-success" : "text-destructive"
+                    resendMessage.startsWith("Failed") ? "text-destructive" : "text-success"
                   }`}
                   testID="resend-message"
                 >
