@@ -154,6 +154,30 @@ describe("useTrainingPlanSnapshot", () => {
     expect(snapshotMocks.refetchWeeklySummary).toHaveBeenCalledTimes(0);
   });
 
+  it("requests insight timeline with the active plan id and explicit window inputs", () => {
+    renderHook(() =>
+      useTrainingPlanSnapshot({
+        planId: "plan-123",
+        includeWeeklySummaries: false,
+        insightWindow: {
+          start_date: "2026-03-14",
+          end_date: "2027-03-13",
+        },
+        timezone: "America/New_York",
+      }),
+    );
+
+    expect(snapshotMocks.getInsightTimelineQuery).toHaveBeenCalledWith(
+      {
+        training_plan_id: "plan-123",
+        start_date: "2026-03-14",
+        end_date: "2027-03-13",
+        timezone: "America/New_York",
+      },
+      expect.objectContaining({ enabled: true, staleTime: 0, refetchOnMount: "always" }),
+    );
+  });
+
   it("requests insight timeline without a training plan id when no active plan exists", async () => {
     snapshotMocks.getPlanQuery.mockImplementationOnce(() => ({
       data: null as any,
