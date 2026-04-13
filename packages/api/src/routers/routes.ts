@@ -133,6 +133,7 @@ const listRoutesSchema = z
     search: z.string().optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: routeCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 

@@ -3,6 +3,14 @@ import { createButtonComponent, createHost } from "../../../../test/mock-compone
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const routesListUseInfiniteQueryMock = jest.fn(() => ({
+  data: { pages: [{ items: routes, nextCursor: undefined }] },
+  isLoading: false,
+  isRefetching: false,
+  hasNextPage: false,
+  fetchNextPage: jest.fn(),
+  refetch: jest.fn(),
+}));
 
 const activityPlans: any[] = [];
 
@@ -162,14 +170,7 @@ jest.mock("@/lib/api", () => ({
     },
     routes: {
       list: {
-        useInfiniteQuery: jest.fn(() => ({
-          data: { pages: [{ items: routes, nextCursor: undefined }] },
-          isLoading: false,
-          isRefetching: false,
-          hasNextPage: false,
-          fetchNextPage: jest.fn(),
-          refetch: jest.fn(),
-        })),
+        useInfiniteQuery: (...args: any[]) => routesListUseInfiniteQueryMock(...args),
       },
     },
     social: {
@@ -190,6 +191,7 @@ const DiscoverScreen = require("../discover").default;
 describe("discover screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    routesListUseInfiniteQueryMock.mockClear();
   });
 
   afterEach(() => {
@@ -232,6 +234,35 @@ describe("discover screen", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Searching profiles for/)).toBeTruthy();
+    });
+  });
+
+  it("requests routes with the debounced search term used by the routes tab", async () => {
+    renderNative(<DiscoverScreen />);
+
+    expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      {
+        search: undefined,
+        limit: 20,
+      },
+      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    );
+
+    fireEvent.press(screen.getByText("Routes"));
+
+    act(() => {
+      fireEvent.changeText(screen.getByPlaceholderText("Search routes"), "river");
+      jest.advanceTimersByTime(350);
+    });
+
+    await waitFor(() => {
+      expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          search: "river",
+          limit: 20,
+        },
+        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+      );
     });
   });
 });

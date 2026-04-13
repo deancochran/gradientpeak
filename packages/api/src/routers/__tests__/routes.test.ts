@@ -194,6 +194,27 @@ describe("routesRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("accepts infinite-query direction metadata", async () => {
+    const db = {
+      select: vi.fn().mockImplementationOnce(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue([]),
+            })),
+          })),
+        })),
+      })),
+    };
+
+    const caller = createCaller(db);
+
+    await expect(caller.list({ limit: 20, direction: "forward" } as never)).resolves.toEqual({
+      items: [],
+      nextCursor: undefined,
+    });
+  });
+
   it("gets a single owned route with like state", async () => {
     const route = createRouteRow();
     const db = {
