@@ -20,7 +20,6 @@
     "build": "turbo run build",
     "check": "biome check apps packages tooling scripts .github README.md package.json pnpm-workspace.yaml turbo.json biome.json",
     "dev": "turbo run dev",
-    "dev:logged": "mkdir -p .logs && concurrently --names web,mobile --prefix '[{time} {name}]' --timestamp-format HH:mm:ss --prefix-colors cyan,magenta \"pnpm --filter web dev 2>&1 | tee -a .logs/web-dev.log\" \"pnpm --filter mobile dev 2>&1 | tee -a .logs/mobile-dev.log\" | tee -a .logs/dev.log",
     "dev:clean": "pnpm exec k 3000 3100 8081 8082 || true && pnpm run self-host:down >/dev/null 2>&1 || true && printf '[dev-clean] local web/mobile dev servers and Supabase stopped\n'",
     "dev:e2e": "turbo run dev:e2e --parallel --ui tui",
     "dev:web": "pnpm --filter web dev",
