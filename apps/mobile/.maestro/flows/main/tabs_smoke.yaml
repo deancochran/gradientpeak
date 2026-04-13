@@ -1,13 +1,40 @@
 appId: com.deancochran.gradientpeak.dev
+env:
+  STANDARD_EVENT_ID: "1f3f84f0-2d72-4d3f-8e0a-f8f93b13c001"
+  STANDARD_ROUTE_ID: "8d0b4a27-d087-4eb2-8d9b-c0f3cb8fb001"
 ---
 - runFlow:
     file: ../reusable/authenticated_home.yaml
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml
 - assertVisible: "Record"
 - assertVisible: "Plan"
 - assertVisible: "Calendar"
 - runFlow:
-    file: ../reusable/open_discover_tab.yaml
-- runFlow:
     file: ../reusable/open_plan_tab.yaml
 - runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml
+- runFlow:
     file: ../reusable/open_calendar_tab.yaml
+- assertVisible:
+    id: "schedule-event-${STANDARD_EVENT_ID}"
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml
+- runFlow:
+    file: ../reusable/open_discover_tab.yaml
+- tapOn:
+    id: "discover-tab-routes"
+- extendedWaitUntil:
+    visible:
+      id: "discover-route-${STANDARD_ROUTE_ID}"
+    timeout: 15000
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml
+- runFlow:
+    file: ../journeys/routes/list_screen_open.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+      STANDARD_ROUTE_ID: "${STANDARD_ROUTE_ID}"
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml

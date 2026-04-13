@@ -11,7 +11,7 @@ export default defineConfig({
     ],
   },
   test: {
-    exclude: ["**/*.live-db.test.ts"],
+    include: ["src/routers/__tests__/*.live-db.test.ts"],
     setupFiles: [path.resolve(__dirname, "./src/test/setup.ts")],
   },
 });
