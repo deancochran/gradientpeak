@@ -11,10 +11,11 @@ import { useAuth } from "@/lib/hooks/useAuth";
 
 export default function VerifyScreen() {
   const router = useRouter();
-  const { email } = useLocalSearchParams<{ email: string }>();
+  const { email, source } = useLocalSearchParams<{ email: string; source?: string }>();
   const { isEmailVerified } = useAuth();
   const [isResending, setIsResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
+  const isSignUpFollowUp = source === "sign-up";
 
   useEffect(() => {
     if (isEmailVerified) {
@@ -66,7 +67,9 @@ export default function VerifyScreen() {
               </Text>
             </CardTitle>
             <Text variant="muted" className="text-center">
-              Check your inbox for a verification link sent to {email || "your email"}
+              {isSignUpFollowUp
+                ? `Check your inbox for a verification link for ${email || "your email"}. If this account already existed but is still awaiting verification, the same link flow applies.`
+                : `Check your inbox for a verification link sent to ${email || "your email"}`}
             </Text>
           </CardHeader>
 
@@ -74,7 +77,8 @@ export default function VerifyScreen() {
             <Alert icon={AlertCircle}>
               <AlertDescription className="text-center">
                 Open the verification email on this device. If you do not see it yet, use resend
-                below and then check your inbox or Mailpit again after a short delay.
+                below and then check your inbox or Mailpit again after a short delay. If you already
+                verified this account, go back and sign in instead.
               </AlertDescription>
             </Alert>
 
@@ -87,6 +91,14 @@ export default function VerifyScreen() {
                 testID="resend-code-button"
               >
                 <Text>{isResending ? "Sending..." : "Resend Email"}</Text>
+              </Button>
+              <Button
+                variant="link"
+                onPress={() => router.replace("/(external)/sign-in")}
+                className="w-full"
+                testID="back-to-sign-in-button"
+              >
+                <Text>Back to Sign In</Text>
               </Button>
               {resendMessage && (
                 <Text

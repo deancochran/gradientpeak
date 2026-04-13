@@ -9,7 +9,11 @@ import { AlertCircle } from "lucide-react-native";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ServerUrlOverride } from "@/components/auth/ServerUrlOverride";
-import { authClient, getEmailVerificationCallbackUrl } from "@/lib/auth/client";
+import {
+  authClient,
+  getEmailVerificationCallbackUrl,
+  refreshMobileAuthSession,
+} from "@/lib/auth/client";
 import {
   applyPendingAuthServerOverride,
   getAuthFormUnexpectedErrorMessage,
@@ -21,6 +25,7 @@ import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { useServerConfig } from "@/lib/server-config";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -68,9 +73,18 @@ export default function SignUpScreen() {
         setAuthFormError(form, mapSignUpError(error.message));
       } else {
         logMobileAction("auth.signUp", "success", { email: data.email });
+
+        const session = await refreshMobileAuthSession();
+        await useAuthStore.getState().refreshSession();
+
+        if (session?.user.emailVerified) {
+          router.replace("/" as any);
+          return;
+        }
+
         router.replace({
           pathname: "/(external)/verify",
-          params: { email: data.email },
+          params: { email: data.email, source: "sign-up" },
         });
       }
     } catch (err) {

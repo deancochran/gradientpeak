@@ -108,6 +108,11 @@ const profileBaseSelect = {
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
+type SessionUser = {
+  id: string;
+  email: string;
+};
+
 type ProfileBaseRow = Pick<
   PublicProfilesRow,
   | "id"
@@ -239,6 +244,35 @@ async function getSerializedProfile(db: DbClient, profileId: string) {
   return serializeProfile(profile, performance);
 }
 
+async function ensureProfileExists(db: DbClient, user: SessionUser) {
+  const existingProfile = await getProfileBaseById(db, user.id);
+
+  if (existingProfile) {
+    return existingProfile;
+  }
+
+  const now = new Date();
+
+  await db.insert(profiles).values({
+    id: user.id,
+    created_at: now,
+    updated_at: now,
+    email: user.email,
+    full_name: null,
+    username: null,
+    avatar_url: null,
+    bio: null,
+    dob: null,
+    gender: null,
+    language: null,
+    preferred_units: null,
+    onboarded: false,
+    is_public: true,
+  });
+
+  return getProfileBaseById(db, user.id);
+}
+
 async function syncProfileMetric(
   db: DbClient,
   input: {
@@ -358,6 +392,11 @@ export const profilesRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
 
     try {
+      await ensureProfileExists(db, {
+        id: ctx.session.user.id,
+        email: ctx.session.user.email,
+      });
+
       const profile = await getSerializedProfile(db, ctx.session.user.id);
 
       if (!profile) {

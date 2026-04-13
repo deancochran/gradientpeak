@@ -1,5 +1,4 @@
 import { activities, activityEfforts, profileMetrics, profiles } from "@repo/db";
-import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 
 const analysisMocks = vi.hoisted(() => ({
@@ -156,7 +155,7 @@ function createCaller(plan: DbPlan = {}) {
   const { db, calls } = createDbMock(plan);
   const caller = profilesRouter.createCaller({
     db: db as any,
-    session: { user: { id: SESSION_USER_ID } },
+    session: { user: { id: SESSION_USER_ID, email: "athlete@example.com" } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
@@ -169,7 +168,7 @@ describe("profilesRouter", () => {
   it("get returns the signed-in profile including email/full_name and derived performance", async () => {
     const { caller } = createCaller({
       select: {
-        profiles: [[createProfileRow()]],
+        profiles: [[createProfileRow()], [createProfileRow()]],
         profileMetrics: [[{ value: "70.4" }], [{ value: "176" }]],
         activityEfforts: [[{ value: 300 }], []],
       },
@@ -183,6 +182,36 @@ describe("profilesRouter", () => {
     expect(result.threshold_hr).toBe(176);
     expect(result.ftp).toBe(285);
     expect(result.created_at).toBe("2026-04-01T10:00:00.000Z");
+  });
+
+  it("get provisions a default profile when the auth user exists without a profile row", async () => {
+    const { caller, calls } = createCaller({
+      select: {
+        profiles: [
+          [],
+          [createProfileRow({ onboarded: false, username: null, full_name: null })],
+          [createProfileRow({ onboarded: false, username: null, full_name: null })],
+        ],
+        profileMetrics: [[], []],
+        activityEfforts: [[], []],
+      },
+    });
+
+    const result = await caller.get();
+
+    expect(calls.inserts).toHaveLength(1);
+    expect(calls.inserts[0]).toMatchObject({
+      table: "profiles",
+      values: {
+        id: SESSION_USER_ID,
+        email: "athlete@example.com",
+        onboarded: false,
+        is_public: true,
+      },
+    });
+    expect(result.id).toBe(SESSION_USER_ID);
+    expect(result.email).toBe("athlete@example.com");
+    expect(result.onboarded).toBe(false);
   });
 
   it("getPublicById hides private fields for non-followers while keeping follow metadata", async () => {
@@ -349,15 +378,27 @@ describe("profilesRouter", () => {
     ]);
   });
 
-  it("get maps a missing profile to NOT_FOUND", async () => {
-    const { caller } = createCaller({
+  it("get provisions a missing profile instead of returning NOT_FOUND", async () => {
+    const { caller, calls } = createCaller({
       select: {
-        profiles: [[]],
+        profiles: [
+          [],
+          [createProfileRow({ onboarded: false })],
+          [createProfileRow({ onboarded: false })],
+        ],
         profileMetrics: [[], []],
         activityEfforts: [[], []],
       },
     });
 
-    await expect(caller.get()).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
+    await expect(caller.get()).resolves.toMatchObject({
+      id: SESSION_USER_ID,
+      email: "athlete@example.com",
+      onboarded: false,
+    });
+    expect(calls.inserts[0]).toMatchObject({
+      table: "profiles",
+      values: { id: SESSION_USER_ID, email: "athlete@example.com" },
+    });
   });
 });
