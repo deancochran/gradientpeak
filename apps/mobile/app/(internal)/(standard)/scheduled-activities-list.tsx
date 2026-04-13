@@ -43,7 +43,7 @@ export default function ScheduledScreen() {
   };
 
   const handleScheduleNew = () => {
-    router.push(ROUTES.CALENDAR as any);
+    router.navigate(ROUTES.CALENDAR as any);
   };
 
   if (isLoading) {

@@ -68,7 +68,7 @@ export default function SignUpScreen() {
         setAuthFormError(form, mapSignUpError(error.message));
       } else {
         logMobileAction("auth.signUp", "success", { email: data.email });
-        router.push({
+        router.replace({
           pathname: "/(external)/verify",
           params: { email: data.email },
         });

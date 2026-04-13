@@ -5,8 +5,9 @@ import React from "react";
 /**
  * External Layout (Unauthenticated Pages)
  *
- * Stack-based navigation with consistent headers and back navigation.
- * All unauthenticated pages (sign-in, sign-up, forgot-password, etc.) support back navigation.
+ * Stack-based navigation with explicit history rules.
+ * Entry and transient auth screens disable swipe-back while utility drill-in screens like
+ * forgot-password keep normal back navigation.
  */
 export default function ExternalLayout() {
   return (
@@ -22,14 +23,25 @@ export default function ExternalLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: "Sign In",
+          title: "Welcome",
           headerShown: false, // Root screen - no back button
+          gestureEnabled: false,
+        }}
+      />
+      <Stack.Screen
+        name="sign-in"
+        options={{
+          title: "Sign In",
+          gestureEnabled: false,
+          headerBackVisible: false,
         }}
       />
       <Stack.Screen
         name="sign-up"
         options={{
           title: "Sign Up",
+          gestureEnabled: false,
+          headerBackVisible: false,
         }}
       />
       <Stack.Screen
@@ -42,30 +54,48 @@ export default function ExternalLayout() {
         name="verify"
         options={{
           title: "Verify Email",
+          gestureEnabled: false,
+          headerBackVisible: false,
         }}
       />
       <Stack.Screen
         name="sign-up-success"
         options={{
           title: "Sign Up Success",
+          gestureEnabled: false,
+          headerBackVisible: false,
         }}
       />
       <Stack.Screen
         name="verification-success"
         options={{
           title: "Verification Success",
+          gestureEnabled: false,
+          headerBackVisible: false,
         }}
       />
       <Stack.Screen
         name="auth-error"
         options={{
           title: "Authentication Error",
+          gestureEnabled: false,
+          headerBackVisible: false,
         }}
       />
       <Stack.Screen
         name="callback"
         options={{
           title: "Completing authentication",
+          gestureEnabled: false,
+          headerBackVisible: false,
+        }}
+      />
+      <Stack.Screen
+        name="reset-password"
+        options={{
+          title: "Reset Password",
+          gestureEnabled: false,
+          headerBackVisible: false,
         }}
       />
       <Stack.Screen

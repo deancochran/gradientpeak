@@ -67,7 +67,7 @@ export default function SignInScreen() {
         const mappedError = mapSignInError(error.message);
 
         if (mappedError.type === "verify-email") {
-          router.push({
+          router.replace({
             pathname: "/(external)/verify",
             params: { email: data.email },
           });

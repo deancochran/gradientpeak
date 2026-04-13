@@ -61,7 +61,7 @@ export function ActivityPlanDetailScreen({
 
   const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
-    onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
   });
 
   const { data: fetchedPlan, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(

@@ -290,7 +290,7 @@ function PlanDashboardScreen() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onPress={() => router.push(ROUTES.CALENDAR as any)}
+                            onPress={() => router.navigate(ROUTES.CALENDAR as any)}
                           >
                             <Text>Log</Text>
                           </Button>
@@ -371,7 +371,7 @@ function PlanDashboardScreen() {
                 <Button
                   variant="outline"
                   className="flex-1"
-                  onPress={() => router.push(ROUTES.CALENDAR as any)}
+                  onPress={() => router.navigate(ROUTES.CALENDAR as any)}
                   testID="plan-open-calendar-button"
                 >
                   <Text>Open Calendar</Text>

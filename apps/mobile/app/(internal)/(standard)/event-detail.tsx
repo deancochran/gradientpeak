@@ -91,7 +91,7 @@ export default function EventDetailScreen() {
   const startsInEditMode = mode === "edit";
 
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
-    onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
   });
 
   const {

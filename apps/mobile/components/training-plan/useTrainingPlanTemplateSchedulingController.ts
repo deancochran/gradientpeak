@@ -69,7 +69,7 @@ export function useTrainingPlanTemplateSchedulingController({
                   router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
                   return;
                 }
-                router.replace(ROUTES.PLAN.INDEX as any);
+                router.navigate(ROUTES.PLAN.INDEX as any);
               },
             },
           ],
@@ -175,7 +175,7 @@ export function useTrainingPlanTemplateSchedulingController({
         router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
         return;
       }
-      router.replace(ROUTES.PLAN.INDEX as any);
+      router.navigate(ROUTES.PLAN.INDEX as any);
     },
     handleSelectScheduleAnchorMode,
     scheduleAnchorContent,

@@ -255,7 +255,7 @@ export default function TrainingPlanOverview() {
   );
 
   const handleOpenCalendar = useCallback(() => {
-    router.replace(ROUTES.CALENDAR as any);
+    router.navigate(ROUTES.CALENDAR as any);
   }, [router]);
 
   const scheduling = useTrainingPlanTemplateSchedulingController({
@@ -277,7 +277,7 @@ export default function TrainingPlanOverview() {
       Alert.alert("Plan Deleted", "Your training plan has been deleted", [
         {
           text: "OK",
-          onPress: () => router.replace(ROUTES.PLAN.INDEX),
+          onPress: () => router.navigate(ROUTES.PLAN.INDEX),
         },
       ]);
     },
@@ -640,7 +640,7 @@ export default function TrainingPlanOverview() {
             isOwnedByUser={isOwnedByUser}
             isPublic={headerActions.isPublic}
             likesCount={headerActions.likesCount}
-            onOpenCalendar={() => router.push(ROUTES.CALENDAR as any)}
+            onOpenCalendar={() => router.navigate(ROUTES.CALENDAR as any)}
             plan={plan}
             schedulingDialogProps={{
               applyPending: scheduling.applyTemplateMutation.isPending,
