@@ -1,3 +1,4 @@
+import { keepPreviousData } from "@tanstack/react-query";
 import { act } from "@testing-library/react-native/pure";
 import React from "react";
 import { create } from "zustand";
@@ -21,6 +22,7 @@ const setSelectionMock = jest.fn();
 const eventCreateMutateMock = jest.fn();
 const eventUpdateMutateMock = jest.fn();
 const eventDeleteMutateMock = jest.fn();
+const eventsListUseQueryMock = jest.fn();
 const refreshScheduleWithCallbacksMock = jest.fn(async (_input: any) => undefined);
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
 const today = fixedNow.toISOString().split("T")[0]!;
@@ -226,66 +228,67 @@ jest.mock("@/lib/api", () => ({
   api: {
     events: {
       list: {
-        useQuery: () => ({
-          data: {
-            items: [
-              {
-                id: "event-1",
-                event_type: "custom",
-                title: "Track workout",
-                description: "Fast reps on the oval.",
-                scheduled_date: today,
-                starts_at: `${today}T09:00:00.000Z`,
-                all_day: false,
-                notes: "Bring spikes",
-              },
-              {
-                id: "event-2",
-                event_type: "planned",
-                title: "Tempo Builder",
-                scheduled_date: today,
-                starts_at: `${today}T06:30:00.000Z`,
-                all_day: false,
-                completed: false,
-                activity_plan: {
-                  id: "plan-1",
-                  name: "Tempo Builder",
-                  description: "Progressive tempo with a strong finish.",
-                  activity_category: "outdoor_run",
-                  estimated_duration: 3600,
-                  estimated_tss: 72,
+        useQuery: (...args: any[]) =>
+          eventsListUseQueryMock(...args) ?? {
+            data: {
+              items: [
+                {
+                  id: "event-1",
+                  event_type: "custom",
+                  title: "Track workout",
+                  description: "Fast reps on the oval.",
+                  scheduled_date: today,
+                  starts_at: `${today}T09:00:00.000Z`,
+                  all_day: false,
+                  notes: "Bring spikes",
                 },
-              },
-              {
-                id: "event-3",
-                event_type: "custom",
-                title: "Mobility session",
-                description: "Gentle evening mobility.",
-                scheduled_date: "2026-03-24",
-                starts_at: "2026-03-24T18:00:00.000Z",
-                all_day: false,
-              },
-              {
-                id: "event-4",
-                event_type: "rest_day",
-                title: "Legacy rest day",
-                scheduled_date: "2026-03-25",
-                all_day: true,
-              },
-              {
-                id: "event-5",
-                event_type: "imported",
-                title: "Imported ride",
-                description: "Pulled in from provider sync.",
-                scheduled_date: today,
-                starts_at: `${today}T14:00:00.000Z`,
-                all_day: false,
-              },
-            ],
+                {
+                  id: "event-2",
+                  event_type: "planned",
+                  title: "Tempo Builder",
+                  scheduled_date: today,
+                  starts_at: `${today}T06:30:00.000Z`,
+                  all_day: false,
+                  completed: false,
+                  activity_plan: {
+                    id: "plan-1",
+                    name: "Tempo Builder",
+                    description: "Progressive tempo with a strong finish.",
+                    activity_category: "outdoor_run",
+                    estimated_duration: 3600,
+                    estimated_tss: 72,
+                  },
+                },
+                {
+                  id: "event-3",
+                  event_type: "custom",
+                  title: "Mobility session",
+                  description: "Gentle evening mobility.",
+                  scheduled_date: "2026-03-24",
+                  starts_at: "2026-03-24T18:00:00.000Z",
+                  all_day: false,
+                },
+                {
+                  id: "event-4",
+                  event_type: "rest_day",
+                  title: "Legacy rest day",
+                  scheduled_date: "2026-03-25",
+                  all_day: true,
+                },
+                {
+                  id: "event-5",
+                  event_type: "imported",
+                  title: "Imported ride",
+                  description: "Pulled in from provider sync.",
+                  scheduled_date: today,
+                  starts_at: `${today}T14:00:00.000Z`,
+                  all_day: false,
+                },
+              ],
+            },
+            isLoading: false,
+            refetch: jest.fn(async () => undefined),
           },
-          isLoading: false,
-          refetch: jest.fn(async () => undefined),
-        }),
       },
       create: {
         useMutation: () => ({ isPending: false, error: null, mutate: eventCreateMutateMock }),
@@ -335,6 +338,16 @@ describe("calendar redesign screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useCalendarStore = createCalendarStore();
+    eventsListUseQueryMock.mockReset();
+  });
+
+  it("keeps previous calendar data visible while the query window changes", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(eventsListUseQueryMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ placeholderData: keepPreviousData }),
+    );
   });
 
   it("renders the compact day shell without week-strip copy", () => {

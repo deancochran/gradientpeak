@@ -21,6 +21,10 @@ type CalendarDayListProps = {
   onDropOnDate: (dateKey: string) => void;
 };
 
+export function getActiveDayIndex(dayKeys: string[], activeDate: string): number {
+  return Math.max(0, dayKeys.indexOf(activeDate));
+}
+
 export function CalendarDayList({
   dayKeys,
   activeDate,
@@ -37,10 +41,7 @@ export function CalendarDayList({
 }: CalendarDayListProps) {
   const listRef = useRef<FlatList<string>>(null);
 
-  const activeIndex = useMemo(
-    () => Math.max(0, dayKeys.indexOf(activeDate)),
-    [activeDate, dayKeys],
-  );
+  const activeIndex = useMemo(() => getActiveDayIndex(dayKeys, activeDate), [activeDate, dayKeys]);
 
   useEffect(() => {
     if (activeIndex < 0) return;

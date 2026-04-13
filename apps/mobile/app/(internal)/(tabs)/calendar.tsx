@@ -1,6 +1,6 @@
 import { PlanCalendarSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RefreshControl,
@@ -137,7 +137,10 @@ function CalendarScreen() {
       include_adhoc: true,
       limit: CALENDAR_EVENT_QUERY_LIMIT,
     },
-    scheduleAwareReadQueryOptions,
+    {
+      ...scheduleAwareReadQueryOptions,
+      placeholderData: keepPreviousData,
+    },
   );
 
   const deleteEventMutation = api.events.delete.useMutation({
@@ -224,6 +227,7 @@ function CalendarScreen() {
   } = useCalendarScreenController({
     isMountedRef,
     activeDate,
+    visibleAnchor,
     mode,
     todayKey,
     rangeStart,
@@ -314,6 +318,7 @@ function CalendarScreen() {
             rangeStart={rangeStart}
             rangeEnd={rangeEnd}
             activeDate={activeDate}
+            visibleMonthAnchor={visibleAnchor}
             todayKey={todayKey}
             eventsByDate={eventsByDate}
             onVisibleMonthChange={handleVisibleMonthChange}
