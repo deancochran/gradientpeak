@@ -25,7 +25,7 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
 import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 
 const CATEGORY_OPTIONS: {
@@ -42,7 +42,7 @@ const CATEGORY_OPTIONS: {
 
 export default function RoutePickerPage() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const service = useSharedActivityRecorder();
   const recordingState = useRecordingState(service);
   const { attachedRouteId, detachRoute } = useRecordingConfiguration(service);
@@ -63,12 +63,15 @@ export default function RoutePickerPage() {
   );
 
   // Handle route selection - Navigate to preview/confirmation screen
-  const handleRoutePress = useCallback((routeId: string) => {
-    pushIfNotCurrent({
-      pathname: "/record/route-preview",
-      params: { routeId },
-    } as any);
-  }, [pushIfNotCurrent]);
+  const handleRoutePress = useCallback(
+    (routeId: string) => {
+      navigateTo({
+        pathname: "/record/route-preview",
+        params: { routeId },
+      } as any);
+    },
+    [navigateTo],
+  );
 
   // Handle detach route
   const handleDetach = useCallback(() => {

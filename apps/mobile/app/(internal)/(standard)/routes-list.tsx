@@ -7,8 +7,8 @@ import { MapPin, Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react-nat
 import { Alert, FlatList, Pressable, View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 import { api } from "@/lib/api";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
   outdoor_run: "🏃 Run",
@@ -19,7 +19,7 @@ const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
 
 export default function RoutesLibraryScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const utils = api.useUtils();
 
   const { data, isLoading, fetchNextPage, hasNextPage } = api.routes.list.useInfiniteQuery(
@@ -61,7 +61,7 @@ export default function RoutesLibraryScreen() {
 
     return (
       <Pressable
-        onPress={() => pushIfNotCurrent(`/route-detail?id=${item.id}` as any)}
+        onPress={() => navigateTo(`/route-detail?id=${item.id}` as any)}
         className="mb-3"
         testID={`routes-list-item-${item.id}`}
       >
@@ -162,7 +162,7 @@ export default function RoutesLibraryScreen() {
               Upload your first GPX route to get started
             </Text>
             <Button
-              onPress={() => pushIfNotCurrent("/route-upload" as any)}
+              onPress={() => navigateTo("/route-upload" as any)}
               testID="routes-list-upload-button"
             >
               <Plus className="text-primary-foreground mr-2" size={20} />
@@ -185,9 +185,9 @@ export default function RoutesLibraryScreen() {
           <Button
             size="lg"
             className="rounded-full shadow-lg"
-              onPress={() => pushIfNotCurrent("/route-upload" as any)}
-              testID="routes-list-fab-upload-button"
-            >
+            onPress={() => navigateTo("/route-upload" as any)}
+            testID="routes-list-fab-upload-button"
+          >
             <Plus className="text-primary-foreground" size={24} />
           </Button>
         </View>

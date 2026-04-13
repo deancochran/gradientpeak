@@ -48,9 +48,9 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock, navigate: navigateMock }),
 }));
 
-jest.mock("@/lib/navigation/useDedupedPush", () => ({
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useDedupedPush: () => pushMock,
+  useAppNavigate: () => pushMock,
 }));
 
 jest.mock("@/components/ErrorBoundary", () => ({
@@ -324,16 +324,25 @@ describe("plan dashboard navigation", () => {
   it("uses schedule-aware freshness for plan dashboard queries", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    expect(activePlanQueryOptionsRef.current).toEqual(
-      expect.objectContaining({ staleTime: 0, refetchOnMount: "always" }),
-    );
-    expect(eventQueryOptionsRef.current).toEqual(
-      expect.arrayContaining([expect.objectContaining({ staleTime: 0, refetchOnMount: "always" })]),
-    );
+    expect(activePlanQueryOptionsRef.current).not.toHaveProperty("staleTime");
+    expect(activePlanQueryOptionsRef.current).not.toHaveProperty("refetchOnMount");
+    for (const options of eventQueryOptionsRef.current) {
+      expect(options).not.toHaveProperty("staleTime");
+      expect(options).not.toHaveProperty("refetchOnMount");
+    }
   });
 
-  it("refreshes the projection snapshot when planned events change", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
+  it("refreshes the projection snapshot when planned events change", async () => {
+    const view = renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(refetchActivePlanMock).not.toHaveBeenCalled();
+    expect(refetchSnapshotMock).not.toHaveBeenCalled();
+
+    await React.act(async () => {
+      recentEventsUpdatedAtRef.current += 1;
+      upcomingEventsUpdatedAtRef.current += 1;
+      view.rerender(<PlanScreenWithErrorBoundary />);
+    });
 
     expect(refetchActivePlanMock).toHaveBeenCalled();
     expect(refetchSnapshotMock).toHaveBeenCalled();

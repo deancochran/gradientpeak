@@ -10,7 +10,7 @@ import { useCallback, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 // ============================================
 // TYPES
@@ -65,7 +65,7 @@ export function ActivityFeedItem({
   onCommentPress,
 }: ActivityFeedItemProps) {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const [isLiked, setIsLiked] = useState(activity.has_liked);
   const [likesCount, setLikesCount] = useState(activity.likes_count);
 
@@ -92,13 +92,13 @@ export function ActivityFeedItem({
 
   const handleProfilePress = useCallback(() => {
     if (activity.profile?.id) {
-      pushIfNotCurrent(`/user/${activity.profile.id}` as any);
+      navigateTo(`/user/${activity.profile.id}` as any);
     }
-  }, [activity.profile?.id, pushIfNotCurrent]);
+  }, [activity.profile?.id, navigateTo]);
 
   const handleActivityPress = useCallback(() => {
-    pushIfNotCurrent(`/activity-detail?id=${activity.id}` as any);
-  }, [activity.id, pushIfNotCurrent]);
+    navigateTo(`/activity-detail?id=${activity.id}` as any);
+  }, [activity.id, navigateTo]);
 
   const formatActivityDate = (dateStr: string) => {
     try {

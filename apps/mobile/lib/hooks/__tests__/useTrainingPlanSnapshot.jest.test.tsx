@@ -121,14 +121,26 @@ describe("useTrainingPlanSnapshot", () => {
     });
   });
 
-  it("uses deep-link plan id and exposes shared/all refetch helpers", async () => {
+  it("can disable status and weekly-summary queries for lighter route entry", async () => {
     const { result } = renderHook(() =>
-      useTrainingPlanSnapshot({ planId: "plan-123", includeWeeklySummaries: false }),
+      useTrainingPlanSnapshot({
+        planId: "plan-123",
+        includeStatus: false,
+        includeWeeklySummaries: false,
+      }),
     );
 
     expect(snapshotMocks.getPlanQuery).toHaveBeenCalledWith(
       { id: "plan-123" },
-      expect.objectContaining({ staleTime: 0, refetchOnMount: "always" }),
+      expect.not.objectContaining({
+        staleTime: expect.anything(),
+        refetchOnMount: expect.anything(),
+      }),
+    );
+
+    expect(snapshotMocks.getStatusQuery).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ enabled: false }),
     );
 
     expect(snapshotMocks.getWeeklySummaryQuery).toHaveBeenCalledWith(
@@ -140,14 +152,14 @@ describe("useTrainingPlanSnapshot", () => {
       await result.current.refetch();
     });
     expect(snapshotMocks.refetchPlan).toHaveBeenCalledTimes(1);
-    expect(snapshotMocks.refetchStatus).toHaveBeenCalledTimes(1);
+    expect(snapshotMocks.refetchStatus).toHaveBeenCalledTimes(0);
     expect(snapshotMocks.refetchInsightTimeline).toHaveBeenCalledTimes(0);
 
     await act(async () => {
       await result.current.refetchAll();
     });
     expect(snapshotMocks.refetchPlan).toHaveBeenCalledTimes(2);
-    expect(snapshotMocks.refetchStatus).toHaveBeenCalledTimes(2);
+    expect(snapshotMocks.refetchStatus).toHaveBeenCalledTimes(0);
     expect(snapshotMocks.refetchInsightTimeline).toHaveBeenCalledTimes(1);
     expect(snapshotMocks.refetchActualCurve).toHaveBeenCalledTimes(1);
     expect(snapshotMocks.refetchIdealCurve).toHaveBeenCalledTimes(1);
@@ -174,7 +186,7 @@ describe("useTrainingPlanSnapshot", () => {
         end_date: "2027-03-13",
         timezone: "America/New_York",
       },
-      expect.objectContaining({ enabled: true, staleTime: 0, refetchOnMount: "always" }),
+      expect.objectContaining({ enabled: true }),
     );
   });
 
@@ -193,7 +205,7 @@ describe("useTrainingPlanSnapshot", () => {
 
     expect(snapshotMocks.getInsightTimelineQuery).toHaveBeenCalledWith(
       expect.not.objectContaining({ training_plan_id: expect.anything() }),
-      expect.objectContaining({ enabled: true, staleTime: 0, refetchOnMount: "always" }),
+      expect.objectContaining({ enabled: true }),
     );
 
     await act(async () => {

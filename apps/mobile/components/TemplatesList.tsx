@@ -16,7 +16,7 @@ import {
 import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard, ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 // Category configurations
 const CATEGORIES = [
@@ -112,7 +112,7 @@ function transformTemplateToCardData(template: any): ActivityPlanCardData {
 
 export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // If no category selected, show category list
@@ -203,7 +203,7 @@ export function TemplatesList({ onTemplateSelect }: TemplatesListProps) {
 
   // Handle navigation to activity plan detail page
   function handleNavigateToDetail(template: any) {
-    pushIfNotCurrent({
+    navigateTo({
       pathname: "/activity-plan-detail" as any,
       params: { template: JSON.stringify(template) },
     } as any);

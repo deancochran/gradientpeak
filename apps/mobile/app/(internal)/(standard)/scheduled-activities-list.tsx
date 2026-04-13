@@ -11,11 +11,11 @@ import { ActivityList } from "@/components/plan/calendar/ActivityList";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 export default function ScheduledScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
   const utils = api.useUtils();
 
@@ -41,7 +41,7 @@ export default function ScheduledScreen() {
   };
 
   const handleActivityTap = (activityId: string) => {
-    pushIfNotCurrent(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
   };
 
   const handleScheduleNew = () => {

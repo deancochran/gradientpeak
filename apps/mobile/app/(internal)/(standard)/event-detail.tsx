@@ -28,7 +28,7 @@ import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import {
   refreshScheduleViews,
   refreshScheduleWithCallbacks,
@@ -86,7 +86,7 @@ function formatEventType(eventType: string | null | undefined) {
 
 export default function EventDetailScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const queryClient = useQueryClient();
   const { id, mode } = useLocalSearchParams<{ id?: string; mode?: string }>();
   const eventId = typeof id === "string" ? id : "";
@@ -272,13 +272,13 @@ export default function EventDetailScreen() {
     };
 
     activitySelectionStore.setSelection(payload);
-    pushIfNotCurrent(ROUTES.RECORD);
+    navigateTo(ROUTES.RECORD);
   };
 
   const handleOpenPlanDetail = () => {
     if (!activityPlan?.id || !event) return;
 
-    pushIfNotCurrent({
+    navigateTo({
       pathname: "/activity-plan-detail",
       params: {
         eventId: event.id,

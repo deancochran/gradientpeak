@@ -78,9 +78,9 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
   activitySelectionStore: { setSelection: jest.fn() },
 }));
 
-jest.mock("@/lib/navigation/useDedupedPush", () => ({
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useDedupedPush: () => routerMock.push,
+  useAppNavigate: () => routerMock.push,
 }));
 
 jest.mock("@/lib/api", () => ({

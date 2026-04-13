@@ -3,7 +3,7 @@ import { createButtonComponent, createHost } from "../../../../test/mock-compone
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
-const routesListUseInfiniteQueryMock = jest.fn(() => ({
+const routesListUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: { pages: [{ items: routes, nextCursor: undefined }] },
   isLoading: false,
   isRefetching: false,
@@ -170,7 +170,8 @@ jest.mock("@/lib/api", () => ({
     },
     routes: {
       list: {
-        useInfiniteQuery: (...args: any[]) => routesListUseInfiniteQueryMock(...args),
+        useInfiniteQuery: (input?: unknown, options?: unknown) =>
+          routesListUseInfiniteQueryMock(input, options),
       },
     },
     social: {
@@ -251,7 +252,7 @@ describe("discover screen", () => {
     fireEvent.press(screen.getByText("Routes"));
 
     act(() => {
-      fireEvent.changeText(screen.getByPlaceholderText("Search routes"), "river");
+      fireEvent.changeText(screen.getByPlaceholderText("Search your routes"), "river");
       jest.advanceTimersByTime(350);
     });
 

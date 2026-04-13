@@ -4,7 +4,7 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const pushMock = jest.fn();
 const guardNavigationMock = jest.fn((navigate: () => void) => navigate());
-const pushIfNotCurrentMock = jest.fn();
+const navigateToMock = jest.fn();
 
 const ButtonHost = createButtonComponent();
 
@@ -62,9 +62,9 @@ jest.mock("@/lib/navigation/useNavigationActionGuard", () => ({
   useNavigationActionGuard: () => guardNavigationMock,
 }));
 
-jest.mock("@/lib/navigation/useDedupedPush", () => ({
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useDedupedPush: () => pushIfNotCurrentMock,
+  useAppNavigate: () => navigateToMock,
 }));
 
 jest.mock("@/lib/stores/theme-store", () => ({
@@ -88,7 +88,7 @@ const TabsLayout = require("../_layout").default;
 describe("tabs layout", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    pushIfNotCurrentMock.mockReset();
+    navigateToMock.mockReset();
   });
 
   it("configures all primary tabs", () => {
@@ -107,7 +107,7 @@ describe("tabs layout", () => {
     fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(guardNavigationMock).toHaveBeenCalledTimes(1);
-    expect(pushIfNotCurrentMock).toHaveBeenCalledWith("/record");
+    expect(navigateToMock).toHaveBeenCalledWith("/record");
     expect(pushMock).not.toHaveBeenCalled();
   });
 });

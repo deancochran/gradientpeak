@@ -44,10 +44,10 @@ export function useActivityPlanSchedulingActions({
   const isScheduled = !!scheduledDate;
 
   const duplicatePlanMutation = api.activityPlans.duplicate.useMutation({
-    onSuccess: async (duplicatedPlan) => {
+    onSuccess: (duplicatedPlan) => {
       const duplicateAction = duplicateActionRef.current;
       duplicateActionRef.current = null;
-      await invalidateActivityPlanQueries(utils);
+      void invalidateActivityPlanQueries(utils);
       if (duplicateAction === "schedule") {
         router.replace(buildPlanRoute(duplicatedPlan.id, "schedule") as any);
         return;
@@ -69,10 +69,10 @@ export function useActivityPlanSchedulingActions({
   });
 
   const removeScheduleMutation = api.events.delete.useMutation({
-    onSuccess: async () => {
+    onSuccess: () => {
       beginRedirect();
       setShowScheduleModal(false);
-      await refreshScheduleViews(queryClient, "eventDeletionMutation");
+      void refreshScheduleViews(queryClient, "eventDeletionMutation");
     },
     onError: (error) => {
       Alert.alert("Error", error.message || "Failed to remove scheduled activity");
@@ -164,7 +164,7 @@ export function useActivityPlanSchedulingActions({
       onClose: () => setShowScheduleModal(false),
       onSuccess: () => {
         setShowScheduleModal(false);
-        utils.events.invalidate();
+        void utils.events.invalidate();
         void invalidateTrainingPlanQueries(utils);
         router.navigate(ROUTES.PLAN.CALENDAR);
       },

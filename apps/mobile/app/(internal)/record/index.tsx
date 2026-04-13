@@ -31,7 +31,7 @@ import {
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
 import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 
@@ -56,7 +56,7 @@ function mapServiceStateToRecordingState(serviceState: string): RecordingState {
 
 function RecordScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const { user } = useAuth();
   const [isInitialized, setIsInitialized] = useState(false);
   const [activityModalVisible, setActivityModalVisible] = useState(false);
@@ -279,7 +279,7 @@ function RecordScreen() {
               text: "Go to Profile",
               onPress: () => {
                 if (!user?.id) return;
-                pushIfNotCurrent({
+                navigateTo({
                   pathname: "/user/[userId]",
                   params: { userId: user.id },
                 } as any);
@@ -323,7 +323,7 @@ function RecordScreen() {
       console.error("[RecordModal] Error starting recording:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
-  }, [allPermissionsGranted, pushIfNotCurrent, start, service, user?.id]);
+  }, [allPermissionsGranted, navigateTo, start, service, user?.id]);
 
   // Handle finish action after local finalization succeeds
   const handleFinish = useCallback(async () => {
@@ -336,7 +336,7 @@ function RecordScreen() {
     try {
       setIsFinishing(true);
       await finish();
-      pushIfNotCurrent("/record/submit");
+      navigateTo("/record/submit");
     } catch (error) {
       console.error("[RecordModal] Error finishing recording:", error);
       Alert.alert(
@@ -346,7 +346,7 @@ function RecordScreen() {
     } finally {
       setIsFinishing(false);
     }
-  }, [finish, isFinishing, pushIfNotCurrent]);
+  }, [finish, isFinishing, navigateTo]);
 
   // Handle lap action
   const handleLap = useCallback(() => {

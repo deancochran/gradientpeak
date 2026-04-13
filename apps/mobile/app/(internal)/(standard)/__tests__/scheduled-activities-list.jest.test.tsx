@@ -30,9 +30,9 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock, navigate: navigateMock }),
 }));
 
-jest.mock("@/lib/navigation/useDedupedPush", () => ({
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useDedupedPush: () => pushMock,
+  useAppNavigate: () => pushMock,
 }));
 
 jest.mock("@/components/plan/calendar/ActivityList", () => ({
@@ -77,10 +77,14 @@ describe("scheduled activities list", () => {
   it("uses schedule-aware query freshness for list data", () => {
     renderNative(<ScheduledActivitiesListScreen />);
 
-    expect(eventsListUseQueryMock).toHaveBeenCalledWith(
-      { limit: 100 },
-      expect.objectContaining({ staleTime: 0, refetchOnMount: "always" }),
-    );
+    expect(eventsListUseQueryMock).toHaveBeenCalledWith({ limit: 100 }, expect.any(Object));
+
+    const calls = eventsListUseQueryMock.mock.calls as unknown as Array<
+      [unknown, Record<string, unknown>?]
+    >;
+    const options = calls[0]?.[1];
+    expect(options).not.toHaveProperty("staleTime");
+    expect(options).not.toHaveProperty("refetchOnMount");
   });
 
   it("switches to the calendar tab for schedule actions", () => {

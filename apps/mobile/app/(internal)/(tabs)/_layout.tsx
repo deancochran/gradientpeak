@@ -3,15 +3,15 @@ import { Tabs } from "expo-router";
 import { Calendar, Circle, Home, Search, Target } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getNavigationTheme, getResolvedThemeScale } from "@/lib/theme";
 
 export default function InternalLayout() {
   const { resolvedTheme } = useTheme();
   const guardNavigation = useNavigationActionGuard();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
 
   const navTheme = getNavigationTheme(resolvedTheme);
   const currentTheme = getResolvedThemeScale(resolvedTheme);
@@ -54,7 +54,7 @@ export default function InternalLayout() {
               <TouchableOpacity
                 {...(props as any)}
                 testID="tab-button-record"
-                onPress={() => guardNavigation(() => pushIfNotCurrent("/record"))}
+                onPress={() => guardNavigation(() => navigateTo("/record"))}
               />
             ),
           }}

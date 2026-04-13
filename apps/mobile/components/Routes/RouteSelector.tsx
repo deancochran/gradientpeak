@@ -15,7 +15,7 @@ import { MapPin, TrendingUp, Upload, X } from "lucide-react-native";
 import { View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 import { api } from "@/lib/api";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface RouteSelectorProps {
   activityCategory: string;
@@ -28,7 +28,7 @@ export function RouteSelector({
   selectedRouteId,
   onSelectRoute,
 }: RouteSelectorProps) {
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
 
   // Fetch routes filtered by activity category
   const { data } = api.routes.list.useInfiniteQuery(
@@ -54,7 +54,7 @@ export function RouteSelector({
   const routes = data?.pages.flatMap((page) => page.items) ?? [];
 
   const handleUploadRoute = () => {
-    pushIfNotCurrent("/route-upload" as any);
+    navigateTo("/route-upload" as any);
   };
 
   const formatDistance = (meters: number) => {

@@ -1,4 +1,3 @@
-import { useFocusEffect } from "@react-navigation/native";
 import { PlanCalendarSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
@@ -249,12 +248,6 @@ function CalendarScreen() {
     createEvent: createEventMutation.mutate,
     getCanStartPlannedEvent,
   });
-
-  useFocusEffect(
-    useCallback(() => {
-      void refetchActivities();
-    }, [refetchActivities]),
-  );
 
   if (loadingEvents && !activitiesData) {
     return (

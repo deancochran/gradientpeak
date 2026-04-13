@@ -9,9 +9,9 @@ import React from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface QuickAdjustSheetProps {
   visible: boolean;
@@ -27,7 +27,7 @@ export function QuickAdjustSheet({
   smartSuggestion,
 }: QuickAdjustSheetProps) {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const utils = api.useUtils();
 
   const applyAdjustmentMutation = useReliableMutation(api.trainingPlans.applyQuickAdjustment, {
@@ -93,7 +93,7 @@ export function QuickAdjustSheet({
 
   const handleCustomAdjustment = () => {
     onClose();
-    pushIfNotCurrent({
+    navigateTo({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
       params: { id: plan.id, initialTab: "plan" },
     } as any);

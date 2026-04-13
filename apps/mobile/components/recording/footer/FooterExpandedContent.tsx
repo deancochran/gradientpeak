@@ -24,7 +24,7 @@ import React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGpsTracking, useSessionView } from "@/lib/hooks/useActivityRecorder";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { IntensityScaling } from "./IntensityScaling";
 import { RecordingControls } from "./RecordingControls";
@@ -56,7 +56,7 @@ export function FooterExpandedContent({
   onLap,
   onFinish,
 }: FooterExpandedContentProps) {
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const insets = useSafeAreaInsets();
   const { toggleGps } = useGpsTracking(service);
   const sessionView = useSessionView(service);
@@ -118,7 +118,7 @@ export function FooterExpandedContent({
   const handleActivityPress = () => {
     if (!isRecordingStarted) {
       console.log("[FooterExpanded] Navigating to activity selection");
-      pushIfNotCurrent("/record/activity");
+      navigateTo("/record/activity");
     }
   };
 
@@ -129,22 +129,22 @@ export function FooterExpandedContent({
 
   const handlePlanPress = () => {
     console.log("[FooterExpanded] Navigating to plan picker");
-    pushIfNotCurrent("/record/plan");
+    navigateTo("/record/plan");
   };
 
   const handleRoutePress = () => {
     console.log("[FooterExpanded] Navigating to route picker");
-    pushIfNotCurrent("/record/route");
+    navigateTo("/record/route");
   };
 
   const handleSensorsPress = () => {
     console.log("[FooterExpanded] Navigating to sensors");
-    pushIfNotCurrent("/record/sensors");
+    navigateTo("/record/sensors");
   };
 
   const handleAdjustPress = () => {
     console.log("[FooterExpanded] Navigating to FTMS control");
-    pushIfNotCurrent("/record/ftms");
+    navigateTo("/record/ftms");
   };
 
   const handleTrainerModeChange = (mode: "auto" | "manual") => {

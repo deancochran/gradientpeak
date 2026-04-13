@@ -30,7 +30,7 @@ import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { ActivityPlanSummarySection } from "./ActivityPlanSummarySection";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
@@ -59,7 +59,7 @@ export function ActivityPlanDetailScreen({
   const { profile } = useAuth();
   const [isPublic, setIsPublic] = useState(false);
   const router = require("expo-router").useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
 
   const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
@@ -117,7 +117,7 @@ export function ActivityPlanDetailScreen({
       eventId: plannedActivity?.id,
     };
     activitySelectionStore.setSelection(payload);
-    pushIfNotCurrent("/record");
+    navigateTo("/record");
   };
   const scheduling = useActivityPlanSchedulingActions({
     action,
@@ -134,7 +134,7 @@ export function ActivityPlanDetailScreen({
 
   const handleEdit = () => {
     if (!activityPlan) return;
-    pushIfNotCurrent({
+    navigateTo({
       pathname: "/create-activity-plan" as any,
       params: { planId: planId || activityPlan.id },
     } as any);

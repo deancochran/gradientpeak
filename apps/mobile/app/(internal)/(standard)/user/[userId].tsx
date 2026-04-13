@@ -14,7 +14,7 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 
@@ -34,7 +34,7 @@ function calculateAge(dob: string | null | undefined): number | null {
 
 function UserDetailScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const {
     user,
@@ -97,7 +97,7 @@ function UserDetailScreen() {
   const messageMutation = api.messaging.getOrCreateDM.useMutation({
     onSuccess: (data) => {
       if (data && "id" in data) {
-        pushIfNotCurrent(`/messages/${(data as any).id}` as any);
+        navigateTo(`/messages/${(data as any).id}` as any);
       }
     },
     onError: (err) => Alert.alert("Error", err.message || "Failed to start message"),
@@ -339,12 +339,12 @@ function UserDetailScreen() {
               <TouchableProfileStat
                 label="Followers"
                 value={renderedProfile?.followers_count ?? 0}
-                onPress={() => pushIfNotCurrent(`/followers?userId=${targetUserId}` as any)}
+                onPress={() => navigateTo(`/followers?userId=${targetUserId}` as any)}
               />
               <TouchableProfileStat
                 label="Following"
                 value={renderedProfile?.following_count ?? 0}
-                onPress={() => pushIfNotCurrent(`/following?userId=${targetUserId}` as any)}
+                onPress={() => navigateTo(`/following?userId=${targetUserId}` as any)}
               />
             </View>
 
@@ -361,7 +361,7 @@ function UserDetailScreen() {
               <Button
                 variant="outline"
                 size="sm"
-                onPress={() => pushIfNotCurrent("/profile-edit" as any)}
+                onPress={() => navigateTo("/profile-edit" as any)}
                 className="flex-row gap-2"
                 testID="edit-profile-action"
               >
@@ -504,7 +504,7 @@ function UserDetailScreen() {
               description="View your completed workouts"
               buttonLabel="Open"
               variant="outline"
-              onPress={() => pushIfNotCurrent(ROUTES.ACTIVITIES.LIST as any)}
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.LIST as any)}
               testID="my-activities"
             />
             <SettingItem
@@ -513,7 +513,7 @@ function UserDetailScreen() {
               description="Create and manage your training plans"
               buttonLabel="Open"
               variant="outline"
-              onPress={() => pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.LIST as any)}
+              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.LIST as any)}
               testID="my-training-plans"
             />
             <SettingItem
@@ -522,7 +522,7 @@ function UserDetailScreen() {
               description="Create or edit your plan templates"
               buttonLabel="Open"
               variant="outline"
-              onPress={() => pushIfNotCurrent(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX as any)}
+              onPress={() => navigateTo(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX as any)}
               testID="my-activity-plans"
             />
             <SettingItem
@@ -531,7 +531,7 @@ function UserDetailScreen() {
               description="Browse your uploaded routes"
               buttonLabel="Open"
               variant="outline"
-              onPress={() => pushIfNotCurrent(ROUTES.ROUTES.LIST as any)}
+              onPress={() => navigateTo(ROUTES.ROUTES.LIST as any)}
               testID="my-routes"
             />
             <SettingItem
@@ -540,7 +540,7 @@ function UserDetailScreen() {
               description="View and manage your raw capability efforts"
               buttonLabel="Open"
               variant="outline"
-              onPress={() => pushIfNotCurrent("/(internal)/(standard)/activity-efforts-list" as any)}
+              onPress={() => navigateTo("/(internal)/(standard)/activity-efforts-list" as any)}
               testID="my-activity-efforts"
             />
           </SettingsGroup>
@@ -650,7 +650,7 @@ function UserDetailScreen() {
               description="Sync activities from Strava, Garmin, and more"
               buttonLabel="Manage"
               variant="outline"
-              onPress={() => pushIfNotCurrent("/integrations" as any)}
+              onPress={() => navigateTo("/integrations" as any)}
               testID="integrations"
             />
           </SettingsGroup>
