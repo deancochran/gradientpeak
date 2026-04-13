@@ -1,6 +1,6 @@
 import { resolveDatabaseUrl, users } from "@repo/db";
 import { createFileRoute } from "@tanstack/react-router";
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
@@ -25,22 +25,16 @@ function createJsonErrorResponse(status: number, message: string) {
 }
 
 async function parseAuthRequestBody(request: Request) {
-  const bodyText = await request.text();
-  const forwardedRequest = new Request(request, {
-    body: bodyText,
-  });
+  const bodyText = await request.clone().text();
 
   if (!bodyText) {
-    return { body: null, forwardedRequest };
+    return null;
   }
 
   try {
-    return {
-      body: JSON.parse(bodyText) as Record<string, unknown>,
-      forwardedRequest,
-    };
+    return JSON.parse(bodyText) as Record<string, unknown>;
   } catch {
-    return { body: null, forwardedRequest };
+    return null;
   }
 }
 
@@ -66,31 +60,29 @@ async function findAuthUserByEmail(email: string) {
 }
 
 async function guardAuthPostRequest(request: Request) {
-  const { body, forwardedRequest } = await parseAuthRequestBody(request);
+  const body = await parseAuthRequestBody(request);
   const pathname = new URL(request.url).pathname;
   const email = typeof body?.email === "string" ? body.email : null;
 
   if (!email) {
-    return { forwardedRequest };
+    return {};
   }
 
   const user = await findAuthUserByEmail(email);
 
   if (pathname.endsWith("/api/auth/sign-up/email") && user) {
     return {
-      forwardedRequest,
       response: createJsonErrorResponse(409, "User already exists. Use another email."),
     };
   }
 
   if (pathname.endsWith("/api/auth/send-verification-email") && user?.emailVerified) {
     return {
-      forwardedRequest,
       response: createJsonErrorResponse(400, "Email already verified. Sign in instead."),
     };
   }
 
-  return { forwardedRequest };
+  return {};
 }
 
 export const Route = createFileRoute("/api/auth/$")({
@@ -118,12 +110,12 @@ export const Route = createFileRoute("/api/auth/$")({
         );
         const auth = getGradientPeakAuth();
 
-        return guardAuthPostRequest(request).then(({ forwardedRequest, response }) => {
+        return guardAuthPostRequest(request).then(({ response }) => {
           if (response) {
             return response;
           }
 
-          return auth.handler(forwardedRequest);
+          return auth.handler(request);
         });
       },
     },
