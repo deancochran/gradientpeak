@@ -11,7 +11,7 @@ interface UseTrainingPlanTemplateSchedulingControllerParams {
   handleOpenCalendar: () => void;
   planId?: string;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
-  router: { replace: (value: any) => void };
+  router: { navigate: (value: any) => void; replace: (value: any) => void };
   utils: ReturnType<typeof api.useUtils>;
 }
 

@@ -86,7 +86,7 @@ describe("scheduled activities list", () => {
   it("switches to the calendar tab for schedule actions", () => {
     const { UNSAFE_getByType } = renderNative(<ScheduledActivitiesListScreen />);
 
-    const emptyStateCard = UNSAFE_getByType("EmptyStateCard");
+    const emptyStateCard = UNSAFE_getByType("EmptyStateCard" as any);
     emptyStateCard.props.onAction();
 
     expect(navigateMock).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
