@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev --host 0.0.0.0 --port 3000",
+    "dev": "concurrently \"pnpm run dev:app\" \"pnpm run dev:ngrok\"",
+    "dev:app": "pnpm exec dotenv -e .env.local -- vite dev --host 0.0.0.0 --port 3000",
+    "dev:ngrok": "ngrok http 3000",
     "build": "vite build",
     "check-types": "tsc --noEmit",
     "preview": "vite preview",
