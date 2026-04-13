@@ -10,8 +10,8 @@ export interface ActivityOption {
   id: string;
   name: string;
   activity_category: string;
-  estimated_duration: number;
-  estimated_tss: number | null;
+  estimated_duration?: number | null;
+  estimated_tss?: number | null;
   description?: string | null;
 }
 
@@ -126,14 +126,16 @@ export function ActivitySelector({
               </Text>
             )}
             <View className="flex-row mt-2 space-x-4">
-              <Text className="text-sm text-gray-600">
-                ⏱️ {formatDuration(item.estimated_duration)}
-              </Text>
-              {item.estimated_tss !== null && (
+              {typeof item.estimated_duration === "number" ? (
+                <Text className="text-sm text-gray-600">
+                  ⏱️ {formatDuration(item.estimated_duration)}
+                </Text>
+              ) : null}
+              {typeof item.estimated_tss === "number" ? (
                 <Text className="text-sm text-gray-600">
                   📊 {Math.round(item.estimated_tss)} TSS
                 </Text>
-              )}
+              ) : null}
             </View>
           </View>
 

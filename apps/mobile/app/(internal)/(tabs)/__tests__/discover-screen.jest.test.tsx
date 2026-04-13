@@ -3,11 +3,27 @@ import { createButtonComponent, createHost } from "../../../../test/mock-compone
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const activityPlansUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: { pages: [{ items: activityPlans, nextCursor: undefined }] },
+  isLoading: false,
+  isRefetching: false,
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  fetchNextPage: jest.fn(),
+  refetch: jest.fn(),
+}));
+const trainingPlansUseQueryMock = jest.fn((_input?: unknown) => ({
+  data: trainingPlans,
+  isLoading: false,
+  isRefetching: false,
+  refetch: jest.fn(),
+}));
 const routesListUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: { pages: [{ items: routes, nextCursor: undefined }] },
   isLoading: false,
   isRefetching: false,
   hasNextPage: false,
+  isFetchingNextPage: false,
   fetchNextPage: jest.fn(),
   refetch: jest.fn(),
 }));
@@ -50,6 +66,16 @@ jest.mock("react-native", () => ({
   TouchableOpacity: ({ children, onPress, ...props }: any) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
+}));
+
+jest.mock("@gorhom/bottom-sheet", () => ({
+  __esModule: true,
+  default: ({ children, ...props }: any) => React.createElement("BottomSheet", props, children),
+  BottomSheetBackdrop: (props: any) => React.createElement("BottomSheetBackdrop", props),
+  BottomSheetScrollView: ({ children, ...props }: any) =>
+    React.createElement("BottomSheetScrollView", props, children),
+  BottomSheetView: ({ children, ...props }: any) =>
+    React.createElement("BottomSheetView", props, children),
 }));
 
 jest.mock("expo-router", () => ({
@@ -127,6 +153,7 @@ jest.mock("lucide-react-native", () => ({
   Footprints: createHost("Footprints"),
   MapPin: createHost("MapPin"),
   Search: createHost("Search"),
+  SlidersHorizontal: createHost("SlidersHorizontal"),
   Users: createHost("Users"),
   Waves: createHost("Waves"),
   X: createHost("X"),
@@ -148,24 +175,13 @@ jest.mock("@/lib/api", () => ({
   api: {
     activityPlans: {
       list: {
-        useInfiniteQuery: jest.fn(() => ({
-          data: { pages: [{ items: activityPlans, nextCursor: undefined }] },
-          isLoading: false,
-          isRefetching: false,
-          hasNextPage: false,
-          fetchNextPage: jest.fn(),
-          refetch: jest.fn(),
-        })),
+        useInfiniteQuery: (input?: unknown, options?: unknown) =>
+          activityPlansUseInfiniteQueryMock(input, options),
       },
     },
     trainingPlans: {
       listTemplates: {
-        useQuery: jest.fn(() => ({
-          data: trainingPlans,
-          isLoading: false,
-          isRefetching: false,
-          refetch: jest.fn(),
-        })),
+        useQuery: (input?: unknown) => trainingPlansUseQueryMock(input),
       },
     },
     routes: {
@@ -192,6 +208,8 @@ const DiscoverScreen = require("../discover").default;
 describe("discover screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    activityPlansUseInfiniteQueryMock.mockClear();
+    trainingPlansUseQueryMock.mockClear();
     routesListUseInfiniteQueryMock.mockClear();
   });
 
@@ -201,55 +219,104 @@ describe("discover screen", () => {
     });
   });
 
-  it("renders the guided browse state for activity plans", () => {
+  it("renders a compact browse state without the old helper stack", () => {
     renderNative(<DiscoverScreen />);
 
     expect(screen.getByText("Header:Discover")).toBeTruthy();
-    expect(screen.getByText("Find your next workout")).toBeTruthy();
     expect(screen.getByText("Browse by type")).toBeTruthy();
-    expect(screen.getByText("Discover your next session")).toBeTruthy();
-    expect(screen.getByText("0 activity plans")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search activity plans")).toBeTruthy();
+    expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
+    expect(screen.queryByText("Find your next workout")).toBeNull();
   });
 
-  it("filters activity plans by category chip", () => {
+  it("applies an activity plan filter from the bottom sheet and marks the filter button active", async () => {
     renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByText("Cycling"));
-
-    expect(screen.getByText("No activity plans found")).toBeTruthy();
-    expect(screen.getByText("Clear filters")).toBeTruthy();
-  });
-
-  it("updates tab copy and search helper on the profiles tab", async () => {
-    renderNative(<DiscoverScreen />);
-
-    fireEvent.press(screen.getByText("Profiles"));
-
-    expect(screen.getByText("Find people to follow")).toBeTruthy();
-    expect(screen.getByText("No profiles found")).toBeTruthy();
-
-    act(() => {
-      fireEvent.changeText(screen.getByPlaceholderText("Search profiles"), "coach");
-      jest.advanceTimersByTime(350);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/Searching profiles for/)).toBeTruthy();
-    });
-  });
-
-  it("requests routes with the debounced search term used by the routes tab", async () => {
-    renderNative(<DiscoverScreen />);
-
-    expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-      {
-        search: undefined,
+    expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          includeSystemTemplates: true,
+          includeOwnOnly: false,
+          includeEstimation: false,
+          ownerScope: "all",
+          search: undefined,
+          activityCategory: undefined,
         limit: 20,
       },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),
     );
 
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    expect(screen.getByTestId("discover-filter-sheet")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-category-bike"));
+    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+
+    await waitFor(() => {
+      expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          includeSystemTemplates: true,
+          includeOwnOnly: false,
+          includeEstimation: false,
+          ownerScope: "all",
+          search: undefined,
+          activityCategory: "bike",
+          limit: 20,
+        },
+        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+      );
+    });
+
+    expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
+  });
+
+  it("applies training plan filters from the bottom sheet", async () => {
+    renderNative(<DiscoverScreen />);
+
+    fireEvent.press(screen.getByText("Training Plans"));
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.press(screen.getByTestId("discover-filter-trainingPlans-sport-run"));
+    fireEvent.press(screen.getByTestId("discover-filter-trainingPlans-experience-beginner"));
+    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+
+    await waitFor(() => {
+      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
+        search: undefined,
+        sport: "run",
+        experience_level: "beginner",
+        min_weeks: undefined,
+        max_weeks: undefined,
+      });
+    });
+  });
+
+  it("requests routes with the debounced search term and applied route filter", async () => {
+    renderNative(<DiscoverScreen />);
+
     fireEvent.press(screen.getByText("Routes"));
+
+    expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      {
+        search: undefined,
+        activityCategory: undefined,
+        limit: 20,
+      },
+      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    );
+
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.press(screen.getByTestId("discover-filter-routes-category-run"));
+    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+
+    await waitFor(() => {
+      expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          search: undefined,
+          activityCategory: "run",
+          limit: 20,
+        },
+        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+      );
+    });
 
     act(() => {
       fireEvent.changeText(screen.getByPlaceholderText("Search your routes"), "river");
@@ -260,10 +327,21 @@ describe("discover screen", () => {
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: "river",
+          activityCategory: "run",
           limit: 20,
         },
         expect.objectContaining({ getNextPageParam: expect.any(Function) }),
       );
     });
+  });
+
+  it("keeps profiles search-only with no filter button", () => {
+    renderNative(<DiscoverScreen />);
+
+    fireEvent.press(screen.getByText("Profiles"));
+
+    expect(screen.getByPlaceholderText("Search profiles")).toBeTruthy();
+    expect(screen.queryByTestId("discover-filter-button")).toBeNull();
+    expect(screen.queryByText(/Searching profiles for/)).toBeNull();
   });
 });
