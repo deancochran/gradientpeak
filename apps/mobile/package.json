@@ -17,7 +17,7 @@
     "android:boot": "bash ./scripts/android-emulator.sh boot",
     "android:install": "bash ./scripts/android-emulator.sh install",
     "android:install:force": "bash ./scripts/android-emulator.sh install-force",
-    "android:e2e:build": "bash ./scripts/android-emulator.sh build-e2e-apk",
+    "android:e2e:build": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_MAESTRO_E2E=1 bash ./scripts/android-emulator.sh build-e2e-apk",
     "android:e2e:apk-path": "bash ./scripts/android-emulator.sh print-e2e-apk-path",
     "android:launch": "bash ./scripts/android-emulator.sh launch",
     "ios": "pnpm exec expo run:ios",

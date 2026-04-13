@@ -110,6 +110,10 @@ const USERS = [
   },
 ];
 
+const STANDARD_ROUTE_ID = "8d0b4a27-d087-4eb2-8d9b-c0f3cb8fb001";
+const STANDARD_EVENT_ID = "1f3f84f0-2d72-4d3f-8e0a-f8f93b13c001";
+const STANDARD_ROUTE_POLYLINE = "_p~iF~ps|U_ulLnnqC_mqNvxq`@";
+
 function shouldIgnoreProfileError(error) {
   return error?.code === "PGRST205";
 }
@@ -210,10 +214,78 @@ async function ensureUser(user) {
   }
 
   console.log(`[e2e-seed] ready ${user.email} (${user.username})`);
+
+  return authUser;
+}
+
+async function ensureStandardUserFixtures(authUser) {
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const todayDate = nowIso.slice(0, 10);
+  const startsAt = new Date(now);
+  startsAt.setHours(9, 0, 0, 0);
+
+  const { error: routeError } = await supabase.from("activity_routes").upsert(
+    {
+      id: STANDARD_ROUTE_ID,
+      profile_id: authUser.id,
+      name: "E2E River Loop",
+      description: "Seeded route for signed-in smoke coverage.",
+      activity_category: "run",
+      file_path: `${authUser.id}/e2e-route.gpx`,
+      total_distance: 10200,
+      total_ascent: 180,
+      total_descent: 175,
+      source: "e2e-seed",
+      elevation_polyline: null,
+      polyline: STANDARD_ROUTE_POLYLINE,
+      is_public: false,
+      likes_count: 0,
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+    {
+      onConflict: "id",
+    },
+  );
+
+  if (routeError) throw routeError;
+
+  const { error: eventError } = await supabase.from("events").upsert(
+    {
+      id: STANDARD_EVENT_ID,
+      profile_id: authUser.id,
+      event_type: "custom",
+      status: "scheduled",
+      title: "E2E Calendar Workout",
+      description: "Seeded calendar event for signed-in smoke coverage.",
+      all_day: false,
+      timezone: "UTC",
+      occurrence_key: `e2e-${todayDate}`,
+      starts_at: startsAt.toISOString(),
+      ends_at: null,
+      scheduled_date: todayDate,
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+    {
+      onConflict: "id",
+    },
+  );
+
+  if (eventError) throw eventError;
+
+  console.log(
+    `[e2e-seed] ensured standard fixtures route=${STANDARD_ROUTE_ID} event=${STANDARD_EVENT_ID}`,
+  );
 }
 
 for (const user of USERS) {
-  await ensureUser(user);
+  const authUser = await ensureUser(user);
+
+  if (user.email === "test@example.com") {
+    await ensureStandardUserFixtures(authUser);
+  }
 }
 
 console.log("[e2e-seed] local mobile/web test users ready");

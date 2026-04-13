@@ -19,6 +19,11 @@ import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import {
+  clearE2ERuntimeErrors,
+  E2ERuntimeErrorStatus,
+  installE2ERuntimeErrorCapture,
+} from "@/lib/testing/e2eRuntimeErrors";
 import { useTheme } from "@/lib/stores/theme-store";
 
 // Initialize Sentry error tracking for production
@@ -81,6 +86,7 @@ function AppShell() {
             <View className="flex-1 bg-background">
               <Slot />
               <PortalHost />
+              <E2ERuntimeErrorStatus />
             </View>
           </SafeAreaView>
         </View>
@@ -103,6 +109,11 @@ export default function RootLayout() {
     GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
       console.warn("Failed to cleanup orphaned FIT recordings:", error);
     });
+  }, []);
+
+  React.useEffect(() => {
+    installE2ERuntimeErrorCapture();
+    clearE2ERuntimeErrors();
   }, []);
 
   React.useEffect(() => {

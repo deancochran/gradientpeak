@@ -17,7 +17,8 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:live-db": "vitest run --config vitest.live-db.config.ts"
   },
   "dependencies": {
     "@repo/auth": "workspace:*",

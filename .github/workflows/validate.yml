@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.non_docs != 'true' }}
+      api_live_db_related: ${{ steps.filter.outputs.api_live_db_related }}
+      db_schema_related: ${{ steps.filter.outputs.db_schema_related }}
       mobile_runtime_related: ${{ steps.filter.outputs.mobile_runtime_related }}
       mobile_test_related: ${{ steps.filter.outputs.mobile_test_related }}
       web_related: ${{ steps.filter.outputs.web_related }}
@@ -71,6 +73,12 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
+            db_schema_related:
+              - 'packages/db/**'
+            api_live_db_related:
+              - 'packages/api/**'
+              - 'packages/db/**'
+              - 'packages/supabase/**'
             mobile_test_related:
               - 'apps/mobile/.maestro/**'
               - 'apps/mobile/scripts/generate-maestro-preview-flow.mts'
@@ -217,6 +225,118 @@ jobs:
       - name: Run unit and integration tests
         run: pnpm test
 
+  db-schema-parity:
+    name: DB Schema Parity
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.docs_only != 'true'
+
+    steps:
+      - name: Checkout
+        if: needs.changes.outputs.db_schema_related == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: needs.changes.outputs.db_schema_related == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        if: needs.changes.outputs.db_schema_related == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        if: needs.changes.outputs.db_schema_related == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Supabase CLI
+        if: needs.changes.outputs.db_schema_related == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        if: needs.changes.outputs.db_schema_related == 'true'
+        run: pnpm run self-host:up
+
+      - name: Wait for Supabase
+        if: needs.changes.outputs.db_schema_related == 'true'
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
+
+      - name: Apply local app schema migrations
+        if: needs.changes.outputs.db_schema_related == 'true'
+        run: pnpm --filter @repo/db db:migrate
+
+      - name: Check schema parity
+        if: needs.changes.outputs.db_schema_related == 'true'
+        run: pnpm --filter @repo/db db:schema:check
+
+      - name: Skip schema parity when DB schema is unchanged
+        if: needs.changes.outputs.db_schema_related != 'true'
+        run: |
+          printf 'No packages/db changes detected; skipping schema parity check.\n'
+
+  api-live-db:
+    name: API Live DB Smoke
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.docs_only != 'true'
+
+    steps:
+      - name: Checkout
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Supabase CLI
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        run: pnpm run self-host:up
+
+      - name: Wait for Supabase
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        run: bash ./scripts/wait-for-port.sh 127.0.0.1 54321 supabase 180
+
+      - name: Apply local app schema migrations
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        run: pnpm --filter @repo/db db:migrate
+
+      - name: Run API live DB smoke tests
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        run: pnpm --filter @repo/api test:live-db
+
+      - name: Skip live DB smoke when API and DB are unchanged
+        if: needs.changes.outputs.api_live_db_related != 'true'
+        run: |
+          printf 'No API or DB changes detected; skipping API live DB smoke tests.\n'
+
   mobile-component-and-jest:
     name: Mobile Component And Jest
     runs-on: ubuntu-latest
@@ -254,6 +374,8 @@ jobs:
       - typecheck
       - build
       - unit-and-integration
+      - db-schema-parity
+      - api-live-db
     if: needs.changes.outputs.docs_only != 'true'
 
     steps:

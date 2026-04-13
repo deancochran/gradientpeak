@@ -39,6 +39,7 @@
     "db:migration:up": "tsx scripts/local-db-command.ts migration up --local",
     "db:migration:down": "tsx scripts/local-db-command.ts migration down --local",
     "db:diff": "tsx scripts/local-db-command.ts db diff --local --schema public",
+    "db:schema:check": "tsx scripts/check-schema-parity.ts",
     "db:lint": "tsx scripts/local-db-command.ts db lint --local --schema public",
     "db:drizzle:pull": "tsx scripts/with-local-db-url.ts drizzle-kit pull --config drizzle.config.ts",
     "db:drizzle:studio": "tsx scripts/with-local-db-url.ts drizzle-kit studio --config drizzle.config.ts",

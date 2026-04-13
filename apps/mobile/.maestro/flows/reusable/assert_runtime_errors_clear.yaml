@@ -1,0 +1,3 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- assertVisible: "E2E_RUNTIME_ERRORS=0"

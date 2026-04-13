@@ -6,6 +6,7 @@ import { Alert, AppState, Platform } from "react-native";
 import { api, createApiClient } from "../api";
 import { useServerConfig } from "../server-config";
 import { useAuthStore } from "../stores/auth-store";
+import { captureE2EQueryError } from "../testing/e2eRuntimeErrors";
 
 // Global error handler for 401/Unauthorized errors
 const handleGlobalError = (error: unknown) => {
@@ -70,12 +71,14 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 
     queryCache.config.onError = (...args) => {
       const [error] = args;
+      captureE2EQueryError(error, "query_cache");
       handleGlobalError(error);
       originalQueryOnError?.(...args);
     };
 
     mutationCache.config.onError = (...args) => {
       const [error] = args;
+      captureE2EQueryError(error, "mutation_cache");
       handleGlobalError(error);
       if (error instanceof Error) {
         // Only show alert for non-auth errors, or if we want to be explicit
