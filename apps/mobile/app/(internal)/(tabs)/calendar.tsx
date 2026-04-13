@@ -1,35 +1,24 @@
 import { PlanCalendarSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
+import { format } from "date-fns";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  RefreshControl,
-  ScrollView,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import {
   CalendarActionsSheet,
-  CalendarDayList,
   CalendarEventPreviewSheet,
   CalendarHeader,
   CalendarManualCreateModal,
   CalendarMonthList,
   CalendarPlannedActivityPickerModal,
+  CalendarSelectedDayAgenda,
 } from "@/components/calendar";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { AppHeader } from "@/components/shared";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
-import {
-  buildDayKeys,
-  getNaturalAnchorForMode,
-  parseDateKey,
-  toDateKey,
-} from "@/lib/calendar/dateMath";
-import { getEventTitle } from "@/lib/calendar/eventPresentation";
+import { getMonthAnchor, parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import {
   buildCalendarQueryWindow,
@@ -46,31 +35,24 @@ const CALENDAR_EVENT_QUERY_LIMIT = 500;
 
 function CalendarScreen() {
   const queryClient = useQueryClient();
-  const { height } = useWindowDimensions();
   const isMountedRef = useRef(true);
 
   const todayKey = useMemo(() => toDateKey(new Date()), []);
 
   const hydrated = useCalendarStore((state) => state.hydrated);
-  const mode = useCalendarStore((state) => state.mode);
   const persistedActiveDate = useCalendarStore((state) => state.activeDate);
   const persistedVisibleAnchor = useCalendarStore((state) => state.visibleAnchor);
   const selectedEventId = useCalendarStore((state) => state.selectedEventId);
   const sheetState = useCalendarStore((state) => state.sheetState);
-  const setMode = useCalendarStore((state) => state.setMode);
   const setActiveDate = useCalendarStore((state) => state.setActiveDate);
   const setVisibleAnchor = useCalendarStore((state) => state.setVisibleAnchor);
   const setSelectedEventId = useCalendarStore((state) => state.setSelectedEventId);
   const setSheetState = useCalendarStore((state) => state.setSheetState);
 
   const activeDate = persistedActiveDate ?? todayKey;
-  const visibleAnchor =
-    persistedVisibleAnchor ?? getNaturalAnchorForMode(persistedActiveDate ?? todayKey, mode);
+  const visibleAnchor = persistedVisibleAnchor ?? getMonthAnchor(persistedActiveDate ?? todayKey);
 
-  const initialWindow = useMemo(
-    () => buildCalendarQueryWindow(visibleAnchor, mode),
-    [mode, visibleAnchor],
-  );
+  const initialWindow = useMemo(() => buildCalendarQueryWindow(visibleAnchor), [visibleAnchor]);
   const [rangeStart, setRangeStart] = useState(initialWindow.rangeStart);
   const [rangeEnd, setRangeEnd] = useState(initialWindow.rangeEnd);
   const [refreshing, setRefreshing] = useState(false);
@@ -79,7 +61,6 @@ function CalendarScreen() {
   const [showPlannedActivityPicker, setShowPlannedActivityPicker] = useState(false);
   const [schedulingActivityPlanId, setSchedulingActivityPlanId] = useState<string | null>(null);
   const [showManualCreateModal, setShowManualCreateModal] = useState(false);
-  const [calendarChromeHeight, setCalendarChromeHeight] = useState(0);
   const [manualCreateType, setManualCreateType] = useState<"race_target" | "custom" | null>(null);
   const [draggingEvent, setDraggingEvent] = useState<CalendarEvent | null>(null);
   const [draggingScope, setDraggingScope] = useState<EventMutationScope | undefined>();
@@ -99,10 +80,9 @@ function CalendarScreen() {
       setActiveDate(todayKey);
     }
     if (!persistedVisibleAnchor) {
-      setVisibleAnchor(getNaturalAnchorForMode(todayKey, mode));
+      setVisibleAnchor(getMonthAnchor(todayKey));
     }
   }, [
-    mode,
     persistedActiveDate,
     persistedVisibleAnchor,
     setActiveDate,
@@ -115,7 +95,6 @@ function CalendarScreen() {
       rangeStart,
       rangeEnd,
       anchorDate: visibleAnchor,
-      mode,
     });
 
     if (nextWindow.rangeStart !== rangeStart) {
@@ -124,7 +103,7 @@ function CalendarScreen() {
     if (nextWindow.rangeEnd !== rangeEnd) {
       setRangeEnd(nextWindow.rangeEnd);
     }
-  }, [mode, rangeEnd, rangeStart, visibleAnchor]);
+  }, [rangeEnd, rangeStart, visibleAnchor]);
 
   const {
     data: activitiesData,
@@ -180,10 +159,9 @@ function CalendarScreen() {
     () => events.find((event) => event.id === selectedEventId) ?? null,
     [events, selectedEventId],
   );
-  const dayKeys = useMemo(() => buildDayKeys(rangeStart, rangeEnd), [rangeEnd, rangeStart]);
-  const pageHeight = Math.max(
-    460,
-    height - (calendarChromeHeight > 0 ? calendarChromeHeight + 88 : 188),
+  const visibleMonthLabel = useMemo(
+    () => format(parseDateKey(visibleAnchor), "MMMM yyyy"),
+    [visibleAnchor],
   );
 
   const handleRefresh = useCallback(async () => {
@@ -208,8 +186,7 @@ function CalendarScreen() {
     closeSheetsAndTransientState,
     resetManualCreateState,
     selectDate,
-    handleModeChange,
-    handleResetToDayPress,
+    handleTodayPress,
     initializeManualCreate,
     handleOpenEvent,
     handleStartPlannedEvent,
@@ -217,7 +194,6 @@ function CalendarScreen() {
     handleDeleteEvent,
     handleStartDragFromEvent,
     handleDropOnDate,
-    handleVisibleDayChange,
     handleVisibleMonthChange,
     handleOpenEventPreview,
     handleQuickActionPress,
@@ -228,11 +204,9 @@ function CalendarScreen() {
     isMountedRef,
     activeDate,
     visibleAnchor,
-    mode,
     todayKey,
     rangeStart,
     rangeEnd,
-    setMode,
     setActiveDate,
     setVisibleAnchor,
     setSelectedEventId,
@@ -287,44 +261,41 @@ function CalendarScreen() {
 
   return (
     <View className="flex-1 bg-background" testID="calendar-screen-ready">
-      <View onLayout={(event) => setCalendarChromeHeight(event.nativeEvent.layout.height)}>
+      <View>
         <AppHeader title="Calendar" />
         <CalendarHeader
-          mode={mode}
-          onModeChange={handleModeChange}
-          onResetToDayPress={handleResetToDayPress}
+          contextLabel={visibleMonthLabel}
+          onTodayPress={handleTodayPress}
           onQuickCreatePress={() => setSheetState("calendar-actions")}
         />
       </View>
 
       <View className="flex-1" testID="calendar-screen-content-ready">
-        {mode === "day" ? (
-          <CalendarDayList
-            dayKeys={dayKeys}
+        <View className="flex-1">
+          <View className="flex-1">
+            <CalendarMonthList
+              rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
+              activeDate={activeDate}
+              visibleMonthAnchor={visibleAnchor}
+              todayKey={todayKey}
+              eventsByDate={eventsByDate}
+              onVisibleMonthChange={handleVisibleMonthChange}
+              onSelectDay={selectDate}
+            />
+          </View>
+          <CalendarSelectedDayAgenda
             activeDate={activeDate}
             todayKey={todayKey}
-            pageHeight={pageHeight}
             eventsByDate={eventsByDate}
             draggingEventId={draggingEvent?.id ?? null}
             getCanStartPlannedEvent={getCanStartPlannedEvent}
-            onVisibleDateChange={handleVisibleDayChange}
             onOpenEvent={handleOpenEventPreview}
             onQuickActionPress={handleQuickActionPress}
             onDragStart={handleStartDragFromEvent}
             onDropOnDate={(dateKey) => handleDropOnDate(dateKey, draggingEvent, draggingScope)}
           />
-        ) : (
-          <CalendarMonthList
-            rangeStart={rangeStart}
-            rangeEnd={rangeEnd}
-            activeDate={activeDate}
-            visibleMonthAnchor={visibleAnchor}
-            todayKey={todayKey}
-            eventsByDate={eventsByDate}
-            onVisibleMonthChange={handleVisibleMonthChange}
-            onSelectDay={(dateKey) => selectDate(dateKey, "day")}
-          />
-        )}
+        </View>
       </View>
 
       <CalendarActionsSheet
@@ -385,7 +356,7 @@ function CalendarScreen() {
             if (!isMountedRef.current) return;
             setSchedulingActivityPlanId(null);
             void handleRefresh();
-            selectDate(activeDate, "day");
+            selectDate(activeDate);
           }}
         />
       ) : null}
@@ -407,10 +378,7 @@ function CalendarScreen() {
         onSubmit={submitManualCreate}
       />
 
-      <ScrollView
-        className="hidden"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-      />
+      <ScrollView className="hidden" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />} />
 
       {!hydrated ? <View testID="calendar-store-pending" /> : null}
     </View>

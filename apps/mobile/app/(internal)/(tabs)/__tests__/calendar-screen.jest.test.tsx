@@ -45,13 +45,11 @@ function createModalHost(type: string) {
 
 type CalendarStoreState = {
   hydrated: boolean;
-  mode: "day" | "month";
   activeDate: string | null;
   visibleAnchor: string | null;
   selectedEventId: string | null;
   sheetState: "closed" | "calendar-actions" | "event-preview";
   setHydrated: (hydrated: boolean) => void;
-  setMode: (mode: "day" | "month") => void;
   setActiveDate: (activeDate: string | null) => void;
   setVisibleAnchor: (visibleAnchor: string | null) => void;
   setSelectedEventId: (selectedEventId: string | null) => void;
@@ -61,13 +59,11 @@ type CalendarStoreState = {
 const createCalendarStore = () =>
   create<CalendarStoreState>((set) => ({
     hydrated: true,
-    mode: "day",
     activeDate: today,
     visibleAnchor: today,
     selectedEventId: null,
     sheetState: "closed",
     setHydrated: (hydrated) => set({ hydrated }),
-    setMode: (mode) => set({ mode }),
     setActiveDate: (activeDate) => set({ activeDate }),
     setVisibleAnchor: (visibleAnchor) => set({ visibleAnchor }),
     setSelectedEventId: (selectedEventId) => set({ selectedEventId }),
@@ -350,37 +346,36 @@ describe("calendar redesign screen", () => {
     );
   });
 
-  it("renders the compact day shell without week-strip copy", () => {
+  it("renders the month-first calendar with a selected-day agenda", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(screen.getByTestId("create-event-entry")).toBeTruthy();
-    expect(screen.queryByTestId("calendar-reset-day-button")).toBeNull();
-    expect(screen.getByTestId("calendar-mode-switcher")).toBeTruthy();
-    expect(screen.getByTestId("calendar-day-page-2026-03-23")).toBeTruthy();
+    expect(screen.getByTestId("calendar-today-button")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-mode-switcher")).toBeNull();
+    expect(screen.getByTestId("calendar-month-page-2026-03-01")).toBeTruthy();
+    expect(screen.getByTestId("calendar-selected-day-agenda")).toBeTruthy();
     expect(screen.getByTestId("schedule-event-event-1")).toBeTruthy();
     expect(screen.queryByText("Week Of")).toBeNull();
     expect(screen.queryByText("Next event")).toBeNull();
   });
 
-  it("resets month mode back to the active day view", () => {
+  it("today selects the current day without switching modes", () => {
+    act(() => {
+      useCalendarStore.setState({ activeDate: "2026-03-24", visibleAnchor: "2026-03-24" });
+    });
+
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    fireEvent.press(screen.getByTestId("calendar-mode-month"));
+    fireEvent.press(screen.getByTestId("calendar-today-button"));
 
-    expect(screen.getByTestId("calendar-reset-day-button")).toBeTruthy();
-
-    fireEvent.press(screen.getByTestId("calendar-reset-day-button"));
-
-    expect(screen.getByTestId("calendar-day-page-2026-03-23")).toBeTruthy();
+    expect(useCalendarStore.getState().activeDate).toBe("2026-03-23");
+    expect(screen.getByText("Today, March 23")).toBeTruthy();
   });
 
-  it("uses the currently visible day for create actions", () => {
-    const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
+  it("uses the selected day for create actions", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
 
-    const flatList = (rendered as any).UNSAFE_getByType("FlatList");
-    act(() => {
-      flatList.props.onViewableItemsChanged({ viewableItems: [{ item: "2026-03-24" }] });
-    });
+    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
 
     fireEvent.press(screen.getByTestId("create-event-entry"));
     fireEvent.press(screen.getByTestId("create-type-planned"));
@@ -390,16 +385,15 @@ describe("calendar redesign screen", () => {
     expect(scheduleModal.props.preselectedDate).toBe("2026-03-24");
   });
 
-  it("switches to month mode and jumps back into day mode from a month cell", () => {
+  it("updates the selected-day agenda from a month cell tap", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("calendar-mode-month"));
 
     expect(screen.getByTestId("calendar-month-page-2026-03-01")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-23"));
+    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
 
-    expect(screen.getByTestId("calendar-day-page-2026-03-23")).toBeTruthy();
+    expect(screen.getByTestId("schedule-event-event-3")).toBeTruthy();
+    expect(screen.queryByTestId("schedule-event-event-2")).toBeNull();
   });
 
   it("opens the event preview sheet and routes to full detail on demand", () => {
@@ -544,10 +538,11 @@ describe("calendar redesign screen", () => {
     expect(screen.queryByTestId("calendar-preview-delete")).toBeNull();
   });
 
-  it("moves an event onto another day through drag-mode drop targets", () => {
+  it("moves an event onto another day through the selected-day drop target", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     fireEvent.press(screen.getByTestId("calendar-drag-handle-event-1"));
+    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
     fireEvent.press(screen.getByTestId("calendar-drop-zone-2026-03-24"));
 
     expect(eventUpdateMutateMock).toHaveBeenCalledWith({

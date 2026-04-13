@@ -1,10 +1,9 @@
 import type { ActivityPayload } from "@repo/core";
 import { format } from "date-fns";
-import { useRouter } from "expo-router";
 import { type RefObject, useCallback } from "react";
 import { Alert } from "react-native";
-import { type CalendarMode, getNaturalAnchorForMode, parseDateKey } from "@/lib/calendar/dateMath";
-import { getEventTitle, isEditableEvent, isRecurringEvent } from "@/lib/calendar/eventPresentation";
+import { getMonthAnchor, parseDateKey } from "@/lib/calendar/dateMath";
+import { isEditableEvent, isRecurringEvent } from "@/lib/calendar/eventPresentation";
 import { buildEditEventRoute, buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { ensureCalendarQueryWindowCovers } from "@/lib/calendar/queryWindow";
@@ -28,11 +27,9 @@ type UseCalendarScreenControllerParams = {
   isMountedRef: RefObject<boolean>;
   activeDate: string;
   visibleAnchor: string;
-  mode: CalendarMode;
   todayKey: string;
   rangeStart: string;
   rangeEnd: string;
-  setMode: (mode: CalendarMode) => void;
   setActiveDate: (activeDate: string) => void;
   setVisibleAnchor: (visibleAnchor: string) => void;
   setSelectedEventId: (selectedEventId: string | null) => void;
@@ -62,27 +59,13 @@ type UseCalendarScreenControllerParams = {
   getCanStartPlannedEvent: (event: CalendarEvent) => boolean;
 };
 
-export function formatCalendarContextLabel(
-  mode: CalendarMode,
-  visibleAnchor: string,
-  activeDate: string,
-): string {
-  if (mode === "month") {
-    return format(parseDateKey(visibleAnchor), "MMMM yyyy");
-  }
-
-  return format(parseDateKey(activeDate), "EEEE, MMM d");
-}
-
 export function useCalendarScreenController({
   isMountedRef,
   activeDate,
   visibleAnchor,
-  mode,
   todayKey,
   rangeStart,
   rangeEnd,
-  setMode,
   setActiveDate,
   setVisibleAnchor,
   setSelectedEventId,
@@ -102,7 +85,6 @@ export function useCalendarScreenController({
   createEvent,
   getCanStartPlannedEvent,
 }: UseCalendarScreenControllerParams) {
-  const router = useRouter();
   const guardNavigation = useNavigationActionGuard();
   const navigateTo = useAppNavigate();
 
@@ -139,13 +121,12 @@ export function useCalendarScreenController({
   );
 
   const ensureDateVisible = useCallback(
-    (dateKey: string, nextMode: CalendarMode) => {
-      const nextAnchor = getNaturalAnchorForMode(dateKey, nextMode);
+    (dateKey: string) => {
+      const nextAnchor = getMonthAnchor(dateKey);
       const nextWindow = ensureCalendarQueryWindowCovers({
         rangeStart,
         rangeEnd,
         anchorDate: nextAnchor,
-        mode: nextMode,
       });
 
       if (nextWindow.rangeStart !== rangeStart) setRangeStart(nextWindow.rangeStart);
@@ -157,32 +138,16 @@ export function useCalendarScreenController({
   );
 
   const selectDate = useCallback(
-    (dateKey: string, nextMode: CalendarMode = mode) => {
+    (dateKey: string) => {
       setActiveDate(dateKey);
-      if (nextMode !== mode) {
-        setMode(nextMode);
-      }
-      ensureDateVisible(dateKey, nextMode);
+      ensureDateVisible(dateKey);
     },
-    [ensureDateVisible, mode, setActiveDate, setMode],
-  );
-
-  const handleModeChange = useCallback(
-    (nextMode: CalendarMode) => {
-      if (nextMode === mode) return;
-      setMode(nextMode);
-      ensureDateVisible(activeDate, nextMode);
-    },
-    [activeDate, ensureDateVisible, mode, setMode],
+    [ensureDateVisible, setActiveDate],
   );
 
   const handleTodayPress = useCallback(() => {
-    selectDate(todayKey, mode);
-  }, [mode, selectDate, todayKey]);
-
-  const handleResetToDayPress = useCallback(() => {
-    selectDate(activeDate, "day");
-  }, [activeDate, selectDate]);
+    selectDate(todayKey);
+  }, [selectDate, todayKey]);
 
   const initializeManualCreate = useCallback(
     (type: ManualEventCreateType) => {
@@ -310,7 +275,7 @@ export function useCalendarScreenController({
       setDraggingScope(scope);
       setSheetState("closed");
       setSelectedEventId(null);
-      selectDate(event.scheduled_date ?? activeDate, "day");
+      selectDate(event.scheduled_date ?? activeDate);
     },
     [activeDate, selectDate, setDraggingEvent, setDraggingScope, setSelectedEventId, setSheetState],
   );
@@ -340,35 +305,6 @@ export function useCalendarScreenController({
     [moveEvent],
   );
 
-  const handleVisibleDayChange = useCallback(
-    (dateKey: string) => {
-      if (dateKey === activeDate && dateKey === visibleAnchor) {
-        return;
-      }
-
-      setActiveDate(dateKey);
-      setVisibleAnchor(dateKey);
-      const nextWindow = ensureCalendarQueryWindowCovers({
-        rangeStart,
-        rangeEnd,
-        anchorDate: dateKey,
-        mode: "day",
-      });
-      if (nextWindow.rangeStart !== rangeStart) setRangeStart(nextWindow.rangeStart);
-      if (nextWindow.rangeEnd !== rangeEnd) setRangeEnd(nextWindow.rangeEnd);
-    },
-    [
-      activeDate,
-      rangeEnd,
-      rangeStart,
-      setActiveDate,
-      setRangeEnd,
-      setRangeStart,
-      setVisibleAnchor,
-      visibleAnchor,
-    ],
-  );
-
   const handleVisibleMonthChange = useCallback(
     (monthStartKey: string) => {
       if (monthStartKey === visibleAnchor) {
@@ -380,7 +316,6 @@ export function useCalendarScreenController({
         rangeStart,
         rangeEnd,
         anchorDate: monthStartKey,
-        mode: "month",
       });
       if (nextWindow.rangeStart !== rangeStart) setRangeStart(nextWindow.rangeStart);
       if (nextWindow.rangeEnd !== rangeEnd) setRangeEnd(nextWindow.rangeEnd);
@@ -446,9 +381,7 @@ export function useCalendarScreenController({
     closeSheetsAndTransientState,
     resetManualCreateState,
     selectDate,
-    handleModeChange,
     handleTodayPress,
-    handleResetToDayPress,
     initializeManualCreate,
     handleOpenEvent,
     handleStartPlannedEvent,
@@ -456,7 +389,6 @@ export function useCalendarScreenController({
     handleDeleteEvent,
     handleStartDragFromEvent,
     handleDropOnDate,
-    handleVisibleDayChange,
     handleVisibleMonthChange,
     handleOpenEventPreview,
     handleQuickActionPress,
