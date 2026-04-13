@@ -11,7 +11,6 @@
 import type { MetricFamily, RecordingActivityCategory, RecordingState } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Text } from "@repo/ui/components/text";
-import { router } from "expo-router";
 import {
   ArrowUpRight,
   Gauge,
@@ -25,6 +24,7 @@ import React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useGpsTracking, useSessionView } from "@/lib/hooks/useActivityRecorder";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { IntensityScaling } from "./IntensityScaling";
 import { RecordingControls } from "./RecordingControls";
@@ -56,6 +56,7 @@ export function FooterExpandedContent({
   onLap,
   onFinish,
 }: FooterExpandedContentProps) {
+  const pushIfNotCurrent = useDedupedPush();
   const insets = useSafeAreaInsets();
   const { toggleGps } = useGpsTracking(service);
   const sessionView = useSessionView(service);
@@ -117,7 +118,7 @@ export function FooterExpandedContent({
   const handleActivityPress = () => {
     if (!isRecordingStarted) {
       console.log("[FooterExpanded] Navigating to activity selection");
-      router.push("/record/activity");
+      pushIfNotCurrent("/record/activity");
     }
   };
 
@@ -128,22 +129,22 @@ export function FooterExpandedContent({
 
   const handlePlanPress = () => {
     console.log("[FooterExpanded] Navigating to plan picker");
-    router.push("/record/plan");
+    pushIfNotCurrent("/record/plan");
   };
 
   const handleRoutePress = () => {
     console.log("[FooterExpanded] Navigating to route picker");
-    router.push("/record/route");
+    pushIfNotCurrent("/record/route");
   };
 
   const handleSensorsPress = () => {
     console.log("[FooterExpanded] Navigating to sensors");
-    router.push("/record/sensors");
+    pushIfNotCurrent("/record/sensors");
   };
 
   const handleAdjustPress = () => {
     console.log("[FooterExpanded] Navigating to FTMS control");
-    router.push("/record/ftms");
+    pushIfNotCurrent("/record/ftms");
   };
 
   const handleTrainerModeChange = (mode: "auto" | "manual") => {

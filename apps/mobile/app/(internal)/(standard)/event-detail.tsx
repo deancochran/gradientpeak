@@ -28,6 +28,7 @@ import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import {
   refreshScheduleViews,
   refreshScheduleWithCallbacks,
@@ -85,13 +86,14 @@ function formatEventType(eventType: string | null | undefined) {
 
 export default function EventDetailScreen() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const queryClient = useQueryClient();
   const { id, mode } = useLocalSearchParams<{ id?: string; mode?: string }>();
   const eventId = typeof id === "string" ? id : "";
   const startsInEditMode = mode === "edit";
 
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
-    onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
   });
 
   const {
@@ -270,19 +272,19 @@ export default function EventDetailScreen() {
     };
 
     activitySelectionStore.setSelection(payload);
-    router.push(ROUTES.RECORD);
+    pushIfNotCurrent(ROUTES.RECORD);
   };
 
   const handleOpenPlanDetail = () => {
     if (!activityPlan?.id || !event) return;
 
-    router.push({
+    pushIfNotCurrent({
       pathname: "/activity-plan-detail",
       params: {
         eventId: event.id,
         planId: activityPlan.id,
       },
-    });
+    } as any);
   };
 
   const openRescheduleModal = (scope?: EventMutationScope) => {

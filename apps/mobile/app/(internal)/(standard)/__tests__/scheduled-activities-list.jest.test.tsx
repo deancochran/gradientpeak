@@ -3,6 +3,7 @@ import React from "react";
 import { renderNative } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const navigateMock = jest.fn();
 const eventsListUseQueryMock = jest.fn(() => ({
   data: { items: [] },
   isLoading: false,
@@ -26,7 +27,12 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, navigate: navigateMock }),
+}));
+
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => pushMock,
 }));
 
 jest.mock("@/components/plan/calendar/ActivityList", () => ({
@@ -64,6 +70,8 @@ const ScheduledActivitiesListScreen = require("../scheduled-activities-list").de
 describe("scheduled activities list", () => {
   beforeEach(() => {
     eventsListUseQueryMock.mockClear();
+    pushMock.mockClear();
+    navigateMock.mockClear();
   });
 
   it("uses schedule-aware query freshness for list data", () => {
@@ -73,5 +81,15 @@ describe("scheduled activities list", () => {
       { limit: 100 },
       expect.objectContaining({ staleTime: 0, refetchOnMount: "always" }),
     );
+  });
+
+  it("switches to the calendar tab for schedule actions", () => {
+    const { UNSAFE_getByType } = renderNative(<ScheduledActivitiesListScreen />);
+
+    const emptyStateCard = UNSAFE_getByType("EmptyStateCard" as any);
+    emptyStateCard.props.onAction();
+
+    expect(navigateMock).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

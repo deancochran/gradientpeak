@@ -32,6 +32,7 @@ import {
   TPV_NEXT_STEP_INTENTS,
 } from "@/lib/constants/trainingPlanIntents";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 
@@ -221,6 +222,7 @@ function formatCompactDayLabel(dayOffset: number) {
 
 export default function TrainingPlanOverview() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const utils = api.useUtils();
@@ -255,7 +257,7 @@ export default function TrainingPlanOverview() {
   );
 
   const handleOpenCalendar = useCallback(() => {
-    router.replace(ROUTES.CALENDAR as any);
+    router.navigate(ROUTES.CALENDAR as any);
   }, [router]);
 
   const scheduling = useTrainingPlanTemplateSchedulingController({
@@ -277,7 +279,7 @@ export default function TrainingPlanOverview() {
       Alert.alert("Plan Deleted", "Your training plan has been deleted", [
         {
           text: "OK",
-          onPress: () => router.replace(ROUTES.PLAN.INDEX),
+          onPress: () => router.navigate(ROUTES.PLAN.INDEX),
         },
       ]);
     },
@@ -342,8 +344,8 @@ export default function TrainingPlanOverview() {
 
   const handleOpenActivity = useCallback(() => {
     if (typeof activityId !== "string") return;
-    router.push(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
-  }, [activityId, router]);
+    pushIfNotCurrent(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+  }, [activityId, pushIfNotCurrent]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -352,7 +354,7 @@ export default function TrainingPlanOverview() {
   };
 
   const handleCreatePlan = () => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.CREATE);
+    pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   };
 
   const handleEditStructure = useCallback(() => {
@@ -360,11 +362,11 @@ export default function TrainingPlanOverview() {
       Alert.alert("Template is read-only", "Only the template owner can edit structure.");
       return;
     }
-    router.push({
+    pushIfNotCurrent({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
       params: { id: plan?.id, initialTab: "plan" },
-    });
-  }, [isOwnedByUser, plan?.id, router]);
+    } as any);
+  }, [isOwnedByUser, plan?.id, pushIfNotCurrent]);
 
   const handleDeletePlan = useCallback(() => {
     if (!plan) return;
@@ -640,7 +642,7 @@ export default function TrainingPlanOverview() {
             isOwnedByUser={isOwnedByUser}
             isPublic={headerActions.isPublic}
             likesCount={headerActions.likesCount}
-            onOpenCalendar={() => router.push(ROUTES.CALENDAR as any)}
+            onOpenCalendar={() => router.navigate(ROUTES.CALENDAR as any)}
             plan={plan}
             schedulingDialogProps={{
               applyPending: scheduling.applyTemplateMutation.isPending,

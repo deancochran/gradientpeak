@@ -1,7 +1,6 @@
 import React from "react";
 import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 
-const pushMock = jest.fn();
 const replaceMock = jest.fn();
 const signInMock = jest.fn();
 const refreshSessionMock = jest.fn(async () => undefined);
@@ -10,7 +9,12 @@ const refreshSessionMock = jest.fn(async () => undefined);
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  useRouter: () => ({ push: jest.fn(), replace: replaceMock }),
+}));
+
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => jest.fn(),
 }));
 
 jest.mock("@/components/auth/ServerUrlOverride", () => ({
@@ -201,7 +205,7 @@ describe("sign-in screen", () => {
     fireEvent.press(screen.getByTestId("sign-in-button"));
 
     await waitFor(() => {
-      expect(pushMock).toHaveBeenCalledWith({
+      expect(replaceMock).toHaveBeenCalledWith({
         pathname: "/(external)/verify",
         params: { email: "athlete@example.com" },
       });

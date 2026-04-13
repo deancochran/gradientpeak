@@ -9,7 +9,7 @@ function createHost(type: string) {
   };
 }
 
-var mockRouterReplace = jest.fn();
+var mockRouterNavigate = jest.fn();
 var mockQuery = jest.fn((_input?: any, _options?: any) => ({
   data: null,
   error: { data: { code: "NOT_FOUND" } },
@@ -39,8 +39,14 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({
     back: jest.fn(),
     push: jest.fn(),
-    replace: mockRouterReplace,
+    navigate: mockRouterNavigate,
+    replace: jest.fn(),
   }),
+}));
+
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => jest.fn(),
 }));
 
 jest.mock("@/components/ScheduleActivityModal", () => ({
@@ -168,7 +174,7 @@ jest.mock("@/lib/api", () => ({
 
 describe("event detail deleted record redirect", () => {
   beforeEach(() => {
-    mockRouterReplace.mockReset();
+    mockRouterNavigate.mockReset();
     mockQuery.mockClear();
   });
 
@@ -189,7 +195,7 @@ describe("event detail deleted record redirect", () => {
     renderNative(<EventDetailScreen />);
 
     await waitFor(() => {
-      expect(mockRouterReplace).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
+      expect(mockRouterNavigate).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
     });
 
     expect(screen.getByText("Closing event...")).toBeTruthy();

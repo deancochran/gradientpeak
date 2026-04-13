@@ -12,7 +12,7 @@ export function MessagesHeaderButton() {
 
   return (
     <TouchableOpacity
-      onPress={() => router.push("/messages")}
+      onPress={() => router.navigate("/messages")}
       testID="messages-header-button"
       className="w-10 h-10 items-center justify-center mr-2"
     >
@@ -34,7 +34,7 @@ export function NotificationsHeaderButton() {
 
   return (
     <TouchableOpacity
-      onPress={() => router.push("/notifications")}
+      onPress={() => router.navigate("/notifications")}
       testID="notifications-header-button"
       className="w-10 h-10 items-center justify-center mr-2"
     >

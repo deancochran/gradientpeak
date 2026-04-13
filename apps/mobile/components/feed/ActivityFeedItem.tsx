@@ -10,6 +10,7 @@ import { useCallback, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 
 // ============================================
 // TYPES
@@ -64,6 +65,7 @@ export function ActivityFeedItem({
   onCommentPress,
 }: ActivityFeedItemProps) {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const [isLiked, setIsLiked] = useState(activity.has_liked);
   const [likesCount, setLikesCount] = useState(activity.likes_count);
 
@@ -90,13 +92,13 @@ export function ActivityFeedItem({
 
   const handleProfilePress = useCallback(() => {
     if (activity.profile?.id) {
-      router.push(`/user/${activity.profile.id}` as any);
+      pushIfNotCurrent(`/user/${activity.profile.id}` as any);
     }
-  }, [activity.profile?.id, router]);
+  }, [activity.profile?.id, pushIfNotCurrent]);
 
   const handleActivityPress = useCallback(() => {
-    router.push(`/activity-detail?id=${activity.id}` as any);
-  }, [activity.id, router]);
+    pushIfNotCurrent(`/activity-detail?id=${activity.id}` as any);
+  }, [activity.id, pushIfNotCurrent]);
 
   const formatActivityDate = (dateStr: string) => {
     try {

@@ -10,6 +10,7 @@ import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { ensureCalendarQueryWindowCovers } from "@/lib/calendar/queryWindow";
 import { ROUTES } from "@/lib/constants/routes";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 
 type EventMutationScope = "single" | "future" | "series";
@@ -101,6 +102,7 @@ export function useCalendarScreenController({
 }: UseCalendarScreenControllerParams) {
   const router = useRouter();
   const guardNavigation = useNavigationActionGuard();
+  const pushIfNotCurrent = useDedupedPush();
 
   const resetManualCreateState = useCallback(() => {
     setShowManualCreateModal(false);
@@ -203,7 +205,7 @@ export function useCalendarScreenController({
       }
 
       dismissOverlaysBeforeNavigation(() => {
-        router.push(route as never);
+        pushIfNotCurrent(route as never);
       });
     },
     [dismissOverlaysBeforeNavigation, router],
@@ -226,7 +228,7 @@ export function useCalendarScreenController({
 
       activitySelectionStore.setSelection(payload);
       dismissOverlaysBeforeNavigation(() => {
-        router.push(ROUTES.RECORD);
+        pushIfNotCurrent(ROUTES.RECORD);
       });
     },
     [dismissOverlaysBeforeNavigation, handleOpenEvent, router],
@@ -268,7 +270,7 @@ export function useCalendarScreenController({
       }
 
       dismissOverlaysBeforeNavigation(() => {
-        router.push(route as never);
+        pushIfNotCurrent(route as never);
       });
     },
     [dismissOverlaysBeforeNavigation, router, setEditingEventId, setEditingEventScope],

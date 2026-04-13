@@ -6,9 +6,11 @@ import React, { useState } from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 
 function FollowersScreen() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const { userId } = useLocalSearchParams<{ userId: string }>();
 
   const targetUserId = typeof userId === "string" ? userId : "";
@@ -30,7 +32,7 @@ function FollowersScreen() {
   const hasMore = followersData?.hasMore || false;
 
   const handleUserPress = (profileUserId: string) => {
-    router.push(`/user/${profileUserId}` as any);
+    pushIfNotCurrent(`/user/${profileUserId}` as any);
   };
 
   const handleLoadMore = () => {

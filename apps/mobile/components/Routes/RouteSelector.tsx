@@ -11,11 +11,11 @@ import {
   SelectValue,
 } from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
-import { useRouter } from "expo-router";
 import { MapPin, TrendingUp, Upload, X } from "lucide-react-native";
 import { View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 import { api } from "@/lib/api";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 
 interface RouteSelectorProps {
   activityCategory: string;
@@ -28,7 +28,7 @@ export function RouteSelector({
   selectedRouteId,
   onSelectRoute,
 }: RouteSelectorProps) {
-  const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
 
   // Fetch routes filtered by activity category
   const { data } = api.routes.list.useInfiniteQuery(
@@ -54,7 +54,7 @@ export function RouteSelector({
   const routes = data?.pages.flatMap((page) => page.items) ?? [];
 
   const handleUploadRoute = () => {
-    router.push("/route-upload" as any);
+    pushIfNotCurrent("/route-upload" as any);
   };
 
   const formatDistance = (meters: number) => {

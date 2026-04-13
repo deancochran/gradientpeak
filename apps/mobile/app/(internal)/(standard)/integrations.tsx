@@ -40,6 +40,7 @@ import {
   View,
 } from "react-native";
 import { api } from "@/lib/api";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { FitUploader } from "@/lib/services/fit/FitUploader";
@@ -119,6 +120,7 @@ function getMobileRedirectUri(): string {
 
 export default function IntegrationsScreen() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const queryClient = useQueryClient();
   const [pendingByProvider, setPendingByProvider] = useState<
     Partial<Record<IntegrationProvider, "connect" | "disconnect">>
@@ -273,7 +275,7 @@ export default function IntegrationsScreen() {
 
   const handleViewImportedActivity = () => {
     if (!importSummary) return;
-    router.push(`/activity-detail?id=${importSummary.activityId}` as any);
+    pushIfNotCurrent(`/activity-detail?id=${importSummary.activityId}` as any);
   };
 
   // Handle deep link and trigger cleanup via refetch

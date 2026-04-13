@@ -12,6 +12,7 @@ import React, { useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 
 type SortBy = "date" | "distance" | "duration" | "tss";
 
@@ -43,6 +44,7 @@ function formatDistance(meters: number): string {
 
 function ActivitiesScreen() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedType, setSelectedType] = useState<ActivityCategory>("bike");
   const [sortBy, setSortBy] = useState<SortBy>("date");
@@ -73,7 +75,7 @@ function ActivitiesScreen() {
   };
 
   const handleActivityPress = (activityId: string) => {
-    router.push(`/activity-detail?id=${activityId}` as any);
+    pushIfNotCurrent(`/activity-detail?id=${activityId}` as any);
   };
 
   const handleLoadMore = () => {
@@ -180,7 +182,7 @@ function ActivitiesScreen() {
               title="No Activities Found"
               description="Start recording activities to see them here"
               actionLabel="Record Activity"
-              onAction={() => router.push("/record" as any)}
+              onAction={() => pushIfNotCurrent("/record" as any)}
               iconSize={64}
               iconColor="text-primary"
             />

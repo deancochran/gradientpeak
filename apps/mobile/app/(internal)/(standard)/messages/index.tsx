@@ -10,6 +10,7 @@ import { cn } from "@repo/ui/lib/cn";
 import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 import { api } from "@/lib/api";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { formatRelativeTime } from "@/lib/utils";
 
 // Type for conversation with message data (returned from getConversations query)
@@ -100,6 +101,7 @@ function ConversationItem({
 
 export default function MessagesScreen() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const { data: conversations = [], isLoading } = api.messaging.getConversations.useQuery();
 
   return (
@@ -117,7 +119,7 @@ export default function MessagesScreen() {
           renderItem={({ item }) => (
             <ConversationItem
               conversation={item}
-              onPress={() => router.push(`/messages/${item.id}`)}
+              onPress={() => pushIfNotCurrent(`/messages/${item.id}`)}
             />
           )}
           ListEmptyComponent={

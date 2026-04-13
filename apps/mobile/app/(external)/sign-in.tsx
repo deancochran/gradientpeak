@@ -21,11 +21,13 @@ import { type SignInFields, signInSchema } from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function SignInScreen() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const { loading: authLoading } = useAuth();
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverConfig = useServerConfig();
@@ -67,7 +69,7 @@ export default function SignInScreen() {
         const mappedError = mapSignInError(error.message);
 
         if (mappedError.type === "verify-email") {
-          router.push({
+          router.replace({
             pathname: "/(external)/verify",
             params: { email: data.email },
           });
@@ -99,7 +101,7 @@ export default function SignInScreen() {
   };
 
   const handleForgotPasswordPress = () => {
-    router.push("/(external)/forgot-password");
+    pushIfNotCurrent("/(external)/forgot-password");
   };
 
   const submitForm = useZodFormSubmit({
@@ -212,7 +214,7 @@ export default function SignInScreen() {
               {__DEV__ && (
                 <Button
                   variant="ghost"
-                  onPress={() => router.push("/(external)/ui-preview" as any)}
+                  onPress={() => pushIfNotCurrent("/(external)/ui-preview" as any)}
                   testId="open-ui-preview-button"
                   className="mt-3 w-full"
                 >

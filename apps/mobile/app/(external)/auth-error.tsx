@@ -14,7 +14,7 @@ export default function AuthErrorScreen() {
   };
 
   const handleTryAgainPress = () => {
-    router.back();
+    router.replace("/(external)/sign-in" as any);
   };
 
   return (

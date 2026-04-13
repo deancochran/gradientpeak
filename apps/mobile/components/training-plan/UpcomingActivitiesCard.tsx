@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { Calendar, ChevronRight, Clock } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 import { ROUTES } from "@/lib/constants/routes";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 
 interface UpcomingActivity {
   id: string;
@@ -24,6 +25,7 @@ interface UpcomingActivitiesCardProps {
 
 export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardProps) {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -67,7 +69,7 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
   };
 
   const handleActivityPress = (activityId: string) => {
-    router.push(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+    pushIfNotCurrent(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
   };
 
   if (!activities || activities.length === 0) {

@@ -1,13 +1,12 @@
 import React from "react";
 import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 
-const pushMock = jest.fn();
 const replaceMock = jest.fn();
 const signUpMock = jest.fn();
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  useRouter: () => ({ push: jest.fn(), replace: replaceMock }),
 }));
 
 jest.mock("@/components/auth/ServerUrlOverride", () => ({
@@ -184,7 +183,7 @@ describe("sign-up screen", () => {
           password: "Password123",
         }),
       );
-      expect(pushMock).toHaveBeenCalledWith({
+      expect(replaceMock).toHaveBeenCalledWith({
         pathname: "/(external)/verify",
         params: { email: "athlete@example.com" },
       });

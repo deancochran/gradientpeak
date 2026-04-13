@@ -96,6 +96,11 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
 }));
 
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => pushMock,
+}));
+
 jest.mock("@react-navigation/native", () => ({
   __esModule: true,
   useFocusEffect: (callback: () => void) => callback(),

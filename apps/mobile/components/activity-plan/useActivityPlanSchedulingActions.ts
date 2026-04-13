@@ -1,11 +1,12 @@
 import { invalidateActivityPlanQueries, invalidateTrainingPlanQueries } from "@repo/api/react";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
-import { buildPlanRoute } from "@/lib/constants/routes";
+import { buildPlanRoute, ROUTES } from "@/lib/constants/routes";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 
 type RouterLike = {
   back: () => void;
+  navigate: (value: unknown) => void;
   replace: (value: unknown) => void;
 };
 
@@ -165,7 +166,7 @@ export function useActivityPlanSchedulingActions({
         setShowScheduleModal(false);
         utils.events.invalidate();
         void invalidateTrainingPlanQueries(utils);
-        router.back();
+        router.navigate(ROUTES.PLAN.CALENDAR);
       },
       visible: showScheduleModal,
     },

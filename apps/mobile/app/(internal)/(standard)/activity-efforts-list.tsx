@@ -15,9 +15,11 @@ import React from "react";
 import { Alert, FlatList, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 
 function ActivityEffortsList() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const utils = api.useUtils();
 
   const { data: efforts, isLoading, error } = api.activityEfforts.getForProfile.useQuery();
@@ -116,7 +118,7 @@ function ActivityEffortsList() {
         <Button
           size="icon"
           className="h-14 w-14 rounded-full shadow-lg"
-          onPress={() => router.push("/(internal)/(standard)/activity-effort-create" as any)}
+          onPress={() => pushIfNotCurrent("/(internal)/(standard)/activity-effort-create" as any)}
         >
           <Icon as={Plus} size={24} className="text-primary-foreground" />
         </Button>

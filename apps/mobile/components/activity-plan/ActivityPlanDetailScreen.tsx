@@ -30,6 +30,7 @@ import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { ActivityPlanSummarySection } from "./ActivityPlanSummarySection";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
@@ -58,10 +59,11 @@ export function ActivityPlanDetailScreen({
   const { profile } = useAuth();
   const [isPublic, setIsPublic] = useState(false);
   const router = require("expo-router").useRouter();
+  const pushIfNotCurrent = useDedupedPush();
 
   const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
-    onRedirect: () => router.replace(ROUTES.PLAN.CALENDAR),
+    onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
   });
 
   const { data: fetchedPlan, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
@@ -115,7 +117,7 @@ export function ActivityPlanDetailScreen({
       eventId: plannedActivity?.id,
     };
     activitySelectionStore.setSelection(payload);
-    router.push("/record");
+    pushIfNotCurrent("/record");
   };
   const scheduling = useActivityPlanSchedulingActions({
     action,
@@ -132,17 +134,17 @@ export function ActivityPlanDetailScreen({
 
   const handleEdit = () => {
     if (!activityPlan) return;
-    router.push({
+    pushIfNotCurrent({
       pathname: "/create-activity-plan" as any,
       params: { planId: planId || activityPlan.id },
-    });
+    } as any);
   };
 
   const deleteMutation = api.activityPlans.delete.useMutation({
     onSuccess: async () => {
       await invalidateActivityPlanQueries(utils);
       Alert.alert("Success", "Activity plan deleted successfully");
-      router.back();
+      router.navigate(ROUTES.PLAN.INDEX);
     },
     onError: (error) => {
       console.error("Delete error:", {

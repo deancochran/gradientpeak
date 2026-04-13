@@ -11,7 +11,7 @@ interface UseTrainingPlanTemplateSchedulingControllerParams {
   handleOpenCalendar: () => void;
   planId?: string;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
-  router: { replace: (value: any) => void };
+  router: { navigate: (value: any) => void; replace: (value: any) => void };
   utils: ReturnType<typeof api.useUtils>;
 }
 
@@ -69,7 +69,7 @@ export function useTrainingPlanTemplateSchedulingController({
                   router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
                   return;
                 }
-                router.replace(ROUTES.PLAN.INDEX as any);
+                router.navigate(ROUTES.PLAN.INDEX as any);
               },
             },
           ],
@@ -175,7 +175,7 @@ export function useTrainingPlanTemplateSchedulingController({
         router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
         return;
       }
-      router.replace(ROUTES.PLAN.INDEX as any);
+      router.navigate(ROUTES.PLAN.INDEX as any);
     },
     handleSelectScheduleAnchorMode,
     scheduleAnchorContent,

@@ -4,6 +4,7 @@ import { ROUTES } from "@/lib/constants/routes";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const navigateMock = jest.fn();
 const refetchActivePlanMock = jest.fn(async () => undefined);
 const refetchSnapshotMock = jest.fn(async () => undefined);
 const recentEventsUpdatedAtRef = { current: 1 };
@@ -44,7 +45,12 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, navigate: navigateMock }),
+}));
+
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => pushMock,
 }));
 
 jest.mock("@/components/ErrorBoundary", () => ({
@@ -308,6 +314,7 @@ const PlanScreenWithErrorBoundary = require("../plan").default;
 describe("plan dashboard navigation", () => {
   beforeEach(() => {
     pushMock.mockClear();
+    navigateMock.mockClear();
     refetchActivePlanMock.mockClear();
     refetchSnapshotMock.mockClear();
     activePlanQueryOptionsRef.current = null;
@@ -347,7 +354,7 @@ describe("plan dashboard navigation", () => {
 
     fireEvent.press(screen.getByTestId("plan-open-calendar-button"));
 
-    expect(pushMock).toHaveBeenCalledWith(ROUTES.CALENDAR);
+    expect(navigateMock).toHaveBeenCalledWith(ROUTES.CALENDAR);
   });
 
   it("opens training plans list from management action", () => {
