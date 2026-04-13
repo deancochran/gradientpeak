@@ -138,13 +138,13 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         {
           text: "Schedule Now",
           onPress: () => {
-            router.push(buildPlanRoute(planId, "schedule") as any);
+            router.replace(buildPlanRoute(planId, "schedule") as any);
           },
         },
         {
           text: "View Plan",
           onPress: () => {
-            router.push(buildPlanRoute(planId) as any);
+            router.replace(buildPlanRoute(planId) as any);
           },
         },
       ]);

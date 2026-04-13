@@ -17,6 +17,7 @@ var localSearchParamsMock = {} as Record<string, string | undefined>;
 var scheduleModalProps: any[] = [];
 var routerMock = {
   back: jest.fn(),
+  navigate: jest.fn(),
   push: jest.fn(),
   replace: jest.fn(),
 };
@@ -106,6 +107,11 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
 jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
   __esModule: true,
   refreshScheduleViews: jest.fn(async () => undefined),
+}));
+
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => routerMock.push,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -242,6 +248,7 @@ const resetTestState = () => {
   nativeAlertMock.mockReset();
   duplicateMutateMock.mockReset();
   routerMock.back.mockReset();
+  routerMock.navigate.mockReset();
   routerMock.push.mockReset();
   routerMock.replace.mockReset();
   Object.keys(localSearchParamsMock).forEach((key) => {
@@ -399,6 +406,29 @@ describe("activity plan detail scheduling", () => {
     expect(scheduleModalProps.at(-1)?.visible).toBe(true);
     expect(scheduleModalProps.at(-1)?.eventId).toBe("event-1");
     expect(nativeAlertMock).not.toHaveBeenCalled();
+  });
+
+  it("navigates to the calendar tab after scheduling succeeds", () => {
+    fetchedPlanMock.current = {
+      id: "owned-plan-1",
+      name: "Owned Builder",
+      activity_category: "run",
+      profile_id: "profile-1",
+      structure: { intervals: [] },
+    };
+
+    renderNative(<ActivityPlanDetail />);
+
+    act(() => {
+      findButton((label) => label === "Schedule").props.onPress();
+    });
+
+    act(() => {
+      scheduleModalProps.at(-1)?.onSuccess?.();
+    });
+
+    expect(routerMock.navigate).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
+    expect(routerMock.back).not.toHaveBeenCalled();
   });
 
   it("shows the new summary-first detail context and hides placeholder share UI", () => {

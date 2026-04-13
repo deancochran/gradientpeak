@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { MessagesHeaderButton, NotificationsHeaderButton } from "./HeaderButtons";
 
 interface AppHeaderProps {
@@ -14,6 +15,7 @@ interface AppHeaderProps {
 export function AppHeader({ showGreeting = true, title }: AppHeaderProps) {
   const { user, profile } = useAuth();
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -32,7 +34,7 @@ export function AppHeader({ showGreeting = true, title }: AppHeaderProps) {
 
   const handleAvatarPress = () => {
     if (!user?.id) return;
-    router.push({
+    pushIfNotCurrent({
       pathname: "/user/[userId]",
       params: { userId: user.id },
     } as any);

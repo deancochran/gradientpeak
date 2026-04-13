@@ -12,6 +12,11 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: jest.fn(), replace: replaceMock }),
 }));
 
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => jest.fn(),
+}));
+
 jest.mock("@/components/auth/ServerUrlOverride", () => ({
   __esModule: true,
   ServerUrlOverride: () => null,

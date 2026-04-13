@@ -30,6 +30,11 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock, navigate: navigateMock }),
 }));
 
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => pushMock,
+}));
+
 jest.mock("@/components/plan/calendar/ActivityList", () => ({
   __esModule: true,
   ActivityList: createHost("ActivityList"),

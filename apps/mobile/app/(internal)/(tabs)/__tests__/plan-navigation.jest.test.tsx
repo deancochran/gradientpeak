@@ -48,6 +48,11 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock, navigate: navigateMock }),
 }));
 
+jest.mock("@/lib/navigation/useDedupedPush", () => ({
+  __esModule: true,
+  useDedupedPush: () => pushMock,
+}));
+
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
   ErrorBoundary: ({ children }: any) => children,

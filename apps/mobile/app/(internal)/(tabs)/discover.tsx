@@ -23,6 +23,7 @@ import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 
 const TABS = [
   { id: "activityPlans", label: "Activity Plans", icon: Activity },
@@ -170,6 +171,7 @@ function getDiscoverResultsListId(tab: TabType) {
 
 export default function DiscoverPage() {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const [activeTab, setActiveTab] = useState<TabType>("activityPlans");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
@@ -247,35 +249,35 @@ export default function DiscoverPage() {
   );
 
   const handleTemplatePress = (template: any) => {
-    router.push({
+    pushIfNotCurrent({
       pathname: "/(internal)/(standard)/activity-plan-detail",
       params: {
         template: JSON.stringify(template),
         source: "discover",
       },
-    });
+    } as any);
   };
 
   const handleTrainingPlanPress = (template: any) => {
-    router.push(ROUTES.PLAN.TRAINING_PLAN.DETAIL(template.id) as any);
+    pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.DETAIL(template.id) as any);
   };
 
   const handleRoutePress = (route: any) => {
-    router.push({
+    pushIfNotCurrent({
       pathname: "/(internal)/(standard)/route-detail",
       params: {
         id: route.id,
       },
-    });
+    } as any);
   };
 
   const handleUserPress = (user: any) => {
-    router.push({
+    pushIfNotCurrent({
       pathname: "/(internal)/(standard)/user/[userId]",
       params: {
         userId: user.id,
       },
-    });
+    } as any);
   };
 
   const handleViewAll = (categoryId: string) => {

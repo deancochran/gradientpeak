@@ -193,7 +193,7 @@ export default function NotificationsScreen() {
     }
 
     if (item.type === "new_message") {
-      router.push("/messages");
+      router.navigate("/messages");
     }
   };
 

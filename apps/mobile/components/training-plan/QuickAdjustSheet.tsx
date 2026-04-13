@@ -9,6 +9,7 @@ import React from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
 
@@ -26,6 +27,7 @@ export function QuickAdjustSheet({
   smartSuggestion,
 }: QuickAdjustSheetProps) {
   const router = useRouter();
+  const pushIfNotCurrent = useDedupedPush();
   const utils = api.useUtils();
 
   const applyAdjustmentMutation = useReliableMutation(api.trainingPlans.applyQuickAdjustment, {
@@ -91,10 +93,10 @@ export function QuickAdjustSheet({
 
   const handleCustomAdjustment = () => {
     onClose();
-    router.push({
+    pushIfNotCurrent({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
       params: { id: plan.id, initialTab: "plan" },
-    });
+    } as any);
   };
 
   return (
