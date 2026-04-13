@@ -15,6 +15,7 @@ type CalendarMonthListProps = {
   rangeStart: string;
   rangeEnd: string;
   activeDate: string;
+  visibleMonthAnchor: string;
   todayKey: string;
   eventsByDate: CalendarEventsByDate;
   onVisibleMonthChange: (monthStartKey: string) => void;
@@ -24,10 +25,21 @@ type CalendarMonthListProps = {
 const MONTH_BLOCK_HEIGHT = 360;
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+export function getVisibleMonthIndex(months: string[], visibleMonthAnchor: string): number {
+  return Math.max(
+    0,
+    months.findIndex(
+      (monthStart) =>
+        monthStart === visibleMonthAnchor || monthStart === visibleMonthAnchor.slice(0, 8) + "01",
+    ),
+  );
+}
+
 export function CalendarMonthList({
   rangeStart,
   rangeEnd,
   activeDate,
+  visibleMonthAnchor,
   todayKey,
   eventsByDate,
   onVisibleMonthChange,
@@ -36,14 +48,8 @@ export function CalendarMonthList({
   const listRef = useRef<FlatList<string>>(null);
   const months = useMemo(() => buildMonthStartKeys(rangeStart, rangeEnd), [rangeEnd, rangeStart]);
   const activeMonthIndex = useMemo(
-    () =>
-      Math.max(
-        0,
-        months.findIndex(
-          (monthStart) => monthStart === activeDate || monthStart === activeDate.slice(0, 8) + "01",
-        ),
-      ),
-    [activeDate, months],
+    () => getVisibleMonthIndex(months, visibleMonthAnchor),
+    [months, visibleMonthAnchor],
   );
 
   useEffect(() => {

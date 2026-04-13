@@ -27,6 +27,7 @@ type CreateManualEventInput = {
 type UseCalendarScreenControllerParams = {
   isMountedRef: RefObject<boolean>;
   activeDate: string;
+  visibleAnchor: string;
   mode: CalendarMode;
   todayKey: string;
   rangeStart: string;
@@ -76,6 +77,7 @@ export function formatCalendarContextLabel(
 export function useCalendarScreenController({
   isMountedRef,
   activeDate,
+  visibleAnchor,
   mode,
   todayKey,
   rangeStart,
@@ -340,6 +342,10 @@ export function useCalendarScreenController({
 
   const handleVisibleDayChange = useCallback(
     (dateKey: string) => {
+      if (dateKey === activeDate && dateKey === visibleAnchor) {
+        return;
+      }
+
       setActiveDate(dateKey);
       setVisibleAnchor(dateKey);
       const nextWindow = ensureCalendarQueryWindowCovers({
@@ -351,11 +357,24 @@ export function useCalendarScreenController({
       if (nextWindow.rangeStart !== rangeStart) setRangeStart(nextWindow.rangeStart);
       if (nextWindow.rangeEnd !== rangeEnd) setRangeEnd(nextWindow.rangeEnd);
     },
-    [rangeEnd, rangeStart, setActiveDate, setRangeEnd, setRangeStart, setVisibleAnchor],
+    [
+      activeDate,
+      rangeEnd,
+      rangeStart,
+      setActiveDate,
+      setRangeEnd,
+      setRangeStart,
+      setVisibleAnchor,
+      visibleAnchor,
+    ],
   );
 
   const handleVisibleMonthChange = useCallback(
     (monthStartKey: string) => {
+      if (monthStartKey === visibleAnchor) {
+        return;
+      }
+
       setVisibleAnchor(monthStartKey);
       const nextWindow = ensureCalendarQueryWindowCovers({
         rangeStart,
@@ -366,7 +385,7 @@ export function useCalendarScreenController({
       if (nextWindow.rangeStart !== rangeStart) setRangeStart(nextWindow.rangeStart);
       if (nextWindow.rangeEnd !== rangeEnd) setRangeEnd(nextWindow.rangeEnd);
     },
-    [rangeEnd, rangeStart, setRangeEnd, setRangeStart, setVisibleAnchor],
+    [rangeEnd, rangeStart, setRangeEnd, setRangeStart, setVisibleAnchor, visibleAnchor],
   );
 
   const handleOpenEventPreview = useCallback(
