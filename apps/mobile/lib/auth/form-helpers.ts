@@ -76,7 +76,10 @@ export function mapSignInError(message?: string | null) {
 }
 
 export function mapSignUpError(message?: string | null) {
-  if (message?.includes("User already registered")) {
+  if (
+    message?.includes("User already registered") ||
+    message?.includes("User already exists. Use another email.")
+  ) {
     return {
       name: "email" as const,
       message: "An account with this email already exists",

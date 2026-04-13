@@ -216,7 +216,7 @@ describe("sign-up screen", () => {
   });
 
   it("maps duplicate-email errors onto the email field", async () => {
-    signUpMock.mockResolvedValue({ error: { message: "User already registered" } });
+    signUpMock.mockResolvedValue({ error: { message: "User already exists. Use another email." } });
 
     renderNative(<SignUpScreen />);
 

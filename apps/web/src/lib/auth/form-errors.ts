@@ -29,7 +29,10 @@ export function getLoginFormError(error: unknown): AuthFormError {
 export function getSignUpFormError(error: unknown): AuthFormError {
   const message = getErrorMessage(error, "An unexpected error occurred");
 
-  if (message.includes("User already registered")) {
+  if (
+    message.includes("User already registered") ||
+    message.includes("User already exists. Use another email.")
+  ) {
     return { message: "An account with this email already exists", target: "email" };
   }
 
