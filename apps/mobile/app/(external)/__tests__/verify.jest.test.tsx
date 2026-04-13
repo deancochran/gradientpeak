@@ -10,7 +10,7 @@ const authState = {
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useLocalSearchParams: () => ({ email: "athlete@example.com" }),
+  useLocalSearchParams: () => ({ email: "athlete@example.com", source: undefined }),
   useRouter: () => ({ replace: replaceMock }),
 }));
 
@@ -167,6 +167,14 @@ describe("verify screen", () => {
     await waitFor(() => {
       expect(screen.getByTestId("resend-message").props.children).toBe("SMTP connection refused");
     });
+  });
+
+  it("offers a way back to sign in", () => {
+    renderNative(<VerifyScreen />);
+
+    fireEvent.press(screen.getByTestId("back-to-sign-in-button"));
+
+    expect(replaceMock).toHaveBeenCalledWith("/(external)/sign-in");
   });
 
   it("redirects verified users back into the app", () => {

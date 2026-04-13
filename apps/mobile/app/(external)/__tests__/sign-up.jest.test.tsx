@@ -3,6 +3,8 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-n
 
 const replaceMock = jest.fn();
 const signUpMock = jest.fn();
+const refreshMobileAuthSessionMock = jest.fn();
+const refreshStoreSessionMock = jest.fn();
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -21,6 +23,7 @@ jest.mock("@/lib/auth/client", () => ({
       email: (...args: any[]) => signUpMock(...args),
     },
   },
+  refreshMobileAuthSession: (...args: any[]) => refreshMobileAuthSessionMock(...args),
   getEmailVerificationCallbackUrl: () => "gradientpeak-dev://callback",
 }));
 
@@ -51,7 +54,10 @@ jest.mock("@/lib/server-config", () => ({
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: {
-    getState: () => ({ clearSession: jest.fn(async () => undefined) }),
+    getState: () => ({
+      clearSession: jest.fn(async () => undefined),
+      refreshSession: refreshStoreSessionMock,
+    }),
   },
 }));
 
@@ -166,6 +172,8 @@ describe("sign-up screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     signUpMock.mockResolvedValue({ error: null });
+    refreshMobileAuthSessionMock.mockResolvedValue(null);
+    refreshStoreSessionMock.mockResolvedValue(undefined);
   });
 
   it("routes to verify after successful sign up", async () => {
@@ -185,8 +193,25 @@ describe("sign-up screen", () => {
       );
       expect(replaceMock).toHaveBeenCalledWith({
         pathname: "/(external)/verify",
-        params: { email: "athlete@example.com" },
+        params: { email: "athlete@example.com", source: "sign-up" },
       });
+    });
+  });
+
+  it("routes verified sessions into the app after sign up success", async () => {
+    refreshMobileAuthSessionMock.mockResolvedValue({
+      user: { id: "user-1", email: "athlete@example.com", emailVerified: true },
+    });
+
+    renderNative(<SignUpScreen />);
+
+    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    fireEvent.press(screen.getByTestId("sign-up-button"));
+
+    await waitFor(() => {
+      expect(replaceMock).toHaveBeenCalledWith("/");
     });
   });
 
