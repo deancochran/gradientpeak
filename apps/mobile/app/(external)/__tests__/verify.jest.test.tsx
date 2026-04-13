@@ -169,6 +169,22 @@ describe("verify screen", () => {
     });
   });
 
+  it("shows a sign-in hint when the email is already verified", async () => {
+    resendMock.mockResolvedValue({
+      error: { message: "Email already verified. Sign in instead." },
+    });
+
+    renderNative(<VerifyScreen />);
+
+    fireEvent.press(screen.getByTestId("resend-code-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("resend-message").props.children).toBe(
+        "Email already verified. Sign in instead.",
+      );
+    });
+  });
+
   it("offers a way back to sign in", () => {
     renderNative(<VerifyScreen />);
 

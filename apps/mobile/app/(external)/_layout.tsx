@@ -1,6 +1,16 @@
 // apps/native/app/(external)/_layout.tsx
-import { Stack } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
 import React from "react";
+
+import { useAuth } from "@/lib/hooks/useAuth";
+
+const AUTHENTICATED_UNVERIFIED_ALLOWED_PATHS = new Set([
+  "/(external)/verify",
+  "/(external)/callback",
+  "/(external)/verification-success",
+  "/(external)/auth-error",
+  "/(external)/reset-password",
+]);
 
 /**
  * External Layout (Unauthenticated Pages)
@@ -10,6 +20,25 @@ import React from "react";
  * forgot-password keep normal back navigation.
  */
 export default function ExternalLayout() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { isAuthenticated, isEmailVerified, isFullyLoaded } = useAuth();
+
+  React.useEffect(() => {
+    if (!isFullyLoaded || !isAuthenticated) {
+      return;
+    }
+
+    if (isEmailVerified) {
+      router.replace("/");
+      return;
+    }
+
+    if (!AUTHENTICATED_UNVERIFIED_ALLOWED_PATHS.has(pathname)) {
+      router.replace("/(external)/verify");
+    }
+  }, [isAuthenticated, isEmailVerified, isFullyLoaded, pathname, router]);
+
   return (
     <Stack
       screenOptions={{
