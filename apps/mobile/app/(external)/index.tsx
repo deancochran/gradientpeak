@@ -5,11 +5,11 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const { isAuthenticated } = useAuth();
 
   React.useEffect(() => {
@@ -25,7 +25,7 @@ export default function WelcomeScreen() {
   };
 
   const handleUiPreviewPress = () => {
-    pushIfNotCurrent("/(external)/ui-preview" as any);
+    navigateTo("/(external)/ui-preview" as any);
   };
 
   return (

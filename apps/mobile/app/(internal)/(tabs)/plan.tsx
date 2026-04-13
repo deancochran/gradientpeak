@@ -16,9 +16,9 @@ import { AppHeader } from "@/components/shared";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 
 function getDateKey(value: Date) {
@@ -47,7 +47,7 @@ function formatPriorityLabel(priority: number | undefined | null) {
 
 function PlanDashboardScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
 
   const { data: activePlan, refetch: refetchActivePlan } = api.trainingPlans.getActivePlan.useQuery(
@@ -97,7 +97,11 @@ function PlanDashboardScreen() {
     scheduleAwareReadQueryOptions,
   );
 
-  const snapshot = useTrainingPlanSnapshot({ planId: activePlan?.id });
+  const snapshot = useTrainingPlanSnapshot({
+    planId: activePlan?.id,
+    includeStatus: false,
+    includeWeeklySummaries: false,
+  });
   const goals = useProfileGoals();
   const goalEditor = usePlanGoalEditorController({
     activePlanId: activePlan?.id,
@@ -128,6 +132,11 @@ function PlanDashboardScreen() {
     }
 
     if (!upcomingPlannedEventsQuery.dataUpdatedAt && !recentPlannedEventsQuery.dataUpdatedAt) {
+      return;
+    }
+
+    if (lastProjectionRefreshKeyRef.current === null) {
+      lastProjectionRefreshKeyRef.current = refreshKey;
       return;
     }
 
@@ -170,7 +179,7 @@ function PlanDashboardScreen() {
               <CardTitle>Forecasted Projection</CardTitle>
               <TouchableOpacity
                 testID="projection-settings-button"
-                onPress={() => pushIfNotCurrent(ROUTES.PLAN.TRAINING_PREFERENCES as any)}
+                onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PREFERENCES as any)}
                 className="rounded-full bg-primary/10 p-2"
                 activeOpacity={0.8}
               >
@@ -257,7 +266,7 @@ function PlanDashboardScreen() {
                 dashboard.goalReadiness.map(({ goal, readinessPercent, projectedCtl }) => (
                   <TouchableOpacity
                     key={goal.id}
-                    onPress={() => pushIfNotCurrent(ROUTES.PLAN.GOAL_DETAIL(goal.id) as any)}
+                    onPress={() => navigateTo(ROUTES.PLAN.GOAL_DETAIL(goal.id) as any)}
                     className="rounded-md border border-border bg-card px-3 py-3"
                     activeOpacity={0.8}
                     testID={`plan-goal-row-${goal.id}`}
@@ -365,7 +374,7 @@ function PlanDashboardScreen() {
               <View className="flex-row gap-2">
                 <Button
                   className="flex-1"
-                  onPress={() => pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.LIST as any)}
+                  onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.LIST as any)}
                   testID="plan-manage-plans-button"
                 >
                   <Text className="text-primary-foreground">Manage Plans</Text>

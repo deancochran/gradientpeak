@@ -32,9 +32,9 @@ import {
   TPV_NEXT_STEP_INTENTS,
 } from "@/lib/constants/trainingPlanIntents";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 type StructureSessionRow = {
   key: string;
@@ -222,7 +222,7 @@ function formatCompactDayLabel(dayOffset: number) {
 
 export default function TrainingPlanOverview() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const utils = api.useUtils();
@@ -243,6 +243,7 @@ export default function TrainingPlanOverview() {
 
   const snapshot = useTrainingPlanSnapshot({
     planId: isSystemTemplateId ? undefined : id,
+    includeStatus: false,
     includeWeeklySummaries: false,
   });
 
@@ -344,8 +345,8 @@ export default function TrainingPlanOverview() {
 
   const handleOpenActivity = useCallback(() => {
     if (typeof activityId !== "string") return;
-    pushIfNotCurrent(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
-  }, [activityId, pushIfNotCurrent]);
+    navigateTo(ROUTES.PLAN.ACTIVITY_DETAIL(activityId) as any);
+  }, [activityId, navigateTo]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -354,7 +355,7 @@ export default function TrainingPlanOverview() {
   };
 
   const handleCreatePlan = () => {
-    pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.CREATE);
+    navigateTo(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   };
 
   const handleEditStructure = useCallback(() => {
@@ -362,11 +363,11 @@ export default function TrainingPlanOverview() {
       Alert.alert("Template is read-only", "Only the template owner can edit structure.");
       return;
     }
-    pushIfNotCurrent({
+    navigateTo({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
       params: { id: plan?.id, initialTab: "plan" },
     } as any);
-  }, [isOwnedByUser, plan?.id, pushIfNotCurrent]);
+  }, [isOwnedByUser, navigateTo, plan?.id]);
 
   const handleDeletePlan = useCallback(() => {
     if (!plan) return;

@@ -7,7 +7,7 @@ import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface TrainingPlanListItemProps {
   plan: {
@@ -22,7 +22,7 @@ interface TrainingPlanListItemProps {
 
 export function TrainingPlanListItem({ plan, onPress }: TrainingPlanListItemProps) {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const [isLiked, setIsLiked] = useState(plan.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(plan.likes_count ?? 0);
 
@@ -48,7 +48,7 @@ export function TrainingPlanListItem({ plan, onPress }: TrainingPlanListItemProp
     if (onPress) {
       onPress();
     } else {
-      pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any);
+      navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any);
     }
   };
 

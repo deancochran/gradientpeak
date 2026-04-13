@@ -11,11 +11,11 @@ import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function TrainingPlansListScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
 
   const {
@@ -54,7 +54,7 @@ function TrainingPlansListScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         <Button
-          onPress={() => pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
+          onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
           testID="training-plans-list-create-button"
         >
           <Icon as={Plus} size={16} className="text-primary-foreground mr-2" />
@@ -67,7 +67,7 @@ function TrainingPlansListScreen() {
               title="No training plans yet"
               description="Create your first plan to start scheduling structured training."
               actionLabel="Create Training Plan"
-              onAction={() => pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
+              onAction={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.CREATE as any)}
             />
           </View>
         ) : (
@@ -78,7 +78,7 @@ function TrainingPlansListScreen() {
             return (
               <TouchableOpacity
                 key={plan.id}
-                onPress={() => pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
+                onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
                 activeOpacity={0.8}
                 testID={`training-plans-list-item-${plan.id}`}
               >

@@ -23,7 +23,7 @@ import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 const TABS = [
   { id: "activityPlans", label: "Activity Plans", icon: Activity },
@@ -171,7 +171,7 @@ function getDiscoverResultsListId(tab: TabType) {
 
 export default function DiscoverPage() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const [activeTab, setActiveTab] = useState<TabType>("activityPlans");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
@@ -249,7 +249,7 @@ export default function DiscoverPage() {
   );
 
   const handleTemplatePress = (template: any) => {
-    pushIfNotCurrent({
+    navigateTo({
       pathname: "/(internal)/(standard)/activity-plan-detail",
       params: {
         template: JSON.stringify(template),
@@ -259,11 +259,11 @@ export default function DiscoverPage() {
   };
 
   const handleTrainingPlanPress = (template: any) => {
-    pushIfNotCurrent(ROUTES.PLAN.TRAINING_PLAN.DETAIL(template.id) as any);
+    navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(template.id) as any);
   };
 
   const handleRoutePress = (route: any) => {
-    pushIfNotCurrent({
+    navigateTo({
       pathname: "/(internal)/(standard)/route-detail",
       params: {
         id: route.id,
@@ -272,7 +272,7 @@ export default function DiscoverPage() {
   };
 
   const handleUserPress = (user: any) => {
-    pushIfNotCurrent({
+    navigateTo({
       pathname: "/(internal)/(standard)/user/[userId]",
       params: {
         userId: user.id,

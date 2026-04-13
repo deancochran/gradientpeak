@@ -9,7 +9,7 @@ import { useRouter } from "expo-router";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 import React from "react";
 import { Pressable, View } from "react-native";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface ActivityHeaderProps {
   user: {
@@ -50,7 +50,7 @@ export function ActivityHeader({
   variant = "card",
 }: ActivityHeaderProps) {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const deviceInfo = [activity.device_manufacturer, activity.device_product]
     .filter(Boolean)
     .join(" ");
@@ -59,7 +59,7 @@ export function ActivityHeader({
 
   const handleUserPress = () => {
     if (!user.id) return;
-    pushIfNotCurrent({
+    navigateTo({
       pathname: "/user/[userId]",
       params: { userId: user.id },
     } as any);

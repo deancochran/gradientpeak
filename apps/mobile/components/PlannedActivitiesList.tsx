@@ -7,7 +7,7 @@ import React from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface PlannedActivitiesListProps {
   onActivitySelect: (plannedActivity: any) => void;
@@ -17,14 +17,14 @@ interface PlannedActivitiesListProps {
 
 export function PlannedActivitiesList({ onActivitySelect }: PlannedActivitiesListProps) {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
 
   // Fetch today's planned activities using API
   const { data: plannedActivities, isLoading: loading } = api.events.getToday.useQuery();
 
   // Handle navigation to activity plan detail page
   const handleNavigateToDetail = (activity: any) => {
-    pushIfNotCurrent({
+    navigateTo({
       pathname: "/activity-plan-detail" as any,
       params: { planId: activity.activity_plan?.id },
     } as any);

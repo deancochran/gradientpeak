@@ -9,8 +9,8 @@ import { buildEditEventRoute, buildOpenEventRoute } from "@/lib/calendar/eventRo
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { ensureCalendarQueryWindowCovers } from "@/lib/calendar/queryWindow";
 import { ROUTES } from "@/lib/constants/routes";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 
 type EventMutationScope = "single" | "future" | "series";
@@ -102,7 +102,7 @@ export function useCalendarScreenController({
 }: UseCalendarScreenControllerParams) {
   const router = useRouter();
   const guardNavigation = useNavigationActionGuard();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
 
   const resetManualCreateState = useCallback(() => {
     setShowManualCreateModal(false);
@@ -123,10 +123,8 @@ export function useCalendarScreenController({
       setSchedulingActivityPlanId(null);
       resetManualCreateState();
 
-      setTimeout(() => {
-        if (!isMountedRef.current) return;
-        guardNavigation(navigate);
-      }, 0);
+      if (!isMountedRef.current) return;
+      guardNavigation(navigate);
     },
     [
       closeSheetsAndTransientState,
@@ -205,10 +203,10 @@ export function useCalendarScreenController({
       }
 
       dismissOverlaysBeforeNavigation(() => {
-        pushIfNotCurrent(route as never);
+        navigateTo(route as never);
       });
     },
-    [dismissOverlaysBeforeNavigation, router],
+    [dismissOverlaysBeforeNavigation, navigateTo],
   );
 
   const handleStartPlannedEvent = useCallback(
@@ -228,10 +226,10 @@ export function useCalendarScreenController({
 
       activitySelectionStore.setSelection(payload);
       dismissOverlaysBeforeNavigation(() => {
-        pushIfNotCurrent(ROUTES.RECORD);
+        navigateTo(ROUTES.RECORD);
       });
     },
-    [dismissOverlaysBeforeNavigation, handleOpenEvent, router],
+    [dismissOverlaysBeforeNavigation, handleOpenEvent, navigateTo],
   );
 
   const getRecurringScopeOptions = useCallback(
@@ -270,10 +268,10 @@ export function useCalendarScreenController({
       }
 
       dismissOverlaysBeforeNavigation(() => {
-        pushIfNotCurrent(route as never);
+        navigateTo(route as never);
       });
     },
-    [dismissOverlaysBeforeNavigation, router, setEditingEventId, setEditingEventScope],
+    [dismissOverlaysBeforeNavigation, navigateTo, setEditingEventId, setEditingEventScope],
   );
 
   const handleDeleteEvent = useCallback(

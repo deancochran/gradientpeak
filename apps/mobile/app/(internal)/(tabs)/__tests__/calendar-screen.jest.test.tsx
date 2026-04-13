@@ -96,9 +96,9 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
 }));
 
-jest.mock("@/lib/navigation/useDedupedPush", () => ({
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useDedupedPush: () => pushMock,
+  useAppNavigate: () => pushMock,
 }));
 
 jest.mock("@react-navigation/native", () => ({
@@ -418,22 +418,16 @@ describe("calendar redesign screen", () => {
     expect(screen.queryByTestId("calendar-preview-open-detail")).toBeNull();
   });
 
-  it("does not navigate after unmount when deferred detail navigation flushes", () => {
-    let deferredNavigation: (() => void) | undefined;
-    const timeoutSpy = jest.spyOn(global, "setTimeout").mockImplementationOnce(((fn: any) => {
-      deferredNavigation = fn;
-      return 0 as any;
-    }) as any);
+  it("opens detail navigation without deferring through setTimeout", () => {
+    const timeoutSpy = jest.spyOn(global, "setTimeout");
 
-    const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
+    renderNative(<CalendarScreenWithErrorBoundary />);
 
     fireEvent.press(screen.getByTestId("schedule-event-event-1"));
     fireEvent.press(screen.getByTestId("calendar-preview-open-detail"));
 
-    rendered.unmount();
-    deferredNavigation?.();
-
-    expect(pushMock).not.toHaveBeenCalled();
+    expect(pushMock).toHaveBeenCalled();
+    expect(timeoutSpy).not.toHaveBeenCalled();
     timeoutSpy.mockRestore();
   });
 

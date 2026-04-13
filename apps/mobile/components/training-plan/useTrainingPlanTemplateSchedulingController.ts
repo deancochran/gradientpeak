@@ -33,9 +33,19 @@ export function useTrainingPlanTemplateSchedulingController({
   );
   const activePlan = rawActivePlan as any;
 
+  const handleOpenCurrentPlan = useCallback(() => {
+    if (typeof activePlan?.id === "string") {
+      router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
+      return;
+    }
+
+    router.navigate(ROUTES.PLAN.INDEX as any);
+  }, [activePlan?.id, router]);
+
   const applyTemplateMutation = api.trainingPlans.applyTemplate.useMutation({
-    onSuccess: async (result) => {
-      await refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation");
+    onSuccess: (result) => {
+      setShowApplyModal(false);
+      void refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation");
       const successActions: Array<{ text: string; onPress: () => void }> = [];
 
       if (typeof result.applied_plan_id === "string") {
@@ -53,7 +63,6 @@ export function useTrainingPlanTemplateSchedulingController({
         `Scheduled ${result.created_event_count} session${result.created_event_count === 1 ? "" : "s"} on your calendar.`,
         successActions,
       );
-      setShowApplyModal(false);
     },
     onError: (error) => {
       if (error.message?.includes("active training plan")) {
@@ -64,13 +73,7 @@ export function useTrainingPlanTemplateSchedulingController({
             { text: "Cancel", style: "cancel" },
             {
               text: "Open Current Plan",
-              onPress: () => {
-                if (typeof activePlan?.id === "string") {
-                  router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
-                  return;
-                }
-                router.navigate(ROUTES.PLAN.INDEX as any);
-              },
+              onPress: handleOpenCurrentPlan,
             },
           ],
         );
@@ -170,13 +173,7 @@ export function useTrainingPlanTemplateSchedulingController({
     activePlan,
     applyTemplateMutation,
     handleApplyTemplate,
-    handleOpenActivePlan: () => {
-      if (typeof activePlan?.id === "string") {
-        router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id) as any);
-        return;
-      }
-      router.navigate(ROUTES.PLAN.INDEX as any);
-    },
+    handleOpenActivePlan: handleOpenCurrentPlan,
     handleSelectScheduleAnchorMode,
     scheduleAnchorContent,
     scheduleAnchorMode,

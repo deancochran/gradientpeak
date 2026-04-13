@@ -67,6 +67,7 @@ export function TrainingPreferencesProjectionPreview({
   const activePlan = activePlanQuery.data;
   const snapshot = useTrainingPlanSnapshot({
     planId: activePlan?.id,
+    includeStatus: false,
     includeWeeklySummaries: false,
   });
 

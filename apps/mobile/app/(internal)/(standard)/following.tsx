@@ -6,11 +6,11 @@ import React, { useState } from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
-import { useDedupedPush } from "@/lib/navigation/useDedupedPush";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function FollowingScreen() {
   const router = useRouter();
-  const pushIfNotCurrent = useDedupedPush();
+  const navigateTo = useAppNavigate();
   const { userId } = useLocalSearchParams<{ userId: string }>();
 
   const targetUserId = typeof userId === "string" ? userId : "";
@@ -32,7 +32,7 @@ function FollowingScreen() {
   const hasMore = followingData?.hasMore || false;
 
   const handleUserPress = (profileUserId: string) => {
-    pushIfNotCurrent(`/user/${profileUserId}` as any);
+    navigateTo(`/user/${profileUserId}` as any);
   };
 
   const handleLoadMore = () => {

@@ -44,9 +44,9 @@ jest.mock("expo-router", () => ({
   }),
 }));
 
-jest.mock("@/lib/navigation/useDedupedPush", () => ({
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
-  useDedupedPush: () => jest.fn(),
+  useAppNavigate: () => jest.fn(),
 }));
 
 jest.mock("@/components/ScheduleActivityModal", () => ({
@@ -185,8 +185,6 @@ describe("event detail deleted record redirect", () => {
       { id: "event-1" },
       expect.objectContaining({
         enabled: true,
-        staleTime: 0,
-        refetchOnMount: "always",
       }),
     );
   });
