@@ -59,6 +59,16 @@
     "tooling/*"
   ],
   "pnpm": {
+    "ignoredBuiltDependencies": [
+      "@prisma/client",
+      "@swc/core",
+      "better-sqlite3",
+      "bufferutil",
+      "esbuild",
+      "msw",
+      "sharp",
+      "unrs-resolver"
+    ],
     "overrides": {
       "baseline-browser-mapping": "2.10.14",
       "browserslist": "4.28.2",

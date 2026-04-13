@@ -151,7 +151,21 @@ describe("verify screen", () => {
         email: "athlete@example.com",
         callbackURL: "gradientpeak://callback",
       });
-      expect(screen.getByTestId("resend-message").props.children).toBe("Verification email sent!");
+      expect(screen.getByTestId("resend-message").props.children).toBe(
+        "Verification email request accepted. Refresh your inbox or Mailpit and try again in a few seconds.",
+      );
+    });
+  });
+
+  it("shows resend failures returned by the auth client", async () => {
+    resendMock.mockResolvedValue({ error: { message: "SMTP connection refused" } });
+
+    renderNative(<VerifyScreen />);
+
+    fireEvent.press(screen.getByTestId("resend-code-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("resend-message").props.children).toBe("SMTP connection refused");
     });
   });
 

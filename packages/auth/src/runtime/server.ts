@@ -105,14 +105,17 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
 
   const mailer = createAuthMailer(env);
 
-  const sendAuthEmail = (input: SendAuthEmailInput) => {
-    void mailer.send(input).catch((error) => {
+  const sendAuthEmail = async (input: SendAuthEmailInput) => {
+    try {
+      await mailer.send(input);
+    } catch (error) {
       console.error("[auth-email] failed", {
         kind: input.kind,
         to: input.to,
         error: error instanceof Error ? error.message : String(error),
       });
-    });
+      throw error;
+    }
   };
 
   const db = drizzle(getPool(options.databaseUrl), {
@@ -142,7 +145,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
         verify: async ({ hash: passwordHash, password }) => compare(password, passwordHash),
       },
       sendResetPassword: async ({ user, url }) => {
-        sendAuthEmail({
+        await sendAuthEmail({
           kind: "reset-password",
           to: user.email,
           actionUrl: url,
@@ -152,7 +155,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     },
     emailVerification: {
       sendVerificationEmail: async ({ user, url }) => {
-        sendAuthEmail({
+        await sendAuthEmail({
           kind: "verification",
           to: user.email,
           actionUrl: url,
@@ -164,7 +167,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
       changeEmail: {
         enabled: true,
         sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
-          sendAuthEmail({
+          await sendAuthEmail({
             kind: "change-email-confirmation",
             to: user.email,
             actionUrl: url,

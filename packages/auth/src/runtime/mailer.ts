@@ -74,6 +74,7 @@ function logAuthEmailEvent(
     to: string;
     smtpHost?: string;
     smtpPort?: number;
+    actionUrl?: string;
     error?: string;
   },
 ) {
@@ -98,6 +99,8 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
           to: maskEmail(input.to),
           smtpHost: env.smtpHost,
           smtpPort: env.smtpPort,
+          // Local log mode is a fallback when SMTP is unavailable, so print the link directly.
+          actionUrl: input.actionUrl,
         });
         return;
       }
