@@ -3,7 +3,7 @@ import { renderNative, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
 const parseMobileAuthCallbackMock = jest.fn();
-const refreshSessionMock = jest.fn(async () => undefined);
+const refreshSessionMock = jest.fn(async (): Promise<any> => null);
 
 const paramsState: Record<string, string | undefined> = {};
 
@@ -63,6 +63,46 @@ describe("auth callback screen", () => {
     await waitFor(() => {
       expect(refreshSessionMock).toHaveBeenCalled();
       expect(replaceMock).toHaveBeenCalledWith("/");
+    });
+  });
+
+  it("routes verified email callbacks home when the refreshed session is verified", async () => {
+    paramsState.intent = "email-verification";
+    paramsState.code = "verification-code";
+    parseMobileAuthCallbackMock.mockReturnValue({
+      success: true,
+      data: { intent: "email-verification", token: null, error: null },
+    });
+    refreshSessionMock.mockResolvedValue({
+      user: { email: "athlete@example.com", emailVerified: true },
+    });
+
+    renderNative(<AuthCallbackScreen />);
+
+    await waitFor(() => {
+      expect(refreshSessionMock).toHaveBeenCalled();
+      expect(replaceMock).toHaveBeenCalledWith("/");
+    });
+  });
+
+  it("routes unverified email callbacks back to verify when a session still exists", async () => {
+    paramsState.intent = "email-verification";
+    paramsState.code = "verification-code";
+    parseMobileAuthCallbackMock.mockReturnValue({
+      success: true,
+      data: { intent: "email-verification", token: null, error: null },
+    });
+    refreshSessionMock.mockResolvedValue({
+      user: { email: "athlete@example.com", emailVerified: false },
+    });
+
+    renderNative(<AuthCallbackScreen />);
+
+    await waitFor(() => {
+      expect(replaceMock).toHaveBeenCalledWith({
+        pathname: "/(external)/verify",
+        params: { email: "athlete@example.com" },
+      });
     });
   });
 });

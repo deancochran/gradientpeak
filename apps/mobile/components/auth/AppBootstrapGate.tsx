@@ -10,9 +10,8 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
   const { initialized } = useServerConfig();
   const {
-    userStatus,
+    authState,
     onboardingStatus,
-    isAuthenticated,
     isFullyLoaded,
     user,
     profileLoading,
@@ -39,13 +38,13 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
       return { type: "loading" as const };
     }
 
-    if (!isAuthenticated) {
+    if (authState === "anonymous") {
       return inExternalGroup
         ? { type: "allow" as const }
         : { type: "redirect" as const, to: "/(external)/sign-in" as const };
     }
 
-    if (userStatus !== "verified") {
+    if (authState === "authenticated-unverified") {
       if (isVerificationScreen || isAuthCallbackScreen) {
         return { type: "allow" as const };
       }
@@ -91,7 +90,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     inInternalGroup,
     initialized,
     isAuthCallbackScreen,
-    isAuthenticated,
+    authState,
     isFullyLoaded,
     isOnboardingScreen,
     isVerificationScreen,
@@ -99,7 +98,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     profileError,
     profileLoading,
     user,
-    userStatus,
+    authState,
   ]);
 
   if (guardDecision.type === "loading") {

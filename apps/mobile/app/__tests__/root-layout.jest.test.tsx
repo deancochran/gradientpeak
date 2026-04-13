@@ -5,6 +5,7 @@ import { renderNative, screen } from "../../test/render-native";
 const replaceMock = jest.fn();
 
 const authState = {
+  authState: "authenticated-verified",
   userStatus: "verified",
   onboardingStatus: true,
   isAuthenticated: true,
@@ -138,6 +139,7 @@ describe("root layout auth guard", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Object.assign(authState, {
+      authState: "authenticated-verified",
       userStatus: "verified",
       onboardingStatus: true,
       isAuthenticated: true,
@@ -150,6 +152,7 @@ describe("root layout auth guard", () => {
   });
 
   it("redirects unauthenticated users to sign in", () => {
+    authState.authState = "anonymous";
     authState.isAuthenticated = false;
     segmentsValue = ["(internal)", "(tabs)"];
 
@@ -159,6 +162,7 @@ describe("root layout auth guard", () => {
   });
 
   it("redirects unverified users to verify with their email", () => {
+    authState.authState = "authenticated-unverified";
     authState.userStatus = "pending";
     segmentsValue = ["(internal)", "(tabs)"];
 
@@ -169,6 +173,7 @@ describe("root layout auth guard", () => {
   });
 
   it("redirects signed-in users away from sign-up and into verify until confirmed", () => {
+    authState.authState = "authenticated-unverified";
     authState.userStatus = "unverified" as any;
     segmentsValue = ["(external)", "sign-up"];
 
