@@ -33,6 +33,7 @@ const listActivityPlansSchema = z
   .object({
     includeOwnOnly: z.boolean().default(true),
     includeSystemTemplates: z.boolean().default(false),
+    includeEstimation: z.boolean().default(true),
     ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
     visibility: z.enum(["private", "public"]).optional(),
     activityCategory: activityCategoryFilterSchema.optional(),
@@ -127,6 +128,20 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
 
 type SerializedActivityPlan = z.output<typeof serializedActivityPlanSchema>;
 type EstimatedActivityPlan = Awaited<ReturnType<typeof addEstimationToPlan>>;
+type DiscoverListActivityPlan = SerializedActivityPlan &
+  Partial<
+    Pick<
+      EstimatedActivityPlan,
+      | "estimated_tss"
+      | "estimated_duration"
+      | "estimated_calories"
+      | "estimated_distance"
+      | "estimated_zones"
+      | "intensity_factor"
+      | "confidence"
+      | "confidence_score"
+    >
+  >;
 
 function buildAccessiblePlanCondition(userId: string) {
   return or(
@@ -227,8 +242,10 @@ export const activityPlansRouter = createTRPCRouter({
       conditions.push(eq(activityPlans.activity_category, input.activityCategory));
     }
 
-    if (input.search) {
-      const pattern = `%${input.search}%`;
+    const trimmedSearch = input.search?.trim();
+
+    if (trimmedSearch) {
+      const pattern = `%${trimmedSearch}%`;
       conditions.push(
         or(ilike(activityPlans.name, pattern), ilike(activityPlans.description, pattern)),
       );
@@ -260,12 +277,20 @@ export const activityPlansRouter = createTRPCRouter({
     const pageRows = hasMore ? parsedRows.slice(0, limit) : parsedRows;
     const items = pageRows.map(serializeActivityPlanRow);
 
-    const itemsWithEstimation = await addEstimationToPlans(
-      items,
-      estimationStore,
-      ctx.session.user.id,
-    );
-    const planIds = itemsWithEstimation.map((plan) => plan.id);
+    const itemsWithOptionalEstimation: DiscoverListActivityPlan[] = input.includeEstimation
+      ? await addEstimationToPlans(items, estimationStore, ctx.session.user.id)
+      : items.map((plan) => ({
+          ...plan,
+          estimated_tss: undefined,
+          estimated_duration: undefined,
+          estimated_calories: undefined,
+          estimated_distance: undefined,
+          estimated_zones: undefined,
+          intensity_factor: undefined,
+          confidence: undefined,
+          confidence_score: undefined,
+        }));
+    const planIds = itemsWithOptionalEstimation.map((plan) => plan.id);
 
     let userLikes: string[] = [];
 
@@ -297,7 +322,7 @@ export const activityPlansRouter = createTRPCRouter({
     }
 
     return {
-      items: itemsWithEstimation.map((plan) => ({
+      items: itemsWithOptionalEstimation.map((plan) => ({
         ...withIdentityFields(plan),
         has_liked: userLikes.includes(plan.id),
       })),

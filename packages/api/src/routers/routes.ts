@@ -197,8 +197,10 @@ export const routesRouter = createTRPCRouter({
         conditions.push(eq(activityRoutes.activity_category, input.activityCategory));
       }
 
-      if (input.search) {
-        conditions.push(ilike(activityRoutes.name, `%${input.search}%`));
+      const trimmedSearch = input.search?.trim();
+
+      if (trimmedSearch) {
+        conditions.push(ilike(activityRoutes.name, `%${trimmedSearch}%`));
       }
 
       if (input.cursor) {

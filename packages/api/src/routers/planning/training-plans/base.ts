@@ -378,7 +378,20 @@ async function updateOwnedTrainingPlanRow(input: {
   return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
 }
 
-async function listPublicTemplateTrainingPlans(db: DbClient): Promise<TrainingPlanRow[]> {
+type TrainingPlanTemplateListFilters = {
+  sport?: string;
+  experience_level?: "beginner" | "intermediate" | "advanced";
+  min_weeks?: number;
+  max_weeks?: number;
+  search?: string;
+};
+
+async function listPublicTemplateTrainingPlans(
+  db: DbClient,
+  filters?: TrainingPlanTemplateListFilters,
+): Promise<TrainingPlanRow[]> {
+  const searchPattern = filters?.search?.trim() ? `%${filters.search.trim()}%` : null;
+
   const result = await db.execute(sql<TrainingPlanRow>`
     select
       id,
@@ -396,6 +409,34 @@ async function listPublicTemplateTrainingPlans(db: DbClient): Promise<TrainingPl
     from training_plans
     where is_system_template = true
       and template_visibility = 'public'
+      and (
+        ${filters?.sport ?? null}::text is null
+        or exists (
+          select 1
+          from jsonb_array_elements_text(coalesce(training_plans.structure->'sport', '[]'::jsonb)) as sport(value)
+          where sport.value = ${filters?.sport ?? null}
+        )
+      )
+      and (
+        ${filters?.experience_level ?? null}::text is null
+        or exists (
+          select 1
+          from jsonb_array_elements_text(coalesce(training_plans.structure->'experienceLevel', '[]'::jsonb)) as experience(value)
+          where experience.value = ${filters?.experience_level ?? null}
+        )
+      )
+      and (
+        ${filters?.min_weeks ?? null}::int is null
+        or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) >= ${filters?.min_weeks ?? null}
+      )
+      and (
+        ${filters?.max_weeks ?? null}::int is null
+        or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) <= ${filters?.max_weeks ?? null}
+      )
+      and (
+        ${searchPattern}::text is null
+        or training_plans.name ilike ${searchPattern}
+      )
     order by created_at desc
   `);
 
@@ -5733,10 +5774,9 @@ export const trainingPlansRouter = createTRPCRouter({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const templates = await listPublicTemplateTrainingPlans(getRequiredDb(ctx));
+      const templates = await listPublicTemplateTrainingPlans(getRequiredDb(ctx), input);
 
-      // Transform and filter results
-      let result = (templates || []).map((t: any) => ({
+      return (templates || []).map((t: any) => ({
         id: t.id,
         name: t.name,
         description: t.description,
@@ -5744,33 +5784,6 @@ export const trainingPlansRouter = createTRPCRouter({
         duration_hours: t.duration_hours,
         ...(t.structure as object),
       }));
-
-      // Apply filters
-      if (input?.sport) {
-        result = result.filter((t: any) => (t.sport || []).includes(input.sport));
-      }
-
-      if (input?.experience_level) {
-        result = result.filter((t: any) =>
-          (t.experienceLevel || []).includes(input.experience_level),
-        );
-      }
-
-      if (input?.min_weeks) {
-        result = result.filter((t: any) => (t.durationWeeks?.recommended || 0) >= input.min_weeks!);
-      }
-
-      if (input?.max_weeks) {
-        result = result.filter((t: any) => (t.durationWeeks?.recommended || 0) <= input.max_weeks!);
-      }
-
-      // Apply search filter (case-insensitive)
-      if (input?.search) {
-        const searchLower = input.search.toLowerCase();
-        result = result.filter((t: any) => (t.name || "").toLowerCase().includes(searchLower));
-      }
-
-      return result;
     }),
 
   // ------------------------------

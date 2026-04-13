@@ -1,10 +1,14 @@
+import BottomSheet, {
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  BottomSheetView,
+} from "@gorhom/bottom-sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
-import { useRouter } from "expo-router";
 import {
   Activity,
   Bike,
@@ -13,12 +17,13 @@ import {
   Footprints,
   MapPin,
   Search,
+  SlidersHorizontal,
   Users,
   Waves,
   X,
 } from "lucide-react-native";
-import React, { useEffect, useMemo, useState } from "react";
-import { FlatList, ScrollView, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, TouchableOpacity, View } from "react-native";
 import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
@@ -38,8 +43,6 @@ const TAB_COPY: Record<
   TabType,
   {
     placeholder: string;
-    browseTitle: string;
-    browseDescription: string;
     resultsLabel: string;
     emptyTitle: string;
     emptyDescription: string;
@@ -47,36 +50,24 @@ const TAB_COPY: Record<
 > = {
   activityPlans: {
     placeholder: "Search activity plans",
-    browseTitle: "Find your next workout",
-    browseDescription:
-      "Browse simple, structured activity plans by sport or search for a specific session.",
     resultsLabel: "activity plans",
-    emptyTitle: "No activity plans found",
-    emptyDescription: "Try another keyword or switch categories.",
+    emptyTitle: "No matching plans",
+    emptyDescription: "Try another search or adjust filters.",
   },
   trainingPlans: {
     placeholder: "Search training plans",
-    browseTitle: "Browse ready-to-use training plans",
-    browseDescription:
-      "See template plans with just enough detail to know the time commitment before you open one.",
     resultsLabel: "training plans",
-    emptyTitle: "No training plans found",
-    emptyDescription: "Try a broader search term like 10k, cycling, or beginner.",
+    emptyTitle: "No matching training plans",
+    emptyDescription: "Try another search or adjust filters.",
   },
   routes: {
     placeholder: "Search your routes",
-    browseTitle: "Revisit saved routes",
-    browseDescription:
-      "Scan your route library by distance, climbing, and activity type before opening the map.",
     resultsLabel: "routes",
-    emptyTitle: "No routes found",
-    emptyDescription: "Try another route name or clear your search.",
+    emptyTitle: "No matching routes",
+    emptyDescription: "Try another search or adjust filters.",
   },
   users: {
     placeholder: "Search profiles",
-    browseTitle: "Find people to follow",
-    browseDescription:
-      "Discover athletes and coaches by username, then open their profile for the full context.",
     resultsLabel: "profiles",
     emptyTitle: "No profiles found",
     emptyDescription: "Try a username or a shorter search term.",
@@ -126,6 +117,26 @@ const CATEGORIES = [
   },
 ] as const;
 
+const TRAINING_PLAN_SPORT_OPTIONS = [
+  { id: "run", label: "Running" },
+  { id: "bike", label: "Cycling" },
+  { id: "swim", label: "Swimming" },
+  { id: "strength", label: "Strength" },
+  { id: "other", label: "Other" },
+] as const;
+
+const TRAINING_PLAN_EXPERIENCE_OPTIONS = [
+  { id: "beginner", label: "Beginner" },
+  { id: "intermediate", label: "Intermediate" },
+  { id: "advanced", label: "Advanced" },
+] as const;
+
+const TRAINING_PLAN_DURATION_PRESETS = [
+  { id: "4-8", label: "4-8 weeks", minWeeks: 4, maxWeeks: 8 },
+  { id: "8-12", label: "8-12 weeks", minWeeks: 8, maxWeeks: 12 },
+  { id: "12+", label: "12+ weeks", minWeeks: 12, maxWeeks: undefined },
+] as const;
+
 const ROUTE_CATEGORY_LABELS: Record<string, string> = {
   run: "Run",
   bike: "Ride",
@@ -137,6 +148,30 @@ const ROUTE_CATEGORY_LABELS: Record<string, string> = {
   indoor_treadmill: "Treadmill",
   indoor_bike_trainer: "Trainer",
 };
+
+type DiscoverCategoryId = (typeof CATEGORIES)[number]["id"];
+
+type ActivityPlanFilters = {
+  categoryId: DiscoverCategoryId | null;
+};
+
+type TrainingPlanFilters = {
+  sport: DiscoverCategoryId | null;
+  experienceLevel: "beginner" | "intermediate" | "advanced" | null;
+  durationPreset: "4-8" | "8-12" | "12+" | null;
+};
+
+type RouteFilters = {
+  categoryId: DiscoverCategoryId | null;
+};
+
+const DEFAULT_ACTIVITY_PLAN_FILTERS: ActivityPlanFilters = { categoryId: null };
+const DEFAULT_TRAINING_PLAN_FILTERS: TrainingPlanFilters = {
+  sport: null,
+  experienceLevel: null,
+  durationPreset: null,
+};
+const DEFAULT_ROUTE_FILTERS: RouteFilters = { categoryId: null };
 
 function useDebounce(value: string, delay: number): string {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -169,25 +204,65 @@ function getDiscoverResultsListId(tab: TabType) {
   }
 }
 
+function hasActivityPlanFilters(filters: ActivityPlanFilters) {
+  return Boolean(filters.categoryId);
+}
+
+function hasTrainingPlanFilters(filters: TrainingPlanFilters) {
+  return Boolean(filters.sport || filters.experienceLevel || filters.durationPreset);
+}
+
+function hasRouteFilters(filters: RouteFilters) {
+  return Boolean(filters.categoryId);
+}
+
+function getDurationRange(
+  preset: TrainingPlanFilters["durationPreset"],
+): { minWeeks?: number; maxWeeks?: number } {
+  const match = TRAINING_PLAN_DURATION_PRESETS.find((option) => option.id === preset);
+  if (!match) {
+    return {};
+  }
+
+  return {
+    minWeeks: match.minWeeks,
+    maxWeeks: match.maxWeeks,
+  };
+}
+
 export default function DiscoverPage() {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
   const [activeTab, setActiveTab] = useState<TabType>("activityPlans");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [activityPlanFilters, setActivityPlanFilters] =
+    useState<ActivityPlanFilters>(DEFAULT_ACTIVITY_PLAN_FILTERS);
+  const [trainingPlanFilters, setTrainingPlanFilters] =
+    useState<TrainingPlanFilters>(DEFAULT_TRAINING_PLAN_FILTERS);
+  const [routeFilters, setRouteFilters] = useState<RouteFilters>(DEFAULT_ROUTE_FILTERS);
+  const [draftActivityPlanFilters, setDraftActivityPlanFilters] =
+    useState<ActivityPlanFilters>(DEFAULT_ACTIVITY_PLAN_FILTERS);
+  const [draftTrainingPlanFilters, setDraftTrainingPlanFilters] =
+    useState<TrainingPlanFilters>(DEFAULT_TRAINING_PLAN_FILTERS);
+  const [draftRouteFilters, setDraftRouteFilters] = useState<RouteFilters>(DEFAULT_ROUTE_FILTERS);
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
   const isSearchMode = debouncedSearch.trim() !== "";
-  const selectedCategoryId = selectedCategories[0] ?? null;
-  const selectedCategory =
-    CATEGORIES.find((category) => category.id === selectedCategoryId) ?? null;
+  const showFilterButton = activeTab !== "users";
+  const selectedActivityCategory =
+    CATEGORIES.find((category) => category.id === activityPlanFilters.categoryId) ?? null;
+  const selectedRouteCategory =
+    CATEGORIES.find((category) => category.id === routeFilters.categoryId) ?? null;
+  const trainingPlanDurationRange = getDurationRange(trainingPlanFilters.durationPreset);
 
   const activityPlansInfiniteQuery = api.activityPlans.list.useInfiniteQuery(
     {
       includeSystemTemplates: true,
       includeOwnOnly: false,
+      includeEstimation: false,
       ownerScope: "all",
       search: debouncedSearch || undefined,
+      activityCategory: activityPlanFilters.categoryId || undefined,
       limit: 20,
     },
     {
@@ -197,11 +272,16 @@ export default function DiscoverPage() {
 
   const trainingPlansQuery = api.trainingPlans.listTemplates.useQuery({
     search: debouncedSearch || undefined,
+    sport: trainingPlanFilters.sport || undefined,
+    experience_level: trainingPlanFilters.experienceLevel || undefined,
+    min_weeks: trainingPlanDurationRange.minWeeks,
+    max_weeks: trainingPlanDurationRange.maxWeeks,
   });
 
   const routesInfiniteQuery = api.routes.list.useInfiniteQuery(
     {
       search: debouncedSearch || undefined,
+      activityCategory: routeFilters.categoryId || undefined,
       limit: 20,
     },
     {
@@ -226,27 +306,30 @@ export default function DiscoverPage() {
   const trainingPlans = trainingPlansQuery.data || [];
   const users = usersQuery.data?.users || [];
 
-  const filteredActivities = useMemo(() => {
-    let activities = activityPlans;
-
-    if (selectedCategories.length > 0) {
-      activities = activities.filter((activity) => {
-        return selectedCategories.includes(activity.activity_category || "");
-      });
-    }
-
-    return activities;
-  }, [activityPlans, selectedCategories]);
-
   const tabCounts = useMemo(
     () => ({
-      activityPlans: filteredActivities.length,
+      activityPlans: activityPlans.length,
       trainingPlans: trainingPlans.length,
       routes: routes.length,
       users: users.length,
     }),
-    [filteredActivities.length, trainingPlans.length, routes.length, users.length],
+    [activityPlans.length, trainingPlans.length, routes.length, users.length],
   );
+
+  const activeTabHasFilters = useMemo(() => {
+    switch (activeTab) {
+      case "activityPlans":
+        return hasActivityPlanFilters(activityPlanFilters);
+      case "trainingPlans":
+        return hasTrainingPlanFilters(trainingPlanFilters);
+      case "routes":
+        return hasRouteFilters(routeFilters);
+      case "users":
+        return false;
+      default:
+        return false;
+    }
+  }, [activeTab, activityPlanFilters, trainingPlanFilters, routeFilters]);
 
   const handleTemplatePress = (template: any) => {
     navigateTo({
@@ -280,29 +363,89 @@ export default function DiscoverPage() {
     } as any);
   };
 
-  const handleViewAll = (categoryId: string) => {
-    setActiveTab("activityPlans");
-    setSearchQuery("");
-    setSelectedCategories([categoryId]);
-  };
+  const syncDraftFiltersFromApplied = useCallback(() => {
+    setDraftActivityPlanFilters(activityPlanFilters);
+    setDraftTrainingPlanFilters(trainingPlanFilters);
+    setDraftRouteFilters(routeFilters);
+  }, [activityPlanFilters, trainingPlanFilters, routeFilters]);
 
-  const handleCategoryToggle = (categoryId: string | null) => {
-    if (!categoryId) {
-      setSelectedCategories([]);
+  const handleOpenFilterSheet = () => {
+    if (!showFilterButton) {
       return;
     }
 
-    setSelectedCategories((current) => (current[0] === categoryId ? [] : [categoryId]));
+    syncDraftFiltersFromApplied();
+    setIsFilterSheetOpen(true);
   };
 
-  const handleClearFilters = () => {
-    setSearchQuery("");
-    setSelectedCategories([]);
+  const handleCloseFilterSheet = () => {
+    syncDraftFiltersFromApplied();
+    setIsFilterSheetOpen(false);
+  };
+
+  const handleApplyFilters = () => {
+    switch (activeTab) {
+      case "activityPlans":
+        setActivityPlanFilters(draftActivityPlanFilters);
+        break;
+      case "trainingPlans":
+        setTrainingPlanFilters(draftTrainingPlanFilters);
+        break;
+      case "routes":
+        setRouteFilters(draftRouteFilters);
+        break;
+      case "users":
+        break;
+    }
+
+    setIsFilterSheetOpen(false);
+  };
+
+  const handleResetDraftFilters = () => {
+    switch (activeTab) {
+      case "activityPlans":
+        setDraftActivityPlanFilters(DEFAULT_ACTIVITY_PLAN_FILTERS);
+        break;
+      case "trainingPlans":
+        setDraftTrainingPlanFilters(DEFAULT_TRAINING_PLAN_FILTERS);
+        break;
+      case "routes":
+        setDraftRouteFilters(DEFAULT_ROUTE_FILTERS);
+        break;
+      case "users":
+        break;
+    }
+  };
+
+  const handleResetActiveTabFilters = useCallback(() => {
+    switch (activeTab) {
+      case "activityPlans":
+        setActivityPlanFilters(DEFAULT_ACTIVITY_PLAN_FILTERS);
+        break;
+      case "trainingPlans":
+        setTrainingPlanFilters(DEFAULT_TRAINING_PLAN_FILTERS);
+        break;
+      case "routes":
+        setRouteFilters(DEFAULT_ROUTE_FILTERS);
+        break;
+      case "users":
+        break;
+    }
+  }, [activeTab]);
+
+  const handleEmptyStateAction = () => {
+    if (isSearchMode) {
+      setSearchQuery("");
+    }
+
+    if (activeTabHasFilters) {
+      handleResetActiveTabFilters();
+    }
   };
 
   const renderTabBar = () => (
     <View className="border-b border-border bg-background px-4 pt-3 pb-3">
-      <Text className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <Text className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
         Browse by type
       </Text>
       <View className="flex-row rounded-2xl border border-border bg-muted/20 p-1.5">
@@ -348,42 +491,13 @@ export default function DiscoverPage() {
     </View>
   );
 
-  const renderCategoryChips = () => {
-    if (activeTab !== "activityPlans") {
-      return null;
-    }
-
-    return (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8, paddingRight: 16 }}
-      >
-        <FilterChip
-          label="All"
-          isActive={!selectedCategoryId}
-          onPress={() => handleCategoryToggle(null)}
-          testID="discover-category-all"
-        />
-        {CATEGORIES.map((category) => (
-          <FilterChip
-            key={category.id}
-            label={category.name}
-            isActive={selectedCategoryId === category.id}
-            onPress={() => handleCategoryToggle(category.id)}
-            testID={`discover-category-${category.id}`}
-          />
-        ))}
-      </ScrollView>
-    );
-  };
-
   const renderSearchInput = () => {
     const activeCopy = TAB_COPY[activeTab];
+    const clearButtonRight = showFilterButton ? 52 : 14;
 
     return (
-      <View className="px-4 pt-4 pb-3 border-b border-border bg-background gap-3">
-        <View className="relative">
+      <View className="px-4 pt-4 pb-3 border-b border-border bg-background">
+        <View className="relative rounded-2xl border border-border bg-card">
           <View className="absolute left-3 top-1/2 z-10 -translate-y-1/2">
             <Icon as={Search} size={18} className="text-muted-foreground" />
           </View>
@@ -391,34 +505,47 @@ export default function DiscoverPage() {
             placeholder={activeCopy.placeholder}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            className="h-12 pl-10 pr-10"
+            className={`h-12 border-0 bg-transparent pl-10 ${showFilterButton ? "pr-24" : "pr-10"}`}
             testID="discover-search-input"
           />
-          {searchQuery.length > 0 && (
+
+          {searchQuery.length > 0 ? (
             <TouchableOpacity
-              className="absolute right-3 top-1/2 -translate-y-1/2"
+              className="absolute top-1/2 -translate-y-1/2"
+              style={{ right: clearButtonRight }}
               onPress={() => setSearchQuery("")}
               activeOpacity={0.8}
+              testID="discover-search-clear"
             >
-              <Icon as={X} size={20} className="text-muted-foreground" />
+              <Icon as={X} size={18} className="text-muted-foreground" />
             </TouchableOpacity>
-          )}
-        </View>
-
-        <View className="gap-2">
-          <Text className="text-sm font-medium text-foreground">{activeCopy.browseTitle}</Text>
-          <Text className="text-xs text-muted-foreground">{activeCopy.browseDescription}</Text>
-          {isSearchMode ? (
-            <View className="flex-row items-center gap-2">
-              <Text className="text-xs text-muted-foreground">
-                Searching {activeCopy.resultsLabel} for {`"${debouncedSearch}"`}
-              </Text>
-              <TouchableOpacity onPress={handleClearFilters} activeOpacity={0.8}>
-                <Text className="text-xs font-medium text-primary">Clear</Text>
-              </TouchableOpacity>
-            </View>
           ) : null}
-          {renderCategoryChips()}
+
+          {showFilterButton ? (
+            <TouchableOpacity
+              className={`absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border ${
+                activeTabHasFilters
+                  ? "border-primary bg-primary"
+                  : "border-border bg-background"
+              }`}
+              onPress={handleOpenFilterSheet}
+              activeOpacity={0.85}
+              testID="discover-filter-button"
+              accessibilityState={{ selected: activeTabHasFilters }}
+            >
+              <Icon
+                as={SlidersHorizontal}
+                size={16}
+                className={activeTabHasFilters ? "text-primary-foreground" : "text-foreground"}
+              />
+              {activeTabHasFilters ? (
+                <View
+                  className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-background"
+                  testID="discover-filter-button-dot"
+                />
+              ) : null}
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
     );
@@ -432,42 +559,43 @@ export default function DiscoverPage() {
     </View>
   );
 
-  const renderEmptyState = (tab: TabType) => (
-    <View className="px-4 py-12">
-      <EmptyStateCard
-        icon={Search}
-        title={TAB_COPY[tab].emptyTitle}
-        description={TAB_COPY[tab].emptyDescription}
-        actionLabel={selectedCategoryId || isSearchMode ? "Clear filters" : undefined}
-        onAction={selectedCategoryId || isSearchMode ? handleClearFilters : undefined}
-      />
-    </View>
-  );
+  const renderEmptyState = (tab: TabType) => {
+    const actionLabel = isSearchMode && activeTabHasFilters
+      ? "Clear search & filters"
+      : activeTabHasFilters
+        ? "Reset filters"
+        : isSearchMode
+          ? "Clear search"
+          : undefined;
+
+    return (
+      <View className="px-4 py-12">
+        <EmptyStateCard
+          icon={Search}
+          title={TAB_COPY[tab].emptyTitle}
+          description={TAB_COPY[tab].emptyDescription}
+          actionLabel={actionLabel}
+          onAction={actionLabel ? handleEmptyStateAction : undefined}
+        />
+      </View>
+    );
+  };
 
   const renderResultsHeader = (title: string, description: string, count: number, noun: string) => (
-    <View className="mb-3 gap-1">
+    <View className="mb-4 gap-1.5">
       <Text className="text-lg font-semibold text-foreground">{title}</Text>
       <Text className="text-sm text-muted-foreground">{description}</Text>
-      <Text className="text-xs text-muted-foreground mt-1">
+      <Text className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mt-1">
         {count} {noun}
         {count === 1 ? "" : "s"}
       </Text>
     </View>
   );
 
-  const renderBrowseIntro = () => (
-    <View className="mx-4 mb-5 rounded-2xl border border-border bg-card p-4 gap-3">
-      <Text className="text-lg font-semibold text-foreground">Discover your next session</Text>
-      <Text className="text-sm leading-5 text-muted-foreground">
-        Keep search simple, browse by sport when you want inspiration, and open any detail page for
-        a deeper look before you commit.
-      </Text>
-      <View className="flex-row flex-wrap gap-2">
-        <BrowsePill label={`${activityPlans.length} activity plans`} />
-        <BrowsePill label={`${trainingPlans.length} training plans`} />
-        <BrowsePill label={`${routes.length} routes`} />
-        <BrowsePill label={`${users.length} profiles`} />
-      </View>
+  const renderNeutralStateHeader = (title: string, description: string) => (
+    <View className="mb-5 gap-2">
+      <Text className="text-lg font-semibold text-foreground">{title}</Text>
+      <Text className="text-sm leading-5 text-muted-foreground">{description}</Text>
     </View>
   );
 
@@ -476,41 +604,43 @@ export default function DiscoverPage() {
       return renderLoadingSkeleton();
     }
 
-    if (!isSearchMode && !selectedCategoryId) {
-      return (
-        <ScrollView className="flex-1 py-4" showsVerticalScrollIndicator={false}>
-          {renderBrowseIntro()}
-          {CATEGORIES.map((category) => {
-            const categoryActivities = activityPlans.filter(
-              (plan) => plan.activity_category === category.id,
-            );
+    if (!isSearchMode && !hasActivityPlanFilters(activityPlanFilters)) {
+      if (activityPlans.length === 0) {
+        return renderEmptyState("activityPlans");
+      }
 
-            return (
-              <CategoryRow
-                key={category.id}
-                category={category}
-                activities={categoryActivities}
-                onViewAll={() => handleViewAll(category.id)}
-                onTemplatePress={handleTemplatePress}
-              />
-            );
-          })}
-          <View className="h-8" />
-        </ScrollView>
+      return (
+        <FlatList
+          testID="discover-activity-plans-list"
+          data={activityPlans.slice(0, 8)}
+          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={renderNeutralStateHeader(
+            "Search anything in Discover",
+            "Start with a plan, or use search and filters when you know what you want to narrow down.",
+          )}
+          renderItem={({ item }) => (
+            <ActivityPlanCard
+              activityPlan={item as any}
+              onPress={() => handleTemplatePress(item)}
+              variant="default"
+            />
+          )}
+        />
       );
     }
 
-    if (filteredActivities.length === 0) {
+    if (activityPlans.length === 0) {
       return renderEmptyState("activityPlans");
     }
 
-    const headerTitle = selectedCategory
-      ? `${selectedCategory.name} activity plans`
+    const headerTitle = selectedActivityCategory
+      ? `${selectedActivityCategory.name} plans`
       : isSearchMode
-        ? "Search results"
+        ? "Plan matches"
         : "All activity plans";
-    const headerDescription = selectedCategory
-      ? selectedCategory.description
+    const headerDescription = selectedActivityCategory
+      ? selectedActivityCategory.description
       : isSearchMode
         ? "Open any session to inspect the structure, route, and scheduling options."
         : "Browse every available activity plan in one place.";
@@ -518,13 +648,13 @@ export default function DiscoverPage() {
     return (
       <FlatList
         testID="discover-activity-plans-list"
-        data={filteredActivities}
+        data={activityPlans}
         contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={renderResultsHeader(
           headerTitle,
           headerDescription,
-          filteredActivities.length,
+          activityPlans.length,
           "plan",
         )}
         renderItem={({ item }) => (
@@ -574,18 +704,28 @@ export default function DiscoverPage() {
       return renderEmptyState("trainingPlans");
     }
 
+    const hasFilters = hasTrainingPlanFilters(trainingPlanFilters);
+    const isNeutralState = !isSearchMode && !hasFilters;
+
     return (
       <FlatList
         testID="discover-training-plans-list"
         data={trainingPlans}
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderResultsHeader(
-          isSearchMode ? "Training plan matches" : "Training plan templates",
-          "Compare commitment, cadence, and focus before you open a plan.",
-          trainingPlans.length,
-          "template",
-        )}
+        ListHeaderComponent={
+          isNeutralState
+            ? renderNeutralStateHeader(
+                "Search anything in Discover",
+                "Browse a few training templates, or use search and filters when you know the structure you want.",
+              )
+            : renderResultsHeader(
+                "Training plan results",
+                "Compare commitment, cadence, and focus before you open a plan.",
+                trainingPlans.length,
+                "template",
+              )
+        }
         renderItem={({ item }) => (
           <TrainingPlanCard template={item} onPress={() => handleTrainingPlanPress(item)} />
         )}
@@ -605,18 +745,32 @@ export default function DiscoverPage() {
       return renderEmptyState("routes");
     }
 
+    const headerTitle = selectedRouteCategory
+      ? `${selectedRouteCategory.name} routes`
+      : isSearchMode
+        ? "Route matches"
+        : "Saved routes";
+    const isNeutralState = !isSearchMode && !hasRouteFilters(routeFilters);
+
     return (
       <FlatList
         testID="discover-routes-list"
         data={routes}
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderResultsHeader(
-          isSearchMode ? "Route matches" : "Saved routes",
-          "Open a route when the distance and climbing feel like the right fit.",
-          routes.length,
-          "route",
-        )}
+        ListHeaderComponent={
+          isNeutralState
+            ? renderNeutralStateHeader(
+                "Search anything in Discover",
+                "Start with a few saved routes, or search when you know the name, distance, or type you want.",
+              )
+            : renderResultsHeader(
+                headerTitle,
+                "Open a route when the distance and climbing feel like the right fit.",
+                routes.length,
+                "route",
+              )
+        }
         renderItem={({ item }) => <RouteCard route={item} onPress={() => handleRoutePress(item)} />}
         ListEmptyComponent={renderEmptyState("routes")}
         onRefresh={() => routesInfiniteQuery.refetch()}
@@ -661,12 +815,19 @@ export default function DiscoverPage() {
         data={users}
         contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderResultsHeader(
-          isSearchMode ? "Profiles found" : "People to follow",
-          "Profiles stay simple here: open one to decide whether you want to follow or message.",
-          users.length,
-          "profile",
-        )}
+        ListHeaderComponent={
+          isSearchMode
+            ? renderResultsHeader(
+                "Profiles",
+                "Profiles stay simple here: open one to decide whether you want to follow or message.",
+                users.length,
+                "profile",
+              )
+            : renderNeutralStateHeader(
+                "Search anything in Discover",
+                "Search profiles directly when you know who you want to find.",
+              )
+        }
         renderItem={({ item }) => <UserCard user={item} onPress={() => handleUserPress(item)} />}
         ListEmptyComponent={renderEmptyState("users")}
         onRefresh={() => usersQuery.refetch()}
@@ -697,14 +858,19 @@ export default function DiscoverPage() {
       {renderTabBar()}
       <View testID={getDiscoverResultsListId(activeTab)} />
       {renderContent()}
-    </View>
-  );
-}
-
-function BrowsePill({ label }: { label: string }) {
-  return (
-    <View className="rounded-full border border-border bg-background px-3 py-1.5">
-      <Text className="text-xs font-medium text-muted-foreground">{label}</Text>
+      <DiscoverFilterSheet
+        activeTab={activeTab}
+        activityPlanFilters={draftActivityPlanFilters}
+        onActivityPlanFiltersChange={setDraftActivityPlanFilters}
+        trainingPlanFilters={draftTrainingPlanFilters}
+        onTrainingPlanFiltersChange={setDraftTrainingPlanFilters}
+        routeFilters={draftRouteFilters}
+        onRouteFiltersChange={setDraftRouteFilters}
+        onApply={handleApplyFilters}
+        onClose={handleCloseFilterSheet}
+        onReset={handleResetDraftFilters}
+        visible={isFilterSheetOpen}
+      />
     </View>
   );
 }
@@ -725,7 +891,7 @@ function FilterChip({
       onPress={onPress}
       activeOpacity={0.8}
       testID={testID}
-      className={`rounded-full border px-3 py-1.5 ${
+      className={`rounded-full border px-3 py-2 ${
         isActive ? "border-primary bg-primary/10" : "border-border bg-background"
       }`}
     >
@@ -738,54 +904,227 @@ function FilterChip({
   );
 }
 
-interface CategoryRowProps {
-  category: (typeof CATEGORIES)[number];
-  activities: any[];
-  onViewAll: () => void;
-  onTemplatePress: (template: any) => void;
+interface DiscoverFilterSheetProps {
+  visible: boolean;
+  activeTab: TabType;
+  activityPlanFilters: ActivityPlanFilters;
+  onActivityPlanFiltersChange: (filters: ActivityPlanFilters) => void;
+  trainingPlanFilters: TrainingPlanFilters;
+  onTrainingPlanFiltersChange: (filters: TrainingPlanFilters) => void;
+  routeFilters: RouteFilters;
+  onRouteFiltersChange: (filters: RouteFilters) => void;
+  onReset: () => void;
+  onApply: () => void;
+  onClose: () => void;
 }
 
-function CategoryRow({ category, activities, onViewAll, onTemplatePress }: CategoryRowProps) {
-  if (activities.length === 0) return null;
+function DiscoverFilterSheet({
+  visible,
+  activeTab,
+  activityPlanFilters,
+  onActivityPlanFiltersChange,
+  trainingPlanFilters,
+  onTrainingPlanFiltersChange,
+  routeFilters,
+  onRouteFiltersChange,
+  onReset,
+  onApply,
+  onClose,
+}: DiscoverFilterSheetProps) {
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  const snapPoints = useMemo(() => ["62%", "85%"], []);
+
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
+  const isResetDisabled = useMemo(() => {
+    switch (activeTab) {
+      case "activityPlans":
+        return !hasActivityPlanFilters(activityPlanFilters);
+      case "trainingPlans":
+        return !hasTrainingPlanFilters(trainingPlanFilters);
+      case "routes":
+        return !hasRouteFilters(routeFilters);
+      case "users":
+        return true;
+      default:
+        return true;
+    }
+  }, [activeTab, activityPlanFilters, trainingPlanFilters, routeFilters]);
+
+  if (!visible || activeTab === "users") {
+    return null;
+  }
 
   return (
-    <View className="mb-6 gap-3">
-      <View className="flex-row items-start justify-between px-4 gap-3">
-        <View className="flex-1 flex-row gap-3">
-          <View className={`mt-0.5 rounded-xl p-2 ${category.bgColor}`}>
-            <Icon as={category.icon} size={18} className={category.color} />
-          </View>
-          <View className="flex-1 gap-1">
-            <Text className="text-lg font-semibold text-foreground">{category.name}</Text>
-            <Text className="text-sm text-muted-foreground">{category.description}</Text>
-            <Text className="text-xs text-muted-foreground">
-              {activities.length} plan{activities.length === 1 ? "" : "s"}
+    <BottomSheet
+      ref={bottomSheetRef}
+      index={0}
+      snapPoints={snapPoints}
+      enablePanDownToClose
+      backdropComponent={renderBackdrop}
+      onClose={onClose}
+    >
+      <BottomSheetView className="flex-1" testID="discover-filter-sheet">
+        <BottomSheetScrollView
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 120 }}
+        >
+          <View className="gap-1 border-b border-border pb-4">
+            <Text className="text-lg font-semibold text-foreground">Filters</Text>
+            <Text className="text-sm text-muted-foreground">
+              {activeTab === "activityPlans"
+                ? "Activity Plans"
+                : activeTab === "trainingPlans"
+                  ? "Training Plans"
+                  : "Routes"}
             </Text>
           </View>
-        </View>
 
-        <TouchableOpacity onPress={onViewAll} activeOpacity={0.8}>
-          <Text className="text-sm text-primary font-medium">See all</Text>
-        </TouchableOpacity>
-      </View>
+          {activeTab === "activityPlans" ? (
+            <View className="mt-6 gap-3">
+              <Text className="text-sm font-medium text-foreground">Activity</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {CATEGORIES.map((category) => (
+                  <FilterChip
+                    key={category.id}
+                    label={category.name}
+                    isActive={activityPlanFilters.categoryId === category.id}
+                    onPress={() =>
+                      onActivityPlanFiltersChange({
+                        categoryId:
+                          activityPlanFilters.categoryId === category.id ? null : category.id,
+                      })
+                    }
+                    testID={`discover-filter-activityPlans-category-${category.id}`}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
 
-      <FlatList
-        horizontal
-        data={activities.slice(0, 5)}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={{ width: 280 }}>
-            <ActivityPlanCard
-              activityPlan={item}
-              onPress={() => onTemplatePress(item)}
-              variant="default"
-            />
+          {activeTab === "trainingPlans" ? (
+            <View className="mt-6 gap-6">
+              <View className="gap-3">
+                <Text className="text-sm font-medium text-foreground">Sport</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {TRAINING_PLAN_SPORT_OPTIONS.map((option) => (
+                    <FilterChip
+                      key={option.id}
+                      label={option.label}
+                      isActive={trainingPlanFilters.sport === option.id}
+                      onPress={() =>
+                        onTrainingPlanFiltersChange({
+                          ...trainingPlanFilters,
+                          sport: trainingPlanFilters.sport === option.id ? null : option.id,
+                        })
+                      }
+                      testID={`discover-filter-trainingPlans-sport-${option.id}`}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View className="gap-3">
+                <Text className="text-sm font-medium text-foreground">Experience</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {TRAINING_PLAN_EXPERIENCE_OPTIONS.map((option) => (
+                    <FilterChip
+                      key={option.id}
+                      label={option.label}
+                      isActive={trainingPlanFilters.experienceLevel === option.id}
+                      onPress={() =>
+                        onTrainingPlanFiltersChange({
+                          ...trainingPlanFilters,
+                          experienceLevel:
+                            trainingPlanFilters.experienceLevel === option.id ? null : option.id,
+                        })
+                      }
+                      testID={`discover-filter-trainingPlans-experience-${option.id}`}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View className="gap-3">
+                <Text className="text-sm font-medium text-foreground">Duration</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {TRAINING_PLAN_DURATION_PRESETS.map((option) => (
+                    <FilterChip
+                      key={option.id}
+                      label={option.label}
+                      isActive={trainingPlanFilters.durationPreset === option.id}
+                      onPress={() =>
+                        onTrainingPlanFiltersChange({
+                          ...trainingPlanFilters,
+                          durationPreset:
+                            trainingPlanFilters.durationPreset === option.id ? null : option.id,
+                        })
+                      }
+                      testID={`discover-filter-trainingPlans-duration-${option.id}`}
+                    />
+                  ))}
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {activeTab === "routes" ? (
+            <View className="mt-6 gap-3">
+              <Text className="text-sm font-medium text-foreground">Route type</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {CATEGORIES.map((category) => (
+                  <FilterChip
+                    key={category.id}
+                    label={category.name}
+                    isActive={routeFilters.categoryId === category.id}
+                    onPress={() =>
+                      onRouteFiltersChange({
+                        categoryId: routeFilters.categoryId === category.id ? null : category.id,
+                      })
+                    }
+                    testID={`discover-filter-routes-category-${category.id}`}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </BottomSheetScrollView>
+
+        <View className="border-t border-border bg-background px-4 pb-8 pt-3">
+          <View className="flex-row gap-3">
+            <TouchableOpacity
+              onPress={onReset}
+              activeOpacity={0.85}
+              disabled={isResetDisabled}
+              testID="discover-filter-reset"
+              className={`flex-1 items-center justify-center rounded-2xl border px-4 py-3 ${
+                isResetDisabled ? "border-border bg-muted/40" : "border-border bg-background"
+              }`}
+            >
+              <Text className="text-sm font-medium text-foreground">Reset</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={onApply}
+              activeOpacity={0.85}
+              testID="discover-filter-apply"
+              className="flex-1 items-center justify-center rounded-2xl bg-primary px-4 py-3"
+            >
+              <Text className="text-sm font-semibold text-primary-foreground">Apply</Text>
+            </TouchableOpacity>
           </View>
-        )}
-      />
-    </View>
+        </View>
+      </BottomSheetView>
+    </BottomSheet>
   );
 }
 
