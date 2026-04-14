@@ -1,6 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { ArrowUpRight, GripVertical, Lock, Play, Target, Zap } from "lucide-react-native";
+import { ArrowUpRight, Lock, Play, Target, Zap } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import {
@@ -9,27 +9,35 @@ import {
   getEventSupportingLine,
   getEventTimeLabel,
   getEventTitle,
-  isEditableEvent,
 } from "@/lib/calendar/eventPresentation";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { getActivityColor } from "@/lib/utils/plan/colors";
 
+function readMetric(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 type CalendarEventCardProps = {
   event: CalendarEvent;
   canStart: boolean;
-  isDragging: boolean;
   onPress: () => void;
-  onQuickActionPress: () => void;
-  onDragStart: () => void;
+  onQuickActionPress?: (() => void) | null;
 };
 
 export function CalendarEventCard({
   event,
   canStart,
-  isDragging,
   onPress,
   onQuickActionPress,
-  onDragStart,
 }: CalendarEventCardProps) {
   const meta = getEventPrimaryMeta(event);
   const supportingLine = getEventSupportingLine(event);
@@ -37,6 +45,9 @@ export function CalendarEventCard({
   const activityColor = getActivityColor(event.activity_plan?.activity_category ?? undefined);
   const timeLabel = getEventTimeLabel(event);
   const planned = event.event_type === "planned";
+  const estimatedTss = readMetric(event.activity_plan?.estimated_tss);
+  const intensityLevel =
+    estimatedTss === null ? 0 : estimatedTss >= 90 ? 3 : estimatedTss >= 55 ? 2 : 1;
 
   const leadingIcon =
     event.event_type === "planned"
@@ -47,12 +58,11 @@ export function CalendarEventCard({
           ? Lock
           : ArrowUpRight;
 
-  const quickActionLabel = canStart ? "Start" : "Preview";
   const quickActionIcon = canStart ? Play : ArrowUpRight;
 
   return (
     <View
-      className={`rounded-3xl border bg-card/95 p-4 ${isDragging ? "border-primary bg-primary/5" : planned ? "border-primary/15" : "border-border"}`}
+      className={`rounded-3xl border bg-card/95 p-4 ${planned ? "border-primary/15" : "border-border"}`}
       testID={`schedule-event-${event.id}`}
     >
       <View className="flex-row items-start gap-3">
@@ -89,33 +99,55 @@ export function CalendarEventCard({
                   {supportingLine}
                 </Text>
               ) : null}
+              {planned && (meta.length > 0 || estimatedTss !== null) ? (
+                <View className="mt-2 rounded-2xl bg-background px-3 py-3">
+                  <View className="flex-row flex-wrap items-center gap-2">
+                    {meta.map((item) => (
+                      <View key={`${event.id}-${item}`} className="rounded-full bg-muted px-2 py-1">
+                        <Text className="text-[10px] font-medium text-muted-foreground">
+                          {item}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  {estimatedTss !== null ? (
+                    <View className="mt-3">
+                      <View className="flex-row items-center justify-between">
+                        <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Intensity
+                        </Text>
+                        <Text className="text-[10px] font-medium text-muted-foreground">
+                          {Math.round(estimatedTss)} TSS
+                        </Text>
+                      </View>
+                      <View className="mt-2 flex-row gap-2">
+                        {Array.from({ length: 3 }, (_, index) => (
+                          <View
+                            key={`${event.id}-intensity-${index}`}
+                            className={`h-2 flex-1 rounded-full ${index < intensityLevel ? activityColor.bg : "bg-muted"}`}
+                          />
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
           </View>
         </TouchableOpacity>
 
-        <View className="items-end gap-2">
-          {isEditableEvent(event) ? (
+        {onQuickActionPress ? (
+          <View className="items-end">
             <TouchableOpacity
-              onPress={onDragStart}
-              className="rounded-full border border-border bg-background p-2"
+              onPress={onQuickActionPress}
+              className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
               activeOpacity={0.85}
-              testID={`calendar-drag-handle-${event.id}`}
+              testID={`schedule-event-action-${event.id}`}
             >
-              <Icon as={GripVertical} size={14} className="text-muted-foreground" />
+              <Icon as={quickActionIcon} size={14} className="text-foreground" />
             </TouchableOpacity>
-          ) : null}
-          <TouchableOpacity
-            onPress={onQuickActionPress}
-            className="rounded-full border border-border bg-background px-3 py-2"
-            activeOpacity={0.85}
-            testID={`schedule-event-action-${event.id}`}
-          >
-            <View className="flex-row items-center gap-1">
-              <Icon as={quickActionIcon} size={12} className="text-foreground" />
-              <Text className="text-[11px] font-semibold text-foreground">{quickActionLabel}</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
+          </View>
+        ) : null}
       </View>
     </View>
   );

@@ -1,38 +1,35 @@
 import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { Plus, RotateCcw } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
-import type { CalendarMode } from "@/lib/calendar/dateMath";
-import { CalendarModeSwitcher } from "./CalendarModeSwitcher";
 
 type CalendarHeaderProps = {
-  mode: CalendarMode;
-  onModeChange: (mode: CalendarMode) => void;
-  onResetToDayPress: () => void;
+  contextLabel: string;
+  onTodayPress: () => void;
   onQuickCreatePress: () => void;
 };
 
 export function CalendarHeader({
-  mode,
-  onModeChange,
-  onResetToDayPress,
+  contextLabel,
+  onTodayPress,
   onQuickCreatePress,
 }: CalendarHeaderProps) {
   return (
     <View className="border-b border-border bg-background px-4 py-3">
       <View className="flex-row items-center justify-between gap-3">
-        <CalendarModeSwitcher value={mode} onChange={onModeChange} />
+        <View className="flex-1">
+          <Text className="text-base font-semibold text-foreground">{contextLabel}</Text>
+        </View>
         <View className="flex-row items-center gap-2">
-          {mode === "month" ? (
-            <TouchableOpacity
-              onPress={onResetToDayPress}
-              className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card"
-              activeOpacity={0.85}
-              testID="calendar-reset-day-button"
-            >
-              <Icon as={RotateCcw} size={18} className="text-foreground" />
-            </TouchableOpacity>
-          ) : null}
+          <TouchableOpacity
+            onPress={onTodayPress}
+            className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card"
+            activeOpacity={0.85}
+            testID="calendar-reset-button"
+          >
+            <Icon as={RotateCcw} size={16} className="text-foreground" />
+          </TouchableOpacity>
           <TouchableOpacity
             onPress={onQuickCreatePress}
             className="h-10 w-10 items-center justify-center rounded-full border border-border bg-card"

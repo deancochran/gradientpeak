@@ -1,13 +1,4 @@
-import {
-  addDays,
-  addMonths,
-  differenceInCalendarDays,
-  endOfMonth,
-  format,
-  startOfMonth,
-} from "date-fns";
-
-export type CalendarMode = "day" | "month";
+import { addDays, addMonths, endOfMonth, format, startOfMonth } from "date-fns";
 
 export function toDateKey(date: Date): string {
   return format(date, "yyyy-MM-dd");
@@ -34,16 +25,8 @@ export function getEndOfMonthKey(dateKey: string): string {
   return toDateKey(endOfMonth(parseDateKey(dateKey)));
 }
 
-export function getNaturalAnchorForMode(dateKey: string, mode: CalendarMode): string {
-  return mode === "month" ? getStartOfMonthKey(dateKey) : dateKey;
-}
-
-export function buildDayKeys(rangeStart: string, rangeEnd: string): string[] {
-  const totalDays = Math.max(
-    0,
-    differenceInCalendarDays(parseDateKey(rangeEnd), parseDateKey(rangeStart)) + 1,
-  );
-  return Array.from({ length: totalDays }, (_, index) => addDaysToDateKey(rangeStart, index));
+export function getMonthAnchor(dateKey: string): string {
+  return getStartOfMonthKey(dateKey);
 }
 
 export function buildMonthStartKeys(rangeStart: string, rangeEnd: string): string[] {

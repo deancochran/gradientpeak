@@ -148,6 +148,12 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="calendar-day"
+        options={{
+          title: "Day Agenda",
+        }}
+      />
+      <Stack.Screen
         name="goal-detail"
         options={{
           title: "Goal Details",

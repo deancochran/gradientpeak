@@ -19,10 +19,11 @@ type CalendarMonthListProps = {
   todayKey: string;
   eventsByDate: CalendarEventsByDate;
   onVisibleMonthChange: (monthStartKey: string) => void;
+  onReachStart: () => void;
+  onReachEnd: () => void;
   onSelectDay: (dateKey: string) => void;
 };
 
-const MONTH_BLOCK_HEIGHT = 360;
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export function getVisibleMonthIndex(months: string[], visibleMonthAnchor: string): number {
@@ -43,9 +44,39 @@ export function CalendarMonthList({
   todayKey,
   eventsByDate,
   onVisibleMonthChange,
+  onReachStart,
+  onReachEnd,
   onSelectDay,
 }: CalendarMonthListProps) {
   const listRef = useRef<FlatList<string>>(null);
+  const hasAlignedInitialScrollRef = useRef(false);
+  const lastReportedVisibleMonthRef = useRef<string | null>(null);
+  const pendingScrollTargetRef = useRef<string | null>(null);
+  const previousVisibleMonthRef = useRef(visibleMonthAnchor);
+  const viewabilityConfigRef = useRef({
+    itemVisiblePercentThreshold: 30,
+    minimumViewTime: 80,
+    waitForInteraction: true,
+  });
+  const onViewableItemsChangedRef = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ item: string | null }> }) => {
+      const firstVisible = viewableItems.find((item) => typeof item.item === "string")?.item;
+      if (typeof firstVisible !== "string") {
+        return;
+      }
+
+      if (pendingScrollTargetRef.current && pendingScrollTargetRef.current !== firstVisible) {
+        return;
+      }
+
+      pendingScrollTargetRef.current = null;
+
+      if (lastReportedVisibleMonthRef.current !== firstVisible) {
+        lastReportedVisibleMonthRef.current = firstVisible;
+        onVisibleMonthChange(firstVisible);
+      }
+    },
+  );
   const months = useMemo(() => buildMonthStartKeys(rangeStart, rangeEnd), [rangeEnd, rangeStart]);
   const activeMonthIndex = useMemo(
     () => getVisibleMonthIndex(months, visibleMonthAnchor),
@@ -53,28 +84,50 @@ export function CalendarMonthList({
   );
 
   useEffect(() => {
-    listRef.current?.scrollToIndex({ animated: false, index: activeMonthIndex });
-  }, [activeMonthIndex]);
+    const shouldScroll =
+      !hasAlignedInitialScrollRef.current ||
+      (previousVisibleMonthRef.current !== visibleMonthAnchor &&
+        lastReportedVisibleMonthRef.current !== visibleMonthAnchor);
+    previousVisibleMonthRef.current = visibleMonthAnchor;
+
+    if (!shouldScroll) return;
+
+    hasAlignedInitialScrollRef.current = true;
+    pendingScrollTargetRef.current = visibleMonthAnchor;
+    listRef.current?.scrollToIndex({ animated: false, index: activeMonthIndex, viewPosition: 0 });
+    queueMicrotask(() => {
+      if (pendingScrollTargetRef.current === visibleMonthAnchor) {
+        pendingScrollTargetRef.current = null;
+      }
+    });
+  }, [activeMonthIndex, visibleMonthAnchor]);
 
   return (
     <FlatList
       ref={listRef}
       data={months}
       keyExtractor={(item) => item}
-      pagingEnabled
-      getItemLayout={(_, index) => ({
-        index,
-        length: MONTH_BLOCK_HEIGHT,
-        offset: MONTH_BLOCK_HEIGHT * index,
-      })}
+      initialNumToRender={4}
+      maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+      maxToRenderPerBatch={4}
+      removeClippedSubviews
       showsVerticalScrollIndicator={false}
-      onViewableItemsChanged={({ viewableItems }) => {
-        const firstVisible = viewableItems[0]?.item;
-        if (typeof firstVisible === "string") {
-          onVisibleMonthChange(firstVisible);
-        }
+      windowSize={5}
+      onEndReached={onReachEnd}
+      onEndReachedThreshold={0.75}
+      onStartReached={onReachStart}
+      onStartReachedThreshold={0.75}
+      onScrollToIndexFailed={({ index }) => {
+        requestAnimationFrame(() => {
+          listRef.current?.scrollToIndex({
+            animated: false,
+            index: Math.max(0, index),
+            viewPosition: 0,
+          });
+        });
       }}
-      viewabilityConfig={{ itemVisiblePercentThreshold: 70 }}
+      onViewableItemsChanged={onViewableItemsChangedRef.current}
+      viewabilityConfig={viewabilityConfigRef.current}
       renderItem={({ item }) => {
         const gridStart = getMonthGridStartKey(item);
         const gridDays = Array.from({ length: 42 }, (_, index) =>
@@ -82,11 +135,7 @@ export function CalendarMonthList({
         );
 
         return (
-          <View
-            className="bg-background px-4 pb-4 pt-3"
-            style={{ height: MONTH_BLOCK_HEIGHT }}
-            testID={`calendar-month-page-${item}`}
-          >
+          <View className="bg-background px-4 pb-4 pt-3" testID={`calendar-month-page-${item}`}>
             <View className="rounded-3xl border border-border bg-card px-4 py-4">
               <Text className="text-lg font-semibold text-foreground">
                 {format(parseDateKey(item), "MMMM yyyy")}
