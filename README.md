@@ -48,6 +48,14 @@ pnpm test
 3. Run the relevant checks locally.
 4. Open a PR with a short summary of the user-facing outcome.
 
+## Multi-Agent Workflow
+
+- Keep orchestration and review in the root checkout.
+- For medium and large efforts, use one Worktrunk worktree per bounded lane under `~/GradientPeak/.worktrees/<branch>`.
+- Keep all GradientPeak worktrees inside the repo-local `.worktrees/` directory.
+- Use branch names shaped like `spec/<spec-slug>/<lane>` for multi-lane efforts.
+- Require merge packets and a fan-in owner before integrating parallel lane outputs.
+
 ## Where to go next
 
 - `apps/web/README.md` covers web-specific setup and commands.
