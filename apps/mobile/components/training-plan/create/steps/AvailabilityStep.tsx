@@ -171,7 +171,7 @@ export function AvailabilityStep({
                   });
                 }}
                 keyboardType="numeric"
-                aria-labelledby="hours-per-week"
+                accessibilityLabel="Hours per Week"
               />
             </View>
 
@@ -193,7 +193,7 @@ export function AvailabilityStep({
                   });
                 }}
                 keyboardType="numeric"
-                aria-labelledby="sessions-per-week"
+                accessibilityLabel="Sessions per Week"
               />
             </View>
 
@@ -211,7 +211,7 @@ export function AvailabilityStep({
                   });
                 }}
                 keyboardType="numeric"
-                aria-labelledby="min-rest-days"
+                accessibilityLabel="Minimum Rest Days per Week"
               />
               <Text className="text-xs text-muted-foreground">
                 Recovery is essential for improvement
