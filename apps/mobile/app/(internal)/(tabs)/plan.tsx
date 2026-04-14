@@ -320,7 +320,6 @@ function PlanDashboardScreen() {
               </Button>
             </CardContent>
           </Card>
-
         </View>
       </ScrollView>
 

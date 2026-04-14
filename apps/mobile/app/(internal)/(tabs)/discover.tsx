@@ -9,7 +9,16 @@ import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
-import { Activity, ChevronRight, Dumbbell, MapPin, Search, SlidersHorizontal, Users, X } from "lucide-react-native";
+import {
+  Activity,
+  ChevronRight,
+  Dumbbell,
+  MapPin,
+  Search,
+  SlidersHorizontal,
+  Users,
+  X,
+} from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
 import { AppHeader } from "@/components/shared";
@@ -76,7 +85,11 @@ function getSelectedResultCount(type: TabType, counts: Record<TabType, number>) 
   return counts[type] ?? 0;
 }
 
-function getOrderedSelectedTypes(selectedTypes: readonly TabType[], counts: Record<TabType, number>, hasSearchQuery: boolean) {
+function getOrderedSelectedTypes(
+  selectedTypes: readonly TabType[],
+  counts: Record<TabType, number>,
+  hasSearchQuery: boolean,
+) {
   if (!hasSearchQuery) {
     return ALL_DISCOVER_TYPES.filter((type) => selectedTypes.includes(type));
   }
@@ -294,7 +307,6 @@ export default function DiscoverPage() {
             ) : null}
           </TouchableOpacity>
         </View>
-
       </View>
     );
   };
@@ -491,9 +503,13 @@ export default function DiscoverPage() {
         {orderedSelectedTypes.map((type, index) => {
           switch (type) {
             case "activityPlans":
-              return <React.Fragment key={type}>{renderActivityPlansSection(index)}</React.Fragment>;
+              return (
+                <React.Fragment key={type}>{renderActivityPlansSection(index)}</React.Fragment>
+              );
             case "trainingPlans":
-              return <React.Fragment key={type}>{renderTrainingPlansSection(index)}</React.Fragment>;
+              return (
+                <React.Fragment key={type}>{renderTrainingPlansSection(index)}</React.Fragment>
+              );
             case "routes":
               return <React.Fragment key={type}>{renderRoutesSection(index)}</React.Fragment>;
             case "users":

@@ -271,7 +271,10 @@ describe("discover screen", () => {
     renderNative(<DiscoverScreen />);
 
     act(() => {
-      fireEvent.changeText(screen.getByPlaceholderText("Search plans, routes, and profiles"), "river");
+      fireEvent.changeText(
+        screen.getByPlaceholderText("Search plans, routes, and profiles"),
+        "river",
+      );
       jest.advanceTimersByTime(350);
     });
 
@@ -320,7 +323,9 @@ describe("discover screen", () => {
     await waitFor(() => {
       expect(screen.getByText("No result types selected")).toBeTruthy();
       expect(
-        screen.getByText("Choose at least one content type in filters to build your discover feed."),
+        screen.getByText(
+          "Choose at least one content type in filters to build your discover feed.",
+        ),
       ).toBeTruthy();
     });
   });
