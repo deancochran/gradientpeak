@@ -56,5 +56,5 @@ export function buildEventsByDate(events: CalendarEvent[]): CalendarEventsByDate
 }
 
 export function getMonthDensity(eventsByDate: CalendarEventsByDate, dateKey: string): number {
-  return eventsByDate.get(dateKey)?.length ?? 0;
+  return (eventsByDate.get(dateKey) ?? []).filter((event) => event.event_type !== "rest_day").length;
 }

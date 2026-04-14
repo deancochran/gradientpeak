@@ -402,6 +402,13 @@ describe("calendar redesign screen", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
+  it("does not render month density markers for rest-day-only dates", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    const restDayCell = screen.getByTestId("calendar-month-cell-2026-03-25");
+    expect((restDayCell.props.children[1]?.props?.children ?? []).length ?? 0).toBe(0);
+  });
+
   it("renders out-of-month filler cells as non-interactive blanks", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 

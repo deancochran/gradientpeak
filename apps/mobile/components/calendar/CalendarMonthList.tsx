@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import React, { useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
 import {
   addDaysToDateKey,
@@ -21,7 +21,7 @@ type CalendarMonthListProps = {
   onVisibleMonthChange: (monthStartKey: string) => void;
   onReachStart: () => void;
   onReachEnd: () => void;
-  onSelectDay: (dateKey: string) => void;
+  onSelectDay: (dateKey: string, hasVisibleEvents: boolean) => void;
 };
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -50,6 +50,7 @@ export function CalendarMonthList({
 }: CalendarMonthListProps) {
   const listRef = useRef<FlatList<string>>(null);
   const lastReportedVisibleMonthRef = useRef<string | null>(null);
+  const previousVisibleMonthRef = useRef(visibleMonthAnchor);
   const viewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: 30,
     minimumViewTime: 80,
@@ -73,6 +74,19 @@ export function CalendarMonthList({
     () => getVisibleMonthIndex(months, visibleMonthAnchor),
     [months, visibleMonthAnchor],
   );
+
+  useEffect(() => {
+    if (
+      previousVisibleMonthRef.current === visibleMonthAnchor ||
+      lastReportedVisibleMonthRef.current === visibleMonthAnchor
+    ) {
+      previousVisibleMonthRef.current = visibleMonthAnchor;
+      return;
+    }
+
+    previousVisibleMonthRef.current = visibleMonthAnchor;
+    listRef.current?.scrollToIndex({ animated: false, index: activeMonthIndex, viewPosition: 0 });
+  }, [activeMonthIndex, visibleMonthAnchor]);
 
   return (
     <FlatList
@@ -126,6 +140,7 @@ export function CalendarMonthList({
               <View className="mt-3 flex-row flex-wrap">
                 {gridDays.map((dateKey) => {
                   const density = getMonthDensity(eventsByDate, dateKey);
+                  const hasVisibleEvents = density > 0;
                   const isInMonth = isSameMonth(dateKey, item);
                   const isActive = isInMonth && dateKey === activeDate;
                   const isToday = isInMonth && dateKey === todayKey;
@@ -146,7 +161,7 @@ export function CalendarMonthList({
                   return (
                     <TouchableOpacity
                       key={dateKey}
-                      onPress={() => onSelectDay(dateKey)}
+                      onPress={() => onSelectDay(dateKey, hasVisibleEvents)}
                       className="mb-2 w-[14.285%] items-center"
                       activeOpacity={0.85}
                       testID={`calendar-month-cell-${dateKey}`}
