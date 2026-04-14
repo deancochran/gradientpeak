@@ -105,6 +105,7 @@ packages/*/lib/
 # OpenCode / local coordinator config
 .opencode/
 opencode.json
+AGENTS.md
 
 # Local config
 .config/
