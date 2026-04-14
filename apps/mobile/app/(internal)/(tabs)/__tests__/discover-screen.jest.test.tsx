@@ -28,7 +28,12 @@ const routesListUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unk
   refetch: jest.fn(),
 }));
 
-const activityPlans: any[] = [];
+const activityPlans = [
+  {
+    id: "ap-1",
+    name: "Threshold Run",
+  },
+];
 
 const trainingPlans = [
   {
@@ -53,15 +58,20 @@ const routes = [
   },
 ];
 
-const users: any[] = [];
+const users = [
+  {
+    id: "user-1",
+    username: "alpinefox",
+    avatar_url: null,
+    is_public: true,
+  },
+];
 
 jest.useFakeTimers();
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  FlatList: ({ ListHeaderComponent, ListFooterComponent, ...props }: any) =>
-    React.createElement("View", props, ListHeaderComponent, ListFooterComponent),
   ScrollView: createHost("ScrollView"),
   TouchableOpacity: ({ children, onPress, ...props }: any) =>
     React.createElement("Pressable", { onPress, ...props }, children),
@@ -147,15 +157,12 @@ jest.mock("@repo/ui/components/text", () => ({
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Activity: createHost("Activity"),
-  Bike: createHost("Bike"),
   ChevronRight: createHost("ChevronRight"),
   Dumbbell: createHost("Dumbbell"),
-  Footprints: createHost("Footprints"),
   MapPin: createHost("MapPin"),
   Search: createHost("Search"),
   SlidersHorizontal: createHost("SlidersHorizontal"),
   Users: createHost("Users"),
-  Waves: createHost("Waves"),
   X: createHost("X"),
 }));
 
@@ -192,11 +199,12 @@ jest.mock("@/lib/api", () => ({
     },
     social: {
       searchUsers: {
-        useQuery: jest.fn(() => ({
+        useQuery: jest.fn((input?: any) => ({
           data: { users, total: users.length, hasMore: false },
           isLoading: false,
           isRefetching: false,
           refetch: jest.fn(),
+          input,
         })),
       },
     },
@@ -219,73 +227,59 @@ describe("discover screen", () => {
     });
   });
 
-  it("renders a compact browse state without the old helper stack", () => {
+  it("renders a mixed discover feed by default", () => {
     renderNative(<DiscoverScreen />);
 
     expect(screen.getByText("Header:Discover")).toBeTruthy();
-    expect(screen.getByPlaceholderText("Search activity plans")).toBeTruthy();
-    expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
-    expect(screen.queryByText("Browse by type")).toBeNull();
-    expect(screen.getByText("Activity Plans")).toBeTruthy();
-    expect(screen.getByText("Change in filters")).toBeTruthy();
-    expect(screen.queryByText("Find your next workout")).toBeNull();
+    expect(screen.getByPlaceholderText("Search plans, routes, and profiles")).toBeTruthy();
+    expect(screen.getByTestId("discover-section-activityPlans")).toBeTruthy();
+    expect(screen.getByTestId("discover-section-trainingPlans")).toBeTruthy();
+    expect(screen.getByTestId("discover-section-routes")).toBeTruthy();
+    expect(screen.getByTestId("discover-section-users")).toBeTruthy();
+    expect(screen.queryByText("Search anything in Discover")).toBeNull();
+    expect(screen.queryByText("Change in filters")).toBeNull();
   });
 
-  it("switches discover content type from the bottom sheet and marks the filter button active", async () => {
+  it("uses type filters to exclude deselected result sections", async () => {
     renderNative(<DiscoverScreen />);
 
-    expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-      {
-        includeSystemTemplates: true,
-        includeOwnOnly: false,
-        includeEstimation: false,
-        ownerScope: "all",
-        search: undefined,
-        limit: 20,
-      },
-      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
-    );
-
     fireEvent.press(screen.getByTestId("discover-filter-button"));
-    expect(screen.getByTestId("discover-filter-sheet")).toBeTruthy();
-
-    fireEvent.press(screen.getByTestId("discover-filter-type-trainingPlans"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-activityPlans"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-routes"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-users"));
     fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText("Search training plans")).toBeTruthy();
+      expect(screen.queryByTestId("discover-section-activityPlans")).toBeNull();
+      expect(screen.getByTestId("discover-section-trainingPlans")).toBeTruthy();
+      expect(screen.queryByTestId("discover-section-routes")).toBeNull();
+      expect(screen.queryByTestId("discover-section-users")).toBeNull();
     });
 
-    expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
-      search: undefined,
-    });
     expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
   });
 
-  it("requests routes with the debounced search term after selecting routes in filters", async () => {
+  it("searches across all result types with the same debounced query", async () => {
     renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-routes"));
-    fireEvent.press(screen.getByTestId("discover-filter-apply"));
-
-    await waitFor(() => {
-      expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-        {
-          search: undefined,
-          limit: 20,
-        },
-        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
-      );
-      expect(screen.getByPlaceholderText("Search your routes")).toBeTruthy();
-    });
-
     act(() => {
-      fireEvent.changeText(screen.getByPlaceholderText("Search your routes"), "river");
+      fireEvent.changeText(screen.getByPlaceholderText("Search plans, routes, and profiles"), "river");
       jest.advanceTimersByTime(350);
     });
 
     await waitFor(() => {
+      expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          includeSystemTemplates: true,
+          includeOwnOnly: false,
+          includeEstimation: false,
+          ownerScope: "all",
+          search: "river",
+          limit: 20,
+        },
+        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+      );
+      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({ search: "river" });
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: "river",
@@ -296,42 +290,28 @@ describe("discover screen", () => {
     });
   });
 
-  it("keeps training plans query unfiltered and debounced by search", async () => {
+  it("can show profiles alongside the mixed search feed", () => {
     renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-trainingPlans"));
-    fireEvent.press(screen.getByTestId("discover-filter-apply"));
-
-    await waitFor(() => {
-      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
-        search: undefined,
-      });
-    });
-
-    act(() => {
-      fireEvent.changeText(screen.getByPlaceholderText("Search training plans"), "10k");
-      jest.advanceTimersByTime(350);
-    });
-
-    await waitFor(() => {
-      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({ search: "10k" });
-    });
+    expect(screen.getByText("alpinefox")).toBeTruthy();
+    expect(screen.getByText("Open profile")).toBeTruthy();
   });
 
-  it("switches to profiles from the filter sheet", async () => {
+  it("shows an empty state when all types are deselected", async () => {
     renderNative(<DiscoverScreen />);
 
     fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-activityPlans"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-trainingPlans"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-routes"));
     fireEvent.press(screen.getByTestId("discover-filter-type-users"));
     fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText("Search profiles")).toBeTruthy();
+      expect(screen.getByText("No result types selected")).toBeTruthy();
+      expect(
+        screen.getByText("Choose at least one content type in filters to build your discover feed."),
+      ).toBeTruthy();
     });
-
-    expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
-    expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
-    expect(screen.queryByText(/Searching profiles for/)).toBeNull();
   });
 });

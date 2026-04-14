@@ -9,18 +9,9 @@ import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
-import {
-  Activity,
-  ChevronRight,
-  Dumbbell,
-  MapPin,
-  Search,
-  SlidersHorizontal,
-  Users,
-  X,
-} from "lucide-react-native";
+import { Activity, ChevronRight, Dumbbell, MapPin, Search, SlidersHorizontal, Users, X } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, TouchableOpacity, View } from "react-native";
+import { ScrollView, TouchableOpacity, View } from "react-native";
 import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
@@ -34,37 +25,16 @@ const TABS = [
   { id: "users", label: "Profiles", icon: Users },
 ] as const;
 
+const SEARCH_PLACEHOLDER = "Search plans, routes, and profiles";
+const PREVIEW_LIMIT = 4;
+
 export type TabType = (typeof TABS)[number]["id"];
 
-const TAB_COPY: Record<
-  TabType,
-  {
-    placeholder: string;
-    emptyTitle: string;
-    emptyDescription: string;
-  }
-> = {
-  activityPlans: {
-    placeholder: "Search activity plans",
-    emptyTitle: "No matching plans",
-    emptyDescription: "Try another search or adjust filters.",
-  },
-  trainingPlans: {
-    placeholder: "Search training plans",
-    emptyTitle: "No matching training plans",
-    emptyDescription: "Try another search or adjust filters.",
-  },
-  routes: {
-    placeholder: "Search your routes",
-    emptyTitle: "No matching routes",
-    emptyDescription: "Try another search or adjust filters.",
-  },
-  users: {
-    placeholder: "Search profiles",
-    emptyTitle: "No profiles found",
-    emptyDescription: "Try a username or a shorter search term.",
-  },
+type DiscoverTypeFilters = {
+  selectedTypes: TabType[];
 };
+
+const ALL_DISCOVER_TYPES = TABS.map((tab) => tab.id);
 
 const ROUTE_CATEGORY_LABELS: Record<string, string> = {
   run: "Run",
@@ -76,10 +46,6 @@ const ROUTE_CATEGORY_LABELS: Record<string, string> = {
   outdoor_bike: "Ride",
   indoor_treadmill: "Treadmill",
   indoor_bike_trainer: "Trainer",
-};
-
-type DiscoverTypeFilters = {
-  activeTab: TabType;
 };
 
 function useDebounce(value: string, delay: number): string {
@@ -98,33 +64,32 @@ function useDebounce(value: string, delay: number): string {
   return debouncedValue;
 }
 
-function getDiscoverResultsListId(tab: TabType) {
-  switch (tab) {
-    case "activityPlans":
-      return "discover-activity-plans-list";
-    case "trainingPlans":
-      return "discover-training-plans-list";
-    case "routes":
-      return "discover-routes-list";
-    case "users":
-      return "discover-users-list";
-    default:
-      return "discover-results-list";
-  }
+function areAllTypesSelected(selectedTypes: readonly TabType[]) {
+  return selectedTypes.length === ALL_DISCOVER_TYPES.length;
+}
+
+function getTypeLabel(type: TabType) {
+  return TABS.find((tab) => tab.id === type)?.label ?? type;
+}
+
+function getSelectedResultCount(type: TabType, counts: Record<TabType, number>) {
+  return counts[type] ?? 0;
 }
 
 export default function DiscoverPage() {
   const navigateTo = useAppNavigate();
-  const [activeTab, setActiveTab] = useState<TabType>("activityPlans");
-  const [draftDiscoverTypeFilters, setDraftDiscoverTypeFilters] = useState<DiscoverTypeFilters>({
-    activeTab: "activityPlans",
+  const [typeFilters, setTypeFilters] = useState<DiscoverTypeFilters>({
+    selectedTypes: [...ALL_DISCOVER_TYPES],
+  });
+  const [draftTypeFilters, setDraftTypeFilters] = useState<DiscoverTypeFilters>({
+    selectedTypes: [...ALL_DISCOVER_TYPES],
   });
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
-  const isSearchMode = debouncedSearch.trim() !== "";
-  const activeTabHasFilters = activeTab !== "activityPlans";
+  const selectedTypes = typeFilters.selectedTypes;
+  const hasTypeFilters = !areAllTypesSelected(selectedTypes);
 
   const activityPlansInfiniteQuery = api.activityPlans.list.useInfiniteQuery(
     {
@@ -170,15 +135,31 @@ export default function DiscoverPage() {
 
   const trainingPlans = trainingPlansQuery.data || [];
   const users = usersQuery.data?.users || [];
-  const activeTabConfig = TABS.find((tab) => tab.id === activeTab) ?? TABS[0];
-  const activeResultCount =
-    activeTab === "activityPlans"
-      ? activityPlans.length
-      : activeTab === "trainingPlans"
-        ? trainingPlans.length
-        : activeTab === "routes"
-          ? routes.length
-          : users.length;
+
+  const resultCounts: Record<TabType, number> = {
+    activityPlans: activityPlans.length,
+    trainingPlans: trainingPlans.length,
+    routes: routes.length,
+    users: users.length,
+  };
+
+  const totalSelectedResults = selectedTypes.reduce(
+    (sum, type) => sum + getSelectedResultCount(type, resultCounts),
+    0,
+  );
+  const isSelectedContentLoading =
+    (selectedTypes.includes("activityPlans") &&
+      activityPlansInfiniteQuery.isLoading &&
+      activityPlans.length === 0) ||
+    (selectedTypes.includes("trainingPlans") &&
+      trainingPlansQuery.isLoading &&
+      trainingPlans.length === 0) ||
+    (selectedTypes.includes("routes") && routesInfiniteQuery.isLoading && routes.length === 0) ||
+    (selectedTypes.includes("users") && usersQuery.isLoading && users.length === 0);
+
+  const syncDraftFiltersFromApplied = useCallback(() => {
+    setDraftTypeFilters({ selectedTypes: [...selectedTypes] });
+  }, [selectedTypes]);
 
   const handleTemplatePress = (template: any) => {
     navigateTo({
@@ -212,10 +193,6 @@ export default function DiscoverPage() {
     } as any);
   };
 
-  const syncDraftFiltersFromApplied = useCallback(() => {
-    setDraftDiscoverTypeFilters({ activeTab });
-  }, [activeTab]);
-
   const handleOpenFilterSheet = () => {
     syncDraftFiltersFromApplied();
     setIsFilterSheetOpen(true);
@@ -227,40 +204,39 @@ export default function DiscoverPage() {
   };
 
   const handleApplyFilters = () => {
-    setActiveTab(draftDiscoverTypeFilters.activeTab);
+    setTypeFilters({ selectedTypes: [...draftTypeFilters.selectedTypes] });
     setIsFilterSheetOpen(false);
   };
 
   const handleResetDraftFilters = () => {
-    setDraftDiscoverTypeFilters({ activeTab: "activityPlans" });
+    setDraftTypeFilters({ selectedTypes: [...ALL_DISCOVER_TYPES] });
   };
 
-  const handleResetActiveTabFilters = useCallback(() => {
-    setActiveTab("activityPlans");
+  const handleResetFilters = useCallback(() => {
+    setTypeFilters({ selectedTypes: [...ALL_DISCOVER_TYPES] });
   }, []);
 
   const handleEmptyStateAction = () => {
-    if (isSearchMode) {
+    if (searchQuery.length > 0) {
       setSearchQuery("");
     }
 
-    if (activeTabHasFilters) {
-      handleResetActiveTabFilters();
+    if (hasTypeFilters) {
+      handleResetFilters();
     }
   };
 
   const renderSearchInput = () => {
-    const activeCopy = TAB_COPY[activeTab];
     const clearButtonRight = 52;
 
     return (
-      <View className="px-4 pt-4 pb-3 border-b border-border bg-background">
+      <View className="border-b border-border bg-background px-4 pb-3 pt-4">
         <View className="relative rounded-2xl border border-border bg-card">
           <View className="absolute left-3 top-1/2 z-10 -translate-y-1/2">
             <Icon as={Search} size={18} className="text-muted-foreground" />
           </View>
           <Input
-            placeholder={activeCopy.placeholder}
+            placeholder={SEARCH_PLACEHOLDER}
             value={searchQuery}
             onChangeText={setSearchQuery}
             className="h-12 border-0 bg-transparent pl-10 pr-24"
@@ -281,19 +257,19 @@ export default function DiscoverPage() {
 
           <TouchableOpacity
             className={`absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border ${
-              activeTabHasFilters ? "border-primary bg-primary" : "border-border bg-background"
+              hasTypeFilters ? "border-primary bg-primary" : "border-border bg-background"
             }`}
             onPress={handleOpenFilterSheet}
             activeOpacity={0.85}
             testID="discover-filter-button"
-            accessibilityState={{ selected: activeTabHasFilters }}
+            accessibilityState={{ selected: hasTypeFilters }}
           >
             <Icon
               as={SlidersHorizontal}
               size={16}
-              className={activeTabHasFilters ? "text-primary-foreground" : "text-foreground"}
+              className={hasTypeFilters ? "text-primary-foreground" : "text-foreground"}
             />
-            {activeTabHasFilters ? (
+            {hasTypeFilters ? (
               <View
                 className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-background"
                 testID="discover-filter-button-dot"
@@ -302,38 +278,39 @@ export default function DiscoverPage() {
           </TouchableOpacity>
         </View>
 
-        <View className="mt-3 flex-row items-center justify-between rounded-2xl bg-muted/30 px-3 py-2.5">
-          <View className="flex-row items-center gap-2">
-            <View className="rounded-full bg-background px-2.5 py-1">
-              <Text className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">
-                {activeTabConfig.label}
-              </Text>
-            </View>
-            <Text className="text-sm text-muted-foreground">
-              {activeResultCount} result{activeResultCount === 1 ? "" : "s"}
-            </Text>
-          </View>
-          <Text className="text-xs font-medium text-muted-foreground">Change in filters</Text>
-        </View>
       </View>
     );
   };
 
   const renderLoadingSkeleton = () => (
-    <View className="p-4 gap-4">
+    <View className="gap-4 p-4">
       {[1, 2, 3].map((i) => (
-        <View key={i} className="h-28 bg-muted rounded-2xl animate-pulse" />
+        <View key={i} className="h-28 rounded-2xl bg-muted animate-pulse" />
       ))}
     </View>
   );
 
-  const renderEmptyState = (tab: TabType) => {
+  const renderEmptyState = () => {
+    if (selectedTypes.length === 0) {
+      return (
+        <View className="px-4 py-12">
+          <EmptyStateCard
+            icon={SlidersHorizontal}
+            title="No result types selected"
+            description="Choose at least one content type in filters to build your discover feed."
+            actionLabel="Reset filters"
+            onAction={handleResetFilters}
+          />
+        </View>
+      );
+    }
+
     const actionLabel =
-      isSearchMode && activeTabHasFilters
+      searchQuery.length > 0 && hasTypeFilters
         ? "Clear search & filters"
-        : activeTabHasFilters
+        : hasTypeFilters
           ? "Reset filters"
-          : isSearchMode
+          : searchQuery.length > 0
             ? "Clear search"
             : undefined;
 
@@ -341,8 +318,8 @@ export default function DiscoverPage() {
       <View className="px-4 py-12">
         <EmptyStateCard
           icon={Search}
-          title={TAB_COPY[tab].emptyTitle}
-          description={TAB_COPY[tab].emptyDescription}
+          title="No discover matches"
+          description="Try another search term or widen the included content types."
           actionLabel={actionLabel}
           onAction={actionLabel ? handleEmptyStateAction : undefined}
         />
@@ -350,274 +327,166 @@ export default function DiscoverPage() {
     );
   };
 
-  const renderResultsHeader = (title: string, description: string, count: number, noun: string) => (
-    <View className="mb-4 gap-1.5">
-      <Text className="text-lg font-semibold text-foreground">{title}</Text>
+  const renderSectionHeader = (type: TabType, count: number, description: string) => (
+    <View className="mb-3 gap-1">
+      <View className="flex-row items-center justify-between gap-3">
+        <Text className="text-base font-semibold text-foreground">{getTypeLabel(type)}</Text>
+        <Text className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+          {count} result{count === 1 ? "" : "s"}
+        </Text>
+      </View>
       <Text className="text-sm text-muted-foreground">{description}</Text>
-      <Text className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mt-1">
-        {count} {noun}
-        {count === 1 ? "" : "s"}
-      </Text>
     </View>
   );
 
-  const renderNeutralStateHeader = (title: string, description: string) => (
-    <View className="mb-5 gap-2">
-      <Text className="text-lg font-semibold text-foreground">{title}</Text>
-      <Text className="text-sm leading-5 text-muted-foreground">{description}</Text>
-    </View>
-  );
-
-  const renderActivityPlansContent = () => {
-    if (activityPlansInfiniteQuery.isLoading) {
-      return renderLoadingSkeleton();
+  const renderActivityPlansSection = () => {
+    if (!selectedTypes.includes("activityPlans") || activityPlans.length === 0) {
+      return null;
     }
 
-    if (!isSearchMode && !activeTabHasFilters) {
-      if (activityPlans.length === 0) {
-        return renderEmptyState("activityPlans");
-      }
-
-      return (
-        <FlatList
-          testID="discover-activity-plans-list"
-          data={activityPlans.slice(0, 8)}
-          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={renderNeutralStateHeader(
-            "Search anything in Discover",
-            "Start with a plan, or use search and filters when you know what you want to narrow down.",
-          )}
-          renderItem={({ item }) => (
+    return (
+      <View className="mb-6 px-4" testID="discover-section-activityPlans">
+        {renderSectionHeader(
+          "activityPlans",
+          activityPlans.length,
+          "Open any session to inspect the structure, route, and scheduling options.",
+        )}
+        <View className="gap-4">
+          {activityPlans.slice(0, PREVIEW_LIMIT).map((item) => (
             <ActivityPlanCard
+              key={item.id}
               activityPlan={item as any}
               onPress={() => handleTemplatePress(item)}
               variant="default"
             />
-          )}
-        />
-      );
-    }
-
-    if (activityPlans.length === 0) {
-      return renderEmptyState("activityPlans");
-    }
-
-    const headerTitle = isSearchMode ? "Plan matches" : "All activity plans";
-    const headerDescription = isSearchMode
-      ? "Open any session to inspect the structure, route, and scheduling options."
-      : "Browse every available activity plan in one place.";
-
-    return (
-      <FlatList
-        testID="discover-activity-plans-list"
-        data={activityPlans}
-        contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 32 }}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderResultsHeader(
-          headerTitle,
-          headerDescription,
-          activityPlans.length,
-          "plan",
-        )}
-        renderItem={({ item }) => (
-          <ActivityPlanCard
-            activityPlan={item as any}
-            onPress={() => handleTemplatePress(item)}
-            variant="default"
-          />
-        )}
-        ListEmptyComponent={renderEmptyState("activityPlans")}
-        onRefresh={() => activityPlansInfiniteQuery.refetch()}
-        refreshing={activityPlansInfiniteQuery.isRefetching}
-        onEndReached={() => {
-          if (
-            activityPlansInfiniteQuery.hasNextPage &&
-            !activityPlansInfiniteQuery.isFetchingNextPage
-          ) {
-            activityPlansInfiniteQuery.fetchNextPage();
-          }
-        }}
-        ListFooterComponent={
-          activityPlansInfiniteQuery.hasNextPage ? (
-            <View className="pt-2">
-              <Button
-                variant="outline"
-                className="w-full"
-                onPress={() => activityPlansInfiniteQuery.fetchNextPage()}
-                disabled={activityPlansInfiniteQuery.isFetchingNextPage}
-              >
-                <Text className="text-foreground">
-                  {activityPlansInfiniteQuery.isFetchingNextPage ? "Loading more..." : "Load More"}
-                </Text>
-              </Button>
-            </View>
-          ) : null
-        }
-      />
+          ))}
+          {activityPlansInfiniteQuery.hasNextPage ? (
+            <Button
+              variant="outline"
+              className="w-full"
+              onPress={() => activityPlansInfiniteQuery.fetchNextPage()}
+              disabled={activityPlansInfiniteQuery.isFetchingNextPage}
+            >
+              <Text className="text-foreground">
+                {activityPlansInfiniteQuery.isFetchingNextPage ? "Loading more..." : "Load More"}
+              </Text>
+            </Button>
+          ) : null}
+        </View>
+      </View>
     );
   };
 
-  const renderTrainingPlansContent = () => {
-    if (trainingPlansQuery.isLoading) {
-      return renderLoadingSkeleton();
+  const renderTrainingPlansSection = () => {
+    if (!selectedTypes.includes("trainingPlans") || trainingPlans.length === 0) {
+      return null;
     }
-
-    if (trainingPlans.length === 0) {
-      return renderEmptyState("trainingPlans");
-    }
-
-    const isNeutralState = !isSearchMode && !activeTabHasFilters;
 
     return (
-      <FlatList
-        testID="discover-training-plans-list"
-        data={trainingPlans}
-        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={
-          isNeutralState
-            ? renderNeutralStateHeader(
-                "Search anything in Discover",
-                "Browse a few training templates, or use search and filters when you know the structure you want.",
-              )
-            : renderResultsHeader(
-                "Training plan results",
-                "Compare commitment, cadence, and focus before you open a plan.",
-                trainingPlans.length,
-                "template",
-              )
-        }
-        renderItem={({ item }) => (
-          <TrainingPlanCard template={item} onPress={() => handleTrainingPlanPress(item)} />
+      <View className="mb-6 px-4" testID="discover-section-trainingPlans">
+        {renderSectionHeader(
+          "trainingPlans",
+          trainingPlans.length,
+          "Compare commitment, cadence, and focus before you open a plan.",
         )}
-        ListEmptyComponent={renderEmptyState("trainingPlans")}
-        onRefresh={() => trainingPlansQuery.refetch()}
-        refreshing={trainingPlansQuery.isRefetching}
-      />
+        <View className="gap-3">
+          {trainingPlans.slice(0, PREVIEW_LIMIT).map((item) => (
+            <TrainingPlanCard
+              key={item.id}
+              template={item}
+              onPress={() => handleTrainingPlanPress(item)}
+            />
+          ))}
+        </View>
+      </View>
     );
   };
 
-  const renderRoutesContent = () => {
-    if (routesInfiniteQuery.isLoading) {
-      return renderLoadingSkeleton();
+  const renderRoutesSection = () => {
+    if (!selectedTypes.includes("routes") || routes.length === 0) {
+      return null;
     }
-
-    if (routes.length === 0) {
-      return renderEmptyState("routes");
-    }
-
-    const headerTitle = isSearchMode ? "Route matches" : "Saved routes";
-    const isNeutralState = !isSearchMode && !activeTabHasFilters;
 
     return (
-      <FlatList
-        testID="discover-routes-list"
-        data={routes}
-        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={
-          isNeutralState
-            ? renderNeutralStateHeader(
-                "Search anything in Discover",
-                "Start with a few saved routes, or search when you know the name, distance, or type you want.",
-              )
-            : renderResultsHeader(
-                headerTitle,
-                "Open a route when the distance and climbing feel like the right fit.",
-                routes.length,
-                "route",
-              )
-        }
-        renderItem={({ item }) => <RouteCard route={item} onPress={() => handleRoutePress(item)} />}
-        ListEmptyComponent={renderEmptyState("routes")}
-        onRefresh={() => routesInfiniteQuery.refetch()}
-        refreshing={routesInfiniteQuery.isRefetching}
-        onEndReached={() => {
-          if (routesInfiniteQuery.hasNextPage && !routesInfiniteQuery.isFetchingNextPage) {
-            routesInfiniteQuery.fetchNextPage();
-          }
-        }}
-        ListFooterComponent={
-          routesInfiniteQuery.hasNextPage ? (
-            <View className="pt-2">
-              <Button
-                variant="outline"
-                className="w-full"
-                onPress={() => routesInfiniteQuery.fetchNextPage()}
-                disabled={routesInfiniteQuery.isFetchingNextPage}
-              >
-                <Text className="text-foreground">
-                  {routesInfiniteQuery.isFetchingNextPage ? "Loading more..." : "Load More"}
-                </Text>
-              </Button>
-            </View>
-          ) : null
-        }
-      />
+      <View className="mb-6 px-4" testID="discover-section-routes">
+        {renderSectionHeader(
+          "routes",
+          routes.length,
+          "Open a route when the distance and climbing feel like the right fit.",
+        )}
+        <View className="gap-3">
+          {routes.slice(0, PREVIEW_LIMIT).map((item) => (
+            <RouteCard key={item.id} route={item} onPress={() => handleRoutePress(item)} />
+          ))}
+          {routesInfiniteQuery.hasNextPage ? (
+            <Button
+              variant="outline"
+              className="w-full"
+              onPress={() => routesInfiniteQuery.fetchNextPage()}
+              disabled={routesInfiniteQuery.isFetchingNextPage}
+            >
+              <Text className="text-foreground">
+                {routesInfiniteQuery.isFetchingNextPage ? "Loading more..." : "Load More"}
+              </Text>
+            </Button>
+          ) : null}
+        </View>
+      </View>
     );
   };
 
-  const renderUsersContent = () => {
-    if (usersQuery.isLoading) {
-      return renderLoadingSkeleton();
-    }
-
-    if (users.length === 0) {
-      return renderEmptyState("users");
+  const renderUsersSection = () => {
+    if (!selectedTypes.includes("users") || users.length === 0) {
+      return null;
     }
 
     return (
-      <FlatList
-        testID="discover-users-list"
-        data={users}
-        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 32 }}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={
-          isSearchMode
-            ? renderResultsHeader(
-                "Profiles",
-                "Profiles stay simple here: open one to decide whether you want to follow or message.",
-                users.length,
-                "profile",
-              )
-            : renderNeutralStateHeader(
-                "Search anything in Discover",
-                "Search profiles directly when you know who you want to find.",
-              )
-        }
-        renderItem={({ item }) => <UserCard user={item} onPress={() => handleUserPress(item)} />}
-        ListEmptyComponent={renderEmptyState("users")}
-        onRefresh={() => usersQuery.refetch()}
-        refreshing={usersQuery.isRefetching}
-      />
+      <View className="mb-6 px-4" testID="discover-section-users">
+        {renderSectionHeader(
+          "users",
+          users.length,
+          "Profiles stay simple here: open one to decide whether you want to follow or message.",
+        )}
+        <View className="gap-3">
+          {users.slice(0, PREVIEW_LIMIT).map((item) => (
+            <UserCard key={item.id} user={item} onPress={() => handleUserPress(item)} />
+          ))}
+        </View>
+      </View>
     );
   };
 
   const renderContent = () => {
-    switch (activeTab) {
-      case "activityPlans":
-        return renderActivityPlansContent();
-      case "trainingPlans":
-        return renderTrainingPlansContent();
-      case "routes":
-        return renderRoutesContent();
-      case "users":
-        return renderUsersContent();
-      default:
-        return null;
+    if (selectedTypes.length === 0) {
+      return renderEmptyState();
     }
+
+    if (isSelectedContentLoading && totalSelectedResults === 0) {
+      return renderLoadingSkeleton();
+    }
+
+    if (totalSelectedResults === 0) {
+      return renderEmptyState();
+    }
+
+    return (
+      <ScrollView testID="discover-results-list" contentContainerStyle={{ paddingBottom: 32 }}>
+        {renderActivityPlansSection()}
+        {renderTrainingPlansSection()}
+        {renderRoutesSection()}
+        {renderUsersSection()}
+      </ScrollView>
+    );
   };
 
   return (
     <View className="flex-1 bg-background" testID="discover-screen">
       <AppHeader title="Discover" />
       {renderSearchInput()}
-      <View testID={getDiscoverResultsListId(activeTab)} />
       {renderContent()}
       <DiscoverFilterSheet
-        discoverTypeFilters={draftDiscoverTypeFilters}
-        onDiscoverTypeFiltersChange={setDraftDiscoverTypeFilters}
+        discoverTypeFilters={draftTypeFilters}
+        onDiscoverTypeFiltersChange={setDraftTypeFilters}
         onApply={handleApplyFilters}
         onClose={handleCloseFilterSheet}
         onReset={handleResetDraftFilters}
@@ -688,7 +557,7 @@ function DiscoverFilterSheet({
     [],
   );
 
-  const isResetDisabled = discoverTypeFilters.activeTab === "activityPlans";
+  const isResetDisabled = areAllTypesSelected(discoverTypeFilters.selectedTypes);
 
   if (!visible) {
     return null;
@@ -710,22 +579,32 @@ function DiscoverFilterSheet({
           <View className="gap-1 border-b border-border pb-4">
             <Text className="text-lg font-semibold text-foreground">Filters</Text>
             <Text className="text-sm text-muted-foreground">
-              Choose which Discover results you want to browse.
+              Choose which result types stay visible in Discover.
             </Text>
           </View>
 
           <View className="mt-6 gap-3">
-            <Text className="text-sm font-medium text-foreground">Content type</Text>
+            <Text className="text-sm font-medium text-foreground">Include content types</Text>
             <View className="flex-row flex-wrap gap-2">
-              {TABS.map((tab) => (
-                <FilterChip
-                  key={tab.id}
-                  label={tab.label}
-                  isActive={discoverTypeFilters.activeTab === tab.id}
-                  onPress={() => onDiscoverTypeFiltersChange({ activeTab: tab.id })}
-                  testID={`discover-filter-type-${tab.id}`}
-                />
-              ))}
+              {TABS.map((tab) => {
+                const isActive = discoverTypeFilters.selectedTypes.includes(tab.id);
+
+                return (
+                  <FilterChip
+                    key={tab.id}
+                    label={tab.label}
+                    isActive={isActive}
+                    onPress={() => {
+                      onDiscoverTypeFiltersChange({
+                        selectedTypes: isActive
+                          ? discoverTypeFilters.selectedTypes.filter((type) => type !== tab.id)
+                          : [...discoverTypeFilters.selectedTypes, tab.id],
+                      });
+                    }}
+                    testID={`discover-filter-type-${tab.id}`}
+                  />
+                );
+              })}
             </View>
           </View>
         </BottomSheetScrollView>
@@ -779,7 +658,7 @@ function TrainingPlanCard({ template, onPress }: TrainingPlanCardProps) {
       onPress={onPress}
       activeOpacity={0.85}
       testID={`discover-training-plan-${template.id}`}
-      className="bg-card border border-border rounded-2xl p-4 gap-3"
+      className="gap-3 rounded-2xl border border-border bg-card p-4"
     >
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 gap-1.5">
@@ -836,11 +715,11 @@ function RouteCard({ route, onPress }: RouteCardProps) {
       onPress={onPress}
       activeOpacity={0.85}
       testID={`discover-route-${route.id}`}
-      className="bg-card border border-border rounded-2xl p-4 gap-3"
+      className="gap-3 rounded-2xl border border-border bg-card p-4"
     >
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 gap-1.5">
-          <View className="rounded-full bg-muted px-2.5 py-1 self-start">
+          <View className="self-start rounded-full bg-muted px-2.5 py-1">
             <Text className="text-[11px] font-medium text-muted-foreground">{routeType}</Text>
           </View>
           <Text className="text-lg font-semibold text-foreground">{route.name}</Text>
@@ -879,7 +758,7 @@ function UserCard({ user, onPress }: UserCardProps) {
       onPress={onPress}
       activeOpacity={0.85}
       testID={`discover-user-${user.id}`}
-      className="bg-card border border-border rounded-2xl p-4 flex-row items-center gap-3"
+      className="flex-row items-center gap-3 rounded-2xl border border-border bg-card p-4"
     >
       <Avatar alt={username} className="h-14 w-14">
         <AvatarImage source={{ uri: user.avatar_url }} />
