@@ -156,6 +156,11 @@ function CalendarScreen() {
     [activitiesData?.items],
   );
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
+  const hasVisibleEventsForDate = useCallback(
+    (dateKey: string) =>
+      (eventsByDate.get(dateKey) ?? []).some((event) => event.event_type !== "rest_day"),
+    [eventsByDate],
+  );
   const visibleMonthLabel = useMemo(
     () => format(parseDateKey(visibleAnchor), "MMMM yyyy"),
     [visibleAnchor],
@@ -224,6 +229,18 @@ function CalendarScreen() {
     getCanStartPlannedEvent,
   });
 
+  const handleMonthDayPress = useCallback(
+    (dateKey: string) => {
+      if (hasVisibleEventsForDate(dateKey)) {
+        handleOpenDayAgenda(dateKey);
+        return;
+      }
+
+      selectDate(dateKey);
+    },
+    [handleOpenDayAgenda, hasVisibleEventsForDate, selectDate],
+  );
+
   if (loadingEvents && !activitiesData) {
     return (
       <View className="flex-1 bg-background">
@@ -278,7 +295,7 @@ function CalendarScreen() {
           onVisibleMonthChange={handleVisibleMonthChange}
           onReachStart={extendMonthRangeBackward}
           onReachEnd={extendMonthRangeForward}
-          onSelectDay={handleOpenDayAgenda}
+          onSelectDay={handleMonthDayPress}
         />
       </View>
 

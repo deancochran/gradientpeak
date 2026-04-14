@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useMemo, useRef } from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
 import {
   addDaysToDateKey,
@@ -49,10 +49,7 @@ export function CalendarMonthList({
   onSelectDay,
 }: CalendarMonthListProps) {
   const listRef = useRef<FlatList<string>>(null);
-  const hasAlignedInitialScrollRef = useRef(false);
   const lastReportedVisibleMonthRef = useRef<string | null>(null);
-  const pendingScrollTargetRef = useRef<string | null>(null);
-  const previousVisibleMonthRef = useRef(visibleMonthAnchor);
   const viewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: 30,
     minimumViewTime: 80,
@@ -64,12 +61,6 @@ export function CalendarMonthList({
       if (typeof firstVisible !== "string") {
         return;
       }
-
-      if (pendingScrollTargetRef.current && pendingScrollTargetRef.current !== firstVisible) {
-        return;
-      }
-
-      pendingScrollTargetRef.current = null;
 
       if (lastReportedVisibleMonthRef.current !== firstVisible) {
         lastReportedVisibleMonthRef.current = firstVisible;
@@ -83,30 +74,12 @@ export function CalendarMonthList({
     [months, visibleMonthAnchor],
   );
 
-  useEffect(() => {
-    const shouldScroll =
-      !hasAlignedInitialScrollRef.current ||
-      (previousVisibleMonthRef.current !== visibleMonthAnchor &&
-        lastReportedVisibleMonthRef.current !== visibleMonthAnchor);
-    previousVisibleMonthRef.current = visibleMonthAnchor;
-
-    if (!shouldScroll) return;
-
-    hasAlignedInitialScrollRef.current = true;
-    pendingScrollTargetRef.current = visibleMonthAnchor;
-    listRef.current?.scrollToIndex({ animated: false, index: activeMonthIndex, viewPosition: 0 });
-    queueMicrotask(() => {
-      if (pendingScrollTargetRef.current === visibleMonthAnchor) {
-        pendingScrollTargetRef.current = null;
-      }
-    });
-  }, [activeMonthIndex, visibleMonthAnchor]);
-
   return (
     <FlatList
       ref={listRef}
       data={months}
       keyExtractor={(item) => item}
+      initialScrollIndex={activeMonthIndex}
       initialNumToRender={4}
       maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
       maxToRenderPerBatch={4}
@@ -154,8 +127,21 @@ export function CalendarMonthList({
                 {gridDays.map((dateKey) => {
                   const density = getMonthDensity(eventsByDate, dateKey);
                   const isInMonth = isSameMonth(dateKey, item);
-                  const isActive = dateKey === activeDate;
-                  const isToday = dateKey === todayKey;
+                  const isActive = isInMonth && dateKey === activeDate;
+                  const isToday = isInMonth && dateKey === todayKey;
+
+                  if (!isInMonth) {
+                    return (
+                      <View
+                        key={dateKey}
+                        className="mb-2 w-[14.285%] items-center"
+                        testID={`calendar-month-filler-${item}-${dateKey}`}
+                      >
+                        <View className="h-11 w-11 rounded-2xl bg-transparent" />
+                        <View className="mt-1 h-2" />
+                      </View>
+                    );
+                  }
 
                   return (
                     <TouchableOpacity

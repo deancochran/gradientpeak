@@ -393,6 +393,26 @@ describe("calendar redesign screen", () => {
     expect(pushMock).toHaveBeenCalledWith("/calendar-day?date=2026-03-24");
   });
 
+  it("does not open the day route for a selected day without visible events", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-25"));
+
+    expect(useCalendarStore.getState().activeDate).toBe("2026-03-25");
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("renders out-of-month filler cells as non-interactive blanks", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-month-filler-2026-03-01-2026-02-23")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("calendar-month-filler-2026-03-01-2026-02-23"));
+
+    expect(useCalendarStore.getState().activeDate).toBe(today);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
   it("opens the actions sheet and schedules a planned activity", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 

@@ -117,31 +117,29 @@ export default function CalendarDayScreen() {
         </View>
       ) : (
         <ScrollView className="flex-1 px-4 pb-6 pt-4" contentContainerStyle={{ gap: 12 }}>
-          <View className="rounded-3xl border border-border bg-card px-4 py-4">
-            <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Agenda
-            </Text>
-            <Text className="mt-2 text-sm text-muted-foreground">
-              {visibleEvents.length === 0
-                ? "Nothing is scheduled for this day."
-                : visibleEvents.length === 1
-                  ? "1 event"
-                  : `${visibleEvents.length} events`}
-            </Text>
-          </View>
-
           {visibleEvents.length > 0 ? (
-            visibleEvents.map((event) => (
-              <CalendarEventCard
-                key={event.id}
-                event={event}
-                canStart={getCanStartPlannedEvent(event)}
-                onPress={() => handleOpenEvent(event)}
-                onQuickActionPress={
-                  getCanStartPlannedEvent(event) ? () => handleQuickActionPress(event) : null
-                }
-              />
-            ))
+            <>
+              <View className="rounded-3xl border border-border bg-card px-4 py-4">
+                <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Agenda
+                </Text>
+                <Text className="mt-2 text-sm text-muted-foreground">
+                  {visibleEvents.length === 1 ? "1 event" : `${visibleEvents.length} events`}
+                </Text>
+              </View>
+
+              {visibleEvents.map((event) => (
+                <CalendarEventCard
+                  key={event.id}
+                  event={event}
+                  canStart={getCanStartPlannedEvent(event)}
+                  onPress={() => handleOpenEvent(event)}
+                  onQuickActionPress={
+                    getCanStartPlannedEvent(event) ? () => handleQuickActionPress(event) : null
+                  }
+                />
+              ))}
+            </>
           ) : (
             <View
               className="rounded-3xl border border-border bg-card px-5 py-5"
