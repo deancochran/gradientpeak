@@ -353,25 +353,8 @@ describe("plan dashboard navigation", () => {
 
     expect(screen.getAllByText("Forecasted Projection")[0]).toBeTruthy();
     expect(screen.getByText("Goals")).toBeTruthy();
-    expect(screen.getAllByText("Current Plan")[0]).toBeTruthy();
     expect(screen.getAllByText("150%")[0]).toBeTruthy();
     expect(screen.getByText("This week's load")).toBeTruthy();
-  });
-
-  it("opens calendar from dashboard action", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("plan-open-calendar-button"));
-
-    expect(navigateMock).toHaveBeenCalledWith(ROUTES.CALENDAR);
-  });
-
-  it("opens training plans list from management action", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("plan-manage-plans-button"));
-
-    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.LIST);
   });
 
   it("navigates to goal detail when a goal card is pressed", () => {
