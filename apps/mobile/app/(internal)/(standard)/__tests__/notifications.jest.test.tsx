@@ -41,7 +41,10 @@ jest.mock("@repo/ui/components/button", () => ({
     React.createElement("Pressable", { onPress, ...props }, children),
 }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
-jest.mock("@repo/ui/lib/cn", () => ({ __esModule: true, cn: (...values: string[]) => values.filter(Boolean).join(" ") }));
+jest.mock("@repo/ui/lib/cn", () => ({
+  __esModule: true,
+  cn: (...values: string[]) => values.filter(Boolean).join(" "),
+}));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
@@ -70,7 +73,9 @@ jest.mock("@repo/core", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    useUtils: () => ({ notifications: { getRecent: { cancel: jest.fn(), getData: jest.fn(), setData: jest.fn() } } }),
+    useUtils: () => ({
+      notifications: { getRecent: { cancel: jest.fn(), getData: jest.fn(), setData: jest.fn() } },
+    }),
     notifications: {
       getRecent: {
         useQuery: () => ({
