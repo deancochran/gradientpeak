@@ -76,6 +76,21 @@ function getSelectedResultCount(type: TabType, counts: Record<TabType, number>) 
   return counts[type] ?? 0;
 }
 
+function getOrderedSelectedTypes(selectedTypes: readonly TabType[], counts: Record<TabType, number>, hasSearchQuery: boolean) {
+  if (!hasSearchQuery) {
+    return ALL_DISCOVER_TYPES.filter((type) => selectedTypes.includes(type));
+  }
+
+  return [...selectedTypes].sort((left, right) => {
+    const countDelta = getSelectedResultCount(right, counts) - getSelectedResultCount(left, counts);
+    if (countDelta !== 0) {
+      return countDelta;
+    }
+
+    return ALL_DISCOVER_TYPES.indexOf(left) - ALL_DISCOVER_TYPES.indexOf(right);
+  });
+}
+
 export default function DiscoverPage() {
   const navigateTo = useAppNavigate();
   const [typeFilters, setTypeFilters] = useState<DiscoverTypeFilters>({
@@ -147,6 +162,8 @@ export default function DiscoverPage() {
     (sum, type) => sum + getSelectedResultCount(type, resultCounts),
     0,
   );
+  const hasSearchQuery = debouncedSearch.trim().length > 0;
+  const orderedSelectedTypes = getOrderedSelectedTypes(selectedTypes, resultCounts, hasSearchQuery);
   const isSelectedContentLoading =
     (selectedTypes.includes("activityPlans") &&
       activityPlansInfiniteQuery.isLoading &&
@@ -339,13 +356,13 @@ export default function DiscoverPage() {
     </View>
   );
 
-  const renderActivityPlansSection = () => {
+  const renderActivityPlansSection = (index: number) => {
     if (!selectedTypes.includes("activityPlans") || activityPlans.length === 0) {
       return null;
     }
 
     return (
-      <View className="mb-6 px-4" testID="discover-section-activityPlans">
+      <View className="mb-6 px-4" testID={`discover-section-activityPlans-${index}`}>
         {renderSectionHeader(
           "activityPlans",
           activityPlans.length,
@@ -377,13 +394,13 @@ export default function DiscoverPage() {
     );
   };
 
-  const renderTrainingPlansSection = () => {
+  const renderTrainingPlansSection = (index: number) => {
     if (!selectedTypes.includes("trainingPlans") || trainingPlans.length === 0) {
       return null;
     }
 
     return (
-      <View className="mb-6 px-4" testID="discover-section-trainingPlans">
+      <View className="mb-6 px-4" testID={`discover-section-trainingPlans-${index}`}>
         {renderSectionHeader(
           "trainingPlans",
           trainingPlans.length,
@@ -402,13 +419,13 @@ export default function DiscoverPage() {
     );
   };
 
-  const renderRoutesSection = () => {
+  const renderRoutesSection = (index: number) => {
     if (!selectedTypes.includes("routes") || routes.length === 0) {
       return null;
     }
 
     return (
-      <View className="mb-6 px-4" testID="discover-section-routes">
+      <View className="mb-6 px-4" testID={`discover-section-routes-${index}`}>
         {renderSectionHeader(
           "routes",
           routes.length,
@@ -435,13 +452,13 @@ export default function DiscoverPage() {
     );
   };
 
-  const renderUsersSection = () => {
+  const renderUsersSection = (index: number) => {
     if (!selectedTypes.includes("users") || users.length === 0) {
       return null;
     }
 
     return (
-      <View className="mb-6 px-4" testID="discover-section-users">
+      <View className="mb-6 px-4" testID={`discover-section-users-${index}`}>
         {renderSectionHeader(
           "users",
           users.length,
@@ -471,10 +488,20 @@ export default function DiscoverPage() {
 
     return (
       <ScrollView testID="discover-results-list" contentContainerStyle={{ paddingBottom: 32 }}>
-        {renderActivityPlansSection()}
-        {renderTrainingPlansSection()}
-        {renderRoutesSection()}
-        {renderUsersSection()}
+        {orderedSelectedTypes.map((type, index) => {
+          switch (type) {
+            case "activityPlans":
+              return <React.Fragment key={type}>{renderActivityPlansSection(index)}</React.Fragment>;
+            case "trainingPlans":
+              return <React.Fragment key={type}>{renderTrainingPlansSection(index)}</React.Fragment>;
+            case "routes":
+              return <React.Fragment key={type}>{renderRoutesSection(index)}</React.Fragment>;
+            case "users":
+              return <React.Fragment key={type}>{renderUsersSection(index)}</React.Fragment>;
+            default:
+              return null;
+          }
+        })}
       </ScrollView>
     );
   };

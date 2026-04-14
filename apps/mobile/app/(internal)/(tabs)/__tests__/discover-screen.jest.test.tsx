@@ -56,6 +56,14 @@ const routes = [
     total_ascent: 180,
     description: "Flat opening miles with a steady climb home.",
   },
+  {
+    id: "route-2",
+    name: "Canyon Tempo",
+    activity_category: "outdoor_run",
+    total_distance: 12400,
+    total_ascent: 260,
+    description: "A longer route with a steady climb through the canyon.",
+  },
 ];
 
 const users = [
@@ -232,10 +240,10 @@ describe("discover screen", () => {
 
     expect(screen.getByText("Header:Discover")).toBeTruthy();
     expect(screen.getByPlaceholderText("Search plans, routes, and profiles")).toBeTruthy();
-    expect(screen.getByTestId("discover-section-activityPlans")).toBeTruthy();
-    expect(screen.getByTestId("discover-section-trainingPlans")).toBeTruthy();
-    expect(screen.getByTestId("discover-section-routes")).toBeTruthy();
-    expect(screen.getByTestId("discover-section-users")).toBeTruthy();
+    expect(screen.getByTestId("discover-section-activityPlans-0")).toBeTruthy();
+    expect(screen.getByTestId("discover-section-trainingPlans-1")).toBeTruthy();
+    expect(screen.getByTestId("discover-section-routes-2")).toBeTruthy();
+    expect(screen.getByTestId("discover-section-users-3")).toBeTruthy();
     expect(screen.queryByText("Search anything in Discover")).toBeNull();
     expect(screen.queryByText("Change in filters")).toBeNull();
   });
@@ -250,10 +258,10 @@ describe("discover screen", () => {
     fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
-      expect(screen.queryByTestId("discover-section-activityPlans")).toBeNull();
-      expect(screen.getByTestId("discover-section-trainingPlans")).toBeTruthy();
-      expect(screen.queryByTestId("discover-section-routes")).toBeNull();
-      expect(screen.queryByTestId("discover-section-users")).toBeNull();
+      expect(screen.queryByTestId("discover-section-activityPlans-0")).toBeNull();
+      expect(screen.getByTestId("discover-section-trainingPlans-0")).toBeTruthy();
+      expect(screen.queryByTestId("discover-section-routes-0")).toBeNull();
+      expect(screen.queryByTestId("discover-section-users-0")).toBeNull();
     });
 
     expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
@@ -287,6 +295,8 @@ describe("discover screen", () => {
         },
         expect.objectContaining({ getNextPageParam: expect.any(Function) }),
       );
+      expect(screen.getByTestId("discover-section-routes-0")).toBeTruthy();
+      expect(screen.getByTestId("discover-section-activityPlans-1")).toBeTruthy();
     });
   });
 
