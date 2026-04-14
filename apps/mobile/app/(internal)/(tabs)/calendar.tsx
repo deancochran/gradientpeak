@@ -224,6 +224,18 @@ function CalendarScreen() {
     getCanStartPlannedEvent,
   });
 
+  const handleMonthDayPress = useCallback(
+    (dateKey: string, hasVisibleEvents: boolean) => {
+      if (hasVisibleEvents) {
+        handleOpenDayAgenda(dateKey);
+        return;
+      }
+
+      selectDate(dateKey);
+    },
+    [handleOpenDayAgenda, selectDate],
+  );
+
   if (loadingEvents && !activitiesData) {
     return (
       <View className="flex-1 bg-background">
@@ -278,7 +290,7 @@ function CalendarScreen() {
           onVisibleMonthChange={handleVisibleMonthChange}
           onReachStart={extendMonthRangeBackward}
           onReachEnd={extendMonthRangeForward}
-          onSelectDay={handleOpenDayAgenda}
+          onSelectDay={handleMonthDayPress}
         />
       </View>
 

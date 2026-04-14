@@ -21,7 +21,7 @@ type CalendarMonthListProps = {
   onVisibleMonthChange: (monthStartKey: string) => void;
   onReachStart: () => void;
   onReachEnd: () => void;
-  onSelectDay: (dateKey: string) => void;
+  onSelectDay: (dateKey: string, hasVisibleEvents: boolean) => void;
 };
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -49,9 +49,7 @@ export function CalendarMonthList({
   onSelectDay,
 }: CalendarMonthListProps) {
   const listRef = useRef<FlatList<string>>(null);
-  const hasAlignedInitialScrollRef = useRef(false);
   const lastReportedVisibleMonthRef = useRef<string | null>(null);
-  const pendingScrollTargetRef = useRef<string | null>(null);
   const previousVisibleMonthRef = useRef(visibleMonthAnchor);
   const viewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: 30,
@@ -64,12 +62,6 @@ export function CalendarMonthList({
       if (typeof firstVisible !== "string") {
         return;
       }
-
-      if (pendingScrollTargetRef.current && pendingScrollTargetRef.current !== firstVisible) {
-        return;
-      }
-
-      pendingScrollTargetRef.current = null;
 
       if (lastReportedVisibleMonthRef.current !== firstVisible) {
         lastReportedVisibleMonthRef.current = firstVisible;
@@ -84,22 +76,16 @@ export function CalendarMonthList({
   );
 
   useEffect(() => {
-    const shouldScroll =
-      !hasAlignedInitialScrollRef.current ||
-      (previousVisibleMonthRef.current !== visibleMonthAnchor &&
-        lastReportedVisibleMonthRef.current !== visibleMonthAnchor);
+    if (
+      previousVisibleMonthRef.current === visibleMonthAnchor ||
+      lastReportedVisibleMonthRef.current === visibleMonthAnchor
+    ) {
+      previousVisibleMonthRef.current = visibleMonthAnchor;
+      return;
+    }
+
     previousVisibleMonthRef.current = visibleMonthAnchor;
-
-    if (!shouldScroll) return;
-
-    hasAlignedInitialScrollRef.current = true;
-    pendingScrollTargetRef.current = visibleMonthAnchor;
     listRef.current?.scrollToIndex({ animated: false, index: activeMonthIndex, viewPosition: 0 });
-    queueMicrotask(() => {
-      if (pendingScrollTargetRef.current === visibleMonthAnchor) {
-        pendingScrollTargetRef.current = null;
-      }
-    });
   }, [activeMonthIndex, visibleMonthAnchor]);
 
   return (
@@ -107,6 +93,7 @@ export function CalendarMonthList({
       ref={listRef}
       data={months}
       keyExtractor={(item) => item}
+      initialScrollIndex={activeMonthIndex}
       initialNumToRender={4}
       maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
       maxToRenderPerBatch={4}
@@ -153,14 +140,28 @@ export function CalendarMonthList({
               <View className="mt-3 flex-row flex-wrap">
                 {gridDays.map((dateKey) => {
                   const density = getMonthDensity(eventsByDate, dateKey);
+                  const hasVisibleEvents = density > 0;
                   const isInMonth = isSameMonth(dateKey, item);
-                  const isActive = dateKey === activeDate;
-                  const isToday = dateKey === todayKey;
+                  const isActive = isInMonth && dateKey === activeDate;
+                  const isToday = isInMonth && dateKey === todayKey;
+
+                  if (!isInMonth) {
+                    return (
+                      <View
+                        key={dateKey}
+                        className="mb-2 w-[14.285%] items-center"
+                        testID={`calendar-month-filler-${item}-${dateKey}`}
+                      >
+                        <View className="h-11 w-11 rounded-2xl bg-transparent" />
+                        <View className="mt-1 h-2" />
+                      </View>
+                    );
+                  }
 
                   return (
                     <TouchableOpacity
                       key={dateKey}
-                      onPress={() => onSelectDay(dateKey)}
+                      onPress={() => onSelectDay(dateKey, hasVisibleEvents)}
                       className="mb-2 w-[14.285%] items-center"
                       activeOpacity={0.85}
                       testID={`calendar-month-cell-${dateKey}`}

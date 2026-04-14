@@ -127,10 +127,8 @@ export function useCalendarScreenController({
 
       if (nextWindow.rangeStart !== rangeStart) setRangeStart(nextWindow.rangeStart);
       if (nextWindow.rangeEnd !== rangeEnd) setRangeEnd(nextWindow.rangeEnd);
-
-      setVisibleAnchor(nextAnchor);
     },
-    [rangeEnd, rangeStart, setRangeEnd, setRangeStart, setVisibleAnchor],
+    [rangeEnd, rangeStart, setRangeEnd, setRangeStart],
   );
 
   const selectDate = useCallback(
@@ -142,8 +140,9 @@ export function useCalendarScreenController({
   );
 
   const handleTodayPress = useCallback(() => {
+    setVisibleAnchor(getMonthAnchor(todayKey));
     selectDate(todayKey);
-  }, [selectDate, todayKey]);
+  }, [selectDate, setVisibleAnchor, todayKey]);
 
   const handleOpenDayAgenda = useCallback(
     (dateKey: string) => {

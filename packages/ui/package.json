@@ -143,13 +143,9 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
-    "generate:selectors": "node --experimental-strip-types ./scripts/generate-selectors.ts",
-    "generate:ui-preview-manifest": "node --experimental-strip-types ./scripts/generate-ui-preview-manifest.ts",
     "test": "pnpm run test:web && pnpm run test:native",
     "test:web": "vitest run",
-    "test:native": "jest --config ./jest.config.mjs --runInBand",
-    "add:shadcn": "node ./scripts/add-shadcn.mjs",
-    "add:reusables": "node ./scripts/add-reusables.mjs"
+    "test:native": "jest --config ./jest.config.mjs --runInBand"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
