@@ -36,9 +36,7 @@ export function ensureCalendarQueryWindowCovers(input: {
   ) {
     rangeStart = getStartOfMonthKey(addMonthsToDateKey(rangeStart, -MONTH_WINDOW_EXTENSION));
   }
-  if (
-    monthStart >= getStartOfMonthKey(addMonthsToDateKey(rangeEnd, -MONTH_WINDOW_EXTENSION + 1))
-  ) {
+  if (monthStart >= getStartOfMonthKey(addMonthsToDateKey(rangeEnd, -MONTH_WINDOW_EXTENSION + 1))) {
     rangeEnd = getEndOfMonthKey(addMonthsToDateKey(rangeEnd, MONTH_WINDOW_EXTENSION));
   }
 

@@ -1,12 +1,14 @@
 import type { ActivityPayload } from "@repo/core";
-import { format } from "date-fns";
 import { type RefObject, useCallback } from "react";
 import { Alert } from "react-native";
-import { getMonthAnchor, parseDateKey } from "@/lib/calendar/dateMath";
-import { isEditableEvent, isRecurringEvent } from "@/lib/calendar/eventPresentation";
+import { getMonthAnchor } from "@/lib/calendar/dateMath";
+import { isRecurringEvent } from "@/lib/calendar/eventPresentation";
 import { buildEditEventRoute, buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
-import { ensureCalendarQueryWindowCovers } from "@/lib/calendar/queryWindow";
+import {
+  buildCalendarQueryWindow,
+  ensureCalendarQueryWindowCovers,
+} from "@/lib/calendar/queryWindow";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
@@ -42,10 +44,7 @@ type UseCalendarScreenControllerParams = {
   setSchedulingActivityPlanId: (activityPlanId: string | null) => void;
   setShowManualCreateModal: (visible: boolean) => void;
   setManualCreateType: (type: ManualEventCreateType | null) => void;
-  setDraggingEvent: (event: CalendarEvent | null) => void;
-  setDraggingScope: (scope: EventMutationScope | undefined) => void;
   deleteEvent: (input: { id: string; scope?: EventMutationScope }) => void;
-  moveEvent: (input: { id: string; scheduled_date: string; scope?: EventMutationScope }) => void;
   createEvent: (input: {
     event_type: ManualEventCreateType;
     title: string;
@@ -61,7 +60,6 @@ type UseCalendarScreenControllerParams = {
 
 export function useCalendarScreenController({
   isMountedRef,
-  activeDate,
   visibleAnchor,
   todayKey,
   rangeStart,
@@ -78,10 +76,7 @@ export function useCalendarScreenController({
   setSchedulingActivityPlanId,
   setShowManualCreateModal,
   setManualCreateType,
-  setDraggingEvent,
-  setDraggingScope,
   deleteEvent,
-  moveEvent,
   createEvent,
   getCanStartPlannedEvent,
 }: UseCalendarScreenControllerParams) {
@@ -96,9 +91,7 @@ export function useCalendarScreenController({
   const closeSheetsAndTransientState = useCallback(() => {
     setSheetState("closed");
     setSelectedEventId(null);
-    setDraggingEvent(null);
-    setDraggingScope(undefined);
-  }, [setDraggingEvent, setDraggingScope, setSelectedEventId, setSheetState]);
+  }, [setSelectedEventId, setSheetState]);
 
   const dismissOverlaysBeforeNavigation = useCallback(
     (navigate: () => void) => {
@@ -123,11 +116,14 @@ export function useCalendarScreenController({
   const ensureDateVisible = useCallback(
     (dateKey: string) => {
       const nextAnchor = getMonthAnchor(dateKey);
-      const nextWindow = ensureCalendarQueryWindowCovers({
-        rangeStart,
-        rangeEnd,
-        anchorDate: nextAnchor,
-      });
+      const nextWindow =
+        nextAnchor < rangeStart || nextAnchor > rangeEnd
+          ? buildCalendarQueryWindow(nextAnchor)
+          : ensureCalendarQueryWindowCovers({
+              rangeStart,
+              rangeEnd,
+              anchorDate: nextAnchor,
+            });
 
       if (nextWindow.rangeStart !== rangeStart) setRangeStart(nextWindow.rangeStart);
       if (nextWindow.rangeEnd !== rangeEnd) setRangeEnd(nextWindow.rangeEnd);
@@ -148,6 +144,16 @@ export function useCalendarScreenController({
   const handleTodayPress = useCallback(() => {
     selectDate(todayKey);
   }, [selectDate, todayKey]);
+
+  const handleOpenDayAgenda = useCallback(
+    (dateKey: string) => {
+      selectDate(dateKey);
+      dismissOverlaysBeforeNavigation(() => {
+        navigateTo(ROUTES.PLAN.CALENDAR_DAY(dateKey));
+      });
+    },
+    [dismissOverlaysBeforeNavigation, navigateTo, selectDate],
+  );
 
   const initializeManualCreate = useCallback(
     (type: ManualEventCreateType) => {
@@ -264,47 +270,6 @@ export function useCalendarScreenController({
     [deleteEvent, getRecurringScopeOptions],
   );
 
-  const startDragging = useCallback(
-    (event: CalendarEvent, scope?: EventMutationScope) => {
-      if (!isEditableEvent(event)) {
-        Alert.alert("Read-only event", "Imported events are read-only and cannot be moved.");
-        return;
-      }
-
-      setDraggingEvent(event);
-      setDraggingScope(scope);
-      setSheetState("closed");
-      setSelectedEventId(null);
-      selectDate(event.scheduled_date ?? activeDate);
-    },
-    [activeDate, selectDate, setDraggingEvent, setDraggingScope, setSelectedEventId, setSheetState],
-  );
-
-  const handleStartDragFromEvent = useCallback(
-    (event: CalendarEvent) => {
-      if (isRecurringEvent(event)) {
-        getRecurringScopeOptions("move", (scope) => startDragging(event, scope));
-        return;
-      }
-
-      startDragging(event);
-    },
-    [getRecurringScopeOptions, startDragging],
-  );
-
-  const handleDropOnDate = useCallback(
-    (dateKey: string, draggingEvent: CalendarEvent | null, draggingScope?: EventMutationScope) => {
-      if (!draggingEvent) return;
-
-      moveEvent(
-        draggingScope
-          ? { id: draggingEvent.id, scheduled_date: dateKey, scope: draggingScope }
-          : { id: draggingEvent.id, scheduled_date: dateKey },
-      );
-    },
-    [moveEvent],
-  );
-
   const handleVisibleMonthChange = useCallback(
     (monthStartKey: string) => {
       if (monthStartKey === visibleAnchor) {
@@ -312,37 +277,8 @@ export function useCalendarScreenController({
       }
 
       setVisibleAnchor(monthStartKey);
-      const nextWindow = ensureCalendarQueryWindowCovers({
-        rangeStart,
-        rangeEnd,
-        anchorDate: monthStartKey,
-      });
-      if (nextWindow.rangeStart !== rangeStart) setRangeStart(nextWindow.rangeStart);
-      if (nextWindow.rangeEnd !== rangeEnd) setRangeEnd(nextWindow.rangeEnd);
     },
-    [rangeEnd, rangeStart, setRangeEnd, setRangeStart, setVisibleAnchor, visibleAnchor],
-  );
-
-  const handleOpenEventPreview = useCallback(
-    (event: CalendarEvent) => {
-      setActiveDate(event.scheduled_date ?? activeDate);
-      setSelectedEventId(event.id);
-      setSheetState("event-preview");
-    },
-    [activeDate, setActiveDate, setSelectedEventId, setSheetState],
-  );
-
-  const handleQuickActionPress = useCallback(
-    (event: CalendarEvent) => {
-      if (getCanStartPlannedEvent(event)) {
-        handleStartPlannedEvent(event);
-        return;
-      }
-
-      setSelectedEventId(event.id);
-      setSheetState("event-preview");
-    },
-    [getCanStartPlannedEvent, handleStartPlannedEvent, setSelectedEventId, setSheetState],
+    [setVisibleAnchor, visibleAnchor],
   );
 
   const handleCreatePlanned = useCallback(() => {
@@ -382,16 +318,13 @@ export function useCalendarScreenController({
     resetManualCreateState,
     selectDate,
     handleTodayPress,
+    handleOpenDayAgenda,
     initializeManualCreate,
     handleOpenEvent,
     handleStartPlannedEvent,
     handleEditEvent,
     handleDeleteEvent,
-    handleStartDragFromEvent,
-    handleDropOnDate,
     handleVisibleMonthChange,
-    handleOpenEventPreview,
-    handleQuickActionPress,
     handleCreatePlanned,
     handlePlannedActivitySelected,
     submitManualCreate,

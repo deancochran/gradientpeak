@@ -1,10 +1,4 @@
-import {
-  addDays,
-  addMonths,
-  endOfMonth,
-  format,
-  startOfMonth,
-} from "date-fns";
+import { addDays, addMonths, endOfMonth, format, startOfMonth } from "date-fns";
 
 export function toDateKey(date: Date): string {
   return format(date, "yyyy-MM-dd");

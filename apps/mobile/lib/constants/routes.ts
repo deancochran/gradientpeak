@@ -12,6 +12,7 @@ export const ROUTES = {
     CALENDAR: "/(internal)/(tabs)/calendar" as const,
     CREATE: "/create-activity-plan" as const,
     SCHEDULED: "/scheduled-activities-list" as const,
+    CALENDAR_DAY: (date: string) => `/calendar-day?date=${date}` as const,
 
     // Training Plan Routes
     TRAINING_PLAN: {
