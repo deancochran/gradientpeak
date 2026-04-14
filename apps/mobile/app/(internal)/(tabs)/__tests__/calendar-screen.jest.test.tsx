@@ -369,6 +369,19 @@ describe("calendar redesign screen", () => {
     expect(scheduleModal.props.preselectedDate).toBe("2026-03-24");
   });
 
+  it("initializes the query window from the selected day even when the visible month diverges", () => {
+    act(() => {
+      useCalendarStore.setState({ activeDate: "2026-09-12", visibleAnchor: "2026-03-01" });
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ date_from: "2026-07-01", date_to: "2027-01-31" }),
+      expect.anything(),
+    );
+  });
+
   it("opens the dedicated day route from a month cell tap", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 

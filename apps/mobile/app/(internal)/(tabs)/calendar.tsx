@@ -42,6 +42,7 @@ const MONTH_RANGE_EXTENSION = 2;
 function CalendarScreen() {
   const queryClient = useQueryClient();
   const isMountedRef = useRef(true);
+  const hasNormalizedInitialVisibleAnchorRef = useRef(false);
 
   const todayKey = useMemo(() => toDateKey(new Date()), []);
 
@@ -57,7 +58,7 @@ function CalendarScreen() {
   const activeDate = persistedActiveDate ?? todayKey;
   const visibleAnchor = persistedVisibleAnchor ?? getMonthAnchor(persistedActiveDate ?? todayKey);
 
-  const initialWindow = useMemo(() => buildCalendarQueryWindow(visibleAnchor), [visibleAnchor]);
+  const initialWindow = useMemo(() => buildCalendarQueryWindow(activeDate), [activeDate]);
   const [rangeStart, setRangeStart] = useState(initialWindow.rangeStart);
   const [rangeEnd, setRangeEnd] = useState(initialWindow.rangeEnd);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -87,19 +88,31 @@ function CalendarScreen() {
   }, [persistedActiveDate, persistedVisibleAnchor, setActiveDate, setVisibleAnchor, todayKey]);
 
   useEffect(() => {
-    const nextWindow = ensureCalendarQueryWindowCovers({
+    if (hasNormalizedInitialVisibleAnchorRef.current) {
+      return;
+    }
+
+    hasNormalizedInitialVisibleAnchorRef.current = true;
+    const activeMonthAnchor = getMonthAnchor(activeDate);
+    if (visibleAnchor !== activeMonthAnchor) {
+      setVisibleAnchor(activeMonthAnchor);
+    }
+  }, [activeDate, setVisibleAnchor, visibleAnchor]);
+
+  useEffect(() => {
+    const windowCoveringActiveDate = ensureCalendarQueryWindowCovers({
       rangeStart,
       rangeEnd,
-      anchorDate: visibleAnchor,
+      anchorDate: activeDate,
     });
 
-    if (nextWindow.rangeStart !== rangeStart) {
-      setRangeStart(nextWindow.rangeStart);
+    if (windowCoveringActiveDate.rangeStart !== rangeStart) {
+      setRangeStart(windowCoveringActiveDate.rangeStart);
     }
-    if (nextWindow.rangeEnd !== rangeEnd) {
-      setRangeEnd(nextWindow.rangeEnd);
+    if (windowCoveringActiveDate.rangeEnd !== rangeEnd) {
+      setRangeEnd(windowCoveringActiveDate.rangeEnd);
     }
-  }, [rangeEnd, rangeStart, visibleAnchor]);
+  }, [activeDate, rangeEnd, rangeStart]);
 
   const {
     data: activitiesData,
