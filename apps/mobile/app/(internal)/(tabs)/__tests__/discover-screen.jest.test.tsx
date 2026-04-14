@@ -223,23 +223,24 @@ describe("discover screen", () => {
     renderNative(<DiscoverScreen />);
 
     expect(screen.getByText("Header:Discover")).toBeTruthy();
-    expect(screen.getByText("Browse by type")).toBeTruthy();
     expect(screen.getByPlaceholderText("Search activity plans")).toBeTruthy();
     expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
+    expect(screen.queryByText("Browse by type")).toBeNull();
+    expect(screen.getByText("Activity Plans")).toBeTruthy();
+    expect(screen.getByText("Change in filters")).toBeTruthy();
     expect(screen.queryByText("Find your next workout")).toBeNull();
   });
 
-  it("applies an activity plan filter from the bottom sheet and marks the filter button active", async () => {
+  it("switches discover content type from the bottom sheet and marks the filter button active", async () => {
     renderNative(<DiscoverScreen />);
 
     expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-        {
-          includeSystemTemplates: true,
-          includeOwnOnly: false,
-          includeEstimation: false,
-          ownerScope: "all",
-          search: undefined,
-          activityCategory: undefined,
+      {
+        includeSystemTemplates: true,
+        includeOwnOnly: false,
+        includeEstimation: false,
+        ownerScope: "all",
+        search: undefined,
         limit: 20,
       },
       expect.objectContaining({ getNextPageParam: expect.any(Function) }),
@@ -248,74 +249,35 @@ describe("discover screen", () => {
     fireEvent.press(screen.getByTestId("discover-filter-button"));
     expect(screen.getByTestId("discover-filter-sheet")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-category-bike"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-trainingPlans"));
     fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
-      expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-        {
-          includeSystemTemplates: true,
-          includeOwnOnly: false,
-          includeEstimation: false,
-          ownerScope: "all",
-          search: undefined,
-          activityCategory: "bike",
-          limit: 20,
-        },
-        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
-      );
+      expect(screen.getByPlaceholderText("Search training plans")).toBeTruthy();
     });
 
+    expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
+      search: undefined,
+    });
     expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
   });
 
-  it("applies training plan filters from the bottom sheet", async () => {
+  it("requests routes with the debounced search term after selecting routes in filters", async () => {
     renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByText("Training Plans"));
     fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-trainingPlans-sport-run"));
-    fireEvent.press(screen.getByTestId("discover-filter-trainingPlans-experience-beginner"));
-    fireEvent.press(screen.getByTestId("discover-filter-apply"));
-
-    await waitFor(() => {
-      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
-        search: undefined,
-        sport: "run",
-        experience_level: "beginner",
-        min_weeks: undefined,
-        max_weeks: undefined,
-      });
-    });
-  });
-
-  it("requests routes with the debounced search term and applied route filter", async () => {
-    renderNative(<DiscoverScreen />);
-
-    fireEvent.press(screen.getByText("Routes"));
-
-    expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-      {
-        search: undefined,
-        activityCategory: undefined,
-        limit: 20,
-      },
-      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
-    );
-
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-routes-category-run"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-routes"));
     fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: undefined,
-          activityCategory: "run",
           limit: 20,
         },
         expect.objectContaining({ getNextPageParam: expect.any(Function) }),
       );
+      expect(screen.getByPlaceholderText("Search your routes")).toBeTruthy();
     });
 
     act(() => {
@@ -327,7 +289,6 @@ describe("discover screen", () => {
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: "river",
-          activityCategory: "run",
           limit: 20,
         },
         expect.objectContaining({ getNextPageParam: expect.any(Function) }),
@@ -335,13 +296,42 @@ describe("discover screen", () => {
     });
   });
 
-  it("keeps profiles search-only with no filter button", () => {
+  it("keeps training plans query unfiltered and debounced by search", async () => {
     renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByText("Profiles"));
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-trainingPlans"));
+    fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
-    expect(screen.getByPlaceholderText("Search profiles")).toBeTruthy();
-    expect(screen.queryByTestId("discover-filter-button")).toBeNull();
+    await waitFor(() => {
+      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
+        search: undefined,
+      });
+    });
+
+    act(() => {
+      fireEvent.changeText(screen.getByPlaceholderText("Search training plans"), "10k");
+      jest.advanceTimersByTime(350);
+    });
+
+    await waitFor(() => {
+      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({ search: "10k" });
+    });
+  });
+
+  it("switches to profiles from the filter sheet", async () => {
+    renderNative(<DiscoverScreen />);
+
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.press(screen.getByTestId("discover-filter-type-users"));
+    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Search profiles")).toBeTruthy();
+    });
+
+    expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
+    expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
     expect(screen.queryByText(/Searching profiles for/)).toBeNull();
   });
 });
