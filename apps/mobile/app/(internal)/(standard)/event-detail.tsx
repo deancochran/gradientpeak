@@ -1,6 +1,5 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import type { ActivityPayload } from "@repo/core";
-import { formatDurationSec } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
@@ -24,6 +23,7 @@ import {
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
+import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
@@ -63,21 +63,6 @@ function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean |
   }
 
   return new Date(event.starts_at);
-}
-
-function readMetric(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  return null;
-}
-
-function hasIntervals(structure: unknown): boolean {
-  if (!structure || typeof structure !== "object") {
-    return false;
-  }
-  const intervals = (structure as Record<string, unknown>).intervals;
-  return Array.isArray(intervals) && intervals.length > 0;
 }
 
 function formatEventType(eventType: string | null | undefined) {
@@ -158,9 +143,8 @@ export default function EventDetailScreen() {
   const isReadOnlyImported = event?.event_type === "imported";
   const isPlannedEvent = event?.event_type === "planned";
   const activityPlan = event?.activity_plan as any;
-  const estimatedTss = readMetric(activityPlan?.estimated_tss);
-  const estimatedDurationSeconds = readMetric(activityPlan?.estimated_duration);
-  const estimatedDurationMinutes = readMetric(activityPlan?.estimated_duration_minutes);
+  const routeId = activityPlan?.route_id as string | undefined;
+  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
   const completed = isPlannedEvent ? isActivityCompleted(event) : false;
   const activityType = activityPlan?.activity_category || "other";
   const activityColor = getActivityColor(activityType);
@@ -169,10 +153,6 @@ export default function EventDetailScreen() {
       ? event.scheduled_date < toDateOnly(new Date())
       : false;
   const canStartPlanned = isPlannedEvent && !completed && !isPastScheduledEvent;
-  const structureSteps =
-    activityPlan?.structure && typeof activityPlan.structure === "object"
-      ? (activityPlan.structure as any).steps
-      : null;
 
   const promptForScope = (
     action: "save" | "delete" | "reschedule",
@@ -337,22 +317,24 @@ export default function EventDetailScreen() {
           </Card>
         ) : null}
 
-        <Card className="border-border bg-muted/20">
-          <CardContent className="p-4 gap-2">
-            <View className="flex-row items-start gap-3">
-              <View className="mt-0.5 h-9 w-9 items-center justify-center rounded-full bg-background">
-                <Icon as={ArrowUpRight} size={16} className="text-muted-foreground" />
+        {!isPlannedEvent ? (
+          <Card className="border-border bg-muted/20">
+            <CardContent className="p-4 gap-2">
+              <View className="flex-row items-start gap-3">
+                <View className="mt-0.5 h-9 w-9 items-center justify-center rounded-full bg-background">
+                  <Icon as={ArrowUpRight} size={16} className="text-muted-foreground" />
+                </View>
+                <View className="flex-1 gap-1">
+                  <Text className="text-sm font-semibold text-foreground">Advanced event detail</Text>
+                  <Text className="text-sm text-muted-foreground" testID="event-detail-fallback-note">
+                    Calendar taps open the preview sheet first. Use this fallback screen for deeper
+                    edits, schedule changes, linked plan access, or deletion.
+                  </Text>
+                </View>
               </View>
-              <View className="flex-1 gap-1">
-                <Text className="text-sm font-semibold text-foreground">Advanced event detail</Text>
-                <Text className="text-sm text-muted-foreground" testID="event-detail-fallback-note">
-                  Calendar taps open the preview sheet first. Use this fallback screen for deeper
-                  edits, schedule changes, linked plan access, or deletion.
-                </Text>
-              </View>
-            </View>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <Card>
           <CardContent className="p-4 gap-4">
@@ -473,37 +455,33 @@ export default function EventDetailScreen() {
 
         {isPlannedEvent ? (
           <Card>
-            <CardContent className="p-4 gap-4">
+            <CardContent className="p-4 gap-3">
               <View className="flex-row items-center gap-3">
                 <View
-                  className={`h-12 w-12 ${getActivityBgClass(activityType)} items-center justify-center rounded-xl`}
+                  className={`h-10 w-10 ${getActivityBgClass(activityType)} items-center justify-center rounded-full`}
                 >
-                  <Icon as={Calendar} size={22} className="text-white" />
+                  <Icon as={Calendar} size={18} className="text-white" />
                 </View>
                 <View className="flex-1 gap-1">
-                  <Text className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Activity Type
+                  <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Activity
                   </Text>
-                  <Text className="text-sm font-semibold text-foreground">
-                    {activityColor.name}
-                  </Text>
+                  <Text className="text-sm font-semibold text-foreground">{activityColor.name}</Text>
                 </View>
               </View>
 
-              <View className="rounded-md border border-border bg-muted/10 p-3 gap-3">
-                <View className="flex-row items-center gap-2">
-                  <Icon as={Clock} size={16} className="text-muted-foreground" />
-                  <Text className="font-semibold text-foreground">Schedule</Text>
+              <View className="rounded-2xl bg-muted/30 px-3 py-3">
+                <View className="flex-row items-center justify-between gap-3">
+                  <Text className="text-sm font-medium text-foreground">
+                    {format(startsAt, "EEEE, MMMM d, yyyy")}
+                  </Text>
+                  <Text className="text-sm text-muted-foreground">
+                    {allDay ? "All day" : format(startsAt, "h:mm a")}
+                  </Text>
                 </View>
-                <Text className="text-sm text-foreground">
-                  {format(startsAt, "EEEE, MMMM d, yyyy")}
-                </Text>
-                <Text className="text-sm text-muted-foreground">
-                  {allDay ? "All day" : format(startsAt, "h:mm a")}
-                </Text>
                 {isPastScheduledEvent && !completed ? (
-                  <Text className="text-xs text-amber-700">
-                    This scheduled workout is in the past and can be rescheduled.
+                  <Text className="mt-2 text-xs text-amber-700">
+                    This activity is in the past and can be rescheduled.
                   </Text>
                 ) : null}
               </View>
@@ -513,90 +491,31 @@ export default function EventDetailScreen() {
 
         {activityPlan ? (
           <Card>
-            <CardContent className="p-4 gap-3">
-              <CardTitle>Linked Activity Plan</CardTitle>
+            <CardContent className="p-4 gap-4">
               <View className="gap-1">
-                <Text className="text-sm font-semibold text-foreground">
-                  {activityPlan.name || "Planned activity"}
+                <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Activity details
                 </Text>
-                <Text className="text-xs text-muted-foreground">
-                  {(activityPlan.activity_category || "other").toUpperCase()}
-                </Text>
+                <CardTitle>{activityPlan.name || "Planned activity"}</CardTitle>
               </View>
 
               {activityPlan.description ? (
-                <Text className="text-sm text-muted-foreground">{activityPlan.description}</Text>
+                <Text className="text-sm leading-5 text-muted-foreground">{activityPlan.description}</Text>
               ) : null}
 
-              {estimatedTss !== null ||
-              estimatedDurationSeconds !== null ||
-              estimatedDurationMinutes !== null ? (
-                <View className="flex-row gap-5">
-                  {estimatedTss !== null ? (
-                    <View>
-                      <Text className="text-xs text-muted-foreground">TSS</Text>
-                      <Text className="text-sm font-semibold text-foreground">
-                        {Math.round(estimatedTss)}
-                      </Text>
-                    </View>
-                  ) : null}
-                  {estimatedDurationSeconds !== null || estimatedDurationMinutes !== null ? (
-                    <View>
-                      <Text className="text-xs text-muted-foreground">Duration</Text>
-                      <Text className="text-sm font-semibold text-foreground">
-                        {estimatedDurationSeconds !== null
-                          ? formatDurationSec(Math.max(0, estimatedDurationSeconds))
-                          : `${Math.round(estimatedDurationMinutes || 0)}min`}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {hasIntervals(activityPlan.structure) ? (
-                <Text className="text-xs text-muted-foreground">Includes interval structure.</Text>
-              ) : null}
-
-              {Array.isArray(structureSteps) && structureSteps.length > 0 ? (
-                <View className="gap-2">
-                  <Text className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Activity Structure
-                  </Text>
-                  {structureSteps.slice(0, 5).map((step: any, index: number) => (
-                    <View
-                      key={`${step.name || "step"}-${index}`}
-                      className="flex-row items-start gap-2"
-                    >
-                      <View className="mt-0.5 h-6 w-6 items-center justify-center rounded-full bg-primary/10">
-                        <Text className="text-xs font-semibold text-primary">{index + 1}</Text>
-                      </View>
-                      <View className="flex-1 gap-0.5">
-                        <Text className="text-sm font-medium text-foreground">
-                          {step.name || `Step ${index + 1}`}
-                        </Text>
-                        {step.duration && step.duration !== "untilFinished" ? (
-                          <Text className="text-xs text-muted-foreground">
-                            {step.duration.value}{" "}
-                            {step.duration.unit === "minutes" ? "min" : step.duration.unit}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  ))}
-                  {structureSteps.length > 5 ? (
-                    <Text className="ml-8 text-xs text-muted-foreground">
-                      +{structureSteps.length - 5} more steps
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
+              <ActivityPlanContentPreview
+                plan={activityPlan}
+                route={route}
+                testIDPrefix="event-detail-plan"
+              />
 
               <Button
                 variant="outline"
+                className="rounded-2xl"
                 onPress={handleOpenPlanDetail}
                 testID="event-detail-open-plan-button"
               >
-                <Text>Open Activity Plan Detail</Text>
+                <Text>View Activity Plan</Text>
               </Button>
             </CardContent>
           </Card>
@@ -609,9 +528,13 @@ export default function EventDetailScreen() {
             <Text>Close</Text>
           </Button>
         ) : isPlannedEvent ? (
-          <View className="gap-2">
+          <View className="gap-2.5">
             {canStartPlanned ? (
-              <Button onPress={handleStartActivity} testID="event-detail-start-activity-button">
+              <Button
+                className="rounded-2xl"
+                onPress={handleStartActivity}
+                testID="event-detail-start-activity-button"
+              >
                 <Icon as={Play} size={18} className="mr-2 text-primary-foreground" />
                 <Text className="text-primary-foreground">Start Activity</Text>
               </Button>
@@ -620,26 +543,27 @@ export default function EventDetailScreen() {
             <View className="flex-row gap-2">
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 rounded-2xl"
                 onPress={handleReschedule}
                 testID="event-detail-reschedule-button"
               >
                 <Icon as={Edit} size={16} className="mr-2 text-foreground" />
-                <Text>Open Schedule Editor</Text>
+                <Text>Edit Activity</Text>
               </Button>
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 rounded-2xl"
                 onPress={handleOpenPlanDetail}
                 testID="event-detail-open-linked-plan-button"
               >
                 <Icon as={Zap} size={16} className="mr-2 text-foreground" />
-                <Text>Open Plan</Text>
+                <Text>View Plan</Text>
               </Button>
             </View>
 
             <Button
               variant="outline"
+              className="rounded-2xl"
               onPress={handleDelete}
               disabled={deleteMutation.isPending}
               testID="event-detail-delete-button"

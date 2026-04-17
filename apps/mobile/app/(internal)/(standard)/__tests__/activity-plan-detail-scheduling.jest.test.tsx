@@ -190,6 +190,7 @@ jest.mock("@repo/core", () => ({
   buildEstimationContext: () => ({}),
   decodePolyline: () => null,
   estimateActivity: () => null,
+  formatDurationSec: (seconds: number) => `${seconds}s`,
   getStepIntensityColor: () => "#000000",
 }));
 
@@ -343,7 +344,7 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     await act(async () => {
-      findButton((label) => label === "Duplicate").props.onPress();
+      findButton((label) => label === "Duplicate Activity").props.onPress();
       await Promise.resolve();
     });
 

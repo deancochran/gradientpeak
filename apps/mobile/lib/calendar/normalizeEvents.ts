@@ -2,9 +2,13 @@ export interface CalendarEventActivityPlan {
   id?: string | null;
   name?: string | null;
   description?: string | null;
+  notes?: string | null;
   activity_category?: string | null;
   estimated_duration?: number | null;
+  estimated_duration_minutes?: number | null;
   estimated_tss?: number | null;
+  route_id?: string | null;
+  structure?: unknown;
 }
 
 export interface CalendarEvent {
