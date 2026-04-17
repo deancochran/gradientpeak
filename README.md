@@ -16,6 +16,8 @@ GradientPeak is a product monorepo for the web app, mobile app, shared UI, backe
 Install dependencies:
 
 ```bash
+mise trust
+mise install
 pnpm install
 ```
 
@@ -23,6 +25,7 @@ Start local development:
 
 ```bash
 pnpm dev
+pnpm dev:web:scan
 ```
 
 Use package-specific entrypoints when you only need one surface:
@@ -36,6 +39,8 @@ pnpm self-host:up
 Run the main validation commands before opening a PR:
 
 ```bash
+pnpm knip
+pnpm knip:full
 pnpm check-types
 pnpm lint
 pnpm test
@@ -63,6 +68,8 @@ pnpm test
 - `packages/db/README.md` covers database ownership and local DB tooling.
 
 Environment files should live with the owning app or package, not at the repo root.
+
+Git hooks are managed with `lefthook` and install automatically from `pnpm install`.
 
 ## Important notes
 
