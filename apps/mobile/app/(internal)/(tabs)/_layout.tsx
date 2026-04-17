@@ -26,6 +26,11 @@ export default function InternalLayout() {
           tabBarShowLabel: true,
           tabBarStyle: {
             height: 80,
+            backgroundColor: navTheme.colors.card,
+            borderTopColor: navTheme.colors.border,
+          },
+          sceneStyle: {
+            backgroundColor: navTheme.colors.background,
           },
         }}
       >

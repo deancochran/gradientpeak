@@ -1,5 +1,6 @@
 // apps/native/app/_layout.tsx
 import "../polyfills";
+import { ThemeProvider } from "@react-navigation/native";
 import { NATIVE_THEME_VARIABLES } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
@@ -24,6 +25,7 @@ import {
   E2ERuntimeErrorStatus,
   installE2ERuntimeErrorCapture,
 } from "@/lib/testing/e2eRuntimeErrors";
+import { getNavigationTheme } from "@/lib/theme";
 import { useTheme } from "@/lib/stores/theme-store";
 
 // Initialize Sentry error tracking for production
@@ -61,9 +63,10 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 }
 
 function AppShell() {
-  const { theme, resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
+  const { resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
 
   const isDark = resolvedTheme === "dark";
+  const navigationTheme = React.useMemo(() => getNavigationTheme(resolvedTheme), [resolvedTheme]);
   const themeVariables = React.useMemo(
     () => vars(NATIVE_THEME_VARIABLES[resolvedTheme]),
     [resolvedTheme],
@@ -80,16 +83,18 @@ function AppShell() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <View style={themeVariables} className="flex-1 bg-background">
-          <StatusBar style={isDark ? "light" : "dark"} />
-          <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-            <View className="flex-1 bg-background">
-              <Slot />
-              <PortalHost />
-              <E2ERuntimeErrorStatus />
-            </View>
-          </SafeAreaView>
-        </View>
+        <ThemeProvider value={navigationTheme}>
+          <View style={themeVariables} className="flex-1 bg-background">
+            <StatusBar style={isDark ? "light" : "dark"} />
+            <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+              <View className="flex-1 bg-background">
+                <Slot />
+                <PortalHost />
+                <E2ERuntimeErrorStatus />
+              </View>
+            </SafeAreaView>
+          </View>
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
