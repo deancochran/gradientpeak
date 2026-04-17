@@ -9,21 +9,23 @@ function toIsoString(value: Date | null): string | null {
 
 export function createWahooRepository({ db }: CreateWahooRepositoryOptions): WahooRepository {
   return {
-    async createSyncedEvent(input) {
-      await db.insert(schema.syncedEvents).values({
-        id: crypto.randomUUID(),
+    async createEventResourceLink(input) {
+      await db.insert(schema.integrationResourceLinks).values({
+        id: randomUUID(),
         created_at: new Date(),
         external_id: input.externalId,
-        event_id: input.eventId,
+        integration_id: input.integrationId,
+        internal_resource_id: input.eventId,
         profile_id: input.profileId,
         provider: input.provider,
+        resource_kind: "event",
         synced_at: new Date(input.syncedAt),
         updated_at: new Date(input.updatedAt),
       });
     },
 
-    async deleteSyncedEvent(id) {
-      await db.delete(schema.syncedEvents).where(eq(schema.syncedEvents.id, id));
+    async deleteEventResourceLink(id) {
+      await db.delete(schema.integrationResourceLinks).where(eq(schema.integrationResourceLinks.id, id));
     },
 
     async findWahooIntegrationByProfileId(profileId) {
@@ -31,6 +33,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .select({
           accessToken: schema.integrations.access_token,
           externalId: schema.integrations.external_id,
+          id: schema.integrations.id,
           profileId: schema.integrations.profile_id,
           refreshToken: schema.integrations.refresh_token,
         })
@@ -48,7 +51,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
     async findWahooIntegrationByExternalId(externalId) {
       const [row] = await db
-        .select({ profileId: schema.integrations.profile_id })
+        .select({ integrationId: schema.integrations.id, profileId: schema.integrations.profile_id })
         .from(schema.integrations)
         .where(
           and(
@@ -78,13 +81,14 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
     async findLinkedPlannedEventId({ profileId, externalWorkoutId }) {
       const [row] = await db
-        .select({ eventId: schema.syncedEvents.event_id })
-        .from(schema.syncedEvents)
+        .select({ eventId: schema.integrationResourceLinks.internal_resource_id })
+        .from(schema.integrationResourceLinks)
         .where(
           and(
-            eq(schema.syncedEvents.provider, "wahoo"),
-            eq(schema.syncedEvents.external_id, externalWorkoutId),
-            eq(schema.syncedEvents.profile_id, profileId),
+            eq(schema.integrationResourceLinks.provider, "wahoo"),
+            eq(schema.integrationResourceLinks.external_id, externalWorkoutId),
+            eq(schema.integrationResourceLinks.profile_id, profileId),
+            eq(schema.integrationResourceLinks.resource_kind, "event"),
           ),
         )
         .limit(1);
@@ -146,19 +150,20 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       return row;
     },
 
-    async getSyncedEvent({ eventId, profileId, provider }) {
+    async getEventResourceLink({ eventId, profileId, provider }) {
       const [row] = await db
         .select({
-          externalId: schema.syncedEvents.external_id,
-          id: schema.syncedEvents.id,
-          updatedAt: schema.syncedEvents.updated_at,
+          externalId: schema.integrationResourceLinks.external_id,
+          id: schema.integrationResourceLinks.id,
+          updatedAt: schema.integrationResourceLinks.updated_at,
         })
-        .from(schema.syncedEvents)
+        .from(schema.integrationResourceLinks)
         .where(
           and(
-            eq(schema.syncedEvents.event_id, eventId),
-            eq(schema.syncedEvents.profile_id, profileId),
-            eq(schema.syncedEvents.provider, provider),
+            eq(schema.integrationResourceLinks.internal_resource_id, eventId),
+            eq(schema.integrationResourceLinks.profile_id, profileId),
+            eq(schema.integrationResourceLinks.provider, provider),
+            eq(schema.integrationResourceLinks.resource_kind, "event"),
           ),
         )
         .limit(1);
@@ -250,20 +255,21 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       };
     },
 
-    async listEventSyncs({ eventId, profileId }) {
+    async listEventResourceLinks({ eventId, profileId }) {
       const rows = await db
         .select({
-          externalId: schema.syncedEvents.external_id,
-          id: schema.syncedEvents.id,
-          provider: schema.syncedEvents.provider,
-          syncedAt: schema.syncedEvents.synced_at,
-          updatedAt: schema.syncedEvents.updated_at,
+          externalId: schema.integrationResourceLinks.external_id,
+          id: schema.integrationResourceLinks.id,
+          provider: schema.integrationResourceLinks.provider,
+          syncedAt: schema.integrationResourceLinks.synced_at,
+          updatedAt: schema.integrationResourceLinks.updated_at,
         })
-        .from(schema.syncedEvents)
+        .from(schema.integrationResourceLinks)
         .where(
           and(
-            eq(schema.syncedEvents.event_id, eventId),
-            eq(schema.syncedEvents.profile_id, profileId),
+            eq(schema.integrationResourceLinks.internal_resource_id, eventId),
+            eq(schema.integrationResourceLinks.profile_id, profileId),
+            eq(schema.integrationResourceLinks.resource_kind, "event"),
           ),
         );
 
@@ -276,14 +282,14 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       }));
     },
 
-    async updateSyncedEvent({ externalId, id, updatedAt }) {
+    async updateEventResourceLink({ externalId, id, updatedAt }) {
       await db
-        .update(schema.syncedEvents)
+        .update(schema.integrationResourceLinks)
         .set({
           ...(externalId ? { external_id: externalId } : {}),
           updated_at: new Date(updatedAt),
         })
-        .where(eq(schema.syncedEvents.id, id));
+        .where(eq(schema.integrationResourceLinks.id, id));
     },
   };
 }

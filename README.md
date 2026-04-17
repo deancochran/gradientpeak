@@ -61,6 +61,7 @@ pnpm test
 - `apps/web/README.md` covers web-specific setup and commands.
 - `apps/mobile/README.md` covers mobile-specific setup, testing, and E2E entrypoints.
 - `packages/db/README.md` covers database ownership and local DB tooling.
+- `provider-onboarding.md` documents the recommended flow for onboarding a new third-party provider starting from the current Wahoo-first setup.
 
 Environment files should live with the owning app or package, not at the repo root.
 

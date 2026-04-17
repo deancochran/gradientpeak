@@ -3,28 +3,32 @@ import type { DrizzleDbClient } from "@repo/db";
 export type WahooIntegrationRecord = {
   accessToken: string;
   externalId: string;
+  id: string;
   profileId: string;
   refreshToken: string | null;
 };
 
-export type WahooSyncedEventRecord = {
+export type WahooEventResourceLinkRecord = {
   externalId: string;
   id: string;
   updatedAt: string | null;
 };
 
 export interface WahooRepository {
-  createSyncedEvent(input: {
+  createEventResourceLink(input: {
     eventId: string;
     externalId: string;
+    integrationId: string;
     profileId: string;
     provider: "wahoo";
     syncedAt: string;
     updatedAt: string;
   }): Promise<void>;
-  deleteSyncedEvent(id: string): Promise<void>;
+  deleteEventResourceLink(id: string): Promise<void>;
   findWahooIntegrationByProfileId(profileId: string): Promise<WahooIntegrationRecord | null>;
-  findWahooIntegrationByExternalId(externalId: string): Promise<{ profileId: string } | null>;
+  findWahooIntegrationByExternalId(
+    externalId: string,
+  ): Promise<{ integrationId: string; profileId: string } | null>;
   findImportedActivityByExternalId(externalId: string): Promise<{ id: string } | null>;
   findLinkedPlannedEventId(input: {
     profileId: string;
@@ -53,11 +57,11 @@ export interface WahooRepository {
     startedAt: string;
     type: string;
   }): Promise<{ id: string }>;
-  getSyncedEvent(input: {
+  getEventResourceLink(input: {
     eventId: string;
     profileId: string;
     provider: "wahoo";
-  }): Promise<WahooSyncedEventRecord | null>;
+  }): Promise<WahooEventResourceLinkRecord | null>;
   getPlannedEventForSync(input: { eventId: string; profileId: string }): Promise<{
     activityPlan: {
       activityCategory: string;
@@ -85,7 +89,7 @@ export interface WahooRepository {
     totalDescent: number | null;
     totalDistance: number;
   } | null>;
-  listEventSyncs(input: { eventId: string; profileId: string }): Promise<
+  listEventResourceLinks(input: { eventId: string; profileId: string }): Promise<
     Array<{
       externalId: string;
       id: string;
@@ -94,7 +98,7 @@ export interface WahooRepository {
       updatedAt: string | null;
     }>
   >;
-  updateSyncedEvent(input: { externalId?: string; id: string; updatedAt: string }): Promise<void>;
+  updateEventResourceLink(input: { externalId?: string; id: string; updatedAt: string }): Promise<void>;
 }
 
 export interface CreateWahooRepositoryOptions {

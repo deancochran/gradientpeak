@@ -1,15 +1,7 @@
-import {
-  createActivityImporter,
-  createWahooImportFitFileStorage,
-  createWahooRepository,
-} from "@repo/api/webhooks";
-import { db } from "@repo/db/client";
-import { createClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
 import crypto from "crypto";
+import { createWahooSyncRuntime } from "../../../lib/wahoo-sync-runtime";
 
-const serverSupabaseUrl =
-  process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const WAHOO_WEBHOOK_TOKEN = process.env.WAHOO_WEBHOOK_TOKEN;
 
 interface WahooWebhookPayload {
@@ -66,57 +58,6 @@ function verifyWebhookSignature(body: string, signature: string | null, secret: 
   }
 }
 
-async function processWorkoutSummary(
-  wahooUserId: number,
-  summary: WahooWebhookPayload["workout_summary"],
-): Promise<void> {
-  if (!summary) {
-    console.error("No workout summary in payload");
-    return;
-  }
-
-  try {
-    const supabase = createClient(
-      serverSupabaseUrl!,
-      process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
-    );
-
-    const importer = createActivityImporter({
-      repository: createWahooRepository({ db }),
-      fitFileStorage: createWahooImportFitFileStorage({
-        async uploadFitFile(input) {
-          const { error } = await supabase.storage
-            .from("fit-files")
-            .upload(input.path, input.bytes, {
-              contentType: input.contentType,
-              upsert: false,
-            });
-
-          if (error) {
-            throw error;
-          }
-        },
-      }),
-    });
-
-    const result = await importer.importWorkoutSummary(wahooUserId, summary);
-
-    if (result.success) {
-      if (result.skipped) {
-        console.log(`Skipped workout summary ${summary.id}: ${result.reason}`);
-      } else {
-        console.log(
-          `Successfully imported workout summary ${summary.id} as activity ${result.activityId}`,
-        );
-      }
-    } else {
-      console.error(`Failed to import workout summary ${summary.id}: ${result.error}`);
-    }
-  } catch (error) {
-    console.error("Error processing workout summary:", error);
-  }
-}
-
 export const Route = createFileRoute("/api/webhooks/wahoo")({
   server: {
     handlers: {
@@ -163,11 +104,16 @@ export const Route = createFileRoute("/api/webhooks/wahoo")({
             eventType: payload.event_type,
           });
 
-          if (payload.event_type === "workout_summary" && payload.workout_summary) {
-            await processWorkoutSummary(payload.user.id, payload.workout_summary);
-          } else {
-            console.log(`Unhandled event type: ${payload.event_type}`);
-          }
+          const runtime = createWahooSyncRuntime();
+          const enqueueResult = await runtime.webhookJobs.storeAndEnqueueReceipt(payload);
+
+          console.log("Stored Wahoo webhook receipt", {
+            eventType: payload.event_type,
+            jobId: enqueueResult.jobId,
+            queued: enqueueResult.queued,
+            receiptId: enqueueResult.receiptId,
+            userId: payload.user.id,
+          });
 
           return Response.json({ received: true }, { status: 200 });
         } catch (error) {

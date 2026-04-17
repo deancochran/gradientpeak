@@ -31,18 +31,20 @@ import {
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
 
 interface WahooRepository {
-  createSyncedEvent(input: {
+  createEventResourceLink(input: {
     eventId: string;
     externalId: string;
+    integrationId: string;
     profileId: string;
     provider: "wahoo";
     syncedAt: string;
     updatedAt: string;
   }): Promise<void>;
-  deleteSyncedEvent(id: string): Promise<void>;
+  deleteEventResourceLink(id: string): Promise<void>;
   findWahooIntegrationByProfileId(profileId: string): Promise<{
     accessToken: string;
     externalId: string;
+    id: string;
     profileId: string;
     refreshToken: string | null;
   } | null>;
@@ -72,12 +74,12 @@ interface WahooRepository {
     totalDescent: number | null;
     totalDistance: number;
   } | null>;
-  getSyncedEvent(input: {
+  getEventResourceLink(input: {
     eventId: string;
     profileId: string;
     provider: "wahoo";
   }): Promise<{ externalId: string; id: string; updatedAt: string | null } | null>;
-  listEventSyncs(input: { eventId: string; profileId: string }): Promise<
+  listEventResourceLinks(input: { eventId: string; profileId: string }): Promise<
     Array<{
       externalId: string;
       id: string;
@@ -86,7 +88,7 @@ interface WahooRepository {
       updatedAt: string | null;
     }>
   >;
-  updateSyncedEvent(input: { externalId?: string; id: string; updatedAt: string }): Promise<void>;
+  updateEventResourceLink(input: { externalId?: string; id: string; updatedAt: string }): Promise<void>;
 }
 
 type WahooActivityPlan = Pick<
@@ -236,7 +238,7 @@ export class WahooSyncService {
       }
 
       // 5. Check if already synced
-      const existingSync = await this.repository.getSyncedEvent({
+      const existingSync = await this.repository.getEventResourceLink({
         eventId,
         profileId,
         provider: "wahoo",
@@ -267,6 +269,7 @@ export class WahooSyncService {
           normalizedPlanned,
           structure,
           profile,
+          integration,
           wahooClient,
           profileId,
           activityType,
@@ -304,6 +307,7 @@ export class WahooSyncService {
     planned: WahooPlannedEvent,
     structure: ActivityPlanStructureV2,
     profile: any,
+    integration: { id: string },
     wahooClient: any,
     profileId: string,
     activityType: string,
@@ -440,9 +444,10 @@ export class WahooSyncService {
     console.log(`[Wahoo Sync] Workout created successfully with ID: ${workout.id}`);
 
     // Store sync record (only workout_id, not plan_id)
-    await this.repository.createSyncedEvent({
+    await this.repository.createEventResourceLink({
       profileId,
       eventId: planned.id,
+      integrationId: integration.id,
       provider: "wahoo",
       externalId: workout.id.toString(),
       syncedAt: new Date().toISOString(),
@@ -485,7 +490,7 @@ export class WahooSyncService {
       });
 
       // Update sync record timestamp
-      await this.repository.updateSyncedEvent({
+      await this.repository.updateEventResourceLink({
         id: existingSync.id,
         updatedAt: new Date().toISOString(),
       });
@@ -551,7 +556,7 @@ export class WahooSyncService {
       }
 
       // Update sync record with new workout ID
-      await this.repository.updateSyncedEvent({
+      await this.repository.updateEventResourceLink({
         id: existingSync.id,
         externalId: workout.id.toString(),
         updatedAt: new Date().toISOString(),
@@ -572,7 +577,7 @@ export class WahooSyncService {
   async unsyncEvent(eventId: string, profileId: string): Promise<SyncResult> {
     try {
       // 1. Fetch sync record
-      const sync = await this.repository.getSyncedEvent({
+      const sync = await this.repository.getEventResourceLink({
         eventId,
         profileId,
         provider: "wahoo",
@@ -611,7 +616,7 @@ export class WahooSyncService {
       }
 
       // 4. Delete sync record
-      await this.repository.deleteSyncedEvent(sync.id);
+      await this.repository.deleteEventResourceLink(sync.id);
 
       return {
         success: true,
@@ -631,13 +636,13 @@ export class WahooSyncService {
    * Get sync status for an event
    */
   async getEventSyncStatus(eventId: string, profileId: string): Promise<any> {
-    return this.repository.getSyncedEvent({ eventId, profileId, provider: "wahoo" });
+    return this.repository.getEventResourceLink({ eventId, profileId, provider: "wahoo" });
   }
 
   /**
    * Get all syncs for an event (all providers)
    */
   async getAllEventSyncs(eventId: string, profileId: string): Promise<any[]> {
-    return this.repository.listEventSyncs({ eventId, profileId });
+    return this.repository.listEventResourceLinks({ eventId, profileId });
   }
 }
