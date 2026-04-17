@@ -211,6 +211,10 @@ function PlanDashboardScreen() {
                 </View>
               ) : null}
 
+              {dashboard.estimationWarning ? (
+                <Text className="text-xs text-muted-foreground">{dashboard.estimationWarning}</Text>
+              ) : null}
+
               {dashboard.nextGoal ? (
                 <View className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
                   <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">

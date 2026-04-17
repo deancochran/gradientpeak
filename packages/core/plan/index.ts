@@ -43,6 +43,7 @@ export * from "./scoring/goalScore";
 export * from "./scoring/planScore";
 export * from "./scoring/targetSatisfaction";
 export * from "./trainingPlanPreview";
+export * from "./trainingSettingsDefaults";
 export * from "./verification/activityTemplateCatalog";
 export * from "./verification/activityTemplateCoverageMatrix";
 export * from "./verification/aggregateWeeklyPlannedLoad";
