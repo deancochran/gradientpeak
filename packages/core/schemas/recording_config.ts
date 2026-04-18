@@ -12,9 +12,15 @@
 import { z } from "zod";
 
 import type { FTMSFeatures } from "../ftms-types";
+import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
 import type { CanonicalSport } from "./sport";
 
 export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);
+export const recordingAutoFollowPrioritySchema = z.enum([
+  "none",
+  "plan_targets",
+  "route_simulation",
+]);
 
 export const recordingCapabilitiesSchema = z
   .object({
@@ -30,6 +36,9 @@ export const recordingCapabilitiesSchema = z
     shouldShowTrainerControl: z.boolean(),
     canAutoAdvanceSteps: z.boolean(),
     shouldAutoFollowTargets: z.boolean(),
+    autoFollowPriority: recordingAutoFollowPrioritySchema,
+    autoFollowConflict: z.boolean(),
+    autoFollowConflictReason: z.string().nullable(),
     primaryMetric: recordingPrimaryMetricSchema,
     isValid: z.boolean(),
     errors: z.array(z.string()),
@@ -53,6 +62,7 @@ export interface RecordingConfigInput {
     hasRoute: boolean; // Has GPS route
     stepCount: number;
     requiresManualAdvance: boolean; // Any "untilFinished" steps
+    structure?: ActivityPlanStructureV2 | null;
   };
 
   // Connected devices
@@ -93,6 +103,9 @@ export interface RecordingCapabilities {
   // Automation - what to do automatically
   canAutoAdvanceSteps: boolean;
   shouldAutoFollowTargets: boolean; // Renamed from canAutoControlTrainer - auto-adjust trainer to follow plan/route targets
+  autoFollowPriority: "none" | "plan_targets" | "route_simulation";
+  autoFollowConflict: boolean;
+  autoFollowConflictReason: string | null;
 
   // Primary metric for navigation
   primaryMetric: "time" | "distance" | "reps" | "power";

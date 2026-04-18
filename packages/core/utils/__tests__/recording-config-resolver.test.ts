@@ -167,6 +167,90 @@ describe("RecordingConfigResolver", () => {
     expect(config.input.mode).toBe("planned");
     expect(config.capabilities.shouldShowTrainerControl).toBe(true);
     expect(config.capabilities.shouldAutoFollowTargets).toBe(true);
+    expect(config.capabilities.autoFollowPriority).toBe("plan_targets");
+    expect(config.capabilities.autoFollowConflict).toBe(false);
+  });
+
+  it("prioritizes structured plan targets over route simulation during auto control conflicts", () => {
+    const config = RecordingConfigResolver.resolve(
+      buildInput({
+        activityCategory: "bike",
+        gpsRecordingEnabled: false,
+        gpsAvailable: false,
+        plan: {
+          hasStructure: true,
+          hasRoute: true,
+          stepCount: 2,
+          requiresManualAdvance: false,
+          structure: {
+            version: 2,
+            intervals: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                name: "Main",
+                repetitions: 1,
+                steps: [
+                  {
+                    id: "22222222-2222-4222-8222-222222222222",
+                    name: "Threshold",
+                    duration: { type: "time", seconds: 600 },
+                    targets: [{ type: "watts", intensity: 250 }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        devices: {
+          ftmsTrainer: {
+            deviceId: "trainer-1",
+            autoControlEnabled: true,
+          },
+          hasPowerMeter: false,
+          hasHeartRateMonitor: false,
+          hasCadenceSensor: false,
+        },
+      }),
+    );
+
+    expect(config.capabilities.shouldAutoFollowTargets).toBe(true);
+    expect(config.capabilities.autoFollowPriority).toBe("plan_targets");
+    expect(config.capabilities.autoFollowConflict).toBe(true);
+    expect(config.capabilities.autoFollowConflictReason).toBe(
+      "Route simulation and plan-driven trainer targets require different trainer authorities and cannot auto-control the same trainer simultaneously.",
+    );
+    expect(config.capabilities.warnings).toContain(
+      "Structured plan targets take priority over route simulation for automatic trainer control during this recording session.",
+    );
+  });
+
+  it("uses route simulation when a route exists without plan trainer targets", () => {
+    const config = RecordingConfigResolver.resolve(
+      buildInput({
+        activityCategory: "bike",
+        gpsRecordingEnabled: false,
+        gpsAvailable: false,
+        plan: {
+          hasStructure: false,
+          hasRoute: true,
+          stepCount: 0,
+          requiresManualAdvance: false,
+        },
+        devices: {
+          ftmsTrainer: {
+            deviceId: "trainer-1",
+            autoControlEnabled: true,
+          },
+          hasPowerMeter: false,
+          hasHeartRateMonitor: false,
+          hasCadenceSensor: false,
+        },
+      }),
+    );
+
+    expect(config.capabilities.shouldAutoFollowTargets).toBe(true);
+    expect(config.capabilities.autoFollowPriority).toBe("route_simulation");
+    expect(config.capabilities.autoFollowConflict).toBe(false);
   });
 
   it("resolves configuration from a session snapshot", () => {
@@ -223,6 +307,9 @@ describe("RecordingConfigResolver", () => {
         shouldShowTrainerControl: true,
         canAutoAdvanceSteps: true,
         shouldAutoFollowTargets: true,
+        autoFollowPriority: "plan_targets",
+        autoFollowConflict: false,
+        autoFollowConflictReason: null,
         primaryMetric: "power",
         isValid: true,
         errors: [],

@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { getRouteStructuredPlanConflicts, getStructuredPlanConflicts } from "./activity_plan_v2";
 import { profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   eventLifecycleSchema,
@@ -732,6 +733,33 @@ const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
       .nullable(),
   });
 
+function addRouteStructuredPlanFormIssues(
+  plan: { route_id?: string | null; structure?: unknown },
+  ctx: z.RefinementCtx,
+): void {
+  if (plan.structure != null) {
+    for (const conflict of getStructuredPlanConflicts(plan.structure)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["structure", ...conflict.path],
+        message: conflict.message,
+      });
+    }
+  }
+
+  if (!plan.route_id || plan.structure == null) {
+    return;
+  }
+
+  for (const conflict of getRouteStructuredPlanConflicts(plan.structure)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["structure", ...conflict.path],
+      message: conflict.message,
+    });
+  }
+}
+
 export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema.refine(
   (data) => {
     // At least one of structure or route_id must be provided
@@ -742,7 +770,7 @@ export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema.refine(
     message: "Activity plan must have either a structure or a route",
     path: ["structure"],
   },
-);
+).superRefine(addRouteStructuredPlanFormIssues);
 
 export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSchema>;
 
@@ -751,7 +779,7 @@ export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSc
  */
 export const activityPlanUpdateFormSchema = activityPlanFormFieldsSchema.partial().safeExtend({
   id: z.string().uuid("Invalid activity plan ID"),
-});
+}).superRefine(addRouteStructuredPlanFormIssues);
 
 export type ActivityPlanUpdateFormData = z.infer<typeof activityPlanUpdateFormSchema>;
 

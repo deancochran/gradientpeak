@@ -108,22 +108,115 @@ export const intensityTargetSchemaV2 = z.discriminatedUnion("type", [
 
 export type IntensityTargetV2 = z.infer<typeof intensityTargetSchemaV2>;
 
+export type ActivityPlanTargetMetricFamily =
+  | "power"
+  | "heart_rate"
+  | "speed"
+  | "cadence"
+  | "perceived_exertion";
+
+export interface ActivityPlanStepTargetConflict {
+  path: Array<string | number>;
+  message: string;
+}
+
+export function getActivityPlanTargetMetricFamily(
+  target: IntensityTargetV2,
+): ActivityPlanTargetMetricFamily {
+  switch (target.type) {
+    case "%FTP":
+    case "watts":
+      return "power";
+    case "%MaxHR":
+    case "%ThresholdHR":
+    case "bpm":
+      return "heart_rate";
+    case "speed":
+      return "speed";
+    case "cadence":
+      return "cadence";
+    case "RPE":
+      return "perceived_exertion";
+  }
+}
+
+export function isTrainerControllableTarget(target: IntensityTargetV2): boolean {
+  switch (target.type) {
+    case "%FTP":
+    case "watts":
+    case "speed":
+    case "cadence":
+      return true;
+    case "%MaxHR":
+    case "%ThresholdHR":
+    case "bpm":
+    case "RPE":
+      return false;
+  }
+}
+
+export function getStepTargetConflicts(step: Pick<IntervalStepV2, "targets">): ActivityPlanStepTargetConflict[] {
+  const conflicts: ActivityPlanStepTargetConflict[] = [];
+  const familyCounts = new Map<ActivityPlanTargetMetricFamily, number>();
+  const controllableIndices: number[] = [];
+
+  (step.targets ?? []).forEach((target, index) => {
+    const family = getActivityPlanTargetMetricFamily(target);
+    familyCounts.set(family, (familyCounts.get(family) ?? 0) + 1);
+    if (isTrainerControllableTarget(target)) {
+      controllableIndices.push(index);
+    }
+  });
+
+  (step.targets ?? []).forEach((target, index) => {
+    const family = getActivityPlanTargetMetricFamily(target);
+    if ((familyCounts.get(family) ?? 0) > 1) {
+      conflicts.push({
+        path: ["targets", index],
+        message: `Step targets cannot include multiple ${family.replace("_", " ")} targets.`,
+      });
+    }
+  });
+
+  if (controllableIndices.length > 1) {
+    for (const index of controllableIndices) {
+      conflicts.push({
+        path: ["targets", index],
+        message:
+          "Step targets can include at most one trainer-controllable target because automatic trainer control needs a single authority.",
+      });
+    }
+  }
+
+  return conflicts;
+}
+
 // ==============================
 // INTERVAL STEP V2 (Nested inside intervals)
 // ==============================
 
-export const intervalStepSchemaV2 = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1).max(100).default("Step"),
-  description: z.string().max(500).optional(),
-  notes: z.string().max(1000).optional(),
+export const intervalStepSchemaV2 = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().min(1).max(100).default("Step"),
+    description: z.string().max(500).optional(),
+    notes: z.string().max(1000).optional(),
 
-  // Duration (required)
-  duration: durationSchemaV2,
+    // Duration (required)
+    duration: durationSchemaV2,
 
-  // Multiple targets (optional)
-  targets: z.array(intensityTargetSchemaV2).max(3).optional(),
-});
+    // Multiple targets (optional)
+    targets: z.array(intensityTargetSchemaV2).max(3).optional(),
+  })
+  .superRefine((step, ctx) => {
+    for (const conflict of getStepTargetConflicts(step)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: conflict.path,
+        message: conflict.message,
+      });
+    }
+  });
 
 export type IntervalStepV2 = z.infer<typeof intervalStepSchemaV2>;
 
@@ -151,6 +244,85 @@ export const activityPlanStructureSchemaV2 = z.object({
 });
 
 export type ActivityPlanStructureV2 = z.infer<typeof activityPlanStructureSchemaV2>;
+
+export interface RouteStructuredPlanConflict {
+  path: Array<string | number>;
+  message: string;
+}
+
+export interface StructuredPlanConflict {
+  path: Array<string | number>;
+  message: string;
+}
+
+/**
+ * Route-guided sessions own spatial guidance. Structured plans attached to a
+ * route must stay non-spatial so interval logic does not fight route progress.
+ */
+export function getRouteStructuredPlanConflicts(
+  structure: unknown,
+): RouteStructuredPlanConflict[] {
+  const parsed = activityPlanStructureSchemaV2.safeParse(structure);
+  if (!parsed.success) {
+    return [];
+  }
+
+  const conflicts: RouteStructuredPlanConflict[] = [];
+
+  parsed.data.intervals.forEach((interval, intervalIndex) => {
+    interval.steps.forEach((step, stepIndex) => {
+      if (step.duration.type === "distance") {
+        conflicts.push({
+          path: ["intervals", intervalIndex, "steps", stepIndex, "duration"],
+          message:
+            "Route-guided plans cannot use distance-based step durations because the route already defines spatial progress.",
+        });
+      }
+
+      step.targets?.forEach((target, targetIndex) => {
+        if (target.type === "speed") {
+          conflicts.push({
+            path: ["intervals", intervalIndex, "steps", stepIndex, "targets", targetIndex],
+            message:
+              "Route-guided plans cannot use speed targets because route simulation owns spatial guidance.",
+          });
+        }
+      });
+    });
+  });
+
+  return conflicts;
+}
+
+export function getStructuredPlanConflicts(structure: unknown): StructuredPlanConflict[] {
+  const parsed = activityPlanStructureSchemaV2.safeParse(structure);
+  if (!parsed.success) {
+    return parsed.error.issues
+      .filter((issue) => issue.code === "custom")
+      .map((issue) => ({
+        path: issue.path.filter(
+          (segment): segment is string | number =>
+            typeof segment === "string" || typeof segment === "number",
+        ),
+        message: issue.message,
+      }));
+  }
+
+  const conflicts: StructuredPlanConflict[] = [];
+
+  parsed.data.intervals.forEach((interval, intervalIndex) => {
+    interval.steps.forEach((step, stepIndex) => {
+      for (const conflict of getStepTargetConflicts(step)) {
+        conflicts.push({
+          path: ["intervals", intervalIndex, "steps", stepIndex, ...conflict.path],
+          message: conflict.message,
+        });
+      }
+    });
+  });
+
+  return conflicts;
+}
 
 // ==============================
 // MINIMAL STRUCTURE HELPERS

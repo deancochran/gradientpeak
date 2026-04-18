@@ -17,13 +17,17 @@ import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { useTheme } from "@/lib/stores/theme-store";
+import { type ThemePreference, useTheme } from "@/lib/stores/theme-store";
 
 const themeOptions = [
   { label: "System", value: "system" },
   { label: "Light", value: "light" },
   { label: "Dark", value: "dark" },
 ] as const;
+
+function isThemePreference(value: string | undefined): value is ThemePreference {
+  return value === "system" || value === "light" || value === "dark";
+}
 
 function calculateAge(dob: string | null | undefined): number | null {
   if (!dob) return null;
@@ -677,9 +681,9 @@ function UserDetailScreen() {
                 <ToggleGroup
                   type="single"
                   value={theme}
-                  onValueChange={(nextValue) => {
-                    if (nextValue) {
-                      void setTheme(nextValue as "system" | "light" | "dark");
+                  onValueChange={(nextValue: string | undefined) => {
+                    if (isThemePreference(nextValue)) {
+                      void setTheme(nextValue);
                     }
                   }}
                   className="w-full"

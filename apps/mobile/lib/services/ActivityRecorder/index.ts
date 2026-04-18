@@ -27,6 +27,7 @@ import {
   RecordingConfigResolver,
   type RecordingConfiguration,
   type RecordingLaunchIntent,
+  type RecordingTrainerIntentSource,
   RecordingServiceActivityPlan,
   resolveMetricSources as resolveCoreMetricSources,
 } from "@repo/core";
@@ -40,6 +41,7 @@ import {
   checkAllPermissions,
 } from "../permissions-check";
 import { persistPendingFinalizedArtifact } from "./finalizedArtifactStorage";
+import { shouldApplyAutoFollowAuthority } from "./autoFollowRuntime";
 import { getNextGpsRecordingEnabled, shouldStartGpsTracking } from "./gpsRuntime";
 import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
@@ -330,12 +332,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (
         sensor.isControllable &&
         sensor.connectionState === "connected" &&
-        this.state === "recording" &&
-        this.currentStep
+        this.state === "recording"
       ) {
-        this.trainerControl
-          .applyStepTargets(this.currentStep, "reconnect_recovery")
-          .catch(console.error);
+        this.syncAutomaticTrainerControl("reconnect_recovery").catch(console.error);
       }
     });
 
@@ -417,11 +416,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     });
 
     // If recording and has a plan, re-apply targets (e.g. for %FTP targets in ERG mode)
-    if (this.state === "recording" && this.hasPlan && this.currentStep) {
+    if (this.state === "recording") {
       console.log("[Service] Re-applying targets with new metrics");
-      this.trainerControl
-        .applyStepTargets(this.currentStep, "periodic_refinement")
-        .catch(console.error);
+      this.syncAutomaticTrainerControl("periodic_refinement").catch(console.error);
     }
 
     this.emit("metricsUpdated");
@@ -458,10 +455,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.liveMetricsManager.updateMetrics(updates);
 
       // Re-apply targets if recording with plan
-      if (this.state === "recording" && this.hasPlan && this.currentStep) {
-        this.trainerControl
-          .applyStepTargets(this.currentStep, "periodic_refinement")
-          .catch(console.error);
+      if (this.state === "recording") {
+        this.syncAutomaticTrainerControl("periodic_refinement").catch(console.error);
       }
     }
 
@@ -597,6 +592,29 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private publishSessionUpdate(): void {
     this.syncRuntimeSourceState({ recordChanges: true });
     this.emit("sessionUpdated", this.getSessionView());
+  }
+
+  private shouldAutoFollowPlanTargets(): boolean {
+    return shouldApplyAutoFollowAuthority(this.getRecordingConfiguration(), "plan_targets");
+  }
+
+  private shouldAutoFollowRouteSimulation(): boolean {
+    return shouldApplyAutoFollowAuthority(this.getRecordingConfiguration(), "route_simulation");
+  }
+
+  private async syncAutomaticTrainerControl(source: RecordingTrainerIntentSource): Promise<void> {
+    if (this.state !== "recording" || this.isTrainerManualMode()) {
+      return;
+    }
+
+    if (this.shouldAutoFollowPlanTargets() && this.currentStep) {
+      await this.trainerControl.applyStepTargets(this.currentStep, source);
+      return;
+    }
+
+    if (this.shouldAutoFollowRouteSimulation() && this.hasRoute) {
+      await this.trainerControl.applyRouteGrade(this.currentRouteGrade);
+    }
   }
 
   private isMetricSelectionDegraded(selection: MetricSourceSelection): boolean {
@@ -1072,6 +1090,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       hasRoute: Boolean(this.getAttachedRouteId()),
       stepCount: this.stepCount,
       requiresManualAdvance: this.planExecution.hasManualAdvanceSteps(),
+      structure: this._plan?.structure ?? null,
     };
   }
 
@@ -1523,6 +1542,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       !this._gpsRecordingEnabled &&
       this.state === "recording" &&
       !this.isTrainerManualMode() &&
+      this.shouldAutoFollowRouteSimulation() &&
       Math.abs(distanceAlongRoute - previousDistance) > 10 // Only update every 10m
     ) {
       this.trainerControl.applyRouteGrade(this.currentRouteGrade).catch(console.error);
@@ -1642,8 +1662,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.emit("stepChanged", this.getStepInfo());
 
-    if (this.state === "recording" && this.currentStep) {
-      this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
+    if (this.state === "recording") {
+      this.syncAutomaticTrainerControl("step_change").catch(console.error);
     }
 
     if (this.isFinished) {
@@ -1801,7 +1821,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         errors:
           validation?.missingMetrics.map((metric) => metric.name) ??
           baseConfiguration.capabilities.errors,
-        warnings: validation?.warnings ?? baseConfiguration.capabilities.warnings,
+        warnings: [
+          ...baseConfiguration.capabilities.warnings,
+          ...(validation?.warnings ?? []),
+        ],
       },
     };
   }
@@ -1869,8 +1892,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (this.hasPlan && this.currentStep) {
       console.log("[Service] Recording started with plan, step:", this.currentStep.name);
       this.emit("stepChanged", this.getStepInfo());
-      this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
     }
+
+    this.syncAutomaticTrainerControl("step_change").catch(console.error);
 
     this.startElapsedTimeUpdates();
 
@@ -2220,10 +2244,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       });
     }
 
-    if (!enabled && this.state === "recording" && this.currentStep) {
-      // Re-apply plan targets when switching back to auto
-      console.log("[Service] Reapplying plan targets after manual override disabled");
-      this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
+    if (!enabled && this.state === "recording") {
+      console.log("[Service] Reapplying automatic trainer control after manual override disabled");
+      this.syncAutomaticTrainerControl("step_change").catch(console.error);
     }
 
     this.publishSessionUpdate();

@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
+import {
+  getStructuredPlanConflicts,
+  getRouteStructuredPlanConflicts,
+  type ActivityPlanStructureV2,
+} from "./activity_plan_v2";
 import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
 import { canonicalSportSchema } from "./sport";
 import {
@@ -29,6 +33,7 @@ export {
   durationSchemaV2,
   formatIntensityTarget,
   formatStepTargets,
+  getRouteStructuredPlanConflicts,
   getStepIntensityColor,
   intensityTargetSchemaV2,
   intervalSchemaV2,
@@ -105,9 +110,36 @@ export * from "./profile-metrics";
 // Export template schemas
 export * from "./template_library";
 
+function addRouteStructuredPlanIssues(
+  plan: { route_id?: string | null; structure?: unknown },
+  ctx: z.RefinementCtx,
+): void {
+  if (plan.structure != null) {
+    for (const conflict of getStructuredPlanConflicts(plan.structure)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["structure", ...conflict.path],
+        message: conflict.message,
+      });
+    }
+  }
+
+  if (!plan.route_id || plan.structure == null) {
+    return;
+  }
+
+  for (const conflict of getRouteStructuredPlanConflicts(plan.structure)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["structure", ...conflict.path],
+      message: conflict.message,
+    });
+  }
+}
+
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
 // Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input
-export const activityPlanCreateSchema = z
+const activityPlanBaseSchema = z
   .object({
     activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
     name: z.string().min(1, "Plan name is required"),
@@ -119,7 +151,11 @@ export const activityPlanCreateSchema = z
   })
   .strict();
 
-export const activityPlanUpdateSchema = activityPlanCreateSchema.partial();
+export const activityPlanCreateSchema = activityPlanBaseSchema.superRefine(addRouteStructuredPlanIssues);
+
+export const activityPlanUpdateSchema = activityPlanBaseSchema
+  .partial()
+  .superRefine(addRouteStructuredPlanIssues);
 
 // Note: plannedActivityCreateSchema and plannedActivityUpdateSchema are now exported from ./planned_activity
 

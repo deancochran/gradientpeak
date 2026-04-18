@@ -24,6 +24,7 @@ export {
 } from "./polyline";
 // Export all recording config utilities
 export * from "./recording-config-resolver";
+export * from "./recording-guidance-policy";
 export * from "./recording-plan-target-resolver";
 export * from "./recording-source-resolver";
 export * from "./recording-trainer-policy";
