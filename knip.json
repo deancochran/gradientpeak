@@ -1,0 +1,65 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "rules": {
+    "files": "warn",
+    "exports": "warn",
+    "types": "warn"
+  },
+  "ignoreBinaries": ["ngrok", "printf"],
+  "ignoreFiles": ["apps/web/src/routeTree.gen.ts"],
+  "ignoreUnresolved": ["vite/client"],
+  "workspaces": {
+    "apps/mobile": {
+      "ignoreDependencies": [
+        "@react-native-community/netinfo",
+        "@react-navigation/.+",
+        "@rn-primitives/.+",
+        "@supabase/supabase-js",
+        "buffer",
+        "class-variance-authority",
+        "expo-blur",
+        "expo-font",
+        "expo-image",
+        "expo-symbols",
+        "lodash",
+        "lucide-react",
+        "react-native-calendars",
+        "react-native-chart-kit",
+        "react-native-url-polyfill",
+        "superjson",
+        "tailwindcss-animate",
+        "@types/lodash",
+        "dotenv-cli",
+        "eas-build-cache-provider"
+      ],
+      "paths": {
+        "app.config": ["./app.config.ts"],
+        "@/*": ["./*"],
+        "@repo/auth": ["../../packages/auth/src/client.ts"],
+        "@repo/auth/*": [
+          "../../packages/auth/src/*",
+          "../../packages/auth/src/contracts/*",
+          "../../packages/auth/src/client/*",
+          "../../packages/auth/src/runtime/*"
+        ]
+      }
+    },
+    "apps/web": {
+      "ignoreDependencies": [
+        "@tanstack/react-router-ssr-query",
+        "@tanstack/router-plugin",
+        "tailwindcss",
+        "@tailwindcss/typography",
+        "@testing-library/dom",
+        "@testing-library/react",
+        "dotenv-cli"
+      ]
+    },
+    "packages/core": {
+      "ignoreDependencies": ["@garmin/fitsdk"]
+    },
+    "packages/ui": {
+      "ignoreDependencies": ["@radix-ui/.+", "@repo/core"]
+    }
+  }
+}
