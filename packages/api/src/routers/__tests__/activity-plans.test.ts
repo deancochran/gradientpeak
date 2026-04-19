@@ -4,18 +4,30 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { estimationState } = vi.hoisted(() => ({
   estimationState: {
-    addEstimationToPlan: vi.fn(async (plan: any) => ({
+    getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
       ...plan,
       estimated_tss: 88,
-      estimated_duration_seconds: 3600,
-      estimated_distance_meters: 12000,
+      estimated_duration: 3600,
+      estimated_distance: 12000,
+      intensity_factor: 0.82,
+      confidence: "moderate",
+      confidence_score: 82,
+      estimate_source: "cache",
+      estimate_computed_at: "2026-03-01T10:00:00.000Z",
+      estimator_version: "2026-04-derived-metrics-v1",
     })),
-    addEstimationToPlans: vi.fn(async (plans: any[]) =>
+    getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
       plans.map((plan) => ({
         ...plan,
         estimated_tss: 88,
-        estimated_duration_seconds: 3600,
-        estimated_distance_meters: 12000,
+        estimated_duration: 3600,
+        estimated_distance: 12000,
+        intensity_factor: 0.82,
+        confidence: "moderate",
+        confidence_score: 82,
+        estimate_source: "cache",
+        estimate_computed_at: "2026-03-01T10:00:00.000Z",
+        estimator_version: "2026-04-derived-metrics-v1",
       })),
     ),
     computePlanMetrics: vi.fn(async () => ({
@@ -27,11 +39,24 @@ const { estimationState } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../utils/estimation-helpers", () => ({
-  addEstimationToPlan: estimationState.addEstimationToPlan,
-  addEstimationToPlans: estimationState.addEstimationToPlans,
-  computePlanMetrics: estimationState.computePlanMetrics,
-}));
+vi.mock("../../utils/estimation-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/estimation-helpers")>();
+
+  return {
+    ...actual,
+    computePlanMetrics: estimationState.computePlanMetrics,
+  };
+});
+
+vi.mock("../../utils/activity-plan-derived-metrics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/activity-plan-derived-metrics")>();
+
+  return {
+    ...actual,
+    getActivityPlanDerivedMetrics: estimationState.getActivityPlanDerivedMetrics,
+    getActivityPlansDerivedMetrics: estimationState.getActivityPlansDerivedMetrics,
+  };
+});
 
 vi.mock("../../infrastructure/repositories", () => ({
   createEventReadRepository: estimationState.createEventReadRepository,

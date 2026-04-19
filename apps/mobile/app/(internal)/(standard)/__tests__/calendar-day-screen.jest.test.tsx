@@ -58,7 +58,30 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
 
 jest.mock("@/lib/constants/routes", () => ({
   __esModule: true,
-  ROUTES: { RECORD: "/record", PLAN: { EVENT_DETAIL: (id: string) => `/event-detail?id=${id}` } },
+  ROUTES: {
+    RECORD: "/record",
+    PLAN: {
+      PLAN_DETAIL: (id: string) => `/activity-plan-detail?id=${id}`,
+      EVENT_DETAIL: (id: string) => `/event-detail?id=${id}`,
+    },
+  },
+}));
+
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
+  __esModule: true,
+  ActivityPlanCard: ({ plannedActivity, onPress }: any) =>
+    React.createElement(
+      "TouchableOpacity",
+      {
+        onPress,
+        testID: `activity-plan-card-${plannedActivity?.id}`,
+      },
+      React.createElement("Text", null, plannedActivity?.activity_plan?.name),
+      React.createElement("Text", null, plannedActivity?.activity_plan?.description),
+      React.createElement("Text", null, "Outdoor Run"),
+      React.createElement("Text", null, "4 steps"),
+      React.createElement("Text", null, "Route"),
+    ),
 }));
 
 jest.mock("@/lib/utils/plan/colors", () => ({
@@ -160,7 +183,7 @@ describe("calendar day screen", () => {
     expect(stackScreen.props.options.title).toBe("Today, March 23");
   });
 
-  it("shows richer cards and opens event detail on tap", () => {
+  it("shows the shared activity-plan list item and opens plan detail on tap", () => {
     renderNative(<CalendarDayScreen />);
 
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
@@ -169,9 +192,9 @@ describe("calendar day screen", () => {
     expect(screen.getByText("4 steps")).toBeTruthy();
     expect(screen.getByText("Route")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("schedule-event-event-2"));
+    fireEvent.press(screen.getByTestId("activity-plan-card-event-1"));
 
-    expect(pushMock).toHaveBeenCalledWith("/event-detail?id=event-2");
+    expect(pushMock).toHaveBeenCalledWith("/activity-plan-detail?id=plan-1");
   });
 
   it("starts a planned activity from the quick action", () => {

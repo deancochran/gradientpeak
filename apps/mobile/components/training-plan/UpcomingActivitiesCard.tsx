@@ -1,3 +1,4 @@
+import { formatDurationSec } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -112,7 +113,7 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
                         <View className="flex-row items-center gap-1">
                           <Icon as={Clock} size={12} className="text-muted-foreground" />
                           <Text className="text-xs text-muted-foreground">
-                            {activity.activity_plan.estimated_duration} min
+                            {formatDurationSec(activity.activity_plan.estimated_duration)}
                           </Text>
                         </View>
 

@@ -67,6 +67,11 @@ jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
+  __esModule: true,
+  ActivityPlanCard: createHost("ActivityPlanCard"),
+}));
+
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
@@ -173,6 +178,7 @@ describe("event detail fallback screen", () => {
       (rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix,
     ).toBe("event-detail-plan");
     expect(screen.getByText("Activity details")).toBeTruthy();
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard")).toBeTruthy();
     expect(screen.getByText("Edit Activity")).toBeTruthy();
   });
 

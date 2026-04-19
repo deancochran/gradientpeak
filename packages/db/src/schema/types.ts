@@ -3,6 +3,8 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import {
   activities,
   activityEfforts,
+  activityPlanDerivedMetricsCache,
+  activityPlanRefreshQueue,
   activityPlans,
   activityRoutes,
   coachesAthletes,
@@ -18,6 +20,7 @@ import {
   messages,
   notifications,
   oauthStates,
+  profileEstimationState,
   profileGoals,
   profileMetrics,
   profiles,
@@ -43,6 +46,16 @@ export type CoachAthleteInsert = InferInsertModel<typeof coachesAthletes>;
 
 export type ActivityPlanRow = InferSelectModel<typeof activityPlans>;
 export type ActivityPlanInsert = InferInsertModel<typeof activityPlans>;
+
+export type ActivityPlanDerivedMetricsCacheRow = InferSelectModel<
+  typeof activityPlanDerivedMetricsCache
+>;
+export type ActivityPlanDerivedMetricsCacheInsert = InferInsertModel<
+  typeof activityPlanDerivedMetricsCache
+>;
+
+export type ActivityPlanRefreshQueueRow = InferSelectModel<typeof activityPlanRefreshQueue>;
+export type ActivityPlanRefreshQueueInsert = InferInsertModel<typeof activityPlanRefreshQueue>;
 
 export type TrainingPlanRow = InferSelectModel<typeof trainingPlans>;
 export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
@@ -73,6 +86,9 @@ export type ProviderWebhookReceiptInsert = InferInsertModel<typeof providerWebho
 
 export type ProfileMetricRow = InferSelectModel<typeof profileMetrics>;
 export type ProfileMetricInsert = InferInsertModel<typeof profileMetrics>;
+
+export type ProfileEstimationStateRow = InferSelectModel<typeof profileEstimationState>;
+export type ProfileEstimationStateInsert = InferInsertModel<typeof profileEstimationState>;
 
 export type ProfileTrainingSettingsRow = InferSelectModel<typeof profileTrainingSettings>;
 export type ProfileTrainingSettingsInsert = InferInsertModel<typeof profileTrainingSettings>;

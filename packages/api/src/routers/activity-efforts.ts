@@ -9,6 +9,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
 
 const activityEffortRowSchema = publicActivityEffortsRowSchema;
 
@@ -70,6 +71,8 @@ export const activityEffortsRouter = createTRPCRouter({
         })
         .returning();
 
+      await bumpProfileEstimationState(db, ctx.session.user.id, ["performance"]);
+
       return activityEffortRowSchema.parse(data);
     }),
 
@@ -87,6 +90,8 @@ export const activityEffortsRouter = createTRPCRouter({
             eq(activityEfforts.profile_id, ctx.session.user.id),
           ),
         );
+
+      await bumpProfileEstimationState(db, ctx.session.user.id, ["performance"]);
 
       return deleteActivityEffortOutputSchema.parse({ success: true, deletedId: input.id });
     }),

@@ -2,7 +2,6 @@ import { schema } from "@repo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const homeMocks = vi.hoisted(() => ({
-  addEstimationToPlans: vi.fn(),
   buildDailyTssByDateSeries: vi.fn(),
   buildDynamicStressSeries: vi.fn(),
   buildWorkloadEnvelopes: vi.fn(),
@@ -10,6 +9,7 @@ const homeMocks = vi.hoisted(() => ({
   calculateRollingTrainingQuality: vi.fn(),
   createActivityAnalysisStore: vi.fn(),
   createEventReadRepository: vi.fn(),
+  getActivityPlansDerivedMetrics: vi.fn(),
   getFormStatus: vi.fn(),
   replayTrainingLoadByDate: vi.fn(),
 }));
@@ -43,9 +43,14 @@ vi.mock("../../lib/features", () => ({
   },
 }));
 
-vi.mock("../../utils/estimation-helpers", () => ({
-  addEstimationToPlans: homeMocks.addEstimationToPlans,
-}));
+vi.mock("../../utils/activity-plan-derived-metrics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/activity-plan-derived-metrics")>();
+
+  return {
+    ...actual,
+    getActivityPlansDerivedMetrics: homeMocks.getActivityPlansDerivedMetrics,
+  };
+});
 
 vi.mock("../../utils/workload", () => ({
   buildWorkloadEnvelopes: homeMocks.buildWorkloadEnvelopes,
@@ -145,7 +150,7 @@ describe("homeRouter", () => {
         ["2026-04-03", 50],
       ]),
     });
-    homeMocks.addEstimationToPlans.mockImplementation(async (plans: Array<any>) =>
+    homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
       plans.map((plan) => ({
         ...plan,
         estimated_distance: plan.id === "plan-1" ? 20000 : 12000,
@@ -353,7 +358,7 @@ describe("homeRouter", () => {
       user_gender: "female",
       training_quality: 0.84,
     });
-    expect(homeMocks.addEstimationToPlans).toHaveBeenCalledTimes(2);
+    expect(homeMocks.getActivityPlansDerivedMetrics).toHaveBeenCalledTimes(2);
   });
 
   it("getDashboard rejects invalid raw SQL plan rows", async () => {
@@ -373,7 +378,7 @@ describe("homeRouter", () => {
     });
     homeMocks.buildDailyTssByDateSeries.mockImplementation(({ tssByDate }) => tssByDate);
     homeMocks.replayTrainingLoadByDate.mockReturnValue([]);
-    homeMocks.addEstimationToPlans.mockResolvedValue([]);
+    homeMocks.getActivityPlansDerivedMetrics.mockResolvedValue([]);
 
     const { caller } = createCaller({
       select: {
@@ -414,7 +419,7 @@ describe("homeRouter", () => {
       byActivityId: new Map([["activity-today", { tss: 50, intensity_factor: 0.9 }]]),
       byDate: new Map([["2026-04-03", 50]]),
     });
-    homeMocks.addEstimationToPlans.mockImplementation(async (plans: Array<any>) =>
+    homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
       plans.map((plan) => ({
         ...plan,
         estimated_distance: 20000,

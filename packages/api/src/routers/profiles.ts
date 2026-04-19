@@ -14,6 +14,7 @@ import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
 
 const profileListFiltersSchema = z
   .object({
@@ -296,6 +297,8 @@ async function syncProfileMetric(
         ),
       );
 
+    await bumpProfileEstimationState(db as any, input.profileId, ["metrics"]);
+
     return;
   }
 
@@ -310,6 +313,8 @@ async function syncProfileMetric(
     reference_activity_id: null,
     value: input.value,
   });
+
+  await bumpProfileEstimationState(db as any, input.profileId, ["metrics"]);
 }
 
 async function syncManualFtp(
@@ -333,6 +338,8 @@ async function syncManualFtp(
       ),
     );
 
+  await bumpProfileEstimationState(db as any, input.profileId, ["performance"]);
+
   if (input.value === null) {
     return;
   }
@@ -351,6 +358,8 @@ async function syncManualFtp(
     unit: MANUAL_FTP_UNIT,
     value: Number((input.value / 0.95).toFixed(2)),
   });
+
+  await bumpProfileEstimationState(db as any, input.profileId, ["performance"]);
 }
 
 async function getFollowStatus(db: DbClient, followerId: string, followingId: string) {

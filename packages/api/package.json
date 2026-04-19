@@ -8,6 +8,7 @@
     ".": "./index.ts",
     "./client": "./src/client.ts",
     "./context": "./src/context.ts",
+    "./maintenance": "./src/maintenance.ts",
     "./react": "./src/react.ts",
     "./server": "./src/server.ts",
     "./webhooks": "./src/webhooks.ts"

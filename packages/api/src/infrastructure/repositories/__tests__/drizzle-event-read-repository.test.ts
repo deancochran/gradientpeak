@@ -201,6 +201,7 @@ describe("drizzle-event-read-repository", () => {
               distance_meters: 42000,
               total_ascent: 510,
               total_descent: 505,
+              updated_at: new Date("2026-04-19T11:00:00.000Z"),
             },
           ],
           error: null,
@@ -244,6 +245,7 @@ describe("drizzle-event-read-repository", () => {
           distance_meters: 42000,
           total_ascent: 510,
           total_descent: 505,
+          updated_at: "2026-04-19T11:00:00.000Z",
         },
       ],
     });

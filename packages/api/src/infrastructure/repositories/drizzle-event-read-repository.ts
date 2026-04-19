@@ -288,6 +288,7 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
                 distance_meters: schema.activityRoutes.total_distance,
                 total_ascent: schema.activityRoutes.total_ascent,
                 total_descent: schema.activityRoutes.total_descent,
+                updated_at: schema.activityRoutes.updated_at,
               })
               .from(schema.activityRoutes)
               .where(inArray(schema.activityRoutes.id, routeIds))
@@ -306,7 +307,10 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
           value: metric.value,
           recorded_at: metric.recorded_at.toISOString(),
         })),
-        routes,
+        routes: routes.map((route) => ({
+          ...route,
+          updated_at: route.updated_at.toISOString(),
+        })),
       };
     },
 

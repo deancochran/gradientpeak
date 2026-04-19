@@ -19,10 +19,11 @@ import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
-  addEstimationToPlan,
-  addEstimationToPlans,
-  computePlanMetrics,
-} from "../utils/estimation-helpers";
+  type ActivityPlanWithDerivedMetrics,
+  getActivityPlanDerivedMetrics,
+  getActivityPlansDerivedMetrics,
+} from "../utils/activity-plan-derived-metrics";
+import { computePlanMetrics } from "../utils/estimation-helpers";
 
 // Input schemas for queries
 const uuidSchema = z.string().uuid();
@@ -127,7 +128,7 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
 }
 
 type SerializedActivityPlan = z.output<typeof serializedActivityPlanSchema>;
-type EstimatedActivityPlan = Awaited<ReturnType<typeof addEstimationToPlan>>;
+type EstimatedActivityPlan = ActivityPlanWithDerivedMetrics<SerializedActivityPlan>;
 type DiscoverListActivityPlan = SerializedActivityPlan &
   Partial<
     Pick<
@@ -140,6 +141,10 @@ type DiscoverListActivityPlan = SerializedActivityPlan &
       | "intensity_factor"
       | "confidence"
       | "confidence_score"
+      | "estimate_computed_at"
+      | "estimate_last_accessed_at"
+      | "estimate_source"
+      | "estimator_version"
     >
   >;
 
@@ -278,7 +283,7 @@ export const activityPlansRouter = createTRPCRouter({
     const items = pageRows.map(serializeActivityPlanRow);
 
     const itemsWithOptionalEstimation: DiscoverListActivityPlan[] = input.includeEstimation
-      ? await addEstimationToPlans(items, estimationStore, ctx.session.user.id)
+      ? await getActivityPlansDerivedMetrics(items, db, estimationStore, ctx.session.user.id)
       : items.map((plan) => ({
           ...plan,
           estimated_tss: undefined,
@@ -371,7 +376,12 @@ export const activityPlansRouter = createTRPCRouter({
       console.error("Invalid V2 structure in database for plan", input.id, validationError);
     }
 
-    const planWithEstimation = await addEstimationToPlan(plan, estimationStore, userId);
+    const planWithEstimation = await getActivityPlanDerivedMetrics(
+      plan,
+      db,
+      estimationStore,
+      userId,
+    );
 
     const [rawLikeRow] = await db
       .select({ id: likes.id })
@@ -415,7 +425,12 @@ export const activityPlansRouter = createTRPCRouter({
         .map((id) => planById.get(id))
         .filter((plan): plan is SerializedActivityPlan => !!plan);
 
-      const itemsWithEstimation = await addEstimationToPlans(orderedPlans, estimationStore, userId);
+      const itemsWithEstimation = await getActivityPlansDerivedMetrics(
+        orderedPlans,
+        db,
+        estimationStore,
+        userId,
+      );
       const planIds = itemsWithEstimation.map((plan) => plan.id);
 
       let userLikes: string[] = [];
@@ -493,8 +508,9 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    const planWithEstimation = await addEstimationToPlan(
+    const planWithEstimation = await getActivityPlanDerivedMetrics(
       serializeActivityPlanRow(createdRow),
+      db,
       estimationStore,
       ctx.session.user.id,
     );
@@ -579,8 +595,9 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      const planWithEstimation = await addEstimationToPlan(
+      const planWithEstimation = await getActivityPlanDerivedMetrics(
         serializeActivityPlanRow(updatedRow),
+        db,
         estimationStore,
         ctx.session.user.id,
       );
@@ -681,8 +698,9 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      const planWithEstimation = await addEstimationToPlan(
+      const planWithEstimation = await getActivityPlanDerivedMetrics(
         serializeActivityPlanRow(duplicatedRow),
+        db,
         estimationStore,
         ctx.session.user.id,
       );
@@ -756,8 +774,9 @@ export const activityPlansRouter = createTRPCRouter({
       let withEstimation: SerializedActivityPlan | EstimatedActivityPlan =
         serializeActivityPlanRow(persistedRow);
       try {
-        withEstimation = await addEstimationToPlan(
+        withEstimation = await getActivityPlanDerivedMetrics(
           serializeActivityPlanRow(persistedRow),
+          db,
           estimationStore,
           ctx.session.user.id,
         );
@@ -837,8 +856,9 @@ export const activityPlansRouter = createTRPCRouter({
       let withEstimation: SerializedActivityPlan | EstimatedActivityPlan =
         serializeActivityPlanRow(persistedRow);
       try {
-        withEstimation = await addEstimationToPlan(
+        withEstimation = await getActivityPlanDerivedMetrics(
           serializeActivityPlanRow(persistedRow),
+          db,
           estimationStore,
           ctx.session.user.id,
         );

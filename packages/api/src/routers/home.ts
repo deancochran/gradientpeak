@@ -18,7 +18,7 @@ import {
 import { buildDynamicStressSeries } from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { addEstimationToPlans } from "../utils/estimation-helpers";
+import { getActivityPlansDerivedMetrics } from "../utils/activity-plan-derived-metrics";
 import { buildWorkloadEnvelopes } from "../utils/workload";
 
 const upcomingDaysSchema = z.object({
@@ -548,7 +548,12 @@ export const homeRouter = createTRPCRouter({
           .filter((p): p is NonNullable<typeof p> => !!p);
 
         if (plans.length > 0) {
-          const plansWithEstimation = await addEstimationToPlans(plans, estimationStore, userId);
+          const plansWithEstimation = await getActivityPlansDerivedMetrics(
+            plans,
+            db,
+            estimationStore,
+            userId,
+          );
           const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
 
           activitiesWithEstimations = activitiesWithEstimations.map((pa) => ({
@@ -803,8 +808,9 @@ export const homeRouter = createTRPCRouter({
           .filter((p): p is NonNullable<typeof p> => !!p);
 
         if (futurePlans.length > 0) {
-          const futurePlansWithEstimation = await addEstimationToPlans(
+          const futurePlansWithEstimation = await getActivityPlansDerivedMetrics(
             futurePlans,
+            db,
             estimationStore,
             userId,
           );
