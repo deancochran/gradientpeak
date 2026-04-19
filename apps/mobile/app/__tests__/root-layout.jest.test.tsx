@@ -33,6 +33,11 @@ jest.mock("react-native", () => ({
   View: createHost("View"),
 }));
 
+jest.mock("@react-navigation/native", () => ({
+  __esModule: true,
+  ThemeProvider: ({ children }: any) => children,
+}));
+
 jest.mock("react-native-gesture-handler", () => ({
   __esModule: true,
   GestureHandlerRootView: createHost("GestureHandlerRootView"),
@@ -86,6 +91,11 @@ jest.mock(
   }),
   { virtual: true },
 );
+
+jest.mock("@/lib/theme", () => ({
+  __esModule: true,
+  getNavigationTheme: () => ({ colors: {} }),
+}));
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
