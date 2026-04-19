@@ -169,9 +169,9 @@ describe("event detail fallback screen", () => {
     const rendered = renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Advanced event detail")).toBeNull();
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix).toBe(
-      "event-detail-plan",
-    );
+    expect(
+      (rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix,
+    ).toBe("event-detail-plan");
     expect(screen.getByText("Activity details")).toBeTruthy();
     expect(screen.getByText("Edit Activity")).toBeTruthy();
   });

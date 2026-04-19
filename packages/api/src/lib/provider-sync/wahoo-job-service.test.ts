@@ -38,7 +38,9 @@ describe("WahooSyncJobService", () => {
 
     const service = new WahooSyncJobService(deps as never);
 
-    await expect(service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" })).resolves.toEqual({
+    await expect(
+      service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
+    ).resolves.toEqual({
       jobId: "job-1",
       queued: true,
     });

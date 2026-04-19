@@ -22,8 +22,8 @@ import {
 } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
-import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
@@ -325,8 +325,13 @@ export default function EventDetailScreen() {
                   <Icon as={ArrowUpRight} size={16} className="text-muted-foreground" />
                 </View>
                 <View className="flex-1 gap-1">
-                  <Text className="text-sm font-semibold text-foreground">Advanced event detail</Text>
-                  <Text className="text-sm text-muted-foreground" testID="event-detail-fallback-note">
+                  <Text className="text-sm font-semibold text-foreground">
+                    Advanced event detail
+                  </Text>
+                  <Text
+                    className="text-sm text-muted-foreground"
+                    testID="event-detail-fallback-note"
+                  >
                     Calendar taps open the preview sheet first. Use this fallback screen for deeper
                     edits, schedule changes, linked plan access, or deletion.
                   </Text>
@@ -466,7 +471,9 @@ export default function EventDetailScreen() {
                   <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Activity
                   </Text>
-                  <Text className="text-sm font-semibold text-foreground">{activityColor.name}</Text>
+                  <Text className="text-sm font-semibold text-foreground">
+                    {activityColor.name}
+                  </Text>
                 </View>
               </View>
 
@@ -500,7 +507,9 @@ export default function EventDetailScreen() {
               </View>
 
               {activityPlan.description ? (
-                <Text className="text-sm leading-5 text-muted-foreground">{activityPlan.description}</Text>
+                <Text className="text-sm leading-5 text-muted-foreground">
+                  {activityPlan.description}
+                </Text>
               ) : null}
 
               <ActivityPlanContentPreview

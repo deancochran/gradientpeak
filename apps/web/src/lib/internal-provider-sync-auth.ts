@@ -9,5 +9,7 @@ export function isInternalProviderSyncAuthorized(request: Request): boolean {
   const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
   const headerToken = request.headers.get("x-provider-sync-secret");
 
-  return bearerToken === INTERNAL_PROVIDER_SYNC_SECRET || headerToken === INTERNAL_PROVIDER_SYNC_SECRET;
+  return (
+    bearerToken === INTERNAL_PROVIDER_SYNC_SECRET || headerToken === INTERNAL_PROVIDER_SYNC_SECRET
+  );
 }

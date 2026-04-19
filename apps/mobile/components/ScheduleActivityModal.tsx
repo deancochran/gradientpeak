@@ -538,7 +538,9 @@ export function ScheduleActivityModal({
                         <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                           Selected activity
                         </Text>
-                        <Text className="text-lg font-semibold text-foreground">{displayPlan.name}</Text>
+                        <Text className="text-lg font-semibold text-foreground">
+                          {displayPlan.name}
+                        </Text>
                         {displayPlan.description && (
                           <Text
                             className="text-sm leading-5 text-muted-foreground"
@@ -552,13 +554,19 @@ export function ScheduleActivityModal({
 
                     <View className="rounded-xl border border-border bg-background px-3 py-3">
                       <View className="gap-1">
-                        <Text className="text-sm font-medium text-foreground">Activity preview</Text>
+                        <Text className="text-sm font-medium text-foreground">
+                          Activity preview
+                        </Text>
                         <Text className="text-sm text-muted-foreground">
                           Review the session shape before you save the activity.
                         </Text>
                       </View>
                       <View className="mt-3" testID="schedule-preview-details">
-                        <ActivityPlanContentPreview compact plan={displayPlan} route={displayRoute} />
+                        <ActivityPlanContentPreview
+                          compact
+                          plan={displayPlan}
+                          route={displayRoute}
+                        />
                       </View>
                     </View>
                   </CardContent>

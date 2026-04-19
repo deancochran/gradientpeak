@@ -43,8 +43,13 @@ export class WahooSyncJobService {
     },
   ) {}
 
-  async enqueuePublishEvent(input: { eventId: string; profileId: string }): Promise<{ queued: boolean; jobId: string }> {
-    const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(input.profileId);
+  async enqueuePublishEvent(input: {
+    eventId: string;
+    profileId: string;
+  }): Promise<{ queued: boolean; jobId: string }> {
+    const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
+      input.profileId,
+    );
     if (!integration) {
       throw new Error("Wahoo integration not found");
     }
@@ -77,7 +82,10 @@ export class WahooSyncJobService {
       integrationId: integration.id,
       internalResourceId: input.eventId,
       jobType: WAHOO_PUBLISH_EVENT_JOB,
-      payload: { eventId: input.eventId, operation: "publish" satisfies WahooJobPayload["operation"] },
+      payload: {
+        eventId: input.eventId,
+        operation: "publish" satisfies WahooJobPayload["operation"],
+      },
       profileId: input.profileId,
       provider: "wahoo",
       resourceKind: "event",
@@ -87,8 +95,13 @@ export class WahooSyncJobService {
     return { jobId: queued.id, queued: queued.status === "queued" };
   }
 
-  async enqueueUnsyncEvent(input: { eventId: string; profileId: string }): Promise<{ queued: boolean; jobId: string }> {
-    const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(input.profileId);
+  async enqueueUnsyncEvent(input: {
+    eventId: string;
+    profileId: string;
+  }): Promise<{ queued: boolean; jobId: string }> {
+    const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
+      input.profileId,
+    );
     if (!integration) {
       throw new Error("Wahoo integration not found");
     }
@@ -98,7 +111,10 @@ export class WahooSyncJobService {
       integrationId: integration.id,
       internalResourceId: input.eventId,
       jobType: WAHOO_UNSYNC_EVENT_JOB,
-      payload: { eventId: input.eventId, operation: "unsync" satisfies WahooJobPayload["operation"] },
+      payload: {
+        eventId: input.eventId,
+        operation: "unsync" satisfies WahooJobPayload["operation"],
+      },
       profileId: input.profileId,
       provider: "wahoo",
       resourceKind: "event",
@@ -144,7 +160,10 @@ export class WahooSyncJobService {
             throw new Error(result.error ?? "Wahoo publish job failed");
           }
         } else if (job.jobType === WAHOO_UNSYNC_EVENT_JOB) {
-          const result = await this.deps.syncService.unsyncEvent(job.payload.eventId, job.profileId);
+          const result = await this.deps.syncService.unsyncEvent(
+            job.payload.eventId,
+            job.profileId,
+          );
           if (!result.success) {
             throw new Error(result.error ?? "Wahoo unsync job failed");
           }

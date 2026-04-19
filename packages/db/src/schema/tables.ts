@@ -27,8 +27,8 @@ import {
   eventStatusEnum,
   eventTypeEnum,
   genderEnum,
-  integrationResourceKindEnum,
   integrationProviderEnum,
+  integrationResourceKindEnum,
   likeEntityTypeEnum,
   notificationTypeEnum,
   profileMetricTypeEnum,
@@ -718,7 +718,10 @@ export const providerSyncState = pgTable(
   },
   (table) => [
     uniqueIndex("provider_sync_state_idx_key").on(table.idx),
-    unique("provider_sync_state_integration_resource_unique").on(table.integration_id, table.resource),
+    unique("provider_sync_state_integration_resource_unique").on(
+      table.integration_id,
+      table.resource,
+    ),
     index("idx_provider_sync_state_provider_next_sync").on(table.provider, table.next_sync_at),
   ],
 );
@@ -758,7 +761,11 @@ export const providerSyncJobs = pgTable(
   },
   (table) => [
     uniqueIndex("provider_sync_jobs_idx_key").on(table.idx),
-    index("idx_provider_sync_jobs_status_run_at_priority").on(table.status, table.run_at, table.priority),
+    index("idx_provider_sync_jobs_status_run_at_priority").on(
+      table.status,
+      table.run_at,
+      table.priority,
+    ),
     index("idx_provider_sync_jobs_provider_profile_status").on(
       table.provider,
       table.profile_id,
@@ -781,7 +788,9 @@ export const providerWebhookReceipts = pgTable(
       .notNull(),
     processed_at: timestamp("processed_at", { withTimezone: true, mode: "date" }),
     provider: integrationProviderEnum("provider").notNull(),
-    integration_id: uuid("integration_id").references(() => integrations.id, { onDelete: "set null" }),
+    integration_id: uuid("integration_id").references(() => integrations.id, {
+      onDelete: "set null",
+    }),
     provider_account_id: text("provider_account_id"),
     provider_event_id: text("provider_event_id"),
     event_type: text("event_type").notNull(),
@@ -800,7 +809,10 @@ export const providerWebhookReceipts = pgTable(
       table.provider_account_id,
       table.provider_event_id,
     ),
-    index("idx_provider_webhook_receipts_provider_status").on(table.provider, table.processing_status),
+    index("idx_provider_webhook_receipts_provider_status").on(
+      table.provider,
+      table.processing_status,
+    ),
     index("idx_provider_webhook_receipts_job_id").on(table.job_id),
   ],
 );

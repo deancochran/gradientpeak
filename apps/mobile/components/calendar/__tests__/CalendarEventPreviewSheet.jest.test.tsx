@@ -71,9 +71,9 @@ describe("CalendarEventPreviewSheet", () => {
       />,
     );
 
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix).toBe(
-      "calendar-preview-plan",
-    );
+    expect(
+      (rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix,
+    ).toBe("calendar-preview-plan");
     expect(screen.getByTestId("calendar-preview-start")).toBeTruthy();
   });
 });

@@ -10,7 +10,9 @@ function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
-export function createProviderSyncRepository({ db }: CreateProviderSyncRepositoryOptions): ProviderSyncRepository {
+export function createProviderSyncRepository({
+  db,
+}: CreateProviderSyncRepositoryOptions): ProviderSyncRepository {
   return {
     async enqueueJob(input) {
       if (input.dedupeKey) {
@@ -377,7 +379,15 @@ export function createProviderSyncRepository({ db }: CreateProviderSyncRepositor
         .where(eq(schema.providerSyncJobs.id, id));
     },
 
-    async touchSyncState({ integrationId, metadata, nextSyncAt, provider, publishHorizonDays, resource, syncMode }) {
+    async touchSyncState({
+      integrationId,
+      metadata,
+      nextSyncAt,
+      provider,
+      publishHorizonDays,
+      resource,
+      syncMode,
+    }) {
       await db
         .insert(schema.providerSyncState)
         .values({
@@ -392,10 +402,13 @@ export function createProviderSyncRepository({ db }: CreateProviderSyncRepositor
         .onConflictDoUpdate({
           target: [schema.providerSyncState.integration_id, schema.providerSyncState.resource],
           set: {
-            metadata: metadata ? sql`${schema.providerSyncState.metadata} || ${JSON.stringify(metadata)}::jsonb` : schema.providerSyncState.metadata,
+            metadata: metadata
+              ? sql`${schema.providerSyncState.metadata} || ${JSON.stringify(metadata)}::jsonb`
+              : schema.providerSyncState.metadata,
             next_sync_at: nextSyncAt ? new Date(nextSyncAt) : schema.providerSyncState.next_sync_at,
             provider,
-            publish_horizon_days: publishHorizonDays ?? schema.providerSyncState.publish_horizon_days,
+            publish_horizon_days:
+              publishHorizonDays ?? schema.providerSyncState.publish_horizon_days,
             sync_mode: syncMode,
             updated_at: new Date(),
           },
@@ -415,18 +428,30 @@ export function createProviderSyncRepository({ db }: CreateProviderSyncRepositor
         .onConflictDoUpdate({
           target: [schema.providerSyncState.integration_id, schema.providerSyncState.resource],
           set: {
-            consecutive_failures: succeeded ? 0 : sql`${schema.providerSyncState.consecutive_failures}`,
+            consecutive_failures: succeeded
+              ? 0
+              : sql`${schema.providerSyncState.consecutive_failures}`,
             last_error: succeeded ? null : schema.providerSyncState.last_error,
-            last_sync_failed_at: succeeded ? schema.providerSyncState.last_sync_failed_at : new Date(),
+            last_sync_failed_at: succeeded
+              ? schema.providerSyncState.last_sync_failed_at
+              : new Date(),
             last_sync_started_at: new Date(),
-            last_sync_succeeded_at: succeeded ? new Date() : schema.providerSyncState.last_sync_succeeded_at,
+            last_sync_succeeded_at: succeeded
+              ? new Date()
+              : schema.providerSyncState.last_sync_succeeded_at,
             next_sync_at: nextSyncAt ? new Date(nextSyncAt) : schema.providerSyncState.next_sync_at,
             updated_at: new Date(),
           },
         });
     },
 
-    async updateSyncStateAfterFailure({ integrationId, lastError, nextSyncAt, provider, resource }) {
+    async updateSyncStateAfterFailure({
+      integrationId,
+      lastError,
+      nextSyncAt,
+      provider,
+      resource,
+    }) {
       await db
         .insert(schema.providerSyncState)
         .values({

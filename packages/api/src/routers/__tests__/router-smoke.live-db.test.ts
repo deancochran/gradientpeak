@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { db, pool } from "@repo/db/client";
 import { activityRoutes, events, profiles, users } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { eventsRouter } from "../events";
 import { routesRouter } from "../routes";
 

@@ -14,8 +14,8 @@ import {
   createWahooRepository,
 } from "../infrastructure/repositories";
 import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
-import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 

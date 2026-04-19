@@ -54,7 +54,9 @@ export default function FTMSControlPage() {
     return (
       <View className="flex-1 justify-center bg-background px-6">
         <View className="rounded-3xl border border-border bg-card p-6">
-          <Text className="text-xl font-semibold text-foreground">Trainer controls are blocked</Text>
+          <Text className="text-xl font-semibold text-foreground">
+            Trainer controls are blocked
+          </Text>
           <Text className="mt-2 text-sm text-muted-foreground">
             {getBlockedDescription({
               bleState,
@@ -64,7 +66,9 @@ export default function FTMSControlPage() {
             })}
           </Text>
           <Button onPress={() => navigateTo("/record/sensors")} className="mt-4">
-            <Text className="text-primary-foreground">{getBlockedActionLabel(Boolean(trainerSensor))}</Text>
+            <Text className="text-primary-foreground">
+              {getBlockedActionLabel(Boolean(trainerSensor))}
+            </Text>
           </Button>
           <Text className="mt-3 text-xs text-muted-foreground">
             If another app already owns trainer control, close it first and reconnect here.
@@ -78,7 +82,9 @@ export default function FTMSControlPage() {
     <ScrollView className="flex-1 bg-background" bounces={false}>
       <View className="px-4 pt-4 pb-6">
         <View className="mb-4 rounded-2xl border border-border bg-card p-4">
-          <Text className="text-2xl font-bold capitalize text-foreground">{machineType} control</Text>
+          <Text className="text-2xl font-bold capitalize text-foreground">
+            {machineType} control
+          </Text>
           <Text className="mt-1 text-sm text-muted-foreground">
             {controlReadyTrainer.name} is connected and ready for FTMS control.
           </Text>
@@ -119,7 +125,8 @@ export default function FTMSControlPage() {
             <View className="mt-4 rounded-xl border border-border bg-background p-4">
               <Text className="text-sm font-medium text-foreground">Advanced controls hidden</Text>
               <Text className="mt-1 text-xs text-muted-foreground">
-                Stay in auto mode for the simplest experience. Switch to manual only when you need to override the trainer.
+                Stay in auto mode for the simplest experience. Switch to manual only when you need
+                to override the trainer.
               </Text>
             </View>
           )}
@@ -135,10 +142,18 @@ export default function FTMSControlPage() {
               <RowerControlUI service={service} controlMode={controlMode} hasPlan={plan.hasPlan} />
             )}
             {machineType === "treadmill" && (
-              <TreadmillControlUI service={service} controlMode={controlMode} hasPlan={plan.hasPlan} />
+              <TreadmillControlUI
+                service={service}
+                controlMode={controlMode}
+                hasPlan={plan.hasPlan}
+              />
             )}
             {machineType === "elliptical" && (
-              <EllipticalControlUI service={service} controlMode={controlMode} hasPlan={plan.hasPlan} />
+              <EllipticalControlUI
+                service={service}
+                controlMode={controlMode}
+                hasPlan={plan.hasPlan}
+              />
             )}
           </View>
         )}

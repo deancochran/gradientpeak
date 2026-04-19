@@ -222,7 +222,9 @@ export class SensorsManager {
       if (state === "PoweredOff" || state === "Unauthorized") {
         const bluetoothError = this.recordServiceError(
           state === "Unauthorized" ? "permission_error" : "bluetooth_unavailable",
-          state === "Unauthorized" ? "Bluetooth permission unavailable" : "Bluetooth is powered off",
+          state === "Unauthorized"
+            ? "Bluetooth permission unavailable"
+            : "Bluetooth is powered off",
           {
             deviceId: this.trainerState.deviceId ?? undefined,
             recoverable: true,
@@ -950,7 +952,7 @@ export class SensorsManager {
       }
 
       console.log(
-        `[SensorsManager] Reconnecting ${(sensor?.name || persistedSensor?.name || sensorId)} on app foreground`,
+        `[SensorsManager] Reconnecting ${sensor?.name || persistedSensor?.name || sensorId} on app foreground`,
       );
 
       if (sensor) {
@@ -1392,7 +1394,9 @@ export class SensorsManager {
       );
       const subscriptionError = this.recordServiceError(
         "measurement_subscription_error",
-        error instanceof Error ? error.message : `Failed to monitor Indoor Bike Data for ${sensor.name}`,
+        error instanceof Error
+          ? error.message
+          : `Failed to monitor Indoor Bike Data for ${sensor.name}`,
         {
           deviceId: sensor.id,
           recoverable: true,

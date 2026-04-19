@@ -1,11 +1,6 @@
 import type { DrizzleDbClient } from "@repo/db";
 
-export type ProviderSyncJobStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "dead_lettered";
+export type ProviderSyncJobStatus = "queued" | "running" | "completed" | "failed" | "dead_lettered";
 
 export type ProviderSyncJobRecord = {
   attempt: number;
@@ -58,7 +53,7 @@ export interface ProviderSyncRepository {
     provider: "wahoo";
     resourceKind?: "event" | "activity_plan" | "activity_route" | "activity";
     runAt: string;
-  }): Promise<{ id: string; status: ProviderSyncJobStatus }>; 
+  }): Promise<{ id: string; status: ProviderSyncJobStatus }>;
   markJobFailed(input: {
     id: string;
     lastError: string;
@@ -66,7 +61,11 @@ export interface ProviderSyncRepository {
     status: Extract<ProviderSyncJobStatus, "queued" | "failed" | "dead_lettered">;
   }): Promise<void>;
   markJobSucceeded(id: string): Promise<void>;
-  markWebhookReceiptProcessed(input: { id: string; lastError?: string; status: "failed" | "processed" }): Promise<void>;
+  markWebhookReceiptProcessed(input: {
+    id: string;
+    lastError?: string;
+    status: "failed" | "processed";
+  }): Promise<void>;
   storeWebhookReceipt(input: {
     eventType: string;
     integrationId?: string;

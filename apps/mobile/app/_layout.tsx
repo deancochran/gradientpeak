@@ -20,13 +20,13 @@ import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useTheme } from "@/lib/stores/theme-store";
 import {
   clearE2ERuntimeErrors,
   E2ERuntimeErrorStatus,
   installE2ERuntimeErrorCapture,
 } from "@/lib/testing/e2eRuntimeErrors";
 import { getNavigationTheme } from "@/lib/theme";
-import { useTheme } from "@/lib/stores/theme-store";
 
 // Initialize Sentry error tracking for production
 initSentry();

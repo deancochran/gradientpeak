@@ -25,7 +25,9 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
     },
 
     async deleteEventResourceLink(id) {
-      await db.delete(schema.integrationResourceLinks).where(eq(schema.integrationResourceLinks.id, id));
+      await db
+        .delete(schema.integrationResourceLinks)
+        .where(eq(schema.integrationResourceLinks.id, id));
     },
 
     async findWahooIntegrationByProfileId(profileId) {
@@ -51,7 +53,10 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
     async findWahooIntegrationByExternalId(externalId) {
       const [row] = await db
-        .select({ integrationId: schema.integrations.id, profileId: schema.integrations.profile_id })
+        .select({
+          integrationId: schema.integrations.id,
+          profileId: schema.integrations.profile_id,
+        })
         .from(schema.integrations)
         .where(
           and(

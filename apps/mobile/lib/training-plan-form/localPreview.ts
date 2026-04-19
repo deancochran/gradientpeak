@@ -16,8 +16,8 @@ import {
   diffDateOnlyUtcDays,
   formatDateOnlyUtc,
   type InferredStateSnapshot,
-  mapAthletePreferencesToCreationDefaults,
   type MinimalTrainingPlanCreate,
+  mapAthletePreferencesToCreationDefaults,
   normalizeCreationConfig,
   type PreviewReadinessSnapshot,
   type ProfileGoal,
@@ -262,7 +262,9 @@ export function buildExpandedPlanFromMinimalGoal(
 
 export function computeLocalCreationPreview(input: LocalPreviewInput): LocalPreviewResult {
   const finalConfig = normalizeCreationConfig({
-    ...(input.profileSettings ? mapAthletePreferencesToCreationDefaults(input.profileSettings) : {}),
+    ...(input.profileSettings
+      ? mapAthletePreferencesToCreationDefaults(input.profileSettings)
+      : {}),
     ...input.creationInput,
   } as CreationNormalizationInput);
   const availableTrainingDays = countAvailableTrainingDays({

@@ -95,7 +95,10 @@ describe("WahooWebhookJobService", () => {
       providerAccountId: "42",
       providerEventId: "99",
     });
-    deps.importer.importWorkoutSummary.mockResolvedValue({ success: true, activityId: "activity-1" });
+    deps.importer.importWorkoutSummary.mockResolvedValue({
+      success: true,
+      activityId: "activity-1",
+    });
 
     const service = new WahooWebhookJobService(deps as never);
 

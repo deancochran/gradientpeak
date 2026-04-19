@@ -2,8 +2,8 @@ import * as React from "react";
 import { Text, View } from "react-native";
 import {
   classifyE2ERuntimeMessage,
-  parseE2EProcedure,
   type E2ERuntimeErrorKind,
+  parseE2EProcedure,
 } from "./e2eRuntimeErrors.shared";
 
 const isE2EEnabled = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";

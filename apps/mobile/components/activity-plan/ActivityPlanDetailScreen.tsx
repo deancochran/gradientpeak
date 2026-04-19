@@ -266,7 +266,9 @@ export function ActivityPlanDetailScreen({
                 testID="activity-plan-record-now-button"
               >
                 <Icon as={Smartphone} size={16} className="text-primary-foreground" />
-                <Text className="text-primary-foreground text-sm font-semibold">Start Activity</Text>
+                <Text className="text-primary-foreground text-sm font-semibold">
+                  Start Activity
+                </Text>
               </Button>
               <Button
                 onPress={
@@ -331,19 +333,19 @@ export function ActivityPlanDetailScreen({
                   </>
                 )}
               </Pressable>
-                <Button
-                  onPress={scheduling.handleDuplicate}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
-                  disabled={scheduling.duplicatePending}
-                  testID="activity-plan-duplicate-button"
-                >
-                  <Icon as={Copy} size={16} className="text-foreground" />
-                  <Text className="text-foreground text-sm">
-                    {scheduling.duplicatePending ? "Duplicating..." : "Duplicate Activity"}
-                  </Text>
-                </Button>
+              <Button
+                onPress={scheduling.handleDuplicate}
+                variant="outline"
+                size="sm"
+                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
+                disabled={scheduling.duplicatePending}
+                testID="activity-plan-duplicate-button"
+              >
+                <Icon as={Copy} size={16} className="text-foreground" />
+                <Text className="text-foreground text-sm">
+                  {scheduling.duplicatePending ? "Duplicating..." : "Duplicate Activity"}
+                </Text>
+              </Button>
             </View>
             {isOwnedByUser && (
               <View className="flex-row gap-2">

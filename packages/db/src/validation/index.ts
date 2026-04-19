@@ -7,8 +7,8 @@ import {
   eventStatusEnum,
   eventTypeEnum,
   genderEnum,
-  integrationResourceKindEnum,
   integrationProviderEnum,
+  integrationResourceKindEnum,
   notificationTypeEnum,
   profileMetricTypeEnum,
   trainingEffectLabelEnum,
@@ -32,10 +32,10 @@ import {
   profileGoals,
   profileMetrics,
   profiles,
+  profileTrainingSettings,
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
-  profileTrainingSettings,
   trainingPlans,
 } from "../schema/tables";
 
@@ -98,8 +98,10 @@ export const publicProviderSyncJobsInsertSchema = createInsertSchema(providerSyn
 export const publicProviderSyncJobsUpdateSchema = createUpdateSchema(providerSyncJobs);
 
 export const publicProviderWebhookReceiptsRowSchema = createSelectSchema(providerWebhookReceipts);
-export const publicProviderWebhookReceiptsInsertSchema = createInsertSchema(providerWebhookReceipts);
-export const publicProviderWebhookReceiptsUpdateSchema = createUpdateSchema(providerWebhookReceipts);
+export const publicProviderWebhookReceiptsInsertSchema =
+  createInsertSchema(providerWebhookReceipts);
+export const publicProviderWebhookReceiptsUpdateSchema =
+  createUpdateSchema(providerWebhookReceipts);
 
 export const publicProfileMetricsRowSchema = createSelectSchema(profileMetrics);
 export const publicProfileMetricsInsertSchema = createInsertSchema(profileMetrics);
@@ -120,12 +122,10 @@ export const publicOAuthStatesInsertSchema = createInsertSchema(oauthStates);
 export const publicOAuthStatesUpdateSchema = createUpdateSchema(oauthStates);
 
 export const publicIntegrationResourceLinksRowSchema = createSelectSchema(integrationResourceLinks);
-export const publicIntegrationResourceLinksInsertSchema = createInsertSchema(
-  integrationResourceLinks,
-);
-export const publicIntegrationResourceLinksUpdateSchema = createUpdateSchema(
-  integrationResourceLinks,
-);
+export const publicIntegrationResourceLinksInsertSchema =
+  createInsertSchema(integrationResourceLinks);
+export const publicIntegrationResourceLinksUpdateSchema =
+  createUpdateSchema(integrationResourceLinks);
 
 export const publicLikesRowSchema = createSelectSchema(likes);
 export const publicLikesInsertSchema = createInsertSchema(likes);
@@ -198,9 +198,15 @@ export type PublicProviderSyncStateUpdate = z.infer<typeof publicProviderSyncSta
 export type PublicProviderSyncJobsRow = z.infer<typeof publicProviderSyncJobsRowSchema>;
 export type PublicProviderSyncJobsInsert = z.infer<typeof publicProviderSyncJobsInsertSchema>;
 export type PublicProviderSyncJobsUpdate = z.infer<typeof publicProviderSyncJobsUpdateSchema>;
-export type PublicProviderWebhookReceiptsRow = z.infer<typeof publicProviderWebhookReceiptsRowSchema>;
-export type PublicProviderWebhookReceiptsInsert = z.infer<typeof publicProviderWebhookReceiptsInsertSchema>;
-export type PublicProviderWebhookReceiptsUpdate = z.infer<typeof publicProviderWebhookReceiptsUpdateSchema>;
+export type PublicProviderWebhookReceiptsRow = z.infer<
+  typeof publicProviderWebhookReceiptsRowSchema
+>;
+export type PublicProviderWebhookReceiptsInsert = z.infer<
+  typeof publicProviderWebhookReceiptsInsertSchema
+>;
+export type PublicProviderWebhookReceiptsUpdate = z.infer<
+  typeof publicProviderWebhookReceiptsUpdateSchema
+>;
 export type PublicProfileMetricsRow = z.infer<typeof publicProfileMetricsRowSchema>;
 export type PublicProfileMetricsInsert = z.infer<typeof publicProfileMetricsInsertSchema>;
 export type PublicProfileMetricsUpdate = z.infer<typeof publicProfileMetricsUpdateSchema>;

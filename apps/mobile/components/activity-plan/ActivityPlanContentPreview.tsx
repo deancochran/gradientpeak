@@ -153,7 +153,9 @@ export function ActivityPlanContentPreview({
               }
             />
           ) : null}
-          {estimatedTss !== null ? <MetricPill label="TSS" value={`${Math.round(estimatedTss)}`} /> : null}
+          {estimatedTss !== null ? (
+            <MetricPill label="TSS" value={`${Math.round(estimatedTss)}`} />
+          ) : null}
           {typeof intensityFactor === "number" ? (
             <MetricPill label="IF" value={intensityFactor.toFixed(2)} />
           ) : null}
@@ -183,7 +185,11 @@ export function ActivityPlanContentPreview({
         </View>
       ) : null}
 
-      {route && routeInitialRegion && routeCoordinates && routeCoordinates.length > 0 && !compact ? (
+      {route &&
+      routeInitialRegion &&
+      routeCoordinates &&
+      routeCoordinates.length > 0 &&
+      !compact ? (
         <View className="overflow-hidden rounded-2xl border border-border bg-card">
           <View className="h-36">
             <MapView
@@ -205,7 +211,9 @@ export function ActivityPlanContentPreview({
             </MapView>
           </View>
           <View className="gap-2 border-t border-border px-3 py-3">
-            {route.name ? <Text className="text-sm font-semibold text-foreground">{route.name}</Text> : null}
+            {route.name ? (
+              <Text className="text-sm font-semibold text-foreground">{route.name}</Text>
+            ) : null}
             <View className="flex-row flex-wrap gap-3">
               {typeof route.total_distance === "number" ? (
                 <Text className="text-xs text-muted-foreground">
@@ -247,7 +255,9 @@ export function ActivityPlanContentPreview({
               );
             })}
             {steps.length > maxVisibleSteps ? (
-              <Text className="text-xs text-muted-foreground">+{steps.length - maxVisibleSteps} more steps</Text>
+              <Text className="text-xs text-muted-foreground">
+                +{steps.length - maxVisibleSteps} more steps
+              </Text>
             ) : null}
           </View>
         </View>
@@ -259,7 +269,9 @@ export function ActivityPlanContentPreview({
 function MetricPill({ label, value }: { label: string; value: string }) {
   return (
     <View className="rounded-full bg-muted px-3 py-1.5">
-      <Text className="text-[11px] font-medium text-muted-foreground">{label}: {value}</Text>
+      <Text className="text-[11px] font-medium text-muted-foreground">
+        {label}: {value}
+      </Text>
     </View>
   );
 }

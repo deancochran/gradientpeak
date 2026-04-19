@@ -1,4 +1,8 @@
-import type { PlannedWorkoutProviderAdapter, ProviderPublishResult, ProviderSyncEligibility } from "./provider-adapter";
+import type {
+  PlannedWorkoutProviderAdapter,
+  ProviderPublishResult,
+  ProviderSyncEligibility,
+} from "./provider-adapter";
 
 const DEFAULT_GARMIN_PUBLISH_HORIZON_DAYS = 15;
 

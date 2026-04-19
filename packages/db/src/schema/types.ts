@@ -21,10 +21,10 @@ import {
   profileGoals,
   profileMetrics,
   profiles,
+  profileTrainingSettings,
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
-  profileTrainingSettings,
   trainingPlans,
   userTrainingPlans,
 } from "./tables";

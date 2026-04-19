@@ -4,8 +4,8 @@ import {
   createWahooImportFitFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
-  WahooSyncService,
   WahooSyncJobService,
+  WahooSyncService,
   WahooWebhookJobService,
 } from "@repo/api/webhooks";
 import { db } from "@repo/db/client";
@@ -15,10 +15,7 @@ const serverSupabaseUrl =
   process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 
 export function createWahooSyncRuntime() {
-  const supabase = createClient(
-    serverSupabaseUrl!,
-    process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!,
-  );
+  const supabase = createClient(serverSupabaseUrl!, process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!);
 
   const wahooRepository = createWahooRepository({ db });
   const providerSyncRepository = createProviderSyncRepository({ db });

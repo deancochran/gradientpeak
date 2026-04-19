@@ -329,7 +329,8 @@ export function TrainingPreferencesProjectionPreview({
         </Text>
         {previewResult.previewSnapshot ? (
           <Text className="text-xs text-muted-foreground">
-            Draft readiness: {Math.round(previewResult.previewSnapshot.readiness_score)}. Load: {Math.round(previewResult.previewSnapshot.predicted_load_tss)} TSS.
+            Draft readiness: {Math.round(previewResult.previewSnapshot.readiness_score)}. Load:{" "}
+            {Math.round(previewResult.previewSnapshot.predicted_load_tss)} TSS.
           </Text>
         ) : null}
       </CardContent>

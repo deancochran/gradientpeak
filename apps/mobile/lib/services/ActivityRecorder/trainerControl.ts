@@ -11,10 +11,10 @@ import { PredictiveResistanceCalculator } from "./PredictiveResistanceCalculator
 import type { ConnectedSensor, SensorsManager } from "./sensors";
 import type {
   CurrentReadings,
-  RecordingTrainerControlState,
   RecordingSessionOverrideState,
   RecordingSessionSnapshot,
   RecordingTrainerCommandStatus,
+  RecordingTrainerControlState,
   RecordingTrainerRecoveryState,
 } from "./types";
 
@@ -350,7 +350,9 @@ export class TrainerControl {
   }
 
   private hasEligibleTrainerCandidate(): boolean {
-    return this.deps.sensorsManager.getConnectedSensors().some((sensor) => this.isFtmsCandidate(sensor));
+    return this.deps.sensorsManager
+      .getConnectedSensors()
+      .some((sensor) => this.isFtmsCandidate(sensor));
   }
 
   private isFtmsCandidate(sensor: ConnectedSensor): boolean {

@@ -98,7 +98,11 @@ export interface WahooRepository {
       updatedAt: string | null;
     }>
   >;
-  updateEventResourceLink(input: { externalId?: string; id: string; updatedAt: string }): Promise<void>;
+  updateEventResourceLink(input: {
+    externalId?: string;
+    id: string;
+    updatedAt: string;
+  }): Promise<void>;
 }
 
 export interface CreateWahooRepositoryOptions {

@@ -14,9 +14,11 @@ import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { getActivityColor } from "@/lib/utils/plan/colors";
 
 function getPlannedStepCount(event: CalendarEvent): number {
-  const intervals = (event.activity_plan?.structure as
-    | { intervals?: Array<{ repetitions?: number; steps?: unknown[] }> }
-    | undefined)?.intervals;
+  const intervals = (
+    event.activity_plan?.structure as
+      | { intervals?: Array<{ repetitions?: number; steps?: unknown[] }> }
+      | undefined
+  )?.intervals;
 
   if (!Array.isArray(intervals)) {
     return 0;
@@ -137,7 +139,10 @@ export function CalendarEventCard({
                 <View className="mt-1 rounded-2xl bg-muted/30 px-3 py-3">
                   <View className="flex-row flex-wrap items-center gap-2">
                     {meta.map((item) => (
-                      <View key={`${event.id}-${item}`} className="rounded-full bg-background px-2 py-1">
+                      <View
+                        key={`${event.id}-${item}`}
+                        className="rounded-full bg-background px-2 py-1"
+                      >
                         <Text className="text-[10px] font-medium text-muted-foreground">
                           {item}
                         </Text>

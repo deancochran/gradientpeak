@@ -304,7 +304,13 @@ export function FooterExpandedContent({
                 tone={bleState === "PoweredOn" ? "good" : "warn"}
               />
               <StatusPill
-                label={trainerDataFlowing ? "Data flowing" : trainerAvailable ? "Waiting for data" : "No data"}
+                label={
+                  trainerDataFlowing
+                    ? "Data flowing"
+                    : trainerAvailable
+                      ? "Waiting for data"
+                      : "No data"
+                }
                 tone={trainerDataFlowing ? "good" : trainerAvailable ? "neutral" : "warn"}
               />
               <StatusPill
@@ -414,7 +420,9 @@ export function FooterExpandedContent({
 
 type TrainerSummaryTone = "good" | "neutral" | "warn";
 
-function hasRecentTrainerData(lastUpdated: { power?: number; cadence?: number; speed?: number } | undefined) {
+function hasRecentTrainerData(
+  lastUpdated: { power?: number; cadence?: number; speed?: number } | undefined,
+) {
   if (!lastUpdated) {
     return false;
   }
@@ -498,7 +506,8 @@ function getTrainerSummary({
   if (trainerControlReady) {
     return {
       status: "Trainer control ready",
-      detail: "Control is available now. Open controls only when you need to change trainer behavior.",
+      detail:
+        "Control is available now. Open controls only when you need to change trainer behavior.",
       action: "controls" as const,
       actionLabel: "Open Controls",
     };

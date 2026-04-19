@@ -2,7 +2,14 @@ import { Button } from "@repo/ui/components/button";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { AlertTriangle, Battery, Bluetooth, RefreshCw, ShieldAlert, Zap } from "lucide-react-native";
+import {
+  AlertTriangle,
+  Battery,
+  Bluetooth,
+  RefreshCw,
+  ShieldAlert,
+  Zap,
+} from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
@@ -209,7 +216,9 @@ function SensorsScreen() {
   }, [resetSensors]);
 
   const trainerSensor = useMemo(
-    () => connectedSensors.find((sensor) => sensor.isControllable || Boolean(sensor.ftmsFeatures)) ?? null,
+    () =>
+      connectedSensors.find((sensor) => sensor.isControllable || Boolean(sensor.ftmsFeatures)) ??
+      null,
     [connectedSensors],
   );
   const trainerDataFlowing = useMemo(
@@ -238,11 +247,16 @@ function SensorsScreen() {
     ],
   );
 
-  const checklistItems = useMemo<Array<{ label: string; value: string; tone: "good" | "neutral" | "warn" }>>(
+  const checklistItems = useMemo<
+    Array<{ label: string; value: string; tone: "good" | "neutral" | "warn" }>
+  >(
     () => [
       {
         label: "Bluetooth ready",
-        value: bluetoothGranted && bleState === "PoweredOn" ? "Ready" : getBluetoothChecklistValue(bleState),
+        value:
+          bluetoothGranted && bleState === "PoweredOn"
+            ? "Ready"
+            : getBluetoothChecklistValue(bleState),
         tone: bluetoothGranted && bleState === "PoweredOn" ? "good" : "warn",
       },
       {
@@ -309,7 +323,12 @@ function SensorsScreen() {
 
           <View className="mt-4 gap-3">
             {checklistItems.map((item) => (
-              <ChecklistRow key={item.label} label={item.label} value={item.value} tone={item.tone} />
+              <ChecklistRow
+                key={item.label}
+                label={item.label}
+                value={item.value}
+                tone={item.tone}
+              />
             ))}
           </View>
         </View>
@@ -348,7 +367,9 @@ function SensorsScreen() {
                         {sensor.isControllable && (
                           <View className="flex-row items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1">
                             <Icon as={Zap} size={12} className="text-emerald-700" />
-                            <Text className="text-xs font-medium text-emerald-700">Control ready</Text>
+                            <Text className="text-xs font-medium text-emerald-700">
+                              Control ready
+                            </Text>
                           </View>
                         )}
                       </View>
@@ -364,7 +385,9 @@ function SensorsScreen() {
                             size={14}
                             className={getBatteryColorClassName(sensor.batteryLevel)}
                           />
-                          <Text className={`text-xs ${getBatteryColorClassName(sensor.batteryLevel)}`}>
+                          <Text
+                            className={`text-xs ${getBatteryColorClassName(sensor.batteryLevel)}`}
+                          >
                             {sensor.batteryLevel}% battery
                           </Text>
                         </View>
@@ -412,7 +435,10 @@ function SensorsScreen() {
                 const connectError = connectErrors[device.id];
 
                 return (
-                  <View key={device.id} className="rounded-xl border border-border bg-background p-3">
+                  <View
+                    key={device.id}
+                    className="rounded-xl border border-border bg-background p-3"
+                  >
                     <View className="flex-row items-start justify-between gap-3">
                       <View className="flex-1">
                         <Text className="text-sm font-medium text-foreground">
@@ -451,9 +477,12 @@ function SensorsScreen() {
           <View className="flex-row items-start gap-3">
             <Icon as={ShieldAlert} size={18} className="mt-0.5 text-amber-700" />
             <View className="flex-1">
-              <Text className="text-sm font-semibold text-amber-900">Control can be blocked elsewhere</Text>
+              <Text className="text-sm font-semibold text-amber-900">
+                Control can be blocked elsewhere
+              </Text>
               <Text className="mt-1 text-xs text-amber-800">
-                Some trainers allow only one app to own control. If data is connected but control never becomes ready, close other training apps and reconnect here.
+                Some trainers allow only one app to own control. If data is connected but control
+                never becomes ready, close other training apps and reconnect here.
               </Text>
             </View>
           </View>
@@ -470,7 +499,9 @@ function getBluetoothChecklistValue(bleState: string) {
   return `Waiting (${bleState})`;
 }
 
-function hasRecentTrainerData(lastUpdated: { power?: number; cadence?: number; speed?: number } | undefined) {
+function hasRecentTrainerData(
+  lastUpdated: { power?: number; cadence?: number; speed?: number } | undefined,
+) {
   if (!lastUpdated) {
     return false;
   }

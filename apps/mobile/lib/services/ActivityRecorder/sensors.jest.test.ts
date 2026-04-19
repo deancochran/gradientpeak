@@ -79,8 +79,14 @@ describe("SensorsManager QA regressions", () => {
     ]);
     (manager as any).persistedSensors = new Map([
       [disconnected.id, { id: disconnected.id, name: disconnected.name, lastConnected: 1 }],
-      [alreadyConnected.id, { id: alreadyConnected.id, name: alreadyConnected.name, lastConnected: 1 }],
-      ["sensor-persisted-only", { id: "sensor-persisted-only", name: "Saved Trainer", lastConnected: 1 }],
+      [
+        alreadyConnected.id,
+        { id: alreadyConnected.id, name: alreadyConnected.name, lastConnected: 1 },
+      ],
+      [
+        "sensor-persisted-only",
+        { id: "sensor-persisted-only", name: "Saved Trainer", lastConnected: 1 },
+      ],
     ]);
 
     const reconnectSpy = jest

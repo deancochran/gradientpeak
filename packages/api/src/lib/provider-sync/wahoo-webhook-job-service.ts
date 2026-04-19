@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
-import type { WahooActivityImporter } from "../integrations/wahoo/activity-importer";
 import type { ProviderSyncRepository, WahooRepository } from "../../repositories";
+import type { WahooActivityImporter } from "../integrations/wahoo/activity-importer";
 
 const WAHOO_WEBHOOK_RECEIPT_JOB = "wahoo.process_webhook_receipt";
 
@@ -22,7 +22,10 @@ function addMinutes(isoString: string, minutes: number): string {
 
 function isWebhookJobPayload(value: unknown): value is WahooWebhookReceiptJobPayload {
   return Boolean(
-    value && typeof value === "object" && "receiptId" in value && typeof value.receiptId === "string",
+    value &&
+      typeof value === "object" &&
+      "receiptId" in value &&
+      typeof value.receiptId === "string",
   );
 }
 
@@ -59,7 +62,8 @@ export class WahooWebhookJobService {
       payload.event_type === "workout_summary" && payload.workout_summary?.id != null
         ? String(payload.workout_summary.id)
         : undefined;
-    const integration = await this.deps.wahooRepository.findWahooIntegrationByExternalId(providerAccountId);
+    const integration =
+      await this.deps.wahooRepository.findWahooIntegrationByExternalId(providerAccountId);
     const payloadHash = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 
     const receipt = await this.deps.providerSyncRepository.storeWebhookReceipt({
@@ -134,7 +138,9 @@ export class WahooWebhookJobService {
         continue;
       }
 
-      const receipt = await this.deps.providerSyncRepository.getWebhookReceipt(job.payload.receiptId);
+      const receipt = await this.deps.providerSyncRepository.getWebhookReceipt(
+        job.payload.receiptId,
+      );
       if (!receipt) {
         await this.deps.providerSyncRepository.markJobFailed({
           id: job.id,
@@ -176,7 +182,8 @@ export class WahooWebhookJobService {
         await this.deps.providerSyncRepository.markJobSucceeded(job.id);
         completed += 1;
       } catch (error) {
-        const lastError = error instanceof Error ? error.message : "Unknown Wahoo webhook job failure";
+        const lastError =
+          error instanceof Error ? error.message : "Unknown Wahoo webhook job failure";
         const shouldDeadLetter = job.attempt >= job.maxAttempts;
         await this.deps.providerSyncRepository.markWebhookReceiptProcessed({
           id: receipt.id,

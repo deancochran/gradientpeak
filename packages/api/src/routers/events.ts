@@ -23,12 +23,12 @@ import { getRequiredDb } from "../db";
 import {
   createEventCompletionRepository,
   createEventReadRepository,
-  createProviderSyncRepository,
   createEventWriteRepository,
+  createProviderSyncRepository,
   createWahooRepository,
 } from "../infrastructure/repositories";
-import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlan, addEstimationToPlans } from "../utils/estimation-helpers";
@@ -1051,7 +1051,8 @@ export const eventsRouter = createTRPCRouter({
           operation: "publish",
           queued: false,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error during Wahoo sync queueing",
+          error:
+            error instanceof Error ? error.message : "Unknown error during Wahoo sync queueing",
         };
       }
     }
