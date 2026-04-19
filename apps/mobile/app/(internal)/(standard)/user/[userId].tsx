@@ -677,7 +677,7 @@ function UserDetailScreen() {
                 <ToggleGroup
                   type="single"
                   value={theme}
-                  onValueChange={(nextValue) => {
+                  onValueChange={(nextValue: string | undefined) => {
                     if (nextValue) {
                       void setTheme(nextValue as "system" | "light" | "dark");
                     }
