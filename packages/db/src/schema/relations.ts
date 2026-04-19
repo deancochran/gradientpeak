@@ -10,6 +10,7 @@ import {
   conversations,
   events,
   follows,
+  integrationResourceLinks,
   integrations,
   likes,
   messages,
@@ -18,8 +19,10 @@ import {
   profileGoals,
   profileMetrics,
   profiles,
+  providerSyncJobs,
+  providerSyncState,
+  providerWebhookReceipts,
   profileTrainingSettings,
-  syncedEvents,
   trainingPlans,
   userTrainingPlans,
 } from "./tables";
@@ -42,8 +45,10 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   oauthStates: many(oauthStates),
   profileGoals: many(profileGoals),
   profileMetrics: many(profileMetrics),
+  providerSyncJobs: many(providerSyncJobs),
+  providerWebhookReceipts: many(providerWebhookReceipts),
   profileTrainingSettings: many(profileTrainingSettings),
-  syncedEvents: many(syncedEvents),
+  integrationResourceLinks: many(integrationResourceLinks),
   trainingPlans: many(trainingPlans),
   userTrainingPlans: many(userTrainingPlans),
 }));
@@ -112,7 +117,9 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
     fields: [events.user_training_plan_id],
     references: [userTrainingPlans.id],
   }),
-  syncedEvents: many(syncedEvents),
+  integrationResourceLinks: many(integrationResourceLinks, {
+    relationName: "eventIntegrationResourceLinks",
+  }),
 }));
 
 export const activitiesRelations = relations(activities, ({ one, many }) => ({
@@ -138,11 +145,15 @@ export const activityEffortsRelations = relations(activityEfforts, ({ one }) => 
   }),
 }));
 
-export const integrationsRelations = relations(integrations, ({ one }) => ({
+export const integrationsRelations = relations(integrations, ({ one, many }) => ({
   profile: one(profiles, {
     fields: [integrations.profile_id],
     references: [profiles.id],
   }),
+  resourceLinks: many(integrationResourceLinks),
+  syncJobs: many(providerSyncJobs),
+  syncState: many(providerSyncState),
+  webhookReceipts: many(providerWebhookReceipts),
 }));
 
 export const profileMetricsRelations = relations(profileMetrics, ({ one }) => ({
@@ -160,6 +171,35 @@ export const profileTrainingSettingsRelations = relations(profileTrainingSetting
   profile: one(profiles, {
     fields: [profileTrainingSettings.profile_id],
     references: [profiles.id],
+  }),
+}));
+
+export const providerSyncStateRelations = relations(providerSyncState, ({ one }) => ({
+  integration: one(integrations, {
+    fields: [providerSyncState.integration_id],
+    references: [integrations.id],
+  }),
+}));
+
+export const providerSyncJobsRelations = relations(providerSyncJobs, ({ one }) => ({
+  profile: one(profiles, {
+    fields: [providerSyncJobs.profile_id],
+    references: [profiles.id],
+  }),
+  integration: one(integrations, {
+    fields: [providerSyncJobs.integration_id],
+    references: [integrations.id],
+  }),
+}));
+
+export const providerWebhookReceiptsRelations = relations(providerWebhookReceipts, ({ one }) => ({
+  integration: one(integrations, {
+    fields: [providerWebhookReceipts.integration_id],
+    references: [integrations.id],
+  }),
+  job: one(providerSyncJobs, {
+    fields: [providerWebhookReceipts.job_id],
+    references: [providerSyncJobs.id],
   }),
 }));
 
@@ -181,13 +221,18 @@ export const oauthStatesRelations = relations(oauthStates, ({ one }) => ({
   }),
 }));
 
-export const syncedEventsRelations = relations(syncedEvents, ({ one }) => ({
+export const integrationResourceLinksRelations = relations(integrationResourceLinks, ({ one }) => ({
   profile: one(profiles, {
-    fields: [syncedEvents.profile_id],
+    fields: [integrationResourceLinks.profile_id],
     references: [profiles.id],
   }),
+  integration: one(integrations, {
+    fields: [integrationResourceLinks.integration_id],
+    references: [integrations.id],
+  }),
   event: one(events, {
-    fields: [syncedEvents.event_id],
+    relationName: "eventIntegrationResourceLinks",
+    fields: [integrationResourceLinks.internal_resource_id],
     references: [events.id],
   }),
 }));
@@ -270,11 +315,14 @@ export const relationsSchema = {
   activitiesRelations,
   activityEffortsRelations,
   integrationsRelations,
+  providerSyncJobsRelations,
+  providerSyncStateRelations,
+  providerWebhookReceiptsRelations,
   profileTrainingSettingsRelations,
   profileGoalsRelations,
   profileMetricsRelations,
   oauthStatesRelations,
-  syncedEventsRelations,
+  integrationResourceLinksRelations,
   likesRelations,
   notificationsRelations,
   conversationsRelations,

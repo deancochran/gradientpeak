@@ -7,6 +7,7 @@ import {
   eventStatusEnum,
   eventTypeEnum,
   genderEnum,
+  integrationResourceKindEnum,
   integrationProviderEnum,
   notificationTypeEnum,
   profileMetricTypeEnum,
@@ -22,6 +23,7 @@ import {
   conversations,
   events,
   follows,
+  integrationResourceLinks,
   integrations,
   likes,
   messages,
@@ -30,8 +32,10 @@ import {
   profileGoals,
   profileMetrics,
   profiles,
+  providerSyncJobs,
+  providerSyncState,
+  providerWebhookReceipts,
   profileTrainingSettings,
-  syncedEvents,
   trainingPlans,
 } from "../schema/tables";
 
@@ -40,6 +44,7 @@ export const publicEffortTypeSchema = z.enum(effortTypeEnum.enumValues);
 export const publicEventStatusSchema = z.enum(eventStatusEnum.enumValues);
 export const publicEventTypeSchema = z.enum(eventTypeEnum.enumValues);
 export const publicGenderSchema = z.enum(genderEnum.enumValues);
+export const publicIntegrationResourceKindSchema = z.enum(integrationResourceKindEnum.enumValues);
 export const publicIntegrationProviderSchema = z.enum(integrationProviderEnum.enumValues);
 export const publicNotificationTypeSchema = z.enum(notificationTypeEnum.enumValues);
 export const publicProfileMetricTypeSchema = z.enum(profileMetricTypeEnum.enumValues);
@@ -84,6 +89,18 @@ export const publicIntegrationsRowSchema = createSelectSchema(integrations);
 export const publicIntegrationsInsertSchema = createInsertSchema(integrations);
 export const publicIntegrationsUpdateSchema = createUpdateSchema(integrations);
 
+export const publicProviderSyncStateRowSchema = createSelectSchema(providerSyncState);
+export const publicProviderSyncStateInsertSchema = createInsertSchema(providerSyncState);
+export const publicProviderSyncStateUpdateSchema = createUpdateSchema(providerSyncState);
+
+export const publicProviderSyncJobsRowSchema = createSelectSchema(providerSyncJobs);
+export const publicProviderSyncJobsInsertSchema = createInsertSchema(providerSyncJobs);
+export const publicProviderSyncJobsUpdateSchema = createUpdateSchema(providerSyncJobs);
+
+export const publicProviderWebhookReceiptsRowSchema = createSelectSchema(providerWebhookReceipts);
+export const publicProviderWebhookReceiptsInsertSchema = createInsertSchema(providerWebhookReceipts);
+export const publicProviderWebhookReceiptsUpdateSchema = createUpdateSchema(providerWebhookReceipts);
+
 export const publicProfileMetricsRowSchema = createSelectSchema(profileMetrics);
 export const publicProfileMetricsInsertSchema = createInsertSchema(profileMetrics);
 export const publicProfileMetricsUpdateSchema = createUpdateSchema(profileMetrics);
@@ -102,9 +119,13 @@ export const publicOAuthStatesRowSchema = createSelectSchema(oauthStates);
 export const publicOAuthStatesInsertSchema = createInsertSchema(oauthStates);
 export const publicOAuthStatesUpdateSchema = createUpdateSchema(oauthStates);
 
-export const publicSyncedEventsRowSchema = createSelectSchema(syncedEvents);
-export const publicSyncedEventsInsertSchema = createInsertSchema(syncedEvents);
-export const publicSyncedEventsUpdateSchema = createUpdateSchema(syncedEvents);
+export const publicIntegrationResourceLinksRowSchema = createSelectSchema(integrationResourceLinks);
+export const publicIntegrationResourceLinksInsertSchema = createInsertSchema(
+  integrationResourceLinks,
+);
+export const publicIntegrationResourceLinksUpdateSchema = createUpdateSchema(
+  integrationResourceLinks,
+);
 
 export const publicLikesRowSchema = createSelectSchema(likes);
 export const publicLikesInsertSchema = createInsertSchema(likes);
@@ -141,6 +162,7 @@ export type PublicEffortType = z.infer<typeof publicEffortTypeSchema>;
 export type PublicEventStatus = z.infer<typeof publicEventStatusSchema>;
 export type PublicEventType = z.infer<typeof publicEventTypeSchema>;
 export type PublicGender = z.infer<typeof publicGenderSchema>;
+export type PublicIntegrationResourceKind = z.infer<typeof publicIntegrationResourceKindSchema>;
 export type PublicIntegrationProvider = z.infer<typeof publicIntegrationProviderSchema>;
 export type PublicNotificationType = z.infer<typeof publicNotificationTypeSchema>;
 export type PublicProfileMetricType = z.infer<typeof publicProfileMetricTypeSchema>;
@@ -170,6 +192,15 @@ export type PublicActivityEffortsUpdate = z.infer<typeof publicActivityEffortsUp
 export type PublicIntegrationsRow = z.infer<typeof publicIntegrationsRowSchema>;
 export type PublicIntegrationsInsert = z.infer<typeof publicIntegrationsInsertSchema>;
 export type PublicIntegrationsUpdate = z.infer<typeof publicIntegrationsUpdateSchema>;
+export type PublicProviderSyncStateRow = z.infer<typeof publicProviderSyncStateRowSchema>;
+export type PublicProviderSyncStateInsert = z.infer<typeof publicProviderSyncStateInsertSchema>;
+export type PublicProviderSyncStateUpdate = z.infer<typeof publicProviderSyncStateUpdateSchema>;
+export type PublicProviderSyncJobsRow = z.infer<typeof publicProviderSyncJobsRowSchema>;
+export type PublicProviderSyncJobsInsert = z.infer<typeof publicProviderSyncJobsInsertSchema>;
+export type PublicProviderSyncJobsUpdate = z.infer<typeof publicProviderSyncJobsUpdateSchema>;
+export type PublicProviderWebhookReceiptsRow = z.infer<typeof publicProviderWebhookReceiptsRowSchema>;
+export type PublicProviderWebhookReceiptsInsert = z.infer<typeof publicProviderWebhookReceiptsInsertSchema>;
+export type PublicProviderWebhookReceiptsUpdate = z.infer<typeof publicProviderWebhookReceiptsUpdateSchema>;
 export type PublicProfileMetricsRow = z.infer<typeof publicProfileMetricsRowSchema>;
 export type PublicProfileMetricsInsert = z.infer<typeof publicProfileMetricsInsertSchema>;
 export type PublicProfileMetricsUpdate = z.infer<typeof publicProfileMetricsUpdateSchema>;
@@ -188,9 +219,15 @@ export type PublicProfileGoalsUpdate = z.infer<typeof publicProfileGoalsUpdateSc
 export type PublicOAuthStatesRow = z.infer<typeof publicOAuthStatesRowSchema>;
 export type PublicOAuthStatesInsert = z.infer<typeof publicOAuthStatesInsertSchema>;
 export type PublicOAuthStatesUpdate = z.infer<typeof publicOAuthStatesUpdateSchema>;
-export type PublicSyncedEventsRow = z.infer<typeof publicSyncedEventsRowSchema>;
-export type PublicSyncedEventsInsert = z.infer<typeof publicSyncedEventsInsertSchema>;
-export type PublicSyncedEventsUpdate = z.infer<typeof publicSyncedEventsUpdateSchema>;
+export type PublicIntegrationResourceLinksRow = z.infer<
+  typeof publicIntegrationResourceLinksRowSchema
+>;
+export type PublicIntegrationResourceLinksInsert = z.infer<
+  typeof publicIntegrationResourceLinksInsertSchema
+>;
+export type PublicIntegrationResourceLinksUpdate = z.infer<
+  typeof publicIntegrationResourceLinksUpdateSchema
+>;
 export type PublicLikesRow = z.infer<typeof publicLikesRowSchema>;
 export type PublicLikesInsert = z.infer<typeof publicLikesInsertSchema>;
 export type PublicLikesUpdate = z.infer<typeof publicLikesUpdateSchema>;

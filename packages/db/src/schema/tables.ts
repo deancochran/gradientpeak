@@ -27,6 +27,7 @@ import {
   eventStatusEnum,
   eventTypeEnum,
   genderEnum,
+  integrationResourceKindEnum,
   integrationProviderEnum,
   likeEntityTypeEnum,
   notificationTypeEnum,
@@ -637,28 +638,170 @@ export const oauthStates = pgTable(
   ],
 );
 
-export const syncedEvents = pgTable(
-  "synced_events",
+export const integrationResourceLinks = pgTable(
+  "integration_resource_links",
   {
     id: uuid("id").primaryKey(),
-    idx: integer("idx"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
+    idx: serial("idx").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
     synced_at: timestamp("synced_at", { withTimezone: true, mode: "date" }),
     profile_id: uuid("profile_id")
       .notNull()
-      .references(() => profiles.id),
-    event_id: uuid("event_id")
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    integration_id: uuid("integration_id")
       .notNull()
-      .references(() => events.id),
+      .references(() => integrations.id, { onDelete: "cascade" }),
     provider: integrationProviderEnum("provider").notNull(),
+    resource_kind: integrationResourceKindEnum("resource_kind").notNull(),
+    internal_resource_id: uuid("internal_resource_id").notNull(),
     external_id: text("external_id").notNull(),
+    provider_updated_at: timestamp("provider_updated_at", { withTimezone: true, mode: "date" }),
+    payload_hash: text("payload_hash"),
   },
   (table) => [
-    unique("unique_event_per_provider").on(table.event_id, table.provider),
-    index("idx_synced_events_profile").on(table.profile_id),
-    index("idx_synced_events_event").on(table.event_id),
-    index("idx_synced_events_provider").on(table.provider, table.external_id),
+    uniqueIndex("integration_resource_links_idx_key").on(table.idx),
+    unique("integration_resource_links_internal_unique").on(
+      table.integration_id,
+      table.resource_kind,
+      table.internal_resource_id,
+    ),
+    unique("integration_resource_links_external_unique").on(
+      table.integration_id,
+      table.resource_kind,
+      table.external_id,
+    ),
+    index("idx_integration_resource_links_profile").on(table.profile_id),
+    index("idx_integration_resource_links_integration").on(table.integration_id),
+    index("idx_integration_resource_links_internal").on(
+      table.resource_kind,
+      table.internal_resource_id,
+    ),
+    index("idx_integration_resource_links_provider_external").on(table.provider, table.external_id),
+  ],
+);
+
+export const providerSyncState = pgTable(
+  "provider_sync_state",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    idx: serial("idx").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    integration_id: uuid("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "cascade" }),
+    provider: integrationProviderEnum("provider").notNull(),
+    resource: text("resource").notNull(),
+    publish_horizon_days: integer("publish_horizon_days"),
+    sync_mode: text("sync_mode").notNull(),
+    last_sync_started_at: timestamp("last_sync_started_at", { withTimezone: true, mode: "date" }),
+    last_sync_succeeded_at: timestamp("last_sync_succeeded_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    last_sync_failed_at: timestamp("last_sync_failed_at", { withTimezone: true, mode: "date" }),
+    next_sync_at: timestamp("next_sync_at", { withTimezone: true, mode: "date" }),
+    consecutive_failures: integer("consecutive_failures").notNull().default(0),
+    last_error: text("last_error"),
+    cursor: text("cursor"),
+    high_watermark: timestamp("high_watermark", { withTimezone: true, mode: "date" }),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  },
+  (table) => [
+    uniqueIndex("provider_sync_state_idx_key").on(table.idx),
+    unique("provider_sync_state_integration_resource_unique").on(table.integration_id, table.resource),
+    index("idx_provider_sync_state_provider_next_sync").on(table.provider, table.next_sync_at),
+  ],
+);
+
+export const providerSyncJobs = pgTable(
+  "provider_sync_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    idx: serial("idx").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    integration_id: uuid("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "cascade" }),
+    provider: integrationProviderEnum("provider").notNull(),
+    job_type: text("job_type").notNull(),
+    resource_kind: integrationResourceKindEnum("resource_kind"),
+    internal_resource_id: uuid("internal_resource_id"),
+    status: text("status").notNull().default("queued"),
+    priority: integer("priority").notNull().default(100),
+    run_at: timestamp("run_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    attempt: integer("attempt").notNull().default(0),
+    max_attempts: integer("max_attempts").notNull().default(8),
+    dedupe_key: text("dedupe_key"),
+    payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
+    last_error: text("last_error"),
+    locked_at: timestamp("locked_at", { withTimezone: true, mode: "date" }),
+    lock_expires_at: timestamp("lock_expires_at", { withTimezone: true, mode: "date" }),
+    locked_by: text("locked_by"),
+  },
+  (table) => [
+    uniqueIndex("provider_sync_jobs_idx_key").on(table.idx),
+    index("idx_provider_sync_jobs_status_run_at_priority").on(table.status, table.run_at, table.priority),
+    index("idx_provider_sync_jobs_provider_profile_status").on(
+      table.provider,
+      table.profile_id,
+      table.status,
+    ),
+    index("idx_provider_sync_jobs_dedupe_key").on(table.dedupe_key),
+  ],
+);
+
+export const providerWebhookReceipts = pgTable(
+  "provider_webhook_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    idx: serial("idx").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    received_at: timestamp("received_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    processed_at: timestamp("processed_at", { withTimezone: true, mode: "date" }),
+    provider: integrationProviderEnum("provider").notNull(),
+    integration_id: uuid("integration_id").references(() => integrations.id, { onDelete: "set null" }),
+    provider_account_id: text("provider_account_id"),
+    provider_event_id: text("provider_event_id"),
+    event_type: text("event_type").notNull(),
+    object_type: text("object_type"),
+    object_id: text("object_id"),
+    payload: jsonb("payload").notNull(),
+    payload_hash: text("payload_hash"),
+    processing_status: text("processing_status").notNull().default("pending"),
+    job_id: uuid("job_id").references(() => providerSyncJobs.id, { onDelete: "set null" }),
+    last_error: text("last_error"),
+  },
+  (table) => [
+    uniqueIndex("provider_webhook_receipts_idx_key").on(table.idx),
+    unique("provider_webhook_receipts_event_unique").on(
+      table.provider,
+      table.provider_account_id,
+      table.provider_event_id,
+    ),
+    index("idx_provider_webhook_receipts_provider_status").on(table.provider, table.processing_status),
+    index("idx_provider_webhook_receipts_job_id").on(table.job_id),
   ],
 );
 

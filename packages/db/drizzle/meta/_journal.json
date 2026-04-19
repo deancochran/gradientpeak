@@ -15,6 +15,34 @@
       "when": 1776102963534,
       "tag": "0001_add_route_visibility_and_coaching_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776466800000,
+      "tag": "0002_migrate_synced_events_to_integration_resource_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776468600000,
+      "tag": "0003_add_provider_sync_state_and_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776470400000,
+      "tag": "0004_add_provider_webhook_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776472200000,
+      "tag": "0005_schedule_wahoo_provider_sync_drain",
+      "breakpoints": true
     }
   ]
 }
