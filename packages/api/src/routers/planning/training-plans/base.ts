@@ -92,6 +92,7 @@ import {
 import { featureFlags } from "../../../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
+import { addEstimationToPlans } from "../../../utils/estimation-helpers";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
@@ -116,20 +117,6 @@ type FeasibilityState = z.infer<typeof feasibilityStateSchema>;
 type SafetyState = z.infer<typeof safetyStateSchema>;
 type DbClient = ReturnType<typeof getRequiredDb>;
 type LegacyPlanningReader = { from: (...args: any[]) => any };
-
-function assertDbAvailableForCachedActivityPlanEstimations(
-  db: DbClient | undefined,
-  context: string,
-): DbClient {
-  if (!db) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: `${context} requires a database-backed activity plan estimation cache`,
-    });
-  }
-
-  return db;
-}
 
 type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings">;
 
@@ -1588,27 +1575,73 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
     };
   }
 
-  const db = assertDbAvailableForCachedActivityPlanEstimations(
-    input.db,
-    "Structured weekly TSS estimation",
-  );
-  const estimationStore = createEventReadRepository(db);
-  const activityPlans = await db
-    .select()
-    .from(schema.activityPlans)
-    .where(inArray(schema.activityPlans.id, activityPlanIds));
+  if (input.db) {
+    const estimationStore = createEventReadRepository(input.db);
+    const activityPlans = await input.db
+      .select()
+      .from(schema.activityPlans)
+      .where(inArray(schema.activityPlans.id, activityPlanIds));
 
-  if (activityPlans.length === 0) {
+    if (activityPlans.length === 0) {
+      return {
+        weeklyTss: null,
+        latestScheduledDate,
+      };
+    }
+
+    const plansWithEstimations = await getActivityPlansDerivedMetrics(
+      activityPlans as any,
+      input.db,
+      estimationStore,
+      input.profileId,
+    );
+
+    const estimatedTssByPlanId = new Map(
+      plansWithEstimations.map((plan: any) => [plan.id, plan.estimated_tss || 0]),
+    );
+
+    const dailyTss = new Map<string, number>();
+    for (const event of materializedEvents) {
+      if (!event.activity_plan_id) {
+        continue;
+      }
+
+      const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id) || 0;
+      if (estimatedTss <= 0) {
+        continue;
+      }
+
+      dailyTss.set(event.scheduled_date, (dailyTss.get(event.scheduled_date) || 0) + estimatedTss);
+    }
+
+    return {
+      weeklyTss: estimateWeeklyTssFromDailyMap(dailyTss),
+      latestScheduledDate,
+    };
+  }
+
+  if (!input.supabase) {
     return {
       weeklyTss: null,
       latestScheduledDate,
     };
   }
 
-  const plansWithEstimations = await getActivityPlansDerivedMetrics(
+  const { data: activityPlans, error } = await input.supabase
+    .from("activity_plans")
+    .select("*")
+    .in("id", activityPlanIds);
+
+  if (error || !activityPlans || activityPlans.length === 0) {
+    return {
+      weeklyTss: null,
+      latestScheduledDate,
+    };
+  }
+
+  const plansWithEstimations = await addEstimationToPlans(
     activityPlans as any,
-    db,
-    estimationStore,
+    input.supabase,
     input.profileId,
   );
 
@@ -1622,7 +1655,7 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
       continue;
     }
 
-    const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id) || 0;
+    const estimatedTss = Number(estimatedTssByPlanId.get(event.activity_plan_id) || 0);
     if (estimatedTss <= 0) {
       continue;
     }
@@ -3640,13 +3673,7 @@ export async function getPlanTabProjectionService({
             estimationReader as any,
             profileId,
           )
-        : (() => {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message:
-                "Training plan projections require a database-backed activity plan estimation cache",
-            });
-          })()
+        : await addEstimationToPlans(activityPlans, estimationReader as any, profileId)
       : [];
   const failedEstimations = plansWithEstimations.filter(
     (item: any) => item.counts_toward_aggregation === false,
@@ -3664,7 +3691,7 @@ export async function getPlanTabProjectionService({
     if (!scheduledDate) continue;
 
     const planId = planned.activity_plan?.id;
-    const estimatedTss = planId ? estimatedTssByPlanId.get(planId) || 0 : 0;
+    const estimatedTss = planId ? Number(estimatedTssByPlanId.get(planId) || 0) : 0;
     scheduledByDate.set(scheduledDate, (scheduledByDate.get(scheduledDate) || 0) + estimatedTss);
   }
 

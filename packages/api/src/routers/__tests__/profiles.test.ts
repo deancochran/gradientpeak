@@ -14,6 +14,10 @@ vi.mock("../../infrastructure/repositories", () => ({
   createActivityAnalysisStore: analysisMocks.createActivityAnalysisStore,
 }));
 
+vi.mock("../../utils/profile-estimation-state", () => ({
+  bumpProfileEstimationState: vi.fn(async () => undefined),
+}));
+
 import { profilesRouter } from "../profiles";
 
 type TableName = "activities" | "activityEfforts" | "profileMetrics" | "profiles";

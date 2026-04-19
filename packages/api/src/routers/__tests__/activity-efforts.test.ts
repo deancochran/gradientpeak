@@ -10,6 +10,10 @@ vi.mock("node:crypto", () => ({
   randomUUID: () => randomUuidState.next,
 }));
 
+vi.mock("../../utils/profile-estimation-state", () => ({
+  bumpProfileEstimationState: vi.fn(async () => undefined),
+}));
+
 import { activityEffortsRouter } from "../activity-efforts";
 
 const userId = "11111111-1111-4111-8111-111111111111";

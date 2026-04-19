@@ -1,5 +1,10 @@
 import { activities, activityEfforts, profileMetrics, profiles } from "@repo/db";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../utils/profile-estimation-state", () => ({
+  bumpProfileEstimationState: vi.fn(async () => undefined),
+}));
+
 import { onboardingRouter } from "../onboarding";
 
 type InsertCall = {

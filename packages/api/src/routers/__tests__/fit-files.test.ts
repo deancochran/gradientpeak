@@ -13,6 +13,20 @@ vi.mock("@repo/db", () => ({
     metric_type: "profile_metrics.metric_type",
     recorded_at: "profile_metrics.recorded_at",
   },
+  profileEstimationState: {
+    profile_id: "profile_estimation_state.profile_id",
+    metrics_revision: "profile_estimation_state.metrics_revision",
+    performance_revision: "profile_estimation_state.performance_revision",
+    fitness_revision: "profile_estimation_state.fitness_revision",
+  },
+  activityPlans: {
+    id: "activity_plans.id",
+    profile_id: "activity_plans.profile_id",
+  },
+  activityPlanRefreshQueue: {
+    profile_id: "activity_plan_refresh_queue.profile_id",
+    activity_plan_id: "activity_plan_refresh_queue.activity_plan_id",
+  },
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -80,6 +94,10 @@ vi.mock("../../storage-service", () => ({
 
 vi.mock("../../db", () => ({
   getRequiredDb: () => mocks.db.current,
+}));
+
+vi.mock("../../utils/profile-estimation-state", () => ({
+  bumpProfileEstimationState: vi.fn(async () => undefined),
 }));
 
 import { fitFilesRouter } from "../fit-files";

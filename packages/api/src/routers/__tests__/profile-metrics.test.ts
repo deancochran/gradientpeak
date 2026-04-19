@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../utils/profile-estimation-state", () => ({
+  bumpProfileEstimationState: vi.fn(async () => undefined),
+}));
+
 import { profileMetricsRouter } from "../profile-metrics";
 
 type QueryPlan = {
