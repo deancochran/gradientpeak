@@ -4,8 +4,9 @@ import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { CalendarEventCard } from "@/components/calendar/CalendarEventCard";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
@@ -69,6 +70,11 @@ export default function CalendarDayScreen() {
   };
 
   const handleOpenEvent = (event: CalendarEvent) => {
+    if (event.event_type === "planned" && event.activity_plan?.id) {
+      navigateTo(ROUTES.PLAN.PLAN_DETAIL(event.activity_plan.id) as never);
+      return;
+    }
+
     const route = buildOpenEventRoute({
       id: event.id,
       event_type: event.event_type === null ? undefined : (event.event_type as any),
@@ -128,17 +134,44 @@ export default function CalendarDayScreen() {
                 </Text>
               </View>
 
-              {visibleEvents.map((event) => (
-                <CalendarEventCard
-                  key={event.id}
-                  event={event}
-                  canStart={getCanStartPlannedEvent(event)}
-                  onPress={() => handleOpenEvent(event)}
-                  onQuickActionPress={
-                    getCanStartPlannedEvent(event) ? () => handleQuickActionPress(event) : null
-                  }
-                />
-              ))}
+              {visibleEvents.map((event) =>
+                event.event_type === "planned" && event.activity_plan ? (
+                  <View key={event.id} className="gap-2">
+                    <ActivityPlanCard
+                      plannedActivity={{
+                        id: event.id,
+                        activity_plan_id: String(event.activity_plan.id),
+                        activity_plan: event.activity_plan as any,
+                        scheduled_date: event.scheduled_date ?? event.starts_at ?? "",
+                        notes: event.notes,
+                        completed_activity_id: (event as any).completed_activity_id ?? null,
+                      }}
+                      onPress={() => handleOpenEvent(event)}
+                      showScheduleInfo={true}
+                    />
+                    {getCanStartPlannedEvent(event) ? (
+                      <TouchableOpacity
+                        onPress={() => handleQuickActionPress(event)}
+                        activeOpacity={0.85}
+                        className="self-end rounded-full border border-border bg-background px-3 py-2"
+                        testID={`schedule-event-action-${event.id}`}
+                      >
+                        <Text className="text-xs font-medium text-foreground">Start Activity</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ) : (
+                  <CalendarEventCard
+                    key={event.id}
+                    event={event}
+                    canStart={getCanStartPlannedEvent(event)}
+                    onPress={() => handleOpenEvent(event)}
+                    onQuickActionPress={
+                      getCanStartPlannedEvent(event) ? () => handleQuickActionPress(event) : null
+                    }
+                  />
+                ),
+              )}
             </>
           ) : (
             <View

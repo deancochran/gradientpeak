@@ -1,15 +1,12 @@
-import {
-  buildEstimationContext,
-  decodePolyline,
-  estimateActivity,
-  type IntervalStepV2,
-} from "@repo/core";
+import { decodePolyline, type IntervalStepV2 } from "@repo/core";
 import { useMemo } from "react";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 
 type ActivityPlanLike = {
   activity_category: string;
+  estimated_duration?: number | null;
   estimated_tss?: number | null;
+  intensity_factor?: number | null;
   profile_id?: string | null;
   structure?: unknown;
   [key: string]: unknown;
@@ -19,7 +16,7 @@ type PlannedActivityLike = {
   activity_plan?: ActivityPlanLike | null;
 };
 
-type ProfileLike = Parameters<typeof buildEstimationContext>[0]["userProfile"] & {
+type ProfileLike = {
   id?: string | null;
 };
 
@@ -78,17 +75,6 @@ export function useActivityPlanDetailViewModel({
     return null;
   }, [activityPlanParam, fetchedPlan, plannedActivity, template]);
 
-  const estimates = useMemo(() => {
-    if (!activityPlan) return null;
-    try {
-      const context = buildEstimationContext({ userProfile: profile || {}, activityPlan });
-      return estimateActivity(context);
-    } catch (error) {
-      console.error("Estimation error:", error);
-      return null;
-    }
-  }, [activityPlan, profile]);
-
   const steps: IntervalStepV2[] = useMemo(() => {
     const intervals = getIntervals(activityPlan?.structure);
     if (intervals.length === 0) return [];
@@ -106,11 +92,12 @@ export function useActivityPlanDetailViewModel({
     [steps],
   );
 
-  const durationMinutes = estimates
-    ? Math.round(estimates.duration / 60)
-    : Math.round(totalDuration / 60000);
-  const tss = estimates ? Math.round(estimates.tss) : activityPlan?.estimated_tss;
-  const intensityFactor = estimates?.intensityFactor;
+  const estimatedDurationMinutes = activityPlan?.estimated_duration
+    ? Math.round(activityPlan.estimated_duration / 60)
+    : null;
+  const durationMinutes = estimatedDurationMinutes ?? Math.round(totalDuration / 60000);
+  const tss = activityPlan?.estimated_tss ?? null;
+  const intensityFactor = activityPlan?.intensity_factor ?? null;
   const isOwnedByUser = activityPlan?.profile_id === profile?.id;
   const visibilityLabel = isOwnedByUser ? (isPublic ? "Public" : "Private") : "Read only";
   const detailBadges = activityPlan
@@ -137,7 +124,6 @@ export function useActivityPlanDetailViewModel({
   return {
     activityPlan,
     detailBadges,
-    estimates,
     intensityFactor,
     isOwnedByUser,
     routePreview,

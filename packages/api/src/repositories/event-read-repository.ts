@@ -43,6 +43,7 @@ type EstimationRoute = {
   distance_meters: number | null;
   total_ascent: ActivityRouteRow["total_ascent"];
   total_descent: ActivityRouteRow["total_descent"];
+  updated_at: string;
 };
 type ProjectionActivity = Pick<
   ActivityRow,

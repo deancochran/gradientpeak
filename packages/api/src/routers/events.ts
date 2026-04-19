@@ -31,7 +31,10 @@ import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/w
 import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { addEstimationToPlan, addEstimationToPlans } from "../utils/estimation-helpers";
+import {
+  getActivityPlanDerivedMetrics,
+  getActivityPlansDerivedMetrics,
+} from "../utils/activity-plan-derived-metrics";
 
 const storageService = getApiStorageService();
 
@@ -866,8 +869,9 @@ export const eventsRouter = createTRPCRouter({
       const event = mapEvent(data as PlannedEventRecord);
 
       if (event.activity_plan) {
-        const planWithEstimation = await addEstimationToPlan(
+        const planWithEstimation = await getActivityPlanDerivedMetrics(
           event.activity_plan,
+          getRequiredDb(ctx),
           eventReadRepository,
           ctx.session.user.id,
         );
@@ -900,8 +904,9 @@ export const eventsRouter = createTRPCRouter({
         .map((event) => event.activity_plan)
         .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
 
-      const plansWithEstimation = await addEstimationToPlans(
+      const plansWithEstimation = await getActivityPlansDerivedMetrics(
         plans,
+        getRequiredDb(ctx),
         eventReadRepository,
         ctx.session.user.id,
       );
@@ -1733,8 +1738,9 @@ export const eventsRouter = createTRPCRouter({
 
     let itemsWithEstimation = events;
     if (itemsWithPlans.length > 0) {
-      const plansWithEstimation = await addEstimationToPlans(
+      const plansWithEstimation = await getActivityPlansDerivedMetrics(
         itemsWithPlans.map((event) => event.activity_plan),
+        getRequiredDb(ctx),
         eventReadRepository,
         ctx.session.user.id,
       );
@@ -2004,8 +2010,9 @@ export const eventsRouter = createTRPCRouter({
           .map((event) => event.activity_plan)
           .filter((plan): plan is NonNullable<typeof plan> => plan !== null);
 
-        const plansWithEstimation = await addEstimationToPlans(
+        const plansWithEstimation = await getActivityPlansDerivedMetrics(
           plans,
+          getRequiredDb(ctx),
           eventReadRepository,
           ctx.session.user.id,
         );

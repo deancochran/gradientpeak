@@ -56,14 +56,6 @@ const routes = [
     total_ascent: 180,
     description: "Flat opening miles with a steady climb home.",
   },
-  {
-    id: "route-2",
-    name: "Canyon Tempo",
-    activity_category: "outdoor_run",
-    total_distance: 12400,
-    total_ascent: 260,
-    description: "A longer route with a steady climb through the canyon.",
-  },
 ];
 
 const users = [
@@ -245,17 +237,15 @@ describe("discover screen", () => {
     expect(screen.getByTestId("discover-section-routes-2")).toBeTruthy();
     expect(screen.getByTestId("discover-section-users-3")).toBeTruthy();
     expect(screen.queryByText("Search anything in Discover")).toBeNull();
-    expect(screen.queryByText("Change in filters")).toBeNull();
   });
 
-  it("uses type filters to exclude deselected result sections", async () => {
+  it("uses live type filters to exclude deselected result sections", async () => {
     renderNative(<DiscoverScreen />);
 
     fireEvent.press(screen.getByTestId("discover-filter-button"));
     fireEvent.press(screen.getByTestId("discover-filter-type-activityPlans"));
     fireEvent.press(screen.getByTestId("discover-filter-type-routes"));
     fireEvent.press(screen.getByTestId("discover-filter-type-users"));
-    fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
       expect(screen.queryByTestId("discover-section-activityPlans-0")).toBeNull();
@@ -265,6 +255,24 @@ describe("discover screen", () => {
     });
 
     expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
+  });
+
+  it("updates training plan queries from bottom sheet interactions", async () => {
+    renderNative(<DiscoverScreen />);
+
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.press(screen.getByTestId("discover-filter-trainingPlans-sport-run"));
+    fireEvent.press(screen.getByTestId("discover-filter-trainingPlans-experience-beginner"));
+
+    await waitFor(() => {
+      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
+        search: undefined,
+        sport: "run",
+        experience_level: "beginner",
+        min_weeks: undefined,
+        max_weeks: undefined,
+      });
+    });
   });
 
   it("searches across all result types with the same debounced query", async () => {
@@ -286,47 +294,44 @@ describe("discover screen", () => {
           includeEstimation: false,
           ownerScope: "all",
           search: "river",
+          activityCategory: undefined,
           limit: 20,
         },
         expect.objectContaining({ getNextPageParam: expect.any(Function) }),
       );
-      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({ search: "river" });
+      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
+        search: "river",
+        sport: undefined,
+        experience_level: undefined,
+        min_weeks: undefined,
+        max_weeks: undefined,
+      });
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: "river",
+          activityCategory: undefined,
           limit: 20,
         },
         expect.objectContaining({ getNextPageParam: expect.any(Function) }),
       );
-      expect(screen.getByTestId("discover-section-routes-0")).toBeTruthy();
-      expect(screen.getByTestId("discover-section-activityPlans-1")).toBeTruthy();
     });
   });
 
-  it("can show profiles alongside the mixed search feed", () => {
-    renderNative(<DiscoverScreen />);
-
-    expect(screen.getByText("alpinefox")).toBeTruthy();
-    expect(screen.getByText("Open profile")).toBeTruthy();
-  });
-
-  it("shows an empty state when all types are deselected", async () => {
+  it("can filter routes while keeping the mixed feed model", async () => {
     renderNative(<DiscoverScreen />);
 
     fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-activityPlans"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-trainingPlans"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-routes"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-users"));
-    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+    fireEvent.press(screen.getByTestId("discover-filter-routes-category-run"));
 
     await waitFor(() => {
-      expect(screen.getByText("No result types selected")).toBeTruthy();
-      expect(
-        screen.getByText(
-          "Choose at least one content type in filters to build your discover feed.",
-        ),
-      ).toBeTruthy();
+      expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          search: undefined,
+          activityCategory: "run",
+          limit: 20,
+        },
+        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+      );
     });
   });
 });

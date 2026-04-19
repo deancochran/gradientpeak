@@ -4,12 +4,12 @@ import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { Calendar, CheckCircle2, Heart } from "lucide-react-native";
+import { Calendar, Heart } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { api } from "@/lib/api";
-import { getActivityConfig } from "@/lib/constants/activities";
+import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
 
 // ============================================
 // TYPES
@@ -24,6 +24,7 @@ export interface ActivityPlan {
   structure?: ActivityPlanStructureV2;
   estimated_duration?: number | null; // in seconds
   estimated_tss?: number | null;
+  intensity_factor?: number | null;
   route_id?: string | null;
   notes?: string | null;
   profile_id?: string | null;
@@ -50,9 +51,11 @@ export interface ActivityPlanCardData {
   id: string;
   name: string;
   activityType: string; // activity_category
+  description?: string;
   structure?: ActivityPlanStructureV2;
   estimatedDuration?: number; // in seconds
   estimatedTss?: number;
+  intensityFactor?: number;
   estimatedDistance?: number; // in km, if route provided
   routeId?: string;
   routeName?: string;
@@ -94,7 +97,10 @@ export function ActivityPlanCard({
   // Transform database objects to internal format
   const activity = legacyActivity || transformToCardData(activityPlan, plannedActivity);
 
-  const config = getActivityConfig(activity.activityType);
+  const config =
+    activity.activityType in { run: true, bike: true, swim: true, strength: true, other: true }
+      ? getActivityCategoryConfig(activity.activityType)
+      : getActivityConfig(activity.activityType);
 
   // Check if has structure with steps/intervals
   const hasStructure = Boolean(
@@ -136,45 +142,46 @@ export function ActivityPlanCard({
       onPress={onPress}
       activeOpacity={isInteractive ? 0.7 : 1}
       disabled={!isInteractive}
+      testID={`activity-plan-card-${activity.id}`}
     >
       <Card
         className={`${isHero ? "border-2 border-primary" : ""} ${activity.isCompleted ? "opacity-60" : ""}`}
       >
-        <CardContent className="p-1.5">
-          {/* Header Row: Icon + Title */}
-          <View className="flex-row items-start mb-1">
-            {/* Small Activity Icon */}
-            <Icon
-              as={config.icon}
-              size={14}
-              className="text-muted-foreground mr-1.5 mt-0.5 shrink-0"
-            />
+        <CardContent className={isCompact ? "p-3" : "p-4"}>
+          <View className="mb-3 flex-row items-start gap-3">
+            <View className={`shrink-0 rounded-full p-2 ${config.bgColor}`}>
+              <Icon as={config.icon} size={isCompact ? 14 : 16} className={config.color} />
+            </View>
 
-            {/* Title Column */}
-            <View className="flex-1 min-w-0">
-              <Text className="font-semibold text-xs" numberOfLines={1}>
+            <View className="min-w-0 flex-1">
+              <Text
+                className={isCompact ? "text-sm font-semibold" : "text-base font-semibold"}
+                numberOfLines={1}
+              >
                 {activity.name}
               </Text>
-
-              {/* Duration + TSS inline */}
-              <View className="flex-row items-center gap-1.5">
-                {activity.estimatedDuration !== undefined && activity.estimatedDuration > 0 && (
-                  <Text className="text-xs text-muted-foreground">
-                    {formatDurationSec(Math.round(activity.estimatedDuration))}
-                  </Text>
-                )}
-                {activity.estimatedTss !== undefined && activity.estimatedTss > 0 && (
-                  <Text className="text-xs text-muted-foreground">
-                    {Math.round(activity.estimatedTss)} TSS
-                  </Text>
-                )}
-              </View>
             </View>
+
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                handleToggleLike();
+              }}
+              className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5"
+            >
+              <Icon
+                as={Heart}
+                size={14}
+                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
+              />
+              <Text className="ml-1 text-xs font-medium text-muted-foreground">
+                {likesCount > 0 ? `${likesCount}` : "Like"}
+              </Text>
+            </Pressable>
           </View>
 
-          {/* Schedule Info Badge (if scheduled) */}
           {showScheduleInfo && activity.scheduledDate && (
-            <View className="flex-row items-center mb-1.5">
+            <View className="mb-2 flex-row items-center">
               <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
               <Text className="text-xs text-muted-foreground">
                 {formatScheduledDateTime(activity.scheduledDate)}
@@ -182,51 +189,56 @@ export function ActivityPlanCard({
             </View>
           )}
 
-          {/* Intensity Profile Chart */}
+          {(activity.estimatedDuration !== undefined ||
+            activity.estimatedTss !== undefined ||
+            activity.intensityFactor !== undefined ||
+            activity.structure?.intervals) && (
+            <View className="mb-3 rounded-lg bg-muted/30 px-2.5 py-2">
+              <View className="flex-row justify-between gap-2">
+                <CompactMetric
+                  label="Duration"
+                  value={
+                    activity.estimatedDuration && activity.estimatedDuration > 0
+                      ? formatDurationSec(Math.round(activity.estimatedDuration))
+                      : "--"
+                  }
+                />
+                <CompactMetric
+                  label="TSS"
+                  value={
+                    activity.estimatedTss !== undefined && activity.estimatedTss > 0
+                      ? `${Math.round(activity.estimatedTss)}`
+                      : "--"
+                  }
+                />
+                <CompactMetric
+                  label="Intensity"
+                  value={
+                    activity.intensityFactor !== undefined && activity.intensityFactor > 0
+                      ? activity.intensityFactor.toFixed(2)
+                      : "--"
+                  }
+                />
+                <CompactMetric label="Steps" value={`${countStructureSteps(activity.structure)}`} />
+              </View>
+            </View>
+          )}
+
           {hasStructure && !activity.isCompleted && activity.structure && (
-            <View className="mb-1.5 rounded overflow-hidden">
+            <View className="mb-3 overflow-hidden rounded-md">
               <TimelineChart structure={activity.structure} height={50} compact={true} />
             </View>
           )}
 
-          {/* Description (2-line clamp with ellipsis) */}
           {activity.notes && (
             <Text
-              className="text-[10px] text-muted-foreground leading-4"
+              className="text-sm leading-5 text-muted-foreground"
               numberOfLines={2}
               ellipsizeMode="tail"
             >
               {activity.notes}
             </Text>
           )}
-
-          {/* Completed Badge */}
-          {activity.isCompleted && (
-            <View className="flex-row items-center mt-1.5">
-              <Icon as={CheckCircle2} size={12} className="text-green-600 mr-1" />
-              <Text className="text-xs text-green-600">Completed</Text>
-            </View>
-          )}
-
-          {/* Social Actions (Like) */}
-          <View className="flex-row items-center mt-1 pt-1 border-t border-border">
-            <Pressable
-              onPress={(e) => {
-                e.stopPropagation();
-                handleToggleLike();
-              }}
-              className="flex-row items-center"
-            >
-              <Icon
-                as={Heart}
-                size={14}
-                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-              />
-              <Text className="ml-1.5 text-[10px] text-muted-foreground">
-                {likesCount > 0 ? likesCount : ""}
-              </Text>
-            </Pressable>
-          </View>
         </CardContent>
       </Card>
     </CardWrapper>
@@ -260,18 +272,40 @@ function transformToCardData(
     id: plannedActivity?.id || plan.id,
     name: plan.name,
     activityType: plan.activity_category,
+    description: plan.description || undefined,
     structure: plan.structure,
     estimatedDuration: plan.estimated_duration || undefined,
     estimatedTss: plan.estimated_tss || undefined,
+    intensityFactor: plan.intensity_factor || undefined,
     estimatedDistance: routeInfo?.distance,
     routeId: plan.route_id || undefined,
     routeName: routeInfo?.name,
-    notes: plannedActivity?.notes || plan.notes || undefined,
+    notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
     scheduledDate: plannedActivity?.scheduled_date,
     isCompleted: Boolean(plannedActivity?.completed_activity_id),
     likes_count: plan.likes_count,
     has_liked: plan.has_liked,
   };
+}
+
+function countStructureSteps(structure?: ActivityPlanStructureV2): number {
+  if (!structure?.intervals) return 0;
+
+  return structure.intervals.reduce((total, interval) => {
+    const repetitions = interval.repetitions || 1;
+    return total + interval.steps.length * repetitions;
+  }, 0);
+}
+
+function CompactMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-1 items-center gap-0.5">
+      <Text className="text-[10px] text-muted-foreground">{label}</Text>
+      <Text className="text-[11px] font-semibold text-foreground" numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
 }
 
 /**

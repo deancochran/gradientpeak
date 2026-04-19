@@ -37,13 +37,63 @@ const TABS = [
 const SEARCH_PLACEHOLDER = "Search plans, routes, and profiles";
 const PREVIEW_LIMIT = 4;
 
+const ACTIVITY_CATEGORY_OPTIONS = [
+  { id: "run", label: "Running" },
+  { id: "bike", label: "Cycling" },
+  { id: "swim", label: "Swimming" },
+  { id: "strength", label: "Strength" },
+  { id: "other", label: "Other" },
+] as const;
+
+const TRAINING_PLAN_SPORT_OPTIONS = [
+  { id: "run", label: "Running" },
+  { id: "bike", label: "Cycling" },
+  { id: "swim", label: "Swimming" },
+  { id: "strength", label: "Strength" },
+  { id: "other", label: "Other" },
+] as const;
+
+const TRAINING_PLAN_EXPERIENCE_OPTIONS = [
+  { id: "beginner", label: "Beginner" },
+  { id: "intermediate", label: "Intermediate" },
+  { id: "advanced", label: "Advanced" },
+] as const;
+
+const TRAINING_PLAN_DURATION_PRESETS = [
+  { id: "4-8", label: "4-8 weeks", minWeeks: 4, maxWeeks: 8 },
+  { id: "8-12", label: "8-12 weeks", minWeeks: 8, maxWeeks: 12 },
+  { id: "12+", label: "12+ weeks", minWeeks: 12, maxWeeks: undefined },
+] as const;
+
 export type TabType = (typeof TABS)[number]["id"];
+type DiscoverCategoryId = (typeof ACTIVITY_CATEGORY_OPTIONS)[number]["id"];
 
 type DiscoverTypeFilters = {
   selectedTypes: TabType[];
 };
 
+type ActivityPlanFilters = {
+  categoryId: DiscoverCategoryId | null;
+};
+
+type TrainingPlanFilters = {
+  sport: DiscoverCategoryId | null;
+  experienceLevel: "beginner" | "intermediate" | "advanced" | null;
+  durationPreset: "4-8" | "8-12" | "12+" | null;
+};
+
+type RouteFilters = {
+  categoryId: DiscoverCategoryId | null;
+};
+
 const ALL_DISCOVER_TYPES = TABS.map((tab) => tab.id);
+const DEFAULT_ACTIVITY_PLAN_FILTERS: ActivityPlanFilters = { categoryId: null };
+const DEFAULT_TRAINING_PLAN_FILTERS: TrainingPlanFilters = {
+  sport: null,
+  experienceLevel: null,
+  durationPreset: null,
+};
+const DEFAULT_ROUTE_FILTERS: RouteFilters = { categoryId: null };
 
 const ROUTE_CATEGORY_LABELS: Record<string, string> = {
   run: "Run",
@@ -75,6 +125,33 @@ function useDebounce(value: string, delay: number): string {
 
 function areAllTypesSelected(selectedTypes: readonly TabType[]) {
   return selectedTypes.length === ALL_DISCOVER_TYPES.length;
+}
+
+function hasActivityPlanFilters(filters: ActivityPlanFilters) {
+  return Boolean(filters.categoryId);
+}
+
+function hasTrainingPlanFilters(filters: TrainingPlanFilters) {
+  return Boolean(filters.sport || filters.experienceLevel || filters.durationPreset);
+}
+
+function hasRouteFilters(filters: RouteFilters) {
+  return Boolean(filters.categoryId);
+}
+
+function getDurationRange(preset: TrainingPlanFilters["durationPreset"]): {
+  minWeeks?: number;
+  maxWeeks?: number;
+} {
+  const match = TRAINING_PLAN_DURATION_PRESETS.find((option) => option.id === preset);
+  if (!match) {
+    return {};
+  }
+
+  return {
+    minWeeks: match.minWeeks,
+    maxWeeks: match.maxWeeks,
+  };
 }
 
 function getTypeLabel(type: TabType) {
@@ -112,12 +189,32 @@ export default function DiscoverPage() {
   const [draftTypeFilters, setDraftTypeFilters] = useState<DiscoverTypeFilters>({
     selectedTypes: [...ALL_DISCOVER_TYPES],
   });
+  const [activityPlanFilters, setActivityPlanFilters] = useState<ActivityPlanFilters>(
+    DEFAULT_ACTIVITY_PLAN_FILTERS,
+  );
+  const [trainingPlanFilters, setTrainingPlanFilters] = useState<TrainingPlanFilters>(
+    DEFAULT_TRAINING_PLAN_FILTERS,
+  );
+  const [routeFilters, setRouteFilters] = useState<RouteFilters>(DEFAULT_ROUTE_FILTERS);
+  const [draftActivityPlanFilters, setDraftActivityPlanFilters] = useState<ActivityPlanFilters>(
+    DEFAULT_ACTIVITY_PLAN_FILTERS,
+  );
+  const [draftTrainingPlanFilters, setDraftTrainingPlanFilters] = useState<TrainingPlanFilters>(
+    DEFAULT_TRAINING_PLAN_FILTERS,
+  );
+  const [draftRouteFilters, setDraftRouteFilters] = useState<RouteFilters>(DEFAULT_ROUTE_FILTERS);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
   const selectedTypes = typeFilters.selectedTypes;
   const hasTypeFilters = !areAllTypesSelected(selectedTypes);
+  const hasSubFilters =
+    hasActivityPlanFilters(activityPlanFilters) ||
+    hasTrainingPlanFilters(trainingPlanFilters) ||
+    hasRouteFilters(routeFilters);
+  const hasAnyFilters = hasTypeFilters || hasSubFilters;
+  const trainingPlanDurationRange = getDurationRange(trainingPlanFilters.durationPreset);
 
   const activityPlansInfiniteQuery = api.activityPlans.list.useInfiniteQuery(
     {
@@ -126,6 +223,7 @@ export default function DiscoverPage() {
       includeEstimation: false,
       ownerScope: "all",
       search: debouncedSearch || undefined,
+      activityCategory: activityPlanFilters.categoryId || undefined,
       limit: 20,
     },
     {
@@ -135,11 +233,16 @@ export default function DiscoverPage() {
 
   const trainingPlansQuery = api.trainingPlans.listTemplates.useQuery({
     search: debouncedSearch || undefined,
+    sport: trainingPlanFilters.sport || undefined,
+    experience_level: trainingPlanFilters.experienceLevel || undefined,
+    min_weeks: trainingPlanDurationRange.minWeeks,
+    max_weeks: trainingPlanDurationRange.maxWeeks,
   });
 
   const routesInfiniteQuery = api.routes.list.useInfiniteQuery(
     {
       search: debouncedSearch || undefined,
+      activityCategory: routeFilters.categoryId || undefined,
       limit: 20,
     },
     {
@@ -189,7 +292,30 @@ export default function DiscoverPage() {
 
   const syncDraftFiltersFromApplied = useCallback(() => {
     setDraftTypeFilters({ selectedTypes: [...selectedTypes] });
-  }, [selectedTypes]);
+    setDraftActivityPlanFilters(activityPlanFilters);
+    setDraftTrainingPlanFilters(trainingPlanFilters);
+    setDraftRouteFilters(routeFilters);
+  }, [selectedTypes, activityPlanFilters, trainingPlanFilters, routeFilters]);
+
+  const handleDraftTypeFiltersChange = useCallback((filters: DiscoverTypeFilters) => {
+    setDraftTypeFilters(filters);
+    setTypeFilters({ selectedTypes: [...filters.selectedTypes] });
+  }, []);
+
+  const handleDraftActivityPlanFiltersChange = useCallback((filters: ActivityPlanFilters) => {
+    setDraftActivityPlanFilters(filters);
+    setActivityPlanFilters(filters);
+  }, []);
+
+  const handleDraftTrainingPlanFiltersChange = useCallback((filters: TrainingPlanFilters) => {
+    setDraftTrainingPlanFilters(filters);
+    setTrainingPlanFilters(filters);
+  }, []);
+
+  const handleDraftRouteFiltersChange = useCallback((filters: RouteFilters) => {
+    setDraftRouteFilters(filters);
+    setRouteFilters(filters);
+  }, []);
 
   const handleTemplatePress = (template: any) => {
     navigateTo({
@@ -235,15 +361,24 @@ export default function DiscoverPage() {
 
   const handleApplyFilters = () => {
     setTypeFilters({ selectedTypes: [...draftTypeFilters.selectedTypes] });
+    setActivityPlanFilters(draftActivityPlanFilters);
+    setTrainingPlanFilters(draftTrainingPlanFilters);
+    setRouteFilters(draftRouteFilters);
     setIsFilterSheetOpen(false);
   };
 
   const handleResetDraftFilters = () => {
     setDraftTypeFilters({ selectedTypes: [...ALL_DISCOVER_TYPES] });
+    setDraftActivityPlanFilters(DEFAULT_ACTIVITY_PLAN_FILTERS);
+    setDraftTrainingPlanFilters(DEFAULT_TRAINING_PLAN_FILTERS);
+    setDraftRouteFilters(DEFAULT_ROUTE_FILTERS);
   };
 
   const handleResetFilters = useCallback(() => {
     setTypeFilters({ selectedTypes: [...ALL_DISCOVER_TYPES] });
+    setActivityPlanFilters(DEFAULT_ACTIVITY_PLAN_FILTERS);
+    setTrainingPlanFilters(DEFAULT_TRAINING_PLAN_FILTERS);
+    setRouteFilters(DEFAULT_ROUTE_FILTERS);
   }, []);
 
   const handleEmptyStateAction = () => {
@@ -251,7 +386,7 @@ export default function DiscoverPage() {
       setSearchQuery("");
     }
 
-    if (hasTypeFilters) {
+    if (hasAnyFilters) {
       handleResetFilters();
     }
   };
@@ -287,19 +422,19 @@ export default function DiscoverPage() {
 
           <TouchableOpacity
             className={`absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border ${
-              hasTypeFilters ? "border-primary bg-primary" : "border-border bg-background"
+              hasAnyFilters ? "border-primary bg-primary" : "border-border bg-background"
             }`}
             onPress={handleOpenFilterSheet}
             activeOpacity={0.85}
             testID="discover-filter-button"
-            accessibilityState={{ selected: hasTypeFilters }}
+            accessibilityState={{ selected: hasAnyFilters }}
           >
             <Icon
               as={SlidersHorizontal}
               size={16}
-              className={hasTypeFilters ? "text-primary-foreground" : "text-foreground"}
+              className={hasAnyFilters ? "text-primary-foreground" : "text-foreground"}
             />
-            {hasTypeFilters ? (
+            {hasAnyFilters ? (
               <View
                 className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-background"
                 testID="discover-filter-button-dot"
@@ -335,9 +470,9 @@ export default function DiscoverPage() {
     }
 
     const actionLabel =
-      searchQuery.length > 0 && hasTypeFilters
+      searchQuery.length > 0 && hasAnyFilters
         ? "Clear search & filters"
-        : hasTypeFilters
+        : hasAnyFilters
           ? "Reset filters"
           : searchQuery.length > 0
             ? "Clear search"
@@ -356,15 +491,12 @@ export default function DiscoverPage() {
     );
   };
 
-  const renderSectionHeader = (type: TabType, count: number, description: string) => (
-    <View className="mb-3 gap-1">
-      <View className="flex-row items-center justify-between gap-3">
-        <Text className="text-base font-semibold text-foreground">{getTypeLabel(type)}</Text>
-        <Text className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-          {count} result{count === 1 ? "" : "s"}
-        </Text>
-      </View>
-      <Text className="text-sm text-muted-foreground">{description}</Text>
+  const renderSectionHeader = (type: TabType, count: number) => (
+    <View className="mb-3 flex-row items-center justify-between gap-3">
+      <Text className="text-base font-semibold text-foreground">{getTypeLabel(type)}</Text>
+      <Text className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+        {count} result{count === 1 ? "" : "s"}
+      </Text>
     </View>
   );
 
@@ -375,11 +507,7 @@ export default function DiscoverPage() {
 
     return (
       <View className="mb-6 px-4" testID={`discover-section-activityPlans-${index}`}>
-        {renderSectionHeader(
-          "activityPlans",
-          activityPlans.length,
-          "Open any session to inspect the structure, route, and scheduling options.",
-        )}
+        {renderSectionHeader("activityPlans", activityPlans.length)}
         <View className="gap-4">
           {activityPlans.slice(0, PREVIEW_LIMIT).map((item) => (
             <ActivityPlanCard
@@ -413,11 +541,7 @@ export default function DiscoverPage() {
 
     return (
       <View className="mb-6 px-4" testID={`discover-section-trainingPlans-${index}`}>
-        {renderSectionHeader(
-          "trainingPlans",
-          trainingPlans.length,
-          "Compare commitment, cadence, and focus before you open a plan.",
-        )}
+        {renderSectionHeader("trainingPlans", trainingPlans.length)}
         <View className="gap-3">
           {trainingPlans.slice(0, PREVIEW_LIMIT).map((item) => (
             <TrainingPlanCard
@@ -438,11 +562,7 @@ export default function DiscoverPage() {
 
     return (
       <View className="mb-6 px-4" testID={`discover-section-routes-${index}`}>
-        {renderSectionHeader(
-          "routes",
-          routes.length,
-          "Open a route when the distance and climbing feel like the right fit.",
-        )}
+        {renderSectionHeader("routes", routes.length)}
         <View className="gap-3">
           {routes.slice(0, PREVIEW_LIMIT).map((item) => (
             <RouteCard key={item.id} route={item} onPress={() => handleRoutePress(item)} />
@@ -471,11 +591,7 @@ export default function DiscoverPage() {
 
     return (
       <View className="mb-6 px-4" testID={`discover-section-users-${index}`}>
-        {renderSectionHeader(
-          "users",
-          users.length,
-          "Profiles stay simple here: open one to decide whether you want to follow or message.",
-        )}
+        {renderSectionHeader("users", users.length)}
         <View className="gap-3">
           {users.slice(0, PREVIEW_LIMIT).map((item) => (
             <UserCard key={item.id} user={item} onPress={() => handleUserPress(item)} />
@@ -528,12 +644,18 @@ export default function DiscoverPage() {
       {renderSearchInput()}
       {renderContent()}
       <DiscoverFilterSheet
+        visible={isFilterSheetOpen}
         discoverTypeFilters={draftTypeFilters}
-        onDiscoverTypeFiltersChange={setDraftTypeFilters}
+        onDiscoverTypeFiltersChange={handleDraftTypeFiltersChange}
+        activityPlanFilters={draftActivityPlanFilters}
+        onActivityPlanFiltersChange={handleDraftActivityPlanFiltersChange}
+        trainingPlanFilters={draftTrainingPlanFilters}
+        onTrainingPlanFiltersChange={handleDraftTrainingPlanFiltersChange}
+        routeFilters={draftRouteFilters}
+        onRouteFiltersChange={handleDraftRouteFiltersChange}
+        onReset={handleResetDraftFilters}
         onApply={handleApplyFilters}
         onClose={handleCloseFilterSheet}
-        onReset={handleResetDraftFilters}
-        visible={isFilterSheetOpen}
       />
     </View>
   );
@@ -572,6 +694,12 @@ interface DiscoverFilterSheetProps {
   visible: boolean;
   discoverTypeFilters: DiscoverTypeFilters;
   onDiscoverTypeFiltersChange: (filters: DiscoverTypeFilters) => void;
+  activityPlanFilters: ActivityPlanFilters;
+  onActivityPlanFiltersChange: (filters: ActivityPlanFilters) => void;
+  trainingPlanFilters: TrainingPlanFilters;
+  onTrainingPlanFiltersChange: (filters: TrainingPlanFilters) => void;
+  routeFilters: RouteFilters;
+  onRouteFiltersChange: (filters: RouteFilters) => void;
   onReset: () => void;
   onApply: () => void;
   onClose: () => void;
@@ -581,6 +709,12 @@ function DiscoverFilterSheet({
   visible,
   discoverTypeFilters,
   onDiscoverTypeFiltersChange,
+  activityPlanFilters,
+  onActivityPlanFiltersChange,
+  trainingPlanFilters,
+  onTrainingPlanFiltersChange,
+  routeFilters,
+  onRouteFiltersChange,
   onReset,
   onApply,
   onClose,
@@ -600,7 +734,11 @@ function DiscoverFilterSheet({
     [],
   );
 
-  const isResetDisabled = areAllTypesSelected(discoverTypeFilters.selectedTypes);
+  const isResetDisabled =
+    areAllTypesSelected(discoverTypeFilters.selectedTypes) &&
+    !hasActivityPlanFilters(activityPlanFilters) &&
+    !hasTrainingPlanFilters(trainingPlanFilters) &&
+    !hasRouteFilters(routeFilters);
 
   if (!visible) {
     return null;
@@ -621,13 +759,10 @@ function DiscoverFilterSheet({
         >
           <View className="gap-1 border-b border-border pb-4">
             <Text className="text-lg font-semibold text-foreground">Filters</Text>
-            <Text className="text-sm text-muted-foreground">
-              Choose which result types stay visible in Discover.
-            </Text>
           </View>
 
           <View className="mt-6 gap-3">
-            <Text className="text-sm font-medium text-foreground">Include content types</Text>
+            <Text className="text-sm font-medium text-foreground">Type</Text>
             <View className="flex-row flex-wrap gap-2">
               {TABS.map((tab) => {
                 const isActive = discoverTypeFilters.selectedTypes.includes(tab.id);
@@ -650,6 +785,115 @@ function DiscoverFilterSheet({
               })}
             </View>
           </View>
+
+          {discoverTypeFilters.selectedTypes.includes("activityPlans") ? (
+            <View className="mt-6 gap-3">
+              <Text className="text-sm font-medium text-foreground">Activity plan type</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {ACTIVITY_CATEGORY_OPTIONS.map((category) => (
+                  <FilterChip
+                    key={category.id}
+                    label={category.label}
+                    isActive={activityPlanFilters.categoryId === category.id}
+                    onPress={() =>
+                      onActivityPlanFiltersChange({
+                        categoryId:
+                          activityPlanFilters.categoryId === category.id ? null : category.id,
+                      })
+                    }
+                    testID={`discover-filter-activityPlans-category-${category.id}`}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {discoverTypeFilters.selectedTypes.includes("trainingPlans") ? (
+            <View className="mt-6 gap-6">
+              <View className="gap-3">
+                <Text className="text-sm font-medium text-foreground">Training plan sport</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {TRAINING_PLAN_SPORT_OPTIONS.map((option) => (
+                    <FilterChip
+                      key={option.id}
+                      label={option.label}
+                      isActive={trainingPlanFilters.sport === option.id}
+                      onPress={() =>
+                        onTrainingPlanFiltersChange({
+                          ...trainingPlanFilters,
+                          sport: trainingPlanFilters.sport === option.id ? null : option.id,
+                        })
+                      }
+                      testID={`discover-filter-trainingPlans-sport-${option.id}`}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View className="gap-3">
+                <Text className="text-sm font-medium text-foreground">Experience</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {TRAINING_PLAN_EXPERIENCE_OPTIONS.map((option) => (
+                    <FilterChip
+                      key={option.id}
+                      label={option.label}
+                      isActive={trainingPlanFilters.experienceLevel === option.id}
+                      onPress={() =>
+                        onTrainingPlanFiltersChange({
+                          ...trainingPlanFilters,
+                          experienceLevel:
+                            trainingPlanFilters.experienceLevel === option.id ? null : option.id,
+                        })
+                      }
+                      testID={`discover-filter-trainingPlans-experience-${option.id}`}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View className="gap-3">
+                <Text className="text-sm font-medium text-foreground">Duration</Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {TRAINING_PLAN_DURATION_PRESETS.map((option) => (
+                    <FilterChip
+                      key={option.id}
+                      label={option.label}
+                      isActive={trainingPlanFilters.durationPreset === option.id}
+                      onPress={() =>
+                        onTrainingPlanFiltersChange({
+                          ...trainingPlanFilters,
+                          durationPreset:
+                            trainingPlanFilters.durationPreset === option.id ? null : option.id,
+                        })
+                      }
+                      testID={`discover-filter-trainingPlans-duration-${option.id}`}
+                    />
+                  ))}
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {discoverTypeFilters.selectedTypes.includes("routes") ? (
+            <View className="mt-6 gap-3">
+              <Text className="text-sm font-medium text-foreground">Route type</Text>
+              <View className="flex-row flex-wrap gap-2">
+                {ACTIVITY_CATEGORY_OPTIONS.map((category) => (
+                  <FilterChip
+                    key={category.id}
+                    label={category.label}
+                    isActive={routeFilters.categoryId === category.id}
+                    onPress={() =>
+                      onRouteFiltersChange({
+                        categoryId: routeFilters.categoryId === category.id ? null : category.id,
+                      })
+                    }
+                    testID={`discover-filter-routes-category-${category.id}`}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
         </BottomSheetScrollView>
 
         <View className="border-t border-border bg-background px-4 pb-8 pt-3">

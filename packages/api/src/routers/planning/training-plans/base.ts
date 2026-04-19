@@ -91,6 +91,7 @@ import {
 } from "../../../lib/activity-analysis";
 import { featureFlags } from "../../../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
+import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { addEstimationToPlans } from "../../../utils/estimation-helpers";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
@@ -1588,8 +1589,9 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
       };
     }
 
-    const plansWithEstimations = await addEstimationToPlans(
+    const plansWithEstimations = await getActivityPlansDerivedMetrics(
       activityPlans as any,
+      input.db,
       estimationStore,
       input.profileId,
     );
@@ -1653,7 +1655,7 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
       continue;
     }
 
-    const estimatedTss = estimatedTssByPlanId.get(event.activity_plan_id) || 0;
+    const estimatedTss = Number(estimatedTssByPlanId.get(event.activity_plan_id) || 0);
     if (estimatedTss <= 0) {
       continue;
     }
@@ -3664,7 +3666,14 @@ export async function getPlanTabProjectionService({
   const estimationReader = db ? createEventReadRepository(db) : fallbackSupabase!;
   const plansWithEstimations =
     activityPlans.length > 0
-      ? await addEstimationToPlans(activityPlans, estimationReader as any, profileId)
+      ? db
+        ? await getActivityPlansDerivedMetrics(
+            activityPlans as any,
+            db,
+            estimationReader as any,
+            profileId,
+          )
+        : await addEstimationToPlans(activityPlans, estimationReader as any, profileId)
       : [];
   const failedEstimations = plansWithEstimations.filter(
     (item: any) => item.counts_toward_aggregation === false,
@@ -3682,7 +3691,7 @@ export async function getPlanTabProjectionService({
     if (!scheduledDate) continue;
 
     const planId = planned.activity_plan?.id;
-    const estimatedTss = planId ? estimatedTssByPlanId.get(planId) || 0 : 0;
+    const estimatedTss = planId ? Number(estimatedTssByPlanId.get(planId) || 0) : 0;
     scheduledByDate.set(scheduledDate, (scheduledByDate.get(scheduledDate) || 0) + estimatedTss);
   }
 
@@ -4710,7 +4719,12 @@ export const trainingPlansRouter = createTRPCRouter({
     const estimationStore = createEventReadRepository(db);
     const plansWithEstimations =
       activityPlans.length > 0
-        ? await addEstimationToPlans(activityPlans as any, estimationStore, ctx.session.user.id)
+        ? await getActivityPlansDerivedMetrics(
+            activityPlans as any,
+            db,
+            estimationStore,
+            ctx.session.user.id,
+          )
         : [];
 
     const plannedWeeklyTSS = plansWithEstimations.reduce(
@@ -4762,7 +4776,12 @@ export const trainingPlansRouter = createTRPCRouter({
 
     const upcomingPlansWithEstimations =
       upcomingPlans.length > 0
-        ? await addEstimationToPlans(upcomingPlans as any, estimationStore, ctx.session.user.id)
+        ? await getActivityPlansDerivedMetrics(
+            upcomingPlans as any,
+            db,
+            estimationStore,
+            ctx.session.user.id,
+          )
         : [];
 
     // Map back to planned activities structure with estimated values
@@ -5189,7 +5208,12 @@ export const trainingPlansRouter = createTRPCRouter({
       const estimationStore = createEventReadRepository(db);
       const plansWithEstimations =
         activityPlans.length > 0
-          ? await addEstimationToPlans(activityPlans as any, estimationStore, ctx.session.user.id)
+          ? await getActivityPlansDerivedMetrics(
+              activityPlans as any,
+              db,
+              estimationStore,
+              ctx.session.user.id,
+            )
           : [];
 
       // Create a map for quick lookup of estimated TSS by plan ID

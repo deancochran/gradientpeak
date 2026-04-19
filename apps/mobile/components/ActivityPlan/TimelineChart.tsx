@@ -6,7 +6,7 @@ import {
 } from "@repo/core/schemas/activity_plan_v2";
 import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, ScrollView, TouchableWithoutFeedback, View } from "react-native";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
 import { getDurationMs } from "@/lib/utils/durationConversion";
@@ -44,10 +44,13 @@ export function TimelineChart({
   compact = false,
   intervalIssues,
 }: TimelineChartProps) {
-  const margin = { top: 2, right: 2, bottom: 16, left: 22 };
-  const gapWithinInterval = 2;
-  const gapBetweenIntervals = 8;
+  const margin = compact
+    ? { top: 0, right: 0, bottom: 0, left: 0 }
+    : { top: 2, right: 2, bottom: 16, left: 22 };
+  const gapWithinInterval = compact ? 1 : 2;
+  const gapBetweenIntervals = compact ? 1 : 8;
   const minAxisY = 0;
+  const [compactContainerWidth, setCompactContainerWidth] = useState(0);
 
   const intervalMeta = useMemo(
     () =>
@@ -128,11 +131,23 @@ export function TimelineChart({
   }, [flattenedSteps]);
 
   const chartWidth = useMemo(() => {
-    const minWidth = 340;
+    if (compact) {
+      return compactContainerWidth > 0 ? compactContainerWidth : 280;
+    }
+
+    const minWidth = compact ? 280 : 340;
     const byStepCount = flattenedSteps.length * 30 + totalGapWidth + margin.left + margin.right;
     const byIntervals = intervalMeta.length * 92 + margin.left + margin.right;
     return Math.max(minWidth, byStepCount, byIntervals);
-  }, [flattenedSteps.length, intervalMeta.length, totalGapWidth]);
+  }, [
+    compact,
+    compactContainerWidth,
+    flattenedSteps.length,
+    intervalMeta.length,
+    totalGapWidth,
+    margin.left,
+    margin.right,
+  ]);
 
   const plotWidth = Math.max(120, chartWidth - margin.left - margin.right);
   const plotHeight = Math.max(36, height - margin.top - margin.bottom);
@@ -280,29 +295,38 @@ export function TimelineChart({
   };
 
   return (
-    <View className="w-full">
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    <View
+      className="w-full"
+      onLayout={
+        compact ? (event) => setCompactContainerWidth(event.nativeEvent.layout.width) : undefined
+      }
+    >
+      {compact ? (
         <View style={{ width: chartWidth, height }} className="relative">
           <Svg width={chartWidth} height={height}>
-            <SvgText
-              x={margin.left - 3}
-              y={margin.top + 7}
-              fontSize={9}
-              fill="#64748B"
-              textAnchor="end"
-            >
-              {maxAxisY}
-            </SvgText>
+            {!compact ? (
+              <>
+                <SvgText
+                  x={margin.left - 3}
+                  y={margin.top + 7}
+                  fontSize={9}
+                  fill="#64748B"
+                  textAnchor="end"
+                >
+                  {maxAxisY}
+                </SvgText>
 
-            <SvgText
-              x={margin.left - 3}
-              y={margin.top + plotHeight + 3}
-              fontSize={9}
-              fill="#64748B"
-              textAnchor="end"
-            >
-              {minAxisY}
-            </SvgText>
+                <SvgText
+                  x={margin.left - 3}
+                  y={margin.top + plotHeight + 3}
+                  fontSize={9}
+                  fill="#64748B"
+                  textAnchor="end"
+                >
+                  {minAxisY}
+                </SvgText>
+              </>
+            ) : null}
 
             {positionedBars.map((bar) => (
               <Rect
@@ -320,32 +344,42 @@ export function TimelineChart({
               />
             ))}
 
-            {intervalSegments.map((segment) => (
-              <SvgText
-                key={`interval-label-${segment.interval.id}`}
-                x={margin.left + (segment.xStart + segment.xEnd) / 2}
-                y={margin.top + plotHeight + 11}
-                fontSize={9}
-                fill="#64748B"
-                textAnchor="middle"
-              >
-                I{segment.intervalIndex + 1}
-              </SvgText>
-            ))}
+            {!compact ? (
+              <>
+                {intervalSegments.map((segment) => (
+                  <SvgText
+                    key={`interval-label-${segment.interval.id}`}
+                    x={margin.left + (segment.xStart + segment.xEnd) / 2}
+                    y={margin.top + plotHeight + 11}
+                    fontSize={9}
+                    fill="#64748B"
+                    textAnchor="middle"
+                  >
+                    I{segment.intervalIndex + 1}
+                  </SvgText>
+                ))}
 
-            <SvgText x={margin.left} y={height - 2} fontSize={9} fill="#64748B" textAnchor="start">
-              0
-            </SvgText>
+                <SvgText
+                  x={margin.left}
+                  y={height - 2}
+                  fontSize={9}
+                  fill="#64748B"
+                  textAnchor="start"
+                >
+                  0
+                </SvgText>
 
-            <SvgText
-              x={chartWidth - margin.right}
-              y={height - 2}
-              fontSize={9}
-              fill="#64748B"
-              textAnchor="end"
-            >
-              {maxAxisXMinutes}
-            </SvgText>
+                <SvgText
+                  x={chartWidth - margin.right}
+                  y={height - 2}
+                  fontSize={9}
+                  fill="#64748B"
+                  textAnchor="end"
+                >
+                  {maxAxisXMinutes}
+                </SvgText>
+              </>
+            ) : null}
           </Svg>
 
           {onIntervalPress && intervalSegments.length > 0 ? (
@@ -406,7 +440,140 @@ export function TimelineChart({
             </View>
           ) : null}
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ width: chartWidth, height }} className="relative">
+            <Svg width={chartWidth} height={height}>
+              <SvgText
+                x={margin.left - 3}
+                y={margin.top + 7}
+                fontSize={9}
+                fill="#64748B"
+                textAnchor="end"
+              >
+                {maxAxisY}
+              </SvgText>
+
+              <SvgText
+                x={margin.left - 3}
+                y={margin.top + plotHeight + 3}
+                fontSize={9}
+                fill="#64748B"
+                textAnchor="end"
+              >
+                {minAxisY}
+              </SvgText>
+
+              {positionedBars.map((bar) => (
+                <Rect
+                  key={bar.index}
+                  x={margin.left + bar.x}
+                  y={bar.barY}
+                  width={bar.width}
+                  height={bar.barHeight}
+                  fill={bar.color}
+                  opacity={bar.isSelected ? 1 : bar.isInSelectedInterval ? 0.95 : 0.82}
+                  stroke={bar.isSelected || bar.isInSelectedInterval ? "#2563EB" : "transparent"}
+                  strokeWidth={bar.isSelected ? 2.6 : bar.isInSelectedInterval ? 1.2 : 0}
+                  rx={3}
+                  ry={3}
+                />
+              ))}
+
+              {intervalSegments.map((segment) => (
+                <SvgText
+                  key={`interval-label-${segment.interval.id}`}
+                  x={margin.left + (segment.xStart + segment.xEnd) / 2}
+                  y={margin.top + plotHeight + 11}
+                  fontSize={9}
+                  fill="#64748B"
+                  textAnchor="middle"
+                >
+                  I{segment.intervalIndex + 1}
+                </SvgText>
+              ))}
+
+              <SvgText
+                x={margin.left}
+                y={height - 2}
+                fontSize={9}
+                fill="#64748B"
+                textAnchor="start"
+              >
+                0
+              </SvgText>
+
+              <SvgText
+                x={chartWidth - margin.right}
+                y={height - 2}
+                fontSize={9}
+                fill="#64748B"
+                textAnchor="end"
+              >
+                {maxAxisXMinutes}
+              </SvgText>
+            </Svg>
+
+            {onIntervalPress && intervalSegments.length > 0 ? (
+              <View className="absolute inset-0">
+                {intervalSegments.map((segment) => {
+                  const isSelected = derivedSelectedIntervalId === segment.interval.id;
+                  const rawWidth = segment.xEnd - segment.xStart;
+                  const segmentWidth = Math.max(rawWidth, 48);
+                  const segmentLeft = margin.left + segment.xStart - (segmentWidth - rawWidth) / 2;
+                  const intervalDurationMinutes = Math.max(
+                    1,
+                    Math.round(segment.totalDurationMs / 60000),
+                  );
+
+                  return (
+                    <Pressable
+                      key={segment.interval.id}
+                      onPress={() => handleIntervalPress(segment.interval.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Interval ${segment.intervalIndex + 1}${isSelected ? ", selected" : ""}, ${intervalDurationMinutes} minutes, ${segment.interval.repetitions} repeats`}
+                      accessibilityHint="Opens interval editor sheet"
+                      style={{
+                        position: "absolute",
+                        left: segmentLeft,
+                        top: margin.top,
+                        width: segmentWidth,
+                        height: plotHeight,
+                        borderRadius: 6,
+                        borderWidth: isSelected ? 2 : 0,
+                        borderColor: isSelected ? "#2563EB" : "transparent",
+                        backgroundColor: isSelected ? "rgba(37, 99, 235, 0.08)" : "transparent",
+                      }}
+                    />
+                  );
+                })}
+              </View>
+            ) : onStepPress ? (
+              <View className="absolute inset-0 flex-row">
+                {positionedBars.map((bar) => (
+                  <TouchableWithoutFeedback
+                    key={bar.index}
+                    onPress={() => handleStepPress(bar.index)}
+                  >
+                    <View
+                      style={{
+                        position: "absolute",
+                        left: margin.left + bar.x - (Math.max(bar.width, 44) - bar.width) / 2,
+                        top: margin.top,
+                        width: Math.max(bar.width, 44),
+                        height: plotHeight,
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Step ${bar.index + 1}`}
+                      accessibilityHint="Opens step editor"
+                    />
+                  </TouchableWithoutFeedback>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        </ScrollView>
+      )}
 
       {!compact ? (
         <View className="flex-row justify-between">

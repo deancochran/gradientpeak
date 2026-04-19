@@ -29,6 +29,42 @@ vi.mock("@repo/core/estimation", async () => {
   };
 });
 
+vi.mock("../../utils/activity-plan-derived-metrics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/activity-plan-derived-metrics")>();
+
+  return {
+    ...actual,
+    getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
+      plans.map((plan) => ({
+        ...plan,
+        estimated_tss: plan?.structure?.mock_estimated_tss ?? 70,
+        estimated_duration: 3600,
+        intensity_factor: 0.75,
+        counts_toward_aggregation: !(plan?.structure?.shouldThrow ?? false),
+        estimation_status: plan?.structure?.shouldThrow ? "failed" : "estimated",
+      })),
+    ),
+  };
+});
+
+vi.mock("../../utils/estimation-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/estimation-helpers")>();
+
+  return {
+    ...actual,
+    addEstimationToPlans: vi.fn(async (plans: any[]) =>
+      plans.map((plan) => ({
+        ...plan,
+        estimated_tss: plan?.structure?.mock_estimated_tss ?? 70,
+        estimated_duration: 3600,
+        intensity_factor: 0.75,
+        counts_toward_aggregation: !(plan?.structure?.shouldThrow ?? false),
+        estimation_status: plan?.structure?.shouldThrow ? "failed" : "estimated",
+      })),
+    ),
+  };
+});
+
 import { trainingPlansRouter } from "../planning/training-plans";
 import { getPlanTabProjectionService } from "../planning/training-plans/base";
 

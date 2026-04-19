@@ -1,3 +1,4 @@
+import { formatDurationSec } from "@repo/core";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -94,7 +95,7 @@ export function PlanCard({ plan, onPress, showOwnership = true }: PlanCardProps)
                   <View className="flex-row items-center">
                     <Icon as={Clock} size={14} className="text-muted-foreground mr-1" />
                     <Text className="text-xs text-muted-foreground">
-                      {plan.estimated_duration} min
+                      {formatDurationSec(plan.estimated_duration)}
                     </Text>
                   </View>
                 )}

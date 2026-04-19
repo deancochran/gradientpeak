@@ -24,6 +24,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
@@ -506,26 +507,24 @@ export default function EventDetailScreen() {
                 <CardTitle>{activityPlan.name || "Planned activity"}</CardTitle>
               </View>
 
-              {activityPlan.description ? (
-                <Text className="text-sm leading-5 text-muted-foreground">
-                  {activityPlan.description}
-                </Text>
-              ) : null}
+              <ActivityPlanCard
+                plannedActivity={{
+                  id: event.id,
+                  activity_plan_id: activityPlan.id,
+                  activity_plan: activityPlan,
+                  scheduled_date: event.scheduled_date || event.starts_at,
+                  notes: event.notes,
+                  completed_activity_id: completed ? event.id : null,
+                }}
+                onPress={handleOpenPlanDetail}
+                showScheduleInfo={true}
+              />
 
               <ActivityPlanContentPreview
                 plan={activityPlan}
                 route={route}
                 testIDPrefix="event-detail-plan"
               />
-
-              <Button
-                variant="outline"
-                className="rounded-2xl"
-                onPress={handleOpenPlanDetail}
-                testID="event-detail-open-plan-button"
-              >
-                <Text>View Activity Plan</Text>
-              </Button>
             </CardContent>
           </Card>
         ) : null}

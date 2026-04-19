@@ -6,11 +6,11 @@ import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo
 import type { ActivityPlanRow, PublicActivityRoutesRow } from "@repo/db";
 import type { EventReadRepository } from "../repositories";
 
-type EstimationReadStore = {
+export type EstimationReadStore = {
   getEstimationInputs: EventReadRepository["getEstimationInputs"];
 };
 
-type EstimationActivityPlanInput = Pick<
+export type EstimationActivityPlanInput = Pick<
   ActivityPlanRow,
   "id" | "profile_id" | "name" | "description" | "activity_category" | "structure" | "route_id"
 > & {
@@ -34,7 +34,10 @@ type PlannedActivityEstimationStore = EstimationReadStore & {
   } | null>;
 };
 
-async function getEstimationProfileInputsFromStore(store: EstimationReadStore, userId: string) {
+export async function getEstimationProfileInputsFromStore(
+  store: EstimationReadStore,
+  userId: string,
+) {
   const data = await store.getEstimationInputs({
     effortCutoffIso: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
     profileId: userId,
@@ -105,7 +108,7 @@ async function getEstimationProfileInputsFromStore(store: EstimationReadStore, u
   };
 }
 
-async function getRoutesMapFromStore(
+export async function getRoutesMapFromStore(
   store: EstimationReadStore,
   userId: string,
   routeIds: string[],
@@ -257,7 +260,7 @@ export type ActivityPlanWithEstimation<
   counts_toward_aggregation: boolean;
 };
 
-function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
+export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
   estimation: ReturnType<typeof estimateActivity>,
   metrics: ReturnType<typeof estimateMetrics>,
@@ -289,7 +292,7 @@ function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
   };
 }
 
-function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanInput>(
+export function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
 ): ActivityPlanWithEstimation<TPlan> {
   return {

@@ -26,6 +26,7 @@ import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
 import { fetchActivityTemperature } from "../utils/weather";
 
 const storageService = getApiStorageService();
@@ -946,6 +947,7 @@ export const fitFilesRouter = createTRPCRouter({
               value: effort.value,
             })),
           );
+          await bumpProfileEstimationState(db, userId, ["performance"]);
         } catch (effortsError) {
           console.error("Failed to insert best efforts:", effortsError);
         }
@@ -964,6 +966,7 @@ export const fitFilesRouter = createTRPCRouter({
             unit: "bpm",
             recorded_at: new Date(activityCompletedAtIso),
           });
+          await bumpProfileEstimationState(db, userId, ["metrics"]);
         }
       }
 

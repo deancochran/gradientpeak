@@ -171,6 +171,96 @@ export const activityPlans = pgTable(
   ],
 );
 
+export const activityPlanDerivedMetricsCache = pgTable(
+  "activity_plan_derived_metrics_cache",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    activity_plan_id: uuid("activity_plan_id")
+      .notNull()
+      .references(() => activityPlans.id, { onDelete: "cascade" }),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    estimator_version: text("estimator_version").notNull(),
+    input_fingerprint: text("input_fingerprint").notNull(),
+    estimated_tss: integer("estimated_tss"),
+    estimated_duration_seconds: integer("estimated_duration_seconds"),
+    intensity_factor: real("intensity_factor"),
+    estimated_calories: integer("estimated_calories"),
+    estimated_distance_meters: integer("estimated_distance_meters"),
+    estimated_zones: jsonb("estimated_zones"),
+    confidence: text("confidence"),
+    confidence_score: integer("confidence_score"),
+    computed_at: timestamp("computed_at", { withTimezone: true, mode: "date" }).notNull(),
+    last_accessed_at: timestamp("last_accessed_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("activity_plan_derived_metrics_cache_lookup_key").on(
+      table.activity_plan_id,
+      table.profile_id,
+      table.estimator_version,
+      table.input_fingerprint,
+    ),
+    index("idx_activity_plan_derived_metrics_cache_profile_plan").on(
+      table.profile_id,
+      table.activity_plan_id,
+    ),
+    index("idx_activity_plan_derived_metrics_cache_last_accessed_at").on(table.last_accessed_at),
+  ],
+);
+
+export const activityPlanRefreshQueue = pgTable(
+  "activity_plan_refresh_queue",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    queued_at: timestamp("queued_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    activity_plan_id: uuid("activity_plan_id")
+      .notNull()
+      .references(() => activityPlans.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("activity_plan_refresh_queue_profile_plan_unique").on(
+      table.profile_id,
+      table.activity_plan_id,
+    ),
+    index("idx_activity_plan_refresh_queue_profile_queued_at").on(
+      table.profile_id,
+      table.queued_at,
+    ),
+  ],
+);
+
+export const profileEstimationState = pgTable(
+  "profile_estimation_state",
+  {
+    profile_id: uuid("profile_id")
+      .primaryKey()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    metrics_revision: integer("metrics_revision").notNull().default(0),
+    performance_revision: integer("performance_revision").notNull().default(0),
+    fitness_revision: integer("fitness_revision").notNull().default(0),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("idx_profile_estimation_state_updated_at").on(table.updated_at)],
+);
+
 export const trainingPlans = pgTable(
   "training_plans",
   {

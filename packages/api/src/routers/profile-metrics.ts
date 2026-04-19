@@ -22,6 +22,7 @@ import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
 
 const createProfileMetricInputSchema = z
   .object({
@@ -191,6 +192,8 @@ export const profileMetricsRouter = createTRPCRouter({
         })
         .returning();
 
+      await bumpProfileEstimationState(db, input.profile_id, ["metrics"]);
+
       return parseProfileMetricRow(data);
     }),
 
@@ -216,6 +219,10 @@ export const profileMetricsRouter = createTRPCRouter({
         )
         .returning();
 
+      if (data) {
+        await bumpProfileEstimationState(db, ctx.session.user.id, ["metrics"]);
+      }
+
       return data ? parseProfileMetricRow(data) : data;
     }),
 
@@ -232,6 +239,8 @@ export const profileMetricsRouter = createTRPCRouter({
         .where(
           and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
         );
+
+      await bumpProfileEstimationState(db, ctx.session.user.id, ["metrics"]);
 
       return deleteProfileMetricOutputSchema.parse({ success: true });
     }),
