@@ -709,6 +709,28 @@ export function useCurrentReadings(service: ActivityRecorderService | null): Cur
   return useSessionSelector(service, (view) => view.currentReadings, EMPTY_CURRENT_READINGS);
 }
 
+export function useBleState(service: ActivityRecorderService | null): string {
+  const [bleState, setBleState] = useState(service?.getBleState() ?? "Unknown");
+
+  useEffect(() => {
+    if (!service) {
+      setBleState("Unknown");
+      return;
+    }
+
+    const syncBleState = () => {
+      setBleState(service.getBleState());
+    };
+
+    syncBleState();
+
+    const interval = setInterval(syncBleState, 2000);
+    return () => clearInterval(interval);
+  }, [service]);
+
+  return bleState;
+}
+
 /**
  * Compatibility selector over `useSessionView()` for session statistics.
  */

@@ -284,12 +284,14 @@ describe("estimation-helpers", () => {
     expect(result[2]).toEqual(
       expect.objectContaining({
         id: "plan-3",
-        estimated_tss: 50,
-        estimated_duration: 3600,
+        estimated_tss: 0,
+        estimated_duration: 0,
         estimated_zones: [],
-        intensity_factor: 0.7,
+        intensity_factor: 0,
         confidence: "low",
         confidence_score: 0,
+        estimation_status: "failed",
+        counts_toward_aggregation: false,
       }),
     );
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1);

@@ -394,11 +394,11 @@ export default function TrainingPreferencesScreen() {
                   />
                   <PercentSliderFormField
                     control={form.control}
-                    description="Higher packs more demanding sessions into the same week."
+                    description="Higher gives strength work more weight when the planner balances endurance and supporting work."
                     fallbackValue={0.5}
-                    id="preferences-key-session-density"
-                    label="Key session density"
-                    name="training_style.key_session_density_preference"
+                    id="preferences-strength-integration"
+                    label="Strength integration priority"
+                    name="training_style.strength_integration_priority"
                   />
                 </>
               ) : null}
@@ -422,19 +422,11 @@ export default function TrainingPreferencesScreen() {
                   />
                   <PercentSliderFormField
                     control={form.control}
-                    description="Higher allows stacked sessions more often."
-                    fallbackValue={0.25}
-                    id="preferences-double-day-tolerance"
-                    label="Double day tolerance"
-                    name="recovery_preferences.double_day_tolerance"
-                  />
-                  <PercentSliderFormField
-                    control={form.control}
-                    description="Lower keeps long-session fatigue more tightly bounded."
+                    description="Higher allows the planner to tolerate more systemic fatigue before reducing load progression."
                     fallbackValue={0.5}
-                    id="preferences-long-session-fatigue"
-                    label="Long session fatigue tolerance"
-                    name="recovery_preferences.long_session_fatigue_tolerance"
+                    id="preferences-systemic-fatigue"
+                    label="Systemic fatigue tolerance"
+                    name="recovery_preferences.systemic_fatigue_tolerance"
                   />
                 </>
               ) : null}
@@ -455,11 +447,11 @@ export default function TrainingPreferencesScreen() {
                   />
                   <PercentSliderFormField
                     control={form.control}
-                    description="Higher lets priority goals pull more strongly on shared training capacity."
+                    description="Higher extends taper windows when the event and sport support it. Lower keeps the lead-in sharper and shorter."
                     fallbackValue={0.5}
-                    id="preferences-priority-tradeoff"
-                    label="Priority tradeoff"
-                    name="goal_strategy_preferences.priority_tradeoff_preference"
+                    id="preferences-taper-style"
+                    label="Taper style"
+                    name="goal_strategy_preferences.taper_style_preference"
                   />
                 </>
               ) : null}

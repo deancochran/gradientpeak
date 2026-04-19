@@ -1,7 +1,7 @@
 import { PlanCalendarSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { format } from "date-fns";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
 import {
@@ -225,15 +225,10 @@ function CalendarScreen() {
   });
 
   const handleMonthDayPress = useCallback(
-    (dateKey: string, hasVisibleEvents: boolean) => {
-      if (hasVisibleEvents) {
-        handleOpenDayAgenda(dateKey);
-        return;
-      }
-
-      selectDate(dateKey);
+    (dateKey: string) => {
+      handleOpenDayAgenda(dateKey);
     },
-    [handleOpenDayAgenda, selectDate],
+    [handleOpenDayAgenda],
   );
 
   if (loadingEvents && !activitiesData) {
@@ -283,7 +278,6 @@ function CalendarScreen() {
         <CalendarMonthList
           rangeStart={rangeStart}
           rangeEnd={rangeEnd}
-          activeDate={activeDate}
           visibleMonthAnchor={visibleAnchor}
           todayKey={todayKey}
           eventsByDate={eventsByDate}

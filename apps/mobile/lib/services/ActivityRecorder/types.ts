@@ -505,12 +505,34 @@ export interface RecordingTrainerCommandStatus {
     | "set_heart_rate"
     | "set_cadence";
   controlMode: ControlMode | null;
+  outcome:
+    | "success"
+    | "control_unavailable"
+    | "control_conflict"
+    | "unsupported"
+    | "invalid_parameter"
+    | "operation_failed"
+    | "timeout"
+    | "write_failed"
+    | "superseded";
   targetValue?: number;
   success: boolean;
   errorMessage?: string;
+  resultCode?: number;
+  resultCodeName?: string;
   queuedAt: number;
   completedAt: number;
 }
+
+export type RecordingTrainerControlState =
+  | "not_applicable"
+  | "eligible"
+  | "requesting_control"
+  | "controllable"
+  | "control_rejected"
+  | "recovering_control"
+  | "control_lost"
+  | "failed";
 
 export type RecordingTrainerRecoveryState =
   | "idle"
@@ -518,11 +540,54 @@ export type RecordingTrainerRecoveryState =
   | "recovered"
   | "failed";
 
+export type RecordingTrainerConnectionState =
+  | "idle"
+  | "discovered"
+  | "connecting"
+  | "connected"
+  | "disconnecting"
+  | "disconnected"
+  | "reconnecting"
+  | "failed";
+
+export type RecordingTrainerDataFlowState =
+  | "unknown"
+  | "waiting_for_data"
+  | "flowing"
+  | "stale"
+  | "lost";
+
+export type RecordingServiceErrorCategory =
+  | "permission_error"
+  | "bluetooth_unavailable"
+  | "scan_error"
+  | "device_connect_error"
+  | "service_discovery_error"
+  | "measurement_subscription_error"
+  | "ftms_control_request_error"
+  | "ftms_command_error"
+  | "reconnect_exhausted"
+  | "control_conflict_suspected";
+
+export interface RecordingServiceError {
+  category: RecordingServiceErrorCategory;
+  message: string;
+  recordedAt: number;
+  deviceId?: string;
+  recoverable: boolean;
+}
+
 export interface RecordingTrainerView {
+  deviceId: string | null;
+  deviceName: string | null;
   machineType: RecordingTrainerMachineType | null;
+  connectionState: RecordingTrainerConnectionState;
+  dataFlowState: RecordingTrainerDataFlowState;
+  controlState: RecordingTrainerControlState;
   currentControlMode: ControlMode | null;
   recoveryState: RecordingTrainerRecoveryState;
   lastCommandStatus: RecordingTrainerCommandStatus | null;
+  lastServiceError: RecordingServiceError | null;
 }
 
 export interface RecordingSessionView {

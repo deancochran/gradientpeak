@@ -398,8 +398,18 @@ describe("calendar redesign screen", () => {
 
     fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-25"));
 
-    expect(useCalendarStore.getState().activeDate).toBe("2026-03-25");
+    expect(useCalendarStore.getState().activeDate).toBe(today);
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("does not keep a persistent selected style after choosing an event day", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
+
+    const selectedCell = screen.getByTestId("calendar-month-cell-2026-03-24");
+    expect(selectedCell.props.children[0].props.className).toContain("bg-transparent");
+    expect(selectedCell.props.children[0].props.className).not.toContain("bg-primary");
   });
 
   it("does not render month density markers for rest-day-only dates", () => {
@@ -418,6 +428,12 @@ describe("calendar redesign screen", () => {
 
     expect(useCalendarStore.getState().activeDate).toBe(today);
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("does not render a sixth blank week for five-row months", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.queryByTestId("calendar-month-filler-2026-04-01-2026-05-04")).toBeNull();
   });
 
   it("opens the actions sheet and schedules a planned activity", () => {

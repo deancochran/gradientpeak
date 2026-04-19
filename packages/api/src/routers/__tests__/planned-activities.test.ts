@@ -22,16 +22,20 @@ vi.mock("../../infrastructure/repositories", () => ({
     clearLinkedCompletionForEvent: vi.fn(async () => undefined),
     listLinkedCompletedActivitiesForTrainingPlan: vi.fn(async () => []),
   })),
+  createProviderSyncRepository: vi.fn(() => ({
+    enqueueJob: vi.fn(async () => ({ id: "job-1", status: "queued" })),
+    touchSyncState: vi.fn(async () => undefined),
+  })),
   createWahooRepository: vi.fn(() => ({
-    createSyncedEvent: vi.fn(async () => undefined),
-    deleteSyncedEvent: vi.fn(async () => undefined),
+    createEventResourceLink: vi.fn(async () => undefined),
+    deleteEventResourceLink: vi.fn(async () => undefined),
     findWahooIntegrationByProfileId: vi.fn(async () => null),
     getPlannedEventForSync: vi.fn(async () => null),
     getProfileSyncMetrics: vi.fn(async () => null),
     getRouteForSync: vi.fn(async () => null),
-    getSyncedEvent: vi.fn(async () => null),
-    listEventSyncs: vi.fn(async () => []),
-    updateSyncedEvent: vi.fn(async () => undefined),
+    getEventResourceLink: vi.fn(async () => null),
+    listEventResourceLinks: vi.fn(async () => []),
+    updateEventResourceLink: vi.fn(async () => undefined),
   })),
 }));
 

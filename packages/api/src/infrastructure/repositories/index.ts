@@ -4,5 +4,6 @@ export * from "./drizzle-event-read-repository";
 export * from "./drizzle-event-write-repository";
 export * from "./drizzle-ical-feed-repository";
 export * from "./drizzle-integrations-repository";
+export * from "./drizzle-provider-sync-repository";
 export * from "./drizzle-training-plan-repository";
 export * from "./drizzle-wahoo-repository";

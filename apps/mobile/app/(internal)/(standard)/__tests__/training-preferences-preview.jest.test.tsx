@@ -72,7 +72,29 @@ const settingsFixture = {
 const upsertMock = jest.fn();
 let activePlanData: { id: string } | undefined = { id: "plan-1" };
 let activePlanIsLoading = false;
+const previewGoalsFixture = [
+  {
+    id: "goal-1",
+    profile_id: "profile-1",
+    milestone_event_id: "event-1",
+    title: "Spring Bike Test",
+    activity_category: "bike",
+    priority: 7,
+    target_date: "2026-07-01",
+    objective: {
+      type: "threshold",
+      metric: "power",
+      value: 260,
+      test_duration_s: 1200,
+      activity_category: "bike",
+    },
+  },
+];
 let snapshotState = {
+  plan: {
+    id: "plan-1",
+    created_at: "2026-02-01T00:00:00.000Z",
+  },
   actualCurveData: {
     dataPoints: [
       { date: "2026-03-01", ctl: 40 },
@@ -95,7 +117,7 @@ let snapshotState = {
   errors: {
     idealCurve: null,
   },
-  profileGoals: [{ id: "goal-1" }],
+  profileGoals: previewGoalsFixture,
 };
 
 jest.mock("react-native", () => ({
@@ -122,6 +144,32 @@ jest.mock("@react-native-community/datetimepicker", () => {
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
   PlanVsActualChart: createHost("PlanVsActualChart"),
+}));
+
+jest.mock("@/lib/training-plan-form/localPreview", () => ({
+  __esModule: true,
+  computeLocalCreationPreview: ({ profileSettings }: any) => {
+    const pace = profileSettings?.training_style?.progression_pace ?? 0.5;
+    const finalCtl = 44 + Math.round((pace - 0.5) * 100) / 5;
+
+    return {
+      projectionChart: {
+        display_points: [
+          { date: "2026-03-01", predicted_fitness_ctl: 40 },
+          { date: "2026-03-02", predicted_fitness_ctl: 42 },
+          { date: "2026-03-03", predicted_fitness_ctl: finalCtl },
+        ],
+      },
+      previewSnapshotBaseline: {
+        readiness_score: 72,
+        predicted_load_tss: 310,
+        predicted_fatigue_atl: 47,
+        feasibility_state: "feasible",
+        tss_ramp_clamp_weeks: 0,
+        ctl_ramp_clamp_weeks: 0,
+      },
+    };
+  },
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -264,6 +312,10 @@ describe("training preferences projection preview", () => {
     activePlanData = { id: "plan-1" };
     activePlanIsLoading = false;
     snapshotState = {
+      plan: {
+        id: "plan-1",
+        created_at: "2026-02-01T00:00:00.000Z",
+      },
       actualCurveData: {
         dataPoints: [
           { date: "2026-03-01", ctl: 40 },
@@ -286,7 +338,7 @@ describe("training preferences projection preview", () => {
       errors: {
         idealCurve: null,
       },
-      profileGoals: [{ id: "goal-1" }],
+      profileGoals: previewGoalsFixture,
     };
   });
 
@@ -311,6 +363,35 @@ describe("training preferences projection preview", () => {
     expect(tabLabels).toContain("Training style");
     expect(tabLabels).toContain("Recovery");
     expect(tabLabels).toContain("Goal strategy");
+  });
+
+  it("renders planner-backed preference controls", () => {
+    renderNative(<TrainingPreferencesScreen />);
+
+    act(() => {
+      getTab("Training style").props.onPress();
+    });
+
+    let textValues = getTextValues();
+    expect(textValues).toContain("Strength integration priority");
+    expect(textValues).not.toContain("Key session density");
+
+    act(() => {
+      getTab("Recovery").props.onPress();
+    });
+
+    textValues = getTextValues();
+    expect(textValues).toContain("Systemic fatigue tolerance");
+    expect(textValues).not.toContain("Double day tolerance");
+    expect(textValues).not.toContain("Long session fatigue tolerance");
+
+    act(() => {
+      getTab("Goal strategy").props.onPress();
+    });
+
+    textValues = getTextValues();
+    expect(textValues).toContain("Taper style");
+    expect(textValues).not.toContain("Priority tradeoff");
   });
 
   it("updates preview chart data when draft sliders change", () => {

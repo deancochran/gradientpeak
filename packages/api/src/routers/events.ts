@@ -24,9 +24,11 @@ import {
   createEventCompletionRepository,
   createEventReadRepository,
   createEventWriteRepository,
+  createProviderSyncRepository,
   createWahooRepository,
 } from "../infrastructure/repositories";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { addEstimationToPlan, addEstimationToPlans } from "../utils/estimation-helpers";
@@ -52,6 +54,65 @@ function getWahooSyncService(ctx: any) {
       },
     }),
   });
+}
+
+function getWahooSyncJobService(ctx: any) {
+  return new WahooSyncJobService({
+    providerSyncRepository: createProviderSyncRepository({ db: getRequiredDb(ctx) }),
+    syncService: getWahooSyncService(ctx),
+    wahooRepository: createWahooRepository({ db: getRequiredDb(ctx) }),
+  });
+}
+
+type WahooQueueResult = {
+  affectedCount: number;
+  error?: string;
+  jobId?: string | null;
+  operation: "publish" | "unsync";
+  queued: boolean;
+  success: boolean;
+};
+
+async function enqueueWahooEventJobs(
+  ctx: any,
+  input: { eventIds: string[]; operation: "publish" | "unsync" },
+): Promise<WahooQueueResult | null> {
+  const eventIds = [...new Set(input.eventIds)];
+  if (eventIds.length === 0) {
+    return null;
+  }
+
+  const integration = await createWahooRepository({
+    db: getRequiredDb(ctx),
+  }).findWahooIntegrationByProfileId(ctx.session.user.id);
+
+  if (!integration) {
+    return null;
+  }
+
+  const jobService = getWahooSyncJobService(ctx);
+  let firstJobId: string | null = null;
+  let queued = false;
+
+  for (const eventId of eventIds) {
+    const result =
+      input.operation === "publish"
+        ? await jobService.enqueuePublishEvent({ eventId, profileId: ctx.session.user.id })
+        : await jobService.enqueueUnsyncEvent({ eventId, profileId: ctx.session.user.id });
+
+    if (!firstJobId) {
+      firstJobId = result.jobId;
+    }
+    queued = queued || result.queued;
+  }
+
+  return {
+    affectedCount: eventIds.length,
+    jobId: firstJobId,
+    operation: input.operation,
+    queued,
+    success: true,
+  };
 }
 
 function getEventCompletionRepository(ctx: { session: { user: { id: string } } }) {
@@ -976,23 +1037,22 @@ export const eventsRouter = createTRPCRouter({
 
     const event = mapEvent(data as PlannedEventRecord);
 
-    let wahooSyncResult: { success: boolean; error?: string } | null = null;
+    let wahooSyncResult: WahooQueueResult | null = null;
     if (event.legacy_event_type === plannedEventType) {
       try {
-        const integration = await createWahooRepository({
-          db: getRequiredDb(ctx),
-        }).findWahooIntegrationByProfileId(ctx.session.user.id);
-
-        if (integration) {
-          const syncService = getWahooSyncService(ctx);
-          const result = await syncService.syncEvent(event.id, ctx.session.user.id);
-          wahooSyncResult = { success: result.success, error: result.error };
-        }
+        wahooSyncResult = await enqueueWahooEventJobs(ctx, {
+          eventIds: [event.id],
+          operation: "publish",
+        });
       } catch (error) {
-        console.error("Failed to auto-sync to Wahoo:", error);
+        console.error("Failed to enqueue Wahoo sync:", error);
         wahooSyncResult = {
+          affectedCount: 1,
+          operation: "publish",
+          queued: false,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error during Wahoo sync",
+          error:
+            error instanceof Error ? error.message : "Unknown error during Wahoo sync queueing",
         };
       }
     }
@@ -1171,23 +1231,36 @@ export const eventsRouter = createTRPCRouter({
     }
     const event = mapEvent(representative);
 
-    let wahooSyncResult: { success: boolean; error?: string } | null = null;
-    if (event.legacy_event_type === plannedEventType) {
-      try {
-        const integration = await createWahooRepository({
-          db: getRequiredDb(ctx),
-        }).findWahooIntegrationByProfileId(ctx.session.user.id);
+    let wahooSyncResult: WahooQueueResult | null = null;
+    const updatedPlannedEventIds = updatedRows
+      .filter((row) => row.event_type === plannedEventType)
+      .map((row) => row.id);
+    const removedPlannedEventIds =
+      existingEvent.event_type === plannedEventType && event.legacy_event_type !== plannedEventType
+        ? updatedRows.map((row) => row.id)
+        : [];
 
-        if (integration) {
-          const syncService = getWahooSyncService(ctx);
-          const result = await syncService.syncEvent(id, ctx.session.user.id);
-          wahooSyncResult = { success: result.success, error: result.error };
-        }
+    if (updatedPlannedEventIds.length > 0 || removedPlannedEventIds.length > 0) {
+      try {
+        wahooSyncResult =
+          updatedPlannedEventIds.length > 0
+            ? await enqueueWahooEventJobs(ctx, {
+                eventIds: updatedPlannedEventIds,
+                operation: "publish",
+              })
+            : await enqueueWahooEventJobs(ctx, {
+                eventIds: removedPlannedEventIds,
+                operation: "unsync",
+              });
       } catch (error) {
-        console.error("Failed to auto-sync update to Wahoo:", error);
+        console.error("Failed to enqueue Wahoo update jobs:", error);
         wahooSyncResult = {
+          affectedCount: updatedPlannedEventIds.length || removedPlannedEventIds.length,
+          operation: updatedPlannedEventIds.length > 0 ? "publish" : "unsync",
+          queued: false,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error during Wahoo sync",
+          error:
+            error instanceof Error ? error.message : "Unknown error during Wahoo sync queueing",
         };
       }
     }
@@ -1246,19 +1319,18 @@ export const eventsRouter = createTRPCRouter({
     }
 
     try {
-      const integration = await createWahooRepository({
-        db: getRequiredDb(ctx),
-      }).findWahooIntegrationByProfileId(ctx.session.user.id);
+      const plannedEventIds = rowsToDelete
+        .filter((row) => row.event_type === plannedEventType)
+        .map((row) => row.id);
 
-      if (integration) {
-        const syncService = getWahooSyncService(ctx);
-        for (const row of rowsToDelete) {
-          if (row.event_type !== plannedEventType) continue;
-          await syncService.unsyncEvent(row.id, ctx.session.user.id);
-        }
+      if (plannedEventIds.length > 0) {
+        await enqueueWahooEventJobs(ctx, {
+          eventIds: plannedEventIds,
+          operation: "unsync",
+        });
       }
     } catch (error) {
-      console.error("Failed to auto-unsync from Wahoo:", error);
+      console.error("Failed to enqueue Wahoo unsync jobs:", error);
     }
 
     try {

@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => {
     repositories,
     createIntegrationsRepositories: vi.fn(() => repositories),
     createIcalFeedRepository: vi.fn((input) => ({ kind: "ical-repository", input })),
+    createProviderSyncRepository: vi.fn((input) => ({ kind: "provider-sync-repository", input })),
     createWahooRepository: vi.fn((input) => ({ kind: "wahoo-repository", input })),
     createWahooRouteStorage: vi.fn((storage) => storage),
     getApiStorageService: vi.fn(() => ({
@@ -48,6 +49,9 @@ const mocks = vi.hoisted(() => {
     },
     wahoo: {
       instances: [] as Array<{ deps: unknown }>,
+      jobInstances: [] as Array<{ deps: unknown }>,
+      enqueuePublishEvent: vi.fn(),
+      enqueueUnsyncEvent: vi.fn(),
       syncEvent: vi.fn(),
       unsyncEvent: vi.fn(),
       getEventSyncStatus: vi.fn(),
@@ -58,6 +62,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("../../infrastructure/repositories", () => ({
   createIntegrationsRepositories: mocks.createIntegrationsRepositories,
   createIcalFeedRepository: mocks.createIcalFeedRepository,
+  createProviderSyncRepository: mocks.createProviderSyncRepository,
   createWahooRepository: mocks.createWahooRepository,
 }));
 
@@ -156,6 +161,25 @@ vi.mock("../../lib/integrations/wahoo/sync-service", () => ({
   },
 }));
 
+vi.mock("../../lib/provider-sync/wahoo-job-service", () => ({
+  WahooSyncJobService: class MockWahooSyncJobService {
+    deps: unknown;
+
+    constructor(deps: unknown) {
+      this.deps = deps;
+      mocks.wahoo.jobInstances.push({ deps });
+    }
+
+    enqueuePublishEvent(...args: Parameters<typeof mocks.wahoo.enqueuePublishEvent>) {
+      return mocks.wahoo.enqueuePublishEvent(...args);
+    }
+
+    enqueueUnsyncEvent(...args: Parameters<typeof mocks.wahoo.enqueueUnsyncEvent>) {
+      return mocks.wahoo.enqueueUnsyncEvent(...args);
+    }
+  },
+}));
+
 import { IcalSyncError } from "../../lib/integrations/ical/sync-service";
 import { integrationsRouter } from "../integrations";
 
@@ -176,6 +200,7 @@ describe("integrationsRouter", () => {
     vi.clearAllMocks();
     mocks.ical.instances.length = 0;
     mocks.wahoo.instances.length = 0;
+    mocks.wahoo.jobInstances.length = 0;
 
     process.env.OAUTH_CALLBACK_BASE_URL = "https://app.example.com";
     process.env.NEXT_PUBLIC_MOBILE_REDIRECT_URI = "gradientpeak://integrations";
@@ -557,34 +582,32 @@ describe("integrationsRouter", () => {
     });
   });
 
-  it("wahoo.syncEvent returns the sync result", async () => {
+  it("wahoo.syncEvent enqueues a publish job", async () => {
     const caller = createCaller();
-    mocks.wahoo.syncEvent.mockResolvedValue({
-      success: true,
-      action: "created",
-      workoutId: "workout-1",
-    });
+    mocks.wahoo.enqueuePublishEvent.mockResolvedValue({ jobId: SYNC_ID, queued: true });
 
     await expect(caller.wahoo.syncEvent({ eventId: EVENT_ID })).resolves.toEqual({
-      success: true,
-      action: "created",
-      workoutId: "workout-1",
+      jobId: SYNC_ID,
+      queued: true,
     });
-    expect(mocks.wahoo.syncEvent).toHaveBeenCalledWith(EVENT_ID, SESSION_USER_ID);
+    expect(mocks.wahoo.enqueuePublishEvent).toHaveBeenCalledWith({
+      eventId: EVENT_ID,
+      profileId: SESSION_USER_ID,
+    });
   });
 
-  it("wahoo.unsyncEvent maps failed unsyncs to BAD_REQUEST", async () => {
+  it("wahoo.unsyncEvent enqueues an unsync job", async () => {
     const caller = createCaller();
-    mocks.wahoo.unsyncEvent.mockResolvedValue({
-      success: false,
-      action: "no_change",
-      error: "Unable to unsync workout",
-    });
+    mocks.wahoo.enqueueUnsyncEvent.mockResolvedValue({ jobId: SYNC_ID, queued: true });
 
-    await expect(caller.wahoo.unsyncEvent({ eventId: EVENT_ID })).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Unable to unsync workout",
-    } satisfies Partial<TRPCError>);
+    await expect(caller.wahoo.unsyncEvent({ eventId: EVENT_ID })).resolves.toEqual({
+      jobId: SYNC_ID,
+      queued: true,
+    });
+    expect(mocks.wahoo.enqueueUnsyncEvent).toHaveBeenCalledWith({
+      eventId: EVENT_ID,
+      profileId: SESSION_USER_ID,
+    });
   });
 
   it("wahoo.getEventSyncStatus returns sync status details", async () => {
@@ -606,17 +629,16 @@ describe("integrationsRouter", () => {
     expect(mocks.wahoo.getEventSyncStatus).toHaveBeenCalledWith(EVENT_ID, SESSION_USER_ID);
   });
 
-  it("wahoo.syncEvent rejects malformed sync results", async () => {
+  it("wahoo.syncEvent rejects malformed enqueue results", async () => {
     const caller = createCaller();
-    mocks.wahoo.syncEvent.mockResolvedValue({
-      success: true,
-      action: "created",
-      workoutId: 42,
+    mocks.wahoo.enqueuePublishEvent.mockResolvedValue({
+      jobId: 42,
+      queued: true,
     });
 
     await expect(caller.wahoo.syncEvent({ eventId: EVENT_ID })).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
-      message: "Wahoo sync service returned invalid sync data",
+      message: "Wahoo sync job service returned invalid enqueue data",
     } satisfies Partial<TRPCError>);
   });
 

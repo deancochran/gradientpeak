@@ -55,7 +55,6 @@
     "studio": "pnpm drizzle-kit studio"
   },
   "dependencies": {
-    "@repo/core": "workspace:*",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.8.3",

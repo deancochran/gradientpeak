@@ -13,6 +13,24 @@ import {
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { getActivityColor } from "@/lib/utils/plan/colors";
 
+function getPlannedStepCount(event: CalendarEvent): number {
+  const intervals = (
+    event.activity_plan?.structure as
+      | { intervals?: Array<{ repetitions?: number; steps?: unknown[] }> }
+      | undefined
+  )?.intervals;
+
+  if (!Array.isArray(intervals)) {
+    return 0;
+  }
+
+  return intervals.reduce((total, interval) => {
+    const repetitions = typeof interval.repetitions === "number" ? interval.repetitions : 1;
+    const stepCount = Array.isArray(interval.steps) ? interval.steps.length : 0;
+    return total + repetitions * stepCount;
+  }, 0);
+}
+
 function readMetric(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -46,6 +64,8 @@ export function CalendarEventCard({
   const timeLabel = getEventTimeLabel(event);
   const planned = event.event_type === "planned";
   const estimatedTss = readMetric(event.activity_plan?.estimated_tss);
+  const plannedStepCount = getPlannedStepCount(event);
+  const hasRoute = !!event.activity_plan?.route_id;
   const intensityLevel =
     estimatedTss === null ? 0 : estimatedTss >= 90 ? 3 : estimatedTss >= 55 ? 2 : 1;
 
@@ -62,14 +82,14 @@ export function CalendarEventCard({
 
   return (
     <View
-      className={`rounded-3xl border bg-card/95 p-4 ${planned ? "border-primary/15" : "border-border"}`}
+      className={`rounded-3xl border bg-card/95 p-4 ${planned ? "border-primary/10" : "border-border"}`}
       testID={`schedule-event-${event.id}`}
     >
       <View className="flex-row items-start gap-3">
-        <TouchableOpacity className="flex-1 gap-3" onPress={onPress} activeOpacity={0.85}>
+        <TouchableOpacity className="flex-1 gap-2.5" onPress={onPress} activeOpacity={0.85}>
           <View className="flex-row items-start gap-3">
             <View
-              className={`mt-0.5 h-10 w-10 items-center justify-center rounded-2xl ${planned ? "bg-primary/10" : "bg-muted/60"}`}
+              className={`mt-0.5 h-10 w-10 items-center justify-center rounded-full ${planned ? "bg-primary/10" : "bg-muted/60"}`}
             >
               <Icon
                 as={leadingIcon}
@@ -77,7 +97,7 @@ export function CalendarEventCard({
                 className={planned ? activityColor.text : "text-foreground"}
               />
             </View>
-            <View className="flex-1 gap-1 pr-2">
+            <View className="flex-1 gap-1.5 pr-2">
               <View className="flex-row flex-wrap items-center gap-2">
                 <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   {timeLabel}
@@ -95,15 +115,34 @@ export function CalendarEventCard({
                 <Text className="text-xs text-muted-foreground">{meta.join(" • ")}</Text>
               ) : null}
               {supportingLine ? (
-                <Text className="text-xs text-muted-foreground" numberOfLines={2}>
+                <Text className="text-xs leading-5 text-muted-foreground" numberOfLines={2}>
                   {supportingLine}
                 </Text>
               ) : null}
+              {planned && (plannedStepCount > 0 || hasRoute) ? (
+                <View className="mt-1 flex-row flex-wrap gap-2">
+                  {plannedStepCount > 0 ? (
+                    <View className="rounded-full bg-muted/80 px-2 py-1">
+                      <Text className="text-[10px] font-medium text-muted-foreground">
+                        {plannedStepCount} steps
+                      </Text>
+                    </View>
+                  ) : null}
+                  {hasRoute ? (
+                    <View className="rounded-full bg-muted/80 px-2 py-1">
+                      <Text className="text-[10px] font-medium text-muted-foreground">Route</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
               {planned && (meta.length > 0 || estimatedTss !== null) ? (
-                <View className="mt-2 rounded-2xl bg-background px-3 py-3">
+                <View className="mt-1 rounded-2xl bg-muted/30 px-3 py-3">
                   <View className="flex-row flex-wrap items-center gap-2">
                     {meta.map((item) => (
-                      <View key={`${event.id}-${item}`} className="rounded-full bg-muted px-2 py-1">
+                      <View
+                        key={`${event.id}-${item}`}
+                        className="rounded-full bg-background px-2 py-1"
+                      >
                         <Text className="text-[10px] font-medium text-muted-foreground">
                           {item}
                         </Text>
@@ -111,7 +150,7 @@ export function CalendarEventCard({
                     ))}
                   </View>
                   {estimatedTss !== null ? (
-                    <View className="mt-3">
+                    <View className="mt-2.5">
                       <View className="flex-row items-center justify-between">
                         <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                           Intensity
@@ -120,7 +159,7 @@ export function CalendarEventCard({
                           {Math.round(estimatedTss)} TSS
                         </Text>
                       </View>
-                      <View className="mt-2 flex-row gap-2">
+                      <View className="mt-2 flex-row gap-1.5">
                         {Array.from({ length: 3 }, (_, index) => (
                           <View
                             key={`${event.id}-intensity-${index}`}

@@ -147,6 +147,7 @@ jest.mock("@repo/core", () => ({
   buildEstimationContext: () => ({}),
   decodePolyline: () => null,
   estimateActivity: () => null,
+  formatDurationSec: (seconds: number) => `${seconds}s`,
   getStepIntensityColor: () => "#000000",
 }));
 jest.mock("lucide-react-native", () => ({

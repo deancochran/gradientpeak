@@ -1,5 +1,5 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
-import { type ActivityPayload, getStepIntensityColor, type IntervalStepV2 } from "@repo/core";
+import type { ActivityPayload } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Switch } from "@repo/ui/components/switch";
@@ -23,8 +23,6 @@ import {
 } from "lucide-react-native";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
-import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -32,6 +30,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
 import { ActivityPlanSummarySection } from "./ActivityPlanSummarySection";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
 import { useActivityPlanSchedulingActions } from "./useActivityPlanSchedulingActions";
@@ -236,14 +235,11 @@ export function ActivityPlanDetailScreen({
     );
   }
 
-  const durationMinutes = vm.durationMinutes;
   const tss = vm.tss;
   const intensityFactor = vm.intensityFactor;
   const isOwnedByUser = vm.isOwnedByUser;
   const primaryScheduleLabel = scheduling.primaryScheduleLabel;
   const detailBadges = vm.detailBadges;
-  const routeCoordinates = vm.routePreview?.coordinates ?? null;
-  const routeInitialRegion = vm.routePreview?.initialRegion;
   const steps = vm.steps;
 
   return (
@@ -261,16 +257,18 @@ export function ActivityPlanDetailScreen({
             stepsCount={steps.length}
             tss={tss}
           />
-          <View className="gap-2 mb-6">
+          <View className="mb-6 gap-2.5">
             <View className="flex-row gap-2">
               <Button
                 onPress={handleRecordNow}
                 size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5"
+                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
                 testID="activity-plan-record-now-button"
               >
                 <Icon as={Smartphone} size={16} className="text-primary-foreground" />
-                <Text className="text-primary-foreground text-sm font-semibold">Record Now</Text>
+                <Text className="text-primary-foreground text-sm font-semibold">
+                  Start Activity
+                </Text>
               </Button>
               <Button
                 onPress={
@@ -278,7 +276,7 @@ export function ActivityPlanDetailScreen({
                 }
                 variant="outline"
                 size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5"
+                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
                 disabled={!scheduling.isScheduled && scheduling.duplicatePending}
                 testID={
                   scheduling.isScheduled
@@ -296,7 +294,7 @@ export function ActivityPlanDetailScreen({
                   onPress={scheduling.handleRemoveSchedule}
                   variant="outline"
                   size="sm"
-                  className="flex-1 flex-row items-center justify-center gap-1.5"
+                  className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
                   disabled={scheduling.removeSchedulePending}
                   testID="activity-plan-remove-schedule-button"
                 >
@@ -310,7 +308,7 @@ export function ActivityPlanDetailScreen({
             <View className="flex-row gap-2">
               <Pressable
                 onPress={social.handleToggleLike}
-                className="flex-1 flex-row items-center justify-center gap-1.5 py-2 rounded-lg border border-border bg-card"
+                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl border border-border bg-card px-3 py-2.5"
                 testID="activity-plan-like-button"
               >
                 <Icon
@@ -339,19 +337,19 @@ export function ActivityPlanDetailScreen({
                 onPress={scheduling.handleDuplicate}
                 variant="outline"
                 size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5"
+                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
                 disabled={scheduling.duplicatePending}
                 testID="activity-plan-duplicate-button"
               >
                 <Icon as={Copy} size={16} className="text-foreground" />
                 <Text className="text-foreground text-sm">
-                  {scheduling.duplicatePending ? "Duplicating..." : "Duplicate"}
+                  {scheduling.duplicatePending ? "Duplicating..." : "Duplicate Activity"}
                 </Text>
               </Button>
             </View>
             {isOwnedByUser && (
               <View className="flex-row gap-2">
-                <View className="flex-1 flex-row items-center justify-between px-3 py-2 rounded-lg border border-border bg-card">
+                <View className="flex-1 flex-row items-center justify-between rounded-2xl border border-border bg-card px-3 py-2.5">
                   <View className="flex-row items-center gap-2">
                     <Icon
                       as={isPublic ? Eye : EyeOff}
@@ -372,7 +370,7 @@ export function ActivityPlanDetailScreen({
                   onPress={handleEdit}
                   variant="outline"
                   size="sm"
-                  className="flex-1 flex-row items-center justify-center gap-1.5"
+                  className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
                   testID="activity-plan-edit-button"
                 >
                   <Icon as={Edit} size={16} className="text-foreground" />
@@ -382,7 +380,7 @@ export function ActivityPlanDetailScreen({
                   onPress={handleDelete}
                   variant="outline"
                   size="sm"
-                  className="flex-1 flex-row items-center justify-center gap-1.5"
+                  className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
                   disabled={deleteMutation.isPending}
                   testID="activity-plan-delete-button"
                 >
@@ -394,118 +392,21 @@ export function ActivityPlanDetailScreen({
               </View>
             )}
           </View>
-          {routeCoordinates && routeCoordinates.length > 0 && (
-            <View className="bg-card border border-border rounded-xl overflow-hidden mb-6">
-              <View className="h-64">
-                <MapView
-                  style={{ flex: 1 }}
-                  provider={PROVIDER_DEFAULT}
-                  initialRegion={routeInitialRegion}
-                  scrollEnabled
-                  zoomEnabled
-                  pitchEnabled={false}
-                  rotateEnabled={false}
-                >
-                  <Polyline
-                    coordinates={routeCoordinates}
-                    strokeColor="#3b82f6"
-                    strokeWidth={4}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                </MapView>
-              </View>
-              {route && (
-                <View className="p-3 border-t border-border">
-                  <Text className="font-medium mb-1">{route.name}</Text>
-                  <View className="flex-row gap-3">
-                    <Text className="text-xs text-muted-foreground">
-                      {((route.total_distance ?? 0) / 1000).toFixed(1)} km
-                    </Text>
-                    {route.total_ascent != null && route.total_ascent > 0 && (
-                      <Text className="text-xs text-muted-foreground">↑ {route.total_ascent}m</Text>
-                    )}
-                    {route.total_descent != null && route.total_descent > 0 && (
-                      <Text className="text-xs text-muted-foreground">
-                        ↓ {route.total_descent}m
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
-          {activityPlan.structure && steps.length > 0 && (
-            <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              <View className="flex-row justify-around mb-4 pb-3 border-b border-border">
-                {durationMinutes && (
-                  <View className="items-center">
-                    <Text className="text-xs text-muted-foreground mb-1">Duration</Text>
-                    <Text className="text-lg font-bold">{vm.durationLabel}</Text>
-                  </View>
-                )}
-                {tss && (
-                  <View className="items-center">
-                    <Text className="text-xs text-muted-foreground mb-1">TSS</Text>
-                    <Text className="text-lg font-bold">{tss}</Text>
-                  </View>
-                )}
-                {intensityFactor && (
-                  <View className="items-center">
-                    <Text className="text-xs text-muted-foreground mb-1">IF</Text>
-                    <Text className="text-lg font-bold">{intensityFactor.toFixed(2)}</Text>
-                  </View>
-                )}
-                <View className="items-center">
-                  <Text className="text-xs text-muted-foreground mb-1">Steps</Text>
-                  <Text className="text-lg font-bold">{steps.length}</Text>
-                </View>
-              </View>
-              <Text className="text-sm font-semibold mb-3">Intensity Profile</Text>
-              <TimelineChart structure={activityPlan.structure} height={140} />
-            </View>
-          )}
-          {activityPlan.structure?.intervals && activityPlan.structure.intervals.length > 0 && (
-            <View className="bg-card border border-border rounded-xl p-4 mb-6">
-              <Text className="text-sm font-semibold mb-3">
-                Intervals ({activityPlan.structure.intervals.length})
-              </Text>
-              <View className="gap-3">
-                {activityPlan.structure.intervals.map((interval: any, idx: number) => (
-                  <View key={interval.id || idx} className="border border-border rounded-lg p-3">
-                    <View className="flex-row items-center justify-between mb-2">
-                      <Text className="font-medium">{interval.name}</Text>
-                      <Text className="text-xs text-muted-foreground">{interval.repetitions}x</Text>
-                    </View>
-                    {interval.notes && (
-                      <Text className="text-xs text-muted-foreground mb-2">{interval.notes}</Text>
-                    )}
-                    <View className="gap-1.5">
-                      {interval.steps.map((step: IntervalStepV2, stepIdx: number) => (
-                        <View key={step.id || stepIdx} className="flex-row items-center ml-3">
-                          <View
-                            className="w-2 h-2 rounded-full mr-2"
-                            style={{ backgroundColor: getStepIntensityColor(step) }}
-                          />
-                          <Text className="text-xs text-muted-foreground flex-1">{step.name}</Text>
-                          <Text className="text-xs text-muted-foreground">
-                            {formatStepDuration(step.duration)}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
+          <View className="mb-6">
+            <ActivityPlanContentPreview
+              plan={activityPlan}
+              route={route}
+              intensityFactor={intensityFactor}
+              testIDPrefix="activity-plan-content-preview"
+            />
+          </View>
           <View className="bg-card border border-border rounded-xl p-4 mb-6 gap-4">
             <View>
               <Text className="font-semibold text-foreground mb-1">
                 Comments ({social.commentCount})
               </Text>
               <Text className="text-sm text-muted-foreground">
-                Ask questions or leave context for anyone reusing this session.
+                Ask questions or leave context for anyone reusing this activity.
               </Text>
             </View>
             <View className="flex-row items-center gap-2">
@@ -552,18 +453,4 @@ export function ActivityPlanDetailScreen({
       {activityPlan && <ScheduleActivityModal {...scheduling.scheduleModalProps} />}
     </View>
   );
-}
-
-function formatStepDuration(duration: any): string {
-  if (duration.type === "time") {
-    const minutes = Math.floor(duration.seconds / 60);
-    const seconds = duration.seconds % 60;
-    if (minutes > 0 && seconds > 0) return `${minutes}m ${seconds}s`;
-    if (minutes > 0) return `${minutes}m`;
-    return `${seconds}s`;
-  }
-  if (duration.type === "distance") return `${(duration.meters / 1000).toFixed(2)} km`;
-  if (duration.type === "repetitions") return `${duration.count} reps`;
-  if (duration.type === "untilFinished") return "Until finished";
-  return "";
 }

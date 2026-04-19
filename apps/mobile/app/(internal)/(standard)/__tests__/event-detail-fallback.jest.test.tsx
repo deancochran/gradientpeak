@@ -62,6 +62,11 @@ jest.mock("@/components/ScheduleActivityModal", () => ({
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
 }));
 
+jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
+  __esModule: true,
+  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
+}));
+
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
@@ -147,6 +152,11 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
+    routes: {
+      get: {
+        useQuery: () => ({ data: null, isLoading: false }),
+      },
+    },
   },
 }));
 
@@ -155,16 +165,15 @@ describe("event detail fallback screen", () => {
     jest.clearAllMocks();
   });
 
-  it("explains that calendar detail is sheet-first and keeps deeper actions here", () => {
-    renderNative(<EventDetailScreen />);
+  it("renders planned activity content directly instead of the fallback note", () => {
+    const rendered = renderNative(<EventDetailScreen />);
 
-    expect(screen.getByText("Advanced event detail")).toBeTruthy();
+    expect(screen.queryByText("Advanced event detail")).toBeNull();
     expect(
-      screen.getByText(
-        /Calendar taps open the preview sheet first\. Use this fallback screen for deeper edits/i,
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText("Open Schedule Editor")).toBeTruthy();
+      (rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix,
+    ).toBe("event-detail-plan");
+    expect(screen.getByText("Activity details")).toBeTruthy();
+    expect(screen.getByText("Edit Activity")).toBeTruthy();
   });
 
   it("preserves planned-event schedule handoff through ScheduleActivityModal", () => {

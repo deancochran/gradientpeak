@@ -49,6 +49,15 @@ export function getMonthGridStartKey(monthStartKey: string): string {
   return addDaysToDateKey(monthStartKey, -mondayOffset);
 }
 
+export function getMonthGridDayCount(monthStartKey: string): number {
+  const monthStart = parseDateKey(getStartOfMonthKey(monthStartKey));
+  const monthEnd = parseDateKey(getEndOfMonthKey(monthStartKey));
+  const startOffset = (monthStart.getDay() + 6) % 7;
+  const endOffset = (6 - ((monthEnd.getDay() + 6) % 7) + 7) % 7;
+
+  return startOffset + monthEnd.getDate() + endOffset;
+}
+
 export function isSameMonth(dateKey: string, monthStartKey: string): boolean {
   return getStartOfMonthKey(dateKey) === getStartOfMonthKey(monthStartKey);
 }

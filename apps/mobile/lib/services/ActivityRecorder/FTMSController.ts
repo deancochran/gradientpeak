@@ -49,6 +49,8 @@ interface FTMSQueuedCommand {
 
 const DEFAULT_COMMAND_SOURCE: RecordingTrainerIntentSource = "manual";
 const CONTROL_POINT_SETTLE_MS = 250;
+const FTMS_RESPONSE_TIMEOUT_MESSAGE = "Response timeout";
+const FTMS_WRITE_ABORTED_MESSAGE = "Control point write aborted";
 
 export class FTMSController {
   private device: Device;
@@ -421,7 +423,14 @@ export class FTMSController {
   async setPowerTarget(watts: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.powerTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support power target setting");
-      return false;
+      return this.failWithoutQueue({
+        commandType: "set_power",
+        targetMode: ControlMode.ERG,
+        targetValue: watts,
+        context: this.normalizeCommandContext(context, "set_power"),
+        outcome: "unsupported",
+        errorMessage: "Trainer does not support power target setting",
+      });
     }
 
     // Validate power range
@@ -458,7 +467,14 @@ export class FTMSController {
   async setSimulation(params: SimulationParams, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.indoorBikeSimulationSupported) {
       console.warn("[FTMS] Trainer does not support indoor bike simulation");
-      return false;
+      return this.failWithoutQueue({
+        commandType: "set_simulation",
+        targetMode: ControlMode.SIM,
+        targetValue: params.grade,
+        context: this.normalizeCommandContext(context, "set_simulation"),
+        outcome: "unsupported",
+        errorMessage: "Trainer does not support indoor bike simulation",
+      });
     }
 
     // Op code 0x11 = Set Indoor Bike Simulation Parameters
@@ -502,7 +518,14 @@ export class FTMSController {
   async setResistanceTarget(level: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.resistanceTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support resistance target setting");
-      return false;
+      return this.failWithoutQueue({
+        commandType: "set_resistance",
+        targetMode: ControlMode.RESISTANCE,
+        targetValue: level,
+        context: this.normalizeCommandContext(context, "set_resistance"),
+        outcome: "unsupported",
+        errorMessage: "Trainer does not support resistance target setting",
+      });
     }
 
     // Validate resistance range
@@ -540,7 +563,14 @@ export class FTMSController {
   async setTargetSpeed(speedKph: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.speedTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support speed target setting");
-      return false;
+      return this.failWithoutQueue({
+        commandType: "set_speed",
+        targetMode: ControlMode.SPEED,
+        targetValue: speedKph,
+        context: this.normalizeCommandContext(context, "set_speed"),
+        outcome: "unsupported",
+        errorMessage: "Trainer does not support speed target setting",
+      });
     }
 
     // Validate speed range
@@ -578,7 +608,14 @@ export class FTMSController {
   async setTargetInclination(percent: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.inclinationTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support inclination target setting");
-      return false;
+      return this.failWithoutQueue({
+        commandType: "set_incline",
+        targetMode: ControlMode.INCLINATION,
+        targetValue: percent,
+        context: this.normalizeCommandContext(context, "set_incline"),
+        outcome: "unsupported",
+        errorMessage: "Trainer does not support inclination target setting",
+      });
     }
 
     // Validate inclination range
@@ -616,7 +653,14 @@ export class FTMSController {
   async setTargetHeartRate(bpm: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.heartRateTargetSettingSupported) {
       console.warn("[FTMS] Trainer does not support heart rate target setting");
-      return false;
+      return this.failWithoutQueue({
+        commandType: "set_heart_rate",
+        targetMode: ControlMode.HEART_RATE,
+        targetValue: bpm,
+        context: this.normalizeCommandContext(context, "set_heart_rate"),
+        outcome: "unsupported",
+        errorMessage: "Trainer does not support heart rate target setting",
+      });
     }
 
     // Validate heart rate range
@@ -652,7 +696,14 @@ export class FTMSController {
   async setTargetCadence(rpm: number, context?: FTMSCommandContext): Promise<boolean> {
     if (!this.features?.targetedCadenceSupported) {
       console.warn("[FTMS] Trainer does not support cadence target setting");
-      return false;
+      return this.failWithoutQueue({
+        commandType: "set_cadence",
+        targetMode: ControlMode.CADENCE,
+        targetValue: rpm,
+        context: this.normalizeCommandContext(context, "set_cadence"),
+        outcome: "unsupported",
+        errorMessage: "Trainer does not support cadence target setting",
+      });
     }
 
     // Validate cadence range
@@ -721,6 +772,32 @@ export class FTMSController {
     });
   }
 
+  private failWithoutQueue(params: {
+    commandType: RecordingTrainerCommandStatus["commandType"];
+    context: Required<FTMSCommandContext>;
+    outcome: RecordingTrainerCommandStatus["outcome"];
+    errorMessage: string;
+    targetMode?: ControlMode;
+    targetValue?: number;
+    resultCode?: number;
+  }): boolean {
+    const completedAt = Date.now();
+    this.lastCommandStatus = {
+      source: params.context.source,
+      commandType: params.commandType,
+      controlMode: params.targetMode ?? this.currentControlMode ?? null,
+      outcome: params.outcome,
+      targetValue: params.targetValue,
+      success: false,
+      errorMessage: params.errorMessage,
+      resultCode: params.resultCode,
+      resultCodeName: params.errorMessage,
+      queuedAt: Date.parse(params.context.createdAt),
+      completedAt,
+    };
+    return false;
+  }
+
   private insertQueuedCommand(command: FTMSQueuedCommand): boolean {
     for (let index = this.commandQueue.length - 1; index >= 0; index--) {
       const existing = this.commandQueue[index];
@@ -772,9 +849,11 @@ export class FTMSController {
       source: command.context.source,
       commandType: command.commandType,
       controlMode: command.targetMode ?? this.currentControlMode ?? null,
+      outcome: "superseded",
       targetValue: command.targetValue,
       success: false,
       errorMessage: `Superseded by ${supersededBy}`,
+      resultCodeName: `Superseded by ${supersededBy}`,
       queuedAt: Date.parse(command.context.createdAt),
       completedAt,
     };
@@ -850,8 +929,11 @@ export class FTMSController {
         source: context.source,
         commandType: "reset",
         controlMode: this.currentControlMode ?? null,
+        outcome: this.mapResponseOutcome(response),
         success: false,
         errorMessage: response.resultCodeName,
+        resultCode: response.resultCode,
+        resultCodeName: response.resultCodeName,
         queuedAt: Date.parse(context.createdAt),
         completedAt: Date.now(),
       };
@@ -863,6 +945,7 @@ export class FTMSController {
       source: context.source,
       commandType: "reset",
       controlMode: this.currentControlMode,
+      outcome: "success",
       success: true,
       queuedAt: Date.parse(context.createdAt),
       completedAt: Date.now(),
@@ -885,9 +968,12 @@ export class FTMSController {
       source: command.context.source,
       commandType: command.commandType,
       controlMode: command.targetMode ?? this.currentControlMode ?? null,
+      outcome: this.mapResponseOutcome(response),
       targetValue: command.targetValue,
       success: response.success,
       errorMessage: response.success ? undefined : response.resultCodeName,
+      resultCode: response.resultCode,
+      resultCodeName: response.resultCodeName,
       queuedAt: Date.parse(command.context.createdAt),
       completedAt,
     };
@@ -940,11 +1026,11 @@ export class FTMSController {
           };
 
           timeout = setTimeout(() => {
-            fail(new Error("Response timeout"));
+            fail(new Error(FTMS_RESPONSE_TIMEOUT_MESSAGE));
           }, 2000);
 
           abortResponseWait = () => {
-            fail(new Error("Control point write aborted"));
+            fail(new Error(FTMS_WRITE_ABORTED_MESSAGE));
           };
 
           subscription = this.device.monitorCharacteristicForService(
@@ -1042,6 +1128,31 @@ export class FTMSController {
         return "Control Not Permitted";
       default:
         return `Unknown (0x${code.toString(16)})`;
+    }
+  }
+
+  private mapResponseOutcome(response: FTMSResponse): RecordingTrainerCommandStatus["outcome"] {
+    if (response.success) {
+      return "success";
+    }
+
+    switch (response.resultCode) {
+      case FTMS_RESULT_CODES.NOT_SUPPORTED:
+        return "unsupported";
+      case FTMS_RESULT_CODES.INVALID_PARAMETER:
+        return "invalid_parameter";
+      case FTMS_RESULT_CODES.CONTROL_NOT_PERMITTED:
+        return "control_conflict";
+      case FTMS_RESULT_CODES.OPERATION_FAILED:
+        if (response.resultCodeName === FTMS_RESPONSE_TIMEOUT_MESSAGE) {
+          return "timeout";
+        }
+        if (response.resultCodeName === FTMS_WRITE_ABORTED_MESSAGE) {
+          return "write_failed";
+        }
+        return "operation_failed";
+      default:
+        return "operation_failed";
     }
   }
 

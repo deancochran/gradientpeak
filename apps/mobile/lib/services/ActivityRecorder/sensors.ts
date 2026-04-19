@@ -16,7 +16,14 @@ import {
   FTMSController,
   type FTMSFeatures,
 } from "./FTMSController";
-import { SensorReading } from "./types";
+import {
+  type RecordingServiceError,
+  type RecordingServiceErrorCategory,
+  type RecordingTrainerConnectionState,
+  type RecordingTrainerControlState,
+  type RecordingTrainerDataFlowState,
+  SensorReading,
+} from "./types";
 
 const SENSOR_PARSER_DEBUG = {
   enabled: false,
@@ -27,14 +34,22 @@ export function setSensorParserDebugEnabled(enabled: boolean): void {
 }
 
 /** --- Connection states --- */
-export type SensorConnectionState = "disconnected" | "connecting" | "connected" | "failed";
+export type SensorConnectionState =
+  | "disconnected"
+  | "disconnecting"
+  | "connecting"
+  | "reconnecting"
+  | "connected"
+  | "failed";
 
 /** --- Valid state transitions for connection state machine --- */
 const VALID_STATE_TRANSITIONS: Record<SensorConnectionState, SensorConnectionState[]> = {
-  disconnected: ["connecting", "failed"],
-  connecting: ["connected", "disconnected", "failed"],
-  connected: ["disconnected"],
-  failed: ["connecting", "disconnected"],
+  disconnected: ["connecting", "reconnecting", "disconnecting", "failed"],
+  disconnecting: ["disconnected", "failed"],
+  connecting: ["connected", "disconnected", "disconnecting", "failed"],
+  reconnecting: ["connected", "disconnected", "disconnecting", "failed"],
+  connected: ["disconnecting", "disconnected", "failed", "reconnecting"],
+  failed: ["connecting", "reconnecting", "disconnected"],
 };
 
 /** --- Connected sensor interface --- */
@@ -48,10 +63,12 @@ export interface ConnectedSensor {
   lastDataTimestamp?: number;
 
   // FTMS control support
+  isTrainer?: boolean;
   isControllable?: boolean;
   ftmsController?: FTMSController;
   ftmsFeatures?: FTMSFeatures;
   currentControlMode?: ControlMode;
+  lastServiceError?: RecordingServiceError;
 
   // Battery monitoring
   batteryLevel?: number; // 0-100
@@ -95,6 +112,15 @@ export interface PersistedSensor {
   lastConnected: number; // timestamp
 }
 
+export interface TrainerStateSnapshot {
+  deviceId: string | null;
+  deviceName: string | null;
+  connectionState: RecordingTrainerConnectionState;
+  dataFlowState: RecordingTrainerDataFlowState;
+  controlState: RecordingTrainerControlState;
+  lastServiceError: RecordingServiceError | null;
+}
+
 /** --- Generic Sports BLE Manager --- */
 export class SensorsManager {
   private bleManager = new BleManager();
@@ -110,6 +136,7 @@ export class SensorsManager {
 
   // Track controllable trainer
   private controllableTrainer?: ConnectedSensor;
+  private trainerState: TrainerStateSnapshot = this.createEmptyTrainerState();
 
   // Enhanced reconnection with exponential backoff
   private reconnectionAttempts: Map<string, number> = new Map();
@@ -193,6 +220,25 @@ export class SensorsManager {
         }
       }
       if (state === "PoweredOff" || state === "Unauthorized") {
+        const bluetoothError = this.recordServiceError(
+          state === "Unauthorized" ? "permission_error" : "bluetooth_unavailable",
+          state === "Unauthorized"
+            ? "Bluetooth permission unavailable"
+            : "Bluetooth is powered off",
+          {
+            deviceId: this.trainerState.deviceId ?? undefined,
+            recoverable: true,
+          },
+        );
+        if (this.trainerState.deviceId) {
+          this.clearControllableTrainer(this.trainerState.deviceId);
+          this.updateTrainerState({
+            connectionState: "disconnected",
+            dataFlowState: "lost",
+            controlState: "control_lost",
+            lastServiceError: bluetoothError,
+          });
+        }
         console.log(`[SensorsManager] BLE ${state}, disconnecting all sensors`);
         this.disconnectAll();
       }
@@ -208,6 +254,10 @@ export class SensorsManager {
     targetState: SensorConnectionState,
     immediate: boolean = false,
   ): void {
+    if (sensor.connectionState === targetState) {
+      return;
+    }
+
     // Check if transition is valid
     const currentState = sensor.connectionState;
     const validTransitions = VALID_STATE_TRANSITIONS[currentState];
@@ -277,7 +327,90 @@ export class SensorsManager {
     );
 
     // Notify connection callbacks
+    this.notifyConnectionChange(sensor);
+  }
+
+  private notifyConnectionChange(sensor: ConnectedSensor): void {
     this.connectionCallbacks.forEach((cb) => cb(sensor));
+  }
+
+  private createEmptyTrainerState(): TrainerStateSnapshot {
+    return {
+      deviceId: null,
+      deviceName: null,
+      connectionState: "idle",
+      dataFlowState: "unknown",
+      controlState: "not_applicable",
+      lastServiceError: null,
+    };
+  }
+
+  private updateTrainerState(update: Partial<TrainerStateSnapshot>): void {
+    this.trainerState = {
+      ...this.trainerState,
+      ...update,
+    };
+  }
+
+  private clearControllableTrainer(deviceId?: string): void {
+    if (!this.controllableTrainer) {
+      return;
+    }
+
+    if (deviceId && this.controllableTrainer.id !== deviceId) {
+      return;
+    }
+
+    this.controllableTrainer.isControllable = false;
+    this.controllableTrainer.ftmsController = undefined;
+    this.controllableTrainer.currentControlMode = undefined;
+    this.controllableTrainer = undefined;
+  }
+
+  private recordServiceError(
+    category: RecordingServiceErrorCategory,
+    message: string,
+    options?: {
+      deviceId?: string;
+      recoverable?: boolean;
+    },
+  ): RecordingServiceError {
+    const error: RecordingServiceError = {
+      category,
+      message,
+      recordedAt: Date.now(),
+      deviceId: options?.deviceId,
+      recoverable: options?.recoverable ?? true,
+    };
+
+    if (options?.deviceId) {
+      const sensor = this.connectedSensors.get(options.deviceId);
+      if (sensor) {
+        sensor.lastServiceError = error;
+      }
+
+      if (this.trainerState.deviceId === options.deviceId) {
+        this.updateTrainerState({ lastServiceError: error });
+      }
+    }
+
+    return error;
+  }
+
+  private clearServiceError(deviceId?: string): void {
+    if (deviceId) {
+      const sensor = this.connectedSensors.get(deviceId);
+      if (sensor) {
+        sensor.lastServiceError = undefined;
+      }
+
+      if (this.trainerState.deviceId === deviceId) {
+        this.updateTrainerState({ lastServiceError: null });
+      }
+      return;
+    }
+
+    this.updateTrainerState({ lastServiceError: null });
   }
 
   /**
@@ -394,6 +527,8 @@ export class SensorsManager {
     console.log("[SensorsManager] Resetting all sensors");
     await this.disconnectAll();
     await this.clearPersistedSensors();
+    this.clearControllableTrainer();
+    this.trainerState = this.createEmptyTrainerState();
   }
 
   /**
@@ -405,6 +540,10 @@ export class SensorsManager {
 
   /** Start monitoring sensor connection health */
   private startConnectionMonitoring() {
+    if (this.connectionMonitorTimer) {
+      return;
+    }
+
     this.connectionMonitorTimer = setInterval(() => {
       this.checkSensorHealth();
     }, this.HEALTH_CHECK_INTERVAL_MS);
@@ -442,6 +581,14 @@ export class SensorsManager {
             `[SensorsManager] Sensor ${sensor.name} disconnected (no data for ${timeSinceLastData}ms)`,
           );
           this.transitionSensorState(sensor, "disconnected", true);
+          if (this.trainerState.deviceId === sensor.id) {
+            this.clearControllableTrainer(sensor.id);
+            this.updateTrainerState({
+              connectionState: "disconnected",
+              dataFlowState: "lost",
+              controlState: "control_lost",
+            });
+          }
 
           // Start reconnection with exponential backoff
           await this.attemptReconnection(sensor.id, 1);
@@ -468,13 +615,41 @@ export class SensorsManager {
         `[SensorsManager] Max reconnection attempts (${this.MAX_RECONNECTION_ATTEMPTS}) reached for ${sensor.name}`,
       );
       this.transitionSensorState(sensor, "failed", true);
+      const reconnectError = this.recordServiceError(
+        "reconnect_exhausted",
+        `Reconnect exhausted for ${sensor.name}`,
+        {
+          deviceId: sensor.id,
+          recoverable: true,
+        },
+      );
+      if (this.trainerState.deviceId === sensor.id) {
+        this.clearControllableTrainer(sensor.id);
+        this.updateTrainerState({
+          connectionState: "failed",
+          dataFlowState: "lost",
+          controlState: "failed",
+          lastServiceError: reconnectError,
+        });
+      }
       this.reconnectionAttempts.delete(sensorId);
       return;
     }
 
     // Update state
-    this.transitionSensorState(sensor, "connecting", true);
+    this.transitionSensorState(sensor, "reconnecting", true);
     this.reconnectionAttempts.set(sensorId, attempt);
+    if (this.trainerState.deviceId === sensorId) {
+      this.updateTrainerState({
+        connectionState: "reconnecting",
+        dataFlowState: "waiting_for_data",
+        controlState:
+          this.trainerState.controlState === "controllable" ||
+          this.trainerState.controlState === "control_lost"
+            ? "recovering_control"
+            : this.trainerState.controlState,
+      });
+    }
 
     console.log(
       `[SensorsManager] Reconnection attempt ${attempt}/${this.MAX_RECONNECTION_ATTEMPTS} for ${sensor.name}`,
@@ -537,6 +712,12 @@ export class SensorsManager {
     const sensor = this.connectedSensors.get(deviceId);
     if (sensor) {
       sensor.lastDataTimestamp = Date.now();
+      if (this.trainerState.deviceId === deviceId) {
+        this.updateTrainerState({
+          connectionState: "connected",
+          dataFlowState: "flowing",
+        });
+      }
 
       // If sensor was marked as disconnected but is sending data, update state
       if (sensor.connectionState === "disconnected") {
@@ -590,6 +771,9 @@ export class SensorsManager {
               this.currentScanTimeout = null;
             }
             this.bleManager.stopDeviceScan();
+            this.recordServiceError("scan_error", error.message || "BLE scan failed", {
+              recoverable: true,
+            });
             reject(error);
             return;
           }
@@ -617,17 +801,33 @@ export class SensorsManager {
     try {
       // Update state to connecting
       let sensor = this.connectedSensors.get(deviceId);
+      const isReconnect = this.reconnectionAttempts.has(deviceId);
       if (sensor) {
-        this.transitionSensorState(sensor, "connecting", true);
+        this.transitionSensorState(sensor, isReconnect ? "reconnecting" : "connecting", true);
       } else {
+        const persistedSensor = this.persistedSensors.get(deviceId);
         sensor = {
           id: deviceId,
-          name: "Unknown",
-          connectionState: "connecting",
+          name: persistedSensor?.name ?? "Unknown",
+          connectionState: isReconnect ? "reconnecting" : "connecting",
         } as ConnectedSensor;
         this.connectedSensors.set(deviceId, sensor);
         // Note: new sensors start in "connecting" state, no transition needed
-        this.connectionCallbacks.forEach((cb) => cb(sensor!));
+        this.notifyConnectionChange(sensor);
+      }
+
+      if (this.trainerState.deviceId === deviceId) {
+        this.updateTrainerState({
+          deviceId,
+          deviceName: sensor.name,
+          connectionState: isReconnect ? "reconnecting" : "connecting",
+          dataFlowState: "waiting_for_data",
+          controlState:
+            this.trainerState.controlState === "controllable" ||
+            this.trainerState.controlState === "control_lost"
+              ? "recovering_control"
+              : this.trainerState.controlState,
+        });
       }
 
       const device = await this.bleManager.connectToDevice(deviceId, {
@@ -652,6 +852,7 @@ export class SensorsManager {
       };
 
       this.connectedSensors.set(device.id, connectedSensor);
+      this.clearServiceError(device.id);
       this.cscParserStates.delete(device.id);
       await this.monitorKnownCharacteristics(connectedSensor);
 
@@ -660,15 +861,41 @@ export class SensorsManager {
 
       if (hasFTMS) {
         console.log(`[SensorsManager] Detected FTMS trainer: ${connectedSensor.name}`);
+        connectedSensor.isTrainer = true;
+        this.updateTrainerState({
+          deviceId: connectedSensor.id,
+          deviceName: connectedSensor.name,
+          connectionState: "connected",
+          dataFlowState: "waiting_for_data",
+          controlState: "eligible",
+          lastServiceError: null,
+        });
         await this.setupFTMSControl(connectedSensor);
       }
 
       // Enhanced disconnect handler with reconnection
       device.onDisconnected((error) => {
         console.log("Disconnected:", device.name, error?.message || "");
+
+        if (connectedSensor.connectionState === "disconnecting") {
+          this.transitionSensorState(connectedSensor, "disconnected", true);
+          connectedSensor.lastDataTimestamp = undefined;
+          return;
+        }
+
         this.transitionSensorState(connectedSensor, "disconnected", true);
         connectedSensor.lastDataTimestamp = undefined;
-        // Health monitoring will handle reconnection attempt
+        if (this.trainerState.deviceId === connectedSensor.id) {
+          this.clearControllableTrainer(connectedSensor.id);
+          this.updateTrainerState({
+            connectionState: "disconnected",
+            dataFlowState: "lost",
+            controlState: "control_lost",
+          });
+        }
+        if (!this.reconnectionAttempts.has(connectedSensor.id)) {
+          void this.attemptReconnection(connectedSensor.id, 1);
+        }
       });
 
       console.log(`Connected to ${connectedSensor.name} with ${services.length} services`);
@@ -676,7 +903,7 @@ export class SensorsManager {
       // Persist sensor for auto-reconnection in future sessions
       await this.addPersistedSensor(connectedSensor.id, connectedSensor.name);
 
-      this.connectionCallbacks.forEach((cb) => cb(connectedSensor));
+      this.notifyConnectionChange(connectedSensor);
       return connectedSensor;
     } catch (err) {
       console.error("Connect error", err);
@@ -685,23 +912,59 @@ export class SensorsManager {
       if (existingSensor) {
         this.transitionSensorState(existingSensor, "failed", true);
       }
+
+      const connectError = this.recordServiceError(
+        "device_connect_error",
+        err instanceof Error ? err.message : "Failed to connect to device",
+        {
+          deviceId,
+          recoverable: true,
+        },
+      );
+
+      if (this.trainerState.deviceId === deviceId) {
+        this.clearControllableTrainer(deviceId);
+        this.updateTrainerState({
+          connectionState: "failed",
+          dataFlowState: "lost",
+          controlState: "failed",
+          lastServiceError: connectError,
+        });
+      }
+
       return null;
     }
   }
 
   /** Public method to reconnect all sensors (to be called on AppState "active") */
   public async reconnectAll(): Promise<void> {
-    const sensors = Array.from(this.connectedSensors.values());
-    for (const sensor of sensors) {
-      if (sensor.connectionState === "disconnected" && !this.reconnectionAttempts.has(sensor.id)) {
-        console.log(`[SensorsManager] Reconnecting ${sensor.name} on app foreground`);
-        await this.attemptReconnection(sensor.id, 1);
+    const knownSensorIds = new Set<string>([
+      ...this.connectedSensors.keys(),
+      ...this.persistedSensors.keys(),
+    ]);
+
+    for (const sensorId of knownSensorIds) {
+      const sensor = this.connectedSensors.get(sensorId);
+      const persistedSensor = this.persistedSensors.get(sensorId);
+
+      if (sensor?.connectionState === "connected" || this.reconnectionAttempts.has(sensorId)) {
+        continue;
+      }
+
+      console.log(
+        `[SensorsManager] Reconnecting ${sensor?.name || persistedSensor?.name || sensorId} on app foreground`,
+      );
+
+      if (sensor) {
+        await this.attemptReconnection(sensorId, 1);
+      } else {
+        await this.connectSensor(sensorId);
       }
     }
   }
 
   /** Disconnect a device */
-  async disconnectSensor(deviceId: string) {
+  async disconnectSensor(deviceId: string, options?: { forgetPersisted?: boolean }) {
     // Cancel any ongoing reconnection attempts
     this.cancelReconnectionAttempts(deviceId);
 
@@ -714,7 +977,15 @@ export class SensorsManager {
     console.log(`[SensorsManager] Disconnecting sensor: ${sensor.name}`);
 
     // Update connection state and notify callbacks first
-    this.transitionSensorState(sensor, "disconnected", true);
+    this.transitionSensorState(sensor, "disconnecting", true);
+    if (this.trainerState.deviceId === deviceId) {
+      this.clearControllableTrainer(deviceId);
+      this.updateTrainerState({
+        connectionState: "disconnecting",
+        dataFlowState: "lost",
+        controlState: "not_applicable",
+      });
+    }
 
     // Cancel BLE connection if device exists
     if (sensor.device) {
@@ -726,28 +997,45 @@ export class SensorsManager {
       }
     }
 
+    this.transitionSensorState(sensor, "disconnected", true);
+
     // Remove from connected sensors map
     this.connectedSensors.delete(deviceId);
     this.cscParserStates.delete(deviceId);
 
     // Remove from persistence - user manually disconnected
-    console.log(
-      `[SensorsManager] Removing ${sensor.name} from persisted sensors (manual disconnect)`,
-    );
-    await this.removePersistedSensor(deviceId);
+    if (options?.forgetPersisted ?? true) {
+      console.log(
+        `[SensorsManager] Removing ${sensor.name} from persisted sensors (manual disconnect)`,
+      );
+      await this.removePersistedSensor(deviceId);
+    }
+
+    if (this.trainerState.deviceId === deviceId) {
+      if (options?.forgetPersisted ?? true) {
+        this.trainerState = this.createEmptyTrainerState();
+      } else {
+        this.updateTrainerState({
+          connectionState: "disconnected",
+          dataFlowState: "lost",
+          controlState: "not_applicable",
+        });
+      }
+    }
   }
 
   /** Disconnect all devices */
   async disconnectAll() {
-    this.stopConnectionMonitoring();
-
     // Cancel all ongoing reconnection attempts
     this.cancelReconnectionAttempts();
 
     await Promise.allSettled(
-      Array.from(this.connectedSensors.keys()).map((id) => this.disconnectSensor(id)),
+      Array.from(this.connectedSensors.keys()).map((id) =>
+        this.disconnectSensor(id, { forgetPersisted: false }),
+      ),
     );
     this.cscParserStates.clear();
+    this.clearControllableTrainer();
   }
 
   /**
@@ -762,6 +1050,15 @@ export class SensorsManager {
       // Read features to determine capabilities
       const features = await controller.readFeatures();
 
+      this.updateTrainerState({
+        deviceId: sensor.id,
+        deviceName: sensor.name,
+        connectionState: "connected",
+        dataFlowState: sensor.lastDataTimestamp ? "flowing" : "waiting_for_data",
+        controlState: "requesting_control",
+        lastServiceError: null,
+      });
+
       // Request control
       const controlGranted = await controller.requestControl();
 
@@ -770,6 +1067,15 @@ export class SensorsManager {
         sensor.ftmsController = controller;
         sensor.ftmsFeatures = features;
         this.controllableTrainer = sensor;
+        this.clearServiceError(sensor.id);
+        this.updateTrainerState({
+          deviceId: sensor.id,
+          deviceName: sensor.name,
+          connectionState: "connected",
+          dataFlowState: sensor.lastDataTimestamp ? "flowing" : "waiting_for_data",
+          controlState: "controllable",
+          lastServiceError: null,
+        });
 
         // Subscribe to status updates
         await controller.subscribeStatus((status) => {
@@ -783,13 +1089,53 @@ export class SensorsManager {
         console.log("[SensorsManager] Capabilities:", features);
 
         // Notify connection callbacks (triggers UI update)
-        this.connectionCallbacks.forEach((cb) => cb(sensor));
+        this.notifyConnectionChange(sensor);
       } else {
         console.warn("[SensorsManager] Failed to gain FTMS control");
+        sensor.isControllable = false;
+        sensor.ftmsController = undefined;
+        sensor.ftmsFeatures = features;
+        this.clearControllableTrainer(sensor.id);
+        const controlError = this.recordServiceError(
+          "control_conflict_suspected",
+          `Trainer control rejected by ${sensor.name}`,
+          {
+            deviceId: sensor.id,
+            recoverable: true,
+          },
+        );
+        this.updateTrainerState({
+          deviceId: sensor.id,
+          deviceName: sensor.name,
+          connectionState: "connected",
+          dataFlowState: sensor.lastDataTimestamp ? "flowing" : "waiting_for_data",
+          controlState: "control_rejected",
+          lastServiceError: controlError,
+        });
+        this.notifyConnectionChange(sensor);
       }
     } catch (error) {
       console.error("[SensorsManager] FTMS setup failed:", error);
       sensor.isControllable = false;
+      sensor.ftmsController = undefined;
+      this.clearControllableTrainer(sensor.id);
+      const setupError = this.recordServiceError(
+        "ftms_control_request_error",
+        error instanceof Error ? error.message : `FTMS control setup failed for ${sensor.name}`,
+        {
+          deviceId: sensor.id,
+          recoverable: true,
+        },
+      );
+      this.updateTrainerState({
+        deviceId: sensor.id,
+        deviceName: sensor.name,
+        connectionState: "connected",
+        dataFlowState: sensor.lastDataTimestamp ? "flowing" : "waiting_for_data",
+        controlState: "failed",
+        lastServiceError: setupError,
+      });
+      this.notifyConnectionChange(sensor);
     }
   }
 
@@ -810,6 +1156,10 @@ export class SensorsManager {
     return Array.from(this.connectedSensors.values()).filter(
       (sensor) => sensor.connectionState === "connected",
     );
+  }
+
+  getTrainerState(): TrainerStateSnapshot {
+    return { ...this.trainerState };
   }
 
   /** Monitor known characteristics */
@@ -1004,6 +1354,21 @@ export class SensorsManager {
             `[SensorsManager] Indoor Bike Data monitoring error for ${sensor.name}:`,
             error,
           );
+          const subscriptionError = this.recordServiceError(
+            "measurement_subscription_error",
+            error.message || `Indoor Bike Data monitoring failed for ${sensor.name}`,
+            {
+              deviceId: sensor.id,
+              recoverable: true,
+            },
+          );
+          if (this.trainerState.deviceId === sensor.id) {
+            this.updateTrainerState({
+              dataFlowState: "lost",
+              lastServiceError: subscriptionError,
+            });
+          }
+          this.notifyConnectionChange(sensor);
           return;
         }
 
@@ -1027,6 +1392,21 @@ export class SensorsManager {
         `[SensorsManager] Failed to monitor Indoor Bike Data for ${sensor.name}:`,
         error,
       );
+      const subscriptionError = this.recordServiceError(
+        "measurement_subscription_error",
+        error instanceof Error
+          ? error.message
+          : `Failed to monitor Indoor Bike Data for ${sensor.name}`,
+        {
+          deviceId: sensor.id,
+          recoverable: true,
+        },
+      );
+      this.updateTrainerState({
+        dataFlowState: "lost",
+        lastServiceError: subscriptionError,
+      });
+      this.notifyConnectionChange(sensor);
     }
   }
 

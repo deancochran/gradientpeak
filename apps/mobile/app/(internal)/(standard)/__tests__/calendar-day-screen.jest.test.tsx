@@ -99,6 +99,10 @@ jest.mock("@/lib/api", () => ({
                   activity_category: "outdoor_run",
                   estimated_duration: 3600,
                   estimated_tss: 72,
+                  route_id: "route-1",
+                  structure: {
+                    intervals: [{ repetitions: 2, steps: [{}, {}] }],
+                  },
                 },
               },
               {
@@ -162,6 +166,8 @@ describe("calendar day screen", () => {
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
     expect(screen.getByText("Outdoor Run")).toBeTruthy();
+    expect(screen.getByText("4 steps")).toBeTruthy();
+    expect(screen.getByText("Route")).toBeTruthy();
 
     fireEvent.press(screen.getByTestId("schedule-event-event-2"));
 

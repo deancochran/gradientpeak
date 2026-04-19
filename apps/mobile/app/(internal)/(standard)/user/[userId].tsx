@@ -6,6 +6,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
+import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Clock, Edit3, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
@@ -17,6 +18,12 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
+
+const themeOptions = [
+  { label: "System", value: "system" },
+  { label: "Light", value: "light" },
+  { label: "Dark", value: "dark" },
+] as const;
 
 function calculateAge(dob: string | null | undefined): number | null {
   if (!dob) return null;
@@ -46,7 +53,7 @@ function UserDetailScreen() {
     updateEmailUnavailableReason,
   } = useAuth();
   const authStore = useAuthStore();
-  const { theme, setTheme } = useTheme();
+  const { theme, resolvedTheme, setTheme } = useTheme();
   const utils = api.useUtils();
 
   const targetUserId = typeof userId === "string" ? userId : "";
@@ -661,13 +668,44 @@ function UserDetailScreen() {
             testID="preferences-section"
           >
             <SettingItem
-              type="toggle"
-              label="Dark Mode"
-              description="Switch between light and dark themes"
-              value={theme === "dark"}
-              onValueChange={(isChecked) => setTheme(isChecked ? "dark" : "light")}
+              type="custom"
+              label="Theme"
+              description={`Current: ${resolvedTheme === "dark" ? "Dark" : "Light"}${theme === "system" ? " (System)" : ""}`}
               testID="dark-mode"
-            />
+            >
+              <View className="ml-3 w-[220px] rounded-lg bg-muted p-1">
+                <ToggleGroup
+                  type="single"
+                  value={theme}
+                  onValueChange={(nextValue: string | undefined) => {
+                    if (nextValue) {
+                      void setTheme(nextValue as "system" | "light" | "dark");
+                    }
+                  }}
+                  className="w-full"
+                  testId="theme-toggle-group"
+                >
+                  {themeOptions.map((option, index) => {
+                    const isSelected = theme === option.value;
+
+                    return (
+                      <ToggleGroupItem
+                        key={option.value}
+                        value={option.value}
+                        testId={`theme-option-${option.value}`}
+                        isFirst={index === 0}
+                        isLast={index === themeOptions.length - 1}
+                        className={`flex-1 px-3 py-2 ${isSelected ? "bg-background" : "bg-transparent"}`}
+                      >
+                        <Text className={isSelected ? "text-foreground" : "text-muted-foreground"}>
+                          {option.label}
+                        </Text>
+                      </ToggleGroupItem>
+                    );
+                  })}
+                </ToggleGroup>
+              </View>
+            </SettingItem>
           </SettingsGroup>
 
           <SettingsGroup

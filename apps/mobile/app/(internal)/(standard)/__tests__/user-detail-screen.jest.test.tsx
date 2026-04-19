@@ -32,6 +32,11 @@ const profileQueryState = {
   isLoading: false,
   error: null as any,
 };
+const themeState = {
+  theme: "light",
+  resolvedTheme: "light",
+  setTheme: jest.fn(),
+};
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -74,6 +79,30 @@ jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHos
 jest.mock("@repo/ui/components/input", () => ({ __esModule: true, Input: createHost("Input") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 
+jest.mock("@repo/ui/components/toggle-group", () => {
+  const React = require("react");
+
+  return {
+    __esModule: true,
+    ToggleGroup: ({ children, onValueChange, ...props }: any) => {
+      const { testId, ...restProps } = props;
+      const enhancedChildren = React.Children.map(children, (child: any) => {
+        if (!React.isValidElement(child)) {
+          return child;
+        }
+
+        return React.cloneElement(child, {
+          onPress: () => onValueChange?.(child.props.value),
+        });
+      });
+
+      return React.createElement("ToggleGroup", { ...restProps, testID: testId }, enhancedChildren);
+    },
+    ToggleGroupItem: ({ testId, ...props }: any) =>
+      React.createElement("ToggleGroupItem", { ...props, testID: testId }, props.children),
+  };
+});
+
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Edit3: createHost("Edit3"),
@@ -95,7 +124,7 @@ jest.mock("@/lib/stores/auth-store", () => ({
 
 jest.mock("@/lib/stores/theme-store", () => ({
   __esModule: true,
-  useTheme: () => ({ theme: "light", setTheme: jest.fn() }),
+  useTheme: () => themeState,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -123,6 +152,9 @@ describe("user detail own vs other controls", () => {
   beforeEach(() => {
     pushMock.mockReset();
     replaceMock.mockReset();
+    themeState.theme = "light";
+    themeState.resolvedTheme = "light";
+    themeState.setTheme.mockReset();
   });
 
   it("shows own-only controls on own profile", () => {
@@ -157,5 +189,31 @@ describe("user detail own vs other controls", () => {
 
     expect(screen.queryByTestId("edit-profile-action")).toBeNull();
     expect(screen.queryByTestId("account-section")).toBeNull();
+  });
+
+  it("reflects resolved dark mode when the preference is system", () => {
+    localSearchParamsMock.userId = authState.user.id;
+    themeState.theme = "system" as any;
+    themeState.resolvedTheme = "dark" as any;
+
+    renderNative(<UserDetailScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("dark-mode")).toBeTruthy();
+    expect(screen.getByTestId("theme-option-system")).toBeTruthy();
+    expect(screen.getByTestId("theme-option-light")).toBeTruthy();
+    expect(screen.getByTestId("theme-option-dark")).toBeTruthy();
+    expect(screen.getByText("System")).toBeTruthy();
+    expect(screen.getByText("Light")).toBeTruthy();
+    expect(screen.getByText("Dark")).toBeTruthy();
+  });
+
+  it("updates the theme preference when an option is selected", () => {
+    localSearchParamsMock.userId = authState.user.id;
+
+    renderNative(<UserDetailScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("theme-option-dark"));
+
+    expect(themeState.setTheme).toHaveBeenCalledWith("dark");
   });
 });

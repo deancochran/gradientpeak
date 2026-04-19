@@ -1,21 +1,15 @@
-// stores/theme-store.ts
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Appearance } from "react-native";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { type ResolvedThemeMode, resolveThemeMode, type ThemePreference } from "@/lib/theme";
 
-const THEME_STORAGE_KEY = "@theme_preference";
-
 interface ThemeStore {
   userPreference: ThemePreference;
   resolvedTheme: ResolvedThemeMode;
   isLoaded: boolean;
-  hydrated: boolean;
   initialize: () => Promise<void>;
-  setTheme: (preference: ThemePreference) => Promise<void>;
-  toggleTheme: () => void;
-  setHydrated: (hydrated: boolean) => void;
+  setTheme: (preference: ThemePreference) => void;
 }
 
 export const useThemeStore = create<ThemeStore>()(
@@ -25,35 +19,19 @@ export const useThemeStore = create<ThemeStore>()(
       userPreference: "system" as ThemePreference,
       resolvedTheme: resolveThemeMode("system") as ResolvedThemeMode,
       isLoaded: false as boolean,
-      hydrated: false as boolean,
-
-      // Actions
-      setHydrated: (hydrated: boolean) => set({ hydrated }),
 
       initialize: async () => {
         if (get().isLoaded) return;
 
-        try {
-          const savedPreference = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        const preference = get().userPreference;
 
-          if (savedPreference && ["light", "dark", "system"].includes(savedPreference)) {
-            const preference = savedPreference as ThemePreference;
-            set({
-              userPreference: preference,
-              resolvedTheme: resolveThemeMode(preference),
-            });
-            Appearance.setColorScheme(preference === "system" ? null : preference);
-          } else {
-            const defaultTheme = "system";
-            set({
-              userPreference: defaultTheme,
-              resolvedTheme: resolveThemeMode(defaultTheme),
-            });
-            Appearance.setColorScheme(null);
-            await AsyncStorage.setItem(THEME_STORAGE_KEY, defaultTheme);
-          }
+        try {
+          set({
+            resolvedTheme: resolveThemeMode(preference),
+          });
+          Appearance.setColorScheme(preference === "system" ? null : preference);
         } catch (error) {
-          console.warn("Failed to load theme preference:", error);
+          console.warn("Failed to initialize theme:", error);
           set({
             userPreference: "system",
             resolvedTheme: resolveThemeMode("system"),
@@ -64,23 +42,16 @@ export const useThemeStore = create<ThemeStore>()(
         }
       },
 
-      setTheme: async (preference: ThemePreference) => {
+      setTheme: (preference: ThemePreference) => {
         try {
-          await AsyncStorage.setItem(THEME_STORAGE_KEY, preference);
           set({
             userPreference: preference,
             resolvedTheme: resolveThemeMode(preference),
           });
           Appearance.setColorScheme(preference === "system" ? null : preference);
         } catch (error) {
-          console.warn("Failed to save theme preference:", error);
+          console.warn("Failed to update theme:", error);
         }
-      },
-
-      toggleTheme: () => {
-        const { resolvedTheme } = get();
-        const newTheme: ThemePreference = resolvedTheme === "dark" ? "light" : "dark";
-        get().setTheme(newTheme);
       },
     }),
     {
@@ -89,13 +60,17 @@ export const useThemeStore = create<ThemeStore>()(
       partialize: (state) => ({
         userPreference: state.userPreference,
       }),
-      onRehydrateStorage: () => (state, error) => {
-        if (state && !error) {
-          state.setHydrated(true);
-          state.initialize();
-        } else if (error && state) {
+      onRehydrateStorage: () => (_state, error) => {
+        if (!error) {
+          void useThemeStore.getState().initialize();
+        } else {
           console.warn("Theme Store rehydrate error:", error);
-          state.setHydrated(true);
+          useThemeStore.setState({
+            userPreference: "system",
+            resolvedTheme: resolveThemeMode("system"),
+            isLoaded: true,
+          });
+          Appearance.setColorScheme(null);
         }
       },
     },
@@ -116,27 +91,14 @@ Appearance.addChangeListener(({ colorScheme }) => {
 
 // Simple hook for components
 export const useTheme = () => {
-  const { userPreference, resolvedTheme, isLoaded, hydrated, setTheme, toggleTheme, initialize } =
-    useThemeStore();
-
-  // Auto-initialize if hydrated but not loaded
-  if (hydrated && !isLoaded) {
-    initialize();
-  }
+  const { userPreference, resolvedTheme, isLoaded, setTheme } = useThemeStore();
 
   return {
     theme: userPreference,
     resolvedTheme,
     isLoaded,
-    hydrated,
     setTheme,
-    toggleTheme,
   };
-};
-
-// Initialize function
-export const initializeTheme = () => {
-  useThemeStore.getState().initialize();
 };
 
 // Export the type for use in components if needed

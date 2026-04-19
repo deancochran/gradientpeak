@@ -45,11 +45,12 @@ import { WahooSyncService } from "./sync-service";
 
 function createRepositoryMock() {
   return {
-    createSyncedEvent: vi.fn().mockResolvedValue(undefined),
-    deleteSyncedEvent: vi.fn().mockResolvedValue(undefined),
+    createEventResourceLink: vi.fn().mockResolvedValue(undefined),
+    deleteEventResourceLink: vi.fn().mockResolvedValue(undefined),
     findWahooIntegrationByProfileId: vi.fn().mockResolvedValue({
       accessToken: "access-token",
       externalId: "wahoo-user-1",
+      id: "integration-1",
       profileId: "profile-1",
       refreshToken: "refresh-token",
     }),
@@ -68,9 +69,9 @@ function createRepositoryMock() {
     }),
     getProfileSyncMetrics: vi.fn().mockResolvedValue({ ftp: 250, thresholdHr: 170 }),
     getRouteForSync: vi.fn().mockResolvedValue(null),
-    getSyncedEvent: vi.fn().mockResolvedValue(null),
-    listEventSyncs: vi.fn().mockResolvedValue([]),
-    updateSyncedEvent: vi.fn().mockResolvedValue(undefined),
+    getEventResourceLink: vi.fn().mockResolvedValue(null),
+    listEventResourceLinks: vi.fn().mockResolvedValue([]),
+    updateEventResourceLink: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -190,9 +191,10 @@ describe("WahooSyncService", () => {
       workoutTypeId: 0,
       durationMinutes: 30,
     });
-    expect(repository.createSyncedEvent).toHaveBeenCalledWith({
+    expect(repository.createEventResourceLink).toHaveBeenCalledWith({
       profileId: "profile-1",
       eventId: "event-1",
+      integrationId: "integration-1",
       provider: "wahoo",
       externalId: "43",
       syncedAt: "2026-04-03T12:00:00.000Z",
@@ -202,7 +204,7 @@ describe("WahooSyncService", () => {
 
   it("updates workout metadata only when the synced structure is not older", async () => {
     const repository = createRepositoryMock();
-    repository.getSyncedEvent.mockResolvedValueOnce({
+    repository.getEventResourceLink.mockResolvedValueOnce({
       externalId: "workout-77",
       id: "sync-1",
       updatedAt: "2026-04-02T09:00:00.000Z",
@@ -236,7 +238,7 @@ describe("WahooSyncService", () => {
       name: "Updated Workout Name",
       scheduledDate: "2026-04-06T07:30:00.000Z",
     });
-    expect(repository.updateSyncedEvent).toHaveBeenCalledWith({
+    expect(repository.updateEventResourceLink).toHaveBeenCalledWith({
       id: "sync-1",
       updatedAt: "2026-04-03T12:00:00.000Z",
     });
@@ -246,7 +248,7 @@ describe("WahooSyncService", () => {
 
   it("recreates the Wahoo workout when the activity plan structure is newer", async () => {
     const repository = createRepositoryMock();
-    repository.getSyncedEvent.mockResolvedValueOnce({
+    repository.getEventResourceLink.mockResolvedValueOnce({
       externalId: "workout-77",
       id: "sync-1",
       updatedAt: "2026-04-01T09:00:00.000Z",
@@ -295,7 +297,7 @@ describe("WahooSyncService", () => {
       durationMinutes: 62,
     });
     expect(wahooClient.deleteWorkout).toHaveBeenCalledWith("workout-77");
-    expect(repository.updateSyncedEvent).toHaveBeenCalledWith({
+    expect(repository.updateEventResourceLink).toHaveBeenCalledWith({
       id: "sync-1",
       externalId: "99",
       updatedAt: "2026-04-03T12:00:00.000Z",
@@ -304,7 +306,7 @@ describe("WahooSyncService", () => {
 
   it("deletes the local sync record even if the remote Wahoo delete fails", async () => {
     const repository = createRepositoryMock();
-    repository.getSyncedEvent.mockResolvedValueOnce({
+    repository.getEventResourceLink.mockResolvedValueOnce({
       externalId: "workout-77",
       id: "sync-1",
       updatedAt: "2026-04-01T09:00:00.000Z",
@@ -321,6 +323,6 @@ describe("WahooSyncService", () => {
     });
 
     expect(wahooClient.deleteWorkout).toHaveBeenCalledWith("workout-77");
-    expect(repository.deleteSyncedEvent).toHaveBeenCalledWith("sync-1");
+    expect(repository.deleteEventResourceLink).toHaveBeenCalledWith("sync-1");
   });
 });

@@ -5,6 +5,7 @@ import { FlatList, TouchableOpacity, View } from "react-native";
 import {
   addDaysToDateKey,
   buildMonthStartKeys,
+  getMonthGridDayCount,
   getMonthGridStartKey,
   isSameMonth,
   parseDateKey,
@@ -14,14 +15,13 @@ import { type CalendarEventsByDate, getMonthDensity } from "@/lib/calendar/norma
 type CalendarMonthListProps = {
   rangeStart: string;
   rangeEnd: string;
-  activeDate: string;
   visibleMonthAnchor: string;
   todayKey: string;
   eventsByDate: CalendarEventsByDate;
   onVisibleMonthChange: (monthStartKey: string) => void;
   onReachStart: () => void;
   onReachEnd: () => void;
-  onSelectDay: (dateKey: string, hasVisibleEvents: boolean) => void;
+  onSelectDay: (dateKey: string) => void;
 };
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -39,7 +39,6 @@ export function getVisibleMonthIndex(months: string[], visibleMonthAnchor: strin
 export function CalendarMonthList({
   rangeStart,
   rangeEnd,
-  activeDate,
   visibleMonthAnchor,
   todayKey,
   eventsByDate,
@@ -117,7 +116,7 @@ export function CalendarMonthList({
       viewabilityConfig={viewabilityConfigRef.current}
       renderItem={({ item }) => {
         const gridStart = getMonthGridStartKey(item);
-        const gridDays = Array.from({ length: 42 }, (_, index) =>
+        const gridDays = Array.from({ length: getMonthGridDayCount(item) }, (_, index) =>
           addDaysToDateKey(gridStart, index),
         );
 
@@ -142,7 +141,6 @@ export function CalendarMonthList({
                   const density = getMonthDensity(eventsByDate, dateKey);
                   const hasVisibleEvents = density > 0;
                   const isInMonth = isSameMonth(dateKey, item);
-                  const isActive = isInMonth && dateKey === activeDate;
                   const isToday = isInMonth && dateKey === todayKey;
 
                   if (!isInMonth) {
@@ -158,20 +156,37 @@ export function CalendarMonthList({
                     );
                   }
 
+                  if (!hasVisibleEvents) {
+                    return (
+                      <View
+                        key={dateKey}
+                        className="mb-2 w-[14.285%] items-center"
+                        testID={`calendar-month-cell-${dateKey}`}
+                      >
+                        <View
+                          className={`h-11 w-11 items-center justify-center rounded-2xl ${isToday ? "border border-primary bg-primary/5" : "bg-transparent"}`}
+                        >
+                          <Text className="text-sm font-semibold text-foreground">
+                            {format(parseDateKey(dateKey), "d")}
+                          </Text>
+                        </View>
+                        <View className="mt-1 h-2" />
+                      </View>
+                    );
+                  }
+
                   return (
                     <TouchableOpacity
                       key={dateKey}
-                      onPress={() => onSelectDay(dateKey, hasVisibleEvents)}
+                      onPress={() => onSelectDay(dateKey)}
                       className="mb-2 w-[14.285%] items-center"
-                      activeOpacity={0.85}
+                      activeOpacity={0.6}
                       testID={`calendar-month-cell-${dateKey}`}
                     >
                       <View
-                        className={`h-11 w-11 items-center justify-center rounded-2xl ${isActive ? "bg-primary" : isToday ? "border border-primary bg-primary/5" : "bg-transparent"}`}
+                        className={`h-11 w-11 items-center justify-center rounded-2xl ${isToday ? "border border-primary bg-primary/5" : "bg-transparent"}`}
                       >
-                        <Text
-                          className={`text-sm font-semibold ${isActive ? "text-primary-foreground" : isInMonth ? "text-foreground" : "text-muted-foreground/40"}`}
-                        >
+                        <Text className="text-sm font-semibold text-foreground">
                           {format(parseDateKey(dateKey), "d")}
                         </Text>
                       </View>

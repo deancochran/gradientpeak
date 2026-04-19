@@ -33,6 +33,7 @@ import {
   inferredStateSnapshotSchema,
   type LoadBootstrapState,
   type MinimalTrainingPlanCreate,
+  mapAthletePreferencesToCreationDefaults,
   materializePlanToEvents,
   minimalTrainingPlanCreateSchema,
   type NoHistoryAnchorContext,
@@ -659,6 +660,11 @@ type ProjectionInsightDiagnostics = {
     overall: number;
     adherence: number;
     capability: number;
+  };
+  estimation?: {
+    failed_plan_count: number;
+    excluded_from_scheduled_load_count: number;
+    affected_plan_ids: string[];
   };
 };
 
@@ -2052,8 +2058,6 @@ const insightTimelineInputSchema = z.object({
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const safeFallbackHrThresholdBpm = 160;
 const projectionTargetTestDurationSeconds = 1200;
-const creationWeekDays = creationWeekDayEnum.options;
-
 type GoalProjectionSource = {
   goal: ProfileGoal;
   targetDate: string;
@@ -3417,46 +3421,6 @@ function extractCreationDefaultsFromProfileSettings(
   return mapAthletePreferencesToCreationDefaults(parsedPreferences.data);
 }
 
-function mapAthletePreferencesToCreationDefaults(
-  preferences: AthletePreferenceProfile,
-): Partial<z.infer<typeof creationConfigValueSchema>> {
-  const baseline = normalizeCreationConfig({});
-  const availabilityByDay = new Map(
-    preferences.availability.weekly_windows.map((dayConfig) => [dayConfig.day, dayConfig]),
-  );
-
-  return {
-    availability_config: {
-      template: "custom",
-      days: creationWeekDays.map((day) => {
-        const dayConfig = availabilityByDay.get(day);
-        return {
-          day,
-          windows: dayConfig?.windows ?? [],
-          ...(dayConfig?.max_sessions !== undefined
-            ? { max_sessions: dayConfig.max_sessions }
-            : {}),
-        };
-      }),
-    },
-    constraints: {
-      ...baseline.constraints,
-      hard_rest_days: preferences.availability.hard_rest_days,
-      min_sessions_per_week: preferences.dose_limits.min_sessions_per_week,
-      max_sessions_per_week: preferences.dose_limits.max_sessions_per_week,
-      max_single_session_duration_minutes:
-        preferences.dose_limits.max_single_session_duration_minutes,
-    },
-    post_goal_recovery_days: preferences.recovery_preferences.post_goal_recovery_days,
-    behavior_controls_v1: {
-      ...baseline.behavior_controls_v1,
-      aggressiveness: preferences.training_style.progression_pace,
-      variability: preferences.training_style.week_pattern_preference,
-      recovery_priority: preferences.recovery_preferences.recovery_priority,
-    },
-  };
-}
-
 function mergeCreationDefaults(input: {
   profileDefaults: Partial<z.infer<typeof creationConfigValueSchema>>;
   inputDefaults?: z.infer<typeof creationNormalizationInputSchema>["defaults"];
@@ -3702,9 +3666,14 @@ export async function getPlanTabProjectionService({
     activityPlans.length > 0
       ? await addEstimationToPlans(activityPlans, estimationReader as any, profileId)
       : [];
+  const failedEstimations = plansWithEstimations.filter(
+    (item: any) => item.counts_toward_aggregation === false,
+  );
 
   const estimatedTssByPlanId = new Map(
-    plansWithEstimations.map((item: any) => [item.id, item.estimated_tss]),
+    plansWithEstimations
+      .filter((item: any) => item.counts_toward_aggregation !== false)
+      .map((item: any) => [item.id, item.estimated_tss]),
   );
 
   const scheduledByDate = new Map<string, number>();
@@ -3856,6 +3825,15 @@ export async function getPlanTabProjectionService({
       capability: capabilityConfidence,
       ...projectionGoalContext.diagnostics.confidence,
     },
+    ...(failedEstimations.length > 0
+      ? {
+          estimation: {
+            failed_plan_count: failedEstimations.length,
+            excluded_from_scheduled_load_count: failedEstimations.length,
+            affected_plan_ids: failedEstimations.map((item: any) => item.id),
+          },
+        }
+      : {}),
   };
 
   const loadGuidance: LoadGuidanceSummary = {

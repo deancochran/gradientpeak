@@ -107,7 +107,7 @@ export class WahooActivityImporter {
       }
 
       // 3. Find linked planned activity event (if any)
-      // Note: This queries synced_events which links events to external workouts
+      // Note: This queries integration_resource_links to map external workouts back to planned events
       // The external_id column stores the Wahoo workout ID
       const linkedWorkoutId = summary.workout_id ?? summary.workout?.id ?? null;
       const linkedEventId = linkedWorkoutId

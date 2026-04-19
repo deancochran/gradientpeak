@@ -211,6 +211,10 @@ function PlanDashboardScreen() {
                 </View>
               ) : null}
 
+              {dashboard.estimationWarning ? (
+                <Text className="text-xs text-muted-foreground">{dashboard.estimationWarning}</Text>
+              ) : null}
+
               {dashboard.nextGoal ? (
                 <View className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
                   <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -318,76 +322,6 @@ function PlanDashboardScreen() {
               >
                 <Text>Add Goal</Text>
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card testID="plan-current-plan-card">
-            <CardHeader>
-              <CardTitle>Current Plan</CardTitle>
-            </CardHeader>
-            <CardContent className="gap-3">
-              {dashboard.activePlansInProgress.length === 0 ? (
-                <Text className="text-sm text-muted-foreground" testID="plan-current-plan-empty">
-                  No training plans are currently scheduled or in progress.
-                </Text>
-              ) : (
-                <View
-                  className="rounded-md border border-border bg-card px-3 py-3 gap-1"
-                  testID="plan-current-plan-summary"
-                >
-                  <View className="flex-row items-center justify-between gap-2">
-                    <Text
-                      className="text-sm font-semibold text-foreground flex-1"
-                      testID="plan-current-plan-name"
-                    >
-                      {dashboard.activePlansInProgress[0]?.name}
-                    </Text>
-                    <Text
-                      className="text-xs font-medium text-primary"
-                      testID="plan-current-plan-status"
-                    >
-                      {dashboard.activePlansInProgress[0]?.statusLabel}
-                    </Text>
-                  </View>
-                  <Text
-                    className="text-xs text-muted-foreground"
-                    testID="plan-current-plan-next-event"
-                  >
-                    Next session{" "}
-                    {new Date(
-                      dashboard.activePlansInProgress[0]?.nextEventAt ?? today.toISOString(),
-                    ).toLocaleDateString()}
-                    {(dashboard.activePlansInProgress[0]?.plannedEventCount ?? 0) > 0
-                      ? ` · ${dashboard.activePlansInProgress[0]?.plannedEventCount} upcoming`
-                      : ""}
-                  </Text>
-                  {dashboard.activePlansInProgress.length > 1 ? (
-                    <Text
-                      className="text-xs text-muted-foreground"
-                      testID="plan-current-plan-overflow-count"
-                    >
-                      +{dashboard.activePlansInProgress.length - 1} more scheduled plans
-                    </Text>
-                  ) : null}
-                </View>
-              )}
-              <View className="flex-row gap-2">
-                <Button
-                  className="flex-1"
-                  onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.LIST as any)}
-                  testID="plan-manage-plans-button"
-                >
-                  <Text className="text-primary-foreground">Manage Plans</Text>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onPress={() => router.navigate(ROUTES.CALENDAR as any)}
-                  testID="plan-open-calendar-button"
-                >
-                  <Text>Open Calendar</Text>
-                </Button>
-              </View>
             </CardContent>
           </Card>
         </View>

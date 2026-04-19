@@ -13,8 +13,8 @@ import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { useCalendarStore } from "@/lib/stores/calendar-store";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { useCalendarStore } from "@/lib/stores/calendar-store";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
 const CALENDAR_DAY_QUERY_LIMIT = 100;

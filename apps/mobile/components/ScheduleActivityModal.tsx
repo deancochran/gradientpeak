@@ -83,7 +83,7 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Calendar, ChevronDown, ChevronUp, Clock, TrendingUp, X } from "lucide-react-native";
+import { Calendar, ChevronDown, ChevronUp, X } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import {
@@ -96,7 +96,7 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { api } from "@/lib/api";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
 import { applyServerFormErrors, getErrorMessage } from "@/lib/utils/formErrors";
@@ -255,7 +255,6 @@ export function ScheduleActivityModal({
     },
   });
 
-  const [showPlanPreviewDetails, setShowPlanPreviewDetails] = useState(false);
   const [showConstraintDetails, setShowConstraintDetails] = useState(false);
   const [startsAt, setStartsAt] = useState(new Date());
   const [allDay, setAllDay] = useState(false);
@@ -278,6 +277,11 @@ export function ScheduleActivityModal({
 
   // Use template if provided, otherwise use fetched plan
   const displayPlan = isTemplate ? activityPlan : planDetails;
+  const displayRouteId = displayPlan?.route_id;
+  const { data: displayRoute } = api.routes.get.useQuery(
+    { id: displayRouteId! },
+    { enabled: visible && !!displayRouteId },
+  );
 
   // Validate constraints in real-time (when training plan provided)
   const {
@@ -299,7 +303,6 @@ export function ScheduleActivityModal({
   useEffect(() => {
     if (!visible) {
       form.reset();
-      setShowPlanPreviewDetails(false);
       setShowConstraintDetails(false);
       setShowDatePicker(false);
       setShowTimePicker(false);
@@ -418,15 +421,6 @@ export function ScheduleActivityModal({
     onSubmit,
   });
 
-  const formatDuration = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
-  };
-
   const getActivityTypeIcon = (type: string): string => {
     const iconMap: Record<string, string> = {
       outdoor_run: "🏃",
@@ -533,19 +527,24 @@ export function ScheduleActivityModal({
               <>
                 {/* Activity Plan Summary */}
                 <Card>
-                  <CardContent className="p-4">
-                    <View className="flex-row items-start mb-3">
-                      <View className="mr-3 items-center justify-center w-12 h-12 rounded-full bg-muted">
-                        <Text className="text-2xl">
+                  <CardContent className="p-4 gap-4">
+                    <View className="flex-row items-start gap-3">
+                      <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
+                        <Text className="text-xl">
                           {getActivityTypeIcon(displayPlan.activity_category)}
                         </Text>
                       </View>
-                      <View className="flex-1">
-                        <Text className="font-semibold text-lg">{displayPlan.name}</Text>
+                      <View className="flex-1 gap-1">
+                        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Selected activity
+                        </Text>
+                        <Text className="text-lg font-semibold text-foreground">
+                          {displayPlan.name}
+                        </Text>
                         {displayPlan.description && (
                           <Text
-                            className="text-sm text-muted-foreground mt-1"
-                            numberOfLines={showPlanPreviewDetails ? undefined : 2}
+                            className="text-sm leading-5 text-muted-foreground"
+                            numberOfLines={3}
                           >
                             {displayPlan.description}
                           </Text>
@@ -553,75 +552,22 @@ export function ScheduleActivityModal({
                       </View>
                     </View>
 
-                    <View className="flex-row flex-wrap gap-4 mb-3">
-                      {displayPlan.estimated_duration && (
-                        <View className="flex-row items-center gap-1.5">
-                          <Icon as={Clock} size={16} className="text-muted-foreground" />
-                          <Text className="text-sm font-medium">
-                            {formatDuration(displayPlan.estimated_duration)}
-                          </Text>
-                        </View>
-                      )}
-                      {displayPlan.estimated_tss && (
-                        <View className="flex-row items-center gap-1.5">
-                          <Icon as={TrendingUp} size={16} className="text-muted-foreground" />
-                          <Text className="text-sm font-medium">
-                            {Math.round(displayPlan.estimated_tss)} TSS
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-
                     <View className="rounded-xl border border-border bg-background px-3 py-3">
-                      <View className="flex-row items-start justify-between gap-3">
-                        <View className="flex-1 gap-1">
-                          <Text className="text-sm font-medium text-foreground">
-                            Workout preview
-                          </Text>
-                          <Text className="text-sm text-muted-foreground">
-                            Keep the schedule flow light by reviewing the structure only when
-                            needed.
-                          </Text>
-                        </View>
-                        <Pressable
-                          onPress={() => setShowPlanPreviewDetails((current) => !current)}
-                          className="flex-row items-center gap-1 rounded-full border border-border bg-card px-3 py-2"
-                          disabled={isSubmitting}
-                          testID="schedule-preview-toggle"
-                        >
-                          <Text className="text-xs font-semibold text-foreground">
-                            {showPlanPreviewDetails ? "Hide" : "Show"}
-                          </Text>
-                          <Icon
-                            as={showPlanPreviewDetails ? ChevronUp : ChevronDown}
-                            size={14}
-                            className="text-foreground"
-                          />
-                        </Pressable>
+                      <View className="gap-1">
+                        <Text className="text-sm font-medium text-foreground">
+                          Activity preview
+                        </Text>
+                        <Text className="text-sm text-muted-foreground">
+                          Review the session shape before you save the activity.
+                        </Text>
                       </View>
-
-                      {showPlanPreviewDetails && (
-                        <View className="mt-3 gap-3" testID="schedule-preview-details">
-                          {displayPlan.structure?.intervals &&
-                          displayPlan.structure.intervals.length > 0 ? (
-                            <View className="rounded-lg overflow-hidden">
-                              <Text className="text-xs text-muted-foreground mb-2">
-                                Intensity Profile
-                              </Text>
-                              <TimelineChart
-                                structure={displayPlan.structure}
-                                height={80}
-                                compact={true}
-                              />
-                            </View>
-                          ) : null}
-                          {!displayPlan.structure?.intervals?.length ? (
-                            <Text className="text-sm text-muted-foreground">
-                              No detailed structure preview is available for this plan.
-                            </Text>
-                          ) : null}
-                        </View>
-                      )}
+                      <View className="mt-3" testID="schedule-preview-details">
+                        <ActivityPlanContentPreview
+                          compact
+                          plan={displayPlan}
+                          route={displayRoute}
+                        />
+                      </View>
                     </View>
                   </CardContent>
                 </Card>
@@ -741,7 +687,7 @@ export function ScheduleActivityModal({
                     numberOfLines={5}
                     parseValue={(value) => value || null}
                     placeholder="Add any notes about this activity..."
-                    description="Optional details to help you remember context when you review this workout later."
+                    description="Optional details to help you remember context when you review this activity later."
                     className="min-h-[100px]"
                     testId="schedule-notes-field"
                   />

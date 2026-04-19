@@ -79,6 +79,11 @@ jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
   TimelineChart: createHost("TimelineChart"),
 }));
 
+jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
+  __esModule: true,
+  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
+}));
+
 jest.mock("../training-plan/modals/components/ConstraintValidator", () => ({
   __esModule: true,
   ConstraintValidator: () => React.createElement("Text", {}, "Constraint Validation"),
@@ -164,6 +169,11 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
+    routes: {
+      get: {
+        useQuery: () => ({ data: null, isLoading: false }),
+      },
+    },
   },
 }));
 
@@ -175,7 +185,7 @@ describe("ScheduleActivityModal", () => {
     existingActivityData = null;
   });
 
-  it("keeps workout preview and constraint details collapsed by default", () => {
+  it("shows the activity preview immediately and keeps constraints collapsed by default", () => {
     renderNative(
       <ScheduleActivityModal
         visible
@@ -185,13 +195,12 @@ describe("ScheduleActivityModal", () => {
       />,
     );
 
-    expect(screen.getByTestId("schedule-preview-toggle")).toBeTruthy();
     expect(screen.getByTestId("schedule-constraints-toggle")).toBeTruthy();
-    expect(screen.queryByTestId("schedule-preview-details")).toBeNull();
+    expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
     expect(screen.queryByTestId("schedule-constraints-details")).toBeNull();
   });
 
-  it("reveals secondary details only when the disclosure controls are used", () => {
+  it("reveals constraint details only when the disclosure control is used", () => {
     renderNative(
       <ScheduleActivityModal
         visible
@@ -201,7 +210,6 @@ describe("ScheduleActivityModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("schedule-preview-toggle"));
     fireEvent.press(screen.getByTestId("schedule-constraints-toggle"));
 
     expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();

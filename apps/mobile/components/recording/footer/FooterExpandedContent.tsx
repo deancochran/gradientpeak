@@ -10,9 +10,11 @@
 
 import type { MetricFamily, RecordingActivityCategory, RecordingState } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
+import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import {
   ArrowUpRight,
+  Bluetooth,
   Gauge,
   MapPin,
   MapPinOff,
@@ -23,7 +25,13 @@ import {
 import React from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useGpsTracking, useSessionView } from "@/lib/hooks/useActivityRecorder";
+import {
+  useBleState,
+  useCurrentReadings,
+  useGpsTracking,
+  useSensors,
+  useSessionView,
+} from "@/lib/hooks/useActivityRecorder";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { IntensityScaling } from "./IntensityScaling";
@@ -59,30 +67,48 @@ export function FooterExpandedContent({
   const navigateTo = useAppNavigate();
   const insets = useSafeAreaInsets();
   const { toggleGps } = useGpsTracking(service);
+  const { sensors } = useSensors(service);
   const sessionView = useSessionView(service);
+  const currentReadings = useCurrentReadings(service);
+  const bleState = useBleState(service);
   const isRecordingStarted = recordingState !== "not_started";
   const snapshot = sessionView?.snapshot;
   const runtimeSourceState = sessionView?.runtimeSourceState;
   const preferredSources = sessionView?.overrideState.preferredSources ?? {};
   const trainerMode = sessionView?.overrideState.trainerMode ?? "auto";
   const trainerView = sessionView?.trainer;
-  const trainerAvailable = Boolean(trainerView?.machineType);
+  const trainerSensor = React.useMemo(
+    () => sensors.find((sensor) => sensor.isControllable || Boolean(sensor.ftmsFeatures)) ?? null,
+    [sensors],
+  );
+  const trainerAvailable = Boolean(trainerSensor || trainerView?.machineType);
+  const trainerControlReady = Boolean(trainerSensor?.isControllable);
   const trainerMachineLabel = trainerView?.machineType
     ? trainerView.machineType.replace(/_/g, " ")
     : null;
-  const trainerStatusLabel =
-    trainerView?.recoveryState === "applying_reconnect_recovery"
-      ? "Recovering control"
-      : trainerView?.recoveryState === "failed"
-        ? "Recovery failed"
-        : trainerView?.lastCommandStatus?.success === false
-          ? "Command issue"
-          : trainerMode === "manual"
-            ? "Manual control"
-            : trainerAvailable
-              ? "Ready"
-              : null;
-
+  const trainerDataFlowing = React.useMemo(
+    () => hasRecentTrainerData(currentReadings.lastUpdated),
+    [currentReadings.lastUpdated],
+  );
+  const trainerSummary = React.useMemo(
+    () =>
+      getTrainerSummary({
+        bleState,
+        trainerAvailable,
+        trainerControlReady,
+        trainerDataFlowing,
+        recoveryState: trainerView?.recoveryState ?? "idle",
+        commandFailed: trainerView?.lastCommandStatus?.success === false,
+      }),
+    [
+      bleState,
+      trainerAvailable,
+      trainerControlReady,
+      trainerDataFlowing,
+      trainerView?.lastCommandStatus?.success,
+      trainerView?.recoveryState,
+    ],
+  );
   const sourceMetrics = React.useMemo(() => {
     if (!service || !runtimeSourceState) {
       return [];
@@ -145,6 +171,15 @@ export function FooterExpandedContent({
   const handleAdjustPress = () => {
     console.log("[FooterExpanded] Navigating to FTMS control");
     navigateTo("/record/ftms");
+  };
+
+  const handleTrainerPrimaryAction = () => {
+    if (trainerSummary.action === "controls") {
+      handleAdjustPress();
+      return;
+    }
+
+    handleSensorsPress();
   };
 
   const handleTrainerModeChange = (mode: "auto" | "manual") => {
@@ -249,17 +284,49 @@ export function FooterExpandedContent({
           title="Adjust Workout"
           description="Trainer mode, session intensity, and source recovery stay here."
         >
-          {trainerAvailable && (
-            <View className="mb-4">
-              <View className="mb-2 flex-row items-center justify-between">
-                <Text className="text-sm font-medium text-muted-foreground">Trainer Mode</Text>
-                {trainerMachineLabel && (
-                  <Text className="text-xs capitalize text-muted-foreground">
-                    {trainerMachineLabel}
-                  </Text>
-                )}
+          <View className="mb-4 rounded-2xl border border-border bg-background p-4">
+            <View className="mb-3 flex-row items-start justify-between gap-3">
+              <View className="flex-1">
+                <Text className="text-sm font-medium text-foreground">Trainer</Text>
+                <Text className="mt-1 text-lg font-semibold text-foreground">
+                  {trainerSensor?.name ?? trainerMachineLabel ?? "No trainer connected"}
+                </Text>
+                <Text className="mt-1 text-sm text-muted-foreground">{trainerSummary.status}</Text>
               </View>
-              <View className="flex-row gap-2">
+              <View className="rounded-full bg-muted p-2">
+                <Bluetooth size={16} color="#71717a" />
+              </View>
+            </View>
+
+            <View className="mb-3 flex-row flex-wrap gap-2">
+              <StatusPill
+                label={bleState === "PoweredOn" ? "Bluetooth ready" : "Bluetooth blocked"}
+                tone={bleState === "PoweredOn" ? "good" : "warn"}
+              />
+              <StatusPill
+                label={
+                  trainerDataFlowing
+                    ? "Data flowing"
+                    : trainerAvailable
+                      ? "Waiting for data"
+                      : "No data"
+                }
+                tone={trainerDataFlowing ? "good" : trainerAvailable ? "neutral" : "warn"}
+              />
+              <StatusPill
+                label={trainerControlReady ? `Control ${trainerMode}` : "Control unavailable"}
+                tone={trainerControlReady ? "good" : "warn"}
+              />
+            </View>
+
+            <Text className="mb-3 text-xs text-muted-foreground">{trainerSummary.detail}</Text>
+
+            <Button onPress={handleTrainerPrimaryAction} className="w-full">
+              <Text className="text-primary-foreground">{trainerSummary.actionLabel}</Text>
+            </Button>
+
+            {trainerControlReady && (
+              <View className="mt-3 flex-row gap-2">
                 <ModeChip
                   label="Auto"
                   active={trainerMode === "auto"}
@@ -270,15 +337,9 @@ export function FooterExpandedContent({
                   active={trainerMode === "manual"}
                   onPress={() => handleTrainerModeChange("manual")}
                 />
-                {trainerMode === "manual" && (
-                  <ModeChip label="Controls" active={false} onPress={handleAdjustPress} />
-                )}
               </View>
-              {trainerStatusLabel && (
-                <Text className="mt-2 text-xs text-muted-foreground">{trainerStatusLabel}</Text>
-              )}
-            </View>
-          )}
+            )}
+          </View>
 
           <View className="mb-4">
             <IntensityScaling service={service} />
@@ -354,6 +415,139 @@ export function FooterExpandedContent({
         )}
       </View>
     </ScrollView>
+  );
+}
+
+type TrainerSummaryTone = "good" | "neutral" | "warn";
+
+function hasRecentTrainerData(
+  lastUpdated: { power?: number; cadence?: number; speed?: number } | undefined,
+) {
+  if (!lastUpdated) {
+    return false;
+  }
+
+  const now = Date.now();
+  return [lastUpdated.power, lastUpdated.cadence, lastUpdated.speed].some(
+    (timestamp) => typeof timestamp === "number" && now - timestamp < 10000,
+  );
+}
+
+function getTrainerSummary({
+  bleState,
+  trainerAvailable,
+  trainerControlReady,
+  trainerDataFlowing,
+  recoveryState,
+  commandFailed,
+}: {
+  bleState: string;
+  trainerAvailable: boolean;
+  trainerControlReady: boolean;
+  trainerDataFlowing: boolean;
+  recoveryState: "idle" | "applying_reconnect_recovery" | "recovered" | "failed";
+  commandFailed: boolean;
+}) {
+  if (bleState === "PoweredOff") {
+    return {
+      status: "Bluetooth off",
+      detail: "Turn Bluetooth back on before trying to reconnect your trainer.",
+      action: "sensors" as const,
+      actionLabel: "Open Sensors",
+    };
+  }
+
+  if (bleState === "Unauthorized") {
+    return {
+      status: "Bluetooth permission needed",
+      detail: "Grant Bluetooth access so the app can scan for and reconnect to your trainer.",
+      action: "sensors" as const,
+      actionLabel: "Open Sensors",
+    };
+  }
+
+  if (recoveryState === "applying_reconnect_recovery") {
+    return {
+      status: "Trainer lost connection. Reconnecting",
+      detail: "Keep this screen open while the app restores trainer control and live data.",
+      action: "sensors" as const,
+      actionLabel: "Open Sensors",
+    };
+  }
+
+  if (recoveryState === "failed") {
+    return {
+      status: "Reconnect failed",
+      detail: "Use the sensors screen to reconnect the trainer and retry control setup.",
+      action: "sensors" as const,
+      actionLabel: "Reconnect",
+    };
+  }
+
+  if (!trainerAvailable) {
+    return {
+      status: "No trainer connected",
+      detail: "Connect your trainer first, then come back here for mode changes or manual control.",
+      action: "sensors" as const,
+      actionLabel: "Connect",
+    };
+  }
+
+  if (commandFailed) {
+    return {
+      status: "Connected, but control unavailable",
+      detail:
+        "Another app may already own trainer control, or the trainer may need a clean reconnect.",
+      action: "sensors" as const,
+      actionLabel: "Reconnect",
+    };
+  }
+
+  if (trainerControlReady) {
+    return {
+      status: "Trainer control ready",
+      detail:
+        "Control is available now. Open controls only when you need to change trainer behavior.",
+      action: "controls" as const,
+      actionLabel: "Open Controls",
+    };
+  }
+
+  if (trainerDataFlowing) {
+    return {
+      status: "Receiving trainer data",
+      detail: "Metrics are arriving, but control still needs to finish setting up.",
+      action: "sensors" as const,
+      actionLabel: "Open Sensors",
+    };
+  }
+
+  return {
+    status: "Trainer connected",
+    detail: "The trainer is connected. Wait for live data or reconnect if it stays idle.",
+    action: "sensors" as const,
+    actionLabel: "Open Sensors",
+  };
+}
+
+function StatusPill({ label, tone }: { label: string; tone: TrainerSummaryTone }) {
+  const toneClassName =
+    tone === "good"
+      ? "border-emerald-500/30 bg-emerald-500/10"
+      : tone === "warn"
+        ? "border-amber-500/30 bg-amber-500/10"
+        : "border-border bg-muted/40";
+  const textClassName =
+    tone === "good"
+      ? "text-emerald-700"
+      : tone === "warn"
+        ? "text-amber-700"
+        : "text-muted-foreground";
+
+  return (
+    <View className={`rounded-full border px-3 py-1 ${toneClassName}`}>
+      <Text className={`text-xs font-medium ${textClassName}`}>{label}</Text>
+    </View>
   );
 }
 

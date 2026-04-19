@@ -10,10 +10,12 @@ import { getRequiredDb } from "../db";
 import {
   createIcalFeedRepository,
   createIntegrationsRepositories,
+  createProviderSyncRepository,
   createWahooRepository,
 } from "../infrastructure/repositories";
 import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 
@@ -264,6 +266,21 @@ function getWahooSyncService(ctx: Context) {
     }),
   });
 }
+
+function getWahooSyncJobService(ctx: Context) {
+  return new WahooSyncJobService({
+    providerSyncRepository: createProviderSyncRepository({ db: getRequiredDb(ctx) }),
+    syncService: getWahooSyncService(ctx),
+    wahooRepository: createWahooRepository({ db: getRequiredDb(ctx) }),
+  });
+}
+
+const wahooQueuedJobResultSchema = z
+  .object({
+    jobId: z.string().uuid(),
+    queued: z.boolean(),
+  })
+  .strict();
 
 const getAuthUrlInputSchema = z
   .object({
@@ -672,18 +689,15 @@ export const integrationsRouter = createTRPCRouter({
           .strict(),
       )
       .mutation(async ({ ctx, input }) => {
-        const syncService = getWahooSyncService(ctx);
-        const result = normalizeWahooSyncResult(
-          await syncService.syncEvent(input.eventId, ctx.session.user.id),
-          "Wahoo sync service returned invalid sync data",
+        const jobService = getWahooSyncJobService(ctx);
+        const result = parseBoundaryValue(
+          wahooQueuedJobResultSchema,
+          await jobService.enqueuePublishEvent({
+            eventId: input.eventId,
+            profileId: ctx.session.user.id,
+          }),
+          "Wahoo sync job service returned invalid enqueue data",
         );
-
-        if (!result.success) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: result.error || "Failed to sync to Wahoo",
-          });
-        }
 
         return result;
       }),
@@ -698,18 +712,15 @@ export const integrationsRouter = createTRPCRouter({
           .strict(),
       )
       .mutation(async ({ ctx, input }) => {
-        const syncService = getWahooSyncService(ctx);
-        const result = normalizeWahooSyncResult(
-          await syncService.unsyncEvent(input.eventId, ctx.session.user.id),
-          "Wahoo sync service returned invalid unsync data",
+        const jobService = getWahooSyncJobService(ctx);
+        const result = parseBoundaryValue(
+          wahooQueuedJobResultSchema,
+          await jobService.enqueueUnsyncEvent({
+            eventId: input.eventId,
+            profileId: ctx.session.user.id,
+          }),
+          "Wahoo sync job service returned invalid unsync enqueue data",
         );
-
-        if (!result.success) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: result.error || "Failed to unsync from Wahoo",
-          });
-        }
 
         return result;
       }),

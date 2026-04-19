@@ -4,6 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { ArrowUpRight, Pencil, Play, Trash2 } from "lucide-react-native";
 import React, { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
+import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import {
   getEventPrimaryMeta,
   getEventStatusLabel,
@@ -37,7 +38,8 @@ export function CalendarEventPreviewSheet({
   onStart,
 }: CalendarEventPreviewSheetProps) {
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["52%"], []);
+  const planned = event?.event_type === "planned";
+  const snapPoints = useMemo(() => [planned ? "64%" : "52%"], [planned]);
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -73,10 +75,10 @@ export function CalendarEventPreviewSheet({
       onClose={onClose}
     >
       <BottomSheetView
-        className="flex-1 gap-4 px-4 pb-8 pt-2"
+        className="flex-1 gap-3 px-4 pb-8 pt-2"
         testID="calendar-event-preview-sheet"
       >
-        <View className="gap-1">
+        <View className="gap-1.5">
           <Text className="text-lg font-semibold text-foreground">{getEventTitle(event)}</Text>
           <View className="flex-row flex-wrap items-center gap-2">
             <Text className="text-sm text-muted-foreground">{getEventTimeLabel(event)}</Text>
@@ -90,11 +92,21 @@ export function CalendarEventPreviewSheet({
             <Text className="text-sm text-muted-foreground">{meta.join(" • ")}</Text>
           ) : null}
           {supportingLine ? (
-            <Text className="text-sm text-muted-foreground">{supportingLine}</Text>
+            <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={2}>
+              {supportingLine}
+            </Text>
           ) : null}
         </View>
 
-        <View className="gap-3">
+        {planned && event.activity_plan ? (
+          <ActivityPlanContentPreview
+            compact
+            plan={event.activity_plan}
+            testIDPrefix="calendar-preview-plan"
+          />
+        ) : null}
+
+        <View className="gap-2.5 pt-1">
           {onStart ? (
             <TouchableOpacity
               onPress={onStart}

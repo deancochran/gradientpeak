@@ -12,6 +12,7 @@ import {
   conversations,
   events,
   follows,
+  integrationResourceLinks,
   integrations,
   likes,
   messages,
@@ -21,7 +22,9 @@ import {
   profileMetrics,
   profiles,
   profileTrainingSettings,
-  syncedEvents,
+  providerSyncJobs,
+  providerSyncState,
+  providerWebhookReceipts,
   trainingPlans,
   userTrainingPlans,
 } from "./tables";
@@ -59,6 +62,15 @@ export type ActivityEffortInsert = InferInsertModel<typeof activityEfforts>;
 export type IntegrationRow = InferSelectModel<typeof integrations>;
 export type IntegrationInsert = InferInsertModel<typeof integrations>;
 
+export type ProviderSyncStateRow = InferSelectModel<typeof providerSyncState>;
+export type ProviderSyncStateInsert = InferInsertModel<typeof providerSyncState>;
+
+export type ProviderSyncJobRow = InferSelectModel<typeof providerSyncJobs>;
+export type ProviderSyncJobInsert = InferInsertModel<typeof providerSyncJobs>;
+
+export type ProviderWebhookReceiptRow = InferSelectModel<typeof providerWebhookReceipts>;
+export type ProviderWebhookReceiptInsert = InferInsertModel<typeof providerWebhookReceipts>;
+
 export type ProfileMetricRow = InferSelectModel<typeof profileMetrics>;
 export type ProfileMetricInsert = InferInsertModel<typeof profileMetrics>;
 
@@ -71,8 +83,8 @@ export type ProfileGoalInsert = InferInsertModel<typeof profileGoals>;
 export type OAuthStateRow = InferSelectModel<typeof oauthStates>;
 export type OAuthStateInsert = InferInsertModel<typeof oauthStates>;
 
-export type SyncedEventRow = InferSelectModel<typeof syncedEvents>;
-export type SyncedEventInsert = InferInsertModel<typeof syncedEvents>;
+export type IntegrationResourceLinkRow = InferSelectModel<typeof integrationResourceLinks>;
+export type IntegrationResourceLinkInsert = InferInsertModel<typeof integrationResourceLinks>;
 
 export type LikeRow = InferSelectModel<typeof likes>;
 export type LikeInsert = InferInsertModel<typeof likes>;

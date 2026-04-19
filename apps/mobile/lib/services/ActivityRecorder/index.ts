@@ -324,6 +324,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Setup sensor connection listeners
     this.sensorsManager.subscribeConnection((sensor) => {
       console.log("[Service] Sensor connection changed:", sensor.name, sensor.connectionState);
+      this.trainerControl.handleSensorConnectionChange(sensor);
       this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
       this.publishSessionUpdate();
 
@@ -580,13 +581,20 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private buildTrainerView(): RecordingTrainerView {
     const trainer = this.sensorsManager.getControllableTrainer();
+    const trainerState = this.sensorsManager.getTrainerState();
     const controller = trainer?.ftmsController;
 
     return {
+      deviceId: trainerState.deviceId,
+      deviceName: trainerState.deviceName,
       machineType: inferTrainerMachineType(trainer) ?? null,
+      connectionState: trainerState.connectionState,
+      dataFlowState: trainerState.dataFlowState,
       currentControlMode: controller?.getCurrentMode() ?? null,
+      controlState: this.trainerControl.getControlState(),
       recoveryState: this.trainerControl.getRecoveryState(),
-      lastCommandStatus: this.sensorsManager.getLastTrainerCommandStatus(),
+      lastCommandStatus: this.trainerControl.getLastCommandStatus(),
+      lastServiceError: trainerState.lastServiceError,
     };
   }
 
@@ -1122,13 +1130,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private async reconnectDisconnectedSensors() {
-    const sensors = this.sensorsManager.getConnectedSensors();
-    for (const sensor of sensors) {
-      if (sensor.connectionState === "disconnected") {
-        console.log(`[Service] Reconnecting ${sensor.name}`);
-        await this.sensorsManager.connectSensor(sensor.id);
-      }
-    }
+    await this.sensorsManager.reconnectAll();
   }
 
   // ================================
@@ -1666,6 +1668,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public async resetAllSensors(): Promise<void> {
     await this.sensorsManager.resetAllSensors();
+    this.publishSessionUpdate();
   }
 
   public async applyManualTrainerPower(watts: number): Promise<boolean> {
