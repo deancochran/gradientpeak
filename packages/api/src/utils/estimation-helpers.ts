@@ -252,7 +252,59 @@ export type ActivityPlanWithEstimation<
   intensity_factor: number;
   confidence: string;
   confidence_score: number;
+  estimation_status: "estimated" | "failed";
+  estimation_warnings: string[];
+  counts_toward_aggregation: boolean;
 };
+
+function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
+  plan: TPlan,
+  estimation: ReturnType<typeof estimateActivity>,
+  metrics: ReturnType<typeof estimateMetrics>,
+): ActivityPlanWithEstimation<TPlan> {
+  const zones: string[] = [];
+  if (estimation.estimatedPowerZones) {
+    estimation.estimatedPowerZones.forEach((secs, idx) => {
+      if (secs > 60) zones.push(`Z${idx + 1}`);
+    });
+  } else if (estimation.estimatedHRZones) {
+    estimation.estimatedHRZones.forEach((secs, idx) => {
+      if (secs > 60) zones.push(`Z${idx + 1}`);
+    });
+  }
+
+  return {
+    ...plan,
+    estimated_tss: estimation.tss,
+    estimated_duration: estimation.duration,
+    estimated_calories: metrics.calories,
+    estimated_distance: metrics.distance,
+    estimated_zones: [...new Set(zones)],
+    intensity_factor: estimation.intensityFactor,
+    confidence: estimation.confidence,
+    confidence_score: estimation.confidenceScore,
+    estimation_status: "estimated",
+    estimation_warnings: estimation.warnings ?? [],
+    counts_toward_aggregation: true,
+  };
+}
+
+function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanInput>(
+  plan: TPlan,
+): ActivityPlanWithEstimation<TPlan> {
+  return {
+    ...plan,
+    estimated_tss: 0,
+    estimated_duration: 0,
+    estimated_zones: [],
+    intensity_factor: 0,
+    confidence: "low",
+    confidence_score: 0,
+    estimation_status: "failed",
+    estimation_warnings: ["Estimation failed and was excluded from scheduled load."],
+    counts_toward_aggregation: false,
+  };
+}
 
 /**
  * Calculate TSS and metrics for a single activity plan
@@ -298,28 +350,7 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
   const estimation = estimateActivity(context);
   const metrics = estimateMetrics(estimation, context);
 
-  const zones: string[] = [];
-  if (estimation.estimatedPowerZones) {
-    estimation.estimatedPowerZones.forEach((secs, idx) => {
-      if (secs > 60) zones.push(`Z${idx + 1}`);
-    });
-  } else if (estimation.estimatedHRZones) {
-    estimation.estimatedHRZones.forEach((secs, idx) => {
-      if (secs > 60) zones.push(`Z${idx + 1}`);
-    });
-  }
-
-  return {
-    ...plan,
-    estimated_tss: estimation.tss,
-    estimated_duration: estimation.duration,
-    estimated_calories: metrics.calories,
-    estimated_distance: metrics.distance,
-    estimated_zones: [...new Set(zones)],
-    intensity_factor: estimation.intensityFactor,
-    confidence: estimation.confidence,
-    confidence_score: estimation.confidenceScore,
-  };
+  return buildEstimatedPlan(plan, estimation, metrics);
 }
 
 /**
@@ -448,40 +479,10 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
       const estimation = estimateActivity(context);
       const metrics = estimateMetrics(estimation, context);
 
-      const zones: string[] = [];
-      if (estimation.estimatedPowerZones) {
-        estimation.estimatedPowerZones.forEach((secs, idx) => {
-          if (secs > 60) zones.push(`Z${idx + 1}`);
-        });
-      } else if (estimation.estimatedHRZones) {
-        estimation.estimatedHRZones.forEach((secs, idx) => {
-          if (secs > 60) zones.push(`Z${idx + 1}`);
-        });
-      }
-
-      results.push({
-        ...plan,
-        estimated_tss: estimation.tss,
-        estimated_duration: estimation.duration,
-        estimated_calories: metrics.calories,
-        estimated_distance: metrics.distance,
-        estimated_zones: [...new Set(zones)],
-        intensity_factor: estimation.intensityFactor,
-        confidence: estimation.confidence,
-        confidence_score: estimation.confidenceScore,
-      });
+      results.push(buildEstimatedPlan(plan, estimation, metrics));
     } catch (error) {
       console.error(`Failed to estimate plan ${plan.id}:`, error);
-      // Add with fallback values
-      results.push({
-        ...plan,
-        estimated_tss: 50,
-        estimated_duration: 3600,
-        estimated_zones: [],
-        intensity_factor: 0.7,
-        confidence: "low",
-        confidence_score: 0,
-      });
+      results.push(buildFailedEstimationPlan(plan));
     }
   }
 

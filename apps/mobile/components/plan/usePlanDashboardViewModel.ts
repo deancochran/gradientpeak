@@ -162,6 +162,17 @@ export function usePlanDashboardViewModel({
   );
 
   const loadGuidance = snapshot.insightTimeline?.load_guidance;
+  const estimationWarning = useMemo(() => {
+    const failedPlanCount =
+      snapshot.insightTimeline?.projection?.diagnostics?.estimation?.failed_plan_count ?? 0;
+    if (failedPlanCount <= 0) {
+      return null;
+    }
+
+    return failedPlanCount === 1
+      ? "One scheduled session could not be estimated and was excluded from planned load."
+      : `${failedPlanCount} scheduled sessions could not be estimated and were excluded from planned load.`;
+  }, [snapshot.insightTimeline?.projection?.diagnostics?.estimation?.failed_plan_count]);
 
   const weeklyLoadSummary = useMemo(() => {
     if (insightTimelinePoints.length === 0) {
@@ -301,6 +312,7 @@ export function usePlanDashboardViewModel({
     goalReadiness,
     insightTimelinePoints,
     loadGuidance,
+    estimationWarning,
     lowReadinessExplainer,
     nextGoal,
     projectedFitness,

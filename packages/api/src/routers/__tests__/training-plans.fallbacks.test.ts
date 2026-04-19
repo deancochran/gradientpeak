@@ -8,14 +8,20 @@ vi.mock("@repo/core/estimation", async () => {
   return {
     ...actual,
     buildEstimationContext: vi.fn((input: unknown) => input),
-    estimateActivity: vi.fn((context: any) => ({
-      tss: context?.activityPlan?.structure?.mock_estimated_tss ?? 70,
-      duration: 3600,
-      intensityFactor: 0.75,
-      confidence: "moderate",
-      confidenceScore: 0.6,
-      estimatedHRZones: [0, 0, 0, 0, 0],
-    })),
+    estimateActivity: vi.fn((context: any) => {
+      if (context?.activityPlan?.structure?.shouldThrow) {
+        throw new Error("estimation failed");
+      }
+
+      return {
+        tss: context?.activityPlan?.structure?.mock_estimated_tss ?? 70,
+        duration: 3600,
+        intensityFactor: 0.75,
+        confidence: "moderate",
+        confidenceScore: 0.6,
+        estimatedHRZones: [0, 0, 0, 0, 0],
+      };
+    }),
     estimateMetrics: vi.fn(() => ({
       calories: 500,
       distance: 10000,
@@ -637,6 +643,67 @@ describe("training plan projection fallbacks", () => {
         adherence: expect.any(Number),
         capability: expect.any(Number),
       },
+    });
+  });
+
+  it("excludes failed session estimations from scheduled load and reports diagnostics", async () => {
+    const result = await getPlanTabProjectionService({
+      supabase: createSupabaseMock({
+        training_plans: {
+          data: {
+            id: "11111111-1111-4111-8111-111111111111",
+            structure: {
+              start_date: "2026-01-01",
+              sessions: [],
+            },
+          },
+          error: null,
+        },
+        profile_goals: { data: [], error: null },
+        profile_training_settings: { data: null, error: null },
+        events: {
+          data: [
+            {
+              starts_at: "2026-01-02T00:00:00.000Z",
+              training_plan_id: "11111111-1111-4111-8111-111111111111",
+              activity_plan: {
+                id: "44444444-4444-4444-8444-444444444444",
+                profile_id: null,
+                route_id: null,
+                name: "Broken plan",
+                activity_category: "run",
+                structure: { shouldThrow: true },
+              },
+            },
+          ],
+          error: null,
+        },
+        activities: { data: [], error: null },
+        profiles: { data: { id: "profile-123", dob: null }, error: null },
+        activity_efforts: { data: [], error: null },
+        profile_metrics: { data: [], error: null },
+      }) as any,
+      profileId: "profile-123",
+      store: {
+        getContextSnapshot: async () => ({
+          profile: { dob: null, gender: null },
+          profileMetrics: [],
+          recentEfforts: [],
+        }),
+      },
+      input: {
+        training_plan_id: "11111111-1111-4111-8111-111111111111",
+        start_date: "2026-01-01",
+        end_date: "2026-01-03",
+        timezone: "UTC",
+      },
+    });
+
+    expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([0, 0, 0]);
+    expect(result.projection.diagnostics.estimation).toMatchObject({
+      failed_plan_count: 1,
+      excluded_from_scheduled_load_count: 1,
+      affected_plan_ids: ["44444444-4444-4444-8444-444444444444"],
     });
   });
 
