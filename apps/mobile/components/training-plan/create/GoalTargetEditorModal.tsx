@@ -149,7 +149,7 @@ export function GoalTargetEditorModal({
                 }}
               >
                 <SelectTrigger
-                  aria-labelledby="editor-target-type"
+                  accessibilityLabel="Target type"
                   className={
                     getTargetFieldError(editingContext, "targetType", getError)
                       ? "border-destructive bg-destructive/5"
@@ -203,7 +203,7 @@ export function GoalTargetEditorModal({
                     }}
                   >
                     <SelectTrigger
-                      aria-labelledby="editor-race-category"
+                      accessibilityLabel="Activity"
                       className={
                         getTargetFieldError(editingContext, "activityCategory", getError)
                           ? "border-destructive bg-destructive/5"
@@ -306,7 +306,7 @@ export function GoalTargetEditorModal({
                     }}
                   >
                     <SelectTrigger
-                      aria-labelledby="editor-pace-category"
+                      accessibilityLabel="Activity"
                       className={
                         getTargetFieldError(editingContext, "activityCategory", getError)
                           ? "border-destructive bg-destructive/5"
@@ -395,7 +395,7 @@ export function GoalTargetEditorModal({
                     }}
                   >
                     <SelectTrigger
-                      aria-labelledby="editor-power-category"
+                      accessibilityLabel="Activity"
                       className={
                         getTargetFieldError(editingContext, "activityCategory", getError)
                           ? "border-destructive bg-destructive/5"

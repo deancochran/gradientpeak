@@ -1574,7 +1574,7 @@ export function SinglePageForm({
                 <View className="flex-row items-center gap-2">
                   <View className="flex-1 gap-1.5">
                     <Input
-                      aria-label="Goal name"
+                      accessibilityLabel="Goal name"
                       placeholder="Goal name"
                       value={activeGoal.name}
                       onChangeText={(value) => {

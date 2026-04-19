@@ -225,15 +225,10 @@ function CalendarScreen() {
   });
 
   const handleMonthDayPress = useCallback(
-    (dateKey: string, hasVisibleEvents: boolean) => {
-      if (hasVisibleEvents) {
-        handleOpenDayAgenda(dateKey);
-        return;
-      }
-
-      selectDate(dateKey);
+    (dateKey: string) => {
+      handleOpenDayAgenda(dateKey);
     },
-    [handleOpenDayAgenda, selectDate],
+    [handleOpenDayAgenda],
   );
 
   if (loadingEvents && !activitiesData) {
@@ -283,7 +278,6 @@ function CalendarScreen() {
         <CalendarMonthList
           rangeStart={rangeStart}
           rangeEnd={rangeEnd}
-          activeDate={activeDate}
           visibleMonthAnchor={visibleAnchor}
           todayKey={todayKey}
           eventsByDate={eventsByDate}
