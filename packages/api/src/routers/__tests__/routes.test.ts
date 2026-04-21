@@ -157,6 +157,15 @@ describe("routesRouter", () => {
           from: vi.fn(() => ({
             where: vi.fn().mockResolvedValue([{ entity_id: ROUTE_ID }]),
           })),
+        }))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({
+            where: vi
+              .fn()
+              .mockResolvedValue([
+                { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
+              ]),
+          })),
         })),
     };
 
@@ -170,12 +179,14 @@ describe("routesRouter", () => {
           created_at: "2026-02-01T10:00:00.000Z",
           updated_at: "2026-02-02T10:00:00.000Z",
           has_liked: true,
+          owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
         },
         {
           ...secondRoute,
           created_at: "2026-01-31T10:00:00.000Z",
           updated_at: "2026-02-01T10:00:00.000Z",
           has_liked: false,
+          owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
         },
       ],
       nextCursor: "2026-01-31T10:00:00.000Z_33333333-3333-4333-8333-333333333333",
@@ -221,7 +232,16 @@ describe("routesRouter", () => {
       select: vi
         .fn()
         .mockImplementationOnce(() => createSelectWithLimit([route]))
-        .mockImplementationOnce(() => createSelectWithLimit([{ id: "like-id" }])),
+        .mockImplementationOnce(() => createSelectWithLimit([{ id: "like-id" }]))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({
+            where: vi
+              .fn()
+              .mockResolvedValue([
+                { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
+              ]),
+          })),
+        })),
     };
 
     const caller = createCaller(db);
@@ -232,6 +252,7 @@ describe("routesRouter", () => {
       created_at: "2026-02-01T10:00:00.000Z",
       updated_at: "2026-02-02T10:00:00.000Z",
       has_liked: true,
+      owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
     });
   });
 

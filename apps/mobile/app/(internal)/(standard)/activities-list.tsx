@@ -1,4 +1,3 @@
-import type { ActivityCategory } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
@@ -6,27 +5,14 @@ import { Icon } from "@repo/ui/components/icon";
 import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { useRouter } from "expo-router";
+import { Stack } from "expo-router";
 import { Activity, ChevronRight } from "lucide-react-native";
 import React, { useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-
-type SortBy = "date" | "distance" | "duration" | "tss";
-
-const ACTIVITY_TYPES: {
-  value: ActivityCategory;
-  label: string;
-  icon: string;
-}[] = [
-  { value: "run", label: "Run", icon: "🏃" },
-  { value: "bike", label: "Bike", icon: "🚴" },
-  { value: "swim", label: "Swim", icon: "🏊" },
-  { value: "strength", label: "Strength", icon: "💪" },
-  { value: "other", label: "Other", icon: "🎯" },
-];
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -43,11 +29,8 @@ function formatDistance(meters: number): string {
 }
 
 function ActivitiesScreen() {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedType, setSelectedType] = useState<ActivityCategory>("bike");
-  const [sortBy, setSortBy] = useState<SortBy>("date");
   const [page, setPage] = useState(0);
   const limit = 20;
 
@@ -59,8 +42,7 @@ function ActivitiesScreen() {
   } = api.activities.listPaginated.useQuery({
     limit,
     offset: page * limit,
-    activity_category: selectedType === "bike" ? undefined : selectedType,
-    sort_by: sortBy,
+    sort_by: "date",
     sort_order: "desc",
   });
 
@@ -84,25 +66,12 @@ function ActivitiesScreen() {
     }
   };
 
-  const handleTypeChange = (type: ActivityCategory) => {
-    setSelectedType(type);
-    setPage(0); // Reset to first page
-  };
-
   const getActivityIcon = (type: string) => {
-    const activityType = ACTIVITY_TYPES.find((t) => t.value === type);
-    return activityType?.icon || "🎯";
-  };
-
-  const getActivityColor = (type: string) => {
-    const colors: Record<string, string> = {
-      run: "text-orange-500",
-      bike: "text-blue-500",
-      swim: "text-cyan-500",
-      strength: "text-purple-500",
-      other: "text-gray-500",
-    };
-    return colors[type] || "text-gray-500";
+    if (type === "run") return "🏃";
+    if (type === "bike") return "🚴";
+    if (type === "swim") return "🏊";
+    if (type === "strength") return "💪";
+    return "🎯";
   };
 
   if (isLoading && page === 0) {
@@ -117,42 +86,27 @@ function ActivitiesScreen() {
 
   return (
     <View className="flex-1 bg-background" testID="activities-list-screen">
-      {/* Filter Chips */}
-      <View className="bg-card border-b border-border">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerClassName="px-4 py-3 gap-2"
-        >
-          {ACTIVITY_TYPES.map((type) => (
+      <Stack.Screen
+        options={{
+          headerRight: () => (
             <TouchableOpacity
-              key={type.value}
-              onPress={() => handleTypeChange(type.value)}
-              testID={`activities-filter-${type.value}`}
-              className={`px-4 py-2 rounded-full border ${
-                selectedType === type.value
-                  ? "bg-primary border-primary"
-                  : "bg-background border-border"
-              }`}
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.IMPORT as any)}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="activities-list-import-trigger"
             >
-              <Text
-                className={`font-medium ${
-                  selectedType === type.value ? "text-primary-foreground" : "text-foreground"
-                }`}
-              >
-                {type.icon} {type.label}
-              </Text>
+              <Text className="text-sm font-medium text-primary">Import</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
+          ),
+        }}
+      />
       {/* Activity Count */}
       {total > 0 && (
-        <View className="px-4 py-3 bg-muted/30">
-          <Text className="text-sm text-muted-foreground">
-            {total} {total === 1 ? "activity" : "activities"} found
-          </Text>
+        <View className="px-4 pt-4">
+          <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
+            <Text className="text-sm text-muted-foreground">
+              {total} {total === 1 ? "activity" : "activities"}
+            </Text>
+          </View>
         </View>
       )}
 
@@ -179,10 +133,8 @@ function ActivitiesScreen() {
           >
             <EmptyStateCard
               icon={Activity}
-              title="No Activities Found"
-              description="Start recording activities to see them here"
-              actionLabel="Record Activity"
-              onAction={() => navigateTo("/record" as any)}
+              title="No activities yet"
+              description="Recorded activities will appear here."
               iconSize={64}
               iconColor="text-primary"
             />
@@ -196,19 +148,17 @@ function ActivitiesScreen() {
                 activeOpacity={0.7}
                 testID={`activities-list-item-${activity.id}`}
               >
-                <Card>
+                <Card className="rounded-3xl border border-border bg-card">
                   <CardContent className="p-4">
-                    {/* Header with avatar, username, metadata */}
                     <View className="flex-row items-start gap-3 mb-3">
-                      <View className="w-10 h-10 rounded-full bg-primary/10 items-center justify-center">
+                      <View className="h-10 w-10 rounded-full bg-primary/10 items-center justify-center">
                         <Text className="text-xl">{getActivityIcon(activity.type)}</Text>
                       </View>
 
-                      <View className="flex-1">
-                        {/* Username (or user info if available) */}
-                        <Text className="text-sm font-semibold text-foreground">You</Text>
-
-                        {/* Metadata Row: Date + Device */}
+                      <View className="flex-1 gap-1">
+                        <Text className="text-base font-semibold text-foreground">
+                          {activity.name}
+                        </Text>
                         <View className="flex-row items-center gap-1.5 mt-1 flex-wrap">
                           <Text className="text-xs text-muted-foreground">
                             {format(new Date(activity.started_at), "MMM d, yyyy • h:mm a")}
@@ -224,41 +174,33 @@ function ActivitiesScreen() {
                         </View>
                       </View>
 
-                      {/* Chevron */}
                       <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
                     </View>
 
-                    {/* Activity Name */}
-                    <Text className="text-base font-semibold text-foreground mb-1">
-                      {activity.name}
-                    </Text>
-
-                    {/* Notes (if any) */}
                     {activity.notes && (
                       <Text className="text-sm text-muted-foreground mb-3" numberOfLines={2}>
                         {activity.notes}
                       </Text>
                     )}
 
-                    {/* Key Metrics */}
                     <View className="flex-row items-center gap-4 flex-wrap">
                       {activity.distance_meters > 0 && (
                         <View>
-                          <Text className="text-xs text-muted-foreground uppercase">Distance</Text>
-                          <Text className="text-sm font-semibold">
+                          <Text className="text-xs text-muted-foreground">Distance</Text>
+                          <Text className="text-sm font-semibold text-foreground">
                             {formatDistance(activity.distance_meters)}
                           </Text>
                         </View>
                       )}
                       <View>
-                        <Text className="text-xs text-muted-foreground uppercase">Duration</Text>
-                        <Text className="text-sm font-semibold">
+                        <Text className="text-xs text-muted-foreground">Duration</Text>
+                        <Text className="text-sm font-semibold text-foreground">
                           {formatDuration(activity.duration_seconds)}
                         </Text>
                       </View>
                       {activity.derived?.tss !== null && activity.derived?.tss !== undefined && (
                         <View>
-                          <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
+                          <Text className="text-xs text-muted-foreground">TSS</Text>
                           <Text className="text-sm font-semibold text-primary">
                             {Math.round(activity.derived.tss)}
                           </Text>
@@ -266,16 +208,16 @@ function ActivitiesScreen() {
                       )}
                       {activity.avg_power && (
                         <View>
-                          <Text className="text-xs text-muted-foreground uppercase">Avg Power</Text>
-                          <Text className="text-sm font-semibold">
+                          <Text className="text-xs text-muted-foreground">Avg Power</Text>
+                          <Text className="text-sm font-semibold text-foreground">
                             {Math.round(activity.avg_power)}W
                           </Text>
                         </View>
                       )}
                       {activity.avg_heart_rate && (
                         <View>
-                          <Text className="text-xs text-muted-foreground uppercase">Avg HR</Text>
-                          <Text className="text-sm font-semibold">
+                          <Text className="text-xs text-muted-foreground">Avg HR</Text>
+                          <Text className="text-sm font-semibold text-foreground">
                             {Math.round(activity.avg_heart_rate)} bpm
                           </Text>
                         </View>

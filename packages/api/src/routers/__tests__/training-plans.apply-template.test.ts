@@ -59,7 +59,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
         },
       ],
       activity_plans: {
-        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
+        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" }],
         error: null,
       },
     });
@@ -79,6 +79,8 @@ describe("trainingPlansRouter.applyTemplate", () => {
     expect(result.created_event_count).toBe(2);
     expect(typeof result.schedule_batch_id).toBe("string");
     expect(insertedRows).toHaveLength(2);
+    expect(insertedRows[0]?.title).toBe("Tempo Builder");
+    expect(insertedRows[1]?.title).toBe("Session B");
     expect(insertedRows[0]?.schedule_batch_id).toBe(result.schedule_batch_id);
     expect(insertedRows[1]?.schedule_batch_id).toBe(result.schedule_batch_id);
     expect(insertedRows[0]?.training_plan_id).toBe(result.applied_plan_id);
@@ -87,6 +89,57 @@ describe("trainingPlansRouter.applyTemplate", () => {
       (call) => call.table === "training_plans" && call.operation === "insert",
     );
     expect(createdPlanInsert).toBeUndefined();
+  });
+
+  it("prefers event_title_override over linked activity plan name when scheduling linked sessions", async () => {
+    const { caller, callLog } = createCaller({
+      events: [
+        { data: [], error: null },
+        { data: [{ id: "event-1" }], error: null },
+      ],
+      training_plans: [
+        {
+          data: {
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Template Plan",
+            description: null,
+            profile_id: "template-owner",
+            is_system_template: false,
+            template_visibility: "public",
+            sessions_per_week_target: 4,
+            duration_hours: 9,
+            structure: {
+              start_date: "2026-01-01",
+              sessions: [
+                {
+                  offset_days: 0,
+                  event_title_override: "Race Simulation",
+                  activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                },
+              ],
+            },
+          },
+          error: null,
+        },
+      ],
+      activity_plans: {
+        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" }],
+        error: null,
+      },
+    });
+
+    await caller.applyTemplate({
+      template_type: "training_plan",
+      template_id: "11111111-1111-4111-8111-111111111111",
+      start_date: "2026-03-10",
+    });
+
+    const eventInsertCall = callLog.find(
+      (call) => call.table === "events" && call.operation === "insert",
+    );
+    const insertedRows = (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
+
+    expect(insertedRows[0]?.title).toBe("Race Simulation");
   });
 
   it("fails when no schedulable event rows can be created", async () => {
@@ -174,7 +227,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
         },
       ],
       activity_plans: {
-        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
+        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Resolved Session" }],
         error: null,
       },
     });
@@ -299,7 +352,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
           },
         ],
         activity_plans: {
-          data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
+          data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" }],
           error: null,
         },
       });

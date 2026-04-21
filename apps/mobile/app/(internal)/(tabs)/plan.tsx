@@ -179,7 +179,11 @@ function PlanDashboardScreen() {
               <CardTitle>Forecasted Projection</CardTitle>
               <TouchableOpacity
                 testID="projection-settings-button"
-                onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PREFERENCES as any)}
+                onPress={() =>
+                  navigateTo({
+                    pathname: ROUTES.PLAN.TRAINING_PREFERENCES,
+                  } as any)
+                }
                 className="rounded-full bg-primary/10 p-2"
                 activeOpacity={0.8}
               >
@@ -270,7 +274,12 @@ function PlanDashboardScreen() {
                 dashboard.goalReadiness.map(({ goal, readinessPercent, projectedCtl }) => (
                   <TouchableOpacity
                     key={goal.id}
-                    onPress={() => navigateTo(ROUTES.PLAN.GOAL_DETAIL(goal.id) as any)}
+                    onPress={() =>
+                      navigateTo({
+                        pathname: "/goal-detail",
+                        params: { id: goal.id },
+                      } as any)
+                    }
                     className="rounded-md border border-border bg-card px-3 py-3"
                     activeOpacity={0.8}
                     testID={`plan-goal-row-${goal.id}`}

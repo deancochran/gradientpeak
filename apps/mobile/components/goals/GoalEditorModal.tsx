@@ -11,7 +11,14 @@ import { DurationInput } from "@repo/ui/components/duration-input";
 import { Input } from "@repo/ui/components/input";
 import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { PaceInput } from "@repo/ui/components/pace-input";
-import { RadioGroup, RadioGroupItem } from "@repo/ui/components/radio-group";
+import {
+  NativeSelectScrollView,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
 import React, { useEffect, useMemo, useState } from "react";
@@ -222,6 +229,18 @@ function getDistanceLabel(goalType: GoalEditorGoalType): string {
   return goalType === "completion" ? "Distance (optional)" : "Race distance";
 }
 
+function SelectionIndicator({ active }: { active: boolean }) {
+  return (
+    <View
+      className={`mt-0.5 size-4 items-center justify-center rounded-full border ${
+        active ? "border-primary" : "border-input dark:bg-input/30"
+      }`}
+    >
+      {active ? <View className="bg-primary size-2 rounded-full" /> : null}
+    </View>
+  );
+}
+
 export function GoalEditorModal({
   visible,
   initialValue,
@@ -340,38 +359,34 @@ export function GoalEditorModal({
 
           <View className="gap-2">
             <Text className="text-sm font-medium text-foreground">Goal focus</Text>
-            <RadioGroup
-              value={draft.goalType}
-              onValueChange={(nextValue) => {
-                handleGoalTypeChange(nextValue as GoalEditorGoalType);
+            <Select
+              value={
+                goalTypeOption
+                  ? { label: goalTypeOption.label, value: goalTypeOption.value }
+                  : undefined
+              }
+              onValueChange={(option) => {
+                if (option?.value) {
+                  handleGoalTypeChange(option.value as GoalEditorGoalType);
+                }
               }}
-              className="gap-2"
             >
-              {GOAL_TYPE_OPTIONS.map((option) => {
-                const isActive = option.value === draft.goalType;
-                return (
-                  <Pressable
-                    key={option.value}
-                    onPress={() => handleGoalTypeChange(option.value)}
-                    className={`rounded-lg border px-3 py-3 ${
-                      isActive ? "border-primary bg-primary/10" : "border-border bg-card"
-                    }`}
-                  >
-                    <View className="flex-row items-start gap-3">
-                      <RadioGroupItem value={option.value} />
-                      <View className="flex-1">
-                        <Text className="text-sm font-semibold text-foreground">
-                          {option.label}
-                        </Text>
-                        <Text className="mt-1 text-xs text-muted-foreground">
-                          {option.description}
-                        </Text>
+              <SelectTrigger accessibilityLabel="Goal focus" testID="goal-type-select-trigger">
+                <SelectValue placeholder="Select goal focus" />
+              </SelectTrigger>
+              <SelectContent>
+                <NativeSelectScrollView>
+                  {GOAL_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} label={option.label} value={option.value}>
+                      <View className="gap-0.5">
+                        <Text className="text-sm font-medium text-foreground">{option.label}</Text>
+                        <Text className="text-xs text-muted-foreground">{option.description}</Text>
                       </View>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </RadioGroup>
+                    </SelectItem>
+                  ))}
+                </NativeSelectScrollView>
+              </SelectContent>
+            </Select>
           </View>
 
           <View className="gap-2">
@@ -498,13 +513,7 @@ export function GoalEditorModal({
               {draft.goalType === "race_performance" ? (
                 <View className="gap-2">
                   <Text className="text-sm font-medium text-foreground">Target style</Text>
-                  <RadioGroup
-                    value={draft.raceTargetMode ?? "time"}
-                    onValueChange={(nextValue) => {
-                      updateDraft({ raceTargetMode: nextValue as GoalEditorRaceTargetMode });
-                    }}
-                    className="gap-2"
-                  >
+                  <View className="gap-2">
                     {RACE_TARGET_MODE_OPTIONS.map((option) => {
                       const isActive = (draft.raceTargetMode ?? "time") === option.value;
                       return (
@@ -516,7 +525,7 @@ export function GoalEditorModal({
                           }`}
                         >
                           <View className="flex-row items-start gap-3">
-                            <RadioGroupItem value={option.value} />
+                            <SelectionIndicator active={isActive} />
                             <View className="flex-1">
                               <Text className="text-sm font-semibold text-foreground">
                                 {option.label}
@@ -529,7 +538,7 @@ export function GoalEditorModal({
                         </Pressable>
                       );
                     })}
-                  </RadioGroup>
+                  </View>
                 </View>
               ) : null}
 

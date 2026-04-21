@@ -20,6 +20,7 @@ import { TouchableOpacity } from "react-native";
  *
  * ACTIVITIES:
  * - activities-list - Completed activity history
+ * - activity-import - Import completed activity history
  * - activity-detail - Individual activity details
  *
  * ROUTES:
@@ -28,6 +29,7 @@ import { TouchableOpacity } from "react-native";
  * - route-upload - Upload new route
  *
  * ACTIVITY PLANS:
+ * - activity-plans-list - Browse owned activity plans
  * - activity-plan-detail - View/edit activity plan details
  * - create-activity-plan - Main activity plan builder
  *
@@ -75,7 +77,14 @@ export default function StandardLayout() {
       <Stack.Screen
         name="activities-list"
         options={{
-          title: "Activities",
+          title: "My Activities",
+        }}
+      />
+      <Stack.Screen
+        name="activity-import"
+        options={{
+          title: "Import Activity",
+          presentation: "modal",
         }}
       />
       <Stack.Screen
@@ -89,7 +98,7 @@ export default function StandardLayout() {
       <Stack.Screen
         name="routes-list"
         options={{
-          title: "Routes",
+          title: "My Routes",
         }}
       />
       <Stack.Screen
@@ -110,7 +119,7 @@ export default function StandardLayout() {
       <Stack.Screen
         name="activity-efforts-list"
         options={{
-          title: "Activity Efforts",
+          title: "My Activity Efforts",
         }}
       />
       <Stack.Screen
@@ -120,8 +129,20 @@ export default function StandardLayout() {
           presentation: "modal",
         }}
       />
+      <Stack.Screen
+        name="activity-effort-detail"
+        options={{
+          title: "Activity Effort",
+        }}
+      />
 
       {/* ACTIVITY PLANS */}
+      <Stack.Screen
+        name="activity-plans-list"
+        options={{
+          title: "My Activity Plans",
+        }}
+      />
       <Stack.Screen
         name="activity-plan-detail"
         options={{
@@ -164,7 +185,7 @@ export default function StandardLayout() {
       <Stack.Screen
         name="training-plans-list"
         options={{
-          title: "Training Plans",
+          title: "My Training Plans",
         }}
       />
       <Stack.Screen
@@ -223,9 +244,27 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="messages/new"
+        options={{
+          title: "New Message",
+        }}
+      />
+      <Stack.Screen
         name="profile-edit"
         options={{
           title: "Edit Profile",
+        }}
+      />
+      <Stack.Screen
+        name="profile-metrics-list"
+        options={{
+          title: "My Profile Metrics",
+        }}
+      />
+      <Stack.Screen
+        name="profile-metric-detail"
+        options={{
+          title: "Profile Metric",
         }}
       />
       <Stack.Screen

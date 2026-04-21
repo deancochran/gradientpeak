@@ -1146,6 +1146,29 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
             </Text>
           </View>
         ) : null}
+        <View className="px-4 pt-3">
+          <View className="rounded-2xl border border-border bg-card p-3">
+            <Text className="text-sm font-semibold text-foreground">
+              {isEditMode ? "Refine the plan scaffold" : "Build the plan scaffold first"}
+            </Text>
+            <Text className="mt-1 text-xs text-muted-foreground">
+              Training plans stay intentionally lightweight. This screen defines timing, goals, and
+              planning constraints first. Specific activity plans and route-backed workouts can be
+              linked from the detail screen after save.
+            </Text>
+            <View className="mt-3 gap-1">
+              <Text className="text-xs text-muted-foreground">
+                1. Set the plan identity and target outcome.
+              </Text>
+              <Text className="text-xs text-muted-foreground">
+                2. Tune availability, limits, and planner behavior.
+              </Text>
+              <Text className="text-xs text-muted-foreground">
+                3. Save, then refine the linked workouts on the detail page.
+              </Text>
+            </View>
+          </View>
+        </View>
         <SinglePageForm
           metadataForm={metadataForm}
           initialTab={contract.initialTab}

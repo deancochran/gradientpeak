@@ -17,7 +17,6 @@ describe("goalDraft", () => {
   it("builds a race payload from athlete-friendly pace input", () => {
     const payload = buildGoalCreatePayload({
       profileId,
-      milestoneEventId,
       draft: {
         ...createEmptyGoalDraft(),
         title: "Spring 10K",
@@ -42,7 +41,6 @@ describe("goalDraft", () => {
     expect(() =>
       buildGoalCreatePayload({
         profileId,
-        milestoneEventId,
         draft: {
           ...createEmptyGoalDraft(),
           title: "Spring 10K",
@@ -59,11 +57,11 @@ describe("goalDraft", () => {
 
   it("hydrates friendly editing fields from canonical goals", () => {
     const draft = buildGoalDraftFromGoal({
-      targetDate: "2026-06-01",
       goal: {
         id: "33333333-3333-4333-8333-333333333333",
         profile_id: profileId,
         milestone_event_id: milestoneEventId,
+        target_date: "2026-06-01",
         title: "Raise FTP",
         priority: 7,
         activity_category: "bike",
@@ -87,6 +85,7 @@ describe("goalDraft", () => {
       id: "33333333-3333-4333-8333-333333333333",
       profile_id: profileId,
       milestone_event_id: milestoneEventId,
+      target_date: "2026-06-01",
       title: "Spring 5K",
       priority: 8,
       activity_category: "run" as const,

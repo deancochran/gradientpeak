@@ -44,6 +44,14 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useLocalSearchParams: () => ({ id: "event-1" }),
   useRouter: () => ({
     back: jest.fn(),
@@ -67,9 +75,14 @@ jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
-jest.mock("@/components/shared/ActivityPlanCard", () => ({
+jest.mock("@/components/shared/ActivityPlanSummary", () => ({
   __esModule: true,
-  ActivityPlanCard: createHost("ActivityPlanCard"),
+  ActivityPlanSummary: createHost("ActivityPlanSummary"),
+}));
+
+jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
+  __esModule: true,
+  ElevationProfileChart: createHost("ElevationProfileChart"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
@@ -78,6 +91,13 @@ jest.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardTitle: createHost("CardTitle"),
+}));
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
 }));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/input", () => ({ __esModule: true, Input: createHost("Input") }));
@@ -125,11 +145,8 @@ jest.mock("lucide-react-native", () => ({
   ArrowUpRight: "ArrowUpRight",
   Calendar: "Calendar",
   CheckCircle2: "CheckCircle2",
-  Clock: "Clock",
-  Edit: "Edit",
+  Ellipsis: "Ellipsis",
   Play: "Play",
-  Trash2: "Trash2",
-  Zap: "Zap",
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -142,6 +159,12 @@ jest.mock("@/lib/api", () => ({
           error: null,
           isLoading: false,
           refetch: jest.fn(),
+        }),
+      },
+      create: {
+        useMutation: () => ({
+          isPending: false,
+          mutate: jest.fn(),
         }),
       },
       update: {
@@ -157,9 +180,30 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
+    activityPlans: {
+      list: {
+        useQuery: () => ({
+          data: { items: [] },
+          isLoading: false,
+          error: null,
+          refetch: jest.fn(),
+        }),
+      },
+    },
     routes: {
       get: {
         useQuery: () => ({ data: null, isLoading: false }),
+      },
+      loadFull: {
+        useQuery: () => ({ data: null, isLoading: false }),
+      },
+    },
+    social: {
+      getComments: {
+        useQuery: () => ({ data: { comments: [], total: 0 } }),
+      },
+      addComment: {
+        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
       },
     },
   },
@@ -177,15 +221,18 @@ describe("event detail fallback screen", () => {
     expect(
       (rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix,
     ).toBe("event-detail-plan");
-    expect(screen.getByText("Activity details")).toBeTruthy();
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard")).toBeTruthy();
-    expect(screen.getByText("Edit Activity")).toBeTruthy();
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanSummary").props.testID).toBe(
+      "event-detail-attached-plan",
+    );
+    expect(screen.getByTestId("event-detail-open-linked-plan")).toBeTruthy();
+    expect(screen.getByTestId("event-detail-options-reschedule")).toBeTruthy();
+    expect(screen.getByText("Comments (0)")).toBeTruthy();
   });
 
   it("preserves planned-event schedule handoff through ScheduleActivityModal", () => {
     renderNative(<EventDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-reschedule-button"));
+    fireEvent.press(screen.getByTestId("event-detail-options-reschedule"));
 
     const modal = (screen as any).UNSAFE_getByType("ScheduleActivityModal");
     expect(modal.props.eventId).toBe("event-1");

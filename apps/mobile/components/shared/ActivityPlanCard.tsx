@@ -1,5 +1,4 @@
 import type { ActivityPlanStructureV2 } from "@repo/core";
-import { formatDurationSec } from "@repo/core";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -7,9 +6,10 @@ import { format } from "date-fns";
 import { Calendar, Heart } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { api } from "@/lib/api";
 import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { ActivityPlanSummary } from "./ActivityPlanSummary";
 
 // ============================================
 // TYPES
@@ -102,11 +102,6 @@ export function ActivityPlanCard({
       ? getActivityCategoryConfig(activity.activityType)
       : getActivityConfig(activity.activityType);
 
-  // Check if has structure with steps/intervals
-  const hasStructure = Boolean(
-    activity.structure?.intervals && activity.structure.intervals.length > 0,
-  );
-
   // Determine if interactive
   const isInteractive = Boolean(onPress);
 
@@ -118,6 +113,12 @@ export function ActivityPlanCard({
 
   const [isLiked, setIsLiked] = useState(activity.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(activity.likes_count ?? 0);
+  const routeId = activity.routeId;
+  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+  const { data: routeFull } = api.routes.loadFull.useQuery(
+    { id: routeId! },
+    { enabled: !!routeId },
+  );
 
   const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
@@ -148,40 +149,39 @@ export function ActivityPlanCard({
         className={`${isHero ? "border-2 border-primary" : ""} ${activity.isCompleted ? "opacity-60" : ""}`}
       >
         <CardContent className={isCompact ? "p-3" : "p-4"}>
-          <View className="mb-3 flex-row items-start gap-3">
-            <View className={`shrink-0 rounded-full p-2 ${config.bgColor}`}>
-              <Icon as={config.icon} size={isCompact ? 14 : 16} className={config.color} />
-            </View>
-
-            <View className="min-w-0 flex-1">
-              <Text
-                className={isCompact ? "text-sm font-semibold" : "text-base font-semibold"}
-                numberOfLines={1}
+          <ActivityPlanSummary
+            activityCategory={activity.activityType}
+            description={isCompact ? null : activity.description || activity.notes || null}
+            estimatedDuration={activity.estimatedDuration}
+            estimatedTss={activity.estimatedTss}
+            headerAccessory={
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleToggleLike();
+                }}
+                className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5"
               >
-                {activity.name}
-              </Text>
-            </View>
-
-            <Pressable
-              onPress={(e) => {
-                e.stopPropagation();
-                handleToggleLike();
-              }}
-              className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5"
-            >
-              <Icon
-                as={Heart}
-                size={14}
-                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-              />
-              <Text className="ml-1 text-xs font-medium text-muted-foreground">
-                {likesCount > 0 ? `${likesCount}` : "Like"}
-              </Text>
-            </Pressable>
-          </View>
+                <Icon
+                  as={Heart}
+                  size={14}
+                  className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
+                />
+                <Text className="ml-1 text-xs font-medium text-muted-foreground">
+                  {likesCount > 0 ? `${likesCount}` : isLiked ? "Liked" : "Like"}
+                </Text>
+              </Pressable>
+            }
+            intensityFactor={activity.intensityFactor}
+            routeName={route?.name || activity.routeName}
+            routeProvided={!!activity.routeId}
+            structure={activity.structure}
+            title={activity.name}
+            variant="standalone"
+          />
 
           {showScheduleInfo && activity.scheduledDate && (
-            <View className="mb-2 flex-row items-center">
+            <View className="mb-2 mt-3 flex-row items-center">
               <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
               <Text className="text-xs text-muted-foreground">
                 {formatScheduledDateTime(activity.scheduledDate)}
@@ -189,56 +189,23 @@ export function ActivityPlanCard({
             </View>
           )}
 
-          {(activity.estimatedDuration !== undefined ||
-            activity.estimatedTss !== undefined ||
-            activity.intensityFactor !== undefined ||
-            activity.structure?.intervals) && (
-            <View className="mb-3 rounded-lg bg-muted/30 px-2.5 py-2">
-              <View className="flex-row justify-between gap-2">
-                <CompactMetric
-                  label="Duration"
-                  value={
-                    activity.estimatedDuration && activity.estimatedDuration > 0
-                      ? formatDurationSec(Math.round(activity.estimatedDuration))
-                      : "--"
-                  }
-                />
-                <CompactMetric
-                  label="TSS"
-                  value={
-                    activity.estimatedTss !== undefined && activity.estimatedTss > 0
-                      ? `${Math.round(activity.estimatedTss)}`
-                      : "--"
-                  }
-                />
-                <CompactMetric
-                  label="Intensity"
-                  value={
-                    activity.intensityFactor !== undefined && activity.intensityFactor > 0
-                      ? activity.intensityFactor.toFixed(2)
-                      : "--"
-                  }
-                />
-                <CompactMetric label="Steps" value={`${countStructureSteps(activity.structure)}`} />
-              </View>
-            </View>
-          )}
-
-          {hasStructure && !activity.isCompleted && activity.structure && (
-            <View className="mb-3 overflow-hidden rounded-md">
-              <TimelineChart structure={activity.structure} height={50} compact={true} />
-            </View>
-          )}
-
-          {activity.notes && (
-            <Text
-              className="text-sm leading-5 text-muted-foreground"
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {activity.notes}
-            </Text>
-          )}
+          <ActivityPlanContentPreview
+            compact={isCompact}
+            size={isCompact ? "small" : isHero ? "large" : "medium"}
+            plan={{
+              estimated_duration: activity.estimatedDuration,
+              estimated_tss: activity.estimatedTss,
+              route_id: activity.routeId,
+              structure: activity.structure,
+            }}
+            route={
+              route ? { ...route, total_distance: (route as any).total_distance ?? null } : null
+            }
+            routeFull={routeFull ? { coordinates: (routeFull as any).coordinates ?? [] } : null}
+            intensityFactor={activity.intensityFactor}
+            tss={activity.estimatedTss}
+            testIDPrefix={`activity-plan-card-preview-${activity.id}`}
+          />
         </CardContent>
       </Card>
     </CardWrapper>
@@ -286,26 +253,6 @@ function transformToCardData(
     likes_count: plan.likes_count,
     has_liked: plan.has_liked,
   };
-}
-
-function countStructureSteps(structure?: ActivityPlanStructureV2): number {
-  if (!structure?.intervals) return 0;
-
-  return structure.intervals.reduce((total, interval) => {
-    const repetitions = interval.repetitions || 1;
-    return total + interval.steps.length * repetitions;
-  }, 0);
-}
-
-function CompactMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="flex-1 items-center gap-0.5">
-      <Text className="text-[10px] text-muted-foreground">{label}</Text>
-      <Text className="text-[11px] font-semibold text-foreground" numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
 }
 
 /**

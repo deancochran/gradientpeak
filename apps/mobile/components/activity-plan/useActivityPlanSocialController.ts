@@ -1,6 +1,7 @@
 import { skipToken } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
+import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 
 function isValidUuid(value: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,7 +25,6 @@ export function useActivityPlanSocialController({
 
   const [isLiked, setIsLiked] = React.useState(initialHasLiked ?? false);
   const [likesCount, setLikesCount] = React.useState(initialLikesCount ?? 0);
-  const [newComment, setNewComment] = React.useState("");
 
   const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
@@ -33,18 +33,9 @@ export function useActivityPlanSocialController({
     },
   });
 
-  const { data: commentsData, refetch: refetchComments } = api.social.getComments.useQuery(
-    isCommentEntityIdValid ? { entity_id: actualPlanId, entity_type: "activity_plan" } : skipToken,
-  );
-
-  const addCommentMutation = api.social.addComment.useMutation({
-    onSuccess: () => {
-      setNewComment("");
-      refetchComments();
-    },
-    onError: (error) => {
-      Alert.alert("Error", `Failed to add comment: ${error.message}`);
-    },
+  const comments = useEntityCommentsController({
+    entityId: isCommentEntityIdValid ? actualPlanId : undefined,
+    entityType: "activity_plan",
   });
 
   React.useEffect(() => {
@@ -67,27 +58,15 @@ export function useActivityPlanSocialController({
     });
   };
 
-  const handleAddComment = () => {
-    if (!actualPlanId || !isValidUuid(actualPlanId) || !newComment.trim()) {
-      return;
-    }
-
-    addCommentMutation.mutate({
-      entity_id: actualPlanId,
-      entity_type: "activity_plan",
-      content: newComment.trim(),
-    });
-  };
-
   return {
-    comments: commentsData?.comments ?? [],
-    commentCount: commentsData?.total ?? 0,
-    handleAddComment,
+    comments: comments.comments,
+    commentCount: comments.commentCount,
+    handleAddComment: comments.handleAddComment,
     handleToggleLike,
     isLiked,
     likesCount,
-    newComment,
-    setNewComment,
-    addCommentPending: addCommentMutation.isPending,
+    newComment: comments.newComment,
+    setNewComment: comments.setNewComment,
+    addCommentPending: comments.addCommentPending,
   };
 }

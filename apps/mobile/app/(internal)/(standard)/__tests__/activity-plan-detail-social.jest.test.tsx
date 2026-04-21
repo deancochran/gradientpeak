@@ -23,6 +23,14 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useRouter: () => routerMock,
   useLocalSearchParams: () => localSearchParamsMock,
 }));
@@ -45,12 +53,24 @@ jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
   TimelineChart: createHost("TimelineChart"),
 }));
 
+jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
+  __esModule: true,
+  ElevationProfileChart: createHost("ElevationProfileChart"),
+}));
+
 jest.mock("@/components/ScheduleActivityModal", () => ({
   __esModule: true,
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
+}));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/switch", () => ({ __esModule: true, Switch: createHost("Switch") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
@@ -109,7 +129,10 @@ jest.mock("@/lib/api", () => ({
       getById: { useQuery: () => ({ data: null, error: null, isLoading: false }) },
       delete: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
-    routes: { get: { useQuery: () => ({ data: null }) } },
+    routes: {
+      get: { useQuery: () => ({ data: null }) },
+      loadFull: { useQuery: () => ({ data: null }) },
+    },
     social: {
       toggleLike: { useMutation: () => ({ mutate: toggleLikeMutateMock, isPending: false }) },
       getComments: {

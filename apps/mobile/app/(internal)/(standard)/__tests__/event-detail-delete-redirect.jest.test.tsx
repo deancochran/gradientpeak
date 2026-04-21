@@ -35,6 +35,14 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useLocalSearchParams: () => ({ id: "event-1" }),
   useRouter: () => ({
     back: jest.fn(),
@@ -59,6 +67,11 @@ jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
+jest.mock("@/components/shared/ActivityPlanSummary", () => ({
+  __esModule: true,
+  ActivityPlanSummary: createHost("ActivityPlanSummary"),
+}));
+
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
   Button: createHost("Button"),
@@ -69,6 +82,14 @@ jest.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardTitle: createHost("CardTitle"),
+}));
+
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({
@@ -137,11 +158,8 @@ jest.mock("lucide-react-native", () => ({
   ArrowUpRight: "ArrowUpRight",
   Calendar: "Calendar",
   CheckCircle2: "CheckCircle2",
-  Clock: "Clock",
-  Edit: "Edit",
+  Ellipsis: "Ellipsis",
   Play: "Play",
-  Trash2: "Trash2",
-  Zap: "Zap",
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -161,10 +179,27 @@ jest.mock("@/lib/api", () => ({
       get: {
         useQuery: () => ({ data: null }),
       },
+      loadFull: {
+        useQuery: () => ({ data: null }),
+      },
+    },
+    social: {
+      getComments: {
+        useQuery: () => ({ data: { comments: [], total: 0 } }),
+      },
+      addComment: {
+        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+      },
     },
     events: {
       getById: {
         useQuery: (input: any, options: any) => mockQuery(input, options),
+      },
+      create: {
+        useMutation: () => ({
+          isPending: false,
+          mutate: jest.fn(),
+        }),
       },
       update: {
         useMutation: () => ({
@@ -176,6 +211,16 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({
           isPending: false,
           mutate: jest.fn(),
+        }),
+      },
+    },
+    activityPlans: {
+      list: {
+        useQuery: () => ({
+          data: { items: [] },
+          isLoading: false,
+          error: null,
+          refetch: jest.fn(),
         }),
       },
     },

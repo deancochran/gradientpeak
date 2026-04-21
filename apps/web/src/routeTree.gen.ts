@@ -29,9 +29,13 @@ import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/waho
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ProtectedUserUserIdIndexRouteImport } from './routes/_protected/user/$userId/index'
+import { Route as ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRouteImport } from './routes/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
 import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
 import { Route as ProtectedUserUserIdFollowingRouteImport } from './routes/_protected/user/$userId/following'
 import { Route as ProtectedUserUserIdFollowersRouteImport } from './routes/_protected/user/$userId/followers'
+import { Route as ApiInternalProviderSyncWahooStatusRouteImport } from './routes/api/internal/provider-sync/wahoo/status'
+import { Route as ApiInternalProviderSyncWahooRetryRouteImport } from './routes/api/internal/provider-sync/wahoo/retry'
+import { Route as ApiInternalProviderSyncWahooDrainRouteImport } from './routes/api/internal/provider-sync/wahoo/drain'
 
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
@@ -133,6 +137,12 @@ const ProtectedUserUserIdIndexRoute =
     path: '/user/$userId/',
     getParentRoute: () => ProtectedRoute,
   } as any)
+const ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute =
+  ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRouteImport.update({
+    id: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue',
+    path: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiIntegrationsCallbackProviderRoute =
   ApiIntegrationsCallbackProviderRouteImport.update({
     id: '/api/integrations/callback/$provider',
@@ -150,6 +160,24 @@ const ProtectedUserUserIdFollowersRoute =
     id: '/user/$userId/followers',
     path: '/user/$userId/followers',
     getParentRoute: () => ProtectedRoute,
+  } as any)
+const ApiInternalProviderSyncWahooStatusRoute =
+  ApiInternalProviderSyncWahooStatusRouteImport.update({
+    id: '/api/internal/provider-sync/wahoo/status',
+    path: '/api/internal/provider-sync/wahoo/status',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiInternalProviderSyncWahooRetryRoute =
+  ApiInternalProviderSyncWahooRetryRouteImport.update({
+    id: '/api/internal/provider-sync/wahoo/retry',
+    path: '/api/internal/provider-sync/wahoo/retry',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiInternalProviderSyncWahooDrainRoute =
+  ApiInternalProviderSyncWahooDrainRouteImport.update({
+    id: '/api/internal/provider-sync/wahoo/drain',
+    path: '/api/internal/provider-sync/wahoo/drain',
+    getParentRoute: () => rootRouteImport,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -174,7 +202,11 @@ export interface FileRoutesByFullPath {
   '/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
+  '/api/internal/activity-plan-derived-metrics/drain-refresh-queue': typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute
   '/user/$userId/': typeof ProtectedUserUserIdIndexRoute
+  '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
+  '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
+  '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
 }
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
@@ -198,7 +230,11 @@ export interface FileRoutesByTo {
   '/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
+  '/api/internal/activity-plan-derived-metrics/drain-refresh-queue': typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute
   '/user/$userId': typeof ProtectedUserUserIdIndexRoute
+  '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
+  '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
+  '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -224,7 +260,11 @@ export interface FileRoutesById {
   '/_protected/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/_protected/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
+  '/api/internal/activity-plan-derived-metrics/drain-refresh-queue': typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute
   '/_protected/user/$userId/': typeof ProtectedUserUserIdIndexRoute
+  '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
+  '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
+  '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -250,7 +290,11 @@ export interface FileRouteTypes {
     | '/user/$userId/followers'
     | '/user/$userId/following'
     | '/api/integrations/callback/$provider'
+    | '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
     | '/user/$userId/'
+    | '/api/internal/provider-sync/wahoo/drain'
+    | '/api/internal/provider-sync/wahoo/retry'
+    | '/api/internal/provider-sync/wahoo/status'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/about'
@@ -274,7 +318,11 @@ export interface FileRouteTypes {
     | '/user/$userId/followers'
     | '/user/$userId/following'
     | '/api/integrations/callback/$provider'
+    | '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
     | '/user/$userId'
+    | '/api/internal/provider-sync/wahoo/drain'
+    | '/api/internal/provider-sync/wahoo/retry'
+    | '/api/internal/provider-sync/wahoo/status'
   id:
     | '__root__'
     | '/_protected'
@@ -299,7 +347,11 @@ export interface FileRouteTypes {
     | '/_protected/user/$userId/followers'
     | '/_protected/user/$userId/following'
     | '/api/integrations/callback/$provider'
+    | '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
     | '/_protected/user/$userId/'
+    | '/api/internal/provider-sync/wahoo/drain'
+    | '/api/internal/provider-sync/wahoo/retry'
+    | '/api/internal/provider-sync/wahoo/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -318,6 +370,10 @@ export interface RootRouteChildren {
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   ApiWebhooksWahooRoute: typeof ApiWebhooksWahooRoute
   ApiIntegrationsCallbackProviderRoute: typeof ApiIntegrationsCallbackProviderRoute
+  ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute: typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute
+  ApiInternalProviderSyncWahooDrainRoute: typeof ApiInternalProviderSyncWahooDrainRoute
+  ApiInternalProviderSyncWahooRetryRoute: typeof ApiInternalProviderSyncWahooRetryRoute
+  ApiInternalProviderSyncWahooStatusRoute: typeof ApiInternalProviderSyncWahooStatusRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -462,6 +518,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedUserUserIdIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/api/internal/activity-plan-derived-metrics/drain-refresh-queue': {
+      id: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
+      path: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
+      fullPath: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
+      preLoaderRoute: typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/integrations/callback/$provider': {
       id: '/api/integrations/callback/$provider'
       path: '/api/integrations/callback/$provider'
@@ -482,6 +545,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/user/$userId/followers'
       preLoaderRoute: typeof ProtectedUserUserIdFollowersRouteImport
       parentRoute: typeof ProtectedRoute
+    }
+    '/api/internal/provider-sync/wahoo/status': {
+      id: '/api/internal/provider-sync/wahoo/status'
+      path: '/api/internal/provider-sync/wahoo/status'
+      fullPath: '/api/internal/provider-sync/wahoo/status'
+      preLoaderRoute: typeof ApiInternalProviderSyncWahooStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/provider-sync/wahoo/retry': {
+      id: '/api/internal/provider-sync/wahoo/retry'
+      path: '/api/internal/provider-sync/wahoo/retry'
+      fullPath: '/api/internal/provider-sync/wahoo/retry'
+      preLoaderRoute: typeof ApiInternalProviderSyncWahooRetryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/provider-sync/wahoo/drain': {
+      id: '/api/internal/provider-sync/wahoo/drain'
+      path: '/api/internal/provider-sync/wahoo/drain'
+      fullPath: '/api/internal/provider-sync/wahoo/drain'
+      preLoaderRoute: typeof ApiInternalProviderSyncWahooDrainRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -528,6 +612,14 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   ApiWebhooksWahooRoute: ApiWebhooksWahooRoute,
   ApiIntegrationsCallbackProviderRoute: ApiIntegrationsCallbackProviderRoute,
+  ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute:
+    ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute,
+  ApiInternalProviderSyncWahooDrainRoute:
+    ApiInternalProviderSyncWahooDrainRoute,
+  ApiInternalProviderSyncWahooRetryRoute:
+    ApiInternalProviderSyncWahooRetryRoute,
+  ApiInternalProviderSyncWahooStatusRoute:
+    ApiInternalProviderSyncWahooStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

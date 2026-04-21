@@ -1,4 +1,6 @@
 import { invalidateConversationQueries, invalidateMessagingInboxQueries } from "@repo/api/react";
+import { getConversationDisplayName } from "@repo/core";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
@@ -10,6 +12,15 @@ import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } fro
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
+
+function getInitials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
 
 function MessageBubble({
   text,
@@ -29,11 +40,11 @@ function MessageBubble({
   return (
     <View
       testID={`message-bubble-${isMe ? "sent" : "received"}`}
-      className={cn("flex w-full mb-4", isMe ? "items-end" : "items-start")}
+      className={cn("mb-3 flex w-full", isMe ? "items-end" : "items-start")}
     >
       <View
         className={cn(
-          "max-w-[80%] p-3 px-4 rounded-2xl",
+          "max-w-[80%] rounded-2xl px-4 py-2.5",
           isMe ? "bg-primary rounded-br-none" : "bg-muted rounded-bl-none",
         )}
       >
@@ -41,9 +52,11 @@ function MessageBubble({
           {text}
         </Text>
       </View>
-      <View className="flex-row items-center mt-1 mx-1">
+      <View className="mx-1 mt-1 flex-row items-center gap-1">
         <Text className="text-[10px] text-muted-foreground">{timestamp}</Text>
-        {statusText && <Text className="text-[10px] text-muted-foreground ml-1">{statusText}</Text>}
+        {statusText ? (
+          <Text className="text-[10px] text-muted-foreground">{statusText}</Text>
+        ) : null}
       </View>
     </View>
   );
@@ -60,6 +73,18 @@ export default function ChatScreen() {
     { conversation_id: id },
     { refetchInterval: 5000 },
   );
+  const { data: conversations = [] } = api.messaging.getConversations.useQuery();
+  const conversation = conversations.find((entry) => entry.id === id);
+  const conversationTitle = conversation ? getConversationDisplayName(conversation as any) : "Chat";
+  const conversationSubtitle = conversation
+    ? conversation.is_group
+      ? conversation.group_name
+        ? "Group conversation"
+        : "New group"
+      : conversation.peer_profile?.username
+        ? `@${conversation.peer_profile.username}`
+        : "Direct message"
+    : null;
 
   // Mark messages as read when viewing the conversation
   const markAsReadMutation = api.messaging.markAsRead.useMutation({
@@ -90,7 +115,32 @@ export default function ChatScreen() {
 
   return (
     <View className="flex-1 bg-background" testID="message-thread-screen">
-      <Stack.Screen options={{ title: "Chat" }} />
+      <Stack.Screen
+        options={{
+          headerTitle: () => (
+            <View className="flex-row items-center gap-3">
+              <Avatar alt={conversationTitle} className="h-9 w-9">
+                {conversation?.peer_profile?.avatar_url ? (
+                  <AvatarImage source={{ uri: conversation.peer_profile.avatar_url }} />
+                ) : null}
+                <AvatarFallback>
+                  <Text className="text-xs font-medium">{getInitials(conversationTitle)}</Text>
+                </AvatarFallback>
+              </Avatar>
+              <View className="max-w-[220px]">
+                <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                  {conversationTitle}
+                </Text>
+                {conversationSubtitle ? (
+                  <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                    {conversationSubtitle}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          ),
+        }}
+      />
 
       {isLoading ? (
         <View className="flex-1 items-center justify-center" testID="message-thread-loading-state">
@@ -122,7 +172,7 @@ export default function ChatScreen() {
               isRead={item.sender_id === user?.id}
             />
           )}
-          contentContainerClassName="p-4"
+          contentContainerClassName="px-4 py-3"
         />
       )}
 
@@ -131,11 +181,11 @@ export default function ChatScreen() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
       >
         <View
-          className="flex-row items-center p-2 border-t border-border bg-background"
+          className="flex-row items-center gap-2 border-t border-border bg-background px-3 pt-2"
           style={{ paddingBottom: Math.max(insets.bottom, 8) }}
         >
           <Input
-            className="flex-1 mr-2"
+            className="flex-1 rounded-full bg-muted/40"
             testId="message-input"
             placeholder="Type a message..."
             value={inputText}
@@ -145,6 +195,7 @@ export default function ChatScreen() {
             size="icon"
             onPress={handleSend}
             disabled={!inputText.trim() || sendMessageMutation.isPending}
+            className="h-10 w-10 rounded-full"
             testID="message-send-button"
           >
             <Send size={20} className="text-primary-foreground" />

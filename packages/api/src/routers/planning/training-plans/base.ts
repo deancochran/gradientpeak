@@ -93,6 +93,7 @@ import { featureFlags } from "../../../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { addEstimationToPlans } from "../../../utils/estimation-helpers";
+import { loadProfileIdentityMap, profileIdentitySchema } from "../../../utils/profile-identity";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
@@ -614,6 +615,16 @@ function withTrainingPlanIdentity<
         : plan.is_system_template
           ? "public"
           : "private",
+  };
+}
+
+function withTrainingPlanOwnerIdentity<T extends { profile_id: string | null }>(
+  plan: T,
+  profileIdentityMap: Map<string, z.infer<typeof profileIdentitySchema>>,
+) {
+  return {
+    ...plan,
+    owner: plan.profile_id ? (profileIdentityMap.get(plan.profile_id) ?? null) : null,
   };
 }
 
@@ -2283,67 +2294,14 @@ async function loadProfileGoalsWithTargetDates(input: {
     return [];
   }
 
-  const milestoneEventIds = [
-    ...new Set(parsedGoals.map((goal: ProfileGoal) => goal.milestone_event_id)),
-  ];
-  let eventRows: Array<{ id: string; starts_at: string }> = [];
-
-  if (milestoneEventIds.length > 0) {
-    if (input.db) {
-      const rows = await input.db
-        .select({ id: schema.events.id, starts_at: schema.events.starts_at })
-        .from(schema.events)
-        .where(inArray(schema.events.id, milestoneEventIds));
-
-      eventRows = rows.map((event) => ({ id: event.id, starts_at: event.starts_at.toISOString() }));
-    } else if (input.supabase) {
-      const { data, error } = await input.supabase
-        .from("events")
-        .select("id, starts_at")
-        .in("id", milestoneEventIds);
-
-      if (error) {
-        console.warn(
-          "Failed to load milestone events for insight timeline projection fallback.",
-          error.message,
-        );
-        return [];
-      }
-
-      eventRows = (data ?? []) as Array<{ id: string; starts_at: string }>;
-    }
-  }
-
-  const eventById = new Map(
-    eventRows
-      .filter(
-        (event): event is { id: string; starts_at: string } =>
-          typeof event?.id === "string" && typeof event?.starts_at === "string",
-      )
-      .map((event: any) => [event.id, event]),
-  );
-
   return parsedGoals
     .flatMap((goal: ProfileGoal) => {
-      const linkedEvent = eventById.get(goal.milestone_event_id);
-      if (!linkedEvent) {
+      const targetDate = goal.target_date;
+      if (!dateOnlyPattern.test(targetDate) || targetDate < input.startDate) {
         return [];
       }
 
-      try {
-        const targetDate = resolveGoalEventDate(goal, linkedEvent);
-        if (!dateOnlyPattern.test(targetDate) || targetDate < input.startDate) {
-          return [];
-        }
-
-        return [{ goal, targetDate }];
-      } catch (resolutionError) {
-        console.warn(
-          "Failed to resolve canonical goal milestone date for insight timeline projection.",
-          resolutionError,
-        );
-        return [];
-      }
+      return [{ goal, targetDate }];
     })
     .sort((left: GoalProjectionSource, right: GoalProjectionSource) =>
       left.targetDate.localeCompare(right.targetDate),
@@ -3936,9 +3894,10 @@ export const trainingPlansRouter = createTRPCRouter({
           profileId: ctx.session.user.id,
           planId: input.id,
         });
+        const profileIdentityMap = await loadProfileIdentityMap(db, [data.profile_id]);
 
         return {
-          ...data,
+          ...withTrainingPlanOwnerIdentity(data, profileIdentityMap),
           has_liked: hasLiked,
         };
       }
@@ -3970,9 +3929,10 @@ export const trainingPlansRouter = createTRPCRouter({
         profileId: ctx.session.user.id,
         planId: data.id,
       });
+      const profileIdentityMap = await loadProfileIdentityMap(db, [data.profile_id]);
 
       return {
-        ...data,
+        ...withTrainingPlanOwnerIdentity(data, profileIdentityMap),
         has_liked: hasLiked,
       };
     }),
@@ -4030,9 +3990,13 @@ export const trainingPlansRouter = createTRPCRouter({
         profileId: ctx.session.user.id,
         planIds,
       });
+      const profileIdentityMap = await loadProfileIdentityMap(
+        db,
+        (data || []).map((plan: any) => plan.profile_id),
+      );
 
       return (data || []).map((plan: any) => ({
-        ...withTrainingPlanIdentity(plan as any),
+        ...withTrainingPlanOwnerIdentity(withTrainingPlanIdentity(plan as any), profileIdentityMap),
         has_liked: userLikes.includes(plan.id),
       }));
     }),
@@ -4599,9 +4563,10 @@ export const trainingPlansRouter = createTRPCRouter({
         profileId: ctx.session.user.id,
         planId: input.id,
       });
+      const profileIdentityMap = await loadProfileIdentityMap(db, [data.profile_id]);
 
       return {
-        ...data,
+        ...withTrainingPlanOwnerIdentity(data, profileIdentityMap),
         has_liked: hasLiked,
       };
     }),
@@ -5894,9 +5859,10 @@ export const trainingPlansRouter = createTRPCRouter({
       );
 
       let allowedPlanIds = new Set<string>();
+      const allowedPlanNameById = new Map<string, string>();
       if (candidatePlanIds.length > 0) {
-        const accessiblePlans = await db.execute(sql<{ id: string }>`
-          select id
+        const accessiblePlans = await db.execute(sql<{ id: string; name: string }>`
+          select id, name
           from activity_plans
           where id in (${sql.join(
             candidatePlanIds.map((id) => sql`${id}::uuid`),
@@ -5909,7 +5875,11 @@ export const trainingPlansRouter = createTRPCRouter({
             )
         `);
 
-        allowedPlanIds = new Set(getSqlRows<{ id: string }>(accessiblePlans).map((row) => row.id));
+        const accessiblePlanRows = getSqlRows<{ id: string; name: string }>(accessiblePlans);
+        allowedPlanIds = new Set(accessiblePlanRows.map((row) => row.id));
+        accessiblePlanRows.forEach((row) => {
+          allowedPlanNameById.set(row.id, row.name);
+        });
       }
 
       const unresolvedPlanIds = candidatePlanIds.filter((planId) => !allowedPlanIds.has(planId));
@@ -5931,7 +5901,12 @@ export const trainingPlansRouter = createTRPCRouter({
             ({
               profile_id: profileId,
               event_type: plannedEventType,
-              title: session.title,
+              title:
+                session.event_title_override ??
+                (session.activity_plan_id
+                  ? allowedPlanNameById.get(session.activity_plan_id)
+                  : undefined) ??
+                session.title,
               all_day: session.all_day,
               timezone: "UTC",
               starts_at: session.starts_at,

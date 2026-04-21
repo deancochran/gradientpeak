@@ -7,7 +7,6 @@ import { Text } from "@repo/ui/components/text";
 import React, { useMemo } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
-import { api } from "@/lib/api";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { computeLocalCreationPreview } from "@/lib/training-plan-form/localPreview";
 
@@ -126,10 +125,7 @@ interface TrainingPreferencesProjectionPreviewProps {
 export function TrainingPreferencesProjectionPreview({
   draft,
 }: TrainingPreferencesProjectionPreviewProps) {
-  const activePlanQuery = api.trainingPlans.getActivePlan.useQuery();
-  const activePlan = activePlanQuery.data;
   const snapshot = useTrainingPlanSnapshot({
-    planId: activePlan?.id,
     includeStatus: false,
     includeWeeklySummaries: false,
   });
@@ -206,8 +202,12 @@ export function TrainingPreferencesProjectionPreview({
   }, [snapshot.idealCurveData]);
 
   const projectionPreviewSummary = useMemo(() => {
-    if (idealFitnessCurve.length < 2 || previewIdealCurve.length < 2) {
-      return "Make changes here to compare the current baseline against this draft once the plan has enough projection data.";
+    if (previewIdealCurve.length < 2) {
+      return "Projection preview unavailable.";
+    }
+
+    if (idealFitnessCurve.length < 2) {
+      return "Draft preview ready. Add or activate a training plan if you want a baseline comparison line too.";
     }
 
     const baselinePoint = idealFitnessCurve[idealFitnessCurve.length - 1];
@@ -222,19 +222,11 @@ export function TrainingPreferencesProjectionPreview({
   }, [idealFitnessCurve, previewIdealCurve]);
 
   const projectionPreviewState = useMemo(() => {
-    if (activePlanQuery.isLoading || snapshot.loading.plan || snapshot.loading.idealCurve) {
+    if (snapshot.loading.plan || snapshot.loading.actualCurve || snapshot.loading.idealCurve) {
       return {
         tone: "loading" as const,
         title: "Loading projection preview",
-        body: "Pulling your active plan and deterministic draft preview so this screen can compare today's settings with the current baseline.",
-      };
-    }
-
-    if (!activePlan?.id) {
-      return {
-        tone: "empty" as const,
-        title: "Preview unavailable",
-        body: "Start or activate a training plan to generate a baseline curve for this preview.",
+        body: "Pulling your current training context and deterministic draft preview so this screen can compare today's settings with the best baseline available.",
       };
     }
 
@@ -242,7 +234,7 @@ export function TrainingPreferencesProjectionPreview({
       return {
         tone: "unavailable" as const,
         title: "Preview unavailable",
-        body: "The baseline projection could not be loaded right now. Try again after refreshing the active plan.",
+        body: "The baseline projection could not be loaded right now. Draft preview is still based on your goals and recent training history.",
       };
     }
 
@@ -256,12 +248,12 @@ export function TrainingPreferencesProjectionPreview({
 
     if (idealFitnessCurve.length < 2) {
       return {
-        tone: "empty" as const,
-        title: "Baseline curve not ready",
+        tone: "ready" as const,
+        title: "Draft preview",
         body:
           snapshot.profileGoals.length > 0
-            ? "This active plan does not have enough ideal-curve checkpoints yet to show a baseline-vs-draft comparison."
-            : "Add a goal with a target date to give the active plan enough information for a projection preview.",
+            ? "Your deterministic draft preview is ready. Activate or build a training plan later if you want to compare against a plan baseline."
+            : "Add a goal with a target date to give the planner enough information for a projection preview.",
       };
     }
 
@@ -282,11 +274,10 @@ export function TrainingPreferencesProjectionPreview({
           : "Recommended shows the current baseline and Planned shows the deterministic draft preview. Completed training will appear here after local history syncs in.",
     };
   }, [
-    activePlan?.id,
-    activePlanQuery.isLoading,
     fitnessHistory.length,
     idealFitnessCurve.length,
     previewIdealCurve.length,
+    snapshot.loading.actualCurve,
     snapshot.errors.idealCurve,
     snapshot.loading.idealCurve,
     snapshot.loading.plan,
@@ -303,8 +294,8 @@ export function TrainingPreferencesProjectionPreview({
           <PlanVsActualChart
             actualData={fitnessHistory}
             projectedData={previewIdealCurve}
-            idealData={idealFitnessCurve}
-            goalMetrics={goalMetrics}
+            idealData={idealFitnessCurve.length >= 2 ? idealFitnessCurve : []}
+            goalMetrics={idealFitnessCurve.length >= 2 ? goalMetrics : null}
             height={220}
             showLegend
           />

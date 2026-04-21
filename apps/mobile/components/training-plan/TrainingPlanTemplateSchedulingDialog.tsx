@@ -8,9 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@repo/ui/components/dialog";
-import { RadioGroup, RadioGroupItem } from "@repo/ui/components/radio-group";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
@@ -36,6 +34,18 @@ interface TrainingPlanTemplateSchedulingDialogProps {
   templateAnchorDate: string;
 }
 
+function SelectionIndicator({ active }: { active: boolean }) {
+  return (
+    <View
+      className={`mt-0.5 size-4 items-center justify-center rounded-full border ${
+        active ? "border-primary" : "border-input dark:bg-input/30"
+      }`}
+    >
+      {active ? <View className="bg-primary size-2 rounded-full" /> : null}
+    </View>
+  );
+}
+
 export function TrainingPlanTemplateSchedulingDialog({
   applyPending,
   onApply,
@@ -53,11 +63,6 @@ export function TrainingPlanTemplateSchedulingDialog({
   return (
     <>
       <Dialog open={showScheduleModal} onOpenChange={onScheduleModalOpenChange}>
-        <DialogTrigger asChild>
-          <Button className="w-full" testID="training-plan-schedule-button">
-            <Text className="text-primary-foreground font-semibold">Schedule Sessions</Text>
-          </Button>
-        </DialogTrigger>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Schedule this plan</DialogTitle>
@@ -69,14 +74,7 @@ export function TrainingPlanTemplateSchedulingDialog({
           <View className="gap-4 py-4">
             <View className="gap-2">
               <Text className="text-sm font-medium">How should this schedule line up?</Text>
-              <RadioGroup
-                value={scheduleAnchorMode}
-                onValueChange={(nextValue) => {
-                  if (nextValue === "start" || nextValue === "finish") {
-                    onSelectScheduleAnchorMode(nextValue);
-                  }
-                }}
-              >
+              <View className="gap-2">
                 <TouchableOpacity
                   onPress={() => onSelectScheduleAnchorMode("start")}
                   className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
@@ -84,7 +82,7 @@ export function TrainingPlanTemplateSchedulingDialog({
                   testID="training-plan-anchor-start"
                 >
                   <View className="flex-row items-start gap-3">
-                    <RadioGroupItem value="start" />
+                    <SelectionIndicator active={scheduleAnchorMode === "start"} />
                     <View className="flex-1">
                       <Text className="text-sm font-semibold text-foreground">Start On</Text>
                       <Text className="mt-1 text-xs text-muted-foreground">
@@ -100,7 +98,7 @@ export function TrainingPlanTemplateSchedulingDialog({
                   testID="training-plan-anchor-finish"
                 >
                   <View className="flex-row items-start gap-3">
-                    <RadioGroupItem value="finish" />
+                    <SelectionIndicator active={scheduleAnchorMode === "finish"} />
                     <View className="flex-1">
                       <Text className="text-sm font-semibold text-foreground">Finish By</Text>
                       <Text className="mt-1 text-xs text-muted-foreground">
@@ -109,7 +107,7 @@ export function TrainingPlanTemplateSchedulingDialog({
                     </View>
                   </View>
                 </TouchableOpacity>
-              </RadioGroup>
+              </View>
             </View>
             <View className="gap-2">
               <DateField
@@ -136,7 +134,7 @@ export function TrainingPlanTemplateSchedulingDialog({
               testID="training-plan-schedule-confirm"
             >
               <Text className="text-primary-foreground font-semibold">
-                {applyPending ? "Scheduling..." : "Schedule Sessions"}
+                {applyPending ? "Scheduling..." : "Schedule"}
               </Text>
             </Button>
           </DialogFooter>

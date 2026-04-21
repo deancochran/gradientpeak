@@ -43,305 +43,172 @@ interface TrainingPlanStructureSectionProps {
   activityPlanNameById: Map<string, string>;
   formatCompactDayLabel: (dayOffset: number) => string;
   groupedStructureSessions: GroupedMicrocycleSessions[];
-  hasIntervals: (structure: unknown) => boolean;
+  embedded?: boolean;
+  hideMicrocycleHeaders?: boolean;
   isLoadingActivityPlans: boolean;
-  isLoadingLinkedPlans: boolean;
   isOwnedByUser: boolean;
-  linkedActivityPlanItems: ActivityPlanListItem[];
-  maxWeeklyLoad: number;
   onActivityPickerOpenChange: (open: boolean) => void;
   onOpenActivityPickerForSession: (session: StructureSessionRow) => void;
   onRefreshActivityPlans: () => void;
   onRemoveActivityFromSession: (session: StructureSessionRow) => void;
+  renderSessionActivityContent?: (session: StructureSessionRow) => React.ReactNode;
   onSelectActivityForSession: (activityPlan: ActivityPlanListItem) => void;
-  onEditStructure: () => void;
-  planStructure: any;
   selectedSessionRow: StructureSessionRow | null;
   showActivityPicker: boolean;
-  uniqueLinkedActivityPlans: ActivityPlanListItem[];
+  title?: string;
+  description?: string;
   updatePlanStructurePending: boolean;
-  weeklyLoadSummary: Array<{ microcycle: number; estimatedTss: number }>;
-}
-
-function TrainingPlanDetailChip({ label }: { label: string }) {
-  return (
-    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-      <Text className="text-xs font-medium capitalize text-foreground">{label}</Text>
-    </View>
-  );
 }
 
 export function TrainingPlanStructureSection({
   activityPlanItems,
   activityPlanNameById,
+  description,
+  embedded = false,
   formatCompactDayLabel,
   groupedStructureSessions,
-  hasIntervals,
+  hideMicrocycleHeaders = false,
   isLoadingActivityPlans,
-  isLoadingLinkedPlans,
   isOwnedByUser,
-  linkedActivityPlanItems,
-  maxWeeklyLoad,
   onActivityPickerOpenChange,
-  onEditStructure,
   onOpenActivityPickerForSession,
   onRefreshActivityPlans,
   onRemoveActivityFromSession,
+  renderSessionActivityContent,
   onSelectActivityForSession,
-  planStructure,
   selectedSessionRow,
   showActivityPicker,
-  uniqueLinkedActivityPlans,
+  title,
   updatePlanStructurePending,
-  weeklyLoadSummary,
 }: TrainingPlanStructureSectionProps) {
-  return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle>Plan overview and structure</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <View className="gap-3">
-            {planStructure && (
-              <>
-                <View className="flex-row flex-wrap gap-2">
-                  <TrainingPlanDetailChip
-                    label={`${planStructure.target_weekly_tss_min} - ${planStructure.target_weekly_tss_max} weekly TSS`}
-                  />
-                  <TrainingPlanDetailChip
-                    label={`${planStructure.target_activities_per_week} sessions/week`}
-                  />
-                  <TrainingPlanDetailChip
-                    label={`${planStructure.max_consecutive_days} max consecutive days`}
-                  />
-                  <TrainingPlanDetailChip
-                    label={`${planStructure.min_rest_days_per_week} rest days/week`}
-                  />
-                </View>
-                {planStructure.periodization_template && (
-                  <>
-                    <View className="h-px bg-border" />
-                    <View className="flex-row justify-between items-center">
-                      <Text className="text-muted-foreground">Periodization</Text>
-                      <Text className="font-semibold">
-                        {planStructure.periodization_template.starting_ctl} →{" "}
-                        {planStructure.periodization_template.target_ctl} CTL
-                      </Text>
-                    </View>
-                    <View className="flex-row justify-between items-center">
-                      <Text className="text-muted-foreground">Target Date</Text>
-                      <Text className="font-semibold">
-                        {new Date(
-                          planStructure.periodization_template.target_date,
-                        ).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </Text>
-                    </View>
-                  </>
-                )}
-                {isOwnedByUser && (
-                  <>
-                    <View className="h-px bg-border" />
-                    <TouchableOpacity
-                      onPress={onEditStructure}
-                      className="pt-1"
-                      testID="training-plan-edit-structure-link"
-                    >
-                      <Text className="text-sm font-semibold text-primary">
-                        Edit structure in composer
-                      </Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </>
-            )}
+  const microcycleContainerClassName = embedded
+    ? "gap-3"
+    : "gap-3 rounded-2xl border border-border bg-muted/20 p-3";
+  const dayContainerClassName = embedded
+    ? "gap-3 py-2"
+    : "gap-3 rounded-xl border border-border/50 bg-background/70 p-3";
+  const fallbackSessionClassName = embedded
+    ? "gap-2 rounded-xl border border-border/40 bg-muted/10 px-3 py-2.5"
+    : "rounded-xl border border-border/60 bg-background px-3 py-2.5";
 
-            <View className="h-px bg-border" />
-            <View className="gap-2">
-              <Text className="text-sm font-semibold">Microcycle weekly load (estimated)</Text>
-              {weeklyLoadSummary.length === 0 ? (
-                <Text className="text-xs text-muted-foreground">
-                  Add linked activity plans to see estimated weekly TSS.
-                </Text>
-              ) : (
-                <View className="gap-2">
-                  {weeklyLoadSummary.map((week) => {
-                    const widthPercent = Math.max(6, (week.estimatedTss / maxWeeklyLoad) * 100);
+  const sectionContent = (
+    <View className="gap-3">
+      <View className="gap-2">
+        <Text className="text-xs text-muted-foreground">
+          {description ||
+            "Review how sessions are distributed across each week before scheduling the full plan."}
+        </Text>
+        {groupedStructureSessions.length === 0 ? (
+          <Text className="text-xs text-muted-foreground">
+            No structured sessions found in this template yet.
+          </Text>
+        ) : (
+          groupedStructureSessions.map((microcycle) => (
+            <View
+              key={`microcycle-${microcycle.microcycle}`}
+              className={microcycleContainerClassName}
+            >
+              {hideMicrocycleHeaders ? null : (
+                <View className="flex-row items-center justify-between gap-2">
+                  <Text className="text-sm font-semibold text-foreground">
+                    Week {microcycle.microcycle}
+                  </Text>
+                  <Text className="text-[11px] text-muted-foreground">
+                    {microcycle.days.reduce((count, day) => count + day.sessions.length, 0)} session
+                    {microcycle.days.reduce((count, day) => count + day.sessions.length, 0) === 1
+                      ? ""
+                      : "s"}
+                  </Text>
+                </View>
+              )}
+              {microcycle.days.map((day) => (
+                <View key={`day-${day.dayOffset}`} className={dayContainerClassName}>
+                  <Text className="text-xs font-medium text-muted-foreground">
+                    {formatCompactDayLabel(day.dayOffset)}
+                  </Text>
+                  {day.sessions.map((session) => {
+                    const linkedActivityName = session.activityPlanId
+                      ? (activityPlanNameById.get(session.activityPlanId) ?? "Linked activity plan")
+                      : null;
+                    const primaryTitle = linkedActivityName ?? session.title;
+                    const customActivityContent = renderSessionActivityContent
+                      ? renderSessionActivityContent(session)
+                      : null;
+                    const showCustomLinkedContent = Boolean(
+                      session.activityPlanId && customActivityContent,
+                    );
+
                     return (
-                      <View key={`week-load-${week.microcycle}`} className="gap-1">
-                        <View className="flex-row items-center justify-between">
-                          <Text className="text-xs font-medium text-foreground">
-                            Week {week.microcycle}
-                          </Text>
-                          <Text className="text-xs text-muted-foreground">
-                            {Math.round(week.estimatedTss)} TSS
-                          </Text>
-                        </View>
-                        <View className="h-2 rounded-full bg-muted/60 overflow-hidden">
-                          <View
-                            className="h-2 rounded-full bg-primary"
-                            style={{ width: `${widthPercent}%` }}
-                          />
+                      <View key={session.key} className="gap-2">
+                        {showCustomLinkedContent ? (
+                          customActivityContent
+                        ) : (
+                          <View className={fallbackSessionClassName}>
+                            <View className="gap-2">
+                              <Text className="text-sm font-medium text-foreground">
+                                {primaryTitle}
+                              </Text>
+                              {!linkedActivityName ? (
+                                <Text className="text-[11px] text-muted-foreground">
+                                  No linked activity plan
+                                </Text>
+                              ) : null}
+                            </View>
+                          </View>
+                        )}
+                        <View className="flex-row flex-wrap gap-2">
+                          {isOwnedByUser ? (
+                            <TouchableOpacity
+                              onPress={() => onOpenActivityPickerForSession(session)}
+                              disabled={updatePlanStructurePending}
+                              className="rounded-full border border-border px-2 py-1"
+                              activeOpacity={0.8}
+                            >
+                              <Text className="text-[11px] font-medium text-primary">
+                                {session.activityPlanId ? "Change" : "Add"}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : null}
+                          {isOwnedByUser && session.activityPlanId ? (
+                            <TouchableOpacity
+                              onPress={() => onRemoveActivityFromSession(session)}
+                              disabled={updatePlanStructurePending}
+                              className="rounded-full border border-destructive/30 px-2 py-1"
+                              activeOpacity={0.8}
+                            >
+                              <Text className="text-[11px] font-medium text-destructive">
+                                Remove
+                              </Text>
+                            </TouchableOpacity>
+                          ) : null}
                         </View>
                       </View>
                     );
                   })}
                 </View>
-              )}
+              ))}
             </View>
+          ))
+        )}
+      </View>
+    </View>
+  );
 
-            <View className="h-px bg-border" />
-            <View className="gap-2">
-              <Text className="text-sm font-semibold">Linked activity plan structures</Text>
-              <Text className="text-xs text-muted-foreground">
-                These are the workout building blocks referenced by this plan.
-              </Text>
-              {isLoadingLinkedPlans ? (
-                <Text className="text-xs text-muted-foreground">
-                  Loading linked activity plans...
-                </Text>
-              ) : uniqueLinkedActivityPlans.length === 0 ? (
-                <Text className="text-xs text-muted-foreground">
-                  No linked activity plans in this template yet.
-                </Text>
-              ) : (
-                <View className="gap-2">
-                  {uniqueLinkedActivityPlans.map((linkedPlan) => (
-                    <View
-                      key={`linked-plan-${linkedPlan.id}`}
-                      className="rounded-md border border-border/60 bg-background px-2 py-2 gap-1"
-                    >
-                      <Text className="text-xs font-semibold text-foreground">
-                        {linkedPlan.name}
-                      </Text>
-                      <Text className="text-[11px] text-muted-foreground">
-                        {(linkedPlan.activity_category ?? "other").toUpperCase()} ·{" "}
-                        {Math.round(
-                          Number.isFinite(linkedPlan.estimated_tss)
-                            ? (linkedPlan.estimated_tss ?? 0)
-                            : 0,
-                        )}{" "}
-                        TSS ·{" "}
-                        {Math.round(
-                          Number.isFinite(linkedPlan.estimated_duration)
-                            ? (linkedPlan.estimated_duration ?? 0)
-                            : 0,
-                        )}{" "}
-                        min
-                      </Text>
-                      <Text className="text-[11px] text-muted-foreground">
-                        {hasIntervals(linkedPlan.structure)
-                          ? "Includes interval structure"
-                          : "No interval structure available"}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            <View className="h-px bg-border" />
-            <View className="gap-2">
-              <Text className="text-sm font-semibold">Sessions by microcycle and day</Text>
-              <Text className="text-xs text-muted-foreground">
-                Review how sessions are distributed across each week before scheduling the full
-                plan.
-              </Text>
-              {groupedStructureSessions.length === 0 ? (
-                <Text className="text-xs text-muted-foreground">
-                  No structured sessions found in this template yet.
-                </Text>
-              ) : (
-                groupedStructureSessions.map((microcycle) => (
-                  <View
-                    key={`microcycle-${microcycle.microcycle}`}
-                    className="gap-2 rounded-md border border-border bg-muted/20 p-2"
-                  >
-                    <View className="flex-row items-center justify-between gap-2">
-                      <Text className="text-sm font-semibold text-foreground">
-                        Week {microcycle.microcycle}
-                      </Text>
-                      <Text className="text-[11px] text-muted-foreground">
-                        {microcycle.days.reduce((count, day) => count + day.sessions.length, 0)}{" "}
-                        session
-                        {microcycle.days.reduce((count, day) => count + day.sessions.length, 0) ===
-                        1
-                          ? ""
-                          : "s"}
-                      </Text>
-                    </View>
-                    {microcycle.days.map((day) => (
-                      <View
-                        key={`day-${day.dayOffset}`}
-                        className="gap-1 rounded-md border border-border/50 bg-background/70 p-2"
-                      >
-                        <View className="flex-row items-center justify-between gap-2">
-                          <Text className="text-xs font-medium text-muted-foreground">
-                            {formatCompactDayLabel(day.dayOffset)}
-                          </Text>
-                          <Text className="text-[11px] text-muted-foreground">
-                            {day.sessions.length} item{day.sessions.length === 1 ? "" : "s"}
-                          </Text>
-                        </View>
-                        {day.sessions.map((session) => (
-                          <View
-                            key={session.key}
-                            className="rounded-md border border-border/60 bg-background px-2 py-2"
-                          >
-                            <View className="flex-row items-start justify-between gap-3">
-                              <View className="flex-1 gap-1">
-                                <Text className="text-xs font-medium text-foreground">
-                                  {session.title}
-                                </Text>
-                                <Text className="text-[11px] text-muted-foreground">
-                                  {session.activityPlanId
-                                    ? (activityPlanNameById.get(session.activityPlanId) ??
-                                      "Linked activity plan")
-                                    : "No linked activity plan"}
-                                </Text>
-                              </View>
-                              {isOwnedByUser ? (
-                                <TouchableOpacity
-                                  onPress={() => onOpenActivityPickerForSession(session)}
-                                  disabled={updatePlanStructurePending}
-                                  className="rounded-full border border-border px-2 py-1"
-                                  activeOpacity={0.8}
-                                >
-                                  <Text className="text-[11px] font-medium text-primary">
-                                    {session.activityPlanId ? "Change" : "Add"}
-                                  </Text>
-                                </TouchableOpacity>
-                              ) : null}
-                            </View>
-                            {isOwnedByUser && session.activityPlanId ? (
-                              <View className="mt-2 flex-row items-center gap-2">
-                                <TouchableOpacity
-                                  onPress={() => onRemoveActivityFromSession(session)}
-                                  disabled={updatePlanStructurePending}
-                                  className="flex-row items-center gap-1 rounded-full border border-destructive/30 px-2 py-1"
-                                  activeOpacity={0.8}
-                                >
-                                  <Text className="text-[11px] font-medium text-destructive">
-                                    Remove
-                                  </Text>
-                                </TouchableOpacity>
-                              </View>
-                            ) : null}
-                          </View>
-                        ))}
-                      </View>
-                    ))}
-                  </View>
-                ))
-              )}
-            </View>
-          </View>
-        </CardContent>
-      </Card>
+  return (
+    <>
+      {embedded ? (
+        <View className="gap-2">
+          {title ? <Text className="text-base font-semibold text-foreground">{title}</Text> : null}
+          {sectionContent}
+        </View>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>{title || "Sessions by microcycle and day"}</CardTitle>
+          </CardHeader>
+          <CardContent>{sectionContent}</CardContent>
+        </Card>
+      )}
 
       <Dialog open={showActivityPicker} onOpenChange={onActivityPickerOpenChange}>
         <DialogContent className="sm:max-w-[425px]">

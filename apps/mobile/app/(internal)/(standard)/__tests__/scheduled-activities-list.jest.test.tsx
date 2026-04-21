@@ -1,6 +1,6 @@
 import React from "react";
 
-import { renderNative } from "../../../../test/render-native";
+import { renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
 const navigateMock = jest.fn();
@@ -21,12 +21,19 @@ jest.mock("react-native", () => ({
   ...jest.requireActual("@repo/ui/test/react-native"),
   RefreshControl: createHost("RefreshControl"),
   ScrollView: createHost("ScrollView"),
-  TouchableOpacity: createHost("TouchableOpacity"),
   View: createHost("View"),
 }));
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useRouter: () => ({ push: pushMock, navigate: navigateMock }),
 }));
 
@@ -54,7 +61,6 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHos
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Calendar: createHost("Calendar"),
-  Plus: createHost("Plus"),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -88,10 +94,9 @@ describe("scheduled activities list", () => {
   });
 
   it("switches to the calendar tab for schedule actions", () => {
-    const { UNSAFE_getByType } = renderNative(<ScheduledActivitiesListScreen />);
+    renderNative(<ScheduledActivitiesListScreen />);
 
-    const emptyStateCard = UNSAFE_getByType("EmptyStateCard" as any);
-    emptyStateCard.props.onAction();
+    screen.getByTestId("scheduled-activities-list-calendar-trigger").props.onPress();
 
     expect(navigateMock).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
     expect(pushMock).not.toHaveBeenCalled();

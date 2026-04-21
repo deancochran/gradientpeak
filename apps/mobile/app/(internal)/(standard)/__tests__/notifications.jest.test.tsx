@@ -15,7 +15,12 @@ function createHost(type: string) {
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: ({ options }: any) => React.createElement("StackScreen", { options }),
+    Screen: ({ options }: any) =>
+      React.createElement(
+        "StackScreen",
+        { options },
+        typeof options?.headerRight === "function" ? options.headerRight() : null,
+      ),
   },
   useRouter: () => ({ navigate: navigateMock, push: pushMock }),
 }));
@@ -124,5 +129,13 @@ describe("notifications screen", () => {
     expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
     expect(navigateMock).toHaveBeenCalledWith("/messages");
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("marks all notifications as read from the direct header action", () => {
+    renderNative(<NotificationsScreen />);
+
+    fireEvent.press(screen.getByTestId("notifications-read-all-trigger"));
+
+    expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
   });
 });

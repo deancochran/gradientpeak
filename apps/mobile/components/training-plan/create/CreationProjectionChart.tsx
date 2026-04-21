@@ -7,11 +7,11 @@ import {
   type LayoutChangeEvent,
   Pressable,
   ScrollView,
-  useColorScheme,
   useWindowDimensions,
   View,
 } from "react-native";
 import { CartesianChart, Line } from "victory-native";
+import { useTheme } from "@/lib/stores/theme-store";
 
 interface CreationProjectionChartProps {
   projectionChart?: ProjectionChartPayload;
@@ -616,8 +616,8 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   compact = false,
   chartMaxHeight,
 }: CreationProjectionChartProps) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const { width } = useWindowDimensions();
   const [measuredChartContainerWidth, setMeasuredChartContainerWidth] = useState(0);
   const fallbackChartContainerWidth = width;

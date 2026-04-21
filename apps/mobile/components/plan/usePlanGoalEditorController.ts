@@ -3,8 +3,6 @@ import {
   buildGoalCreatePayload,
   buildGoalDraftFromGoal,
   buildGoalUpdatePayload,
-  buildMilestoneEventCreateInput,
-  buildMilestoneEventUpdatePatch,
   createEmptyGoalDraft,
   type GoalEditorDraft,
 } from "@repo/core";
@@ -33,8 +31,6 @@ export function usePlanGoalEditorController({
 
   const createGoalMutation = api.goals.create.useMutation();
   const updateGoalMutation = api.goals.update.useMutation();
-  const createMilestoneEventMutation = api.events.create.useMutation();
-  const updateMilestoneEventMutation = api.events.update.useMutation();
 
   const closeGoalEditor = useCallback(() => {
     setIsGoalModalVisible(false);
@@ -61,17 +57,10 @@ export function usePlanGoalEditorController({
       return createEmptyGoalDraft() satisfies GoalEditorDraft;
     }
 
-    return buildGoalDraftFromGoal({
-      goal,
-      targetDate: goal.target_date,
-    });
+    return buildGoalDraftFromGoal({ goal });
   }, [editingGoalId, goals.goals]);
 
-  const isGoalSaving =
-    createGoalMutation.isPending ||
-    updateGoalMutation.isPending ||
-    createMilestoneEventMutation.isPending ||
-    updateMilestoneEventMutation.isPending;
+  const isGoalSaving = createGoalMutation.isPending || updateGoalMutation.isPending;
 
   const submitGoal = useCallback(
     async (draft: GoalEditorDraft) => {
@@ -80,41 +69,13 @@ export function usePlanGoalEditorController({
       }
 
       try {
-        const existingGoal = editingGoalId
-          ? goals.goals.find((goal) => goal.id === editingGoalId)
-          : null;
-
-        const milestoneEventId = existingGoal?.milestone_event_id;
-        const resolvedMilestoneEventId = milestoneEventId
-          ? milestoneEventId
-          : (
-              await createMilestoneEventMutation.mutateAsync({
-                ...buildMilestoneEventCreateInput({
-                  draft,
-                  trainingPlanId: activePlanId ?? null,
-                }),
-                lifecycle: { status: "scheduled" },
-                read_only: false,
-              })
-            ).id;
-
-        if (milestoneEventId) {
-          await updateMilestoneEventMutation.mutateAsync({
-            id: milestoneEventId,
-            patch: buildMilestoneEventUpdatePatch({
-              draft,
-              trainingPlanId: activePlanId ?? null,
-            }),
-          });
-        }
-
         if (editingGoalId) {
           await updateGoalMutation.mutateAsync({
             id: editingGoalId,
-            data: buildGoalUpdatePayload({
-              draft,
-              milestoneEventId: resolvedMilestoneEventId,
-            }),
+            data: {
+              ...buildGoalUpdatePayload({ draft }),
+              training_plan_id: activePlanId ?? undefined,
+            },
           });
 
           await Promise.all([
@@ -128,13 +89,13 @@ export function usePlanGoalEditorController({
           return;
         }
 
-        await createGoalMutation.mutateAsync(
-          buildGoalCreatePayload({
+        await createGoalMutation.mutateAsync({
+          ...buildGoalCreatePayload({
             draft,
             profileId: goals.profileId,
-            milestoneEventId: resolvedMilestoneEventId,
           }),
-        );
+          training_plan_id: activePlanId ?? undefined,
+        });
 
         await Promise.all([invalidateGoalQueries(utils), goals.refetch()]);
         closeGoalEditor();
@@ -149,11 +110,9 @@ export function usePlanGoalEditorController({
       activePlanId,
       closeGoalEditor,
       createGoalMutation,
-      createMilestoneEventMutation,
       editingGoalId,
       goals,
       updateGoalMutation,
-      updateMilestoneEventMutation,
       utils,
     ],
   );

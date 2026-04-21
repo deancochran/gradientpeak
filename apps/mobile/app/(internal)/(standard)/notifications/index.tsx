@@ -42,10 +42,7 @@ function NotificationItem({
     <Pressable
       onPress={onPress}
       testID={`notification-item-${notification.id}`}
-      className={cn(
-        "flex-row items-center p-4 border-b border-border bg-background active:bg-accent",
-        item.isUnread && "bg-muted/10",
-      )}
+      className="flex-row items-center p-4 border-b border-border bg-background active:bg-accent"
     >
       <View className="h-12 w-12 mr-4 rounded-full bg-muted items-center justify-center">
         <Icon size={24} className="text-foreground" />
@@ -212,15 +209,21 @@ export default function NotificationsScreen() {
     }
   };
 
+  const unreadCount = getUnreadNotificationIds(normalizedNotifications).length;
+
   return (
     <View className="flex-1 bg-background" testID="notifications-screen">
       <Stack.Screen
         options={{
           title: "Notifications",
           headerRight: () => (
-            <Button variant="ghost" onPress={handleReadAll} testID="notifications-read-all-button">
-              <Text className="text-primary">Read All</Text>
-            </Button>
+            <Pressable
+              onPress={handleReadAll}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="notifications-read-all-trigger"
+            >
+              <Text className="text-sm font-medium text-primary">Read All</Text>
+            </Pressable>
           ),
         }}
       />
@@ -228,6 +231,17 @@ export default function NotificationsScreen() {
         testID="notifications-list"
         data={normalizedNotifications}
         keyExtractor={(item) => item.id}
+        ListHeaderComponent={
+          normalizedNotifications.length > 0 ? (
+            <View className="border-b border-border bg-muted/20 px-4 py-3">
+              <Text className="text-sm text-muted-foreground">
+                {normalizedNotifications.length}{" "}
+                {normalizedNotifications.length === 1 ? "notification" : "notifications"}
+                {unreadCount > 0 ? `, ${unreadCount} unread` : ""}
+              </Text>
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => (
           <NotificationItem
             notification={item}
@@ -241,7 +255,7 @@ export default function NotificationsScreen() {
             className="flex-1 items-center justify-center p-8"
             testID="notifications-empty-state"
           >
-            <Text className="text-muted-foreground">No notifications</Text>
+            <Text className="text-muted-foreground">Your notifications will appear here.</Text>
           </View>
         }
       />

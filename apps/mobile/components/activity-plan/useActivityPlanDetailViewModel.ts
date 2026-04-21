@@ -28,7 +28,6 @@ interface UseActivityPlanDetailViewModelParams {
   activityPlanParam?: string;
   fetchedPlan: ActivityPlanLike | null | undefined;
   formatDuration: (seconds: number) => string;
-  isPublic: boolean;
   isScheduled: boolean;
   plannedActivity: PlannedActivityLike | null | undefined;
   profile: ProfileLike | null | undefined;
@@ -48,7 +47,6 @@ export function useActivityPlanDetailViewModel({
   activityPlanParam,
   fetchedPlan,
   formatDuration,
-  isPublic,
   isScheduled,
   plannedActivity,
   profile,
@@ -99,12 +97,10 @@ export function useActivityPlanDetailViewModel({
   const tss = activityPlan?.estimated_tss ?? null;
   const intensityFactor = activityPlan?.intensity_factor ?? null;
   const isOwnedByUser = activityPlan?.profile_id === profile?.id;
-  const visibilityLabel = isOwnedByUser ? (isPublic ? "Public" : "Private") : "Read only";
   const detailBadges = activityPlan
     ? [
         activityPlan.activity_category,
         isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
-        visibilityLabel,
       ]
     : [];
 
@@ -129,7 +125,6 @@ export function useActivityPlanDetailViewModel({
     routePreview,
     steps,
     tss,
-    visibilityLabel,
     durationLabel: formatDuration(durationMinutes * 60),
     durationMinutes,
   };

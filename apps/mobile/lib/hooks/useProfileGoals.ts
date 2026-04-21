@@ -6,14 +6,6 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 
 const GOALS_PAGE_SIZE = 100;
 
-export type MobileProfileGoal = ProfileGoal & {
-  target_date: string | null;
-};
-
-function toDateKey(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
-
 export function useProfileGoals() {
   const profileId = useAuthStore((state) => state.profile?.id ?? null);
 
@@ -28,65 +20,27 @@ export function useProfileGoals() {
       ...scheduleAwareReadQueryOptions,
     },
   );
-  const today = useMemo(() => new Date(), []);
-  const milestoneWindow = useMemo(() => {
-    const start = new Date(today);
-    start.setUTCDate(start.getUTCDate() - 730);
-
-    const end = new Date(today);
-    end.setUTCDate(end.getUTCDate() + 3650);
-
-    return {
-      date_from: toDateKey(start),
-      date_to: toDateKey(end),
-    };
-  }, [today]);
-  const milestoneEventsQuery = api.events.list.useQuery(
-    {
-      event_types: ["custom", "race_target"],
-      include_adhoc: true,
-      date_from: milestoneWindow.date_from,
-      date_to: milestoneWindow.date_to,
-      limit: 500,
-    },
-    {
-      enabled: !!profileId,
-      ...scheduleAwareReadQueryOptions,
-    },
-  );
-
-  const goals = useMemo<MobileProfileGoal[]>(() => {
+  const goals = useMemo<ProfileGoal[]>(() => {
     if (!Array.isArray(query.data)) {
       return [];
     }
 
-    const eventsById = new Map(
-      (milestoneEventsQuery.data?.items ?? []).map((event) => [event.id, event]),
-    );
-
     return query.data.flatMap((goal) => {
       try {
-        const parsed = parseProfileGoalRecord(goal);
-        const milestoneEvent = eventsById.get(parsed.milestone_event_id);
-        return [
-          {
-            ...parsed,
-            target_date: milestoneEvent?.starts_at?.slice(0, 10) ?? null,
-          },
-        ];
+        return [parseProfileGoalRecord(goal)];
       } catch {
         return [];
       }
     });
-  }, [milestoneEventsQuery.data?.items, query.data]);
+  }, [query.data]);
 
   const refetch = useCallback(async () => {
     if (!profileId) {
       return;
     }
 
-    await Promise.all([query.refetch(), milestoneEventsQuery.refetch()]);
-  }, [milestoneEventsQuery.refetch, profileId, query.refetch]);
+    await query.refetch();
+  }, [profileId, query.refetch]);
 
   return {
     profileId,

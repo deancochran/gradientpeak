@@ -27,6 +27,14 @@ function createHost(type: string) {
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useLocalSearchParams: () => ({ id: routeData.id }),
   useRouter: () => ({ back: backMock }),
 }));
@@ -56,6 +64,14 @@ jest.mock("@repo/ui/components/card", () => ({
   CardContent: createHost("CardContent"),
 }));
 
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
+}));
+
 jest.mock("@repo/ui/components/icon", () => ({
   __esModule: true,
   Icon: createHost("Icon"),
@@ -64,6 +80,11 @@ jest.mock("@repo/ui/components/icon", () => ({
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),
+}));
+
+jest.mock("@repo/ui/components/textarea", () => ({
+  __esModule: true,
+  Textarea: createHost("Textarea"),
 }));
 
 jest.mock("@/lib/hooks/useReliableMutation", () => ({
@@ -82,11 +103,27 @@ jest.mock("@/lib/api", () => ({
       get: {
         useQuery: () => ({ data: routeData, isLoading: false }),
       },
+      loadFull: {
+        useQuery: () => ({
+          data: {
+            coordinates: [
+              { latitude: 40.0, longitude: -75.0, altitude: 120 },
+              { latitude: 40.1, longitude: -75.1, altitude: 180 },
+            ],
+          },
+        }),
+      },
       delete: {},
     },
     social: {
       toggleLike: {
         useMutation: () => ({ mutate: toggleLikeMutateMock }),
+      },
+      getComments: {
+        useQuery: () => ({ data: { comments: [], total: 0 } }),
+      },
+      addComment: {
+        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
       },
     },
   },
@@ -94,15 +131,16 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  decodePolyline: () => [
-    { latitude: 40.0, longitude: -75.0 },
-    { latitude: 40.1, longitude: -75.1 },
-  ],
+}));
+
+jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
+  __esModule: true,
+  ElevationProfileChart: createHost("ElevationProfileChart"),
 }));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Calendar: createHost("Calendar"),
+  Ellipsis: createHost("Ellipsis"),
   Heart: createHost("Heart"),
   MapPin: createHost("MapPin"),
   Trash2: createHost("Trash2"),
@@ -119,20 +157,23 @@ describe("route detail screen", () => {
     toggleLikeMutateMock.mockReset();
   });
 
-  it("shows the new summary chips and route management copy", () => {
+  it("shows the new identity-first route layout", () => {
     renderNative(<RouteDetailScreen />);
 
     expect(screen.getByText("River Loop")).toBeTruthy();
     expect(screen.getAllByText("10.20 km").length).toBeGreaterThan(0);
-    expect(screen.getByText("180m climb")).toBeTruthy();
+    expect(screen.getByText("Flat start, climb home.")).toBeTruthy();
+    expect(screen.getByText("Distance: 10.20 km")).toBeTruthy();
+    expect(screen.getByText("Climb: 180m")).toBeTruthy();
     expect(screen.getAllByText(/Uploaded/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Route management")).toBeTruthy();
-    expect(screen.queryByText("Use in Activity Plan")).toBeNull();
+    expect(screen.getByText("Route Preview")).toBeTruthy();
+    expect(screen.getByText("Route details")).toBeTruthy();
+    expect(screen.getByText("Comments (0)")).toBeTruthy();
   });
 
-  it("keeps the delete action inside the route management section", () => {
+  it("moves delete into the header overflow menu", () => {
     renderNative(<RouteDetailScreen />);
 
-    expect(screen.getByText("Delete Route")).toBeTruthy();
+    expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
   });
 });

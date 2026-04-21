@@ -14,6 +14,11 @@ import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
 const activityEffortRowSchema = publicActivityEffortsRowSchema;
 
 const getForProfileOutputSchema = z.array(activityEffortRowSchema);
+const getActivityEffortByIdInputSchema = z
+  .object({
+    id: z.string().uuid(),
+  })
+  .strict();
 
 const createActivityEffortInputSchema = z
   .object({
@@ -53,6 +58,26 @@ export const activityEffortsRouter = createTRPCRouter({
 
     return getForProfileOutputSchema.parse(rows);
   }),
+
+  getById: protectedProcedure
+    .input(getActivityEffortByIdInputSchema)
+    .output(activityEffortRowSchema.nullable())
+    .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+
+      const [row] = await db
+        .select()
+        .from(activityEfforts)
+        .where(
+          and(
+            eq(activityEfforts.id, input.id),
+            eq(activityEfforts.profile_id, ctx.session.user.id),
+          ),
+        )
+        .limit(1);
+
+      return row ? activityEffortRowSchema.parse(row) : null;
+    }),
 
   create: protectedProcedure
     .input(createActivityEffortInputSchema)

@@ -1,8 +1,9 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
-import { Dimensions, TouchableOpacity, useColorScheme, View } from "react-native";
+import { Dimensions, TouchableOpacity, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
+import { useTheme } from "@/lib/stores/theme-store";
 
 interface FitnessProgressCardProps {
   currentCTL: number;
@@ -25,8 +26,8 @@ export function FitnessProgressCard({
 }: FitnessProgressCardProps) {
   const screenWidth = Dimensions.get("window").width;
   const chartWidth = screenWidth - 64; // Account for padding
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   const hasProjection = projectedCTL !== undefined && projectedCTL !== null;
   const hasGoal = goalCTL !== undefined && goalCTL !== null;

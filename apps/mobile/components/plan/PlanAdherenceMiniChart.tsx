@@ -1,7 +1,8 @@
 import { Text } from "@repo/ui/components/text";
-import { Dimensions, useColorScheme, View } from "react-native";
+import { Dimensions, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import type { InsightTimelinePoint } from "@/components/charts/PlanVsActualChart";
+import { useTheme } from "@/lib/stores/theme-store";
 
 interface PlanAdherenceMiniChartProps {
   timeline: InsightTimelinePoint[];
@@ -27,8 +28,8 @@ function boundaryTint(boundary?: string) {
 }
 
 export function PlanAdherenceMiniChart({ timeline }: PlanAdherenceMiniChartProps) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const width = Math.max(130, Math.floor((Dimensions.get("window").width - 52) / 2));
 
   const adherence = timeline.map((point) => Math.max(0, Math.min(100, point.adherence_score)));

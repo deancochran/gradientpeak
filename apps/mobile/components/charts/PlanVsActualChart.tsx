@@ -7,14 +7,9 @@ import {
   vec,
 } from "@shopify/react-native-skia";
 import React, { useMemo, useState } from "react";
-import {
-  LayoutChangeEvent,
-  Pressable,
-  useColorScheme,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { LayoutChangeEvent, Pressable, useWindowDimensions, View } from "react-native";
 import { Area, CartesianChart, Line, Scatter } from "victory-native";
+import { useTheme } from "@/lib/stores/theme-store";
 
 export interface FitnessDataPoint {
   date: string;
@@ -271,8 +266,8 @@ export function PlanVsActualChart({
 }: PlanVsActualChartProps) {
   const { width } = useWindowDimensions();
   const [chartWidth, setChartWidth] = useState(Math.max(220, width - 32));
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const axisFont = useFont(getAxisFontSource(), 9);
   const useInsightTimeline = !!timeline && timeline.length > 0;
   const normalizedGoalMarkers = useMemo(

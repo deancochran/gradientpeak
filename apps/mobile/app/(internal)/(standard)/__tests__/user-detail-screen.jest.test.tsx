@@ -46,6 +46,14 @@ function createHost(type: string) {
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
   useLocalSearchParams: () => localSearchParamsMock,
 }));
@@ -105,7 +113,7 @@ jest.mock("@repo/ui/components/toggle-group", () => {
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Edit3: createHost("Edit3"),
+  Check: createHost("Check"),
   UserPlus: createHost("UserPlus"),
   UserMinus: createHost("UserMinus"),
   Clock: createHost("Clock"),
@@ -140,6 +148,9 @@ jest.mock("@/lib/api", () => ({
       followUser: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
       unfollowUser: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
+    integrations: {
+      list: { useQuery: () => ({ data: [{ provider: "strava" }] }) },
+    },
     messaging: {
       getOrCreateDM: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
@@ -164,10 +175,11 @@ describe("user detail own vs other controls", () => {
 
     renderNative(<UserDetailScreenWithErrorBoundary />);
 
-    expect(screen.getByTestId("edit-profile-action")).toBeTruthy();
+    expect(screen.getByTestId("user-detail-edit-trigger")).toBeTruthy();
     expect(screen.getByTestId("account-section")).toBeTruthy();
     expect(screen.getByText("Your account")).toBeTruthy();
-    expect(screen.getByText("Manage your account")).toBeTruthy();
+    expect(screen.getByText("Quick Links")).toBeTruthy();
+    expect(screen.getByText("Manage Third-Party Integrations")).toBeTruthy();
 
     fireEvent.press(screen.getByTestId("my-training-plans"));
     expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.LIST);
@@ -187,7 +199,7 @@ describe("user detail own vs other controls", () => {
 
     renderNative(<UserDetailScreenWithErrorBoundary />);
 
-    expect(screen.queryByTestId("edit-profile-action")).toBeNull();
+    expect(screen.queryByTestId("user-detail-edit-trigger")).toBeNull();
     expect(screen.queryByTestId("account-section")).toBeNull();
   });
 

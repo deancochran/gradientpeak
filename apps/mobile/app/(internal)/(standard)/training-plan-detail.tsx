@@ -1,13 +1,15 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
-import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@repo/ui/components/dropdown-menu";
 import { Icon } from "@repo/ui/components/icon";
-import { RadioGroup, RadioGroupItem } from "@repo/ui/components/radio-group";
-import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Activity, Calendar, Trash2, TrendingUp } from "lucide-react-native";
+import { Ellipsis } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,20 +20,26 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { TrainingPlanDangerZoneCard } from "@/components/training-plan/TrainingPlanDangerZoneCard";
+import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import { ActivityPlanMetricsRow } from "@/components/shared/ActivityPlanSummary";
+import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
+import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { TrainingPlanDetailFocusBanner } from "@/components/training-plan/TrainingPlanDetailFocusBanner";
 import { TrainingPlanDetailHeaderActionsSection } from "@/components/training-plan/TrainingPlanDetailHeaderActionsSection";
 import { TrainingPlanNoPlanEmptyState } from "@/components/training-plan/TrainingPlanNoPlanEmptyState";
 import { TrainingPlanStructureSection } from "@/components/training-plan/TrainingPlanStructureSection";
+import { TrainingPlanTemplateSchedulingDialog } from "@/components/training-plan/TrainingPlanTemplateSchedulingDialog";
 import { useTrainingPlanHeaderSocialActions } from "@/components/training-plan/useTrainingPlanHeaderSocialActions";
 import { useTrainingPlanTemplateSchedulingController } from "@/components/training-plan/useTrainingPlanTemplateSchedulingController";
 import { api } from "@/lib/api";
+import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
 import {
   normalizeTrainingPlanNextStep,
   TPV_NEXT_STEP_INTENTS,
 } from "@/lib/constants/trainingPlanIntents";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -48,8 +56,12 @@ type ActivityPlanListItem = {
   id: string;
   name: string;
   activity_category?: string | null;
+  route_id?: string | null;
   estimated_tss?: number | null;
+  intensity_factor?: number | null;
   estimated_duration?: number | null;
+  estimated_duration_minutes?: number | null;
+  description?: string | null;
   structure?: unknown;
 };
 
@@ -87,6 +99,76 @@ function hasIntervals(structure: unknown): boolean {
   return Array.isArray(intervals) && intervals.length > 0;
 }
 
+function countSteps(structure: unknown): number {
+  if (!structure || typeof structure !== "object") {
+    return 0;
+  }
+
+  const intervals = (structure as Record<string, unknown>).intervals;
+  if (!Array.isArray(intervals)) {
+    return 0;
+  }
+
+  return intervals.reduce((total, interval) => {
+    if (!interval || typeof interval !== "object") {
+      return total;
+    }
+
+    const repetitions = readNumber((interval as Record<string, unknown>).repetitions) ?? 1;
+    const steps = Array.isArray((interval as Record<string, unknown>).steps)
+      ? ((interval as Record<string, unknown>).steps as unknown[]).length
+      : 0;
+
+    return total + Math.max(1, repetitions) * steps;
+  }, 0);
+}
+
+function hasRouteAttached(activityPlan: ActivityPlanListItem): boolean {
+  if (activityPlan.route_id) {
+    return true;
+  }
+
+  if (!activityPlan.structure || typeof activityPlan.structure !== "object") {
+    return false;
+  }
+
+  const routeId = (activityPlan.structure as Record<string, unknown>).route_id;
+  const route = (activityPlan.structure as Record<string, unknown>).route;
+  return typeof routeId === "string" || (!!route && typeof route === "object");
+}
+
+function formatMinutesLabel(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 min";
+  }
+
+  const rounded = Math.round(value);
+  if (rounded < 60) {
+    return `${rounded} min`;
+  }
+
+  const hours = Math.floor(rounded / 60);
+  const minutes = rounded % 60;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function formatDateLabel(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function extractSessionRows(structure: unknown): StructureSessionRow[] {
   if (!structure || typeof structure !== "object") {
     return [];
@@ -108,13 +190,18 @@ function extractSessionRows(structure: unknown): StructureSessionRow[] {
     }
 
     const dayOffset = inheritedOffsetDays + sessionOffset;
+    const activityPlanId = readText(session.activity_plan_id) ?? null;
+    const overrideTitle = readText(session.event_title_override);
+    const legacyTitle = readText(session.title) ?? readText(session.name);
     const title =
-      readText(session.title) ?? readText(session.name) ?? inheritedTitle ?? `Session ${index + 1}`;
+      activityPlanId === null
+        ? (overrideTitle ?? legacyTitle ?? inheritedTitle ?? `Session ${index + 1}`)
+        : (overrideTitle ?? inheritedTitle ?? legacyTitle ?? `Session ${index + 1}`);
 
     rows.push({
       key: `${dayOffset}-${title}-${index}`,
       title,
-      activityPlanId: readText(session.activity_plan_id) ?? null,
+      activityPlanId,
       dayOffset,
       sourcePath,
     });
@@ -223,6 +310,7 @@ function formatCompactDayLabel(dayOffset: number) {
 export default function TrainingPlanOverview() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
+  const { Stack } = require("expo-router") as typeof import("expo-router");
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const utils = api.useUtils();
@@ -256,6 +344,7 @@ export default function TrainingPlanOverview() {
   const [selectedSessionRow, setSelectedSessionRow] = React.useState<StructureSessionRow | null>(
     null,
   );
+  const [activeMicrocycle, setActiveMicrocycle] = useState<number | null>(null);
 
   const handleOpenCalendar = useCallback(() => {
     router.navigate(ROUTES.CALENDAR as any);
@@ -273,6 +362,7 @@ export default function TrainingPlanOverview() {
     router,
     utils,
   });
+  const comments = useEntityCommentsController({ entityId: plan?.id, entityType: "training_plan" });
 
   const deletePlanMutation = useReliableMutation(api.trainingPlans.delete, {
     invalidate: [utils.trainingPlans],
@@ -387,6 +477,13 @@ export default function TrainingPlanOverview() {
     );
   }, [deletePlanMutation, plan]);
 
+  const handleOpenLinkedActivityPlan = useCallback(
+    (activityPlanId: string) => {
+      navigateTo(ROUTES.PLAN.PLAN_DETAIL(activityPlanId) as any);
+    },
+    [navigateTo],
+  );
+
   const activityPlanItems = ((activityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
   const linkedActivityPlanItems =
     ((linkedActivityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
@@ -433,17 +530,126 @@ export default function TrainingPlanOverview() {
     [groupedStructureSessions, linkedActivityPlanById],
   );
 
-  const maxWeeklyLoad = useMemo(
-    () => Math.max(1, ...weeklyLoadSummary.map((week) => week.estimatedTss)),
-    [weeklyLoadSummary],
-  );
-
   const uniqueLinkedActivityPlans = useMemo(
     () =>
       linkedActivityPlanIds
         .map((linkedPlanId) => linkedActivityPlanById.get(linkedPlanId))
         .filter((planItem): planItem is ActivityPlanListItem => !!planItem),
     [linkedActivityPlanById, linkedActivityPlanIds],
+  );
+  const activityUsageCountById = useMemo(() => {
+    const usage = new Map<string, number>();
+    structureSessionRows.forEach((session) => {
+      if (!session.activityPlanId) {
+        return;
+      }
+
+      usage.set(session.activityPlanId, (usage.get(session.activityPlanId) ?? 0) + 1);
+    });
+    return usage;
+  }, [structureSessionRows]);
+  const linkedWorkoutCards = useMemo(
+    () =>
+      uniqueLinkedActivityPlans.map((linkedPlan) => ({
+        ...linkedPlan,
+        estimatedTss: Math.round(readFiniteNumber(linkedPlan.estimated_tss)),
+        intensityFactor: readNumber(linkedPlan.intensity_factor) ?? null,
+        estimatedDurationMinutes: Math.round(
+          readFiniteNumber(linkedPlan.estimated_duration_minutes) ||
+            readFiniteNumber(linkedPlan.estimated_duration) / 60,
+        ),
+        usageCount: activityUsageCountById.get(linkedPlan.id) ?? 0,
+        stepCount: countSteps(linkedPlan.structure),
+        hasRoute: hasRouteAttached(linkedPlan),
+        includesIntervals: hasIntervals(linkedPlan.structure),
+      })),
+    [activityUsageCountById, uniqueLinkedActivityPlans],
+  );
+  const totalPlannedTss = useMemo(
+    () => weeklyLoadSummary.reduce((sum, week) => sum + week.estimatedTss, 0),
+    [weeklyLoadSummary],
+  );
+  const totalPlannedMinutes = useMemo(
+    () =>
+      structureSessionRows.reduce((sum, session) => {
+        if (!session.activityPlanId) {
+          return sum;
+        }
+
+        return (
+          sum +
+          readFiniteNumber(linkedActivityPlanById.get(session.activityPlanId)?.estimated_duration)
+        );
+      }, 0),
+    [linkedActivityPlanById, structureSessionRows],
+  );
+  const routeBackedWorkoutCards = useMemo(
+    () => linkedWorkoutCards.filter((planItem) => planItem.hasRoute),
+    [linkedWorkoutCards],
+  );
+  const periodizationTargetDate = formatDateLabel(
+    plan?.structure?.periodization_template?.target_date,
+  );
+
+  React.useEffect(() => {
+    if (groupedStructureSessions.length === 0) {
+      setActiveMicrocycle(null);
+      return;
+    }
+
+    if (
+      activeMicrocycle === null ||
+      !groupedStructureSessions.some((group) => group.microcycle === activeMicrocycle)
+    ) {
+      setActiveMicrocycle(groupedStructureSessions[0]?.microcycle ?? null);
+    }
+  }, [activeMicrocycle, groupedStructureSessions]);
+
+  const selectedMicrocycleGroup = useMemo(
+    () => groupedStructureSessions.find((group) => group.microcycle === activeMicrocycle) ?? null,
+    [activeMicrocycle, groupedStructureSessions],
+  );
+  const selectedMicrocycleSessionCount = useMemo(
+    () => selectedMicrocycleGroup?.days.reduce((count, day) => count + day.sessions.length, 0) ?? 0,
+    [selectedMicrocycleGroup],
+  );
+  const selectedMicrocycleActivityPlanIds = useMemo(() => {
+    const ids = new Set<string>();
+
+    selectedMicrocycleGroup?.days.forEach((day) => {
+      day.sessions.forEach((session) => {
+        if (session.activityPlanId) {
+          ids.add(session.activityPlanId);
+        }
+      });
+    });
+
+    return ids;
+  }, [selectedMicrocycleGroup]);
+  const selectedMicrocycleWorkoutCards = useMemo(
+    () =>
+      linkedWorkoutCards.filter((planItem) => selectedMicrocycleActivityPlanIds.has(planItem.id)),
+    [linkedWorkoutCards, selectedMicrocycleActivityPlanIds],
+  );
+  const selectedMicrocycleWorkoutById = useMemo(
+    () => new Map(selectedMicrocycleWorkoutCards.map((planItem) => [planItem.id, planItem])),
+    [selectedMicrocycleWorkoutCards],
+  );
+  const selectedMicrocycleMinutes = useMemo(
+    () =>
+      selectedMicrocycleWorkoutCards.reduce(
+        (sum, planItem) => sum + Math.max(0, planItem.estimatedDurationMinutes || 0),
+        0,
+      ),
+    [selectedMicrocycleWorkoutCards],
+  );
+  const selectedMicrocycleRouteCount = useMemo(
+    () => selectedMicrocycleWorkoutCards.filter((planItem) => planItem.hasRoute).length,
+    [selectedMicrocycleWorkoutCards],
+  );
+  const selectedMicrocycleLoad = useMemo(
+    () => weeklyLoadSummary.find((week) => week.microcycle === activeMicrocycle)?.estimatedTss ?? 0,
+    [activeMicrocycle, weeklyLoadSummary],
   );
 
   const commitSessionActivityPlan = useCallback(
@@ -470,9 +676,29 @@ export default function TrainingPlanOverview() {
       }
 
       targetSession.activity_plan_id = nextActivityPlanId;
-      if (!readText(targetSession.title) && fallbackSessionTitle) {
+      if (nextActivityPlanId) {
+        delete targetSession.event_title_override;
+        delete targetSession.title;
+        delete targetSession.name;
+      } else if (!readText(targetSession.title) && fallbackSessionTitle) {
         targetSession.title = fallbackSessionTitle;
       }
+
+      if (
+        typeof targetSession.day_offset === "number" &&
+        typeof targetSession.offset_days !== "number"
+      ) {
+        targetSession.offset_days = targetSession.day_offset;
+      }
+      delete targetSession.day_offset;
+
+      if (
+        typeof targetSession.week_offset === "number" &&
+        typeof targetSession.offset_weeks !== "number"
+      ) {
+        targetSession.offset_weeks = targetSession.week_offset;
+      }
+      delete targetSession.week_offset;
 
       await updatePlanStructureMutation.mutateAsync({
         id: plan.id,
@@ -617,101 +843,332 @@ export default function TrainingPlanOverview() {
     );
   }
 
-  return (
-    <ScrollView
-      className="flex-1 bg-background"
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-    >
-      <View className="flex-1 p-4 gap-4">
-        <View className="mb-4">
-          {focusContext && (
-            <TrainingPlanDetailFocusBanner
-              ctaLabel={focusContext.ctaLabel}
-              description={focusContext.description}
-              onPress={focusContext.onPress}
-              title={focusContext.title}
-            />
-          )}
+  const renderHeaderActions = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger testID="training-plan-options-trigger">
+        <View className="rounded-full p-2">
+          <Icon as={Ellipsis} size={18} className="text-foreground" />
+        </View>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6}>
+        {isOwnedByUser ? (
+          <DropdownMenuItem onPress={handleEditStructure} testID="training-plan-options-edit">
+            <Text>Edit Plan</Text>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onPress={headerActions.handleDuplicate}
+            disabled={headerActions.duplicatePending}
+            testID="training-plan-options-duplicate"
+          >
+            <Text>{headerActions.duplicatePending ? "Duplicating..." : "Duplicate"}</Text>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onPress={() => scheduling.setShowApplyModal(true)}
+          testID="training-plan-options-schedule"
+        >
+          <Text>Schedule</Text>
+        </DropdownMenuItem>
+        {isOwnedByUser ? (
+          <DropdownMenuItem
+            onPress={handleDeletePlan}
+            variant="destructive"
+            testID="training-plan-options-delete"
+          >
+            <Text>Delete Plan</Text>
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
-          <TrainingPlanDetailHeaderActionsSection
-            duplicatePending={headerActions.duplicatePending}
-            handleDuplicate={headerActions.handleDuplicate}
-            handleEditStructure={handleEditStructure}
-            handleToggleLike={headerActions.handleToggleLike}
-            handleTogglePrivacy={headerActions.handleTogglePrivacy}
-            isLiked={headerActions.isLiked}
-            isOwnedByUser={isOwnedByUser}
-            isPublic={headerActions.isPublic}
-            likesCount={headerActions.likesCount}
-            onOpenCalendar={() => router.navigate(ROUTES.CALENDAR as any)}
-            plan={plan}
-            schedulingDialogProps={{
-              applyPending: scheduling.applyTemplateMutation.isPending,
-              onApply: scheduling.handleApplyTemplate,
-              onConcurrencyOpenChange: scheduling.setShowConcurrencyWarning,
-              onOpenActivePlan: scheduling.handleOpenActivePlan,
-              onScheduleModalOpenChange: scheduling.setShowApplyModal,
-              onSelectScheduleAnchorMode: scheduling.handleSelectScheduleAnchorMode,
-              scheduleAnchorContent: scheduling.scheduleAnchorContent,
-              scheduleAnchorMode: scheduling.scheduleAnchorMode,
-              setTemplateAnchorDate: scheduling.setTemplateAnchorDate,
-              showConcurrencyWarning: scheduling.showConcurrencyWarning,
-              showScheduleModal: scheduling.showApplyModal,
-              templateAnchorDate: scheduling.templateAnchorDate,
-            }}
-            visibilityPending={headerActions.visibilityPending}
+  return (
+    <>
+      <Stack.Screen options={{ headerRight: renderHeaderActions }} />
+      <ScrollView
+        className="flex-1 bg-background"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      >
+        <View className="flex-1 p-4 gap-4">
+          <View className="mb-4">
+            {focusContext && (
+              <TrainingPlanDetailFocusBanner
+                ctaLabel={focusContext.ctaLabel}
+                description={focusContext.description}
+                onPress={focusContext.onPress}
+                title={focusContext.title}
+              />
+            )}
+
+            <TrainingPlanDetailHeaderActionsSection
+              handleToggleLike={headerActions.handleToggleLike}
+              isLiked={headerActions.isLiked}
+              likesCount={headerActions.likesCount}
+              overview={{
+                linkedWorkouts: linkedWorkoutCards.length,
+                microcycles: groupedStructureSessions.length || 0,
+                plannedTime: formatMinutesLabel(totalPlannedMinutes),
+                plannedTss: Math.round(totalPlannedTss),
+                routeBacked: routeBackedWorkoutCards.length,
+                sessions: structureSessionRows.length,
+              }}
+              plan={plan}
+            />
+          </View>
+
+          <View className="gap-4">
+            <View className="rounded-3xl border border-border bg-card p-4 gap-3">
+              <View className="gap-1">
+                <Text className="text-base font-semibold text-foreground">Weekly structure</Text>
+                <Text className="text-sm text-muted-foreground">
+                  Jump between microcycles to inspect sessions, linked activity plans, and
+                  route-backed work week by week.
+                </Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerClassName="gap-3 pr-2"
+                accessibilityRole="tablist"
+                accessibilityLabel="Training plan weeks"
+              >
+                {groupedStructureSessions.map((group) => {
+                  const load =
+                    weeklyLoadSummary.find((week) => week.microcycle === group.microcycle)
+                      ?.estimatedTss ?? 0;
+                  const sessionCount = group.days.reduce(
+                    (count, day) => count + day.sessions.length,
+                    0,
+                  );
+                  const isActive = group.microcycle === activeMicrocycle;
+
+                  return (
+                    <Pressable
+                      key={`training-plan-week-tab-${group.microcycle}`}
+                      onPress={() => setActiveMicrocycle(group.microcycle)}
+                      testID={`training-plan-detail-tab-week-${group.microcycle}`}
+                      className={`w-32 rounded-2xl border px-3 py-3 ${isActive ? "border-primary bg-primary/10" : "border-border bg-background"}`}
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected: isActive }}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${isActive ? "text-foreground" : "text-foreground"}`}
+                      >
+                        Week {group.microcycle}
+                      </Text>
+                      <Text className="mt-1 text-xs text-muted-foreground">
+                        {sessionCount} sessions
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">{Math.round(load)} TSS</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {selectedMicrocycleGroup ? (
+              <>
+                <View className="rounded-3xl border border-border bg-card p-4 gap-4">
+                  <Text className="text-base font-semibold text-foreground">
+                    Week {selectedMicrocycleGroup.microcycle} summary
+                  </Text>
+                  <Text className="text-sm text-muted-foreground">
+                    {periodizationTargetDate
+                      ? `This plan builds toward ${periodizationTargetDate}. `
+                      : ""}
+                    Review the sessions and linked activity plans for this microcycle in one place.
+                  </Text>
+                  <View className="flex-row flex-wrap gap-3">
+                    <SummaryMetricCard
+                      label="Sessions"
+                      value={`${selectedMicrocycleSessionCount}`}
+                    />
+                    <SummaryMetricCard
+                      label="Linked workouts"
+                      value={`${selectedMicrocycleWorkoutCards.length}`}
+                    />
+                    <SummaryMetricCard
+                      label="Route-backed"
+                      value={`${selectedMicrocycleRouteCount}`}
+                    />
+                    <SummaryMetricCard
+                      label="Planned TSS"
+                      value={`${Math.round(selectedMicrocycleLoad)}`}
+                    />
+                    <SummaryMetricCard
+                      label="Planned time"
+                      value={formatMinutesLabel(selectedMicrocycleMinutes * 60)}
+                    />
+                  </View>
+                  <TrainingPlanStructureSection
+                    activityPlanItems={activityPlanItems}
+                    activityPlanNameById={activityPlanNameById}
+                    description="Session placement stays visible here so the full microcycle remains easy to scan."
+                    embedded
+                    formatCompactDayLabel={formatCompactDayLabel}
+                    groupedStructureSessions={[selectedMicrocycleGroup]}
+                    hideMicrocycleHeaders
+                    isLoadingActivityPlans={isLoadingActivityPlans}
+                    isOwnedByUser={isOwnedByUser}
+                    onActivityPickerOpenChange={(open) => {
+                      setShowActivityPicker(open);
+                      if (!open) {
+                        setSelectedSessionRow(null);
+                      }
+                    }}
+                    onOpenActivityPickerForSession={handleOpenActivityPickerForSession}
+                    onRefreshActivityPlans={() => {
+                      void refetchActivityPlans();
+                    }}
+                    onRemoveActivityFromSession={handleRemoveActivityFromSession}
+                    renderSessionActivityContent={(session) => {
+                      if (!session.activityPlanId) {
+                        return null;
+                      }
+
+                      const linkedPlan = selectedMicrocycleWorkoutById.get(session.activityPlanId);
+                      if (!linkedPlan) {
+                        return null;
+                      }
+
+                      return (
+                        <View className="pt-1">
+                          <TrainingPlanCompactActivityPlanCard
+                            linkedPlan={linkedPlan}
+                            onPress={() => handleOpenLinkedActivityPlan(linkedPlan.id)}
+                          />
+                        </View>
+                      );
+                    }}
+                    onSelectActivityForSession={(activityPlan) => {
+                      void handleSelectActivityForSession(activityPlan);
+                    }}
+                    selectedSessionRow={selectedSessionRow}
+                    showActivityPicker={showActivityPicker}
+                    title="Sessions"
+                    updatePlanStructurePending={updatePlanStructureMutation.isPending}
+                  />
+                  {isLoadingLinkedPlans ? (
+                    <Text className="text-sm text-muted-foreground">
+                      Loading linked activity plans...
+                    </Text>
+                  ) : null}
+                </View>
+              </>
+            ) : (
+              <View className="rounded-3xl border border-border bg-card p-4">
+                <Text className="text-sm text-muted-foreground">
+                  No structured weeks found in this template yet.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <TrainingPlanTemplateSchedulingDialog
+            applyPending={scheduling.applyTemplateMutation.isPending}
+            onApply={scheduling.handleApplyTemplate}
+            onConcurrencyOpenChange={scheduling.setShowConcurrencyWarning}
+            onOpenActivePlan={scheduling.handleOpenActivePlan}
+            onScheduleModalOpenChange={scheduling.setShowApplyModal}
+            onSelectScheduleAnchorMode={scheduling.handleSelectScheduleAnchorMode}
+            scheduleAnchorContent={scheduling.scheduleAnchorContent}
+            scheduleAnchorMode={scheduling.scheduleAnchorMode}
+            setTemplateAnchorDate={scheduling.setTemplateAnchorDate}
+            showConcurrencyWarning={scheduling.showConcurrencyWarning}
+            showScheduleModal={scheduling.showApplyModal}
+            templateAnchorDate={scheduling.templateAnchorDate}
+          />
+
+          <EntityCommentsSection
+            addCommentPending={comments.addCommentPending}
+            commentCount={comments.commentCount}
+            comments={comments.comments}
+            helperText="Discuss the template before duplicating or scheduling it."
+            newComment={comments.newComment}
+            onAddComment={comments.handleAddComment}
+            onChangeNewComment={comments.setNewComment}
+            testIDPrefix="training-plan"
           />
         </View>
-
-        <TrainingPlanStructureSection
-          activityPlanItems={activityPlanItems}
-          activityPlanNameById={activityPlanNameById}
-          formatCompactDayLabel={formatCompactDayLabel}
-          groupedStructureSessions={groupedStructureSessions}
-          hasIntervals={hasIntervals}
-          isLoadingActivityPlans={isLoadingActivityPlans}
-          isLoadingLinkedPlans={isLoadingLinkedPlans}
-          isOwnedByUser={isOwnedByUser}
-          linkedActivityPlanItems={linkedActivityPlanItems}
-          maxWeeklyLoad={maxWeeklyLoad}
-          onActivityPickerOpenChange={(open) => {
-            setShowActivityPicker(open);
-            if (!open) {
-              setSelectedSessionRow(null);
-            }
-          }}
-          onEditStructure={handleEditStructure}
-          onOpenActivityPickerForSession={handleOpenActivityPickerForSession}
-          onRefreshActivityPlans={() => {
-            void refetchActivityPlans();
-          }}
-          onRemoveActivityFromSession={handleRemoveActivityFromSession}
-          onSelectActivityForSession={(activityPlan) => {
-            void handleSelectActivityForSession(activityPlan);
-          }}
-          planStructure={plan.structure as any}
-          selectedSessionRow={selectedSessionRow}
-          showActivityPicker={showActivityPicker}
-          uniqueLinkedActivityPlans={uniqueLinkedActivityPlans}
-          updatePlanStructurePending={updatePlanStructureMutation.isPending}
-          weeklyLoadSummary={weeklyLoadSummary}
-        />
-
-        {isOwnedByUser && (
-          <TrainingPlanDangerZoneCard
-            deletePending={deletePlanMutation.isPending}
-            onDelete={handleDeletePlan}
-          />
-        )}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </>
   );
 }
 
-function TrainingPlanDetailChip({ label }: { label: string }) {
+function SummaryMetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-      <Text className="text-xs font-medium capitalize text-foreground">{label}</Text>
+    <View className="min-w-[46%] flex-1 rounded-2xl border border-border/60 bg-muted/20 px-3 py-3">
+      <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</Text>
+      <Text className="mt-1 text-lg font-semibold text-foreground">{value}</Text>
     </View>
+  );
+}
+
+function TrainingPlanCompactActivityPlanCard({
+  linkedPlan,
+  onPress,
+}: {
+  linkedPlan: any;
+  onPress: () => void;
+}) {
+  const routeId = linkedPlan.route_id;
+  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+  const { data: routeFull } = api.routes.loadFull.useQuery(
+    { id: routeId! },
+    { enabled: !!routeId },
+  );
+  const activityConfig = linkedPlan.activity_category
+    ? linkedPlan.activity_category.includes("_")
+      ? getActivityConfig(linkedPlan.activity_category)
+      : getActivityCategoryConfig(linkedPlan.activity_category)
+    : getActivityCategoryConfig("other");
+
+  return (
+    <TouchableOpacity
+      className="rounded-2xl border border-border/60 bg-background p-3"
+      activeOpacity={0.85}
+      onPress={onPress}
+      testID={`training-plan-linked-activity-${linkedPlan.id}`}
+    >
+      <View className="gap-3">
+        <View className="flex-row items-center gap-2">
+          <View className={`rounded-full p-1.5 ${activityConfig.bgColor}`}>
+            <Icon as={activityConfig.icon} size={14} className={activityConfig.color} />
+          </View>
+          <Text className="flex-1 text-sm font-semibold text-foreground" numberOfLines={1}>
+            {linkedPlan.name}
+          </Text>
+        </View>
+
+        {route?.name || linkedPlan.hasRoute ? (
+          <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1">
+            {route?.name ? (
+              <Text className="text-xs text-muted-foreground">{route.name}</Text>
+            ) : null}
+            {!route?.name && linkedPlan.hasRoute ? (
+              <Text className="text-xs text-muted-foreground">Route included</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        <ActivityPlanMetricsRow
+          estimatedDurationMinutes={linkedPlan.estimatedDurationMinutes}
+          estimatedTss={linkedPlan.estimatedTss}
+          intensityFactor={linkedPlan.intensityFactor}
+          structure={linkedPlan.structure}
+        />
+
+        <ActivityPlanContentPreview
+          size="small"
+          plan={linkedPlan as any}
+          route={route}
+          routeFull={routeFull ? { coordinates: (routeFull as any).coordinates ?? [] } : null}
+          testIDPrefix={`training-plan-workout-${linkedPlan.id}`}
+        />
+
+        {linkedPlan.owner ? <EntityOwnerRow owner={linkedPlan.owner} /> : null}
+      </View>
+    </TouchableOpacity>
   );
 }

@@ -1,33 +1,11 @@
-import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
-import { useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
-import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import {
-  Check,
-  CheckCircle,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  History,
-  Upload,
-} from "lucide-react-native";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -42,8 +20,6 @@ import {
 import { api } from "@/lib/api";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { FitUploader } from "@/lib/services/fit/FitUploader";
 
 type IntegrationConfig = {
   provider: IntegrationProvider;
@@ -51,234 +27,47 @@ type IntegrationConfig = {
 };
 
 const INTEGRATIONS: IntegrationConfig[] = [
-  {
-    provider: "strava",
-    name: "Strava",
-  },
-  {
-    provider: "wahoo",
-    name: "Wahoo",
-  },
-  {
-    provider: "trainingpeaks",
-    name: "TrainingPeaks",
-  },
-  {
-    provider: "garmin",
-    name: "Garmin Connect",
-  },
-  {
-    provider: "zwift",
-    name: "Zwift",
-  },
+  { provider: "strava", name: "Strava" },
+  { provider: "wahoo", name: "Wahoo" },
+  { provider: "trainingpeaks", name: "TrainingPeaks" },
+  { provider: "garmin", name: "Garmin Connect" },
+  { provider: "zwift", name: "Zwift" },
 ];
 
-const ACTIVITY_TYPES = [
-  { value: "run", label: "Run" },
-  { value: "bike", label: "Ride" },
-  { value: "swim", label: "Swim" },
-  { value: "strength", label: "Strength" },
-  { value: "other", label: "Other" },
-] as const;
-
-function isFitParseFailureMessage(message: string) {
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("failed to parse fit file") ||
-    normalized.includes("fit decode") ||
-    normalized.includes("fit parser") ||
-    normalized.includes("fit parse") ||
-    normalized.includes("corrupt fit") ||
-    normalized.includes("invalid fit") ||
-    normalized.includes("bar error")
-  );
+function getConnectedSummary(integrations: Array<{ provider: string }> | undefined) {
+  const count = integrations?.length ?? 0;
+  if (count === 0) return "No services connected";
+  return `${count} connected ${count === 1 ? "service" : "services"}`;
 }
 
-const createOption = (value: string, label?: string) => ({
-  value,
-  label: label || value,
-});
-
-const buildManualHistoricalImportProvenance = (fileName: string) => ({
-  import_source: "manual_historical" as const,
-  import_file_type: "fit" as const,
-  import_original_file_name: fileName.trim(),
-});
-
-/**
- * Get the mobile redirect URI based on environment
- */
 function getMobileRedirectUri(): string {
-  // Use environment variable if set
   if (Constants.expoConfig?.extra?.redirectUri) {
     return Constants.expoConfig.extra.redirectUri;
   }
 
-  // Default to the app scheme
   return Linking.createURL("integrations");
 }
 
 export default function IntegrationsScreen() {
   const router = useRouter();
-  const navigateTo = useAppNavigate();
-  const queryClient = useQueryClient();
   const [pendingByProvider, setPendingByProvider] = useState<
     Partial<Record<IntegrationProvider, "connect" | "disconnect">>
   >({});
 
   const utils = api.useUtils();
-  const [historicalName, setHistoricalName] = useState("");
-  const [historicalNotes, setHistoricalNotes] = useState("");
-  const [historicalActivityType, setHistoricalActivityType] = useState<string>("bike");
-  const [selectedFitFile, setSelectedFitFile] = useState<{
-    name: string;
-    uri: string;
-    size: number;
-  } | null>(null);
-  const [importSummary, setImportSummary] = useState<{
-    activityId: string;
-    name: string;
-    fileName: string;
-  } | null>(null);
-
-  // API queries
   const {
     data: integrations,
     refetch,
     isLoading: integrationsLoading,
   } = api.integrations.list.useQuery();
   const getAuthUrlMutation = useReliableMutation(api.integrations.getAuthUrl, {
-    silent: true, // No success message for auth URL generation
+    silent: true,
   });
   const disconnectMutation = useReliableMutation(api.integrations.disconnect, {
     invalidate: [utils.integrations],
     success: "Integration disconnected",
   });
 
-  const getSignedUrlMutation = api.fitFiles.getSignedUploadUrl.useMutation();
-  const processFitFileMutation = api.fitFiles.processFitFile.useMutation();
-
-  const isImporting = getSignedUrlMutation.isPending || processFitFileMutation.isPending;
-
-  const handlePickFitFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["*/*"],
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled || !result.assets[0]) {
-        return;
-      }
-
-      const asset = result.assets[0];
-
-      if (!asset.name.toLowerCase().endsWith(".fit")) {
-        Alert.alert("Unsupported file", "Choose a FIT file ending in .fit.");
-        return;
-      }
-
-      const file = new File(asset.uri);
-      const fileSize = asset.size ?? file.size ?? 0;
-
-      if (fileSize <= 0) {
-        Alert.alert("Unreadable file", "The selected FIT file appears to be empty.");
-        return;
-      }
-
-      setSelectedFitFile({
-        name: asset.name,
-        uri: asset.uri,
-        size: fileSize,
-      });
-
-      if (!historicalName.trim()) {
-        setHistoricalName(asset.name.replace(/\.fit$/i, ""));
-      }
-    } catch (error) {
-      console.error("Failed to pick FIT file", error);
-      Alert.alert("File selection failed", "Could not open the FIT file picker.");
-    }
-  };
-
-  const handleHistoricalImport = async () => {
-    const trimmedName = historicalName.trim();
-
-    if (!selectedFitFile) {
-      Alert.alert("Missing file", "Choose a FIT file to import.");
-      return;
-    }
-
-    if (!trimmedName) {
-      Alert.alert("Missing activity name", "Enter a name for this imported activity.");
-      return;
-    }
-
-    try {
-      const signedUrlData = await getSignedUrlMutation.mutateAsync({
-        fileName: selectedFitFile.name,
-        fileSize: selectedFitFile.size,
-      });
-
-      const uploader = new FitUploader(undefined, undefined, "fit-files");
-
-      const uploadResult = await uploader.uploadToSignedUrl(
-        selectedFitFile.uri,
-        signedUrlData.signedUrl,
-      );
-
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || "Failed to upload FIT file");
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const result = await processFitFileMutation.mutateAsync({
-        fitFilePath: signedUrlData.filePath,
-        name: trimmedName,
-        notes: historicalNotes.trim() || undefined,
-        activityType: historicalActivityType,
-        importProvenance: buildManualHistoricalImportProvenance(selectedFitFile.name),
-      });
-
-      await invalidatePostActivityIngestionQueries(queryClient);
-      await utils.activities.invalidate();
-
-      setImportSummary({
-        activityId: result.activity.id,
-        name: result.activity.name,
-        fileName: selectedFitFile.name,
-      });
-    } catch (error) {
-      console.error("Historical FIT import failed", error);
-      const message = error instanceof Error ? error.message : "Unknown error";
-
-      if (message.includes("Only .fit files are supported")) {
-        Alert.alert("Unsupported file", "Only FIT files are supported right now.");
-        return;
-      }
-
-      if (isFitParseFailureMessage(message)) {
-        Alert.alert(
-          "Import failed",
-          "We could not read that FIT file. Try a different export or recording.",
-        );
-        return;
-      }
-
-      Alert.alert(
-        "Import failed",
-        "The FIT activity could not be imported right now. Please try again.",
-      );
-    }
-  };
-
-  const handleViewImportedActivity = () => {
-    if (!importSummary) return;
-    navigateTo(`/activity-detail?id=${importSummary.activityId}` as any);
-  };
-
-  // Handle deep link and trigger cleanup via refetch
   const handleDeepLink = useCallback(
     (event: { url: string }) => {
       try {
@@ -290,10 +79,8 @@ export default function IntegrationsScreen() {
 
         if (success === "true") {
           Alert.alert("Success", `Successfully connected to ${provider}!`);
-          // Refetch integrations - this also cleans up expired states
           refetch();
         } else if (error) {
-          // Even on error, refetch to trigger cleanup of expired states
           refetch();
           let errorMessage = "Failed to connect";
           switch (error) {
@@ -331,25 +118,20 @@ export default function IntegrationsScreen() {
     [refetch],
   );
 
-  // Handle close action
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
 
-  // Handle deep link return from OAuth
   useEffect(() => {
     const subscription = Linking.addEventListener("url", handleDeepLink);
-    // Refetch on mount to get fresh data and clean expired states
     refetch();
     return () => subscription.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [handleDeepLink, refetch]);
 
-  // Handle Android back button
   useEffect(() => {
     const backHandler = BackHandler?.addEventListener?.("hardwareBackPress", () => {
       handleClose();
-      return true; // Prevent default behavior
+      return true;
     });
 
     return () => backHandler?.remove?.();
@@ -359,18 +141,9 @@ export default function IntegrationsScreen() {
     setPendingByProvider((prev) => ({ ...prev, [provider]: "connect" }));
 
     try {
-      // Get the redirect URI for the current environment
       const redirectUri = getMobileRedirectUri();
-
-      // This automatically cleans up expired states before creating a new one
-      const { url } = await getAuthUrlMutation.mutateAsync({
-        provider,
-        redirectUri,
-      });
-
-      // Open OAuth flow in browser
+      const { url } = await getAuthUrlMutation.mutateAsync({ provider, redirectUri });
       const result = await WebBrowser.openAuthSessionAsync(url, redirectUri, {
-        // Use system browser on iOS for better OAuth support
         preferEphemeralSession: Platform.OS === "ios",
       });
 
@@ -379,7 +152,6 @@ export default function IntegrationsScreen() {
       } else if (result.type === "success" && "url" in result && result.url) {
         handleDeepLink({ url: result.url });
       }
-      // Success/error handling happens via deep link
     } catch (error) {
       console.error("OAuth initiation error:", error);
       Alert.alert("Error", "Failed to initiate connection. Please try again.");
@@ -398,10 +170,7 @@ export default function IntegrationsScreen() {
           text: "Disconnect",
           style: "destructive",
           onPress: async () => {
-            setPendingByProvider((prev) => ({
-              ...prev,
-              [provider]: "disconnect",
-            }));
+            setPendingByProvider((prev) => ({ ...prev, [provider]: "disconnect" }));
             try {
               await disconnectMutation.mutateAsync({ provider });
               refetch();
@@ -410,10 +179,7 @@ export default function IntegrationsScreen() {
               console.error("Disconnect error:", error);
               Alert.alert("Error", "Failed to disconnect. Please try again.");
             } finally {
-              setPendingByProvider((prev) => ({
-                ...prev,
-                [provider]: undefined,
-              }));
+              setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
             }
           },
         },
@@ -422,38 +188,43 @@ export default function IntegrationsScreen() {
   };
 
   const isConnected = (provider: IntegrationProvider) => {
-    return integrations?.some((i) => i.provider === provider);
+    return integrations?.some((integration) => integration.provider === provider);
   };
 
   const getProviderDisplayName = (provider: IntegrationProvider) => {
-    return INTEGRATIONS.find((i) => i.provider === provider)?.name || provider;
+    return INTEGRATIONS.find((integration) => integration.provider === provider)?.name || provider;
   };
 
   return (
     <View className="flex-1 bg-background" testID="integrations-screen">
-      {/* Header */}
-      <View className="flex-row items-center px-6 py-4 border-b border-border/50">
-        <Pressable onPress={handleClose} className="p-2 -ml-2" testID="back-button">
+      <View className="flex-row items-center border-b border-border/50 px-6 py-4">
+        <Pressable onPress={handleClose} className="-ml-2 p-2" testID="back-button">
           <Icon as={ChevronLeft} size={24} />
         </Pressable>
-        <Text className="text-xl font-semibold text-foreground ml-4">Integrations</Text>
+        <Text className="ml-4 text-xl font-semibold text-foreground">Integrations</Text>
       </View>
 
-      {/* Content */}
       <ScrollView
         className="flex-1"
         contentContainerClassName="px-6 py-5"
         showsVerticalScrollIndicator={false}
       >
-        <View className="mb-4">
-          <Text className="text-muted-foreground text-base">
-            Connect your fitness platforms and import completed history from FIT files.
+        <View className="mb-4 gap-2">
+          <Text className="text-base text-muted-foreground">
+            Connect your training platforms and keep account-level sync settings together here.
+          </Text>
+          <Text className="text-xs text-muted-foreground">
+            File imports now live with the relevant activity and route screens.
           </Text>
           {integrationsLoading ? (
-            <Text className="text-xs text-muted-foreground mt-2">
+            <Text className="mt-2 text-xs text-muted-foreground">
               Checking connection status...
             </Text>
           ) : null}
+        </View>
+
+        <View className="mb-4 rounded-2xl border border-border bg-muted/20 px-4 py-3">
+          <Text className="text-sm text-muted-foreground">{getConnectedSummary(integrations)}</Text>
         </View>
 
         {INTEGRATIONS.map((integration) => {
@@ -472,13 +243,13 @@ export default function IntegrationsScreen() {
               disabled={isPending}
               activeOpacity={0.7}
               testID={`integration-provider-${integration.provider}`}
-              className={`flex-row items-center justify-between border rounded-xl px-4 py-3 mb-2 ${
+              className={`mb-2 flex-row items-center justify-between rounded-xl border px-4 py-3 ${
                 connected ? "border-green-500 bg-green-500/10" : "border-border bg-card"
               } ${isPending ? "opacity-70" : ""}`}
             >
               <View>
                 <Text className="text-base font-semibold text-foreground">{integration.name}</Text>
-                <Text className="text-xs text-muted-foreground mt-0.5">
+                <Text className="mt-0.5 text-xs text-muted-foreground">
                   {connected ? "Connected - tap to disconnect" : "Not connected - tap to connect"}
                 </Text>
               </View>
@@ -494,137 +265,12 @@ export default function IntegrationsScreen() {
           );
         })}
 
-        <View className="mt-6">
-          <Text className="text-base font-semibold text-foreground mb-2">
-            Import Activity History
+        <View className="mt-6 rounded-2xl border border-border bg-muted/20 p-4">
+          <Text className="text-sm font-medium text-foreground">Need to import data?</Text>
+          <Text className="mt-1 text-xs text-muted-foreground">
+            Use `My Activities` to import FIT activity history and `My Routes` to upload route
+            files.
           </Text>
-          <Text className="text-xs text-muted-foreground mb-3">
-            FIT-only for now. Older activities are imported into your normal activity history and
-            may influence training insights.
-          </Text>
-
-          <View className="border border-border rounded-xl p-4 bg-card gap-3">
-            <View className="flex-row items-start gap-3">
-              <View className="h-10 w-10 rounded-full bg-primary/10 items-center justify-center">
-                <Icon as={History} size={18} className="text-primary" />
-              </View>
-              <View className="flex-1 gap-1">
-                <Text className="text-sm font-medium text-foreground">Completed FIT Activity</Text>
-                <Text className="text-xs text-muted-foreground">
-                  Upload one completed FIT file from your device. Other file formats stay deferred
-                  for a later phase.
-                </Text>
-              </View>
-            </View>
-
-            {!selectedFitFile ? (
-              <Button
-                onPress={handlePickFitFile}
-                variant="outline"
-                className="justify-start gap-2"
-                disabled={isImporting}
-                testID="integrations-pick-fit-file-button"
-              >
-                <Upload className="text-foreground" size={18} />
-                <Text>Choose FIT File</Text>
-              </Button>
-            ) : (
-              <View className="border border-border rounded-xl p-3 bg-muted/40 gap-2">
-                <View className="flex-row items-center gap-2">
-                  <FileText className="text-foreground" size={18} />
-                  <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
-                    {selectedFitFile.name}
-                  </Text>
-                  <CheckCircle className="text-green-600" size={18} />
-                </View>
-                <Text className="text-xs text-muted-foreground">
-                  {(selectedFitFile.size / (1024 * 1024)).toFixed(2)} MB
-                </Text>
-                <Button
-                  onPress={handlePickFitFile}
-                  variant="ghost"
-                  className="self-start px-0"
-                  disabled={isImporting}
-                >
-                  <Text className="text-sm text-primary font-medium">Choose a different file</Text>
-                </Button>
-              </View>
-            )}
-
-            <Input
-              value={historicalName}
-              onChangeText={setHistoricalName}
-              placeholder="Activity name"
-              autoCapitalize="sentences"
-              testID="integrations-historical-name-input"
-            />
-
-            <Select
-              value={createOption(historicalActivityType)}
-              onValueChange={(option: { value: string; label: string } | undefined) => {
-                if (option) setHistoricalActivityType(option.value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose activity type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {ACTIVITY_TYPES.map((activityType) => (
-                    <SelectItem
-                      key={activityType.value}
-                      value={activityType.value}
-                      label={activityType.label}
-                    />
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-
-            <Textarea
-              value={historicalNotes}
-              onChangeText={setHistoricalNotes}
-              placeholder="Optional notes"
-              className="min-h-[88px]"
-              testID="integrations-historical-notes-input"
-            />
-
-            <Text className="text-xs text-muted-foreground">
-              Supported now: `.fit` only. Historical imports keep their original timestamps.
-            </Text>
-
-            <Button
-              onPress={handleHistoricalImport}
-              disabled={isImporting || !selectedFitFile || !historicalName.trim()}
-              testID="integrations-import-fit-button"
-            >
-              <Text className="text-primary-foreground font-semibold">
-                {isImporting ? "Importing FIT Activity..." : "Import FIT Activity"}
-              </Text>
-            </Button>
-          </View>
-
-          {importSummary ? (
-            <View
-              className="mt-3 border border-border rounded-xl p-3 bg-muted/40"
-              testID="integrations-import-summary"
-            >
-              <Text className="text-sm text-foreground font-medium">
-                Historical activity imported
-              </Text>
-              <Text className="text-xs text-muted-foreground mt-1">
-                {importSummary.name} was created from {importSummary.fileName}.
-              </Text>
-              <Button
-                onPress={handleViewImportedActivity}
-                variant="outline"
-                className="mt-3"
-                testID="integrations-view-imported-activity-button"
-              >
-                <Text>View Activity</Text>
-              </Button>
-            </View>
-          ) : null}
         </View>
       </ScrollView>
     </View>

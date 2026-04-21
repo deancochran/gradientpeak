@@ -368,7 +368,10 @@ describe("plan dashboard navigation", () => {
     expect(goalCard).toBeTruthy();
     fireEvent.press(goalCard!);
 
-    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.GOAL_DETAIL("goal-1"));
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/goal-detail",
+      params: { id: "goal-1" },
+    });
   });
 
   it("opens training preferences from projection settings icon", () => {
@@ -376,7 +379,9 @@ describe("plan dashboard navigation", () => {
 
     fireEvent.press(screen.getByTestId("projection-settings-button"));
 
-    expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PREFERENCES);
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: ROUTES.PLAN.TRAINING_PREFERENCES,
+    });
   });
 
   it("does not render active-plan navigation action", () => {

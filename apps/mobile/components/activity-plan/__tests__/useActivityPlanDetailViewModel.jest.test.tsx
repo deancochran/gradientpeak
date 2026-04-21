@@ -28,7 +28,6 @@ describe("useActivityPlanDetailViewModel", () => {
         }),
         fetchedPlan: { id: "db-plan", activity_category: "swim", structure: {} },
         formatDuration: (seconds) => `${seconds / 60}m`,
-        isPublic: false,
         isScheduled: true,
         plannedActivity: {
           activity_plan: {
@@ -59,7 +58,7 @@ describe("useActivityPlanDetailViewModel", () => {
     expect(result.current.tss).toBe(42);
     expect(result.current.intensityFactor).toBe(0.83);
     expect(result.current.steps).toHaveLength(2);
-    expect(result.current.detailBadges).toEqual(["run", "Scheduled", "Private"]);
+    expect(result.current.detailBadges).toEqual(["run", "Scheduled"]);
     expect(result.current.routePreview?.coordinates).toHaveLength(2);
   });
 
@@ -69,7 +68,6 @@ describe("useActivityPlanDetailViewModel", () => {
         activityPlanParam: "{bad json",
         fetchedPlan: null,
         formatDuration: (seconds) => `${seconds / 60}m`,
-        isPublic: true,
         isScheduled: false,
         plannedActivity: null,
         profile: { id: "profile-1" },

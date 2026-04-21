@@ -170,7 +170,7 @@ jest.mock("@/lib/constants/routes", () => ({
   ROUTES: {
     RECORD: "/record",
     PLAN: {
-      CALENDAR_DAY: (date: string) => `/calendar-day?date=${date}`,
+      CALENDAR_DAY: (date: string) => ({ pathname: "/calendar-day", params: { date } }),
     },
   },
 }));
@@ -331,42 +331,16 @@ describe("calendar redesign screen", () => {
     );
   });
 
-  it("renders the month-first calendar without an inline agenda surface", () => {
+  it("renders the month-first calendar without inline action controls", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(screen.getByTestId("create-event-entry")).toBeTruthy();
-    expect(screen.getByTestId("calendar-reset-button")).toBeTruthy();
+    expect(screen.queryByTestId("create-event-entry")).toBeNull();
+    expect(screen.queryByTestId("calendar-reset-button")).toBeNull();
     expect(screen.queryByTestId("calendar-mode-switcher")).toBeNull();
     expect(screen.getByTestId("calendar-month-page-2026-03-01")).toBeTruthy();
     expect(screen.queryByTestId("calendar-selected-day-agenda")).toBeNull();
     expect(screen.queryByText("Week Of")).toBeNull();
     expect(screen.queryByText("Next event")).toBeNull();
-  });
-
-  it("reset selects the current day without changing the visible month model", () => {
-    act(() => {
-      useCalendarStore.setState({ activeDate: "2026-03-24", visibleAnchor: "2026-03-24" });
-    });
-
-    renderNative(<CalendarScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("calendar-reset-button"));
-
-    expect(useCalendarStore.getState().activeDate).toBe("2026-03-23");
-    expect(useCalendarStore.getState().visibleAnchor).toBe("2026-03-01");
-  });
-
-  it("uses the selected day for create actions", () => {
-    renderNative(<CalendarScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
-
-    fireEvent.press(screen.getByTestId("create-event-entry"));
-    fireEvent.press(screen.getByTestId("create-type-planned"));
-    fireEvent.press(screen.getByTestId("calendar-planned-activity-option-plan-1"));
-
-    const scheduleModal = (screen as any).UNSAFE_getAllByType("ScheduleActivityModal")[0];
-    expect(scheduleModal.props.preselectedDate).toBe("2026-03-24");
   });
 
   it("initializes the query window from the selected day even when the visible month diverges", () => {
@@ -390,16 +364,22 @@ describe("calendar redesign screen", () => {
     fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
 
     expect(useCalendarStore.getState().activeDate).toBe("2026-03-24");
-    expect(pushMock).toHaveBeenCalledWith("/calendar-day?date=2026-03-24");
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/calendar-day",
+      params: { date: "2026-03-24" },
+    });
   });
 
-  it("does not open the day route for a selected day without visible events", () => {
+  it("opens the day route for a selected day even without visible events", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-25"));
 
-    expect(useCalendarStore.getState().activeDate).toBe(today);
-    expect(pushMock).not.toHaveBeenCalled();
+    expect(useCalendarStore.getState().activeDate).toBe("2026-03-25");
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/calendar-day",
+      params: { date: "2026-03-25" },
+    });
   });
 
   it("does not keep a persistent selected style after choosing an event day", () => {
@@ -416,7 +396,18 @@ describe("calendar redesign screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     const restDayCell = screen.getByTestId("calendar-month-cell-2026-03-25");
-    expect((restDayCell.props.children[1]?.props?.children ?? []).length ?? 0).toBe(0);
+    expect(screen.queryByTestId("calendar-month-planned-signal-2026-03-25")).toBeNull();
+    expect(
+      (restDayCell.props.children[1]?.props?.children?.[1]?.props?.children ?? []).length ?? 0,
+    ).toBe(0);
+  });
+
+  it("renders a lightweight planned-workout signal on planned days", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-month-planned-signal-2026-03-23")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-month-planned-signal-2026-03-24")).toBeNull();
+    expect(screen.queryByTestId("calendar-month-planned-signal-2026-03-25")).toBeNull();
   });
 
   it("renders out-of-month filler cells as non-interactive blanks", () => {
@@ -434,31 +425,6 @@ describe("calendar redesign screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(screen.queryByTestId("calendar-month-filler-2026-04-01-2026-05-04")).toBeNull();
-  });
-
-  it("opens the actions sheet and schedules a planned activity", () => {
-    renderNative(<CalendarScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("create-event-entry"));
-    expect(screen.getByTestId("calendar-actions-sheet")).toBeTruthy();
-    expect(screen.queryByTestId("create-type-rest-day")).toBeNull();
-    expect(screen.queryByTestId("calendar-actions-today")).toBeNull();
-
-    fireEvent.press(screen.getByTestId("create-type-planned"));
-    fireEvent.press(screen.getByTestId("calendar-planned-activity-option-plan-1"));
-
-    const scheduleModal = (screen as any).UNSAFE_getAllByType("ScheduleActivityModal")[0];
-    expect(scheduleModal.props.activityPlanId).toBe("plan-1");
-    expect(scheduleModal.props.preselectedDate).toBe(today);
-  });
-
-  it("opens custom event creation from the actions sheet", () => {
-    renderNative(<CalendarScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("create-event-entry"));
-    fireEvent.press(screen.getByTestId("create-type-custom"));
-
-    expect(screen.getByTestId("manual-create-modal")).toBeTruthy();
   });
 
   it("keeps month scrolling continuous while extending the query range", () => {

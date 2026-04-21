@@ -12,7 +12,9 @@ export const ROUTES = {
     CALENDAR: "/(internal)/(tabs)/calendar" as const,
     CREATE: "/create-activity-plan" as const,
     SCHEDULED: "/scheduled-activities-list" as const,
-    CALENDAR_DAY: (date: string) => `/calendar-day?date=${date}` as const,
+    CALENDAR_DAY: (date: string) => ({ pathname: "/calendar-day", params: { date } }) as const,
+    EVENT_CREATE: (date: string) =>
+      ({ pathname: "/event-detail", params: { mode: "create", date } }) as const,
 
     // Training Plan Routes
     TRAINING_PLAN: {
@@ -27,6 +29,7 @@ export const ROUTES = {
     CREATE_ACTIVITY_PLAN: {
       INDEX: "/create-activity-plan" as const,
     },
+    ACTIVITY_PLAN_LIST: "/activity-plans-list" as const,
 
     // Dynamic Routes (use with params)
     PLAN_DETAIL: (planId: string) => `/activity-plan-detail?id=${planId}` as const,
@@ -41,7 +44,15 @@ export const ROUTES = {
   // Activities Routes
   ACTIVITIES: {
     LIST: "/activities-list" as const,
+    IMPORT: "/activity-import" as const,
     DETAIL: (activityId: string) => `/activity-detail?id=${activityId}` as const,
+    EFFORTS_LIST: "/activity-efforts-list" as const,
+    EFFORT_DETAIL: (effortId: string) => `/activity-effort-detail?id=${effortId}` as const,
+  },
+
+  PROFILE_METRICS: {
+    LIST: "/profile-metrics-list" as const,
+    DETAIL: (metricId: string) => `/profile-metric-detail?id=${metricId}` as const,
   },
 
   // Routes Routes
@@ -60,6 +71,8 @@ export const ROUTES = {
   PROFILE_EDIT: "/profile-edit" as const,
   INTEGRATIONS: "/integrations" as const,
   NOTIFICATIONS: "/notifications" as const,
+  MESSAGES: "/messages" as const,
+  MESSAGE_NEW: "/messages/new" as const,
 
   // Activity Recording
   RECORD: "/record" as const,

@@ -38,6 +38,22 @@ jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
+jest.mock("@/lib/api", () => ({
+  __esModule: true,
+  api: {
+    routes: {
+      get: {
+        useQuery: () => ({ data: { id: "route-1", name: "River Loop" } }),
+      },
+    },
+  },
+}));
+
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
+  __esModule: true,
+  useAppNavigate: () => jest.fn(),
+}));
+
 jest.mock("@/lib/calendar/eventRouting", () => ({
   __esModule: true,
   buildOpenEventRoute: () => "/event-detail?id=event-1",
@@ -57,7 +73,7 @@ const baseEvent = {
 };
 
 describe("CalendarEventPreviewSheet", () => {
-  it("renders a compact planned activity preview for planned events", () => {
+  it("renders a medium planned activity preview for planned events", () => {
     const rendered = renderNative(
       <CalendarEventPreviewSheet
         event={baseEvent as any}
@@ -74,6 +90,9 @@ describe("CalendarEventPreviewSheet", () => {
     expect(
       (rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix,
     ).toBe("calendar-preview-plan");
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.size).toBe(
+      "medium",
+    );
     expect(screen.getByTestId("calendar-preview-start")).toBeTruthy();
   });
 });

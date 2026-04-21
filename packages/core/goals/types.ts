@@ -54,5 +54,4 @@ export interface TrainingPlanFormForValidation {
 
 export interface GoalDraftFromGoalInput {
   goal: ProfileGoal;
-  targetDate?: string | null;
 }

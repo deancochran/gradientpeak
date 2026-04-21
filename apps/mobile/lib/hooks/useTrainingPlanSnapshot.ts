@@ -231,7 +231,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     error: actualCurveError,
     refetch: refetchActualCurve,
   } = api.trainingPlans.getActualCurve.useQuery(actualCurveRange, {
-    enabled: !!planSnapshot,
+    enabled: true,
     ...scheduleAwareReadQueryOptions,
   });
 

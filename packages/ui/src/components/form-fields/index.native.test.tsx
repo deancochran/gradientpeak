@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { useZodForm } from "../../hooks/use-zod-form";
 import { fireEvent, renderNative } from "../../test/render-native";
-import { Form } from "../form/index.native";
+import { Form, FormItem, FormLabel } from "../form/index.native";
 import { Text } from "../text/index.native";
 import {
   FormBoundedNumberField,
@@ -64,6 +64,29 @@ function FormFieldsHarness() {
   );
 }
 
+function DetachedFormLabelHarness() {
+  const methods = useZodForm({
+    schema: profileSchema,
+    defaultValues: {
+      bio: null,
+      duration: "0:20:00",
+      ftp: 250,
+      max_sessions: 3,
+      pace: "4:30",
+      weight_kg: 70,
+      username: "Avery",
+    },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormItem>
+        <FormLabel>Detached label</FormLabel>
+      </FormItem>
+    </Form>
+  );
+}
+
 describe("Form fields native", () => {
   it("binds shared controlled wrappers to react-hook-form", () => {
     const { getByLabelText, getByText } = renderNative(<FormFieldsHarness />);
@@ -87,5 +110,11 @@ describe("Form fields native", () => {
     expect(getByText(/"ftp":300/)).toBeTruthy();
     expect(getByText(/"pace":"4:05"/)).toBeTruthy();
     expect(getByText(/"weight_kg":72.5/)).toBeTruthy();
+  });
+
+  it("throws a clear error when form subcomponents render outside FormField", () => {
+    expect(() => renderNative(<DetachedFormLabelHarness />)).toThrow(
+      "useFormField should be used within <FormField>",
+    );
   });
 });

@@ -24,6 +24,7 @@ import {
   getActivityPlansDerivedMetrics,
 } from "../utils/activity-plan-derived-metrics";
 import { computePlanMetrics } from "../utils/estimation-helpers";
+import { loadProfileIdentityMap, profileIdentitySchema } from "../utils/profile-identity";
 
 // Input schemas for queries
 const uuidSchema = z.string().uuid();
@@ -179,6 +180,16 @@ function withIdentityFields<
   };
 }
 
+function withOwnerIdentity<T extends { profile_id: string | null }>(
+  plan: T,
+  profileIdentityMap: Map<string, z.infer<typeof profileIdentitySchema>>,
+) {
+  return {
+    ...plan,
+    owner: plan.profile_id ? (profileIdentityMap.get(plan.profile_id) ?? null) : null,
+  };
+}
+
 function buildCreateValues(
   input: z.infer<typeof createActivityPlanInput>,
   profileId: string,
@@ -326,9 +337,14 @@ export const activityPlansRouter = createTRPCRouter({
       nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
     }
 
+    const profileIdentityMap = await loadProfileIdentityMap(
+      db,
+      itemsWithOptionalEstimation.map((plan) => plan.profile_id),
+    );
+
     return {
       items: itemsWithOptionalEstimation.map((plan) => ({
-        ...withIdentityFields(plan),
+        ...withOwnerIdentity(withIdentityFields(plan), profileIdentityMap),
         has_liked: userLikes.includes(plan.id),
       })),
       nextCursor,
@@ -396,9 +412,10 @@ export const activityPlansRouter = createTRPCRouter({
       .limit(1);
 
     const likeRow = rawLikeRow ? activityPlanLikeLookupRowSchema.parse(rawLikeRow) : null;
+    const profileIdentityMap = await loadProfileIdentityMap(db, [planWithEstimation.profile_id]);
 
     return {
-      ...withIdentityFields(planWithEstimation),
+      ...withOwnerIdentity(withIdentityFields(planWithEstimation), profileIdentityMap),
       has_liked: !!likeRow,
     };
   }),
@@ -453,9 +470,14 @@ export const activityPlansRouter = createTRPCRouter({
           .map((row) => row.entity_id);
       }
 
+      const profileIdentityMap = await loadProfileIdentityMap(
+        db,
+        itemsWithEstimation.map((plan) => plan.profile_id),
+      );
+
       return {
         items: itemsWithEstimation.map((plan) => ({
-          ...withIdentityFields(plan),
+          ...withOwnerIdentity(withIdentityFields(plan), profileIdentityMap),
           has_liked: userLikes.includes(plan.id),
         })),
       };

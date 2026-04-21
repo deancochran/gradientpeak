@@ -2,8 +2,6 @@ import { invalidateGoalQueries } from "@repo/api/react";
 import {
   buildGoalDraftFromGoal,
   buildGoalUpdatePayload,
-  buildMilestoneEventCreateInput,
-  buildMilestoneEventUpdatePatch,
   createEmptyGoalDraft,
   formatGoalTypeLabel,
   type GoalEditorDraft,
@@ -13,16 +11,28 @@ import {
   parseProfileGoalRecord,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
+import { Card, CardContent } from "@repo/ui/components/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@repo/ui/components/dropdown-menu";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Calendar, Ellipsis, Target } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import { GoalEditorModal } from "@/components/goals/GoalEditorModal";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 export default function GoalDetailScreen() {
   const router = useRouter();
+  const navigateTo = useAppNavigate();
+  const { Stack } = require("expo-router") as typeof import("expo-router");
   const utils = api.useUtils();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
@@ -44,10 +54,6 @@ export default function GoalDetailScreen() {
       return null;
     }
   }, [goal]);
-  const milestoneEventQuery = api.events.getById.useQuery(
-    { id: goalRecord?.milestone_event_id ?? "" },
-    { enabled: !!goalRecord?.milestone_event_id },
-  );
 
   const updateGoalMutation = api.goals.update.useMutation({
     onSuccess: async () => {
@@ -58,14 +64,6 @@ export default function GoalDetailScreen() {
       setShowEditor(false);
     },
   });
-  const createMilestoneEventMutation = api.events.create.useMutation();
-  const updateMilestoneEventMutation = api.events.update.useMutation();
-  const deleteMilestoneEventMutation = api.events.delete.useMutation({
-    onSuccess: async () => {
-      await invalidateGoalQueries(utils, { includeGoalDetail: false });
-      router.back();
-    },
-  });
   const deleteGoalMutation = api.goals.delete.useMutation({
     onSuccess: async () => {
       await invalidateGoalQueries(utils, { includeGoalDetail: false });
@@ -73,17 +71,17 @@ export default function GoalDetailScreen() {
     },
   });
 
-  const targetDate = milestoneEventQuery.data?.starts_at?.slice(0, 10) ?? null;
   const initialDraft = useMemo(() => {
     if (!goalRecord) {
       return createEmptyGoalDraft() satisfies GoalEditorDraft;
     }
 
-    return buildGoalDraftFromGoal({ goal: goalRecord, targetDate });
-  }, [goalRecord, targetDate]);
+    return buildGoalDraftFromGoal({ goal: goalRecord });
+  }, [goalRecord]);
   const metricSummary = goalRecord ? getGoalMetricSummary(goalRecord) : null;
   const distanceBadge = goalRecord ? getGoalDistanceBadge(goalRecord) : null;
   const objectiveSummary = goalRecord ? getGoalObjectiveSummary(goalRecord) : null;
+  const targetDate = goalRecord?.target_date ?? null;
 
   const handleDeleteGoal = () => {
     if (!goalRecord) {
@@ -96,13 +94,6 @@ export default function GoalDetailScreen() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
-          if (goalRecord.milestone_event_id) {
-            deleteMilestoneEventMutation.mutate({
-              id: goalRecord.milestone_event_id,
-            });
-            return;
-          }
-
           deleteGoalMutation.mutate({ id: goalRecord.id });
         },
       },
@@ -115,29 +106,9 @@ export default function GoalDetailScreen() {
     }
 
     try {
-      const milestoneEventId = goalRecord.milestone_event_id
-        ? goalRecord.milestone_event_id
-        : (
-            await createMilestoneEventMutation.mutateAsync({
-              ...buildMilestoneEventCreateInput({ draft }),
-              lifecycle: { status: "scheduled" },
-              read_only: false,
-            })
-          ).id;
-
-      if (goalRecord.milestone_event_id) {
-        await updateMilestoneEventMutation.mutateAsync({
-          id: goalRecord.milestone_event_id,
-          patch: buildMilestoneEventUpdatePatch({ draft }),
-        });
-      }
-
       await updateGoalMutation.mutateAsync({
         id: goalRecord.id,
-        data: buildGoalUpdatePayload({
-          draft,
-          milestoneEventId,
-        }),
+        data: buildGoalUpdatePayload({ draft }),
       });
     } catch (error) {
       Alert.alert(
@@ -170,20 +141,49 @@ export default function GoalDetailScreen() {
     );
   }
 
+  const renderHeaderActions = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger testID="goal-detail-options-trigger">
+        <View className="rounded-full p-2">
+          <Icon as={Ellipsis} size={18} className="text-foreground" />
+        </View>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6}>
+        <DropdownMenuItem onPress={() => setShowEditor(true)} testID="goal-detail-options-edit">
+          <Text>Edit Goal</Text>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onPress={handleDeleteGoal}
+          variant="destructive"
+          testID="goal-detail-options-delete"
+        >
+          <Text>Delete Goal</Text>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <View className="flex-1 bg-background">
+      <Stack.Screen options={{ headerRight: renderHeaderActions }} />
       <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
-        <Card>
+        <Card className="rounded-3xl border border-border bg-card">
           <CardContent className="gap-4 p-4">
-            <View className="gap-1">
-              <CardTitle>{goalRecord.title}</CardTitle>
-              <Text className="text-sm text-muted-foreground">
-                {formatGoalTypeLabel(goalRecord)} goal
-                {targetDate ? ` · target ${targetDate}` : ""}
-              </Text>
-              {objectiveSummary ? (
-                <Text className="text-sm text-foreground">{objectiveSummary}</Text>
-              ) : null}
+            <View className="flex-row items-start gap-3">
+              <View className="rounded-full bg-muted/30 p-2.5">
+                <Icon as={Target} size={18} className="text-foreground" />
+              </View>
+              <View className="flex-1 gap-1">
+                <Text className="text-2xl font-semibold text-foreground">{goalRecord.title}</Text>
+                <Text className="text-sm text-muted-foreground">
+                  {formatGoalTypeLabel(goalRecord)} goal
+                </Text>
+                {objectiveSummary ? (
+                  <Text className="text-sm leading-5 text-muted-foreground">
+                    {objectiveSummary}
+                  </Text>
+                ) : null}
+              </View>
             </View>
 
             <View className="flex-row flex-wrap gap-2">
@@ -203,8 +203,50 @@ export default function GoalDetailScreen() {
                 </View>
               ) : null}
             </View>
+          </CardContent>
+        </Card>
 
-            <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
+        {goalRecord.milestone_event_id ? (
+          <Card className="rounded-3xl border border-border bg-card">
+            <CardContent className="gap-4 p-4">
+              <View className="gap-1">
+                <Text className="text-sm font-semibold text-foreground">Milestone</Text>
+                <Text className="text-xs text-muted-foreground">
+                  Open the scheduled milestone tied to this goal.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() =>
+                  navigateTo(ROUTES.PLAN.EVENT_DETAIL(goalRecord.milestone_event_id) as any)
+                }
+                className="rounded-2xl border border-border bg-muted/10 px-4 py-3"
+                testID="goal-detail-open-milestone"
+              >
+                <View className="flex-row items-center gap-2">
+                  <Icon as={Calendar} size={16} className="text-muted-foreground" />
+                  <Text className="text-sm font-medium text-foreground">
+                    {targetDate || "No target date set"}
+                  </Text>
+                </View>
+                <Text className="mt-1 text-xs text-muted-foreground">
+                  Tap to view the linked milestone event.
+                </Text>
+              </Pressable>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        <Card className="rounded-3xl border border-border bg-card">
+          <CardContent className="gap-4 p-4">
+            <View className="gap-1">
+              <Text className="text-sm font-semibold text-foreground">Progress snapshot</Text>
+              <Text className="text-xs text-muted-foreground">
+                Key goal targets and timing at a glance.
+              </Text>
+            </View>
+
+            <View className="gap-3 rounded-2xl border border-border bg-muted/10 px-4 py-3">
               <View className="flex-row items-center justify-between gap-3">
                 <Text className="text-xs text-muted-foreground">Target date</Text>
                 <Text className="text-sm font-medium text-foreground">
@@ -217,51 +259,46 @@ export default function GoalDetailScreen() {
                   {formatGoalTypeLabel(goalRecord)}
                 </Text>
               </View>
+              {metricSummary ? (
+                <View className="flex-row items-center justify-between gap-3">
+                  <Text className="text-xs text-muted-foreground">{metricSummary.label}</Text>
+                  <Text className="text-sm font-medium text-foreground">{metricSummary.value}</Text>
+                </View>
+              ) : null}
               <View className="flex-row items-center justify-between gap-3">
-                <Text className="text-xs text-muted-foreground">{metricSummary?.label}</Text>
-                <Text className="text-sm font-medium text-foreground">{metricSummary?.value}</Text>
+                <Text className="text-xs text-muted-foreground">Importance</Text>
+                <Text className="text-sm font-medium text-foreground">
+                  {goalRecord.priority}/10
+                </Text>
               </View>
             </View>
           </CardContent>
         </Card>
-      </ScrollView>
 
-      <View className="border-t border-border bg-background px-4 py-4">
-        <View className="flex-row gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onPress={() => setShowEditor(true)}
-            testID="goal-detail-edit-button"
-          >
-            <Text>Edit Goal</Text>
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1"
-            onPress={handleDeleteGoal}
-            disabled={deleteGoalMutation.isPending || deleteMilestoneEventMutation.isPending}
-            testID="goal-detail-delete-button"
-          >
-            <Text className="text-destructive">
-              {deleteGoalMutation.isPending || deleteMilestoneEventMutation.isPending
-                ? "Deleting..."
-                : "Delete"}
-            </Text>
-          </Button>
-        </View>
-      </View>
+        <Card className="rounded-3xl border border-border bg-card">
+          <CardContent className="gap-4 p-4">
+            <View className="gap-1">
+              <Text className="text-sm font-semibold text-foreground">Goal details</Text>
+              <Text className="text-xs text-muted-foreground">
+                The objective and target definition for this goal.
+              </Text>
+            </View>
+
+            {objectiveSummary ? (
+              <View className="rounded-2xl border border-border bg-muted/10 px-4 py-3">
+                <Text className="text-sm text-foreground">{objectiveSummary}</Text>
+              </View>
+            ) : null}
+          </CardContent>
+        </Card>
+      </ScrollView>
 
       <GoalEditorModal
         visible={showEditor}
         initialValue={initialDraft}
         title="Edit Goal"
         submitLabel="Save Changes"
-        isSubmitting={
-          updateGoalMutation.isPending ||
-          createMilestoneEventMutation.isPending ||
-          updateMilestoneEventMutation.isPending
-        }
+        isSubmitting={updateGoalMutation.isPending}
         onClose={() => setShowEditor(false)}
         onSubmit={(draft) => {
           void handleSubmitGoal(draft);

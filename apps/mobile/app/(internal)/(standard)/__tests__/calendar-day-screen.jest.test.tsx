@@ -25,7 +25,14 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  Stack: { Screen: createHost("StackScreen") },
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useLocalSearchParams: () => paramsState,
 }));
 
@@ -61,27 +68,24 @@ jest.mock("@/lib/constants/routes", () => ({
   ROUTES: {
     RECORD: "/record",
     PLAN: {
+      EVENT_CREATE: (date: string) => ({
+        pathname: "/event-detail",
+        params: { mode: "create", date },
+      }),
       PLAN_DETAIL: (id: string) => `/activity-plan-detail?id=${id}`,
       EVENT_DETAIL: (id: string) => `/event-detail?id=${id}`,
     },
   },
 }));
 
-jest.mock("@/components/shared/ActivityPlanCard", () => ({
+jest.mock("@/components/shared/ActivityPlanSummary", () => ({
   __esModule: true,
-  ActivityPlanCard: ({ plannedActivity, onPress }: any) =>
-    React.createElement(
-      "TouchableOpacity",
-      {
-        onPress,
-        testID: `activity-plan-card-${plannedActivity?.id}`,
-      },
-      React.createElement("Text", null, plannedActivity?.activity_plan?.name),
-      React.createElement("Text", null, plannedActivity?.activity_plan?.description),
-      React.createElement("Text", null, "Outdoor Run"),
-      React.createElement("Text", null, "4 steps"),
-      React.createElement("Text", null, "Route"),
-    ),
+  ActivityPlanSummary: createHost("ActivityPlanSummary"),
+}));
+
+jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
+  __esModule: true,
+  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
 jest.mock("@/lib/utils/plan/colors", () => ({
@@ -102,6 +106,11 @@ jest.mock("@/lib/utils/plan/dateGrouping", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    routes: {
+      get: {
+        useQuery: () => ({ data: { id: "route-1", name: "River Loop" } }),
+      },
+    },
     events: {
       list: {
         useQuery: () => ({
@@ -122,6 +131,7 @@ jest.mock("@/lib/api", () => ({
                   activity_category: "outdoor_run",
                   estimated_duration: 3600,
                   estimated_tss: 72,
+                  intensity_factor: 0.88,
                   route_id: "route-1",
                   structure: {
                     intervals: [{ repetitions: 2, steps: [{}, {}] }],
@@ -133,8 +143,10 @@ jest.mock("@/lib/api", () => ({
                 event_type: "custom",
                 title: "Mobility session",
                 description: "Gentle evening mobility.",
+                location: "Garage studio",
                 scheduled_date: today,
                 starts_at: `${today}T18:00:00.000Z`,
+                ends_at: `${today}T19:00:00.000Z`,
                 all_day: false,
               },
             ],
@@ -183,18 +195,46 @@ describe("calendar day screen", () => {
     expect(stackScreen.props.options.title).toBe("Today, March 23");
   });
 
-  it("shows the shared activity-plan list item and opens plan detail on tap", () => {
+  it("opens create event with the selected day prefilled", () => {
     renderNative(<CalendarDayScreen />);
 
+    fireEvent.press(screen.getByTestId("calendar-day-create-event-button"));
+
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/event-detail",
+      params: { mode: "create", date: today },
+    });
+  });
+
+  it("shows the planned activity summary inside the event card and opens event detail on tap", () => {
+    const rendered = renderNative(<CalendarDayScreen />);
+
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
-    expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
-    expect(screen.getByText("Outdoor Run")).toBeTruthy();
-    expect(screen.getByText("4 steps")).toBeTruthy();
-    expect(screen.getByText("Route")).toBeTruthy();
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanSummary").props.testID).toBe(
+      "calendar-day-planned-event-1",
+    );
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanSummary").props.routeName).toBe(
+      "River Loop",
+    );
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanSummary").props.subtitle).toBe(
+      "Attached activity plan",
+    );
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.size).toBe(
+      "small",
+    );
 
-    fireEvent.press(screen.getByTestId("activity-plan-card-event-1"));
+    fireEvent.press(screen.getByTestId("schedule-event-event-1"));
 
-    expect(pushMock).toHaveBeenCalledWith("/activity-plan-detail?id=plan-1");
+    expect(pushMock).toHaveBeenCalledWith("/event-detail?id=event-1");
+  });
+
+  it("shows normal events as plain calendar entries", () => {
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByText("Mobility session")).toBeTruthy();
+    expect(screen.getByText("Gentle evening mobility.")).toBeTruthy();
+    expect(screen.getByText("2:00 PM - 3:00 PM")).toBeTruthy();
+    expect(screen.getByText("Garage studio")).toBeTruthy();
   });
 
   it("starts a planned activity from the quick action", () => {

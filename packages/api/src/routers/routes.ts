@@ -20,6 +20,7 @@ import { getRequiredDb } from "../db";
 import { parseRoute, validateRoute } from "../lib/routes/route-parser";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { loadProfileIdentityMap, profileIdentitySchema } from "../utils/profile-identity";
 
 const storageService = getApiStorageService();
 
@@ -103,6 +104,7 @@ const serializedActivityRouteSchema = z
 const activityRouteWithLikeSchema = serializedActivityRouteSchema
   .extend({
     has_liked: z.boolean(),
+    owner: profileIdentitySchema.nullable().optional(),
   })
   .strict();
 
@@ -254,11 +256,17 @@ export const routesRouter = createTRPCRouter({
         userLikes = likeRows.map((row) => row.entity_id);
       }
 
+      const profileIdentityMap = await loadProfileIdentityMap(
+        db,
+        items.map((route) => route.profile_id),
+      );
+
       return {
         items: items.map((route) =>
           activityRouteWithLikeSchema.parse({
             ...route,
             has_liked: userLikes.includes(route.id),
+            owner: route.profile_id ? (profileIdentityMap.get(route.profile_id) ?? null) : null,
           }),
         ),
         nextCursor,
@@ -301,9 +309,12 @@ export const routesRouter = createTRPCRouter({
         )
         .limit(1);
 
+      const profileIdentityMap = await loadProfileIdentityMap(db, [route.profile_id]);
+
       return activityRouteWithLikeSchema.parse({
         ...serializeActivityRouteRow(route),
         has_liked: !!likeData,
+        owner: route.profile_id ? (profileIdentityMap.get(route.profile_id) ?? null) : null,
       });
     }),
 

@@ -1063,7 +1063,7 @@ export const comments = pgTable(
     id: uuid("id").primaryKey(),
     profile_id: uuid("profile_id").references(() => profiles.id),
     entity_type: text("entity_type", {
-      enum: ["activity", "training_plan", "activity_plan", "route"],
+      enum: ["activity", "training_plan", "activity_plan", "route", "event"],
     }).notNull(),
     entity_id: uuid("entity_id").notNull(),
     content: text("content").notNull(),

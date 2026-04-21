@@ -7,8 +7,8 @@ import { Input } from "@repo/ui/components/input";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { Clock, Edit3, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Clock, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
@@ -24,6 +24,14 @@ const themeOptions = [
   { label: "Light", value: "light" },
   { label: "Dark", value: "dark" },
 ] as const;
+
+const integrationProviderLabels: Record<string, string> = {
+  garmin: "Garmin Connect",
+  strava: "Strava",
+  trainingpeaks: "TrainingPeaks",
+  wahoo: "Wahoo",
+  zwift: "Zwift",
+};
 
 function calculateAge(dob: string | null | undefined): number | null {
   if (!dob) return null;
@@ -68,6 +76,9 @@ function UserDetailScreen() {
     { id: targetUserId },
     { enabled: targetUserId.length > 0 },
   );
+  const { data: integrations = [] } = api.integrations.list.useQuery(undefined, {
+    enabled: isOwnProfile,
+  });
 
   // Merge profile data: use auth profile for own profile (has dob), merge in counts from getPublicById
   const renderedProfile = useMemo(() => {
@@ -286,6 +297,57 @@ function UserDetailScreen() {
     !!renderedProfile?.gender ||
     !!renderedProfile?.preferred_units ||
     !!renderedProfile?.language;
+  const displayName = renderedProfile?.username || user?.email?.split("@")[0] || "Unknown user";
+  const usernameLabel = renderedProfile?.username ? `@${renderedProfile.username}` : null;
+  const quickLinks = [
+    {
+      testID: "my-activities",
+      title: "My Activities",
+      description: "Completed workouts",
+      onPress: () => navigateTo(ROUTES.ACTIVITIES.LIST as any),
+    },
+    {
+      testID: "my-training-plans",
+      title: "My Training Plans",
+      description: "Saved training plans",
+      onPress: () => navigateTo(ROUTES.PLAN.TRAINING_PLAN.LIST as any),
+    },
+    {
+      testID: "my-activity-plans",
+      title: "My Activity Plans",
+      description: "Saved activity plans",
+      onPress: () => navigateTo(ROUTES.PLAN.ACTIVITY_PLAN_LIST as any),
+    },
+    {
+      testID: "my-routes",
+      title: "My Routes",
+      description: "Saved routes",
+      onPress: () => navigateTo(ROUTES.ROUTES.LIST as any),
+    },
+    {
+      testID: "my-activity-efforts",
+      title: "My Activity Efforts",
+      description: "Capability efforts",
+      onPress: () => navigateTo(ROUTES.ACTIVITIES.EFFORTS_LIST as any),
+    },
+    {
+      testID: "my-profile-metrics",
+      title: "My Profile Metrics",
+      description: "Saved profile metrics",
+      onPress: () => navigateTo(ROUTES.PROFILE_METRICS.LIST as any),
+    },
+  ] as const;
+
+  const renderHeaderActions = () =>
+    isOwnProfile ? (
+      <TouchableOpacity
+        onPress={() => navigateTo(ROUTES.PROFILE_EDIT as any)}
+        className="mr-2 rounded-full px-2 py-1"
+        testID="user-detail-edit-trigger"
+      >
+        <Text className="text-sm font-medium text-primary">Edit</Text>
+      </TouchableOpacity>
+    ) : null;
 
   return (
     <ScrollView
@@ -294,10 +356,12 @@ function UserDetailScreen() {
       showsVerticalScrollIndicator={false}
       testID="user-detail-screen"
     >
-      <Card>
-        <CardContent className="p-6">
-          <View className="items-center mb-4">
-            <Avatar alt={renderedProfile?.username || "User"} className="w-24 h-24 mb-4">
+      <Stack.Screen options={{ headerRight: renderHeaderActions }} />
+
+      <Card className="rounded-3xl border border-border bg-card">
+        <CardContent className="gap-5 p-6">
+          <View className="flex-row items-start gap-4">
+            <Avatar alt={renderedProfile?.username || "User"} className="h-24 w-24">
               {renderedProfile?.avatar_url ? (
                 <AvatarImage
                   source={{ uri: renderedProfile.avatar_url }}
@@ -313,248 +377,198 @@ function UserDetailScreen() {
               </AvatarFallback>
             </Avatar>
 
-            <Text className="text-2xl font-bold mb-1">
-              {renderedProfile?.username || "Unknown user"}
-            </Text>
-            {isOwnProfile && user?.email ? (
-              <Text className="text-sm text-muted-foreground mb-4">{user.email}</Text>
-            ) : null}
-
-            <View className="mb-4 flex-row flex-wrap items-center justify-center gap-2">
-              <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                <Text className="text-xs font-medium text-foreground">
-                  {renderedProfile?.is_public ? "Public profile" : "Private profile"}
-                </Text>
+            <View className="flex-1 gap-2">
+              <View className="gap-1">
+                <Text className="text-2xl font-semibold text-foreground">{displayName}</Text>
+                {usernameLabel ? (
+                  <Text className="text-sm text-muted-foreground">{usernameLabel}</Text>
+                ) : null}
+                {isOwnProfile && user?.email ? (
+                  <Text className="text-sm text-muted-foreground">{user.email}</Text>
+                ) : null}
               </View>
-              {isOwnProfile ? (
+
+              <View className="flex-row flex-wrap items-center gap-2">
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                  <Text className="text-xs font-medium text-foreground">Your account</Text>
+                  <Text className="text-xs font-medium text-foreground">
+                    {renderedProfile?.is_public ? "Public profile" : "Private profile"}
+                  </Text>
                 </View>
-              ) : null}
-            </View>
-
-            <Text className="text-sm text-center text-muted-foreground mb-4">
-              {isOwnProfile
-                ? "Your public profile summary lives here. Account tools stay below so profile details remain easy to scan."
-                : renderedProfile?.is_public
-                  ? "Open profile details, then follow or message if this looks like the right connection."
-                  : "This profile stays private until your follow request is accepted."}
-            </Text>
-
-            {/* Followers/Following Counts - show for ALL profiles */}
-            <View className="flex-row gap-3 mb-4">
-              <TouchableProfileStat
-                label="Followers"
-                value={renderedProfile?.followers_count ?? 0}
-                onPress={() => navigateTo(`/followers?userId=${targetUserId}` as any)}
-              />
-              <TouchableProfileStat
-                label="Following"
-                value={renderedProfile?.following_count ?? 0}
-                onPress={() => navigateTo(`/following?userId=${targetUserId}` as any)}
-              />
-            </View>
-
-            {!isOwnProfile && renderedProfile?.follow_status === "pending" && (
-              <View className="flex-row items-center gap-2 mb-3 bg-amber-100 dark:bg-amber-900 px-3 py-2 rounded-lg">
-                <Icon as={Clock} size={16} className="text-amber-600 dark:text-amber-400" />
-                <Text className="text-sm text-amber-700 dark:text-amber-300">
-                  Follow request pending
-                </Text>
+                {isOwnProfile ? (
+                  <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                    <Text className="text-xs font-medium text-foreground">Your account</Text>
+                  </View>
+                ) : null}
               </View>
-            )}
+            </View>
+          </View>
 
-            {isOwnProfile ? (
+          <Text className="text-sm text-muted-foreground">
+            {isOwnProfile
+              ? "Your public profile summary lives here. Account tools stay below so profile details remain easy to scan."
+              : renderedProfile?.is_public
+                ? "Open profile details, then follow or message if this looks like the right connection."
+                : "This profile stays private until your follow request is accepted."}
+          </Text>
+
+          <View className="flex-row gap-3">
+            <TouchableProfileStat
+              label="Followers"
+              value={renderedProfile?.followers_count ?? 0}
+              onPress={() => navigateTo(`/followers?userId=${targetUserId}` as any)}
+            />
+            <TouchableProfileStat
+              label="Following"
+              value={renderedProfile?.following_count ?? 0}
+              onPress={() => navigateTo(`/following?userId=${targetUserId}` as any)}
+            />
+          </View>
+
+          {!isOwnProfile && renderedProfile?.follow_status === "pending" && (
+            <View className="flex-row items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 dark:bg-amber-900">
+              <Icon as={Clock} size={16} className="text-amber-600 dark:text-amber-400" />
+              <Text className="text-sm text-amber-700 dark:text-amber-300">
+                Follow request pending
+              </Text>
+            </View>
+          )}
+
+          {!isOwnProfile ? (
+            <View className="flex-row gap-3">
+              {renderedProfile?.follow_status === "accepted" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
+                  className="flex-row gap-2"
+                  disabled={unfollowMutation.isPending}
+                  testID="user-detail-unfollow-button"
+                >
+                  <Icon as={UserMinus} size={16} />
+                  <Text>Unfollow</Text>
+                </Button>
+              ) : renderedProfile?.follow_status === "pending" ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
+                  className="flex-row gap-2"
+                  disabled={unfollowMutation.isPending}
+                  testID="user-detail-requested-button"
+                >
+                  <Icon as={Clock} size={16} />
+                  <Text>Requested</Text>
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onPress={() => followMutation.mutate({ target_user_id: targetUserId })}
+                  className="flex-row gap-2"
+                  disabled={followMutation.isPending}
+                  testID="user-detail-follow-button"
+                >
+                  <Icon as={UserPlus} size={16} />
+                  <Text>Follow</Text>
+                </Button>
+              )}
+
               <Button
                 variant="outline"
                 size="sm"
-                onPress={() => navigateTo("/profile-edit" as any)}
+                onPress={() => messageMutation.mutate({ target_user_id: targetUserId })}
                 className="flex-row gap-2"
-                testID="edit-profile-action"
+                disabled={messageMutation.isPending}
+                testID="user-detail-message-button"
               >
-                <Icon as={Edit3} size={16} />
-                <Text>Edit Profile</Text>
+                <Icon as={MessageCircle} size={16} />
+                <Text>Message</Text>
               </Button>
-            ) : (
-              <View className="flex-row gap-3">
-                {renderedProfile?.follow_status === "accepted" ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
-                    className="flex-row gap-2"
-                    disabled={unfollowMutation.isPending}
-                    testID="user-detail-unfollow-button"
-                  >
-                    <Icon as={UserMinus} size={16} />
-                    <Text>Unfollow</Text>
-                  </Button>
-                ) : renderedProfile?.follow_status === "pending" ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
-                    className="flex-row gap-2"
-                    disabled={unfollowMutation.isPending}
-                    testID="user-detail-requested-button"
-                  >
-                    <Icon as={Clock} size={16} />
-                    <Text>Requested</Text>
-                  </Button>
-                ) : (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onPress={() => followMutation.mutate({ target_user_id: targetUserId })}
-                    className="flex-row gap-2"
-                    disabled={followMutation.isPending}
-                    testID="user-detail-follow-button"
-                  >
-                    <Icon as={UserPlus} size={16} />
-                    <Text>Follow</Text>
-                  </Button>
-                )}
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onPress={() => messageMutation.mutate({ target_user_id: targetUserId })}
-                  className="flex-row gap-2"
-                  disabled={messageMutation.isPending}
-                  testID="user-detail-message-button"
-                >
-                  <Icon as={MessageCircle} size={16} />
-                  <Text>Message</Text>
-                </Button>
-              </View>
-            )}
-          </View>
+            </View>
+          ) : null}
 
           {!isOwnProfile &&
           renderedProfile?.is_public === false &&
           renderedProfile?.follow_status !== "accepted" ? (
-            <View className="items-center py-6 border-t border-border">
-              <Text className="text-base font-semibold">This account is private</Text>
-              <Text className="text-sm text-muted-foreground mt-1 text-center">
+            <View className="items-center border-t border-border py-6">
+              <Text className="text-base font-semibold text-foreground">
+                This account is private
+              </Text>
+              <Text className="mt-1 text-center text-sm text-muted-foreground">
                 Follow this account to see their activities and profile details.
               </Text>
             </View>
-          ) : (
-            hasProfileMetadata && (
-              <View className="gap-3 pt-4 border-t border-border">
-                {renderedProfile.bio && (
-                  <View>
-                    <Text className="text-xs text-muted-foreground uppercase mb-1">Bio</Text>
-                    <Text className="text-sm">{renderedProfile.bio}</Text>
-                  </View>
-                )}
-
-                <View className="flex-row flex-wrap gap-4">
-                  {age !== null && (
-                    <View className="flex-1 min-w-[45%]">
-                      <Text className="text-xs text-muted-foreground uppercase mb-1">Age</Text>
-                      <Text className="text-sm font-medium">{age} years</Text>
-                    </View>
-                  )}
-
-                  {renderedProfile.gender && (
-                    <View className="flex-1 min-w-[45%]">
-                      <Text className="text-xs text-muted-foreground uppercase mb-1">Gender</Text>
-                      <Text className="text-sm font-medium capitalize">
-                        {renderedProfile.gender}
-                      </Text>
-                    </View>
-                  )}
-
-                  {renderedProfile.preferred_units && (
-                    <View className="flex-1 min-w-[45%]">
-                      <Text className="text-xs text-muted-foreground uppercase mb-1">Units</Text>
-                      <Text className="text-sm font-medium capitalize">
-                        {renderedProfile.preferred_units}
-                      </Text>
-                    </View>
-                  )}
-
-                  {renderedProfile.language && (
-                    <View className="flex-1 min-w-[45%]">
-                      <Text className="text-xs text-muted-foreground uppercase mb-1">Language</Text>
-                      <Text className="text-sm font-medium uppercase">
-                        {renderedProfile.language}
-                      </Text>
-                    </View>
-                  )}
+          ) : hasProfileMetadata ? (
+            <View className="gap-3 border-t border-border pt-4">
+              {renderedProfile.bio ? (
+                <View>
+                  <Text className="mb-1 text-xs uppercase text-muted-foreground">Bio</Text>
+                  <Text className="text-sm text-foreground">{renderedProfile.bio}</Text>
                 </View>
+              ) : null}
+
+              <View className="flex-row flex-wrap gap-4">
+                {age !== null ? (
+                  <View className="min-w-[45%] flex-1">
+                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Age</Text>
+                    <Text className="text-sm font-medium text-foreground">{age} years</Text>
+                  </View>
+                ) : null}
+
+                {renderedProfile.gender ? (
+                  <View className="min-w-[45%] flex-1">
+                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Gender</Text>
+                    <Text className="text-sm font-medium capitalize text-foreground">
+                      {renderedProfile.gender}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {renderedProfile.preferred_units ? (
+                  <View className="min-w-[45%] flex-1">
+                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Units</Text>
+                    <Text className="text-sm font-medium capitalize text-foreground">
+                      {renderedProfile.preferred_units}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {renderedProfile.language ? (
+                  <View className="min-w-[45%] flex-1">
+                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Language</Text>
+                    <Text className="text-sm font-medium uppercase text-foreground">
+                      {renderedProfile.language}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
-            )
-          )}
+            </View>
+          ) : null}
         </CardContent>
       </Card>
 
       {isOwnProfile ? (
         <>
-          <View className="gap-1 px-1">
-            <Text className="text-lg font-semibold text-foreground">Manage your account</Text>
-            <Text className="text-sm text-muted-foreground">
-              Keep profile viewing simple above and use these tools when you need to manage data,
-              settings, or security.
-            </Text>
-          </View>
+          <Card className="rounded-3xl border border-border bg-card" testID="my-records-section">
+            <CardContent className="gap-4 p-6">
+              <View className="gap-1">
+                <Text className="text-lg font-semibold text-foreground">Quick Links</Text>
+                <Text className="text-sm text-muted-foreground">
+                  Open your saved training data without turning this page into a search surface.
+                </Text>
+              </View>
+
+              <View className="flex-row flex-wrap gap-3">
+                {quickLinks.map((link) => (
+                  <QuickLinkTile key={link.testID} {...link} />
+                ))}
+              </View>
+            </CardContent>
+          </Card>
 
           <SettingsGroup
-            title="My Records"
-            description="Private views for your training data"
-            testID="my-records-section"
-          >
-            <SettingItem
-              type="button"
-              label="Activities"
-              description="View your completed workouts"
-              buttonLabel="Open"
-              variant="outline"
-              onPress={() => navigateTo(ROUTES.ACTIVITIES.LIST as any)}
-              testID="my-activities"
-            />
-            <SettingItem
-              type="button"
-              label="Training Plans"
-              description="Create and manage your training plans"
-              buttonLabel="Open"
-              variant="outline"
-              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.LIST as any)}
-              testID="my-training-plans"
-            />
-            <SettingItem
-              type="button"
-              label="Activity Plans"
-              description="Create or edit your plan templates"
-              buttonLabel="Open"
-              variant="outline"
-              onPress={() => navigateTo(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX as any)}
-              testID="my-activity-plans"
-            />
-            <SettingItem
-              type="button"
-              label="Routes"
-              description="Browse your uploaded routes"
-              buttonLabel="Open"
-              variant="outline"
-              onPress={() => navigateTo(ROUTES.ROUTES.LIST as any)}
-              testID="my-routes"
-            />
-            <SettingItem
-              type="button"
-              label="Activity Efforts"
-              description="View and manage your raw capability efforts"
-              buttonLabel="Open"
-              variant="outline"
-              onPress={() => navigateTo("/(internal)/(standard)/activity-efforts-list" as any)}
-              testID="my-activity-efforts"
-            />
-          </SettingsGroup>
-
-          <SettingsGroup
-            title="Account"
-            description="Manage your account settings"
+            title="My Account"
+            description="Email, password, session, and account ownership actions"
             testID="account-section"
           >
             <SettingItem
@@ -644,29 +658,7 @@ function UserDetailScreen() {
                 </Button>
               </View>
             )}
-          </SettingsGroup>
 
-          <SettingsGroup
-            title="Integrations"
-            description="Connect your fitness tracking platforms"
-            testID="integrations-section"
-          >
-            <SettingItem
-              type="button"
-              label="Third-Party Services"
-              description="Sync activities from Strava, Garmin, and more"
-              buttonLabel="Manage"
-              variant="outline"
-              onPress={() => navigateTo("/integrations" as any)}
-              testID="integrations"
-            />
-          </SettingsGroup>
-
-          <SettingsGroup
-            title="Preferences"
-            description="Customize your app experience"
-            testID="preferences-section"
-          >
             <SettingItem
               type="custom"
               label="Theme"
@@ -706,17 +698,11 @@ function UserDetailScreen() {
                 </ToggleGroup>
               </View>
             </SettingItem>
-          </SettingsGroup>
 
-          <SettingsGroup
-            title="Danger Zone"
-            description="Irreversible actions"
-            testID="danger-section"
-          >
             <SettingItem
               type="button"
               label="Sign Out"
-              description="Sign out of your account"
+              description="Sign out of your account on this device"
               buttonLabel={isSigningOut ? "Signing out..." : "Sign Out"}
               variant="destructive"
               onPress={handleSignOut}
@@ -734,6 +720,48 @@ function UserDetailScreen() {
               testID="delete-account"
             />
           </SettingsGroup>
+
+          <Card className="rounded-3xl border border-border bg-card" testID="integrations-card">
+            <CardContent className="gap-4 p-6">
+              <View className="gap-1">
+                <Text className="text-lg font-semibold text-foreground">Integrations</Text>
+                <Text className="text-sm text-muted-foreground">
+                  Connection state for your third-party services.
+                </Text>
+              </View>
+
+              <View className="gap-3 rounded-2xl border border-border bg-muted/20 p-4">
+                <View className="gap-1">
+                  <Text className="text-sm font-medium text-foreground">
+                    {integrations.length > 0
+                      ? `${integrations.length} connected ${integrations.length === 1 ? "service" : "services"}`
+                      : "No services connected"}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    {integrations.length > 0
+                      ? integrations
+                          .map(
+                            (integration) =>
+                              integrationProviderLabels[integration.provider] ??
+                              integration.provider,
+                          )
+                          .join(", ")
+                      : "Connect Strava, Garmin, Wahoo, and other providers from the dedicated integrations screen."}
+                  </Text>
+                </View>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  onPress={() => navigateTo(ROUTES.INTEGRATIONS as any)}
+                  testID="manage-integrations-button"
+                >
+                  <Text>Manage Third-Party Integrations</Text>
+                </Button>
+              </View>
+            </CardContent>
+          </Card>
 
           <SettingsGroup title="About" testID="about-section">
             <View className="gap-2">
@@ -775,6 +803,30 @@ export default function UserDetailScreenWithErrorBoundary() {
   );
 }
 
+function QuickLinkTile({
+  title,
+  description,
+  onPress,
+  testID,
+}: {
+  title: string;
+  description: string;
+  onPress: () => void;
+  testID: string;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      className="min-w-[47%] flex-1 rounded-2xl border border-border bg-muted/20 p-4"
+      testID={testID}
+    >
+      <Text className="text-sm font-semibold text-foreground">{title}</Text>
+      <Text className="mt-1 text-xs text-muted-foreground">{description}</Text>
+    </TouchableOpacity>
+  );
+}
+
 function TouchableProfileStat({
   label,
   value,
@@ -788,7 +840,7 @@ function TouchableProfileStat({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
-      className="rounded-xl border border-border bg-muted/20 px-4 py-3"
+      className="flex-1 rounded-xl border border-border bg-muted/20 px-4 py-3"
     >
       <Text className="text-base font-semibold text-foreground">{value}</Text>
       <Text className="text-xs font-medium text-primary">{label}</Text>

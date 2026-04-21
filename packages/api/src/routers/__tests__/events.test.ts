@@ -26,6 +26,23 @@ vi.mock("../../infrastructure/repositories", () => ({
   })),
 }));
 
+vi.mock("../../utils/activity-plan-derived-metrics", () => ({
+  getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
+    ...plan,
+    estimated_duration: plan.estimated_duration ?? 3600,
+    estimated_tss: plan.estimated_tss ?? 72,
+    intensity_factor: plan.intensity_factor ?? 0.88,
+  })),
+  getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
+    plans.map((plan) => ({
+      ...plan,
+      estimated_duration: plan.estimated_duration ?? 3600,
+      estimated_tss: plan.estimated_tss ?? 72,
+      intensity_factor: plan.intensity_factor ?? 0.88,
+    })),
+  ),
+}));
+
 import { eventsRouter } from "../events";
 
 type QueryResult = {
@@ -320,6 +337,78 @@ describe("eventsRouter generalization", () => {
     });
 
     expect(result.event_type).toBe("custom");
+  });
+
+  it("getById hydrates the linked activity plan for planned events", async () => {
+    const { caller } = createCaller({
+      events: {
+        data: createEventRow({
+          id: "00000000-0000-4000-8000-000000000012",
+          event_type: "planned_activity",
+          activity_plan_id: "11111111-1111-4111-8111-111111111111",
+          activity_plan: {
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Tempo Builder",
+            activity_category: "run",
+            structure: { intervals: [{ repetitions: 1, steps: [{}, {}] }] },
+            route_id: "route-1",
+          },
+        }),
+        error: null,
+      },
+    });
+
+    const result = await caller.getById({
+      id: "00000000-0000-4000-8000-000000000012",
+    });
+
+    expect(result.event_type).toBe("planned");
+    expect(result.activity_plan).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Tempo Builder",
+      route_id: "route-1",
+      estimated_tss: 72,
+      intensity_factor: 0.88,
+    });
+  });
+
+  it("list hydrates linked activity plans for planned events", async () => {
+    const { caller } = createCaller({
+      events: {
+        data: [
+          createEventRow({
+            id: "planned-1",
+            event_type: "planned_activity",
+            activity_plan_id: "11111111-1111-4111-8111-111111111111",
+            activity_plan: {
+              id: "11111111-1111-4111-8111-111111111111",
+              name: "Threshold Ride",
+              activity_category: "bike",
+              route_id: "route-2",
+              structure: { intervals: [{ repetitions: 1, steps: [{}, {}, {}] }] },
+            },
+          }),
+          createEventRow({
+            id: "custom-1",
+            event_type: "custom",
+            title: "Strength and mobility",
+          }),
+        ],
+        error: null,
+      },
+      activities: { data: [], error: null },
+    });
+
+    const result = await caller.list({ limit: 20, include_adhoc: true });
+    const plannedEvent = result.items.find((item) => item.id === "planned-1");
+
+    expect(plannedEvent?.activity_plan).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      name: "Threshold Ride",
+      route_id: "route-2",
+      estimated_tss: 72,
+      intensity_factor: 0.88,
+    });
   });
 
   it("getToday returns normalized events for the current UTC day", async () => {

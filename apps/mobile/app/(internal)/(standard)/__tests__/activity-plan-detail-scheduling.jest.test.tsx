@@ -30,6 +30,14 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useRouter: () => routerMock,
   useLocalSearchParams: () => localSearchParamsMock,
 }));
@@ -52,6 +60,11 @@ jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
   TimelineChart: createHost("TimelineChart"),
 }));
 
+jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
+  __esModule: true,
+  ElevationProfileChart: createHost("ElevationProfileChart"),
+}));
+
 jest.mock("@/components/ScheduleActivityModal", () => ({
   __esModule: true,
   ScheduleActivityModal: (props: any) => {
@@ -63,6 +76,14 @@ jest.mock("@/components/ScheduleActivityModal", () => ({
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
   Button: createHost("Button"),
+}));
+
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({
@@ -160,6 +181,9 @@ jest.mock("@/lib/api", () => ({
     },
     routes: {
       get: {
+        useQuery: () => ({ data: null }),
+      },
+      loadFull: {
         useQuery: () => ({ data: null }),
       },
     },
@@ -274,7 +298,7 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     act(() => {
-      findButton((label) => label === "Schedule").props.onPress();
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
     expect(nativeAlertMock).not.toHaveBeenCalled();
@@ -292,7 +316,7 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     act(() => {
-      findButton((label) => label === "Schedule").props.onPress();
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
     expect(nativeAlertMock).toHaveBeenCalledWith(
@@ -302,7 +326,7 @@ describe("activity plan detail scheduling", () => {
     expect(scheduleModalProps.at(-1)?.visible).toBe(false);
   });
 
-  it("duplicates and routes into scheduling for a shared template", async () => {
+  it("opens scheduling directly for a shared public template", async () => {
     localSearchParamsMock.template = JSON.stringify({
       id: "11111111-1111-1111-1111-111111111111",
       name: "Shared Builder",
@@ -313,23 +337,13 @@ describe("activity plan detail scheduling", () => {
 
     renderNative(<ActivityPlanDetail />);
 
-    await act(async () => {
-      findButton((label) => label === "Duplicate and Schedule").props.onPress();
-      await Promise.resolve();
+    act(() => {
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
-    expect(duplicateMutateMock).toHaveBeenCalledWith({
-      id: "11111111-1111-1111-1111-111111111111",
-      newName: "Shared Builder (Copy)",
-    });
     expect(nativeAlertMock).not.toHaveBeenCalled();
-    await waitFor(() => {
-      expect(routerMock.replace).toHaveBeenCalledWith({
-        pathname: "/activity-plan-detail",
-        params: { planId: "duplicated-plan-1", action: "schedule" },
-      });
-    });
-    expect(scheduleModalProps.at(-1)?.visible).toBe(false);
+    expect(duplicateMutateMock).not.toHaveBeenCalled();
+    expect(scheduleModalProps.at(-1)?.visible).toBe(true);
   });
 
   it("duplicates a shared activity plan into the owned detail flow", async () => {
@@ -344,7 +358,7 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     await act(async () => {
-      findButton((label) => label === "Duplicate Activity").props.onPress();
+      screen.getByTestId("activity-plan-options-duplicate").props.onPress();
       await Promise.resolve();
     });
 
@@ -421,7 +435,7 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     act(() => {
-      findButton((label) => label === "Schedule").props.onPress();
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
     act(() => {
@@ -445,9 +459,8 @@ describe("activity plan detail scheduling", () => {
 
     renderNative(<ActivityPlanDetail />);
 
-    expect(screen.getByText("Overview")).toBeTruthy();
     expect(screen.getByText("Controlled tempo intervals.")).toBeTruthy();
-    expect(screen.getByText("Notes")).toBeTruthy();
+    expect(screen.getByText("Keep the recoveries honest.")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
     expect(screen.queryByText("Share")).toBeNull();
   });

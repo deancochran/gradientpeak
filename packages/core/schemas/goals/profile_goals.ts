@@ -112,6 +112,7 @@ const profileGoalHeaderSchema = z
     id: uuidSchema,
     profile_id: uuidSchema,
     milestone_event_id: uuidSchema,
+    target_date: dateOnlySchema,
     title: z.string().trim().min(1).max(100),
     priority: z.number().int().min(0).max(10),
     activity_category: canonicalGoalActivityCategorySchema,
@@ -241,6 +242,7 @@ export const profileGoalRecordSchema = profileGoalRecordInputBaseSchema
 export const profileGoalCreateSchema = profileGoalRecordInputBaseSchema
   .omit({
     id: true,
+    milestone_event_id: true,
   })
   .superRefine((record, ctx) => {
     const parsedObjective = safeParseCanonicalGoalObjective(
@@ -316,6 +318,7 @@ export function parseProfileGoalRecord(record: unknown): ProfileGoal {
     id: parsedRecord.id,
     profile_id: parsedRecord.profile_id,
     milestone_event_id: parsedRecord.milestone_event_id,
+    target_date: parsedRecord.target_date,
     title: parsedRecord.title,
     priority: parsedRecord.priority,
     activity_category: parsedRecord.activity_category,
@@ -326,15 +329,15 @@ export function parseProfileGoalRecord(record: unknown): ProfileGoal {
 /**
  * Resolves a goal's planning date from its linked milestone event.
  *
- * Goal timing is event-owned by design, so this helper rejects mismatched links
- * and returns the canonical event date in `YYYY-MM-DD` form.
+ * Goal timing is goal-owned by design, so this helper verifies the linked event
+ * still matches the canonical goal date before returning it.
  *
  * @param goal - Canonical goal with required `milestone_event_id`
  * @param linkedEvent - Event record referenced by the goal
  * @returns Resolved planning date derived from the linked event start
  */
 export function resolveGoalEventDate(
-  goal: Pick<ProfileGoal, "milestone_event_id">,
+  goal: Pick<ProfileGoal, "milestone_event_id" | "target_date">,
   linkedEvent: unknown,
 ): string {
   const event = profileGoalLinkedEventSchema.parse(linkedEvent);
@@ -343,7 +346,12 @@ export function resolveGoalEventDate(
     throw new Error("linked event id must match goal.milestone_event_id for timing resolution");
   }
 
-  return event.starts_at.slice(0, 10);
+  const eventDate = event.starts_at.slice(0, 10);
+  if (eventDate !== goal.target_date) {
+    throw new Error("linked event date must match goal.target_date for timing resolution");
+  }
+
+  return goal.target_date;
 }
 
 /**

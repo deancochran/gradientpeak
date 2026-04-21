@@ -7,6 +7,7 @@ export interface CalendarEventActivityPlan {
   estimated_duration?: number | null;
   estimated_duration_minutes?: number | null;
   estimated_tss?: number | null;
+  intensity_factor?: number | null;
   route_id?: string | null;
   structure?: unknown;
 }

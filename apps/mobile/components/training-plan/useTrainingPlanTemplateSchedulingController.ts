@@ -56,11 +56,9 @@ export function useTrainingPlanTemplateSchedulingController({
         });
       }
 
-      successActions.push({ text: "View Calendar", onPress: handleOpenCalendar });
-
       Alert.alert(
         "Plan scheduled",
-        `Scheduled ${result.created_event_count} session${result.created_event_count === 1 ? "" : "s"} on your calendar.`,
+        `Scheduled ${result.created_event_count} session${result.created_event_count === 1 ? "" : "s"}.`,
         successActions,
       );
     },

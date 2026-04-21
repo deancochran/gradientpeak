@@ -20,12 +20,12 @@ interface TrainingPlanSummaryHeaderProps {
 
 const titleClassByVariant: Record<TrainingPlanSummaryVariant, string> = {
   compact: "font-semibold text-lg mb-1",
-  default: "text-2xl font-bold mb-2",
+  default: "text-2xl font-semibold mb-1",
 };
 
 const descriptionClassByVariant: Record<TrainingPlanSummaryVariant, string> = {
   compact: "text-sm text-muted-foreground mb-2",
-  default: "text-base text-muted-foreground mb-3",
+  default: "text-sm leading-5 text-muted-foreground mb-3",
 };
 
 export function TrainingPlanSummaryHeader({

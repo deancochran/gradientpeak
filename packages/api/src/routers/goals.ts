@@ -5,9 +5,9 @@ import {
   profileGoalCreateSchema,
   profileGoalRecordSchema,
 } from "@repo/core";
-import { profileGoals } from "@repo/db";
+import { events, profileGoals, trainingPlans } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -32,7 +32,15 @@ function toSafeDbErrorMessage(error: unknown): string {
   return `${code}${message}`;
 }
 
+function rethrowTrpcError(error: unknown): never | void {
+  if (error instanceof TRPCError) {
+    throw error;
+  }
+}
+
 const goalIdSchema = z.string().uuid();
+const goalDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const milestoneTrainingPlanIdSchema = z.string().uuid().nullable().optional();
 
 const goalsListInputSchema = z
   .object({
@@ -42,14 +50,25 @@ const goalsListInputSchema = z
   })
   .strict();
 
-const profileGoalWriteSchema = profileGoalCreateSchema;
-const profileGoalUpdateDataSchema = z
+const profileGoalWriteSchema = z
   .object({
-    milestone_event_id: z.string().uuid(),
+    profile_id: z.string().uuid(),
+    target_date: goalDateSchema,
     title: z.string().trim().min(1).max(100),
     priority: z.number().int().min(0).max(10),
     activity_category: canonicalGoalActivityCategorySchema,
     target_payload: canonicalGoalObjectiveSchema,
+    training_plan_id: milestoneTrainingPlanIdSchema,
+  })
+  .strict();
+const profileGoalUpdateDataSchema = z
+  .object({
+    target_date: goalDateSchema,
+    title: z.string().trim().min(1).max(100),
+    priority: z.number().int().min(0).max(10),
+    activity_category: canonicalGoalActivityCategorySchema,
+    target_payload: canonicalGoalObjectiveSchema,
+    training_plan_id: milestoneTrainingPlanIdSchema,
   })
   .partial()
   .strict();
@@ -64,6 +83,67 @@ const profileGoalUpdateInputSchema = z
   .strict();
 
 type ProfileGoalRecord = z.infer<typeof profileGoalRecordSchema>;
+type GoalMilestoneProjection = {
+  eventType: "race" | "custom";
+  startsAt: string;
+  title: string;
+};
+
+function buildGoalMilestoneProjection(
+  input: Pick<ProfileGoalRecord, "target_date" | "title" | "target_payload">,
+): GoalMilestoneProjection {
+  return {
+    eventType: input.target_payload.type === "event_performance" ? "race" : "custom",
+    startsAt: `${input.target_date}T12:00:00.000Z`,
+    title: input.title,
+  };
+}
+
+async function assertOwnedTrainingPlan(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  profileId: string;
+  trainingPlanId: string;
+}): Promise<void> {
+  const [row] = await input.db
+    .select({ id: trainingPlans.id })
+    .from(trainingPlans)
+    .where(
+      and(
+        eq(trainingPlans.id, input.trainingPlanId),
+        eq(trainingPlans.profile_id, input.profileId),
+      ),
+    )
+    .limit(1);
+
+  if (!row) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Training plan not found or not accessible",
+    });
+  }
+}
+
+async function getOwnedMilestoneEvent(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  eventId: string;
+  profileId: string;
+}) {
+  const [row] = await input.db
+    .select({
+      id: events.id,
+      profile_id: events.profile_id,
+      training_plan_id: events.training_plan_id,
+    })
+    .from(events)
+    .where(eq(events.id, input.eventId))
+    .limit(1);
+
+  if (!row || row.profile_id !== input.profileId) {
+    return null;
+  }
+
+  return row;
+}
 
 async function listProfileGoals(input: {
   db: ReturnType<typeof getRequiredDb>;
@@ -76,6 +156,7 @@ async function listProfileGoals(input: {
       id: profileGoals.id,
       profile_id: profileGoals.profile_id,
       milestone_event_id: profileGoals.milestone_event_id,
+      target_date: profileGoals.target_date,
       title: profileGoals.title,
       priority: profileGoals.priority,
       activity_category: profileGoals.activity_category,
@@ -101,6 +182,7 @@ async function getProfileGoalById(input: {
           id: profileGoals.id,
           profile_id: profileGoals.profile_id,
           milestone_event_id: profileGoals.milestone_event_id,
+          target_date: profileGoals.target_date,
           title: profileGoals.title,
           priority: profileGoals.priority,
           activity_category: profileGoals.activity_category,
@@ -116,7 +198,7 @@ async function getProfileGoalById(input: {
 
 async function createProfileGoal(input: {
   db: ReturnType<typeof getRequiredDb>;
-  values: z.infer<typeof profileGoalWriteSchema>;
+  values: z.infer<typeof profileGoalCreateSchema> & { milestone_event_id: string };
 }): Promise<ProfileGoalRecord> {
   const [row] = await input.db
     .insert(profileGoals)
@@ -124,6 +206,7 @@ async function createProfileGoal(input: {
       id: randomUUID(),
       profile_id: input.values.profile_id,
       milestone_event_id: input.values.milestone_event_id,
+      target_date: input.values.target_date,
       title: input.values.title,
       priority: input.values.priority,
       activity_category: input.values.activity_category,
@@ -135,6 +218,7 @@ async function createProfileGoal(input: {
       id: profileGoals.id,
       profile_id: profileGoals.profile_id,
       milestone_event_id: profileGoals.milestone_event_id,
+      target_date: profileGoals.target_date,
       title: profileGoals.title,
       priority: profileGoals.priority,
       activity_category: profileGoals.activity_category,
@@ -153,6 +237,7 @@ async function updateProfileGoal(input: {
     .update(profileGoals)
     .set({
       milestone_event_id: input.data.milestone_event_id,
+      target_date: input.data.target_date,
       title: input.data.title,
       priority: input.data.priority,
       activity_category: input.data.activity_category,
@@ -164,6 +249,7 @@ async function updateProfileGoal(input: {
       id: profileGoals.id,
       profile_id: profileGoals.profile_id,
       milestone_event_id: profileGoals.milestone_event_id,
+      target_date: profileGoals.target_date,
       title: profileGoals.title,
       priority: profileGoals.priority,
       activity_category: profileGoals.activity_category,
@@ -178,6 +264,77 @@ async function deleteProfileGoal(input: {
   id: string;
 }): Promise<void> {
   await input.db.delete(profileGoals).where(eq(profileGoals.id, input.id));
+}
+
+async function createGoalMilestoneEvent(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  goal: Pick<ProfileGoalRecord, "profile_id" | "target_date" | "title" | "target_payload">;
+  trainingPlanId?: string | null;
+}): Promise<string> {
+  const projection = buildGoalMilestoneProjection(input.goal);
+  const [row] = await input.db
+    .insert(events)
+    .values({
+      id: randomUUID(),
+      created_at: new Date(),
+      updated_at: new Date(),
+      profile_id: input.goal.profile_id,
+      training_plan_id: input.trainingPlanId ?? null,
+      event_type: projection.eventType,
+      status: "scheduled",
+      title: projection.title,
+      all_day: true,
+      timezone: "UTC",
+      starts_at: new Date(projection.startsAt),
+      read_only: false,
+    })
+    .returning({ id: events.id });
+
+  if (!row) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to create linked milestone event",
+    });
+  }
+
+  return row.id;
+}
+
+async function updateGoalMilestoneEvent(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  eventId: string;
+  profileId: string;
+  goal: Pick<ProfileGoalRecord, "target_date" | "title" | "target_payload">;
+  trainingPlanId?: string | null;
+  preserveTrainingPlanId?: string | null;
+}): Promise<void> {
+  const projection = buildGoalMilestoneProjection(input.goal);
+  await input.db
+    .update(events)
+    .set({
+      updated_at: new Date(),
+      training_plan_id:
+        input.trainingPlanId !== undefined
+          ? input.trainingPlanId
+          : (input.preserveTrainingPlanId ?? null),
+      event_type: projection.eventType,
+      title: projection.title,
+      all_day: true,
+      timezone: "UTC",
+      starts_at: new Date(projection.startsAt),
+      read_only: false,
+    })
+    .where(and(eq(events.id, input.eventId), eq(events.profile_id, input.profileId)));
+}
+
+async function deleteGoalMilestoneEvent(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  eventId: string;
+  profileId: string;
+}): Promise<void> {
+  await input.db
+    .delete(events)
+    .where(and(eq(events.id, input.eventId), eq(events.profile_id, input.profileId)));
 }
 
 export const goalsRouter = createTRPCRouter({
@@ -235,14 +392,48 @@ export const goalsRouter = createTRPCRouter({
       profileId: input.profile_id,
     });
 
-    let createdGoal: ProfileGoalRecord;
-
     try {
-      createdGoal = await createProfileGoal({
-        db,
-        values: input,
+      if (input.training_plan_id) {
+        await assertOwnedTrainingPlan({
+          db,
+          profileId: input.profile_id,
+          trainingPlanId: input.training_plan_id,
+        });
+      }
+
+      const createdGoal = await db.transaction(async (tx) => {
+        const txDb = tx as unknown as ReturnType<typeof getRequiredDb>;
+        const milestoneEventId = await createGoalMilestoneEvent({
+          db: txDb,
+          goal: {
+            profile_id: input.profile_id,
+            target_date: input.target_date,
+            title: input.title,
+            target_payload: input.target_payload,
+          },
+          trainingPlanId: input.training_plan_id,
+        });
+
+        return createProfileGoal({
+          db: txDb,
+          values: {
+            profile_id: input.profile_id,
+            milestone_event_id: milestoneEventId,
+            target_date: input.target_date,
+            title: input.title,
+            priority: input.priority,
+            activity_category: input.activity_category,
+            target_payload: input.target_payload,
+          },
+        });
       });
+
+      return {
+        ...createdGoal,
+        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+      };
     } catch (error) {
+      rethrowTrpcError(error);
       console.error("goals.create failed", {
         profileId: input.profile_id,
         errorCode:
@@ -256,11 +447,6 @@ export const goalsRouter = createTRPCRouter({
         message: `Failed to create goal: ${toSafeDbErrorMessage(error)}`,
       });
     }
-
-    return {
-      ...createdGoal,
-      cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
-    };
   }),
 
   update: protectedProcedure
@@ -285,9 +471,10 @@ export const goalsRouter = createTRPCRouter({
         profileId: existingGoal.profile_id,
       });
 
+      const { training_plan_id, ...goalUpdateData } = input.data;
       const mergedGoal = profileGoalRecordSchema.safeParse({
         ...existingGoal,
-        ...input.data,
+        ...goalUpdateData,
       });
 
       if (!mergedGoal.success) {
@@ -298,25 +485,63 @@ export const goalsRouter = createTRPCRouter({
         });
       }
 
-      let updatedGoal: ProfileGoalRecord;
-
       try {
-        updatedGoal = await updateProfileGoal({
-          db,
-          id: input.id,
-          data: mergedGoal.data,
+        if (training_plan_id) {
+          await assertOwnedTrainingPlan({
+            db,
+            profileId: existingGoal.profile_id,
+            trainingPlanId: training_plan_id,
+          });
+        }
+
+        const updatedGoal = await db.transaction(async (tx) => {
+          const txDb = tx as unknown as ReturnType<typeof getRequiredDb>;
+          const existingMilestoneEvent = await getOwnedMilestoneEvent({
+            db: txDb,
+            eventId: existingGoal.milestone_event_id,
+            profileId: existingGoal.profile_id,
+          });
+
+          const milestoneEventId = existingMilestoneEvent?.id
+            ? existingMilestoneEvent.id
+            : await createGoalMilestoneEvent({
+                db: txDb,
+                goal: mergedGoal.data,
+                trainingPlanId: training_plan_id,
+              });
+
+          if (existingMilestoneEvent?.id) {
+            await updateGoalMilestoneEvent({
+              db: txDb,
+              eventId: existingMilestoneEvent.id,
+              profileId: existingGoal.profile_id,
+              goal: mergedGoal.data,
+              trainingPlanId: training_plan_id,
+              preserveTrainingPlanId: existingMilestoneEvent.training_plan_id,
+            });
+          }
+
+          return updateProfileGoal({
+            db: txDb,
+            id: input.id,
+            data: {
+              ...mergedGoal.data,
+              milestone_event_id: milestoneEventId,
+            },
+          });
         });
-      } catch {
+
+        return {
+          ...updatedGoal,
+          cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+        };
+      } catch (error) {
+        rethrowTrpcError(error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update goal",
         });
       }
-
-      return {
-        ...updatedGoal,
-        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
-      };
     }),
 
   delete: protectedProcedure.input(goalIdInputSchema).mutation(async ({ ctx, input }) => {
@@ -340,11 +565,20 @@ export const goalsRouter = createTRPCRouter({
     });
 
     try {
-      await deleteProfileGoal({
-        db,
-        id: input.id,
+      await db.transaction(async (tx) => {
+        const txDb = tx as unknown as ReturnType<typeof getRequiredDb>;
+        await deleteProfileGoal({
+          db: txDb,
+          id: input.id,
+        });
+        await deleteGoalMilestoneEvent({
+          db: txDb,
+          eventId: existingGoal.milestone_event_id,
+          profileId: existingGoal.profile_id,
+        });
       });
-    } catch {
+    } catch (error) {
+      rethrowTrpcError(error);
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Failed to delete goal",

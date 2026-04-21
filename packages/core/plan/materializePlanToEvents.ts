@@ -13,9 +13,33 @@ export interface MaterializedPlanEvent {
   starts_at: string;
   ends_at: string;
   title: string;
+  event_title_override: string | null;
   event_type: MaterializedPlanEventType;
   activity_plan_id: string | null;
   all_day: true;
+}
+
+function getSessionTitleOverride(session: SessionSource): string | null {
+  if (
+    typeof session.event_title_override === "string" &&
+    session.event_title_override.trim().length > 0
+  ) {
+    return session.event_title_override.trim();
+  }
+
+  return null;
+}
+
+function getLegacySessionTitle(session: SessionSource): string | null {
+  if (typeof session.title === "string" && session.title.trim().length > 0) {
+    return session.title.trim();
+  }
+
+  if (typeof session.name === "string" && session.name.trim().length > 0) {
+    return session.name.trim();
+  }
+
+  return null;
 }
 
 function toDayStartIso(dateOnly: string): string {
@@ -135,11 +159,8 @@ export function materializePlanToEvents(
     }
 
     const activityPlanId = isUuidString(session.activity_plan_id) ? session.activity_plan_id : null;
-
-    const title =
-      typeof session.title === "string" && session.title.trim().length > 0
-        ? session.title.trim()
-        : fallbackTitle;
+    const eventTitleOverride = getSessionTitleOverride(session);
+    const title = eventTitleOverride ?? getLegacySessionTitle(session) ?? fallbackTitle;
 
     const key = `${scheduledDate}|planned|${activityPlanId ?? "none"}|${title}`;
     if (dedupe.has(key)) {
@@ -152,6 +173,7 @@ export function materializePlanToEvents(
       starts_at: toDayStartIso(scheduledDate),
       ends_at: toNextDayStartIso(scheduledDate),
       title,
+      event_title_override: eventTitleOverride,
       event_type: "planned",
       activity_plan_id: activityPlanId,
       all_day: true,

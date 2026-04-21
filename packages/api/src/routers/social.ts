@@ -3,6 +3,7 @@ import {
   activities,
   activityPlans,
   activityRoutes,
+  events,
   likes,
   profiles,
   publicNotificationTypeSchema,
@@ -19,7 +20,14 @@ const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
 const nullableUsernameSchema = z.string().nullable();
 const followStatusSchema = z.enum(["pending", "accepted"]);
-const entityTypeSchema = z.enum(["activity", "training_plan", "activity_plan", "route"]);
+const likeEntityTypeSchema = z.enum(["activity", "training_plan", "activity_plan", "route"]);
+const commentEntityTypeSchema = z.enum([
+  "activity",
+  "training_plan",
+  "activity_plan",
+  "route",
+  "event",
+]);
 type FollowNotificationType = Extract<
   z.infer<typeof publicNotificationTypeSchema>,
   "follow_request" | "new_follower"
@@ -65,7 +73,7 @@ const commentInsertRowSchema = z
     id: uuidSchema,
     profile_id: uuidSchema,
     entity_id: uuidSchema,
-    entity_type: entityTypeSchema,
+    entity_type: commentEntityTypeSchema,
     content: z.string(),
     created_at: z.union([z.date(), z.string()]),
   })
@@ -86,7 +94,7 @@ const commentListRowSchema = z
 
 const trainingPlanAccessRowSchema = z
   .object({
-    profile_id: uuidSchema,
+    profile_id: uuidSchema.nullable(),
     is_system_template: z.boolean(),
     template_visibility: z.enum(["private", "public"]),
   })
@@ -272,6 +280,21 @@ async function checkRouteAccess(db: DbClient, routeId: string, userId: string): 
   return route.profile_id === userId || route.is_public;
 }
 
+async function checkEventAccess(db: DbClient, eventId: string, userId: string): Promise<boolean> {
+  const event = await db.query.events.findFirst({
+    columns: {
+      profile_id: true,
+    },
+    where: eq(events.id, eventId),
+  });
+
+  if (!event) {
+    return false;
+  }
+
+  return event.profile_id === userId;
+}
+
 export const socialRouter = createTRPCRouter({
   followUser: protectedProcedure
     .input(z.object({ target_user_id: z.string().uuid() }).strict())
@@ -447,7 +470,7 @@ export const socialRouter = createTRPCRouter({
       z
         .object({
           entity_id: z.string().uuid(),
-          entity_type: entityTypeSchema,
+          entity_type: likeEntityTypeSchema,
         })
         .strict(),
     )
@@ -762,7 +785,7 @@ export const socialRouter = createTRPCRouter({
       z
         .object({
           entity_id: z.string().uuid(),
-          entity_type: entityTypeSchema,
+          entity_type: commentEntityTypeSchema,
           content: z.string().min(1).max(1000),
         })
         .strict(),
@@ -800,6 +823,17 @@ export const socialRouter = createTRPCRouter({
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "You don't have permission to comment on this route",
+          });
+        }
+      }
+
+      if (input.entity_type === "event") {
+        const hasAccess = await checkEventAccess(db, input.entity_id, userId);
+
+        if (!hasAccess) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You don't have permission to view comments on this event",
           });
         }
       }
@@ -866,7 +900,7 @@ export const socialRouter = createTRPCRouter({
       z
         .object({
           entity_id: z.string().uuid(),
-          entity_type: entityTypeSchema,
+          entity_type: commentEntityTypeSchema,
           limit: z.number().min(1).max(100).default(20),
           offset: z.number().min(0).default(0),
         })

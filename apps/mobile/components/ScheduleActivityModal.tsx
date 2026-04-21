@@ -528,6 +528,9 @@ export function ScheduleActivityModal({
                 {/* Activity Plan Summary */}
                 <Card>
                   <CardContent className="p-4 gap-4">
+                    <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Selected activity
+                    </Text>
                     <View className="flex-row items-start gap-3">
                       <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
                         <Text className="text-xl">
@@ -535,39 +538,29 @@ export function ScheduleActivityModal({
                         </Text>
                       </View>
                       <View className="flex-1 gap-1">
-                        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Selected activity
-                        </Text>
                         <Text className="text-lg font-semibold text-foreground">
                           {displayPlan.name}
                         </Text>
-                        {displayPlan.description && (
+                        {displayPlan.description ? (
                           <Text
                             className="text-sm leading-5 text-muted-foreground"
                             numberOfLines={3}
                           >
                             {displayPlan.description}
                           </Text>
-                        )}
+                        ) : null}
                       </View>
                     </View>
 
-                    <View className="rounded-xl border border-border bg-background px-3 py-3">
-                      <View className="gap-1">
-                        <Text className="text-sm font-medium text-foreground">
-                          Activity preview
-                        </Text>
-                        <Text className="text-sm text-muted-foreground">
-                          Review the session shape before you save the activity.
-                        </Text>
-                      </View>
-                      <View className="mt-3" testID="schedule-preview-details">
-                        <ActivityPlanContentPreview
-                          compact
-                          plan={displayPlan}
-                          route={displayRoute}
-                        />
-                      </View>
+                    <Text className="text-sm text-muted-foreground">
+                      Review the session shape before you save the activity.
+                    </Text>
+                    <View testID="schedule-preview-details">
+                      <ActivityPlanContentPreview
+                        size="medium"
+                        plan={displayPlan}
+                        route={displayRoute}
+                      />
                     </View>
                   </CardContent>
                 </Card>
@@ -637,43 +630,41 @@ export function ScheduleActivityModal({
 
                 {/* Constraint Validation Summary */}
                 {trainingPlanId && validationSummary && (
-                  <View>
-                    <View className={`rounded-xl border px-4 py-4 ${validationSummary.tone}`}>
-                      <View className="flex-row items-start justify-between gap-3">
-                        <View className="flex-1 gap-1">
-                          <Text className={`text-sm font-semibold ${validationSummary.textTone}`}>
-                            {validationSummary.title}
-                          </Text>
-                          <Text className="text-sm text-muted-foreground">
-                            {validationSummary.detail}
-                          </Text>
-                        </View>
-                        <Pressable
-                          onPress={() => setShowConstraintDetails((current) => !current)}
-                          className="flex-row items-center gap-1 rounded-full border border-border bg-background px-3 py-2"
-                          disabled={isSubmitting}
-                          testID="schedule-constraints-toggle"
-                        >
-                          <Text className="text-xs font-semibold text-foreground">
-                            {showConstraintDetails ? "Hide" : "Details"}
-                          </Text>
-                          <Icon
-                            as={showConstraintDetails ? ChevronUp : ChevronDown}
-                            size={14}
-                            className="text-foreground"
-                          />
-                        </Pressable>
+                  <View className={`rounded-xl border px-4 py-4 ${validationSummary.tone}`}>
+                    <View className="flex-row items-start justify-between gap-3">
+                      <View className="flex-1 gap-1">
+                        <Text className={`text-sm font-semibold ${validationSummary.textTone}`}>
+                          {validationSummary.title}
+                        </Text>
+                        <Text className="text-sm text-muted-foreground">
+                          {validationSummary.detail}
+                        </Text>
                       </View>
-
-                      {showConstraintDetails && (
-                        <View className="mt-3" testID="schedule-constraints-details">
-                          <ConstraintValidator
-                            validation={validation ?? null}
-                            isLoading={validationLoading}
-                          />
-                        </View>
-                      )}
+                      <Pressable
+                        onPress={() => setShowConstraintDetails((current) => !current)}
+                        className="flex-row items-center gap-1 rounded-full border border-border bg-background px-3 py-2"
+                        disabled={isSubmitting}
+                        testID="schedule-constraints-toggle"
+                      >
+                        <Text className="text-xs font-semibold text-foreground">
+                          {showConstraintDetails ? "Hide" : "Details"}
+                        </Text>
+                        <Icon
+                          as={showConstraintDetails ? ChevronUp : ChevronDown}
+                          size={14}
+                          className="text-foreground"
+                        />
+                      </Pressable>
                     </View>
+
+                    {showConstraintDetails ? (
+                      <View className="mt-3" testID="schedule-constraints-details">
+                        <ConstraintValidator
+                          validation={validation ?? null}
+                          isLoading={validationLoading}
+                        />
+                      </View>
+                    ) : null}
                   </View>
                 )}
 

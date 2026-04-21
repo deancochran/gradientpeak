@@ -180,6 +180,12 @@ const nativeCss = `${GENERATED_HEADER}
 ${formatDeclarations(nativeLightEntries)}
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+${formatDeclarations(nativeDarkEntries)}
+  }
+}
+
 @theme inline {
 ${formatThemeAliases()}
 }

@@ -2,6 +2,7 @@ const asyncStorageState = new Map<string, string>();
 const appearanceSetColorSchemeMock = jest.fn();
 const appearanceListenerMock = jest.fn();
 const appearanceGetColorSchemeMock = jest.fn(() => "light");
+const nativeCssSetColorSchemeMock = jest.fn();
 
 async function waitFor(expectation: () => void, attempts = 10) {
   let lastError: unknown;
@@ -40,6 +41,13 @@ jest.mock("react-native", () => ({
   },
 }));
 
+jest.mock("react-native-css/native", () => ({
+  __esModule: true,
+  colorScheme: {
+    set: nativeCssSetColorSchemeMock,
+  },
+}));
+
 jest.mock("@/lib/theme", () => ({
   __esModule: true,
   resolveThemeMode: (preference: "system" | "light" | "dark", systemColorScheme = "light") =>
@@ -65,6 +73,7 @@ describe("theme store", () => {
     await waitFor(() => {
       expect(useThemeStore.getState().userPreference).toBe("dark");
       expect(useThemeStore.getState().resolvedTheme).toBe("dark");
+      expect(nativeCssSetColorSchemeMock).toHaveBeenCalledWith("dark");
       expect(appearanceSetColorSchemeMock).toHaveBeenCalledWith("dark");
     });
   });
@@ -76,6 +85,7 @@ describe("theme store", () => {
 
     expect(useThemeStore.getState().userPreference).toBe("dark");
     expect(useThemeStore.getState().resolvedTheme).toBe("dark");
+    expect(nativeCssSetColorSchemeMock).toHaveBeenCalledWith("dark");
     expect(appearanceSetColorSchemeMock).toHaveBeenCalledWith("dark");
     expect(asyncStorageState.get("gradientpeak-theme-store")).toContain('"userPreference":"dark"');
     expect(asyncStorageState.has("@theme_preference")).toBe(false);

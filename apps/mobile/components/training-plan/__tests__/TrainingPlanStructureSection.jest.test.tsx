@@ -37,44 +37,45 @@ const getAllByTypeOrEmpty = (type: string) => {
   }
 };
 
+const getNodeText = (children: any): string => {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(getNodeText).join("");
+  if (children?.props?.children !== undefined) return getNodeText(children.props.children);
+  return "";
+};
+
+const findTouchableByText = (text: string) =>
+  getAllByTypeOrEmpty("TouchableOpacity").find((node: any) => {
+    if (typeof node.props?.onPress !== "function") {
+      return false;
+    }
+
+    return node.findAll((child: any) => getNodeText(child.props?.children) === text).length > 0;
+  });
+
 describe("TrainingPlanStructureSection", () => {
-  it("sanitizes non-finite linked activity metrics to 0", () => {
+  it("renders the session-view empty state", () => {
     renderNative(
       <TrainingPlanStructureSection
         activityPlanItems={[]}
         activityPlanNameById={new Map()}
         formatCompactDayLabel={() => "Mon · Day 1"}
         groupedStructureSessions={[]}
-        hasIntervals={() => false}
         isLoadingActivityPlans={false}
-        isLoadingLinkedPlans={false}
         isOwnedByUser={false}
-        linkedActivityPlanItems={[]}
-        maxWeeklyLoad={1}
         onActivityPickerOpenChange={jest.fn()}
-        onEditStructure={jest.fn()}
         onOpenActivityPickerForSession={jest.fn()}
         onRefreshActivityPlans={jest.fn()}
         onRemoveActivityFromSession={jest.fn()}
         onSelectActivityForSession={jest.fn()}
-        planStructure={{}}
         selectedSessionRow={null}
         showActivityPicker={false}
-        uniqueLinkedActivityPlans={[
-          {
-            id: "activity-1",
-            name: "Workout",
-            activity_category: "run",
-            estimated_tss: Number.NaN,
-            estimated_duration: Number.NaN,
-          },
-        ]}
         updatePlanStructurePending={false}
-        weeklyLoadSummary={[]}
       />,
     );
 
-    expect(screen.getByText(/RUN · 0 TSS · 0 min/)).toBeTruthy();
+    expect(screen.getByText(/No structured sessions found in this template yet./)).toBeTruthy();
   });
 
   it("delegates picker close events back to the route owner", () => {
@@ -86,24 +87,16 @@ describe("TrainingPlanStructureSection", () => {
         activityPlanNameById={new Map()}
         formatCompactDayLabel={() => "Mon · Day 1"}
         groupedStructureSessions={[]}
-        hasIntervals={() => false}
         isLoadingActivityPlans={false}
-        isLoadingLinkedPlans={false}
         isOwnedByUser={false}
-        linkedActivityPlanItems={[]}
-        maxWeeklyLoad={1}
         onActivityPickerOpenChange={onActivityPickerOpenChange}
-        onEditStructure={jest.fn()}
         onOpenActivityPickerForSession={jest.fn()}
         onRefreshActivityPlans={jest.fn()}
         onRemoveActivityFromSession={jest.fn()}
         onSelectActivityForSession={jest.fn()}
-        planStructure={{}}
         selectedSessionRow={null}
         showActivityPicker={true}
-        uniqueLinkedActivityPlans={[]}
         updatePlanStructurePending={false}
-        weeklyLoadSummary={[]}
       />,
     );
 
@@ -113,5 +106,55 @@ describe("TrainingPlanStructureSection", () => {
     });
 
     expect(onActivityPickerOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("opens the activity picker for an owned session", () => {
+    const onOpenActivityPickerForSession = jest.fn();
+
+    renderNative(
+      <TrainingPlanStructureSection
+        activityPlanItems={[]}
+        activityPlanNameById={new Map([["activity-1", "Workout"]])}
+        formatCompactDayLabel={() => "Mon · Day 1"}
+        groupedStructureSessions={[
+          {
+            microcycle: 1,
+            days: [
+              {
+                dayOffset: 0,
+                sessions: [
+                  {
+                    key: "session-1",
+                    title: "Workout",
+                    activityPlanId: "activity-1",
+                    dayOffset: 0,
+                    sourcePath: [],
+                  },
+                ],
+              },
+            ],
+          },
+        ]}
+        isLoadingActivityPlans={false}
+        isOwnedByUser={true}
+        onActivityPickerOpenChange={jest.fn()}
+        onOpenActivityPickerForSession={onOpenActivityPickerForSession}
+        onRefreshActivityPlans={jest.fn()}
+        onRemoveActivityFromSession={jest.fn()}
+        onSelectActivityForSession={jest.fn()}
+        selectedSessionRow={null}
+        showActivityPicker={false}
+        updatePlanStructurePending={false}
+      />,
+    );
+
+    const trigger = findTouchableByText("Change");
+    act(() => {
+      trigger.props.onPress();
+    });
+
+    expect(onOpenActivityPickerForSession).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "session-1" }),
+    );
   });
 });

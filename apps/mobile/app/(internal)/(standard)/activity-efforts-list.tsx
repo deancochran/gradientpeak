@@ -1,48 +1,20 @@
-import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { useRouter } from "expo-router";
-import { Activity, Plus, Timer, Trash2, Zap } from "lucide-react-native";
+import { Stack } from "expo-router";
+import { Activity, ChevronRight, Timer, Zap } from "lucide-react-native";
 import React from "react";
-import { Alert, FlatList, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function ActivityEffortsList() {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
-  const utils = api.useUtils();
 
   const { data: efforts, isLoading, error } = api.activityEfforts.getForProfile.useQuery();
-
-  const deleteMutation = api.activityEfforts.delete.useMutation({
-    onSuccess: () => {
-      utils.activityEfforts.getForProfile.invalidate();
-    },
-    onError: (err) => {
-      Alert.alert("Error", err.message || "Failed to delete effort");
-    },
-  });
-
-  const handleDelete = (id: string) => {
-    Alert.alert("Delete Effort", "Are you sure you want to delete this activity effort?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => deleteMutation.mutate({ id }),
-      },
-    ]);
-  };
 
   if (isLoading) {
     return (
@@ -63,66 +35,77 @@ function ActivityEffortsList() {
 
   return (
     <View className="flex-1 bg-background">
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              onPress={() => navigateTo("/(internal)/(standard)/activity-effort-create" as any)}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="activity-efforts-list-add-trigger"
+            >
+              <Text className="text-sm font-medium text-primary">Add</Text>
+            </Pressable>
+          ),
+        }}
+      />
       <FlatList
         data={efforts}
         keyExtractor={(item) => item.id}
         contentContainerClassName="p-4 gap-4"
+        ListHeaderComponent={
+          efforts && efforts.length > 0 ? (
+            <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
+              <Text className="text-sm text-muted-foreground">
+                {efforts.length} {efforts.length === 1 ? "effort" : "efforts"}
+              </Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <View className="items-center justify-center py-10">
             <Icon as={Activity} size={48} className="text-muted-foreground mb-4" />
-            <Text className="text-lg font-medium text-foreground">No efforts recorded</Text>
+            <Text className="text-lg font-medium text-foreground">No activity efforts yet</Text>
             <Text className="text-sm text-muted-foreground text-center mt-2">
-              Record your best efforts for power and speed across different activities.
+              Your recorded activity efforts will appear here.
             </Text>
           </View>
         }
         renderItem={({ item }) => (
-          <Card>
-            <CardHeader className="flex-row justify-between items-start pb-2">
-              <View>
-                <CardTitle className="capitalize text-lg text-foreground">
-                  {item.activity_category} - {item.effort_type}
-                </CardTitle>
-                <CardDescription>
-                  {format(new Date(item.recorded_at), "MMM d, yyyy")}
-                </CardDescription>
-              </View>
-              <Button
-                variant="ghost"
-                size="sm"
-                onPress={() => handleDelete(item.id)}
-                disabled={deleteMutation.isPending}
-              >
-                <Icon as={Trash2} size={18} className="text-destructive" />
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <View className="flex-row justify-between mt-2">
-                <View className="flex-row items-center gap-2">
-                  <Icon as={Timer} size={16} className="text-muted-foreground" />
-                  <Text className="text-foreground font-medium">{item.duration_seconds}s</Text>
+          <Pressable
+            onPress={() => navigateTo(ROUTES.ACTIVITIES.EFFORT_DETAIL(item.id) as any)}
+            testID={`activity-effort-list-item-${item.id}`}
+          >
+            <Card className="rounded-3xl border border-border bg-card">
+              <CardContent className="gap-3 p-4">
+                <View className="flex-row items-start justify-between gap-3">
+                  <View className="flex-1 gap-1">
+                    <Text className="text-base font-semibold capitalize text-foreground">
+                      {item.activity_category} • {item.effort_type}
+                    </Text>
+                    <Text className="text-sm text-muted-foreground">
+                      {format(new Date(item.recorded_at), "MMM d, yyyy")}
+                    </Text>
+                  </View>
+                  <Icon as={ChevronRight} size={16} className="text-muted-foreground" />
                 </View>
-                <View className="flex-row items-center gap-2">
-                  <Icon as={Zap} size={16} className="text-primary" />
-                  <Text className="text-foreground font-bold text-lg">
-                    {item.value} {item.unit}
-                  </Text>
+
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-2">
+                    <Icon as={Timer} size={16} className="text-muted-foreground" />
+                    <Text className="font-medium text-foreground">{item.duration_seconds}s</Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <Icon as={Zap} size={16} className="text-primary" />
+                    <Text className="text-lg font-bold text-foreground">
+                      {item.value} {item.unit}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Pressable>
         )}
       />
-
-      <View className="absolute bottom-6 right-6">
-        <Button
-          size="icon"
-          className="h-14 w-14 rounded-full shadow-lg"
-          onPress={() => navigateTo("/(internal)/(standard)/activity-effort-create" as any)}
-        >
-          <Icon as={Plus} size={24} className="text-primary-foreground" />
-        </Button>
-      </View>
     </View>
   );
 }

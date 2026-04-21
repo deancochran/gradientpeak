@@ -230,16 +230,13 @@ export function createEmptyGoalDraft(): GoalEditorDraft {
   };
 }
 
-export function buildGoalDraftFromGoal(input: {
-  goal: ProfileGoal;
-  targetDate?: string | null;
-}): GoalEditorDraft {
-  const { goal, targetDate } = input;
+export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditorDraft {
+  const { goal } = input;
 
   if (goal.objective.type === "event_performance") {
     return {
       title: goal.title,
-      targetDate: targetDate ?? "",
+      targetDate: goal.target_date,
       importance: goal.priority,
       goalType: "race_performance",
       activityCategory: goal.activity_category,
@@ -265,7 +262,7 @@ export function buildGoalDraftFromGoal(input: {
     if (goal.objective.metric === "pace") {
       return {
         title: goal.title,
-        targetDate: targetDate ?? "",
+        targetDate: goal.target_date,
         importance: goal.priority,
         goalType: "pace_threshold",
         activityCategory: "run",
@@ -287,7 +284,7 @@ export function buildGoalDraftFromGoal(input: {
     if (goal.objective.metric === "power") {
       return {
         title: goal.title,
-        targetDate: targetDate ?? "",
+        targetDate: goal.target_date,
         importance: goal.priority,
         goalType: "power_threshold",
         activityCategory: "bike",
@@ -308,7 +305,7 @@ export function buildGoalDraftFromGoal(input: {
 
     return {
       title: goal.title,
-      targetDate: targetDate ?? "",
+      targetDate: goal.target_date,
       importance: goal.priority,
       goalType: "hr_threshold",
       activityCategory: goal.activity_category,
@@ -327,7 +324,7 @@ export function buildGoalDraftFromGoal(input: {
   if (goal.objective.type === "completion") {
     return {
       title: goal.title,
-      targetDate: targetDate ?? "",
+      targetDate: goal.target_date,
       importance: goal.priority,
       goalType: "completion",
       activityCategory: goal.activity_category,
@@ -348,7 +345,7 @@ export function buildGoalDraftFromGoal(input: {
 
   return {
     title: goal.title,
-    targetDate: targetDate ?? "",
+    targetDate: goal.target_date,
     importance: goal.priority,
     goalType: "consistency",
     activityCategory: goal.activity_category,
@@ -364,11 +361,7 @@ export function buildGoalDraftFromGoal(input: {
   };
 }
 
-export function buildGoalCreatePayload(input: {
-  draft: GoalEditorDraft;
-  profileId: string;
-  milestoneEventId: string;
-}) {
+export function buildGoalCreatePayload(input: { draft: GoalEditorDraft; profileId: string }) {
   const activityCategory = resolveGoalActivityCategory(input.draft);
   const targetPayload = buildGoalTargetPayload({
     draft: input.draft,
@@ -377,7 +370,7 @@ export function buildGoalCreatePayload(input: {
 
   return profileGoalCreateSchema.parse({
     profile_id: input.profileId,
-    milestone_event_id: input.milestoneEventId,
+    target_date: input.draft.targetDate,
     title: input.draft.title.trim(),
     priority: Math.max(0, Math.min(10, input.draft.importance)),
     activity_category: activityCategory,
@@ -385,18 +378,14 @@ export function buildGoalCreatePayload(input: {
   });
 }
 
-export function buildGoalUpdatePayload(input: {
-  draft: GoalEditorDraft;
-  milestoneEventId: string;
-}) {
+export function buildGoalUpdatePayload(input: { draft: GoalEditorDraft }) {
   const createPayload = buildGoalCreatePayload({
     draft: input.draft,
     profileId: "00000000-0000-0000-0000-000000000000",
-    milestoneEventId: input.milestoneEventId,
   });
 
   return {
-    milestone_event_id: createPayload.milestone_event_id,
+    target_date: createPayload.target_date,
     title: createPayload.title,
     priority: createPayload.priority,
     activity_category: createPayload.activity_category,

@@ -5,8 +5,8 @@ import { format } from "date-fns";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
-import { CalendarEventCard } from "@/components/calendar/CalendarEventCard";
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
@@ -27,6 +27,159 @@ function formatCalendarDayTitle(dateKey: string, todayKey: string) {
   }
 
   return format(date, "EEEE, MMMM d");
+}
+
+function readMetric(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function formatTimeRange(event: CalendarEvent): string {
+  if (event.all_day) {
+    return "All day";
+  }
+
+  if (!event.starts_at) {
+    return "Scheduled";
+  }
+
+  const start = new Date(event.starts_at);
+  if (Number.isNaN(start.getTime())) {
+    return "Scheduled";
+  }
+
+  if (!event.ends_at) {
+    return format(start, "h:mm a");
+  }
+
+  const end = new Date(event.ends_at);
+  if (Number.isNaN(end.getTime())) {
+    return format(start, "h:mm a");
+  }
+
+  return `${format(start, "h:mm a")} - ${format(end, "h:mm a")}`;
+}
+
+function readEventPlace(event: CalendarEvent): string | null {
+  const source = event as CalendarEvent & {
+    location?: string | null;
+    place?: string | null;
+    venue?: string | null;
+  };
+
+  const value = source.location ?? source.place ?? source.venue ?? null;
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function PlannedAgendaEventCard({
+  event,
+  onPress,
+  onStart,
+}: {
+  event: CalendarEvent;
+  onPress: () => void;
+  onStart?: (() => void) | null;
+}) {
+  const estimatedTss = readMetric(event.activity_plan?.estimated_tss);
+  const intensityFactor = readMetric(event.activity_plan?.intensity_factor);
+  const routeId = event.activity_plan?.route_id;
+  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+  const eventNote = event.notes?.trim() || event.description?.trim() || null;
+  const planDescription =
+    event.activity_plan?.notes?.trim() || event.activity_plan?.description?.trim() || null;
+
+  return (
+    <View
+      className="rounded-3xl border border-primary/10 bg-card p-4"
+      testID={`schedule-event-${event.id}`}
+    >
+      <TouchableOpacity onPress={onPress} activeOpacity={0.85} className="gap-3">
+        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {formatTimeRange(event)}
+        </Text>
+        <Text className="text-base font-semibold text-foreground">
+          {event.title || event.activity_plan?.name || "Planned activity"}
+        </Text>
+        {eventNote ? (
+          <Text className="text-sm leading-5 text-muted-foreground">{eventNote}</Text>
+        ) : null}
+
+        <ActivityPlanSummary
+          activityCategory={event.activity_plan?.activity_category}
+          description={null}
+          estimatedDuration={readMetric(event.activity_plan?.estimated_duration)}
+          estimatedDurationMinutes={readMetric(event.activity_plan?.estimated_duration_minutes)}
+          intensityFactor={intensityFactor}
+          estimatedTss={estimatedTss}
+          routeName={route?.name}
+          routeProvided={!!routeId}
+          structure={event.activity_plan?.structure}
+          subtitle="Attached activity plan"
+          testID={`calendar-day-planned-${event.id}`}
+          title={event.activity_plan?.name}
+          variant="embedded"
+        />
+
+        <ActivityPlanContentPreview
+          compact
+          size="small"
+          durationLabel={null}
+          intensityFactor={intensityFactor}
+          plan={event.activity_plan}
+          route={route}
+          tss={estimatedTss}
+          testIDPrefix={`calendar-day-planned-${event.id}`}
+        />
+      </TouchableOpacity>
+
+      {onStart ? (
+        <TouchableOpacity
+          onPress={onStart}
+          activeOpacity={0.85}
+          className="mt-3 self-end rounded-full border border-border bg-background px-3 py-2"
+          testID={`schedule-event-action-${event.id}`}
+        >
+          <Text className="text-xs font-medium text-foreground">Start Activity</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function SimpleAgendaEventCard({ event, onPress }: { event: CalendarEvent; onPress: () => void }) {
+  const place = readEventPlace(event);
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      className="rounded-3xl border border-border bg-card px-4 py-4"
+      testID={`schedule-event-${event.id}`}
+    >
+      <View className="gap-1.5">
+        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {formatTimeRange(event)}
+        </Text>
+        <Text className="text-base font-semibold text-foreground">
+          {event.title || "Scheduled event"}
+        </Text>
+        {event.description || event.notes ? (
+          <Text className="text-sm leading-5 text-muted-foreground">
+            {event.description || event.notes}
+          </Text>
+        ) : null}
+        {place ? <Text className="text-xs text-muted-foreground">{place}</Text> : null}
+      </View>
+    </TouchableOpacity>
+  );
 }
 
 export default function CalendarDayScreen() {
@@ -70,11 +223,6 @@ export default function CalendarDayScreen() {
   };
 
   const handleOpenEvent = (event: CalendarEvent) => {
-    if (event.event_type === "planned" && event.activity_plan?.id) {
-      navigateTo(ROUTES.PLAN.PLAN_DETAIL(event.activity_plan.id) as never);
-      return;
-    }
-
     const route = buildOpenEventRoute({
       id: event.id,
       event_type: event.event_type === null ? undefined : (event.event_type as any),
@@ -104,9 +252,27 @@ export default function CalendarDayScreen() {
     navigateTo(ROUTES.RECORD);
   };
 
+  const handleCreateEvent = () => {
+    navigateTo(ROUTES.PLAN.EVENT_CREATE(dateKey));
+  };
+
   return (
     <View className="flex-1 bg-background">
-      <Stack.Screen options={{ title }} />
+      <Stack.Screen
+        options={{
+          title,
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={handleCreateEvent}
+              className="mr-2 rounded-full px-2 py-1"
+              activeOpacity={0.85}
+              testID="calendar-day-create-event-button"
+            >
+              <Text className="text-sm font-medium text-primary">Create</Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
 
       {isLoading && !data ? (
         <View className="flex-1 items-center justify-center px-6">
@@ -136,39 +302,19 @@ export default function CalendarDayScreen() {
 
               {visibleEvents.map((event) =>
                 event.event_type === "planned" && event.activity_plan ? (
-                  <View key={event.id} className="gap-2">
-                    <ActivityPlanCard
-                      plannedActivity={{
-                        id: event.id,
-                        activity_plan_id: String(event.activity_plan.id),
-                        activity_plan: event.activity_plan as any,
-                        scheduled_date: event.scheduled_date ?? event.starts_at ?? "",
-                        notes: event.notes,
-                        completed_activity_id: (event as any).completed_activity_id ?? null,
-                      }}
-                      onPress={() => handleOpenEvent(event)}
-                      showScheduleInfo={true}
-                    />
-                    {getCanStartPlannedEvent(event) ? (
-                      <TouchableOpacity
-                        onPress={() => handleQuickActionPress(event)}
-                        activeOpacity={0.85}
-                        className="self-end rounded-full border border-border bg-background px-3 py-2"
-                        testID={`schedule-event-action-${event.id}`}
-                      >
-                        <Text className="text-xs font-medium text-foreground">Start Activity</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                ) : (
-                  <CalendarEventCard
+                  <PlannedAgendaEventCard
                     key={event.id}
                     event={event}
-                    canStart={getCanStartPlannedEvent(event)}
                     onPress={() => handleOpenEvent(event)}
-                    onQuickActionPress={
+                    onStart={
                       getCanStartPlannedEvent(event) ? () => handleQuickActionPress(event) : null
                     }
+                  />
+                ) : (
+                  <SimpleAgendaEventCard
+                    key={event.id}
+                    event={event}
+                    onPress={() => handleOpenEvent(event)}
                   />
                 ),
               )}

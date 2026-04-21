@@ -49,6 +49,14 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useRouter: () => ({
     replace: mockRouterReplace,
     push: mockRouterPush,
@@ -151,6 +159,14 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
+    routes: {
+      get: {
+        useQuery: () => ({ data: null }),
+      },
+      loadFull: {
+        useQuery: () => ({ data: null }),
+      },
+    },
   },
 }));
 
@@ -194,6 +210,19 @@ jest.mock("@/components/training-plan/TrainingPlanSummaryHeader", () => ({
 jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
+}));
+jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
+  __esModule: true,
+  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
+}));
+jest.mock("@/components/shared/ActivityPlanSummary", () => ({
+  __esModule: true,
+  ActivityPlanMetricsRow: createHost("ActivityPlanMetricsRow"),
+  ActivityPlanSummary: createHost("ActivityPlanSummary"),
+}));
+jest.mock("@/components/shared/EntityOwnerRow", () => ({
+  __esModule: true,
+  EntityOwnerRow: createHost("EntityOwnerRow"),
 }));
 jest.mock("@/components/training-plan/WeeklyProgressCard", () => ({
   __esModule: true,
@@ -242,6 +271,10 @@ jest.mock("@/components/shared/DetailChartModal", () => ({
     );
   },
 }));
+jest.mock("@/components/shared/EntityOwnerRow", () => ({
+  __esModule: true,
+  EntityOwnerRow: createHost("EntityOwnerRow"),
+}));
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
   Button: createHost("Button"),
@@ -264,6 +297,13 @@ jest.mock("@repo/ui/components/card", () => ({
   CardHeader: createHost("CardHeader"),
   CardTitle: createHost("CardTitle"),
 }));
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
+}));
 jest.mock("@repo/ui/components/icon", () => ({
   __esModule: true,
   Icon: createHost("Icon"),
@@ -277,11 +317,6 @@ jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
   Input: createHost("Input"),
 }));
-jest.mock("@repo/ui/components/radio-group", () => ({
-  __esModule: true,
-  RadioGroup: createHost("RadioGroup"),
-  RadioGroupItem: createHost("RadioGroupItem"),
-}));
 jest.mock("@repo/ui/components/switch", () => ({
   __esModule: true,
   Switch: createHost("Switch"),
@@ -289,6 +324,10 @@ jest.mock("@repo/ui/components/switch", () => ({
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),
+}));
+jest.mock("@repo/ui/components/textarea", () => ({
+  __esModule: true,
+  Textarea: createHost("Textarea"),
 }));
 
 jest.mock("lucide-react-native", () => {
@@ -357,6 +396,13 @@ const findButtonByText = (text: string) =>
 
 const findButtonByTestId = (testID: string) =>
   getAllByTypeOrEmpty("Button").find((node: any) => node.props?.testID === testID);
+
+const findNodeByTestId = (testID: string) =>
+  [
+    ...getAllByTypeOrEmpty("DropdownMenuItem"),
+    ...getAllByTypeOrEmpty("Button"),
+    ...getAllByTypeOrEmpty("TouchableOpacity"),
+  ].find((node: any) => node.props?.testID === testID);
 
 const getDateFields = () => getAllByTypeOrEmpty("DateField");
 
@@ -481,7 +527,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     renderNative(<TrainingPlanOverview />);
 
-    expect(hasTextContaining("Schedule Sessions")).toBe(true);
+    expect(hasTextContaining("Schedule")).toBe(true);
     expect(hasTextContaining("Edit Plan")).toBe(true);
     expect(hasTextContaining("Apply Template")).toBe(false);
     expect(hasTextContaining("Edit Structure")).toBe(false);
@@ -507,8 +553,8 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("Plan snapshot")).toBe(true);
     expect(hasTextContaining("8 weeks")).toBe(true);
     expect(hasTextContaining("4 sessions/week")).toBe(true);
-    expect(hasTextContaining("Open Calendar")).toBe(true);
-    expect(hasTextContaining("Linked activity plan structures")).toBe(true);
+    expect(hasTextContaining("Open Calendar")).toBe(false);
+    expect(hasTextContaining("Route-backed workouts")).toBe(true);
   });
 
   it("shows one clear schedule anchor mode instead of start plus target dates", () => {
@@ -554,7 +600,11 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
 
     act(() => {
-      findButtonByText("Schedule Sessions").props.onPress();
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
+    });
+
+    act(() => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
     });
 
     expect(mockApplyTemplateMutate).toHaveBeenCalledWith({
@@ -583,7 +633,11 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
 
     await act(async () => {
-      findButtonByText("Schedule Sessions").props.onPress();
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
     });
 
     await waitFor(() => {
@@ -610,7 +664,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     renderNative(<TrainingPlanOverview />);
 
     await act(async () => {
-      findButtonByText("Schedule Sessions").props.onPress();
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
     });
 
     await act(async () => {
@@ -636,7 +690,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     renderNative(<TrainingPlanOverview />);
 
     await act(async () => {
-      findButtonByText("Schedule Sessions").props.onPress();
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
     });
 
     await act(async () => {
@@ -667,7 +721,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     renderNative(<TrainingPlanOverview />);
 
     await act(async () => {
-      findButtonByText("Schedule Sessions").props.onPress();
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
     });
 
     await act(async () => {
@@ -677,7 +731,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     expect(nativeAlertMock).toHaveBeenCalledWith(
       "Plan scheduled",
-      "Scheduled 3 sessions on your calendar.",
+      "Scheduled 3 sessions.",
       expect.any(Array),
     );
 
@@ -692,30 +746,6 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(mockRouterReplace).toHaveBeenCalledWith(
       ROUTES.PLAN.TRAINING_PLAN.DETAIL("scheduled-plan-1"),
     );
-  });
-
-  it("toggles privacy with the expected template visibility payload", async () => {
-    mockSnapshotState.plan = {
-      id: "plan-owned-privacy-1",
-      name: "Owned Plan",
-      profile_id: "test-profile-id",
-      template_visibility: "private",
-      created_at: "2026-01-01T00:00:00.000Z",
-      structure: {},
-    } as any;
-    mockLocalSearchParams.id = "plan-owned-privacy-1";
-
-    renderNative(<TrainingPlanOverview />);
-
-    const switches = getAllByTypeOrEmpty("Switch");
-    await act(async () => {
-      switches[0].props.onCheckedChange(true);
-    });
-
-    expect(mockUpdatePlanMutate).toHaveBeenCalledWith({
-      id: "plan-owned-privacy-1",
-      template_visibility: "public",
-    });
   });
 
   it("routes review-activity intent CTA to activity detail", () => {
@@ -775,8 +805,10 @@ describe("TrainingPlanOverview deep-link routing", () => {
     renderNative(<TrainingPlanOverview />);
 
     await act(async () => {
-      findButtonByText("Make Editable Copy").props.onPress();
+      findNodeByTestId("training-plan-options-duplicate").props.onPress();
     });
+
+    expect(hasTextContaining("Duplicate")).toBe(true);
 
     expect(mockDuplicateMutate).toHaveBeenCalledWith({
       id: "plan-shared-1",

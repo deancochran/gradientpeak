@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { useZodForm } from "../../hooks/use-zod-form";
 import { fireEvent, renderWeb, screen } from "../../test/render-web";
-import { Form } from "../form/index.web";
+import { Form, FormItem, FormLabel } from "../form/index.web";
 import {
   FormBoundedNumberField,
   FormDateInputField,
@@ -88,6 +88,31 @@ function FormFieldsHarness() {
   );
 }
 
+function DetachedFormLabelHarness() {
+  const methods = useZodForm({
+    schema: profileSchema,
+    defaultValues: {
+      bio: null,
+      dob: null,
+      duration: "0:20:00",
+      ftp: 250,
+      max_sessions: 3,
+      is_public: false,
+      pace: "4:30",
+      weight_kg: 70,
+      username: "Avery",
+    },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormItem>
+        <FormLabel>Detached label</FormLabel>
+      </FormItem>
+    </Form>
+  );
+}
+
 describe("Form fields web", () => {
   it("binds shared controlled wrappers to react-hook-form", () => {
     renderWeb(<FormFieldsHarness />);
@@ -130,5 +155,11 @@ describe("Form fields web", () => {
     expect(screen.getByTestId("values").textContent).toContain('"ftp":300');
     expect(screen.getByTestId("values").textContent).toContain('"pace":"4:05"');
     expect(screen.getByTestId("values").textContent).toContain('"weight_kg":72.5');
+  });
+
+  it("throws a clear error when form subcomponents render outside FormField", () => {
+    expect(() => renderWeb(<DetachedFormLabelHarness />)).toThrowError(
+      "useFormField should be used within <FormField>",
+    );
   });
 });

@@ -15,10 +15,11 @@
 import BottomSheet, { BottomSheetBackdrop, SNAP_POINT_TYPE } from "@gorhom/bottom-sheet";
 import type { RecordingActivityCategory, RecordingState } from "@repo/core";
 import React, { useCallback, useMemo, useRef } from "react";
-import { useColorScheme, View } from "react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusMode } from "@/lib/contexts/FocusModeContext";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import { useTheme } from "@/lib/stores/theme-store";
 import { FooterExpandedContent } from "./FooterExpandedContent";
 
 export interface RecordingFooterProps {
@@ -76,10 +77,10 @@ export function RecordingFooter({
   const { focusState, focusFooter, clearFocus, isAnyZoneFocused } = useFocusMode();
   const bottomSheetRef = useRef<BottomSheet>(null);
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
+  const { resolvedTheme } = useTheme();
 
   // Get theme-aware colors
-  const themeColors = THEME_COLORS[colorScheme === "dark" ? "dark" : "light"];
+  const themeColors = THEME_COLORS[resolvedTheme === "dark" ? "dark" : "light"];
 
   // Construct theme-aware styles
   const bottomSheetStyles = useMemo(

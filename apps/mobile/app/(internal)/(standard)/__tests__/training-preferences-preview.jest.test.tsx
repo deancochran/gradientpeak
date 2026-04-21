@@ -423,16 +423,23 @@ describe("training preferences projection preview", () => {
 
   it("shows a clear empty state when there is no active plan", () => {
     activePlanData = undefined;
+    snapshotState = {
+      ...snapshotState,
+      plan: undefined,
+      idealCurveData: {
+        dataPoints: [],
+        targetCTL: null,
+        targetDate: null,
+      },
+    } as any;
 
     renderNative(<TrainingPreferencesScreen />);
 
     const textValues = getTextValues();
 
-    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(true);
-    expect(
-      textValues.some((value: string) => value.includes("Start or activate a training plan")),
-    ).toBe(true);
-    expect(getAllByTypeOrEmpty("PlanVsActualChart")).toHaveLength(0);
+    expect(textValues.some((value: string) => value.includes("Draft preview"))).toBe(true);
+    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(false);
+    expect(getAllByTypeOrEmpty("PlanVsActualChart")).toHaveLength(1);
   });
 
   it("shows a baseline-curve message when projection data is missing", () => {
@@ -449,12 +456,8 @@ describe("training preferences projection preview", () => {
 
     const textValues = getTextValues();
 
-    expect(textValues.some((value: string) => value.includes("Baseline curve not ready"))).toBe(
-      true,
-    );
-    expect(textValues.some((value: string) => value.includes("baseline-vs-draft comparison"))).toBe(
-      true,
-    );
+    expect(textValues.some((value: string) => value.includes("Draft preview"))).toBe(true);
+    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(false);
   });
 
   it("blocks saving when schedule limits conflict", () => {

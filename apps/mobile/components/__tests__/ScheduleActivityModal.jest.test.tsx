@@ -186,7 +186,7 @@ describe("ScheduleActivityModal", () => {
   });
 
   it("shows the activity preview immediately and keeps constraints collapsed by default", () => {
-    renderNative(
+    const rendered = renderNative(
       <ScheduleActivityModal
         visible
         onClose={jest.fn()}
@@ -198,6 +198,9 @@ describe("ScheduleActivityModal", () => {
     expect(screen.getByTestId("schedule-constraints-toggle")).toBeTruthy();
     expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
     expect(screen.queryByTestId("schedule-constraints-details")).toBeNull();
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.size).toBe(
+      "medium",
+    );
   });
 
   it("reveals constraint details only when the disclosure control is used", () => {

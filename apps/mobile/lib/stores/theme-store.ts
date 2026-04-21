@@ -1,8 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Appearance } from "react-native";
+import { colorScheme as nativeCssColorScheme } from "react-native-css/native";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { type ResolvedThemeMode, resolveThemeMode, type ThemePreference } from "@/lib/theme";
+
+function applyRuntimeTheme(preference: ThemePreference) {
+  const scheme = preference === "system" ? null : preference;
+
+  nativeCssColorScheme.set(scheme);
+  Appearance.setColorScheme(scheme);
+}
 
 interface ThemeStore {
   userPreference: ThemePreference;
@@ -29,14 +37,14 @@ export const useThemeStore = create<ThemeStore>()(
           set({
             resolvedTheme: resolveThemeMode(preference),
           });
-          Appearance.setColorScheme(preference === "system" ? null : preference);
+          applyRuntimeTheme(preference);
         } catch (error) {
           console.warn("Failed to initialize theme:", error);
           set({
             userPreference: "system",
             resolvedTheme: resolveThemeMode("system"),
           });
-          Appearance.setColorScheme(null);
+          applyRuntimeTheme("system");
         } finally {
           set({ isLoaded: true });
         }
@@ -48,7 +56,7 @@ export const useThemeStore = create<ThemeStore>()(
             userPreference: preference,
             resolvedTheme: resolveThemeMode(preference),
           });
-          Appearance.setColorScheme(preference === "system" ? null : preference);
+          applyRuntimeTheme(preference);
         } catch (error) {
           console.warn("Failed to update theme:", error);
         }
@@ -70,7 +78,7 @@ export const useThemeStore = create<ThemeStore>()(
             resolvedTheme: resolveThemeMode("system"),
             isLoaded: true,
           });
-          Appearance.setColorScheme(null);
+          applyRuntimeTheme("system");
         }
       },
     },

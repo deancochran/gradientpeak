@@ -1,4 +1,4 @@
-import { activityPlans, likes } from "@repo/db";
+import { activityPlans, likes, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -64,7 +64,7 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 import { activityPlansRouter } from "../activity-plans";
 
-type MockTableName = "activity_plans" | "likes";
+type MockTableName = "activity_plans" | "likes" | "profiles";
 type MockOperation = "select" | "insert" | "update" | "delete";
 
 type MockDbState = Partial<Record<`${MockOperation}:${MockTableName}`, unknown[][]>>;
@@ -128,6 +128,10 @@ function resolveTableName(table: unknown): MockTableName {
 
   if (table === likes) {
     return "likes";
+  }
+
+  if (table === profiles) {
+    return "profiles";
   }
 
   throw new Error(`Unsupported table in activity-plans test mock: ${String(table)}`);
@@ -221,6 +225,15 @@ function createCaller(params?: { state?: MockDbState; userId?: string }) {
   return { caller, callLog };
 }
 
+function createProfileRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: USER_ID,
+    username: "Owner",
+    avatar_url: "https://example.com/avatar.png",
+    ...overrides,
+  };
+}
+
 describe("activityPlansRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -241,6 +254,7 @@ describe("activityPlansRouter", () => {
       state: {
         "select:activity_plans": [[firstPlan, secondPlan]],
         "select:likes": [[{ entity_id: firstPlan.id }]],
+        "select:profiles": [[createProfileRow()]],
       },
     });
 
@@ -252,6 +266,11 @@ describe("activityPlansRouter", () => {
       has_liked: true,
       content_type: "activity_plan",
       owner_profile_id: USER_ID,
+      owner: {
+        id: USER_ID,
+        username: "Owner",
+        avatar_url: "https://example.com/avatar.png",
+      },
       visibility: "private",
       estimated_tss: 88,
     });
@@ -302,6 +321,12 @@ describe("activityPlansRouter", () => {
       state: {
         "select:activity_plans": [[publicPlan, ownPlan]],
         "select:likes": [[{ entity_id: ownPlan.id }]],
+        "select:profiles": [
+          [
+            createProfileRow(),
+            createProfileRow({ id: OTHER_USER_ID, username: "Other", avatar_url: null }),
+          ],
+        ],
       },
     });
 
@@ -312,6 +337,8 @@ describe("activityPlansRouter", () => {
     expect(result.items.map((item) => item.id)).toEqual([ownPlan.id, publicPlan.id]);
     expect(result.items[0]?.has_liked).toBe(true);
     expect(result.items[1]?.has_liked).toBe(false);
+    expect(result.items[0]?.owner?.id).toBe(USER_ID);
+    expect(result.items[1]?.owner?.id).toBe(OTHER_USER_ID);
   });
 
   it("getUserPlansCount coerces the current user's count from the DB", async () => {

@@ -3,11 +3,11 @@ import {
   getConversationInitials,
   getConversationPreviewText,
 } from "@repo/core";
-import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
-import { Stack, useRouter } from "expo-router";
+import { Stack } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -47,52 +47,74 @@ function ConversationItem({
   const name = getConversationDisplayName(conversation);
   const unreadCount = conversation.unread_count || 0;
   const isUnread = unreadCount > 0;
+  const subtitle = conversation.is_group
+    ? conversation.group_name
+      ? "Group conversation"
+      : "Group"
+    : conversation.peer_profile?.username
+      ? `@${conversation.peer_profile.username}`
+      : null;
 
   return (
     <Pressable
       onPress={onPress}
       testID={`messages-conversation-${conversation.id}`}
-      className={cn(
-        "flex-row items-center p-4 border-b border-border bg-background active:bg-accent",
-        isUnread && "bg-muted/10",
-      )}
+      className="rounded-3xl border border-border bg-card p-4 active:bg-accent"
     >
-      <Avatar alt={name} className="h-12 w-12 mr-4">
-        <AvatarFallback>
-          <Text>{getConversationInitials(conversation)}</Text>
-        </AvatarFallback>
-      </Avatar>
+      <View className="flex-row items-center gap-3">
+        <Avatar alt={name} className="h-11 w-11">
+          {conversation.peer_profile?.avatar_url ? (
+            <AvatarImage source={{ uri: conversation.peer_profile.avatar_url }} />
+          ) : null}
+          <AvatarFallback>
+            <Text>{getConversationInitials(conversation)}</Text>
+          </AvatarFallback>
+        </Avatar>
 
-      <View className="flex-1 gap-1">
-        <View className="flex-row justify-between items-center">
-          <Text
-            className={cn("text-base text-foreground", isUnread ? "font-bold" : "font-medium")}
-            numberOfLines={1}
-          >
-            {name}
-          </Text>
-          <Text className="text-xs text-muted-foreground">
-            {conversation.last_message_at ? formatRelativeTime(conversation.last_message_at) : ""}
-          </Text>
-        </View>
-
-        <View className="flex-row justify-between items-center">
-          <Text
-            className={cn(
-              "text-sm flex-1 mr-2",
-              isUnread ? "text-foreground font-semibold" : "text-muted-foreground",
-            )}
-            numberOfLines={1}
-          >
-            {getConversationPreviewText(conversation)}
-          </Text>
-          {isUnread && (
-            <Badge variant="default" className="h-6 min-w-[24px] px-1.5 justify-center">
-              <Text className="text-xs text-primary-foreground">
-                {unreadCount > 9 ? "9+" : unreadCount}
+        <View className="flex-1 gap-1">
+          <View className="flex-row items-center justify-between gap-2">
+            <View className="flex-1 gap-0.5">
+              <Text
+                className={cn(
+                  "text-base text-foreground",
+                  isUnread ? "font-semibold" : "font-medium",
+                )}
+                numberOfLines={1}
+              >
+                {name}
               </Text>
-            </Badge>
-          )}
+              {subtitle ? (
+                <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+            <Text className="text-xs text-muted-foreground">
+              {conversation.last_message_at ? formatRelativeTime(conversation.last_message_at) : ""}
+            </Text>
+          </View>
+
+          <View className="flex-row items-center justify-between gap-2">
+            <Text
+              className={cn(
+                "mr-2 flex-1 text-sm",
+                isUnread ? "font-medium text-foreground" : "text-muted-foreground",
+              )}
+              numberOfLines={1}
+            >
+              {getConversationPreviewText(conversation)}
+            </Text>
+            {isUnread ? (
+              <Badge
+                variant="default"
+                className="h-5 min-w-[20px] items-center justify-center px-1.5"
+              >
+                <Text className="text-[10px] text-primary-foreground">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </Text>
+              </Badge>
+            ) : null}
+          </View>
         </View>
       </View>
     </Pressable>
@@ -100,13 +122,29 @@ function ConversationItem({
 }
 
 export default function MessagesScreen() {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
   const { data: conversations = [], isLoading } = api.messaging.getConversations.useQuery();
+  const unreadCount = conversations.reduce(
+    (count, conversation) => count + (conversation.unread_count || 0),
+    0,
+  );
 
   return (
     <View className="flex-1 bg-background" testID="messages-screen">
-      <Stack.Screen options={{ title: "Messages" }} />
+      <Stack.Screen
+        options={{
+          title: "Messages",
+          headerRight: () => (
+            <Pressable
+              onPress={() => navigateTo("/messages/new" as any)}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="messages-new-trigger"
+            >
+              <Text className="text-sm font-medium text-primary">New Message</Text>
+            </Pressable>
+          ),
+        }}
+      />
       {isLoading ? (
         <View className="flex-1 items-center justify-center" testID="messages-loading-state">
           <ActivityIndicator size="large" className="text-muted-foreground" />
@@ -116,6 +154,18 @@ export default function MessagesScreen() {
           testID="messages-conversation-list"
           data={conversations}
           keyExtractor={(item) => item.id}
+          contentContainerClassName="gap-3 p-4 pb-6"
+          ListHeaderComponent={
+            conversations.length > 0 ? (
+              <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
+                <Text className="text-sm text-muted-foreground">
+                  {conversations.length}{" "}
+                  {conversations.length === 1 ? "conversation" : "conversations"}
+                  {unreadCount > 0 ? `, ${unreadCount} unread` : ""}
+                </Text>
+              </View>
+            ) : null
+          }
           renderItem={({ item }) => (
             <ConversationItem
               conversation={item}
@@ -123,8 +173,14 @@ export default function MessagesScreen() {
             />
           )}
           ListEmptyComponent={
-            <View className="flex-1 items-center justify-center p-8" testID="messages-empty-state">
-              <Text className="text-muted-foreground">No conversations yet</Text>
+            <View
+              className="flex-1 items-center justify-center py-12"
+              testID="messages-empty-state"
+            >
+              <Text className="text-base font-medium text-foreground">No conversations yet</Text>
+              <Text className="mt-2 text-center text-sm text-muted-foreground">
+                Your conversations will appear here once you start messaging.
+              </Text>
             </View>
           }
         />

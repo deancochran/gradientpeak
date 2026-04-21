@@ -3,9 +3,6 @@ import React from "react";
 import { renderNative } from "../../../../test/render-native";
 
 const createGoalMutateAsync = jest.fn().mockResolvedValue({ id: "goal-new" });
-const createMilestoneEventMutateAsync = jest
-  .fn()
-  .mockResolvedValue({ id: "22222222-2222-4222-8222-222222222222" });
 const goalsFixture: any[] = [];
 const goalEditorModalPropsRef = { current: null as any };
 
@@ -32,9 +29,9 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  buildGoalCreatePayload: jest.fn(({ draft, profileId, milestoneEventId }: any) => ({
+  buildGoalCreatePayload: jest.fn(({ draft, profileId }: any) => ({
     profile_id: profileId,
-    milestone_event_id: milestoneEventId,
+    target_date: draft.targetDate,
     title: draft.title,
     priority: draft.importance,
     activity_category: draft.activityCategory,
@@ -43,11 +40,6 @@ jest.mock("@repo/core", () => ({
       distance_m: 5000,
       target_time_s: 1500,
     },
-  })),
-  buildMilestoneEventCreateInput: jest.fn(({ draft }: any) => ({
-    title: draft.title,
-    starts_at: `${draft.targetDate}T12:00:00.000Z`,
-    event_type: "race_target",
   })),
   createEmptyGoalDraft: jest.fn(() => ({ title: "", objective: null })),
   buildGoalDraftFromGoal: jest.fn(),
@@ -138,10 +130,6 @@ jest.mock("@/lib/api", () => ({
     },
     events: {
       list: { useQuery: () => ({ data: { items: [] }, refetch: jest.fn() }) },
-      create: {
-        useMutation: () => ({ isPending: false, mutateAsync: createMilestoneEventMutateAsync }),
-      },
-      update: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
     },
     goals: {
       create: { useMutation: () => ({ isPending: false, mutateAsync: createGoalMutateAsync }) },
@@ -155,7 +143,6 @@ const PlanScreenWithErrorBoundary = require("../plan").default;
 describe("plan goal persistence", () => {
   beforeEach(() => {
     createGoalMutateAsync.mockClear();
-    createMilestoneEventMutateAsync.mockClear();
     goalEditorModalPropsRef.current = null;
     goalsFixture.splice(0, goalsFixture.length);
   });
@@ -177,17 +164,11 @@ describe("plan goal persistence", () => {
       consistencyWeeks: 8,
     });
 
-    expect(createMilestoneEventMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Spring 5K",
-        starts_at: "2026-06-01T12:00:00.000Z",
-        event_type: "race_target",
-      }),
-    );
     expect(createGoalMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
         profile_id: "11111111-1111-4111-8111-111111111111",
-        milestone_event_id: "22222222-2222-4222-8222-222222222222",
+        target_date: "2026-06-01",
+        training_plan_id: "33333333-3333-4333-8333-333333333333",
         title: "Spring 5K",
         priority: 8,
         activity_category: "run",

@@ -44,11 +44,14 @@ export function TimelineChart({
   compact = false,
   intervalIssues,
 }: TimelineChartProps) {
+  const isInteractive = Boolean(onStepPress || onIntervalPress);
   const margin = compact
     ? { top: 0, right: 0, bottom: 0, left: 0 }
-    : { top: 2, right: 2, bottom: 16, left: 22 };
+    : isInteractive
+      ? { top: 2, right: 2, bottom: 16, left: 22 }
+      : { top: 0, right: 0, bottom: 0, left: 0 };
   const gapWithinInterval = compact ? 1 : 2;
-  const gapBetweenIntervals = compact ? 1 : 8;
+  const gapBetweenIntervals = compact ? 1 : isInteractive ? 8 : 1;
   const minAxisY = 0;
   const [compactContainerWidth, setCompactContainerWidth] = useState(0);
 
@@ -304,7 +307,7 @@ export function TimelineChart({
       {compact ? (
         <View style={{ width: chartWidth, height }} className="relative">
           <Svg width={chartWidth} height={height}>
-            {!compact ? (
+            {!compact && isInteractive ? (
               <>
                 <SvgText
                   x={margin.left - 3}
@@ -344,7 +347,7 @@ export function TimelineChart({
               />
             ))}
 
-            {!compact ? (
+            {!compact && isInteractive ? (
               <>
                 {intervalSegments.map((segment) => (
                   <SvgText
@@ -358,26 +361,6 @@ export function TimelineChart({
                     I{segment.intervalIndex + 1}
                   </SvgText>
                 ))}
-
-                <SvgText
-                  x={margin.left}
-                  y={height - 2}
-                  fontSize={9}
-                  fill="#64748B"
-                  textAnchor="start"
-                >
-                  0
-                </SvgText>
-
-                <SvgText
-                  x={chartWidth - margin.right}
-                  y={height - 2}
-                  fontSize={9}
-                  fill="#64748B"
-                  textAnchor="end"
-                >
-                  {maxAxisXMinutes}
-                </SvgText>
               </>
             ) : null}
           </Svg>
@@ -444,25 +427,29 @@ export function TimelineChart({
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View style={{ width: chartWidth, height }} className="relative">
             <Svg width={chartWidth} height={height}>
-              <SvgText
-                x={margin.left - 3}
-                y={margin.top + 7}
-                fontSize={9}
-                fill="#64748B"
-                textAnchor="end"
-              >
-                {maxAxisY}
-              </SvgText>
+              {isInteractive ? (
+                <>
+                  <SvgText
+                    x={margin.left - 3}
+                    y={margin.top + 7}
+                    fontSize={9}
+                    fill="#64748B"
+                    textAnchor="end"
+                  >
+                    {maxAxisY}
+                  </SvgText>
 
-              <SvgText
-                x={margin.left - 3}
-                y={margin.top + plotHeight + 3}
-                fontSize={9}
-                fill="#64748B"
-                textAnchor="end"
-              >
-                {minAxisY}
-              </SvgText>
+                  <SvgText
+                    x={margin.left - 3}
+                    y={margin.top + plotHeight + 3}
+                    fontSize={9}
+                    fill="#64748B"
+                    textAnchor="end"
+                  >
+                    {minAxisY}
+                  </SvgText>
+                </>
+              ) : null}
 
               {positionedBars.map((bar) => (
                 <Rect
@@ -480,38 +467,20 @@ export function TimelineChart({
                 />
               ))}
 
-              {intervalSegments.map((segment) => (
-                <SvgText
-                  key={`interval-label-${segment.interval.id}`}
-                  x={margin.left + (segment.xStart + segment.xEnd) / 2}
-                  y={margin.top + plotHeight + 11}
-                  fontSize={9}
-                  fill="#64748B"
-                  textAnchor="middle"
-                >
-                  I{segment.intervalIndex + 1}
-                </SvgText>
-              ))}
-
-              <SvgText
-                x={margin.left}
-                y={height - 2}
-                fontSize={9}
-                fill="#64748B"
-                textAnchor="start"
-              >
-                0
-              </SvgText>
-
-              <SvgText
-                x={chartWidth - margin.right}
-                y={height - 2}
-                fontSize={9}
-                fill="#64748B"
-                textAnchor="end"
-              >
-                {maxAxisXMinutes}
-              </SvgText>
+              {isInteractive
+                ? intervalSegments.map((segment) => (
+                    <SvgText
+                      key={`interval-label-${segment.interval.id}`}
+                      x={margin.left + (segment.xStart + segment.xEnd) / 2}
+                      y={margin.top + plotHeight + 11}
+                      fontSize={9}
+                      fill="#64748B"
+                      textAnchor="middle"
+                    >
+                      I{segment.intervalIndex + 1}
+                    </SvgText>
+                  ))
+                : null}
             </Svg>
 
             {onIntervalPress && intervalSegments.length > 0 ? (
@@ -575,7 +544,7 @@ export function TimelineChart({
         </ScrollView>
       )}
 
-      {!compact ? (
+      {!compact && isInteractive ? (
         <View className="flex-row justify-between">
           <Text className="text-xs text-muted-foreground">
             {steps.length} step{steps.length !== 1 ? "s" : ""}
@@ -586,7 +555,7 @@ export function TimelineChart({
         </View>
       ) : null}
 
-      {!compact && selectedStepIndex !== undefined && steps[selectedStepIndex] ? (
+      {!compact && isInteractive && selectedStepIndex !== undefined && steps[selectedStepIndex] ? (
         <View className="mt-1 rounded-md bg-muted p-2">
           <Text className="text-xs font-medium">
             Step {selectedStepIndex + 1}: {steps[selectedStepIndex].name}

@@ -423,4 +423,56 @@ describe("socialRouter", () => {
       hasMore: true,
     });
   });
+
+  it("getComments allows system training plans with null owner profile_id", async () => {
+    const createdAt = new Date("2026-04-03T14:00:00.000Z");
+    const trainingPlanId = "99999999-9999-4999-8999-999999999999";
+
+    const { caller } = createCaller({
+      execute: [
+        [
+          {
+            profile_id: null,
+            is_system_template: true,
+            template_visibility: "public",
+          },
+        ],
+        [
+          {
+            id: COMMENT_ID,
+            content: "Pinned session",
+            created_at: createdAt,
+            profile_id: TARGET_USER_ID,
+            profile_username: "target-runner",
+            profile_avatar_url: null,
+          },
+        ],
+        [{ value: 1 }],
+      ],
+    });
+
+    const result = await caller.getComments({
+      entity_id: trainingPlanId,
+      entity_type: "training_plan",
+      limit: 20,
+      offset: 0,
+    });
+
+    expect(result).toEqual({
+      comments: [
+        {
+          id: COMMENT_ID,
+          content: "Pinned session",
+          created_at: createdAt.toISOString(),
+          profile: {
+            id: TARGET_USER_ID,
+            username: "target-runner",
+            avatar_url: null,
+          },
+        },
+      ],
+      total: 1,
+      hasMore: false,
+    });
+  });
 });

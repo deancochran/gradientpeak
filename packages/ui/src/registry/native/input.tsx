@@ -1,11 +1,11 @@
-import { Platform, TextInput } from "react-native";
+import { Platform, TextInput, View } from "react-native";
 import { cn } from "../../lib/cn";
 
 function Input({ className, ...props }: React.ComponentProps<typeof TextInput>) {
   return (
-    <TextInput
+    <View
       className={cn(
-        "dark:bg-input/30 border-input bg-background text-foreground flex h-10 w-full min-w-0 flex-row items-center rounded-md border px-3 py-1 text-base leading-5 shadow-sm shadow-black/5 sm:h-9",
+        "dark:bg-input/30 border-input bg-background min-w-0 rounded-md border shadow-sm shadow-black/5",
         props.editable === false &&
           cn(
             "opacity-50",
@@ -13,17 +13,27 @@ function Input({ className, ...props }: React.ComponentProps<typeof TextInput>) 
           ),
         Platform.select({
           web: cn(
-            "placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground outline-none transition-[color,box-shadow] md:text-sm",
-            "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+            "selection:bg-primary selection:text-primary-foreground outline-none transition-[color,box-shadow]",
+            "focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]",
             "aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
           ),
-          native: "placeholder:text-muted-foreground/50",
         }),
         className,
       )}
-      {...props}
-    />
+    >
+      <TextInput {...props} style={[styles.input, props.style]} />
+    </View>
   );
 }
+
+const styles = {
+  input: {
+    fontSize: 16,
+    minWidth: 0,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+} as const;
 
 export { Input };

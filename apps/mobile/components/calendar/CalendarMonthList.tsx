@@ -10,7 +10,11 @@ import {
   isSameMonth,
   parseDateKey,
 } from "@/lib/calendar/dateMath";
-import { type CalendarEventsByDate, getMonthDensity } from "@/lib/calendar/normalizeEvents";
+import {
+  type CalendarEvent,
+  type CalendarEventsByDate,
+  getMonthDensity,
+} from "@/lib/calendar/normalizeEvents";
 
 type CalendarMonthListProps = {
   rangeStart: string;
@@ -25,6 +29,37 @@ type CalendarMonthListProps = {
 };
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function readMetric(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function getPlannedDaySignal(
+  events: CalendarEvent[],
+): { count: number; level: 1 | 2 | 3 | 4 } | null {
+  const plannedEvents = events.filter((event) => event.event_type === "planned");
+  if (plannedEvents.length === 0) {
+    return null;
+  }
+
+  const maxTss = plannedEvents.reduce((highest, event) => {
+    const tss = readMetric(event.activity_plan?.estimated_tss) ?? 0;
+    return Math.max(highest, tss);
+  }, 0);
+
+  const level: 1 | 2 | 3 | 4 = maxTss >= 110 ? 4 : maxTss >= 80 ? 3 : maxTss >= 45 ? 2 : 1;
+
+  return { count: plannedEvents.length, level };
+}
 
 export function getVisibleMonthIndex(months: string[], visibleMonthAnchor: string): number {
   return Math.max(
@@ -138,7 +173,9 @@ export function CalendarMonthList({
 
               <View className="mt-3 flex-row flex-wrap">
                 {gridDays.map((dateKey) => {
+                  const dayEvents = eventsByDate.get(dateKey) ?? [];
                   const density = getMonthDensity(eventsByDate, dateKey);
+                  const plannedSignal = getPlannedDaySignal(dayEvents);
                   const hasVisibleEvents = density > 0;
                   const isInMonth = isSameMonth(dateKey, item);
                   const isToday = isInMonth && dateKey === todayKey;
@@ -151,25 +188,6 @@ export function CalendarMonthList({
                         testID={`calendar-month-filler-${item}-${dateKey}`}
                       >
                         <View className="h-11 w-11 rounded-2xl bg-transparent" />
-                        <View className="mt-1 h-2" />
-                      </View>
-                    );
-                  }
-
-                  if (!hasVisibleEvents) {
-                    return (
-                      <View
-                        key={dateKey}
-                        className="mb-2 w-[14.285%] items-center"
-                        testID={`calendar-month-cell-${dateKey}`}
-                      >
-                        <View
-                          className={`h-11 w-11 items-center justify-center rounded-2xl ${isToday ? "border border-primary bg-primary/5" : "bg-transparent"}`}
-                        >
-                          <Text className="text-sm font-semibold text-foreground">
-                            {format(parseDateKey(dateKey), "d")}
-                          </Text>
-                        </View>
                         <View className="mt-1 h-2" />
                       </View>
                     );
@@ -190,13 +208,32 @@ export function CalendarMonthList({
                           {format(parseDateKey(dateKey), "d")}
                         </Text>
                       </View>
-                      <View className="mt-1 h-2 flex-row items-center justify-center gap-1">
-                        {Array.from({ length: Math.min(3, density) }, (_, index) => (
+                      <View className="mt-1 h-3 items-center justify-start gap-1">
+                        {plannedSignal ? (
                           <View
-                            key={`${dateKey}-${index}`}
-                            className="h-1.5 w-1.5 rounded-full bg-primary/70"
+                            className={`h-1 rounded-full ${
+                              plannedSignal.level >= 4
+                                ? "bg-primary"
+                                : plannedSignal.level === 3
+                                  ? "bg-primary/85"
+                                  : plannedSignal.level === 2
+                                    ? "bg-primary/70"
+                                    : "bg-primary/50"
+                            }`}
+                            style={{ width: plannedSignal.count > 1 ? 16 : 10 }}
+                            testID={`calendar-month-planned-signal-${dateKey}`}
                           />
-                        ))}
+                        ) : null}
+                        <View className="h-1.5 flex-row items-center justify-center gap-1">
+                          {hasVisibleEvents
+                            ? Array.from({ length: Math.min(3, density) }, (_, index) => (
+                                <View
+                                  key={`${dateKey}-${index}`}
+                                  className="h-1.5 w-1.5 rounded-full bg-primary/70"
+                                />
+                              ))
+                            : null}
+                        </View>
                       </View>
                     </TouchableOpacity>
                   );

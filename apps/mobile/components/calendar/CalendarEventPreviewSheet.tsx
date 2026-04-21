@@ -5,6 +5,7 @@ import { ArrowUpRight, Pencil, Play, Trash2 } from "lucide-react-native";
 import React, { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import { api } from "@/lib/api";
 import {
   getEventPrimaryMeta,
   getEventStatusLabel,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/calendar/eventPresentation";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 type CalendarEventPreviewSheetProps = {
   event: CalendarEvent | null;
@@ -38,8 +40,14 @@ export function CalendarEventPreviewSheet({
   onStart,
 }: CalendarEventPreviewSheetProps) {
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const navigateTo = useAppNavigate();
   const planned = event?.event_type === "planned";
   const snapPoints = useMemo(() => [planned ? "64%" : "52%"], [planned]);
+  const routeId = event?.activity_plan?.route_id;
+  const { data: route } = api.routes.get.useQuery(
+    { id: routeId! },
+    { enabled: !!routeId && !!event },
+  );
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -100,8 +108,20 @@ export function CalendarEventPreviewSheet({
 
         {planned && event.activity_plan ? (
           <ActivityPlanContentPreview
-            compact
+            size="medium"
             plan={event.activity_plan}
+            route={route}
+            onRoutePress={
+              routeId
+                ? () =>
+                    navigateTo({
+                      pathname: "/(internal)/(standard)/route-detail",
+                      params: { id: routeId },
+                    } as never)
+                : null
+            }
+            intensityFactor={event.activity_plan.intensity_factor ?? null}
+            tss={event.activity_plan.estimated_tss ?? null}
             testIDPrefix="calendar-preview-plan"
           />
         ) : null}
@@ -110,30 +130,24 @@ export function CalendarEventPreviewSheet({
           {onStart ? (
             <TouchableOpacity
               onPress={onStart}
-              className="rounded-2xl bg-primary px-4 py-4"
+              className="flex-row items-center gap-2 rounded-2xl bg-primary px-4 py-4"
               activeOpacity={0.85}
               testID="calendar-preview-start"
             >
-              <View className="flex-row items-center gap-2">
-                <Icon as={Play} size={16} className="text-primary-foreground" />
-                <Text className="text-sm font-semibold text-primary-foreground">
-                  Start activity
-                </Text>
-              </View>
+              <Icon as={Play} size={16} className="text-primary-foreground" />
+              <Text className="text-sm font-semibold text-primary-foreground">Start activity</Text>
             </TouchableOpacity>
           ) : null}
 
           {canOpenDetail ? (
             <TouchableOpacity
               onPress={onOpenDetail}
-              className="rounded-2xl border border-border bg-card px-4 py-4"
+              className="flex-row items-center gap-2 rounded-2xl border border-border bg-card px-4 py-4"
               activeOpacity={0.85}
               testID="calendar-preview-open-detail"
             >
-              <View className="flex-row items-center gap-2">
-                <Icon as={ArrowUpRight} size={16} className="text-foreground" />
-                <Text className="text-sm font-semibold text-foreground">Open full detail</Text>
-              </View>
+              <Icon as={ArrowUpRight} size={16} className="text-foreground" />
+              <Text className="text-sm font-semibold text-foreground">Open full detail</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -141,14 +155,12 @@ export function CalendarEventPreviewSheet({
             <>
               <TouchableOpacity
                 onPress={onEdit}
-                className="rounded-2xl border border-border bg-card px-4 py-4"
+                className="flex-row items-center gap-2 rounded-2xl border border-border bg-card px-4 py-4"
                 activeOpacity={0.85}
                 testID="calendar-preview-edit"
               >
-                <View className="flex-row items-center gap-2">
-                  <Icon as={Pencil} size={16} className="text-foreground" />
-                  <Text className="text-sm font-semibold text-foreground">Edit event</Text>
-                </View>
+                <Icon as={Pencil} size={16} className="text-foreground" />
+                <Text className="text-sm font-semibold text-foreground">Edit event</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={onMove}
@@ -160,14 +172,12 @@ export function CalendarEventPreviewSheet({
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={onDelete}
-                className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-4"
+                className="flex-row items-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-4"
                 activeOpacity={0.85}
                 testID="calendar-preview-delete"
               >
-                <View className="flex-row items-center gap-2">
-                  <Icon as={Trash2} size={16} className="text-destructive" />
-                  <Text className="text-sm font-semibold text-destructive">Delete event</Text>
-                </View>
+                <Icon as={Trash2} size={16} className="text-destructive" />
+                <Text className="text-sm font-semibold text-destructive">Delete event</Text>
               </TouchableOpacity>
             </>
           ) : null}
