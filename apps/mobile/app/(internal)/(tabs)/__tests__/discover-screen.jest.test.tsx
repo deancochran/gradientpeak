@@ -230,6 +230,10 @@ describe("discover screen", () => {
   it("renders a mixed discover feed by default", () => {
     renderNative(<DiscoverScreen />);
 
+    expect(activityPlansUseInfiniteQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ includeEstimation: true }),
+      expect.anything(),
+    );
     expect(screen.getByText("Header:Discover")).toBeTruthy();
     expect(screen.getByPlaceholderText("Search plans, routes, and profiles")).toBeTruthy();
     expect(screen.getByTestId("discover-section-activityPlans-0")).toBeTruthy();
@@ -291,7 +295,7 @@ describe("discover screen", () => {
         {
           includeSystemTemplates: true,
           includeOwnOnly: false,
-          includeEstimation: false,
+          includeEstimation: true,
           ownerScope: "all",
           search: "river",
           activityCategory: undefined,

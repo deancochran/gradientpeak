@@ -20,9 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
-import { ActivityPlanMetricsRow } from "@/components/shared/ActivityPlanSummary";
-import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { TrainingPlanDetailFocusBanner } from "@/components/training-plan/TrainingPlanDetailFocusBanner";
 import { TrainingPlanDetailHeaderActionsSection } from "@/components/training-plan/TrainingPlanDetailHeaderActionsSection";
@@ -32,7 +30,6 @@ import { TrainingPlanTemplateSchedulingDialog } from "@/components/training-plan
 import { useTrainingPlanHeaderSocialActions } from "@/components/training-plan/useTrainingPlanHeaderSocialActions";
 import { useTrainingPlanTemplateSchedulingController } from "@/components/training-plan/useTrainingPlanTemplateSchedulingController";
 import { api } from "@/lib/api";
-import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
 import {
   normalizeTrainingPlanNextStep,
@@ -891,95 +888,74 @@ export default function TrainingPlanOverview() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         <View className="flex-1 p-4 gap-4">
-          <View className="mb-4">
-            {focusContext && (
-              <TrainingPlanDetailFocusBanner
-                ctaLabel={focusContext.ctaLabel}
-                description={focusContext.description}
-                onPress={focusContext.onPress}
-                title={focusContext.title}
-              />
-            )}
-
-            <TrainingPlanDetailHeaderActionsSection
-              handleToggleLike={headerActions.handleToggleLike}
-              isLiked={headerActions.isLiked}
-              likesCount={headerActions.likesCount}
-              overview={{
-                linkedWorkouts: linkedWorkoutCards.length,
-                microcycles: groupedStructureSessions.length || 0,
-                plannedTime: formatMinutesLabel(totalPlannedMinutes),
-                plannedTss: Math.round(totalPlannedTss),
-                routeBacked: routeBackedWorkoutCards.length,
-                sessions: structureSessionRows.length,
-              }}
-              plan={plan}
+          {focusContext ? (
+            <TrainingPlanDetailFocusBanner
+              ctaLabel={focusContext.ctaLabel}
+              description={focusContext.description}
+              onPress={focusContext.onPress}
+              title={focusContext.title}
             />
-          </View>
+          ) : null}
+
+          <TrainingPlanDetailHeaderActionsSection
+            handleToggleLike={headerActions.handleToggleLike}
+            isLiked={headerActions.isLiked}
+            likesCount={headerActions.likesCount}
+            overview={{
+              linkedWorkouts: linkedWorkoutCards.length,
+              microcycles: groupedStructureSessions.length || 0,
+              plannedTime: formatMinutesLabel(totalPlannedMinutes),
+              plannedTss: Math.round(totalPlannedTss),
+              routeBacked: routeBackedWorkoutCards.length,
+              sessions: structureSessionRows.length,
+            }}
+            plan={plan}
+          />
 
           <View className="gap-4">
-            <View className="rounded-3xl border border-border bg-card p-4 gap-3">
-              <View className="gap-1">
-                <Text className="text-base font-semibold text-foreground">Weekly structure</Text>
-                <Text className="text-sm text-muted-foreground">
-                  Jump between microcycles to inspect sessions, linked activity plans, and
-                  route-backed work week by week.
-                </Text>
-              </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerClassName="gap-3 pr-2"
-                accessibilityRole="tablist"
-                accessibilityLabel="Training plan weeks"
-              >
-                {groupedStructureSessions.map((group) => {
-                  const load =
-                    weeklyLoadSummary.find((week) => week.microcycle === group.microcycle)
-                      ?.estimatedTss ?? 0;
-                  const sessionCount = group.days.reduce(
-                    (count, day) => count + day.sessions.length,
-                    0,
-                  );
-                  const isActive = group.microcycle === activeMicrocycle;
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerClassName="gap-2 pr-2"
+              accessibilityRole="tablist"
+              accessibilityLabel="Training plan weeks"
+            >
+              {groupedStructureSessions.map((group) => {
+                const isActive = group.microcycle === activeMicrocycle;
 
-                  return (
-                    <Pressable
-                      key={`training-plan-week-tab-${group.microcycle}`}
-                      onPress={() => setActiveMicrocycle(group.microcycle)}
-                      testID={`training-plan-detail-tab-week-${group.microcycle}`}
-                      className={`w-32 rounded-2xl border px-3 py-3 ${isActive ? "border-primary bg-primary/10" : "border-border bg-background"}`}
-                      accessibilityRole="tab"
-                      accessibilityState={{ selected: isActive }}
+                return (
+                  <Pressable
+                    key={`training-plan-week-tab-${group.microcycle}`}
+                    onPress={() => setActiveMicrocycle(group.microcycle)}
+                    testID={`training-plan-detail-tab-week-${group.microcycle}`}
+                    className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isActive }}
+                  >
+                    <Text
+                      className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
                     >
-                      <Text
-                        className={`text-sm font-semibold ${isActive ? "text-foreground" : "text-foreground"}`}
-                      >
-                        Week {group.microcycle}
-                      </Text>
-                      <Text className="mt-1 text-xs text-muted-foreground">
-                        {sessionCount} sessions
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">{Math.round(load)} TSS</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
+                      Week {group.microcycle}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
 
             {selectedMicrocycleGroup ? (
               <>
                 <View className="rounded-3xl border border-border bg-card p-4 gap-4">
-                  <Text className="text-base font-semibold text-foreground">
-                    Week {selectedMicrocycleGroup.microcycle} summary
-                  </Text>
-                  <Text className="text-sm text-muted-foreground">
-                    {periodizationTargetDate
-                      ? `This plan builds toward ${periodizationTargetDate}. `
-                      : ""}
-                    Review the sessions and linked activity plans for this microcycle in one place.
-                  </Text>
-                  <View className="flex-row flex-wrap gap-3">
+                  <View className="gap-1">
+                    <Text className="text-base font-semibold text-foreground">
+                      Week {selectedMicrocycleGroup.microcycle}
+                    </Text>
+                    {periodizationTargetDate ? (
+                      <Text className="text-xs text-muted-foreground">
+                        Building toward {periodizationTargetDate}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View className="flex-row flex-wrap gap-2">
                     <SummaryMetricCard
                       label="Sessions"
                       value={`${selectedMicrocycleSessionCount}`}
@@ -1112,63 +1088,9 @@ function TrainingPlanCompactActivityPlanCard({
   linkedPlan: any;
   onPress: () => void;
 }) {
-  const routeId = linkedPlan.route_id;
-  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
-  const { data: routeFull } = api.routes.loadFull.useQuery(
-    { id: routeId! },
-    { enabled: !!routeId },
-  );
-  const activityConfig = linkedPlan.activity_category
-    ? linkedPlan.activity_category.includes("_")
-      ? getActivityConfig(linkedPlan.activity_category)
-      : getActivityCategoryConfig(linkedPlan.activity_category)
-    : getActivityCategoryConfig("other");
-
   return (
-    <TouchableOpacity
-      className="rounded-2xl border border-border/60 bg-background p-3"
-      activeOpacity={0.85}
-      onPress={onPress}
-      testID={`training-plan-linked-activity-${linkedPlan.id}`}
-    >
-      <View className="gap-3">
-        <View className="flex-row items-center gap-2">
-          <View className={`rounded-full p-1.5 ${activityConfig.bgColor}`}>
-            <Icon as={activityConfig.icon} size={14} className={activityConfig.color} />
-          </View>
-          <Text className="flex-1 text-sm font-semibold text-foreground" numberOfLines={1}>
-            {linkedPlan.name}
-          </Text>
-        </View>
-
-        {route?.name || linkedPlan.hasRoute ? (
-          <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1">
-            {route?.name ? (
-              <Text className="text-xs text-muted-foreground">{route.name}</Text>
-            ) : null}
-            {!route?.name && linkedPlan.hasRoute ? (
-              <Text className="text-xs text-muted-foreground">Route included</Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        <ActivityPlanMetricsRow
-          estimatedDurationMinutes={linkedPlan.estimatedDurationMinutes}
-          estimatedTss={linkedPlan.estimatedTss}
-          intensityFactor={linkedPlan.intensityFactor}
-          structure={linkedPlan.structure}
-        />
-
-        <ActivityPlanContentPreview
-          size="small"
-          plan={linkedPlan as any}
-          route={route}
-          routeFull={routeFull ? { coordinates: (routeFull as any).coordinates ?? [] } : null}
-          testIDPrefix={`training-plan-workout-${linkedPlan.id}`}
-        />
-
-        {linkedPlan.owner ? <EntityOwnerRow owner={linkedPlan.owner} /> : null}
-      </View>
-    </TouchableOpacity>
+    <View testID={`training-plan-linked-activity-${linkedPlan.id}`}>
+      <ActivityPlanCard activityPlan={linkedPlan} onPress={onPress} variant="default" />
+    </View>
   );
 }

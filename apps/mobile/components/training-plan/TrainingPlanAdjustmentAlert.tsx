@@ -26,16 +26,12 @@ export function TrainingPlanAdjustmentAlert({
         isAlert ? "bg-destructive/10 border-destructive/30" : "bg-amber-500/10 border-amber-500/30"
       }`}
     >
-      {/* Icon */}
-      <View className="mr-3 mt-0.5">
-        <Icon
-          as={isAlert ? AlertCircle : AlertTriangle}
-          size={20}
-          className={isAlert ? "text-destructive" : "text-amber-500"}
-        />
-      </View>
+      <Icon
+        as={isAlert ? AlertCircle : AlertTriangle}
+        size={20}
+        className={`mr-3 mt-0.5 ${isAlert ? "text-destructive" : "text-amber-500"}`}
+      />
 
-      {/* Content */}
       <View className="flex-1">
         <Text className="font-semibold text-sm mb-1">{suggestion.title}</Text>
         <Text className="text-xs text-muted-foreground leading-relaxed">
@@ -44,7 +40,6 @@ export function TrainingPlanAdjustmentAlert({
         <Text className="text-xs text-primary font-medium mt-2">Tap to adjust</Text>
       </View>
 
-      {/* Dismiss Button */}
       <TouchableOpacity
         onPress={(e) => {
           e.stopPropagation();

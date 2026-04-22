@@ -16,27 +16,25 @@ export function TrainingPlanMetadataSection({ form }: TrainingPlanMetadataSectio
       </Text>
 
       <Form {...form}>
-        <View className="gap-4">
-          <FormTextField
-            control={form.control}
-            label="Plan name"
-            maxLength={120}
-            name="name"
-            placeholder="Enter plan name"
-            required
-            testId="training-plan-name-input"
-          />
+        <FormTextField
+          control={form.control}
+          label="Plan name"
+          maxLength={120}
+          name="name"
+          placeholder="Enter plan name"
+          required
+          testId="training-plan-name-input"
+        />
 
-          <FormTextareaField
-            control={form.control}
-            label="Description"
-            maxLength={500}
-            name="description"
-            numberOfLines={3}
-            placeholder="Optional description"
-            testId="training-plan-description-input"
-          />
-        </View>
+        <FormTextareaField
+          control={form.control}
+          label="Description"
+          maxLength={500}
+          name="description"
+          numberOfLines={3}
+          placeholder="Optional description"
+          testId="training-plan-description-input"
+        />
       </Form>
 
       <Text className="text-xs text-muted-foreground">

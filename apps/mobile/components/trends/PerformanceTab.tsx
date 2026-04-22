@@ -42,10 +42,9 @@ export function PerformanceTab({
   }
 
   return (
-    <View className="space-y-4">
-      {/* Metric Selector */}
-      <View className="bg-card rounded-lg border border-border p-4">
-        <Text className="text-sm font-medium text-foreground mb-2">Select Metric</Text>
+    <View className="gap-4">
+      <View className="gap-2 rounded-lg border border-border bg-card p-4">
+        <Text className="text-sm font-medium text-foreground">Select Metric</Text>
         <View className="flex-row gap-2">
           {hasSpeed && (
             <TouchableOpacity
@@ -98,7 +97,6 @@ export function PerformanceTab({
         </View>
       </View>
 
-      {/* Performance Chart */}
       <PerformanceTrendsChart
         data={dataPoints}
         metric={selectedMetric}
@@ -106,13 +104,11 @@ export function PerformanceTab({
         showTrendline={true}
       />
 
-      {/* Best Performances */}
-      <View className="bg-card rounded-lg border border-border p-4">
-        <Text className="text-base font-semibold text-foreground mb-3">
+      <View className="gap-3 rounded-lg border border-border bg-card p-4">
+        <Text className="text-base font-semibold text-foreground">
           Top 5 Activities ({timeRange})
         </Text>
 
-        {/* Sort by selected metric */}
         {dataPoints
           .filter((d) => {
             switch (selectedMetric) {
@@ -171,7 +167,7 @@ export function PerformanceTab({
                   </View>
                   <Text className="text-sm font-semibold text-foreground">{value}</Text>
                 </View>
-                {index < 4 && <View className="h-px bg-border" />}
+                {index < 4 ? <View className="h-px bg-border" /> : null}
               </View>
             );
           })}

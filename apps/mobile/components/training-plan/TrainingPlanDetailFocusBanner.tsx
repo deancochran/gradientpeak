@@ -1,7 +1,6 @@
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
-import { TouchableOpacity } from "react-native";
+import { TouchableOpacity, View } from "react-native";
 
 interface TrainingPlanDetailFocusBannerProps {
   ctaLabel: string;
@@ -17,18 +16,16 @@ export function TrainingPlanDetailFocusBanner({
   title,
 }: TrainingPlanDetailFocusBannerProps) {
   return (
-    <Card className="border-primary/40 bg-primary/5 mb-4">
-      <CardContent className="p-3">
-        <Text className="text-sm text-primary font-semibold">{title}</Text>
-        <Text className="text-xs text-muted-foreground mt-1">{description}</Text>
-        <TouchableOpacity
-          onPress={onPress}
-          className="self-start mt-2 px-3 py-1.5 rounded-full bg-primary"
-          activeOpacity={0.8}
-        >
-          <Text className="text-xs font-semibold text-primary-foreground">{ctaLabel}</Text>
-        </TouchableOpacity>
-      </CardContent>
-    </Card>
+    <View className="mb-4 rounded-xl border border-primary/40 bg-primary/5 p-3">
+      <Text className="text-sm font-semibold text-primary">{title}</Text>
+      <Text className="mt-1 text-xs text-muted-foreground">{description}</Text>
+      <TouchableOpacity
+        onPress={onPress}
+        className="mt-2 self-start rounded-full bg-primary px-3 py-1.5"
+        activeOpacity={0.8}
+      >
+        <Text className="text-xs font-semibold text-primary-foreground">{ctaLabel}</Text>
+      </TouchableOpacity>
+    </View>
   );
 }

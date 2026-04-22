@@ -20,7 +20,7 @@ describe("calendar event routing", () => {
 
   it("routes non-planned edit action to routed edit mode", () => {
     expect(buildEditEventRoute({ id: "e-4", event_type: "custom" })).toBe(
-      ROUTES.PLAN.EVENT_DETAIL("e-4", "edit"),
+      ROUTES.PLAN.EVENT_UPDATE("e-4"),
     );
   });
 

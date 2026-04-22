@@ -35,6 +35,7 @@ import {
   getActivityPlanDerivedMetrics,
   getActivityPlansDerivedMetrics,
 } from "../utils/activity-plan-derived-metrics";
+import { loadProfileIdentityMap, type ProfileIdentity } from "../utils/profile-identity";
 
 const storageService = getApiStorageService();
 
@@ -247,7 +248,12 @@ type MappedEvent<T extends PlannedEventRecord = PlannedEventRecord> = Omit<
   scheduled_date: string;
   event_type: CoreEventType;
   legacy_event_type: DbEventType;
-  activity_plan: PublicActivityPlansRow | null;
+  activity_plan:
+    | (PublicActivityPlansRow & {
+        owner?: ProfileIdentity | null;
+        updated_at?: Date | string | null;
+      })
+    | null;
 };
 
 function flattenActivityPlanRelation(
@@ -474,7 +480,9 @@ function hasInstantChanged(
 
 function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
   const legacyEventType = (event.event_type ?? plannedEventType) as DbEventType;
-  const activityPlan = flattenActivityPlanRelation(event.activity_plan);
+  const activityPlan = flattenActivityPlanRelation(
+    event.activity_plan,
+  ) as MappedEvent<T>["activity_plan"];
 
   return {
     ...event,
@@ -495,6 +503,29 @@ function mapEvents<T extends PlannedEventRecord>(events: T[] | null): Array<Mapp
   return (events || [])
     .filter((event) => !isLegacyRestDayEvent(event))
     .map((event) => mapEvent(event));
+}
+
+async function enrichEventsWithActivityPlanIdentity<
+  T extends {
+    activity_plan: (PublicActivityPlansRow & { updated_at?: Date | string | null }) | null;
+  },
+>(db: any, events: T[]) {
+  const profileIdentityMap = await loadProfileIdentityMap(
+    db,
+    events.map((event) => event.activity_plan?.profile_id ?? null),
+  );
+
+  return events.map((event) => ({
+    ...event,
+    activity_plan: event.activity_plan
+      ? {
+          ...event.activity_plan,
+          owner: event.activity_plan.profile_id
+            ? (profileIdentityMap.get(event.activity_plan.profile_id) ?? null)
+            : null,
+        }
+      : null,
+  })) as T[];
 }
 
 function assertRestDayWritesBlocked(eventType: CoreEventType, action: "create" | "update"): void {
@@ -875,10 +906,18 @@ export const eventsRouter = createTRPCRouter({
           eventReadRepository,
           ctx.session.user.id,
         );
-        return {
-          ...event,
-          activity_plan: planWithEstimation,
-        };
+        const [eventWithOwner] = await enrichEventsWithActivityPlanIdentity(getRequiredDb(ctx), [
+          {
+            ...event,
+            activity_plan: planWithEstimation,
+          } as typeof event,
+        ]);
+        return (
+          eventWithOwner ?? {
+            ...event,
+            activity_plan: planWithEstimation,
+          }
+        );
       }
 
       return event;
@@ -912,10 +951,13 @@ export const eventsRouter = createTRPCRouter({
       );
 
       const plansMap = new Map(plansWithEstimation.map((p: any) => [p.id, p]));
-      return events.map((event) => ({
-        ...event,
-        activity_plan: event.activity_plan ? plansMap.get(event.activity_plan.id) : null,
-      }));
+      return (await enrichEventsWithActivityPlanIdentity(
+        getRequiredDb(ctx),
+        events.map((event) => ({
+          ...event,
+          activity_plan: event.activity_plan ? plansMap.get(event.activity_plan.id) : null,
+        })) as typeof events,
+      )) as typeof events;
     }
 
     return events;
@@ -1754,6 +1796,11 @@ export const eventsRouter = createTRPCRouter({
           : null,
       })) as typeof events;
     }
+
+    itemsWithEstimation = (await enrichEventsWithActivityPlanIdentity(
+      getRequiredDb(ctx),
+      itemsWithEstimation as typeof itemsWithEstimation,
+    )) as typeof itemsWithEstimation;
 
     let nextCursor: string | undefined;
     if (hasMore && events.length > 0) {

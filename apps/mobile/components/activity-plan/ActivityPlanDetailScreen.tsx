@@ -16,7 +16,6 @@ import React from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
-import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -339,11 +338,6 @@ export function ActivityPlanDetailScreen({
                 <Text className="text-sm text-muted-foreground">
                   {social.commentCount} comments
                 </Text>
-              </View>
-            ) : null}
-            {activityPlan.owner ? (
-              <View className="mt-4 border-t border-border pt-4">
-                <EntityOwnerRow owner={activityPlan.owner} subtitle="Plan owner" />
               </View>
             ) : null}
           </View>

@@ -8,8 +8,9 @@ import { useState } from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { api } from "@/lib/api";
-import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
+import type { EntityOwner } from "./EntityOwnerRow";
 
 // ============================================
 // TYPES
@@ -32,6 +33,7 @@ export interface ActivityPlan {
   updated_at?: string;
   likes_count?: number;
   has_liked?: boolean;
+  owner?: EntityOwner | null;
 }
 
 export interface PlannedActivity {
@@ -60,6 +62,7 @@ export interface ActivityPlanCardData {
   routeId?: string;
   routeName?: string;
   notes?: string;
+  updatedAt?: string;
 
   // Scheduling info (optional)
   scheduledDate?: string; // ISO date string
@@ -67,6 +70,7 @@ export interface ActivityPlanCardData {
 
   likes_count?: number;
   has_liked?: boolean;
+  owner?: EntityOwner | null;
 }
 
 interface ActivityPlanCardProps {
@@ -96,11 +100,6 @@ export function ActivityPlanCard({
 }: ActivityPlanCardProps) {
   // Transform database objects to internal format
   const activity = legacyActivity || transformToCardData(activityPlan, plannedActivity);
-
-  const config =
-    activity.activityType in { run: true, bike: true, swim: true, strength: true, other: true }
-      ? getActivityCategoryConfig(activity.activityType)
-      : getActivityConfig(activity.activityType);
 
   // Determine if interactive
   const isInteractive = Boolean(onPress);
@@ -146,12 +145,12 @@ export function ActivityPlanCard({
       testID={`activity-plan-card-${activity.id}`}
     >
       <Card
-        className={`${isHero ? "border-2 border-primary" : ""} ${activity.isCompleted ? "opacity-60" : ""}`}
+        className={`${isCompact ? "py-2" : "py-3"} ${isHero ? "border-2 border-primary" : ""} ${activity.isCompleted ? "opacity-60" : ""}`}
       >
-        <CardContent className={isCompact ? "p-3" : "p-4"}>
+        <CardContent className={isCompact ? "px-2" : "px-3"}>
           <ActivityPlanSummary
             activityCategory={activity.activityType}
-            description={isCompact ? null : activity.description || activity.notes || null}
+            description={activity.description || activity.notes || null}
             estimatedDuration={activity.estimatedDuration}
             estimatedTss={activity.estimatedTss}
             headerAccessory={
@@ -173,11 +172,14 @@ export function ActivityPlanCard({
               </Pressable>
             }
             intensityFactor={activity.intensityFactor}
+            owner={activity.owner}
             routeName={route?.name || activity.routeName}
             routeProvided={!!activity.routeId}
             structure={activity.structure}
             title={activity.name}
+            updatedAt={activity.updatedAt}
             variant="standalone"
+            showAttribution={false}
           />
 
           {showScheduleInfo && activity.scheduledDate && (
@@ -205,6 +207,12 @@ export function ActivityPlanCard({
             intensityFactor={activity.intensityFactor}
             tss={activity.estimatedTss}
             testIDPrefix={`activity-plan-card-preview-${activity.id}`}
+          />
+
+          <ActivityPlanAttributionRow
+            compact={isCompact}
+            owner={activity.owner}
+            updatedAt={activity.updatedAt}
           />
         </CardContent>
       </Card>
@@ -248,10 +256,12 @@ function transformToCardData(
     routeId: plan.route_id || undefined,
     routeName: routeInfo?.name,
     notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
+    updatedAt: plan.updated_at || undefined,
     scheduledDate: plannedActivity?.scheduled_date,
     isCompleted: Boolean(plannedActivity?.completed_activity_id),
     likes_count: plan.likes_count,
     has_liked: plan.has_liked,
+    owner: plan.owner ?? null,
   };
 }
 

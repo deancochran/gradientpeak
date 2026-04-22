@@ -225,32 +225,30 @@ export function AvailabilityConfigSection({
         )}
       />
 
-      <View className="gap-1">
-        <Text className="text-xs text-muted-foreground">
-          Training days ({selectedAvailabilityDays}/7)
-        </Text>
-        <View className="flex-row flex-wrap gap-2">
-          {weekDays.map((day) => {
-            const isAvailable = resolvedValues[day];
+      <Text className="text-xs text-muted-foreground">
+        Training days ({selectedAvailabilityDays}/7)
+      </Text>
+      <View className="flex-row flex-wrap gap-2">
+        {weekDays.map((day) => {
+          const isAvailable = resolvedValues[day];
 
-            return (
-              <Button
-                key={`availability-${day}`}
-                variant={isAvailable ? "default" : "outline"}
-                size="sm"
-                onPress={() => {
-                  form.setValue(day, !isAvailable, {
-                    shouldDirty: true,
-                    shouldTouch: true,
-                    shouldValidate: true,
-                  });
-                }}
-              >
-                <Text>{getWeekDayLabel(day)}</Text>
-              </Button>
-            );
-          })}
-        </View>
+          return (
+            <Button
+              key={`availability-${day}`}
+              variant={isAvailable ? "default" : "outline"}
+              size="sm"
+              onPress={() => {
+                form.setValue(day, !isAvailable, {
+                  shouldDirty: true,
+                  shouldTouch: true,
+                  shouldValidate: true,
+                });
+              }}
+            >
+              <Text>{getWeekDayLabel(day)}</Text>
+            </Button>
+          );
+        })}
       </View>
     </View>
   );

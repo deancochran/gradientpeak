@@ -2,8 +2,21 @@ import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, lt, lte, or } from "drizzle-orm";
 import type { EventReadRepository } from "../../repositories";
 
+function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
+  if (!activityPlan) {
+    return null;
+  }
+
+  return {
+    ...activityPlan,
+    created_at: activityPlan.created_at.toISOString(),
+    updated_at: activityPlan.updated_at.toISOString(),
+  };
+}
+
 function serializeEventRow(row: {
   activity_plan_id: string | null;
+  activity_plan: typeof schema.activityPlans.$inferSelect | null;
   all_day: boolean | null;
   created_at: Date;
   description: string | null;
@@ -40,7 +53,7 @@ function serializeEventRow(row: {
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
-    activity_plan: null,
+    activity_plan: serializeActivityPlanRow(row.activity_plan),
   };
 }
 
@@ -74,8 +87,12 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
   return {
     async getOwnedEventById({ eventId, profileId }) {
       const [row] = await db
-        .select(eventColumns)
+        .select({
+          ...eventColumns,
+          activity_plan: schema.activityPlans,
+        })
         .from(schema.events)
+        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
@@ -439,7 +456,10 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
       }
 
       const rows = await db
-        .select(eventColumns)
+        .select({
+          ...eventColumns,
+          activity_plan: schema.activityPlans,
+        })
         .from(schema.events)
         .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(and(...conditions))

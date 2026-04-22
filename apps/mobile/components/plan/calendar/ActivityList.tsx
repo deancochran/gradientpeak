@@ -52,11 +52,9 @@ function GroupSection({ title, activities, onPress }: GroupSectionProps) {
 
   return (
     <View className="mb-6">
-      <View className="flex-row items-center mb-3 px-4">
+      <View className="mb-3 flex-row items-center px-4">
         <Text className="text-lg font-semibold flex-1">{title}</Text>
-        <View className="bg-muted px-3 py-1 rounded-full">
-          <Text className="text-sm text-muted-foreground">{activities.length}</Text>
-        </View>
+        <Text className="text-sm text-muted-foreground">{activities.length}</Text>
       </View>
       <View className="gap-3 px-4">
         {activities.map((activity) => (

@@ -1,22 +1,18 @@
-import type { ActivityPayload } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
-import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
-import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
+import { getEventStatusLabel, getEventTitle } from "@/lib/calendar/eventPresentation";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
-import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
-import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 
 const CALENDAR_DAY_QUERY_LIMIT = 100;
 
@@ -27,19 +23,6 @@ function formatCalendarDayTitle(dateKey: string, todayKey: string) {
   }
 
   return format(date, "EEEE, MMMM d");
-}
-
-function readMetric(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  return null;
 }
 
 function formatTimeRange(event: CalendarEvent): string {
@@ -79,83 +62,48 @@ function readEventPlace(event: CalendarEvent): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function PlannedAgendaEventCard({
-  event,
-  onPress,
-  onStart,
-}: {
-  event: CalendarEvent;
-  onPress: () => void;
-  onStart?: (() => void) | null;
-}) {
-  const estimatedTss = readMetric(event.activity_plan?.estimated_tss);
-  const intensityFactor = readMetric(event.activity_plan?.intensity_factor);
-  const routeId = event.activity_plan?.route_id;
-  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+function EventStatusPill({ label }: { label: string }) {
+  return (
+    <View className="rounded-full border border-border/60 bg-muted/60 px-2 py-1">
+      <Text className="text-[11px] font-medium text-muted-foreground">{label}</Text>
+    </View>
+  );
+}
+
+function PlannedAgendaEventCard({ event, onPress }: { event: CalendarEvent; onPress: () => void }) {
   const eventNote = event.notes?.trim() || event.description?.trim() || null;
-  const planDescription =
-    event.activity_plan?.notes?.trim() || event.activity_plan?.description?.trim() || null;
+  const statusLabel = getEventStatusLabel(event);
 
   return (
     <View
-      className="rounded-3xl border border-primary/10 bg-card p-4"
+      className="rounded-3xl border border-border bg-card p-4"
       testID={`schedule-event-${event.id}`}
     >
       <TouchableOpacity onPress={onPress} activeOpacity={0.85} className="gap-3">
-        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {formatTimeRange(event)}
-        </Text>
-        <Text className="text-base font-semibold text-foreground">
-          {event.title || event.activity_plan?.name || "Planned activity"}
-        </Text>
+        <View className="flex-row flex-wrap items-center gap-2">
+          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {formatTimeRange(event)}
+          </Text>
+          <EventStatusPill label="Planned" />
+          {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
+        </View>
+        <Text className="text-xl font-semibold text-foreground">{getEventTitle(event)}</Text>
         {eventNote ? (
           <Text className="text-sm leading-5 text-muted-foreground">{eventNote}</Text>
         ) : null}
 
-        <ActivityPlanSummary
-          activityCategory={event.activity_plan?.activity_category}
-          description={null}
-          estimatedDuration={readMetric(event.activity_plan?.estimated_duration)}
-          estimatedDurationMinutes={readMetric(event.activity_plan?.estimated_duration_minutes)}
-          intensityFactor={intensityFactor}
-          estimatedTss={estimatedTss}
-          routeName={route?.name}
-          routeProvided={!!routeId}
-          structure={event.activity_plan?.structure}
-          subtitle="Attached activity plan"
-          testID={`calendar-day-planned-${event.id}`}
-          title={event.activity_plan?.name}
-          variant="embedded"
-        />
-
-        <ActivityPlanContentPreview
-          compact
-          size="small"
-          durationLabel={null}
-          intensityFactor={intensityFactor}
-          plan={event.activity_plan}
-          route={route}
-          tss={estimatedTss}
-          testIDPrefix={`calendar-day-planned-${event.id}`}
-        />
+        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Linked plan
+        </Text>
+        <ActivityPlanCard activityPlan={event.activity_plan as any} variant="compact" />
       </TouchableOpacity>
-
-      {onStart ? (
-        <TouchableOpacity
-          onPress={onStart}
-          activeOpacity={0.85}
-          className="mt-3 self-end rounded-full border border-border bg-background px-3 py-2"
-          testID={`schedule-event-action-${event.id}`}
-        >
-          <Text className="text-xs font-medium text-foreground">Start Activity</Text>
-        </TouchableOpacity>
-      ) : null}
     </View>
   );
 }
 
 function SimpleAgendaEventCard({ event, onPress }: { event: CalendarEvent; onPress: () => void }) {
   const place = readEventPlace(event);
+  const statusLabel = getEventStatusLabel(event);
 
   return (
     <TouchableOpacity
@@ -164,11 +112,14 @@ function SimpleAgendaEventCard({ event, onPress }: { event: CalendarEvent; onPre
       className="rounded-3xl border border-border bg-card px-4 py-4"
       testID={`schedule-event-${event.id}`}
     >
-      <View className="gap-1.5">
-        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {formatTimeRange(event)}
-        </Text>
-        <Text className="text-base font-semibold text-foreground">
+      <View className="gap-2">
+        <View className="flex-row flex-wrap items-center gap-2">
+          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {formatTimeRange(event)}
+          </Text>
+          {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
+        </View>
+        <Text className="text-xl font-semibold text-foreground">
           {event.title || "Scheduled event"}
         </Text>
         {event.description || event.notes ? (
@@ -214,14 +165,6 @@ export default function CalendarDayScreen() {
   );
   const title = useMemo(() => formatCalendarDayTitle(dateKey, todayKey), [dateKey, todayKey]);
 
-  const getCanStartPlannedEvent = (event: CalendarEvent) => {
-    if (event.event_type !== "planned") return false;
-    const isCompleted = isActivityCompleted(event);
-    return (
-      !isCompleted && typeof event.scheduled_date === "string" && event.scheduled_date >= todayKey
-    );
-  };
-
   const handleOpenEvent = (event: CalendarEvent) => {
     const route = buildOpenEventRoute({
       id: event.id,
@@ -236,24 +179,11 @@ export default function CalendarDayScreen() {
     navigateTo(route as never);
   };
 
-  const handleQuickActionPress = (event: CalendarEvent) => {
-    if (!getCanStartPlannedEvent(event) || !event.activity_plan) {
-      return;
-    }
-
-    const payload: ActivityPayload = {
-      category: event.activity_plan.activity_category as ActivityPayload["category"],
-      gpsRecordingEnabled: true,
-      eventId: event.id,
-      plan: event.activity_plan as ActivityPayload["plan"],
-    };
-
-    activitySelectionStore.setSelection(payload);
-    navigateTo(ROUTES.RECORD);
-  };
-
   const handleCreateEvent = () => {
-    navigateTo(ROUTES.PLAN.EVENT_CREATE(dateKey));
+    navigateTo({
+      pathname: "/(internal)/(standard)/event-detail",
+      params: { mode: "create", date: dateKey },
+    } as never);
   };
 
   return (
@@ -293,10 +223,13 @@ export default function CalendarDayScreen() {
             <>
               <View className="rounded-3xl border border-border bg-card px-4 py-4">
                 <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Agenda
+                  Day agenda
                 </Text>
-                <Text className="mt-2 text-sm text-muted-foreground">
+                <Text className="mt-2 text-2xl font-semibold text-foreground">
                   {visibleEvents.length === 1 ? "1 event" : `${visibleEvents.length} events`}
+                </Text>
+                <Text className="mt-1 text-sm text-muted-foreground">
+                  Events scheduled for this day, in chronological order.
                 </Text>
               </View>
 
@@ -306,9 +239,6 @@ export default function CalendarDayScreen() {
                     key={event.id}
                     event={event}
                     onPress={() => handleOpenEvent(event)}
-                    onStart={
-                      getCanStartPlannedEvent(event) ? () => handleQuickActionPress(event) : null
-                    }
                   />
                 ) : (
                   <SimpleAgendaEventCard

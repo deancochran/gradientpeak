@@ -1,4 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Activity, Heart, TrendingUp } from "lucide-react-native";
@@ -48,71 +47,80 @@ export function CurrentStatusCard({ ctl, atl, tsb, form }: CurrentStatusCardProp
   const formInfo = formConfig[form];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Current Training Status</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <View className="gap-4">
-          {/* Form Status Banner */}
-          <View className={`${formInfo.bgColor} rounded-lg p-4`}>
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className={`text-lg font-bold ${formInfo.color}`}>{formInfo.label}</Text>
-              <Text className={`text-2xl font-bold ${formInfo.color}`}>
-                TSB: {tsb > 0 ? "+" : ""}
-                {tsb}
-              </Text>
-            </View>
-            <Text className="text-sm text-muted-foreground">{formInfo.description}</Text>
-          </View>
+    <View className="gap-4 rounded-xl border border-border bg-card p-4">
+      <Text className="text-base font-semibold text-foreground">Current Training Status</Text>
 
-          {/* Metrics Grid */}
-          <View className="flex-row gap-3">
-            {/* CTL - Fitness */}
-            <View className="flex-1 bg-muted/30 rounded-lg p-4">
-              <View className="flex-row items-center gap-2 mb-2">
-                <Icon as={TrendingUp} size={18} className="text-blue-500" />
-                <Text className="text-xs text-muted-foreground font-medium">CTL</Text>
-              </View>
-              <Text className="text-2xl font-bold mb-1">{ctl}</Text>
-              <Text className="text-xs text-muted-foreground">Fitness</Text>
-            </View>
-
-            {/* ATL - Fatigue */}
-            <View className="flex-1 bg-muted/30 rounded-lg p-4">
-              <View className="flex-row items-center gap-2 mb-2">
-                <Icon as={Heart} size={18} className="text-red-500" />
-                <Text className="text-xs text-muted-foreground font-medium">ATL</Text>
-              </View>
-              <Text className="text-2xl font-bold mb-1">{atl}</Text>
-              <Text className="text-xs text-muted-foreground">Fatigue</Text>
-            </View>
-
-            {/* TSB - Form */}
-            <View className="flex-1 bg-muted/30 rounded-lg p-4">
-              <View className="flex-row items-center gap-2 mb-2">
-                <Icon as={Activity} size={18} className={formInfo.color} />
-                <Text className="text-xs text-muted-foreground font-medium">TSB</Text>
-              </View>
-              <Text className={`text-2xl font-bold mb-1 ${formInfo.color}`}>
-                {tsb > 0 ? "+" : ""}
-                {tsb}
-              </Text>
-              <Text className="text-xs text-muted-foreground">Form</Text>
-            </View>
-          </View>
-
-          {/* Info Text */}
-          <View className="bg-muted/20 rounded-lg p-3">
-            <Text className="text-xs text-muted-foreground leading-5">
-              <Text className="font-semibold">CTL</Text> (Chronic Training Load) represents your
-              long-term fitness. <Text className="font-semibold">ATL</Text> (Acute Training Load)
-              represents recent fatigue. <Text className="font-semibold">TSB</Text> (Training Stress
-              Balance) is the difference, indicating your current form.
-            </Text>
-          </View>
+      <View className={`${formInfo.bgColor} rounded-lg p-4`}>
+        <View className="mb-2 flex-row items-center justify-between">
+          <Text className={`text-lg font-bold ${formInfo.color}`}>{formInfo.label}</Text>
+          <Text className={`text-2xl font-bold ${formInfo.color}`}>
+            TSB: {tsb > 0 ? "+" : ""}
+            {tsb}
+          </Text>
         </View>
-      </CardContent>
-    </Card>
+        <Text className="text-sm text-muted-foreground">{formInfo.description}</Text>
+      </View>
+
+      <View className="flex-row gap-3">
+        <TrainingMetricCard
+          icon={TrendingUp}
+          iconClassName="text-blue-500"
+          label="CTL"
+          subtitle="Fitness"
+          value={`${ctl}`}
+        />
+        <TrainingMetricCard
+          icon={Heart}
+          iconClassName="text-red-500"
+          label="ATL"
+          subtitle="Fatigue"
+          value={`${atl}`}
+        />
+        <TrainingMetricCard
+          icon={Activity}
+          iconClassName={formInfo.color}
+          label="TSB"
+          subtitle="Form"
+          value={`${tsb > 0 ? "+" : ""}${tsb}`}
+          valueClassName={formInfo.color}
+        />
+      </View>
+
+      <Text className="text-xs leading-5 text-muted-foreground">
+        <Text className="font-semibold">CTL</Text> (Chronic Training Load) represents your long-term
+        fitness. <Text className="font-semibold">ATL</Text> (Acute Training Load) represents recent
+        fatigue. <Text className="font-semibold">TSB</Text> (Training Stress Balance) is the
+        difference, indicating your current form.
+      </Text>
+    </View>
+  );
+}
+
+function TrainingMetricCard({
+  icon,
+  iconClassName,
+  label,
+  subtitle,
+  value,
+  valueClassName,
+}: {
+  icon: any;
+  iconClassName: string;
+  label: string;
+  subtitle: string;
+  value: string;
+  valueClassName?: string;
+}) {
+  return (
+    <View className="flex-1 rounded-lg bg-muted/30 p-4">
+      <View className="mb-2 flex-row items-center gap-2">
+        <Icon as={icon} size={18} className={iconClassName} />
+        <Text className="text-xs font-medium text-muted-foreground">{label}</Text>
+      </View>
+      <Text className={`mb-1 text-2xl font-bold ${valueClassName ?? "text-foreground"}`}>
+        {value}
+      </Text>
+      <Text className="text-xs text-muted-foreground">{subtitle}</Text>
+    </View>
   );
 }

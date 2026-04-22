@@ -395,6 +395,65 @@ describe("drizzle-event-read-repository", () => {
     ]);
   });
 
+  it("hydrates joined activity plans for owned events and detail reads", async () => {
+    const activityPlan = createActivityPlanRow();
+    const { db } = createQueryMapDbMock({
+      events: {
+        data: [
+          {
+            ...createEventRow(),
+            activity_plan: activityPlan,
+          },
+        ],
+        error: null,
+      },
+    });
+    const repository = createEventReadRepository(db);
+
+    await expect(
+      repository.listOwnedEvents({
+        profileId: "profile-1",
+        limit: 10,
+        includeAdhoc: true,
+      }),
+    ).resolves.toEqual([
+      {
+        ...createEventRow(),
+        occurrence_key: "",
+        created_at: "2026-04-01T10:00:00.000Z",
+        starts_at: "2026-04-15T07:00:00.000Z",
+        ends_at: "2026-04-15T08:15:00.000Z",
+        original_starts_at: "2026-04-15T06:45:00.000Z",
+        updated_at: "2026-04-02T11:00:00.000Z",
+        activity_plan: {
+          ...activityPlan,
+          created_at: "2026-04-01T00:00:00.000Z",
+          updated_at: "2026-04-01T00:00:00.000Z",
+        },
+      },
+    ]);
+
+    await expect(
+      repository.getOwnedEventById({
+        eventId: "event-1",
+        profileId: "profile-1",
+      }),
+    ).resolves.toEqual({
+      ...createEventRow(),
+      occurrence_key: "",
+      created_at: "2026-04-01T10:00:00.000Z",
+      starts_at: "2026-04-15T07:00:00.000Z",
+      ends_at: "2026-04-15T08:15:00.000Z",
+      original_starts_at: "2026-04-15T06:45:00.000Z",
+      updated_at: "2026-04-02T11:00:00.000Z",
+      activity_plan: {
+        ...activityPlan,
+        created_at: "2026-04-01T00:00:00.000Z",
+        updated_at: "2026-04-01T00:00:00.000Z",
+      },
+    });
+  });
+
   it("builds listOwnedEvents filters, cursor, ordering, and limit on the seam query", async () => {
     const { db, selects } = createSelectCaptureDb({
       events: [createEventRow()],

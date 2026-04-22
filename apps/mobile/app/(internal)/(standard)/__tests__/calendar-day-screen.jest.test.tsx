@@ -78,14 +78,9 @@ jest.mock("@/lib/constants/routes", () => ({
   },
 }));
 
-jest.mock("@/components/shared/ActivityPlanSummary", () => ({
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanSummary: createHost("ActivityPlanSummary"),
-}));
-
-jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
-  __esModule: true,
-  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
+  ActivityPlanCard: createHost("ActivityPlanCard"),
 }));
 
 jest.mock("@/lib/utils/plan/colors", () => ({
@@ -201,26 +196,20 @@ describe("calendar day screen", () => {
     fireEvent.press(screen.getByTestId("calendar-day-create-event-button"));
 
     expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/event-detail",
+      pathname: "/(internal)/(standard)/event-detail",
       params: { mode: "create", date: today },
     });
   });
 
-  it("shows the planned activity summary inside the event card and opens event detail on tap", () => {
+  it("shows the shared activity plan card inside the event card and opens event detail on tap", () => {
     const rendered = renderNative(<CalendarDayScreen />);
 
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanSummary").props.testID).toBe(
-      "calendar-day-planned-event-1",
-    );
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanSummary").props.routeName).toBe(
-      "River Loop",
-    );
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanSummary").props.subtitle).toBe(
-      "Attached activity plan",
-    );
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.size).toBe(
-      "small",
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.activityPlan).toEqual(
+      expect.objectContaining({
+        id: "plan-1",
+        name: "Tempo Builder",
+      }),
     );
 
     fireEvent.press(screen.getByTestId("schedule-event-event-1"));
@@ -237,14 +226,9 @@ describe("calendar day screen", () => {
     expect(screen.getByText("Garage studio")).toBeTruthy();
   });
 
-  it("starts a planned activity from the quick action", () => {
+  it("keeps planned agenda items scan-first without a quick action button", () => {
     renderNative(<CalendarDayScreen />);
 
-    fireEvent.press(screen.getByTestId("schedule-event-action-event-1"));
-
-    expect(setSelectionMock).toHaveBeenCalledWith(
-      expect.objectContaining({ category: "outdoor_run", eventId: "event-1" }),
-    );
-    expect(pushMock).toHaveBeenCalledWith("/record");
+    expect(screen.queryByTestId("schedule-event-action-event-1")).toBeNull();
   });
 });

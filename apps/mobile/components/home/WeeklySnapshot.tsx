@@ -1,4 +1,3 @@
-import { Card, CardContent } from "@repo/ui/components/card";
 import React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 
@@ -25,50 +24,45 @@ const WeeklySnapshot: React.FC<WeeklySnapshotProps> = ({
 
   return (
     <CardWrapper onPress={onPress} activeOpacity={0.7}>
-      <Card className="bg-card border-border">
-        <CardContent>
-          <View className="flex-row items-center justify-between">
-            {/* TSS */}
-            <View className="items-center flex-1">
-              <Text className="text-2xl font-semibold text-foreground">{totalTSS}</Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">TSS</Text>
-              {plannedTSS !== undefined && plannedTSS > 0 && (
-                <Text className="text-[10px] text-muted-foreground mt-0.5">/ {plannedTSS}</Text>
-              )}
-            </View>
-
-            {/* Divider */}
-            <View className="h-12 w-px bg-border" />
-
-            {/* Distance */}
-            <View className="items-center flex-1">
-              <Text className="text-2xl font-semibold text-foreground">{distance}</Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">Miles</Text>
-              {plannedDistance !== undefined && plannedDistance > 0 && (
-                <Text className="text-[10px] text-muted-foreground mt-0.5">
-                  / {plannedDistance.toFixed(1)}
-                </Text>
-              )}
-            </View>
-
-            {/* Divider */}
-            <View className="h-12 w-px bg-border" />
-
-            {/* Workouts */}
-            <View className="items-center flex-1">
-              <Text className="text-2xl font-semibold text-foreground">{workouts}</Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">Workouts</Text>
-              {plannedWorkouts !== undefined && plannedWorkouts > 0 && (
-                <Text className="text-[10px] text-muted-foreground mt-0.5">
-                  / {plannedWorkouts}
-                </Text>
-              )}
-            </View>
-          </View>
-        </CardContent>
-      </Card>
+      <View className="rounded-xl border border-border bg-card px-4 py-4">
+        <View className="flex-row items-center justify-between">
+          <MetricColumn label="TSS" planned={plannedTSS} value={`${totalTSS}`} />
+          <View className="h-12 w-px bg-border" />
+          <MetricColumn
+            label="Miles"
+            planned={
+              plannedDistance !== undefined && plannedDistance > 0
+                ? plannedDistance.toFixed(1)
+                : undefined
+            }
+            value={`${distance}`}
+          />
+          <View className="h-12 w-px bg-border" />
+          <MetricColumn label="Workouts" planned={plannedWorkouts} value={`${workouts}`} />
+        </View>
+      </View>
     </CardWrapper>
   );
 };
+
+function MetricColumn({
+  label,
+  planned,
+  value,
+}: {
+  label: string;
+  planned?: number | string;
+  value: string;
+}) {
+  return (
+    <View className="flex-1 items-center">
+      <Text className="text-2xl font-semibold text-foreground">{value}</Text>
+      <Text className="mt-0.5 text-xs text-muted-foreground">{label}</Text>
+      {planned !== undefined && planned !== null ? (
+        <Text className="mt-0.5 text-[10px] text-muted-foreground">/ {planned}</Text>
+      ) : null}
+    </View>
+  );
+}
 
 export default WeeklySnapshot;

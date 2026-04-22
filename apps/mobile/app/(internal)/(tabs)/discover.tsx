@@ -220,7 +220,7 @@ export default function DiscoverPage() {
     {
       includeSystemTemplates: true,
       includeOwnOnly: false,
-      includeEstimation: false,
+      includeEstimation: true,
       ownerScope: "all",
       search: debouncedSearch || undefined,
       activityCategory: activityPlanFilters.categoryId || undefined,

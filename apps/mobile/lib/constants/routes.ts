@@ -34,10 +34,8 @@ export const ROUTES = {
     // Dynamic Routes (use with params)
     PLAN_DETAIL: (planId: string) => `/activity-plan-detail?id=${planId}` as const,
     ACTIVITY_DETAIL: (activityId: string) => `/event-detail?id=${activityId}` as const,
-    EVENT_DETAIL: (eventId: string, mode?: "view" | "edit") =>
-      mode
-        ? (`/event-detail?id=${eventId}&mode=${mode}` as const)
-        : (`/event-detail?id=${eventId}` as const),
+    EVENT_DETAIL: (eventId: string) => `/event-detail?id=${eventId}` as const,
+    EVENT_UPDATE: (eventId: string) => `/event-detail-update?id=${eventId}` as const,
     GOAL_DETAIL: (goalId: string) => `/goal-detail?id=${goalId}` as const,
   },
 

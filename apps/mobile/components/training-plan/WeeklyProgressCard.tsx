@@ -1,7 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Progress } from "@repo/ui/components/progress";
-import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { CheckCircle2, Target } from "lucide-react-native";
 import { View } from "react-native";
@@ -42,97 +40,85 @@ export function WeeklyProgressCard({
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>This Week&apos;s Progress</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <View className="gap-6">
-          {/* TSS Progress */}
-          <View>
-            <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center gap-2">
-                <Icon as={Target} size={18} className="text-primary" />
-                <Text className="font-semibold">Training Stress Score</Text>
-              </View>
-              <Text className="text-sm text-muted-foreground">{Math.round(tssProgress)}%</Text>
-            </View>
+    <View className="gap-6 rounded-xl border border-border bg-card p-4">
+      <Text className="text-base font-semibold text-foreground">This Week&apos;s Progress</Text>
 
-            {/* TSS Progress Bar */}
-            <Progress
-              value={Math.min(tssProgress, 100)}
-              className="mb-2 h-3"
-              indicatorClassName={getTSSProgressColor()}
-            />
+      <ProgressSection
+        icon={Target}
+        indicatorClassName={getTSSProgressColor()}
+        label="Training Stress Score"
+        progress={tssProgress}
+        summary={`${Math.round(completedTSS)}`}
+        targetLabel={`/ ${Math.round(targetTSS)} TSS target`}
+      />
 
-            {/* TSS Numbers */}
-            <View className="flex-row items-center justify-between">
-              <Text className="text-2xl font-bold">{Math.round(completedTSS)}</Text>
-              <Text className="text-sm text-muted-foreground">
-                / {Math.round(targetTSS)} TSS target
-              </Text>
-            </View>
+      {plannedTSS > completedTSS ? (
+        <Text className="text-xs font-medium text-blue-500">
+          {Math.round(plannedTSS - completedTSS)} TSS remaining
+        </Text>
+      ) : null}
 
-            {/* Planned vs Completed */}
-            {plannedTSS > completedTSS && (
-              <View className="mt-2 flex-row items-center gap-2">
-                <View className="bg-blue-500/10 rounded px-2 py-1">
-                  <Text className="text-xs text-blue-500 font-medium">
-                    {Math.round(plannedTSS - completedTSS)} TSS remaining
-                  </Text>
-                </View>
-              </View>
-            )}
-          </View>
+      <View className="h-px bg-border" />
 
-          <Separator />
+      <ProgressSection
+        icon={CheckCircle2}
+        indicatorClassName={getActivityProgressColor()}
+        label="Activity Completion"
+        progress={activityProgress}
+        summary={`${completedActivities}`}
+        targetLabel={`/ ${totalPlannedActivities} activities`}
+      />
 
-          {/* Activity Completion */}
-          <View>
-            <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center gap-2">
-                <Icon as={CheckCircle2} size={18} className="text-primary" />
-                <Text className="font-semibold">Activity Completion</Text>
-              </View>
-              <Text className="text-sm text-muted-foreground">
-                {totalPlannedActivities > 0 ? Math.round(activityProgress) : 0}%
-              </Text>
-            </View>
+      {tssProgress >= 100 ? (
+        <Text className="text-sm font-medium text-green-600">
+          Weekly TSS target achieved. Great work.
+        </Text>
+      ) : null}
 
-            {/* Activity Progress Bar */}
-            <Progress
-              value={Math.min(activityProgress, 100)}
-              className="mb-2 h-3"
-              indicatorClassName={getActivityProgressColor()}
-            />
+      {tssProgress < 50 && totalPlannedActivities > completedActivities ? (
+        <Text className="text-sm font-medium text-orange-600">
+          Behind on weekly target. Consider completing scheduled activities.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
 
-            {/* Activity Count */}
-            <View className="flex-row items-center justify-between">
-              <Text className="text-2xl font-bold">{completedActivities}</Text>
-              <Text className="text-sm text-muted-foreground">
-                / {totalPlannedActivities} activities
-              </Text>
-            </View>
-          </View>
-
-          {/* Status Messages */}
-          {tssProgress >= 100 && (
-            <View className="bg-green-500/10 rounded-lg p-3">
-              <Text className="text-sm text-green-600 font-medium">
-                🎉 Weekly TSS target achieved! Great work!
-              </Text>
-            </View>
-          )}
-
-          {tssProgress < 50 && totalPlannedActivities > completedActivities && (
-            <View className="bg-orange-500/10 rounded-lg p-3">
-              <Text className="text-sm text-orange-600 font-medium">
-                ⚠️ Behind on weekly target. Consider completing scheduled activities.
-              </Text>
-            </View>
-          )}
+function ProgressSection({
+  icon,
+  indicatorClassName,
+  label,
+  progress,
+  summary,
+  targetLabel,
+}: {
+  icon: any;
+  indicatorClassName: string;
+  label: string;
+  progress: number;
+  summary: string;
+  targetLabel: string;
+}) {
+  return (
+    <View>
+      <View className="mb-3 flex-row items-center justify-between">
+        <View className="flex-row items-center gap-2">
+          <Icon as={icon} size={18} className="text-primary" />
+          <Text className="font-semibold text-foreground">{label}</Text>
         </View>
-      </CardContent>
-    </Card>
+        <Text className="text-sm text-muted-foreground">{Math.round(progress)}%</Text>
+      </View>
+
+      <Progress
+        value={Math.min(progress, 100)}
+        className="mb-2 h-3"
+        indicatorClassName={indicatorClassName}
+      />
+
+      <View className="flex-row items-center justify-between">
+        <Text className="text-2xl font-bold text-foreground">{summary}</Text>
+        <Text className="text-sm text-muted-foreground">{targetLabel}</Text>
+      </View>
+    </View>
   );
 }

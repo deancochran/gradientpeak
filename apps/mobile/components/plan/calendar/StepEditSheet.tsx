@@ -310,9 +310,8 @@ export function StepEditSheet({
               />
             </View>
 
-            {/* Duration Section */}
-            <View className="gap-3 p-3 bg-muted/30 rounded-lg">
-              <Text className="font-semibold">Duration</Text>
+            <View className="gap-3">
+              <Text className="font-semibold text-foreground">Duration</Text>
 
               <View className="gap-2">
                 <Label>Duration Type</Label>
@@ -394,9 +393,8 @@ export function StepEditSheet({
               )}
             </View>
 
-            {/* Target Section */}
-            <View className="gap-3 p-3 bg-muted/30 rounded-lg">
-              <Text className="font-semibold">Target Intensity (optional)</Text>
+            <View className="gap-3">
+              <Text className="font-semibold text-foreground">Target Intensity (optional)</Text>
 
               <View className="gap-2">
                 <Label>Target Type</Label>
@@ -453,7 +451,6 @@ export function StepEditSheet({
               </View>
             </View>
 
-            {/* Notes */}
             <View className="gap-2">
               <Label>Notes (optional)</Label>
               <Textarea

@@ -1,4 +1,4 @@
-import type { ActivityRow, EventRow, PublicEventStatus } from "@repo/db";
+import type { ActivityPlanRow, ActivityRow, EventRow, PublicEventStatus } from "@repo/db";
 
 type EventCompletionBase = Pick<
   EventRow,
@@ -28,8 +28,13 @@ type EventCompletionBase = Pick<
   original_starts_at: string | null;
 };
 
+type SerializedEventActivityPlan = Omit<ActivityPlanRow, "created_at" | "updated_at"> & {
+  created_at: string;
+  updated_at: string;
+};
+
 export type EventCompletionEventRecord = EventCompletionBase & {
-  activity_plan: null;
+  activity_plan: SerializedEventActivityPlan | null;
 };
 
 export type EventDeleteCandidateRecord = Pick<EventRow, "id" | "event_type">;

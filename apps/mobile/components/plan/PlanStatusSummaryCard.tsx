@@ -121,11 +121,9 @@ export function PlanStatusSummaryCard({
     <View className="bg-card border border-border rounded-lg p-4 gap-3">
       <View className="flex-row items-center justify-between">
         <Text className="text-base font-semibold">Status Summary</Text>
-        <View className="px-2.5 py-1 rounded-full bg-muted">
-          <Text className="text-[11px] font-medium text-muted-foreground">
-            Confidence {confidenceLabel(confidence)}
-          </Text>
-        </View>
+        <Text className="text-[11px] font-medium text-muted-foreground">
+          Confidence {confidenceLabel(confidence)}
+        </Text>
       </View>
 
       <View className="gap-2">
@@ -160,16 +158,12 @@ export function PlanStatusSummaryCard({
         </View>
       </View>
 
-      <View className="bg-muted/50 rounded-md p-3">
-        <Text className="text-sm text-foreground">
-          {divergenceSummary || "No divergence signal available yet."}
-        </Text>
-        {primaryReason ? (
-          <Text className="text-xs text-muted-foreground mt-1">
-            Driver: {stateText(primaryReason)}
-          </Text>
-        ) : null}
-      </View>
+      <Text className="text-sm text-foreground">
+        {divergenceSummary || "No divergence signal available yet."}
+      </Text>
+      {primaryReason ? (
+        <Text className="text-xs text-muted-foreground">Driver: {stateText(primaryReason)}</Text>
+      ) : null}
     </View>
   );
 }

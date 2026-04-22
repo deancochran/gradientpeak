@@ -1,5 +1,4 @@
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Activity, Calendar, TrendingUp } from "lucide-react-native";
@@ -23,34 +22,24 @@ export function TrainingPlanNoPlanEmptyState({
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       <View className="flex-1 p-6 gap-6">
-        <Card className="mt-8">
-          <CardContent className="p-8">
-            <View className="items-center">
-              <View className="bg-primary/10 rounded-full p-6 mb-6">
-                <Icon as={Activity} size={64} className="text-primary" />
-              </View>
-              <Text className="text-2xl font-bold mb-3 text-center">No Training Plan</Text>
-              <Text className="text-base text-muted-foreground text-center mb-6">
-                A training plan helps you build fitness systematically, track your progress, and
-                prevent overtraining through structured activities and recovery.
-              </Text>
-              <View className="w-full gap-3">
-                <Button size="lg" onPress={onCreatePlan}>
-                  <Text className="text-primary-foreground font-semibold">
-                    Create Training Plan
-                  </Text>
-                </Button>
-              </View>
-            </View>
-          </CardContent>
-        </Card>
+        <View className="mt-8 items-center rounded-2xl border border-border bg-card p-8">
+          <View className="mb-6 rounded-full bg-primary/10 p-6">
+            <Icon as={Activity} size={64} className="text-primary" />
+          </View>
+          <Text className="mb-3 text-center text-2xl font-bold">No Training Plan</Text>
+          <Text className="mb-6 text-center text-base text-muted-foreground">
+            A training plan helps you build fitness systematically, track your progress, and prevent
+            overtraining through structured activities and recovery.
+          </Text>
+          <Button size="lg" onPress={onCreatePlan} className="w-full">
+            <Text className="font-semibold text-primary-foreground">Create Training Plan</Text>
+          </Button>
+        </View>
 
         <View className="gap-4 mt-4">
           <Text className="text-lg font-semibold">Benefits of a Training Plan:</Text>
           <View className="flex-row items-start gap-3">
-            <View className="bg-primary/10 rounded-full p-2 mt-1">
-              <Icon as={TrendingUp} size={20} className="text-primary" />
-            </View>
+            <Icon as={TrendingUp} size={20} className="mt-1 text-primary" />
             <View className="flex-1">
               <Text className="font-semibold mb-1">Track Your Fitness</Text>
               <Text className="text-sm text-muted-foreground">
@@ -59,9 +48,7 @@ export function TrainingPlanNoPlanEmptyState({
             </View>
           </View>
           <View className="flex-row items-start gap-3">
-            <View className="bg-primary/10 rounded-full p-2 mt-1">
-              <Icon as={Calendar} size={20} className="text-primary" />
-            </View>
+            <Icon as={Calendar} size={20} className="mt-1 text-primary" />
             <View className="flex-1">
               <Text className="font-semibold mb-1">Structured Scheduling</Text>
               <Text className="text-sm text-muted-foreground">
@@ -70,9 +57,7 @@ export function TrainingPlanNoPlanEmptyState({
             </View>
           </View>
           <View className="flex-row items-start gap-3">
-            <View className="bg-primary/10 rounded-full p-2 mt-1">
-              <Icon as={Activity} size={20} className="text-primary" />
-            </View>
+            <Icon as={Activity} size={20} className="mt-1 text-primary" />
             <View className="flex-1">
               <Text className="font-semibold mb-1">Prevent Overtraining</Text>
               <Text className="text-sm text-muted-foreground">

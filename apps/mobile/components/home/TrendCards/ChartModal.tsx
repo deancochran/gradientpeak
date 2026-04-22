@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
 import React, { useState } from "react";
-import { Dimensions, Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import type { TimeRange } from "@/components/TimeRangeSelector";
 
 interface ChartModalProps {
@@ -29,8 +29,6 @@ export function ChartModal({
     { value: "ALL", label: "All" },
   ];
 
-  const { height } = Dimensions.get("window");
-
   return (
     <Modal
       visible={visible}
@@ -39,20 +37,18 @@ export function ChartModal({
       onRequestClose={onClose}
     >
       <View className="flex-1 bg-background">
-        {/* Header */}
         <View className="px-4 pt-4 pb-3 border-b border-border">
-          <View className="flex-row items-center justify-between mb-4">
+          <View className="mb-4 flex-row items-center justify-between">
             <Text className="text-2xl font-bold text-foreground">{title}</Text>
             <TouchableOpacity
               onPress={onClose}
-              className="w-10 h-10 rounded-full bg-muted items-center justify-center"
+              className="h-10 w-10 items-center justify-center rounded-full bg-muted"
               activeOpacity={0.7}
             >
               <X size={24} className="text-foreground" />
             </TouchableOpacity>
           </View>
 
-          {/* Time Range Selector */}
           <View className="flex-row bg-muted rounded-lg p-1 gap-1">
             {timeRanges.map((range) => (
               <TouchableOpacity
@@ -74,7 +70,6 @@ export function ChartModal({
           </View>
         </View>
 
-        {/* Content */}
         <ScrollView
           className="flex-1"
           contentContainerClassName="p-4"

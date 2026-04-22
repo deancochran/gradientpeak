@@ -1,4 +1,6 @@
+import { format } from "date-fns";
 import React from "react";
+import { ROUTES } from "@/lib/constants/routes";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
@@ -25,6 +27,8 @@ const eventDetailData = {
     estimated_tss: 72,
   },
 };
+
+const routerNavigateMock = jest.fn();
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -55,6 +59,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "event-1" }),
   useRouter: () => ({
     back: jest.fn(),
+    navigate: routerNavigateMock,
     push: jest.fn(),
     replace: jest.fn(),
   }),
@@ -75,9 +80,9 @@ jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
-jest.mock("@/components/shared/ActivityPlanSummary", () => ({
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanSummary: createHost("ActivityPlanSummary"),
+  ActivityPlanCard: createHost("ActivityPlanCard"),
 }));
 
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
@@ -218,25 +223,31 @@ describe("event detail fallback screen", () => {
     const rendered = renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Advanced event detail")).toBeNull();
-    expect(
-      (rendered as any).UNSAFE_getByType("ActivityPlanContentPreview").props.testIDPrefix,
-    ).toBe("event-detail-plan");
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanSummary").props.testID).toBe(
-      "event-detail-attached-plan",
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.activityPlan).toEqual(
+      expect.objectContaining({
+        id: "plan-1",
+        name: "Tempo Builder",
+      }),
     );
-    expect(screen.getByTestId("event-detail-open-linked-plan")).toBeTruthy();
-    expect(screen.getByTestId("event-detail-options-reschedule")).toBeTruthy();
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.onPress).toEqual(
+      expect.any(Function),
+    );
+    expect(screen.getByText("Monday, March 23, 2026")).toBeTruthy();
+    expect(screen.getByText(format(new Date(eventDetailData.starts_at), "h:mm a"))).toBeTruthy();
+    expect(screen.queryByText("Schedule details")).toBeNull();
+    expect(screen.queryByText("Date")).toBeNull();
+    expect(screen.queryByText("Time")).toBeNull();
+    expect(screen.getByTestId("event-detail-edit-trigger")).toBeTruthy();
+    expect(screen.queryByTestId("event-detail-open-linked-plan")).toBeNull();
+    expect(screen.queryByTestId("event-detail-options-trigger")).toBeNull();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
   });
 
-  it("preserves planned-event schedule handoff through ScheduleActivityModal", () => {
+  it("routes the existing edit trigger to the dedicated update screen", () => {
     renderNative(<EventDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-options-reschedule"));
+    fireEvent.press(screen.getByTestId("event-detail-edit-trigger"));
 
-    const modal = (screen as any).UNSAFE_getByType("ScheduleActivityModal");
-    expect(modal.props.eventId).toBe("event-1");
-    expect(modal.props.editScope).toBe("single");
-    expect(modal.props.visible).toBe(true);
+    expect(routerNavigateMock).toHaveBeenCalledWith(ROUTES.PLAN.EVENT_UPDATE("event-1"));
   });
 });

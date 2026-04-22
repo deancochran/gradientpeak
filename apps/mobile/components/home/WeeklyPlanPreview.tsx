@@ -72,15 +72,13 @@ export function WeeklyPlanPreview({
             className="flex-row items-center justify-between p-3 bg-muted rounded-lg border border-border"
           >
             <View className="flex-1">
-              <View className="flex-row items-center mb-1">
+              <View className="mb-1 flex-row items-center gap-2">
                 <Text className="text-muted-foreground text-xs font-medium mr-2">
                   {activity.day}
                 </Text>
-                <View className={`px-2 py-0.5 rounded ${getStatusBadgeColor(activity.status)}`}>
-                  <Text className={`${getStatusTextColor(activity.status)} text-xs font-medium`}>
-                    {activity.status}
-                  </Text>
-                </View>
+                <Text className={`${getStatusTextColor(activity.status)} text-xs font-medium`}>
+                  {activity.status}
+                </Text>
               </View>
               <Text className="text-foreground font-medium mb-1">{activity.title}</Text>
               <View className="flex-row items-center gap-3">

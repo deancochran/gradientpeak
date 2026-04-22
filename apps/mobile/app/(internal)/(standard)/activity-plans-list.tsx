@@ -4,7 +4,6 @@ import React from "react";
 import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -88,7 +87,6 @@ function ActivityPlansListScreen() {
                     {item.template_visibility === "public" ? "Public template" : "Private plan"}
                   </Text>
                 </View>
-                {item.owner ? <EntityOwnerRow owner={item.owner} subtitle="Plan owner" /> : null}
               </View>
             </Pressable>
           );

@@ -1,4 +1,3 @@
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
@@ -72,51 +71,31 @@ export function TrainingReadinessCard({
 
   return (
     <CardWrapper onPress={onPress} activeOpacity={0.7}>
-      <Card className="bg-card border-border">
-        <CardContent className="space-y-3">
-          {/* Metrics Grid - Compact 3 columns */}
-          <View className="flex-row items-center justify-between">
-            {/* CTL - Fitness */}
-            <View className="items-center flex-1">
-              <Text className="text-2xl font-semibold text-foreground">{ctl}</Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">Fitness</Text>
-              <Text className="text-[10px] text-muted-foreground">CTL</Text>
-            </View>
+      <View className="gap-3 rounded-xl border border-border bg-card px-4 py-4">
+        <View className="flex-row items-center justify-between">
+          <ReadinessMetric code="CTL" label="Fitness" value={`${ctl}`} />
+          <View className="h-12 w-px bg-border" />
+          <ReadinessMetric code="ATL" label="Fatigue" value={`${atl}`} />
+          <View className="h-12 w-px bg-border" />
+          <ReadinessMetric code="TSB" label="Form" value={`${tsb > 0 ? "+" : ""}${tsb}`} />
+        </View>
 
-            {/* Divider */}
-            <View className="h-12 w-px bg-border" />
-
-            {/* ATL - Fatigue */}
-            <View className="items-center flex-1">
-              <Text className="text-2xl font-semibold text-foreground">{atl}</Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">Fatigue</Text>
-              <Text className="text-[10px] text-muted-foreground">ATL</Text>
-            </View>
-
-            {/* Divider */}
-            <View className="h-12 w-px bg-border" />
-
-            {/* TSB - Form */}
-            <View className="items-center flex-1">
-              <Text className="text-2xl font-semibold text-foreground">
-                {tsb > 0 ? "+" : ""}
-                {tsb}
-              </Text>
-              <Text className="text-xs text-muted-foreground mt-0.5">Form</Text>
-              <Text className="text-[10px] text-muted-foreground">TSB</Text>
-            </View>
-          </View>
-
-          {/* Status Line - Minimalist */}
-          <View className="pt-2 border-t border-border">
-            <Text className="text-xs text-center text-muted-foreground">
-              <Text className={getFormStatusColor(form)}>{getFormStatusText(form)}</Text>
-              {" · "}
-              {getReadinessText(form)}
-            </Text>
-          </View>
-        </CardContent>
-      </Card>
+        <Text className="border-t border-border pt-2 text-center text-xs text-muted-foreground">
+          <Text className={getFormStatusColor(form)}>{getFormStatusText(form)}</Text>
+          {" · "}
+          {getReadinessText(form)}
+        </Text>
+      </View>
     </CardWrapper>
+  );
+}
+
+function ReadinessMetric({ code, label, value }: { code: string; label: string; value: string }) {
+  return (
+    <View className="flex-1 items-center">
+      <Text className="text-2xl font-semibold text-foreground">{value}</Text>
+      <Text className="mt-0.5 text-xs text-muted-foreground">{label}</Text>
+      <Text className="text-[10px] text-muted-foreground">{code}</Text>
+    </View>
   );
 }

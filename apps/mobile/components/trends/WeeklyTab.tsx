@@ -45,8 +45,7 @@ export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyT
   }
 
   return (
-    <View className="space-y-4">
-      {/* Weekly Progress Chart */}
+    <View className="gap-4">
       <WeeklyProgressChart
         data={weeklySummary.map((week) => ({
           weekStart: week.weekStart,
@@ -59,8 +58,7 @@ export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyT
         height={280}
       />
 
-      {/* Weekly Summary Cards */}
-      <View className="space-y-3">
+      <View className="gap-3">
         {weeklySummary.map((week, index) => {
           const statusColor =
             week.status === "good"
@@ -84,7 +82,7 @@ export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyT
               }}
               className={`p-4 rounded-lg border ${statusColor} active:opacity-70`}
             >
-              <View className="flex-row items-center justify-between mb-3">
+              <View className="mb-3 flex-row items-center justify-between">
                 <View>
                   <Text className="text-sm font-semibold text-gray-900">
                     Week {weeklySummary.length - index}
@@ -97,26 +95,27 @@ export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyT
                 <Text className="text-2xl">{statusIcon}</Text>
               </View>
 
-              <View className="space-y-2">
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm text-gray-600">TSS</Text>
-                  <Text className="text-sm font-medium text-gray-900">
-                    {week.completedTSS} / {week.plannedTSS} ({week.tssPercentage}%)
-                  </Text>
-                </View>
-
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-sm text-gray-600">Activities</Text>
-                  <Text className="text-sm font-medium text-gray-900">
-                    {week.completedActivities} / {week.plannedActivities} ({week.activityPercentage}
-                    %)
-                  </Text>
-                </View>
-              </View>
+              <SummaryRow
+                label="TSS"
+                value={`${week.completedTSS} / ${week.plannedTSS} (${week.tssPercentage}%)`}
+              />
+              <SummaryRow
+                label="Activities"
+                value={`${week.completedActivities} / ${week.plannedActivities} (${week.activityPercentage}%)`}
+              />
             </Pressable>
           );
         })}
       </View>
+    </View>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-row items-center justify-between">
+      <Text className="text-sm text-gray-600">{label}</Text>
+      <Text className="text-sm font-medium text-gray-900">{value}</Text>
     </View>
   );
 }

@@ -24,9 +24,7 @@ const TodaysTrainingCard: React.FC<TodaysTrainingCardProps> = ({
     return (
       <View className="bg-card p-4 rounded-xl shadow-sm">
         <View className="items-center py-2">
-          <View className="bg-muted p-2.5 rounded-full mb-2">
-            <Calendar className="text-muted-foreground" size={20} />
-          </View>
+          <Calendar className="mb-2 text-muted-foreground" size={20} />
           <Text className="text-base font-bold text-foreground mb-1">No Activity Scheduled</Text>
           <Text className="text-xs text-muted-foreground text-center mb-3 px-2" numberOfLines={1}>
             Enjoy your free day or create a new training plan.
@@ -52,11 +50,8 @@ const TodaysTrainingCard: React.FC<TodaysTrainingCardProps> = ({
 
   return (
     <View className="bg-card p-4 rounded-xl shadow-sm">
-      {/* Header */}
       <View className="flex-row items-center mb-2">
-        <View className="bg-primary/10 p-2 rounded-full mr-2">
-          <Activity className="text-primary" size={18} />
-        </View>
+        <Activity className="mr-2 text-primary" size={18} />
         <View className="flex-1">
           <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Today&apos;s Training
@@ -67,7 +62,6 @@ const TodaysTrainingCard: React.FC<TodaysTrainingCardProps> = ({
         </View>
       </View>
 
-      {/* Workout Details - Compact */}
       <View className="flex-row justify-between items-center mb-3 px-1">
         <View className="items-center">
           <Text className="text-xs text-muted-foreground mb-0.5">Distance</Text>
@@ -85,7 +79,6 @@ const TodaysTrainingCard: React.FC<TodaysTrainingCardProps> = ({
         </View>
       </View>
 
-      {/* CTA Button */}
       <TouchableOpacity
         className="bg-foreground py-2.5 rounded-lg items-center justify-center active:opacity-90"
         onPress={onStartActivity}

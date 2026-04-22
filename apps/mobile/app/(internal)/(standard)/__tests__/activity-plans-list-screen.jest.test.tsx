@@ -45,11 +45,6 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
-jest.mock("@/components/shared/EntityOwnerRow", () => ({
-  __esModule: true,
-  EntityOwnerRow: createHost("EntityOwnerRow"),
-}));
-
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: createHost("ActivityPlanCard"),
@@ -108,6 +103,11 @@ describe("activity plans list screen", () => {
   it("renders owner identity on each plan card", () => {
     const rendered = renderNative(<ActivityPlansListScreen />);
 
-    expect((rendered as any).UNSAFE_getByType("EntityOwnerRow").props.subtitle).toBe("Plan owner");
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.activityPlan.owner).toEqual(
+      expect.objectContaining({
+        id: "owner-1",
+        username: "Owner",
+      }),
+    );
   });
 });

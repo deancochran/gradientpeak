@@ -112,7 +112,6 @@ export function QuickAdjustSheet({
           className="bg-background rounded-t-3xl"
           style={{ maxHeight: "85%" }}
         >
-          {/* Header */}
           <View className="flex-row items-center justify-between p-4 border-b border-border">
             <Text className="text-xl font-semibold">Adjust Training Plan</Text>
             <TouchableOpacity onPress={onClose} className="p-2">
@@ -122,14 +121,12 @@ export function QuickAdjustSheet({
 
           <ScrollView className="flex-1">
             <View className="p-4 gap-4">
-              {/* Smart Suggestion Section */}
               {smartSuggestion && (
-                <View>
-                  <View className="flex-row items-center mb-3">
-                    <Icon as={Sparkles} size={20} className="text-primary mr-2" />
+                <View className="gap-3">
+                  <View className="flex-row items-center">
+                    <Icon as={Sparkles} size={20} className="mr-2 text-primary" />
                     <Text className="text-lg font-semibold">Smart Suggestion</Text>
                   </View>
-
                   <View
                     className={`p-4 rounded-lg border ${
                       smartSuggestion.severity === "alert"
@@ -157,21 +154,15 @@ export function QuickAdjustSheet({
                     </Button>
                   </View>
 
-                  {/* Divider */}
-                  <View className="flex-row items-center my-6">
-                    <Separator className="flex-1" />
-                    <Text className="px-4 text-sm text-muted-foreground">
-                      Or choose adjustment type
-                    </Text>
-                    <Separator className="flex-1" />
-                  </View>
+                  <Text className="text-sm text-muted-foreground">
+                    Or choose an adjustment type
+                  </Text>
                 </View>
               )}
 
-              {/* Quick Adjustment Presets */}
-              <View>
+              <View className="gap-3">
                 {!smartSuggestion && (
-                  <Text className="text-lg font-semibold mb-3">Quick Adjustments</Text>
+                  <Text className="text-lg font-semibold">Quick Adjustments</Text>
                 )}
 
                 <View className="gap-3">
@@ -183,9 +174,7 @@ export function QuickAdjustSheet({
                       className="flex-row items-center p-4 bg-card border border-border rounded-lg active:bg-muted"
                       activeOpacity={0.7}
                     >
-                      <View className="w-12 h-12 items-center justify-center bg-muted rounded-full mr-3">
-                        <Text className="text-2xl">{preset.icon}</Text>
-                      </View>
+                      <Text className="mr-3 text-2xl">{preset.icon}</Text>
                       <View className="flex-1">
                         <Text className="font-semibold mb-1">{preset.label}</Text>
                         <Text className="text-sm text-muted-foreground">{preset.description}</Text>
@@ -195,17 +184,14 @@ export function QuickAdjustSheet({
                 </View>
               </View>
 
-              {/* Custom Adjustment */}
-              <View className="mt-2">
-                <TouchableOpacity
-                  onPress={handleCustomAdjustment}
-                  className="flex-row items-center justify-center p-4 border border-border rounded-lg active:bg-muted"
-                  activeOpacity={0.7}
-                >
-                  <Icon as={Settings2} size={20} className="text-primary mr-2" />
-                  <Text className="text-primary font-semibold">Custom Adjustment</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                onPress={handleCustomAdjustment}
+                className="mt-2 flex-row items-center justify-center rounded-lg border border-border p-4 active:bg-muted"
+                activeOpacity={0.7}
+              >
+                <Icon as={Settings2} size={20} className="mr-2 text-primary" />
+                <Text className="font-semibold text-primary">Custom Adjustment</Text>
+              </TouchableOpacity>
             </View>
           </ScrollView>
         </TouchableOpacity>

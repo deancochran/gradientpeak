@@ -1,4 +1,3 @@
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { Dimensions, TouchableOpacity, View } from "react-native";
@@ -60,80 +59,76 @@ export function FitnessProgressCard({
 
   return (
     <CardWrapper onPress={onPress} activeOpacity={0.7}>
-      <Card className="bg-card border-border">
-        <CardContent className="space-y-3">
-          {/* Mini Chart with both actual and ideal */}
-          {datasets.length > 0 && (
-            <View className="h-16 -mx-2">
-              <LineChart
-                data={{
-                  labels: [],
-                  datasets,
-                }}
-                width={chartWidth}
-                height={64}
-                withDots={false}
-                withInnerLines={false}
-                withOuterLines={false}
-                withVerticalLabels={false}
-                withHorizontalLabels={false}
-                chartConfig={{
-                  backgroundColor: isDark ? "#0a0a0a" : "#ffffff",
-                  backgroundGradientFrom: isDark ? "#0a0a0a" : "#ffffff",
-                  backgroundGradientTo: isDark ? "#0a0a0a" : "#ffffff",
-                  decimalPlaces: 0,
-                  color: (opacity = 1) =>
-                    isDark ? `rgba(250, 250, 250, ${opacity})` : `rgba(10, 10, 10, ${opacity})`,
-                  strokeWidth: 2,
-                  propsForBackgroundLines: {
-                    strokeWidth: 0,
-                  },
-                }}
-                bezier
-                style={{
-                  paddingRight: 0,
-                  paddingTop: 0,
-                  paddingBottom: 0,
-                }}
-              />
-            </View>
-          )}
-
-          {/* Metrics */}
-          <View className="space-y-2">
-            <View className="flex-row items-baseline justify-between">
-              <Text className="text-xs text-muted-foreground">Current</Text>
-              <View className="flex-row items-baseline gap-2">
-                <Text className="text-2xl font-semibold text-foreground">{currentCTL}</Text>
-                {hasProjection && behindSchedule !== undefined && behindSchedule !== 0 && (
-                  <Text
-                    className={`text-sm font-medium ${
-                      behindSchedule > 0 ? "text-green-600" : "text-orange-500"
-                    }`}
-                  >
-                    {behindSchedule > 0 ? "+" : ""}
-                    {behindSchedule}
-                  </Text>
-                )}
-              </View>
-            </View>
-
-            {hasProjection && (
-              <View className="flex-row items-baseline justify-between">
-                <Text className="text-xs text-muted-foreground">Target Today</Text>
-                <Text className="text-2xl font-semibold text-foreground">{projectedCTL}</Text>
-              </View>
-            )}
-
-            {hasGoal && (
-              <View className="flex-row items-baseline justify-between">
-                <Text className="text-xs text-muted-foreground">Goal</Text>
-                <Text className="text-2xl font-semibold text-foreground">{goalCTL}</Text>
-              </View>
-            )}
+      <View className="gap-3 rounded-xl border border-border bg-card px-4 py-4">
+        {datasets.length > 0 ? (
+          <View className="h-16 -mx-2">
+            <LineChart
+              data={{
+                labels: [],
+                datasets,
+              }}
+              width={chartWidth}
+              height={64}
+              withDots={false}
+              withInnerLines={false}
+              withOuterLines={false}
+              withVerticalLabels={false}
+              withHorizontalLabels={false}
+              chartConfig={{
+                backgroundColor: isDark ? "#0a0a0a" : "#ffffff",
+                backgroundGradientFrom: isDark ? "#0a0a0a" : "#ffffff",
+                backgroundGradientTo: isDark ? "#0a0a0a" : "#ffffff",
+                decimalPlaces: 0,
+                color: (opacity = 1) =>
+                  isDark ? `rgba(250, 250, 250, ${opacity})` : `rgba(10, 10, 10, ${opacity})`,
+                strokeWidth: 2,
+                propsForBackgroundLines: {
+                  strokeWidth: 0,
+                },
+              }}
+              bezier
+              style={{
+                paddingRight: 0,
+                paddingTop: 0,
+                paddingBottom: 0,
+              }}
+            />
           </View>
-        </CardContent>
-      </Card>
+        ) : null}
+
+        <View className="gap-2">
+          <View className="flex-row items-baseline justify-between">
+            <Text className="text-xs text-muted-foreground">Current</Text>
+            <View className="flex-row items-baseline gap-2">
+              <Text className="text-2xl font-semibold text-foreground">{currentCTL}</Text>
+              {hasProjection && behindSchedule !== undefined && behindSchedule !== 0 ? (
+                <Text
+                  className={`text-sm font-medium ${
+                    behindSchedule > 0 ? "text-green-600" : "text-orange-500"
+                  }`}
+                >
+                  {behindSchedule > 0 ? "+" : ""}
+                  {behindSchedule}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          {hasProjection ? (
+            <View className="flex-row items-baseline justify-between">
+              <Text className="text-xs text-muted-foreground">Target Today</Text>
+              <Text className="text-2xl font-semibold text-foreground">{projectedCTL}</Text>
+            </View>
+          ) : null}
+
+          {hasGoal ? (
+            <View className="flex-row items-baseline justify-between">
+              <Text className="text-xs text-muted-foreground">Goal</Text>
+              <Text className="text-2xl font-semibold text-foreground">{goalCTL}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
     </CardWrapper>
   );
 }

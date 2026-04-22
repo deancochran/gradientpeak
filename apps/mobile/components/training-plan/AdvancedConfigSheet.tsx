@@ -149,7 +149,6 @@ export function AdvancedConfigSheet({
       onRequestClose={onClose}
     >
       <View className="flex-1 bg-background">
-        {/* Header */}
         <View className="flex-row items-center justify-between p-4 border-b border-border">
           <Text className="text-xl font-bold">Advanced Training Configuration</Text>
           <Pressable onPress={onClose} className="p-2">
@@ -157,7 +156,6 @@ export function AdvancedConfigSheet({
           </Pressable>
         </View>
 
-        {/* Fitness Projection Chart (always visible at top) */}
         {formData.periodization_template &&
           formData.periodization_template.mesocycles &&
           formData.periodization_template.mesocycles.length > 0 && (
@@ -178,10 +176,13 @@ export function AdvancedConfigSheet({
             </View>
           )}
 
-        {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
           <View className="px-4 pt-4">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerClassName="gap-0"
+            >
               <TabsList>
                 <TabsTrigger value="targets">
                   <Text className="text-xs">Targets</Text>
@@ -203,7 +204,6 @@ export function AdvancedConfigSheet({
           </View>
 
           <ScrollView className="flex-1">
-            {/* Weekly Targets Tab */}
             <TabsContent value="targets" className="p-4">
               <WeeklyTargetsForm
                 data={{
@@ -216,7 +216,6 @@ export function AdvancedConfigSheet({
               />
             </TabsContent>
 
-            {/* Recovery Rules Tab */}
             <TabsContent value="recovery" className="p-4">
               <RecoveryRulesForm
                 data={{
@@ -229,7 +228,6 @@ export function AdvancedConfigSheet({
               />
             </TabsContent>
 
-            {/* Periodization Tab */}
             <TabsContent value="periodization" className="p-4">
               <PeriodizationForm
                 data={formData.periodization_template}
@@ -241,7 +239,6 @@ export function AdvancedConfigSheet({
               />
             </TabsContent>
 
-            {/* Activity Distribution Tab */}
             <TabsContent value="activities" className="p-4">
               <ActivityDistributionForm
                 data={formData.activity_type_distribution || null}
@@ -252,7 +249,6 @@ export function AdvancedConfigSheet({
               />
             </TabsContent>
 
-            {/* Training Phases Tab */}
             <TabsContent value="phases" className="p-4">
               <MesocycleBuilderForm
                 data={formData.periodization_template?.mesocycles || null}
@@ -279,16 +275,14 @@ export function AdvancedConfigSheet({
           </ScrollView>
         </Tabs>
 
-        {/* Footer Actions */}
         <View className="p-4 border-t border-border gap-3">
-          {/* Global validation error */}
-          {validationErrors.schedule && (
+          {validationErrors.schedule ? (
             <Alert icon={AlertCircle} variant="destructive">
               <AlertDescription className="font-medium">
                 {validationErrors.schedule}
               </AlertDescription>
             </Alert>
-          )}
+          ) : null}
 
           <View className="flex-row gap-3">
             <Button variant="outline" className="flex-1" onPress={onClose} disabled={isSaving}>

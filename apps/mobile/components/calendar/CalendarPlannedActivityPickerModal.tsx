@@ -262,14 +262,12 @@ export function CalendarPlannedActivityPickerModal({
       >
         <View className="flex-row items-start gap-3">
           <View className="flex-1 gap-2">
-            <View className="flex-row flex-wrap items-center gap-2">
-              <Text className="text-sm font-semibold text-foreground">{plan.name}</Text>
+            <View className="flex-row items-center gap-2">
+              <Text className="flex-1 text-sm font-semibold text-foreground">{plan.name}</Text>
               {recommendationLabel ? (
-                <View className="rounded-full bg-primary/10 px-2 py-1">
-                  <Text className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                    {recommendationLabel}
-                  </Text>
-                </View>
+                <Text className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                  {recommendationLabel}
+                </Text>
               ) : null}
             </View>
 
@@ -279,33 +277,18 @@ export function CalendarPlannedActivityPickerModal({
               {typeof plan.estimated_tss === "number"
                 ? ` • ${Math.round(plan.estimated_tss)} TSS`
                 : ""}
+              {plan.has_liked || (plan.likes_count ?? 0) > 0
+                ? ` • ${(plan.likes_count ?? 1) > 1 ? `${plan.likes_count} likes` : "Favorite"}`
+                : ""}
             </Text>
 
-            {plan.description ? (
-              <Text className="text-xs text-muted-foreground" numberOfLines={2}>
-                {plan.description}
-              </Text>
-            ) : (
-              <Text className="text-xs text-muted-foreground">
-                Saved {categoryLabel.toLowerCase()} plan ready to drop onto this day.
-              </Text>
-            )}
+            <Text className="text-xs text-muted-foreground" numberOfLines={2}>
+              {plan.description ||
+                `Saved ${categoryLabel.toLowerCase()} plan ready to drop onto this day.`}
+            </Text>
           </View>
 
-          <View className="items-end gap-2 pt-0.5">
-            <View className="flex-row items-center gap-1">
-              <Icon as={Clock3} size={12} className="text-muted-foreground" />
-              <Icon as={ChevronRight} size={16} className="text-muted-foreground" />
-            </View>
-            {(plan.has_liked || (plan.likes_count ?? 0) > 0) && (
-              <View className="flex-row items-center gap-1 rounded-full bg-muted px-2 py-1">
-                <Icon as={Heart} size={10} className="text-muted-foreground" />
-                <Text className="text-[10px] font-medium text-muted-foreground">
-                  {(plan.likes_count ?? 1) > 1 ? `${plan.likes_count} likes` : "Favorite"}
-                </Text>
-              </View>
-            )}
-          </View>
+          <Icon as={ChevronRight} size={16} className="mt-0.5 text-muted-foreground" />
         </View>
       </TouchableOpacity>
     );

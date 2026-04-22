@@ -169,6 +169,12 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="event-detail-update"
+        options={{
+          title: "Update Event",
+        }}
+      />
+      <Stack.Screen
         name="calendar-day"
         options={{
           title: "Day Agenda",

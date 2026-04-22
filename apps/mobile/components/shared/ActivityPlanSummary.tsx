@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import React from "react";
 import { View } from "react-native";
 import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
+import type { EntityOwner } from "./EntityOwnerRow";
 
 type ActivityPlanSummaryProps = {
   activityCategory?: string | null;
@@ -14,13 +16,16 @@ type ActivityPlanSummaryProps = {
   estimatedTss?: number | null;
   headerAccessory?: ReactNode;
   intensityFactor?: number | null;
+  owner?: EntityOwner | null;
   routeName?: string | null;
   routeProvided?: boolean;
   structure?: ActivityPlanStructureV2 | unknown;
   subtitle?: string | null;
   testID?: string;
   title?: string | null;
+  updatedAt?: string | Date | null;
   variant?: "embedded" | "standalone";
+  showAttribution?: boolean;
 };
 
 export function formatActivityCategoryLabel(
@@ -131,15 +136,17 @@ export function ActivityPlanSummary({
   estimatedTss,
   headerAccessory,
   intensityFactor,
+  owner,
   routeName,
   routeProvided,
   structure,
   subtitle,
   testID,
   title,
+  updatedAt,
   variant = "embedded",
+  showAttribution = true,
 }: ActivityPlanSummaryProps) {
-  const categoryLabel = formatActivityCategoryLabel(activityCategory);
   const routeLabel = routeName?.trim() || (routeProvided ? "Route included" : null);
   const activityConfig = activityCategory
     ? activityCategory.includes("_")
@@ -163,24 +170,19 @@ export function ActivityPlanSummary({
               {subtitle}
             </Text>
           ) : null}
-          <Text className="text-base font-semibold text-foreground">
-            {title || "Untitled activity plan"}
-          </Text>
-          {categoryLabel || routeLabel ? (
-            <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1">
-              {categoryLabel ? (
-                <View className="flex-row items-center gap-1">
-                  <Icon as={activityConfig.icon} size={12} className={activityConfig.color} />
-                  <Text className="text-xs text-muted-foreground">{categoryLabel}</Text>
-                </View>
-              ) : null}
-              {routeLabel ? (
-                <Text className="text-xs text-muted-foreground">{routeLabel}</Text>
-              ) : null}
-            </View>
-          ) : null}
+          <View className="flex-row items-center gap-2">
+            <Icon as={activityConfig.icon} size={14} className={activityConfig.color} />
+            <Text className="flex-1 text-base font-semibold text-foreground">
+              {title || "Untitled activity plan"}
+            </Text>
+          </View>
           {description?.trim() ? (
-            <Text className="text-sm leading-5 text-muted-foreground">{description.trim()}</Text>
+            <Text className="text-xs leading-5 text-muted-foreground">{description.trim()}</Text>
+          ) : null}
+          {routeLabel ? (
+            <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1">
+              <Text className="text-xs text-muted-foreground">{routeLabel}</Text>
+            </View>
           ) : null}
         </View>
         {headerAccessory}
@@ -193,6 +195,14 @@ export function ActivityPlanSummary({
         intensityFactor={intensityFactor}
         structure={structure}
       />
+
+      {showAttribution ? (
+        <ActivityPlanAttributionRow
+          compact={variant !== "standalone"}
+          owner={owner}
+          updatedAt={updatedAt}
+        />
+      ) : null}
     </View>
   );
 }

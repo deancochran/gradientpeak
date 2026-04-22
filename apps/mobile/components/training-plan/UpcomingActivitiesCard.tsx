@@ -1,8 +1,6 @@
 import { formatDurationSec } from "@repo/core";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { useRouter } from "expo-router";
 import { Calendar, ChevronRight, Clock } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 import { ROUTES } from "@/lib/constants/routes";
@@ -25,7 +23,6 @@ interface UpcomingActivitiesCardProps {
 }
 
 export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardProps) {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
 
   const formatDate = (dateString: string) => {
@@ -78,72 +75,58 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Upcoming Activities</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <View className="gap-3">
-          {activities.map((activity, index) => {
-            if (!activity.activity_plan) return null;
+    <View className="gap-3 rounded-xl border border-border bg-card p-4">
+      <Text className="text-base font-semibold text-foreground">Upcoming Activities</Text>
+      <View className="gap-3">
+        {activities.map((activity, index) => {
+          if (!activity.activity_plan) return null;
 
-            return (
-              <View key={activity.id}>
-                <TouchableOpacity
-                  onPress={() => handleActivityPress(activity.id)}
-                  activeOpacity={0.7}
-                >
-                  <View className="flex-row items-center justify-between p-3 bg-muted/30 rounded-lg">
-                    <View className="flex-1 mr-3">
-                      {/* Date */}
-                      <View className="flex-row items-center gap-2 mb-2">
-                        <Icon as={Calendar} size={14} className="text-muted-foreground" />
-                        <Text className="text-sm text-muted-foreground font-medium">
-                          {formatDate(activity.scheduled_date)}
-                        </Text>
-                      </View>
-
-                      {/* Activity Name */}
-                      <Text className="font-semibold text-base mb-1">
-                        {activity.activity_plan.name}
+          return (
+            <View key={activity.id}>
+              <TouchableOpacity
+                onPress={() => handleActivityPress(activity.id)}
+                activeOpacity={0.7}
+              >
+                <View className="flex-row items-center justify-between rounded-lg bg-muted/30 p-3">
+                  <View className="mr-3 flex-1">
+                    <View className="mb-2 flex-row items-center gap-2">
+                      <Icon as={Calendar} size={14} className="text-muted-foreground" />
+                      <Text className="text-sm font-medium text-muted-foreground">
+                        {formatDate(activity.scheduled_date)}
                       </Text>
-
-                      {/* Activity Details */}
-                      <View className="flex-row items-center gap-3">
-                        <View className="flex-row items-center gap-1">
-                          <Icon as={Clock} size={12} className="text-muted-foreground" />
-                          <Text className="text-xs text-muted-foreground">
-                            {formatDurationSec(activity.activity_plan.estimated_duration)}
-                          </Text>
-                        </View>
-
-                        {activity.activity_plan.estimated_tss && (
-                          <>
-                            <Text className="text-xs text-muted-foreground">•</Text>
-                            <Text className="text-xs text-muted-foreground">
-                              {Math.round(activity.activity_plan.estimated_tss)} TSS
-                            </Text>
-                          </>
-                        )}
-
-                        <Text className="text-xs text-muted-foreground">•</Text>
-                        <Text className="text-xs text-muted-foreground capitalize">
-                          {formatActivityType(activity.activity_plan.activity_category)}
-                        </Text>
-                      </View>
                     </View>
 
-                    <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
-                  </View>
-                </TouchableOpacity>
+                    <Text className="mb-1 text-base font-semibold text-foreground">
+                      {activity.activity_plan.name}
+                    </Text>
 
-                {/* Divider between activities (not after last one) */}
-                {index < activities.length - 1 && <View className="h-px bg-border my-1" />}
-              </View>
-            );
-          })}
-        </View>
-      </CardContent>
-    </Card>
+                    <View className="flex-row items-center gap-3">
+                      <View className="flex-row items-center gap-1">
+                        <Icon as={Clock} size={12} className="text-muted-foreground" />
+                        <Text className="text-xs text-muted-foreground">
+                          {formatDurationSec(activity.activity_plan.estimated_duration)}
+                        </Text>
+                      </View>
+                      {activity.activity_plan.estimated_tss ? (
+                        <Text className="text-xs text-muted-foreground">
+                          {Math.round(activity.activity_plan.estimated_tss)} TSS
+                        </Text>
+                      ) : null}
+                      <Text className="text-xs capitalize text-muted-foreground">
+                        {formatActivityType(activity.activity_plan.activity_category)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
+                </View>
+              </TouchableOpacity>
+
+              {index < activities.length - 1 ? <View className="my-1 h-px bg-border" /> : null}
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
 }

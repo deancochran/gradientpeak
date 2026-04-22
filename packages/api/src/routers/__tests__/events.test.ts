@@ -43,6 +43,17 @@ vi.mock("../../utils/activity-plan-derived-metrics", () => ({
   ),
 }));
 
+vi.mock("../../utils/profile-identity", () => ({
+  loadProfileIdentityMap: vi.fn(
+    async (_db: any, profileIds: Array<string | null | undefined>) =>
+      new Map(
+        profileIds
+          .filter((id): id is string => typeof id === "string")
+          .map((id) => [id, { id, username: `user-${id.slice(0, 4)}`, avatar_url: null }]),
+      ),
+  ),
+}));
+
 import { eventsRouter } from "../events";
 
 type QueryResult = {
@@ -352,6 +363,8 @@ describe("eventsRouter generalization", () => {
             activity_category: "run",
             structure: { intervals: [{ repetitions: 1, steps: [{}, {}] }] },
             route_id: "route-1",
+            profile_id: "profile-1",
+            updated_at: "2026-03-01T00:00:00.000Z",
           },
         }),
         error: null,
@@ -369,6 +382,8 @@ describe("eventsRouter generalization", () => {
       route_id: "route-1",
       estimated_tss: 72,
       intensity_factor: 0.88,
+      updated_at: "2026-03-01T00:00:00.000Z",
+      owner: expect.objectContaining({ username: "user-prof" }),
     });
   });
 
@@ -386,6 +401,8 @@ describe("eventsRouter generalization", () => {
               activity_category: "bike",
               route_id: "route-2",
               structure: { intervals: [{ repetitions: 1, steps: [{}, {}, {}] }] },
+              profile_id: "profile-2",
+              updated_at: "2026-03-02T00:00:00.000Z",
             },
           }),
           createEventRow({
@@ -408,6 +425,8 @@ describe("eventsRouter generalization", () => {
       route_id: "route-2",
       estimated_tss: 72,
       intensity_factor: 0.88,
+      updated_at: "2026-03-02T00:00:00.000Z",
+      owner: expect.objectContaining({ username: "user-prof" }),
     });
   });
 

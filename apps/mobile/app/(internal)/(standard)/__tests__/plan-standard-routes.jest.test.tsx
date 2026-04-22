@@ -44,6 +44,9 @@ describe("standard layout plan detail routes", () => {
     expect(screen.getByTestId("stack-screen-event-detail").props.options).toMatchObject({
       title: "Event Details",
     });
+    expect(screen.getByTestId("stack-screen-event-detail-update").props.options).toMatchObject({
+      title: "Update Event",
+    });
     expect(screen.getByTestId("stack-screen-goal-detail").props.options).toMatchObject({
       title: "Goal Details",
     });
@@ -51,7 +54,7 @@ describe("standard layout plan detail routes", () => {
       title: "Training Preferences",
     });
     expect(screen.getByTestId("stack-screen-training-plans-list").props.options).toMatchObject({
-      title: "Training Plans",
+      title: "My Training Plans",
     });
   });
 });
