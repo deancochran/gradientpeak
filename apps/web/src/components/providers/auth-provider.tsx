@@ -53,7 +53,7 @@ export function useAuth() {
   return context;
 }
 
-export function useRequireAuth(redirectTo = "/auth/login") {
+export function useRequireAuth(redirectTo: "/auth/login" = "/auth/login") {
   const { user, isLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
@@ -66,7 +66,7 @@ export function useRequireAuth(redirectTo = "/auth/login") {
   return { user, isLoading, isAuthenticated };
 }
 
-export function useRedirectIfAuthenticated(redirectTo = "/") {
+export function useRedirectIfAuthenticated(redirectTo: "/" = "/") {
   const { isLoading, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
