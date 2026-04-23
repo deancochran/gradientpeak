@@ -75,9 +75,7 @@ export const activityRoutes = pgTable(
     updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
+    profile_id: uuid("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
     activity_category: activityCategoryEnum("activity_category").notNull(),
@@ -86,8 +84,16 @@ export const activityRoutes = pgTable(
     total_ascent: integer("total_ascent"),
     total_descent: integer("total_descent"),
     source: text("source"),
+    source_page_url: text("source_page_url"),
+    source_download_url: text("source_download_url"),
+    source_license: text("source_license"),
+    source_attribution: text("source_attribution"),
+    import_provider: text("import_provider"),
+    import_external_id: text("import_external_id"),
+    checksum_sha256: text("checksum_sha256"),
     elevation_polyline: text("elevation_polyline"),
     polyline: text("polyline").notNull(),
+    is_system_template: boolean("is_system_template").notNull().default(false),
     is_public: boolean("is_public").notNull().default(false),
     likes_count: integer("likes_count").default(0),
   },
@@ -96,10 +102,42 @@ export const activityRoutes = pgTable(
     check("activity_routes_total_distance_check", sql`${table.total_distance} >= 0`),
     check("activity_routes_total_ascent_check", sql`${table.total_ascent} >= 0`),
     check("activity_routes_total_descent_check", sql`${table.total_descent} >= 0`),
-    index("idx_routes_profile_id").on(table.profile_id),
+    check(
+      "activity_routes_import_provider_non_empty_check",
+      sql`${table.import_provider} is null or btrim(${table.import_provider}) <> ''`,
+    ),
+    check(
+      "activity_routes_import_external_id_non_empty_check",
+      sql`${table.import_external_id} is null or btrim(${table.import_external_id}) <> ''`,
+    ),
+    check(
+      "activity_routes_source_page_url_non_empty_check",
+      sql`${table.source_page_url} is null or btrim(${table.source_page_url}) <> ''`,
+    ),
+    check(
+      "activity_routes_source_download_url_non_empty_check",
+      sql`${table.source_download_url} is null or btrim(${table.source_download_url}) <> ''`,
+    ),
+    check(
+      "activity_routes_system_templates_public_check",
+      sql`${table.is_system_template} = false or ${table.is_public} = true`,
+    ),
+    check(
+      "activity_routes_system_template_check",
+      sql`(${table.is_system_template} = true and ${table.profile_id} is null) or (${table.is_system_template} = false and ${table.profile_id} is not null)`,
+    ),
+    index("idx_routes_profile_id").on(table.profile_id).where(sql`${table.profile_id} is not null`),
     index("idx_routes_name").on(table.name),
     index("idx_routes_activity_category").on(table.activity_category),
     index("idx_routes_created_at").on(table.created_at),
+    index("idx_routes_is_system_template")
+      .on(table.is_system_template)
+      .where(sql`${table.is_system_template} = true`),
+    uniqueIndex("idx_activity_routes_system_import_identity")
+      .on(table.import_provider, table.import_external_id)
+      .where(
+        sql`${table.is_system_template} = true and ${table.import_provider} is not null and ${table.import_external_id} is not null`,
+      ),
   ],
 );
 

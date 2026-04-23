@@ -1,11 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  calculateRouteStats,
-  encodeElevationPolyline,
-  encodePolyline,
-  simplifyCoordinates,
-} from "@repo/core";
-import {
   type ActivityRouteRow,
   activityPlans,
   activityRoutes,
@@ -17,14 +11,19 @@ import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
-import { parseRoute, validateRoute } from "../lib/routes/route-parser";
+import {
+  buildRouteFileArtifacts,
+  inferRouteContentType,
+  inferRouteFileExtension,
+  parseStoredRouteFile,
+  ROUTES_BUCKET,
+  routeCoordinateSchema,
+} from "../lib/routes/route-file-helpers";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { loadProfileIdentityMap, profileIdentitySchema } from "../utils/profile-identity";
 
 const storageService = getApiStorageService();
-
-const ROUTES_BUCKET = "gpx-routes";
 
 // Input schemas
 const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
@@ -60,37 +59,6 @@ const routeCursorSchema = z.string().superRefine((value, ctx) => {
     });
   }
 });
-
-const routeCoordinateSchema = z
-  .object({
-    latitude: z.number().finite(),
-    longitude: z.number().finite(),
-    altitude: z.number().finite().optional(),
-  })
-  .strict();
-
-const parsedRouteSchema = z
-  .object({
-    name: z.string().optional(),
-    coordinates: z.array(routeCoordinateSchema),
-    metadata: z
-      .object({
-        author: z.string().optional(),
-        time: z.string().optional(),
-        bounds: z
-          .object({
-            minLat: z.number().finite(),
-            maxLat: z.number().finite(),
-            minLng: z.number().finite(),
-            maxLng: z.number().finite(),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
 
 const serializedActivityRouteSchema = z
   .object({
@@ -159,30 +127,6 @@ function serializeActivityRouteRow(row: ActivityRouteRow) {
   });
 }
 
-function parseStoredRouteFile(fileContent: string) {
-  const parsed = parsedRouteSchema.safeParse(parseRoute(fileContent, "gpx"));
-  if (!parsed.success) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Stored route file contained invalid route data",
-    });
-  }
-
-  return parsed.data;
-}
-
-function parseUploadedRouteFile(fileContent: string) {
-  const parsed = parsedRouteSchema.safeParse(parseRoute(fileContent, "gpx"));
-  if (!parsed.success) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Failed to process route file",
-    });
-  }
-
-  return parsed.data;
-}
-
 export const routesRouter = createTRPCRouter({
   // ------------------------------
   // List routes with encoded polylines for preview
@@ -193,7 +137,16 @@ export const routesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const limit = input.limit;
-      const conditions = [eq(activityRoutes.profile_id, ctx.session.user.id)];
+      const visibilityCondition = or(
+        eq(activityRoutes.profile_id, ctx.session.user.id),
+        eq(activityRoutes.is_public, true),
+      );
+
+      if (!visibilityCondition) {
+        throw new Error("Failed to build route visibility condition");
+      }
+
+      const conditions = [visibilityCondition];
 
       if (input.activityCategory && input.activityCategory !== "all") {
         conditions.push(eq(activityRoutes.activity_category, input.activityCategory));
@@ -281,13 +234,19 @@ export const routesRouter = createTRPCRouter({
     .output(activityRouteWithLikeSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
+      const visibilityCondition = or(
+        eq(activityRoutes.profile_id, ctx.session.user.id),
+        eq(activityRoutes.is_public, true),
+      );
+
+      if (!visibilityCondition) {
+        throw new Error("Failed to build route visibility condition");
+      }
 
       const [route] = await db
         .select()
         .from(activityRoutes)
-        .where(
-          and(eq(activityRoutes.id, input.id), eq(activityRoutes.profile_id, ctx.session.user.id)),
-        )
+        .where(and(eq(activityRoutes.id, input.id), visibilityCondition))
         .limit(1);
 
       if (!route) {
@@ -326,13 +285,19 @@ export const routesRouter = createTRPCRouter({
     .output(loadFullRouteOutputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
+      const visibilityCondition = or(
+        eq(activityRoutes.profile_id, ctx.session.user.id),
+        eq(activityRoutes.is_public, true),
+      );
+
+      if (!visibilityCondition) {
+        throw new Error("Failed to build route visibility condition");
+      }
 
       const [routeData] = await db
         .select()
         .from(activityRoutes)
-        .where(
-          and(eq(activityRoutes.id, input.id), eq(activityRoutes.profile_id, ctx.session.user.id)),
-        )
+        .where(and(eq(activityRoutes.id, input.id), visibilityCondition))
         .limit(1);
 
       if (!routeData) {
@@ -362,7 +327,19 @@ export const routesRouter = createTRPCRouter({
 
       // Parse GPX file
       const fileContent = await fileData.text();
-      const parsed = parseStoredRouteFile(fileContent);
+      let parsed;
+
+      try {
+        parsed = parseStoredRouteFile(fileContent);
+      } catch (error) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Stored route file contained invalid route data",
+        });
+      }
 
       return loadFullRouteOutputSchema.parse({
         id: routeData.id,
@@ -384,45 +361,17 @@ export const routesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       try {
         const db = getRequiredDb(ctx);
-
-        // Parse the route file
-        const parsed = parseUploadedRouteFile(input.fileContent);
-
-        // Validate parsed route
-        const validation = validateRoute(parsed);
-        if (!validation.valid) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: `Invalid route: ${validation.errors.join(", ")}`,
-          });
-        }
-
-        // Calculate route statistics
-        const stats = calculateRouteStats(parsed.coordinates);
-
-        // Simplify coordinates for preview (target ~150-200 points)
-        const tolerance = calculateSimplificationTolerance(parsed.coordinates.length);
-        const simplified = simplifyCoordinates(parsed.coordinates, tolerance);
-
-        // Encode polyline for storage
-        const polyline = encodePolyline(simplified);
-
-        // Encode elevation if available
-        let elevationPolyline: string | null = null;
-        if (simplified.some((coord) => coord.altitude !== undefined)) {
-          const elevations = simplified.map((coord) => coord.altitude || 0);
-          elevationPolyline = encodeElevationPolyline(elevations);
-        }
+        const artifacts = buildRouteFileArtifacts(input.fileContent);
 
         // Generate unique file path
-        const fileExtension = input.fileName.split(".").pop() || "gpx";
+        const fileExtension = inferRouteFileExtension(input.fileName);
         const timestamp = Date.now();
         const filePath = `${ctx.session.user.id}/${timestamp}.${fileExtension}`;
 
         const { error: uploadError } = await storageService.storage
           .from(ROUTES_BUCKET)
           .upload(filePath, input.fileContent, {
-            contentType: "application/gpx+xml",
+            contentType: inferRouteContentType(input.fileName),
             upsert: false,
           });
 
@@ -445,11 +394,11 @@ export const routesRouter = createTRPCRouter({
               description: input.description,
               activity_category: input.activityCategory,
               file_path: filePath,
-              total_distance: stats.totalDistance,
-              total_ascent: stats.totalAscent,
-              total_descent: stats.totalDescent,
-              polyline,
-              elevation_polyline: elevationPolyline,
+              total_distance: artifacts.totalDistance,
+              total_ascent: artifacts.totalAscent,
+              total_descent: artifacts.totalDescent,
+              polyline: artifacts.polyline,
+              elevation_polyline: artifacts.elevationPolyline,
               source: input.source,
               is_public: false,
             })
@@ -593,15 +542,3 @@ export const routesRouter = createTRPCRouter({
       return serializeActivityRouteRow(data);
     }),
 });
-
-/**
- * Calculate simplification tolerance based on number of points
- * Target: ~150-200 points for preview
- */
-function calculateSimplificationTolerance(pointCount: number): number {
-  if (pointCount <= 200) return 0; // Don't simplify if already small
-  if (pointCount <= 500) return 0.0001; // ~11 meters
-  if (pointCount <= 1000) return 0.0002; // ~22 meters
-  if (pointCount <= 2000) return 0.0003; // ~33 meters
-  return 0.0005; // ~55 meters for very large routes
-}

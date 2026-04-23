@@ -50,6 +50,7 @@
     "functions:deploy": "tsx scripts/local-db-command.ts functions deploy",
     "functions:new": "tsx scripts/local-db-command.ts functions new",
     "seed-templates": "tsx scripts/seed-templates.ts",
+    "seed-system-routes": "tsx scripts/seed-system-routes.ts",
     "seed-training-plans": "tsx scripts/seed-training-plan-templates.ts",
     "push": "pnpm drizzle-kit push",
     "studio": "pnpm drizzle-kit studio"

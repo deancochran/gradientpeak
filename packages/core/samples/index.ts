@@ -20,6 +20,7 @@ export * from "./other-activity";
 export * from "./outdoor-bike";
 export * from "./outdoor-run";
 export * from "./system-activity-template-taxonomy";
+export * from "./system-routes";
 
 // Export training plan samples
 export * from "./training-plans";

@@ -16,6 +16,7 @@ import {
 import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
+import { ROUTES_BUCKET } from "../lib/routes/route-file-helpers";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 
@@ -259,7 +260,7 @@ function getWahooSyncService(ctx: Context) {
     repository: createWahooRepository({ db: getRequiredDb(ctx) }),
     storage: createWahooRouteStorage({
       async downloadRouteGpx(filePath) {
-        const { data, error } = await storageService.storage.from("routes").download(filePath);
+        const { data, error } = await storageService.storage.from(ROUTES_BUCKET).download(filePath);
         if (error || !data) return null;
         return data.text();
       },

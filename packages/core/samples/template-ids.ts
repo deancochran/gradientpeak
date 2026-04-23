@@ -64,3 +64,25 @@ export function normalizeLinkedActivityPlanId(activityPlanId: string): string {
 
   return deterministicUuidFromSeed(`system-activity-template:external:${activityPlanId}`);
 }
+
+export function normalizeSystemRouteTemplateId({
+  id,
+  activityCategory,
+  name,
+}: {
+  id?: string;
+  activityCategory: string;
+  name: string;
+}): string {
+  if (id && rfc4122UuidPattern.test(id)) {
+    return id;
+  }
+
+  if (id && uuidLikePattern.test(id)) {
+    return canonicalizeLegacyUuid(id);
+  }
+
+  return deterministicUuidFromSeed(
+    `system-route-template:${slugifySegment(activityCategory)}:${slugifySegment(name)}`,
+  );
+}

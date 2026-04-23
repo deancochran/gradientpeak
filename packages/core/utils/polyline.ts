@@ -1,5 +1,7 @@
 import * as polyline from "@mapbox/polyline";
 
+const polylineApi = (polyline as { default?: typeof polyline }).default ?? polyline;
+
 export interface LatLng {
   latitude: number;
   longitude: number;
@@ -20,14 +22,14 @@ export interface RouteStats {
  */
 export function encodePolyline(coordinates: LatLng[]): string {
   const coords: [number, number][] = coordinates.map((coord) => [coord.latitude, coord.longitude]);
-  return polyline.encode(coords);
+  return polylineApi.encode(coords);
 }
 
 /**
  * Decode polyline string to coordinates
  */
 export function decodePolyline(encoded: string): LatLng[] {
-  const coords = polyline.decode(encoded);
+  const coords = polylineApi.decode(encoded);
   return coords.map(([latitude, longitude]: [number, number]) => ({
     latitude,
     longitude,
@@ -192,14 +194,14 @@ export function encodeElevationPolyline(elevations: number[]): string {
     index,
     Math.round(elevation * 10), // Scale to preserve decimal precision
   ]);
-  return polyline.encode(coords, 6);
+  return polylineApi.encode(coords, 6);
 }
 
 /**
  * Decode elevation polyline
  */
 export function decodeElevationPolyline(encoded: string): number[] {
-  const coords = polyline.decode(encoded, 6);
+  const coords = polylineApi.decode(encoded, 6);
   return coords.map(([_, elevation]: [number, number]) => elevation / 10); // Unscale
 }
 

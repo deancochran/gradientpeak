@@ -26,9 +26,14 @@ const mockCore = vi.hoisted(() => ({
 
 const mockRandomUUID = vi.hoisted(() => vi.fn(() => UPLOADED_ROUTE_ID));
 
-vi.mock("node:crypto", () => ({
-  randomUUID: mockRandomUUID,
-}));
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+
+  return {
+    ...actual,
+    randomUUID: mockRandomUUID,
+  };
+});
 
 vi.mock("../../storage-service", () => ({
   getApiStorageService: () => ({
@@ -80,6 +85,14 @@ function createRouteRow(overrides: Record<string, unknown> = {}) {
     total_descent: 540,
     polyline: "encoded-preview",
     elevation_polyline: "encoded-elevation",
+    source_page_url: null,
+    source_download_url: null,
+    source_license: null,
+    source_attribution: null,
+    import_provider: null,
+    import_external_id: null,
+    checksum_sha256: null,
+    is_system_template: false,
     likes_count: null,
     source: "manual",
     is_public: false,
@@ -256,6 +269,35 @@ describe("routesRouter", () => {
     });
   });
 
+  it("gets a public system route even when it has no owner profile", async () => {
+    const route = createRouteRow({
+      profile_id: null,
+      is_public: true,
+      is_system_template: true,
+      source: "running-routes",
+      import_provider: "running-routes",
+      import_external_id: "running-routes:bob-graham-round:simplified",
+    });
+    const db = {
+      select: vi
+        .fn()
+        .mockImplementationOnce(() => createSelectWithLimit([route]))
+        .mockImplementationOnce(() => createSelectWithLimit([]))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn().mockResolvedValue([]),
+          })),
+        })),
+    };
+
+    const caller = createCaller(db, "99999999-9999-4999-8999-999999999999");
+    const result = await caller.get({ id: ROUTE_ID });
+
+    expect(result.owner).toBeNull();
+    expect(result.is_system_template).toBe(true);
+    expect(result.is_public).toBe(true);
+  });
+
   it("loads full route coordinates from stored GPX content", async () => {
     const route = createRouteRow();
     const fileData = {
@@ -285,6 +327,29 @@ describe("routesRouter", () => {
       totalDescent: 540,
       activityCategory: "bike",
     });
+  });
+
+  it("loads full coordinates for a public system route", async () => {
+    const route = createRouteRow({
+      profile_id: null,
+      file_path: "system/route.gpx",
+      is_public: true,
+      is_system_template: true,
+    });
+    const fileData = {
+      text: vi.fn().mockResolvedValue("<gpx>route</gpx>"),
+    };
+    mockStorage.download.mockResolvedValue({ error: null, data: fileData });
+
+    const db = {
+      select: vi.fn().mockImplementationOnce(() => createSelectWithLimit([route])),
+    };
+
+    const caller = createCaller(db, "99999999-9999-4999-8999-999999999999");
+    const result = await caller.loadFull({ id: ROUTE_ID });
+
+    expect(mockStorage.download).toHaveBeenCalledWith("system/route.gpx");
+    expect(result.id).toBe(ROUTE_ID);
   });
 
   it("rejects invalid parsed coordinates from stored route files", async () => {
