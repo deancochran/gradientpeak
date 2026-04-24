@@ -98,4 +98,33 @@ describe("server-config", () => {
     expect(result.changed).toBe(false);
     expect(afterSecondSet.version).toBe(afterFirstSet.version);
   });
+
+  it("rewrites local signed storage URLs to the reachable hosted supabase origin", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+
+    expect(
+      module.getReachableSupabaseStorageUrl(
+        "http://127.0.0.1:54321/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
+      ),
+    ).toBe(
+      "https://db.gradientpeak.app/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
+    );
+  });
+
+  it("keeps local signed storage URLs when the device is intentionally using local supabase", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+    await module.setServerUrlOverride("http://127.0.0.1:3000");
+
+    expect(
+      module.getReachableSupabaseStorageUrl(
+        "http://127.0.0.1:54321/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
+      ),
+    ).toBe(
+      "http://127.0.0.1:54321/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
+    );
+  });
 });

@@ -28,6 +28,7 @@ type GoalRow = {
 
 type QueryMap = {
   profileGoalsSelect?: GoalRow[] | GoalRow[][];
+  profileGoalsCount?: Array<{ total: number }>;
   profileGoalsInsert?: GoalRow[];
   profileGoalsUpdate?: GoalRow[];
   milestoneEventsInsert?: Array<{ id: string }>;
@@ -92,7 +93,15 @@ function createDbMock(queryMap: QueryMap = {}) {
   const callLog: CallLogEntry[] = [];
   let activeTable: "profile_goals" | "events" | "training_plans" = "profile_goals";
 
-  const nextSelectResult = (): any[] => {
+  const nextSelectResult = (isCountSelect = false): any[] => {
+    if (isCountSelect) {
+      return (
+        queryMap.profileGoalsCount ?? [
+          { total: Array.isArray(queryMap.profileGoalsSelect) ? 1 : 0 },
+        ]
+      );
+    }
+
     if (activeTable === "training_plans") {
       return queryMap.trainingPlansSelect ?? [];
     }
@@ -119,7 +128,7 @@ function createDbMock(queryMap: QueryMap = {}) {
     return (entry as GoalRow[][])[index] ?? (entry as GoalRow[][]).at(-1) ?? [];
   };
 
-  const createSelectBuilder = () => {
+  const createSelectBuilder = (isCountSelect = false) => {
     const builder: any = {
       from: (table: any) => {
         activeTable = getTableName(table);
@@ -130,7 +139,7 @@ function createDbMock(queryMap: QueryMap = {}) {
       limit: () => builder,
       offset: () => builder,
       then: (onFulfilled: (value: any[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
-        Promise.resolve(nextSelectResult()).then(onFulfilled, onRejected),
+        Promise.resolve(nextSelectResult(isCountSelect)).then(onFulfilled, onRejected),
     };
 
     return builder;
@@ -141,7 +150,7 @@ function createDbMock(queryMap: QueryMap = {}) {
     execute: async () => ({
       rows: queryMap.profileAccess ?? [{ has_access: false }],
     }),
-    select: () => createSelectBuilder(),
+    select: (selection?: Record<string, unknown>) => createSelectBuilder(Boolean(selection?.total)),
     insert: (table: any) => ({
       values: (payload: Record<string, unknown>) => {
         const tableName = getTableName(table);
@@ -211,16 +220,21 @@ describe("goalsRouter", () => {
     const { caller } = createCaller({
       queryMap: {
         profileGoalsSelect: [goal],
+        profileGoalsCount: [{ total: 1 }],
       },
     });
 
     const result = await caller.list({
       profile_id: OWNER_ID,
       limit: 20,
-      offset: 0,
     });
 
-    expect(result).toEqual([goal]);
+    expect(result).toEqual({
+      items: [goal],
+      total: 1,
+      hasMore: false,
+      nextCursor: undefined,
+    });
   });
 
   it("rejects list input with unexpected keys", async () => {
@@ -230,7 +244,6 @@ describe("goalsRouter", () => {
       caller.list({
         profile_id: OWNER_ID,
         limit: 20,
-        offset: 0,
         extra: true,
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
@@ -437,7 +450,6 @@ describe("goalsRouter", () => {
       caller.list({
         profile_id: OWNER_ID,
         limit: 20,
-        offset: 0,
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
   });

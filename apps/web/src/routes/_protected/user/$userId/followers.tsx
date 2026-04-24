@@ -2,7 +2,7 @@ import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { UserCheck, UserMinus, UserPlus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 
 import { RelationshipList } from "../../../../components/protected/relationship-list";
@@ -26,35 +26,11 @@ function FollowersPage() {
   const { user } = useAuth();
   const { userId } = Route.useParams();
   const utils = api.useUtils();
-  const [page, setPage] = useState(0);
-  const [loadedPages, setLoadedPages] = useState<Record<number, FollowerProfile[]>>({});
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const limit = 20;
-  const followersQuery = api.social.getFollowers.useQuery(
-    { user_id: userId, limit, offset: page * limit },
-    { enabled: Boolean(userId) },
+  const followersQuery = api.social.getFollowers.useInfiniteQuery(
+    { user_id: userId, limit },
+    { enabled: Boolean(userId), getNextPageParam: (lastPage: any) => lastPage.nextCursor },
   );
-
-  useEffect(() => {
-    setPage(0);
-    setLoadedPages({});
-    setTotal(0);
-    setHasMore(false);
-  }, [userId]);
-
-  useEffect(() => {
-    if (!followersQuery.data) {
-      return;
-    }
-
-    setLoadedPages((previous) => ({
-      ...previous,
-      [page]: followersQuery.data.users,
-    }));
-    setTotal(followersQuery.data.total);
-    setHasMore(followersQuery.data.hasMore);
-  }, [followersQuery.data, page]);
 
   const followMutation = api.social.followUser.useMutation({
     onSuccess: async (_data, variables) => {
@@ -75,19 +51,18 @@ function FollowersPage() {
   const users = useMemo(() => {
     const seenUserIds = new Set<string>();
 
-    return Object.keys(loadedPages)
-      .map(Number)
-      .sort((left, right) => left - right)
-      .flatMap((pageIndex) => loadedPages[pageIndex] ?? [])
-      .filter((profile) => {
-        if (seenUserIds.has(profile.id)) {
-          return false;
-        }
+    return (followersQuery.data?.pages.flatMap((page) => page.users) ?? []).filter((profile) => {
+      if (seenUserIds.has(profile.id)) {
+        return false;
+      }
 
-        seenUserIds.add(profile.id);
-        return true;
-      });
-  }, [loadedPages]);
+      seenUserIds.add(profile.id);
+      return true;
+    });
+  }, [followersQuery.data]);
+
+  const total = followersQuery.data?.pages[0]?.total ?? 0;
+  const hasMore = followersQuery.hasNextPage ?? false;
 
   return (
     <div className="container max-w-3xl space-y-6 py-8">
@@ -110,7 +85,7 @@ function FollowersPage() {
         hasMore={hasMore}
         onLoadMore={() => {
           if (hasMore && !followersQuery.isFetching) {
-            setPage((currentPage) => currentPage + 1);
+            void followersQuery.fetchNextPage();
           }
         }}
         onOpenProfile={(profileUserId) =>

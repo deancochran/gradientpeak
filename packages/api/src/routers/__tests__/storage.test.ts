@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { storageState } = vi.hoisted(() => ({
   storageState: {
+    createBucket: vi.fn(async () => ({ data: { name: "profile-avatars" }, error: null })),
     createSignedUploadUrl: vi.fn(async (path: string) => ({
       data: { signedUrl: `https://upload.test/${path}`, path },
       error: null,
@@ -27,6 +28,7 @@ vi.mock("../../storage-service", () => ({
         createSignedUrl: storageState.createSignedUrl,
         remove: storageState.remove,
       }),
+      createBucket: storageState.createBucket,
     },
   }),
 }));
@@ -57,6 +59,22 @@ describe("storageRouter", () => {
 
     expect(result.path).toMatch(/^11111111-1111-4111-8111-111111111111\//);
     expect(result.publicUrl).toBe(`https://public.test/${result.path}`);
+  });
+
+  it("creates the avatar bucket before issuing upload URLs", async () => {
+    const caller = createCaller("22222222-2222-4222-8222-222222222222");
+
+    const result = await caller.createSignedUploadUrl({
+      fileName: "avatar.png",
+      fileType: "image/png",
+    });
+
+    expect(storageState.createBucket).toHaveBeenCalledWith("profile-avatars", {
+      public: true,
+      fileSizeLimit: "5MB",
+      allowedMimeTypes: ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"],
+    });
+    expect(result.path).toMatch(/^22222222-2222-4222-8222-222222222222\//);
   });
 
   it("rejects upload requests when file extension does not match MIME type", async () => {

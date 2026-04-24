@@ -287,16 +287,16 @@ describe("profilesRouter", () => {
     expect(calls.executes).toHaveLength(1);
   });
 
-  it("list returns serialized rows and respects limit/offset", async () => {
+  it("list returns serialized rows and respects limit/cursor", async () => {
     const { caller, calls } = createCaller({
       select: {
         profiles: [[createProfileRow({ id: OTHER_USER_ID, username: "other-athlete", dob: null })]],
       },
     });
 
-    const result = await caller.list({ username: "other", limit: 5, offset: 10 });
+    const result = await caller.list({ username: "other", limit: 5, cursor: "index:10" });
 
-    expect(result).toEqual([
+    expect(result.items).toEqual([
       expect.objectContaining({
         id: OTHER_USER_ID,
         username: "other-athlete",

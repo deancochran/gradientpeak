@@ -138,7 +138,13 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
       },
       getComments: {
-        useQuery: () => ({ data: { comments: [] } }),
+        useInfiniteQuery: () => ({
+          data: { pages: [{ comments: [], total: 0, hasMore: false, nextCursor: undefined }] },
+          refetch: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
+        }),
       },
       addComment: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
@@ -551,8 +557,9 @@ describe("TrainingPlanOverview deep-link routing", () => {
     renderNative(<TrainingPlanOverview />);
 
     expect(hasTextContaining("Plan snapshot")).toBe(true);
+    expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
     expect(hasTextContaining("8 weeks")).toBe(true);
-    expect(hasTextContaining("4 sessions/week")).toBe(true);
+    expect(hasTextContaining("4/week")).toBe(true);
     expect(hasTextContaining("Open Calendar")).toBe(false);
     expect(hasTextContaining("Route-backed workouts")).toBe(true);
   });

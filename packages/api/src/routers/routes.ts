@@ -8,7 +8,7 @@ import {
   publicActivityRoutesRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import {
@@ -27,10 +27,16 @@ const storageService = getApiStorageService();
 
 // Input schemas
 const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
+const activityCategoryFiltersSchema = z.array(publicActivityCategorySchema).min(1).max(10);
+const routeOwnerScopeSchema = z.enum(["own", "system", "public", "all"]);
 
 const routeIdSchema = z.string().uuid();
 
 const routeCursorSchema = z.string().superRefine((value, ctx) => {
+  if (/^index:\d+$/.test(value)) {
+    return;
+  }
+
   const separatorIndex = value.indexOf("_");
   if (separatorIndex <= 0) {
     ctx.addIssue({
@@ -100,12 +106,33 @@ const deleteRouteOutputSchema = z.object({ success: z.literal(true) }).strict();
 const listRoutesSchema = z
   .object({
     activityCategory: activityCategoryFilterSchema.optional(),
+    activityCategories: activityCategoryFiltersSchema.optional(),
     search: z.string().optional(),
+    min_distance_m: z.number().min(0).optional(),
+    max_distance_m: z.number().min(0).optional(),
+    min_ascent_m: z.number().min(0).optional(),
+    max_ascent_m: z.number().min(0).optional(),
+    sort_by: z
+      .enum(["newest", "oldest", "distance_desc", "distance_asc", "ascent_desc", "ascent_asc"])
+      .optional(),
     limit: z.number().min(1).max(100).default(20),
     cursor: routeCursorSchema.optional(),
     direction: z.enum(["forward", "backward"]).optional(),
+    ownerScope: routeOwnerScopeSchema.optional(),
   })
   .strict();
+
+function buildAccessibleRouteCondition(userId: string) {
+  return or(
+    eq(activityRoutes.profile_id, userId),
+    eq(activityRoutes.is_public, true),
+    eq(activityRoutes.is_system_template, true),
+  );
+}
+
+function buildOwnedRouteCondition(userId: string) {
+  return eq(activityRoutes.profile_id, userId);
+}
 
 const uploadRouteSchema = z
   .object({
@@ -114,7 +141,6 @@ const uploadRouteSchema = z
     activityCategory: publicActivityCategorySchema,
     fileContent: z.string().min(1),
     fileName: z.string().min(1),
-    source: z.string().optional(),
   })
   .strict();
 
@@ -137,10 +163,15 @@ export const routesRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const limit = input.limit;
-      const visibilityCondition = or(
-        eq(activityRoutes.profile_id, ctx.session.user.id),
-        eq(activityRoutes.is_public, true),
-      );
+      const ownerScope = input.ownerScope ?? "all";
+      const visibilityCondition =
+        ownerScope === "own"
+          ? buildOwnedRouteCondition(ctx.session.user.id)
+          : ownerScope === "system"
+            ? eq(activityRoutes.is_system_template, true)
+            : ownerScope === "public"
+              ? eq(activityRoutes.is_public, true)
+              : buildAccessibleRouteCondition(ctx.session.user.id);
 
       if (!visibilityCondition) {
         throw new Error("Failed to build route visibility condition");
@@ -152,13 +183,37 @@ export const routesRouter = createTRPCRouter({
         conditions.push(eq(activityRoutes.activity_category, input.activityCategory));
       }
 
+      if (input.activityCategories?.length) {
+        conditions.push(inArray(activityRoutes.activity_category, input.activityCategories));
+      }
+
       const trimmedSearch = input.search?.trim();
 
       if (trimmedSearch) {
         conditions.push(ilike(activityRoutes.name, `%${trimmedSearch}%`));
       }
 
-      if (input.cursor) {
+      if (typeof input.min_distance_m === "number") {
+        conditions.push(gte(activityRoutes.total_distance, input.min_distance_m));
+      }
+
+      if (typeof input.max_distance_m === "number") {
+        conditions.push(lte(activityRoutes.total_distance, input.max_distance_m));
+      }
+
+      if (typeof input.min_ascent_m === "number") {
+        conditions.push(gte(activityRoutes.total_ascent, input.min_ascent_m));
+      }
+
+      if (typeof input.max_ascent_m === "number") {
+        conditions.push(lte(activityRoutes.total_ascent, input.max_ascent_m));
+      }
+
+      const offsetCursor = input.cursor?.startsWith("index:")
+        ? Number.parseInt(input.cursor.slice(6), 10)
+        : null;
+
+      if (input.cursor && offsetCursor === null) {
         const [cursorDate, cursorId] = input.cursor.split("_");
         if (cursorDate && cursorId) {
           const cursorCreatedAt = new Date(cursorDate);
@@ -173,12 +228,50 @@ export const routesRouter = createTRPCRouter({
         }
       }
 
-      const rows = await db
-        .select()
-        .from(activityRoutes)
-        .where(and(...conditions))
-        .orderBy(desc(activityRoutes.created_at), asc(activityRoutes.id))
-        .limit(limit + 1);
+      const sortOrder =
+        input.sort_by === "oldest"
+          ? [asc(activityRoutes.created_at), asc(activityRoutes.id)]
+          : input.sort_by === "distance_desc"
+            ? [
+                desc(activityRoutes.total_distance),
+                desc(activityRoutes.created_at),
+                asc(activityRoutes.id),
+              ]
+            : input.sort_by === "distance_asc"
+              ? [
+                  asc(activityRoutes.total_distance),
+                  desc(activityRoutes.created_at),
+                  asc(activityRoutes.id),
+                ]
+              : input.sort_by === "ascent_desc"
+                ? [
+                    desc(activityRoutes.total_ascent),
+                    desc(activityRoutes.created_at),
+                    asc(activityRoutes.id),
+                  ]
+                : input.sort_by === "ascent_asc"
+                  ? [
+                      asc(activityRoutes.total_ascent),
+                      desc(activityRoutes.created_at),
+                      asc(activityRoutes.id),
+                    ]
+                  : [desc(activityRoutes.created_at), asc(activityRoutes.id)];
+
+      const rows =
+        offsetCursor !== null
+          ? await db
+              .select()
+              .from(activityRoutes)
+              .where(and(...conditions))
+              .orderBy(...sortOrder)
+              .limit(limit + 1)
+              .offset(offsetCursor)
+          : await db
+              .select()
+              .from(activityRoutes)
+              .where(and(...conditions))
+              .orderBy(...sortOrder)
+              .limit(limit + 1);
 
       const hasMore = rows.length > limit;
       const pageRows = hasMore ? rows.slice(0, limit) : rows;
@@ -186,9 +279,13 @@ export const routesRouter = createTRPCRouter({
 
       let nextCursor: string | undefined;
       if (hasMore && pageRows.length > 0) {
-        const lastItem = pageRows[pageRows.length - 1];
-        if (!lastItem) throw new Error("Unexpected error");
-        nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
+        if (offsetCursor !== null) {
+          nextCursor = `index:${offsetCursor + limit}`;
+        } else {
+          const lastItem = pageRows[pageRows.length - 1];
+          if (!lastItem) throw new Error("Unexpected error");
+          nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
+        }
       }
 
       const routeIds = items.map((route) => route.id);
@@ -399,7 +496,6 @@ export const routesRouter = createTRPCRouter({
               total_descent: artifacts.totalDescent,
               polyline: artifacts.polyline,
               elevation_polyline: artifacts.elevationPolyline,
-              source: input.source,
               is_public: false,
             })
             .returning();

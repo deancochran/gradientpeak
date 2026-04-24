@@ -8,6 +8,7 @@ import {
 } from "@repo/db";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
+  type ActivityPlanRouteSummary,
   type ActivityPlanWithEstimation,
   buildEstimatedPlan,
   buildFailedEstimationPlan,
@@ -100,21 +101,53 @@ function normalizeRouteForEstimation(
   };
 }
 
+function buildRouteSummary(
+  route:
+    | {
+        distance_meters: number | null;
+        total_ascent: number | null;
+        total_descent: number | null;
+      }
+    | undefined,
+): ActivityPlanRouteSummary | null {
+  if (!route) return null;
+
+  if (
+    route.distance_meters === null &&
+    route.total_ascent === null &&
+    route.total_descent === null
+  ) {
+    return null;
+  }
+
+  return {
+    distance: route.distance_meters ?? undefined,
+    ascent: route.total_ascent ?? undefined,
+    descent: route.total_descent ?? undefined,
+  };
+}
+
+function shouldUseRouteForSavedPlanMetrics(structure: unknown): boolean {
+  if (!structure || typeof structure !== "object") {
+    return true;
+  }
+
+  const intervals = (structure as { intervals?: unknown }).intervals;
+  return !Array.isArray(intervals) || intervals.length === 0;
+}
+
 function buildCachedEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
   projection: ProjectionRow,
+  routeSummary: ActivityPlanRouteSummary | null,
   options?: { isStale?: boolean },
 ): ActivityPlanWithDerivedMetrics<TPlan> {
   return {
     ...plan,
-    estimated_tss: projection.estimated_tss ?? 0,
-    estimated_duration: projection.estimated_duration_seconds ?? 0,
     estimated_calories: projection.estimated_calories ?? undefined,
-    estimated_distance: projection.estimated_distance_meters ?? undefined,
     estimated_zones: Array.isArray(projection.estimated_zones)
       ? projection.estimated_zones.filter((value): value is string => typeof value === "string")
       : [],
-    intensity_factor: projection.intensity_factor ?? 0,
     confidence: projection.confidence ?? "low",
     confidence_score: projection.confidence_score ?? 0,
     estimation_status: "estimated",
@@ -124,6 +157,13 @@ function buildCachedEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
     estimate_last_accessed_at: projection.last_accessed_at.toISOString(),
     estimate_source: "cache",
     estimator_version: projection.estimator_version,
+    authoritative_metrics: {
+      estimated_tss: projection.estimated_tss ?? 0,
+      estimated_duration: projection.estimated_duration_seconds ?? 0,
+      intensity_factor: projection.intensity_factor ?? 0,
+      estimated_distance: projection.estimated_distance_meters ?? undefined,
+    },
+    route: routeSummary,
   };
 }
 
@@ -139,17 +179,17 @@ function buildProjectionUpsert<TPlan extends EstimationActivityPlanInput>(
     profile_id: profileId,
     estimator_version: ESTIMATOR_VERSION,
     input_fingerprint: fingerprint,
-    estimated_tss: Math.round(estimatedPlan.estimated_tss),
-    estimated_duration_seconds: Math.round(estimatedPlan.estimated_duration),
-    intensity_factor: estimatedPlan.intensity_factor,
+    estimated_tss: Math.round(estimatedPlan.authoritative_metrics.estimated_tss),
+    estimated_duration_seconds: Math.round(estimatedPlan.authoritative_metrics.estimated_duration),
+    intensity_factor: estimatedPlan.authoritative_metrics.intensity_factor,
     estimated_calories:
       estimatedPlan.estimated_calories === undefined
         ? null
         : Math.round(estimatedPlan.estimated_calories),
     estimated_distance_meters:
-      estimatedPlan.estimated_distance === undefined
+      estimatedPlan.authoritative_metrics.estimated_distance === undefined
         ? null
-        : Math.round(estimatedPlan.estimated_distance),
+        : Math.round(estimatedPlan.authoritative_metrics.estimated_distance),
     estimated_zones: estimatedPlan.estimated_zones ?? [],
     confidence: estimatedPlan.confidence,
     confidence_score: Math.round(estimatedPlan.confidence_score),
@@ -317,20 +357,25 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
     const fingerprint = planFingerprints.get(plan.id);
     if (!fingerprint) continue;
 
+    const routeForFacts = plan.route_id ? routesMap.get(plan.route_id) : undefined;
+    const routeSummary = buildRouteSummary(routeForFacts);
+
     const cached = cachedProjectionMap.get(buildProjectionLookupKey(plan.id, fingerprint));
     if (cached) {
       if (!forceRefreshPlanIds.has(plan.id) && !shouldRefreshHotProjection(cached, now)) {
         rowsToUpsert.push(buildProjectionTouchRow(cached, now));
         results.push(
-          buildCachedEstimatedPlan(plan, cached, { isStale: isProjectionStale(cached, now) }),
+          buildCachedEstimatedPlan(plan, cached, routeSummary, {
+            isStale: isProjectionStale(cached, now),
+          }),
         );
         continue;
       }
     }
 
-    const route = normalizeRouteForEstimation(
-      plan.route_id ? routesMap.get(plan.route_id) : undefined,
-    );
+    const route = shouldUseRouteForSavedPlanMetrics(plan.structure)
+      ? normalizeRouteForEstimation(routeForFacts)
+      : undefined;
 
     try {
       if (!profileInputs) {
@@ -349,7 +394,7 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
 
       const estimation = estimateActivity(context);
       const metrics = estimateMetrics(estimation, context);
-      const estimatedPlan = buildEstimatedPlan(plan, estimation, metrics);
+      const estimatedPlan = buildEstimatedPlan(plan, estimation, metrics, { route: routeSummary });
 
       rowsToUpsert.push(buildProjectionUpsert(plan, userId, fingerprint, estimatedPlan, now));
       results.push({
@@ -361,7 +406,7 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
       });
     } catch (error) {
       console.error(`Failed to build derived metrics for activity plan ${plan.id}:`, error);
-      const failed = buildFailedEstimationPlan(plan);
+      const failed = buildFailedEstimationPlan(plan, { route: routeSummary });
       results.push({
         ...failed,
         estimate_computed_at: null,

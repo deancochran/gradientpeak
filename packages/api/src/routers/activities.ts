@@ -26,6 +26,7 @@ import {
   resolveActivityContextAsOf,
 } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 
@@ -79,8 +80,9 @@ const listInputSchema = z
 
 const listPaginatedInputSchema = z
   .object({
-    limit: z.number().int().min(1).max(100).default(20),
-    offset: z.number().int().min(0).default(0),
+    limit: z.number().int().min(1).max(50).default(25),
+    cursor: indexCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
     activity_category: publicActivityCategorySchema.optional(),
     date_from: isoDatetimeSchema.optional(),
     date_to: isoDatetimeSchema.optional(),
@@ -236,6 +238,7 @@ export const activitiesRouter = createTRPCRouter({
     .input(listPaginatedInputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
+      const offset = parseIndexCursor(input.cursor);
       const conditions = [eq(activities.profile_id, ctx.session.user.id)];
 
       if (input.activity_category) {
@@ -268,7 +271,7 @@ export const activitiesRouter = createTRPCRouter({
                     : desc(activities.distance_meters),
                 )
                 .limit(input.limit)
-                .offset(input.offset)
+                .offset(offset)
             : input.sort_by === "duration"
               ? db
                   .select()
@@ -280,7 +283,7 @@ export const activitiesRouter = createTRPCRouter({
                       : desc(activities.duration_seconds),
                   )
                   .limit(input.limit)
-                  .offset(input.offset)
+                  .offset(offset)
               : db
                   .select()
                   .from(activities)
@@ -291,7 +294,7 @@ export const activitiesRouter = createTRPCRouter({
                       : desc(activities.started_at),
                   )
                   .limit(input.limit)
-                  .offset(input.offset);
+                  .offset(offset);
 
       const [totalRows, rawData] = await Promise.all([totalPromise, dataPromise]);
       const total = Number(totalRowSchema.parse(totalRows[0] ?? { total: 0 }).total);
@@ -336,20 +339,23 @@ export const activitiesRouter = createTRPCRouter({
             const right = b.derived?.tss ?? Number.NEGATIVE_INFINITY;
             return input.sort_order === "asc" ? left - right : right - left;
           })
-          .slice(input.offset, input.offset + input.limit);
+          .slice(offset, offset + input.limit);
       }
+
+      const pageInfo = buildIndexPageInfo({ offset, limit: input.limit, total });
 
       return z
         .object({
           items: activityListItemSchema.array(),
           total: z.number().int().nonnegative(),
           hasMore: z.boolean(),
+          nextCursor: z.string().optional(),
         })
         .strict()
         .parse({
           items,
           total,
-          hasMore: total > input.offset + input.limit,
+          ...pageInfo,
         });
     }),
 

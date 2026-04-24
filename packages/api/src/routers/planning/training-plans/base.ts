@@ -93,6 +93,11 @@ import { featureFlags } from "../../../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { addEstimationToPlans } from "../../../utils/estimation-helpers";
+import {
+  buildIndexPageInfo,
+  indexCursorSchema,
+  parseIndexCursor,
+} from "../../../utils/index-cursor";
 import { loadProfileIdentityMap, profileIdentitySchema } from "../../../utils/profile-identity";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
@@ -386,14 +391,52 @@ type TrainingPlanTemplateListFilters = {
   experience_level?: "beginner" | "intermediate" | "advanced";
   min_weeks?: number;
   max_weeks?: number;
+  min_sessions_per_week?: number;
+  max_sessions_per_week?: number;
   search?: string;
+  sort_by?:
+    | "newest"
+    | "oldest"
+    | "duration_desc"
+    | "duration_asc"
+    | "sessions_desc"
+    | "sessions_asc";
 };
+
+function serializeTrainingPlanTemplate(t: any) {
+  return {
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    sessions_per_week_target: t.sessions_per_week_target,
+    duration_hours: t.duration_hours,
+    likes_count: typeof t.likes_count === "number" ? t.likes_count : 0,
+    has_liked: Boolean(t.has_liked),
+    created_at:
+      t.created_at instanceof Date ? t.created_at.toISOString() : String(t.created_at ?? ""),
+    updated_at:
+      t.updated_at instanceof Date ? t.updated_at.toISOString() : String(t.updated_at ?? ""),
+    ...(t.structure as object),
+  };
+}
 
 async function listPublicTemplateTrainingPlans(
   db: DbClient,
   filters?: TrainingPlanTemplateListFilters,
 ): Promise<TrainingPlanRow[]> {
   const searchPattern = filters?.search?.trim() ? `%${filters.search.trim()}%` : null;
+  const sortClause =
+    filters?.sort_by === "oldest"
+      ? sql`created_at asc`
+      : filters?.sort_by === "duration_desc"
+        ? sql`coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) desc, created_at desc`
+        : filters?.sort_by === "duration_asc"
+          ? sql`coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) asc, created_at desc`
+          : filters?.sort_by === "sessions_desc"
+            ? sql`sessions_per_week_target desc nulls last, created_at desc`
+            : filters?.sort_by === "sessions_asc"
+              ? sql`sessions_per_week_target asc nulls last, created_at desc`
+              : sql`created_at desc`;
 
   const result = await db.execute(sql<TrainingPlanRow>`
     select
@@ -437,10 +480,18 @@ async function listPublicTemplateTrainingPlans(
         or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) <= ${filters?.max_weeks ?? null}
       )
       and (
+        ${filters?.min_sessions_per_week ?? null}::int is null
+        or coalesce(training_plans.sessions_per_week_target, 0) >= ${filters?.min_sessions_per_week ?? null}
+      )
+      and (
+        ${filters?.max_sessions_per_week ?? null}::int is null
+        or coalesce(training_plans.sessions_per_week_target, 0) <= ${filters?.max_sessions_per_week ?? null}
+      )
+      and (
         ${searchPattern}::text is null
         or training_plans.name ilike ${searchPattern}
       )
-    order by created_at desc
+    order by ${sortClause}
   `);
 
   return getSqlRows<TrainingPlanRow>(result);
@@ -3948,18 +3999,22 @@ export const trainingPlansRouter = createTRPCRouter({
           includeSystemTemplates: z.boolean().default(false),
           ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
           visibility: z.enum(["private", "public"]).optional(),
+          limit: z.number().int().min(1).max(50).default(25),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
-        .optional(),
+        .strict(),
     )
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
+      const offset = parseIndexCursor(input.cursor);
 
       let ownerScope: "own" | "system" | "public" | "all" | "none";
-      if (input?.ownerScope) {
+      if (input.ownerScope) {
         ownerScope = input.ownerScope;
       } else {
-        const includeOwnOnly = input?.includeOwnOnly ?? true;
-        const includeSystemTemplates = input?.includeSystemTemplates ?? false;
+        const includeOwnOnly = input.includeOwnOnly ?? true;
+        const includeSystemTemplates = input.includeSystemTemplates ?? false;
         ownerScope = includeOwnOnly
           ? includeSystemTemplates
             ? "all"
@@ -3974,17 +4029,21 @@ export const trainingPlansRouter = createTRPCRouter({
       } else if (ownerScope === "public") {
       } else if (ownerScope === "all") {
       } else {
-        return [];
+        return { items: [], total: 0, hasMore: false, nextCursor: undefined };
       }
 
       const data = await listTrainingPlans({
         db,
         profileId: ctx.session.user.id,
         ownerScope,
-        visibility: input?.visibility,
+        visibility: input.visibility,
       });
 
-      const planIds = data?.map((p: any) => p.id) || [];
+      const total = data?.length ?? 0;
+      const pageItems = (data || []).slice(offset, offset + input.limit);
+      const pageInfo = buildIndexPageInfo({ offset, limit: input.limit, total });
+
+      const planIds = pageItems.map((p: any) => p.id);
       const userLikes = await listTrainingPlanLikedIds({
         db,
         profileId: ctx.session.user.id,
@@ -3992,13 +4051,20 @@ export const trainingPlansRouter = createTRPCRouter({
       });
       const profileIdentityMap = await loadProfileIdentityMap(
         db,
-        (data || []).map((plan: any) => plan.profile_id),
+        pageItems.map((plan: any) => plan.profile_id),
       );
 
-      return (data || []).map((plan: any) => ({
-        ...withTrainingPlanOwnerIdentity(withTrainingPlanIdentity(plan as any), profileIdentityMap),
-        has_liked: userLikes.includes(plan.id),
-      }));
+      return {
+        items: pageItems.map((plan: any) => ({
+          ...withTrainingPlanOwnerIdentity(
+            withTrainingPlanIdentity(plan as any),
+            profileIdentityMap,
+          ),
+          has_liked: userLikes.includes(plan.id),
+        })),
+        total,
+        ...pageInfo,
+      };
     }),
 
   // ------------------------------
@@ -4693,7 +4759,7 @@ export const trainingPlansRouter = createTRPCRouter({
         : [];
 
     const plannedWeeklyTSS = plansWithEstimations.reduce(
-      (sum, plan) => sum + plan.estimated_tss,
+      (sum, plan) => sum + plan.authoritative_metrics.estimated_tss,
       0,
     );
 
@@ -5736,21 +5802,47 @@ export const trainingPlansRouter = createTRPCRouter({
           experience_level: z.enum(["beginner", "intermediate", "advanced"]).optional(),
           min_weeks: z.number().int().min(1).max(52).optional(),
           max_weeks: z.number().int().min(1).max(52).optional(),
+          min_sessions_per_week: z.number().int().min(1).max(14).optional(),
+          max_sessions_per_week: z.number().int().min(1).max(14).optional(),
           search: z.string().optional(),
+          sort_by: z
+            .enum([
+              "newest",
+              "oldest",
+              "duration_desc",
+              "duration_asc",
+              "sessions_desc",
+              "sessions_asc",
+            ])
+            .optional(),
+          limit: z.number().int().min(1).max(50).default(25),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
-        .optional(),
+        .strict(),
     )
     .query(async ({ ctx, input }) => {
-      const templates = await listPublicTemplateTrainingPlans(getRequiredDb(ctx), input);
+      const db = getRequiredDb(ctx);
+      const templates = await listPublicTemplateTrainingPlans(db, input);
+      const offset = parseIndexCursor(input.cursor);
+      const pageItems = templates.slice(offset, offset + input.limit);
+      const pageInfo = buildIndexPageInfo({ offset, limit: input.limit, total: templates.length });
+      const likedTemplateIds = await listTrainingPlanLikedIds({
+        db,
+        profileId: ctx.session.user.id,
+        planIds: pageItems.map((template) => template.id),
+      });
 
-      return (templates || []).map((t: any) => ({
-        id: t.id,
-        name: t.name,
-        description: t.description,
-        sessions_per_week_target: t.sessions_per_week_target,
-        duration_hours: t.duration_hours,
-        ...(t.structure as object),
-      }));
+      return {
+        items: pageItems.map((template) =>
+          serializeTrainingPlanTemplate({
+            ...template,
+            has_liked: likedTemplateIds.includes(template.id),
+          }),
+        ),
+        total: templates.length,
+        ...pageInfo,
+      };
     }),
 
   // ------------------------------

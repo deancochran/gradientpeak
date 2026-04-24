@@ -35,6 +35,11 @@ describe("useActivityPlanDetailViewModel", () => {
             activity_category: "run",
             profile_id: "profile-1",
             estimated_tss: 30,
+            authoritative_metrics: {
+              estimated_duration: 3600,
+              estimated_tss: 42,
+              intensity_factor: 0.83,
+            },
             structure: {
               intervals: [
                 {

@@ -2,6 +2,7 @@ import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import React, { useEffect, useMemo, useRef } from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import {
   addDaysToDateKey,
   buildMonthStartKeys,
@@ -52,7 +53,8 @@ function getPlannedDaySignal(
   }
 
   const maxTss = plannedEvents.reduce((highest, event) => {
-    const tss = readMetric(event.activity_plan?.estimated_tss) ?? 0;
+    const tss =
+      readMetric(getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss) ?? 0;
     return Math.max(highest, tss);
   }, 0);
 

@@ -6,6 +6,15 @@ import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo
 import type { ActivityPlanRow, PublicActivityRoutesRow } from "@repo/db";
 import type { EventReadRepository } from "../repositories";
 
+function shouldUseRouteForSavedPlanMetrics(structure: unknown): boolean {
+  if (!structure || typeof structure !== "object") {
+    return true;
+  }
+
+  const intervals = (structure as { intervals?: unknown }).intervals;
+  return !Array.isArray(intervals) || intervals.length === 0;
+}
+
 export type EstimationReadStore = {
   getEstimationInputs: EventReadRepository["getEstimationInputs"];
 };
@@ -33,6 +42,45 @@ type PlannedActivityEstimationStore = EstimationReadStore & {
     tsb: number | null;
   } | null>;
 };
+
+export type ActivityPlanRouteSummary = {
+  distance?: number;
+  ascent?: number;
+  descent?: number;
+};
+
+function buildRouteSummary(
+  route:
+    | {
+        distanceMeters?: number;
+        distance_meters?: number;
+        totalAscent?: number;
+        total_ascent?: number;
+        totalDescent?: number;
+        total_descent?: number;
+      }
+    | undefined,
+): ActivityPlanRouteSummary | null {
+  if (!route) return null;
+
+  const distanceMeters = route.distanceMeters ?? route.distance_meters;
+  const totalAscentMeters = route.totalAscent ?? route.total_ascent;
+  const totalDescentMeters = route.totalDescent ?? route.total_descent;
+
+  if (
+    distanceMeters === undefined &&
+    totalAscentMeters === undefined &&
+    totalDescentMeters === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    distance: distanceMeters,
+    ascent: totalAscentMeters,
+    descent: totalDescentMeters,
+  };
+}
 
 export async function getEstimationProfileInputsFromStore(
   store: EstimationReadStore,
@@ -246,24 +294,27 @@ async function getEstimationProfileInputs(
 export type ActivityPlanWithEstimation<
   TPlan extends EstimationActivityPlanInput = EstimationActivityPlanInput,
 > = TPlan & {
-  // Dynamically calculated fields
-  estimated_tss: number;
-  estimated_duration: number;
   estimated_calories?: number;
-  estimated_distance?: number;
   estimated_zones?: string[];
-  intensity_factor: number;
   confidence: string;
   confidence_score: number;
   estimation_status: "estimated" | "failed";
   estimation_warnings: string[];
   counts_toward_aggregation: boolean;
+  authoritative_metrics: {
+    estimated_tss: number;
+    estimated_duration: number;
+    intensity_factor: number;
+    estimated_distance?: number;
+  };
+  route: ActivityPlanRouteSummary | null;
 };
 
 export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
   estimation: ReturnType<typeof estimateActivity>,
   metrics: ReturnType<typeof estimateMetrics>,
+  options?: { route?: ActivityPlanRouteSummary | null },
 ): ActivityPlanWithEstimation<TPlan> {
   const zones: string[] = [];
   if (estimation.estimatedPowerZones) {
@@ -278,34 +329,41 @@ export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
 
   return {
     ...plan,
-    estimated_tss: estimation.tss,
-    estimated_duration: estimation.duration,
     estimated_calories: metrics.calories,
-    estimated_distance: metrics.distance,
     estimated_zones: [...new Set(zones)],
-    intensity_factor: estimation.intensityFactor,
     confidence: estimation.confidence,
     confidence_score: estimation.confidenceScore,
     estimation_status: "estimated",
     estimation_warnings: estimation.warnings ?? [],
     counts_toward_aggregation: true,
+    authoritative_metrics: {
+      estimated_tss: estimation.tss,
+      estimated_duration: estimation.duration,
+      intensity_factor: estimation.intensityFactor,
+      estimated_distance: metrics.distance,
+    },
+    route: options?.route ?? null,
   };
 }
 
 export function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
+  options?: { route?: ActivityPlanRouteSummary | null },
 ): ActivityPlanWithEstimation<TPlan> {
   return {
     ...plan,
-    estimated_tss: 0,
-    estimated_duration: 0,
     estimated_zones: [],
-    intensity_factor: 0,
     confidence: "low",
     confidence_score: 0,
     estimation_status: "failed",
     estimation_warnings: ["Estimation failed and was excluded from scheduled load."],
     counts_toward_aggregation: false,
+    authoritative_metrics: {
+      estimated_tss: 0,
+      estimated_duration: 0,
+      intensity_factor: 0,
+    },
+    route: options?.route ?? null,
   };
 }
 
@@ -323,7 +381,7 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
 
   // Fetch route if referenced
   let route: any = undefined;
-  if (plan.route_id) {
+  if (plan.route_id && shouldUseRouteForSavedPlanMetrics(plan.structure)) {
     if (isLegacyEstimationReadClient(estimationReader)) {
       const { data: routeData } = await estimationReader
         .from("activity_routes")
@@ -353,7 +411,7 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
   const estimation = estimateActivity(context);
   const metrics = estimateMetrics(estimation, context);
 
-  return buildEstimatedPlan(plan, estimation, metrics);
+  return buildEstimatedPlan(plan, estimation, metrics, { route: buildRouteSummary(route) });
 }
 
 /**
@@ -378,7 +436,7 @@ export async function computePlanMetrics(
     : await getEstimationProfileInputsFromStore(estimationReader, userId);
 
   let route: any = undefined;
-  if (planInput.route_id) {
+  if (planInput.route_id && shouldUseRouteForSavedPlanMetrics(planInput.structure)) {
     route = isLegacyEstimationReadClient(estimationReader)
       ? await estimationReader
           .from("activity_routes")
@@ -466,8 +524,12 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
   const results: ActivityPlanWithEstimation<TPlan>[] = [];
 
   for (const plan of normalizedPlans) {
+    const route = plan.route_id ? routesMap.get(plan.route_id) : undefined;
+
     try {
-      const route = plan.route_id ? routesMap.get(plan.route_id) : undefined;
+      const authoritativeRoute = shouldUseRouteForSavedPlanMetrics(plan.structure)
+        ? route
+        : undefined;
 
       const context = buildEstimationContext({
         userProfile: profile || {},
@@ -476,16 +538,18 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
           structure: plan.structure,
           route_id: plan.route_id ?? undefined,
         },
-        route,
+        route: authoritativeRoute,
       });
 
       const estimation = estimateActivity(context);
       const metrics = estimateMetrics(estimation, context);
 
-      results.push(buildEstimatedPlan(plan, estimation, metrics));
+      results.push(
+        buildEstimatedPlan(plan, estimation, metrics, { route: buildRouteSummary(route) }),
+      );
     } catch (error) {
       console.error(`Failed to estimate plan ${plan.id}:`, error);
-      results.push(buildFailedEstimationPlan(plan));
+      results.push(buildFailedEstimationPlan(plan, { route: buildRouteSummary(route) }));
     }
   }
 

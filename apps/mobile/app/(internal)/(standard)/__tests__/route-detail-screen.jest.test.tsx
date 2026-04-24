@@ -5,7 +5,7 @@ import { renderNative, screen } from "../../../../test/render-native";
 const routeData = {
   id: "11111111-1111-4111-8111-111111111111",
   name: "River Loop",
-  activity_category: "outdoor_run",
+  activity_category: "run",
   total_distance: 10200,
   total_ascent: 180,
   total_descent: 175,
@@ -120,7 +120,13 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ mutate: toggleLikeMutateMock }),
       },
       getComments: {
-        useQuery: () => ({ data: { comments: [], total: 0 } }),
+        useInfiniteQuery: () => ({
+          data: { pages: [{ comments: [], total: 0, hasMore: false, nextCursor: undefined }] },
+          refetch: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
+        }),
       },
       addComment: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
@@ -142,10 +148,6 @@ jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Ellipsis: createHost("Ellipsis"),
   Heart: createHost("Heart"),
-  MapPin: createHost("MapPin"),
-  Trash2: createHost("Trash2"),
-  TrendingDown: createHost("TrendingDown"),
-  TrendingUp: createHost("TrendingUp"),
 }));
 
 const RouteDetailScreen = require("../route-detail").default;
@@ -161,13 +163,12 @@ describe("route detail screen", () => {
     renderNative(<RouteDetailScreen />);
 
     expect(screen.getByText("River Loop")).toBeTruthy();
-    expect(screen.getAllByText("10.20 km").length).toBeGreaterThan(0);
     expect(screen.getByText("Flat start, climb home.")).toBeTruthy();
     expect(screen.getByText("Distance: 10.20 km")).toBeTruthy();
     expect(screen.getByText("Climb: 180m")).toBeTruthy();
+    expect(screen.getByText("Descent: 175m")).toBeTruthy();
+    expect(screen.getByText("Type: Run")).toBeTruthy();
     expect(screen.getAllByText(/Uploaded/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Route Preview")).toBeTruthy();
-    expect(screen.getByText("Route details")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
   });
 

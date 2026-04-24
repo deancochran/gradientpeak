@@ -28,14 +28,23 @@ export function useEntityCommentsController({
   const canQueryComments = isValidUuid(actualEntityId);
   const [newComment, setNewComment] = React.useState("");
 
-  const { data: commentsData, refetch: refetchComments } = api.social.getComments.useQuery(
-    canQueryComments ? { entity_id: actualEntityId, entity_type: entityType } : skipToken,
+  const commentsQuery = api.social.getComments.useInfiniteQuery(
+    canQueryComments
+      ? {
+          entity_id: actualEntityId,
+          entity_type: entityType,
+          limit: 25,
+        }
+      : skipToken,
+    {
+      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+    },
   );
 
   const addCommentMutation = api.social.addComment.useMutation({
     onSuccess: () => {
       setNewComment("");
-      refetchComments();
+      void commentsQuery.refetch();
     },
     onError: (error) => {
       Alert.alert("Error", `Failed to add comment: ${error.message}`);
@@ -56,9 +65,16 @@ export function useEntityCommentsController({
 
   return {
     addCommentPending: addCommentMutation.isPending,
-    commentCount: commentsData?.total ?? 0,
-    comments: commentsData?.comments ?? [],
+    commentCount: commentsQuery.data?.pages[0]?.total ?? 0,
+    comments: commentsQuery.data?.pages.flatMap((page: any) => page.comments) ?? [],
     handleAddComment,
+    hasMoreComments: commentsQuery.hasNextPage ?? false,
+    isLoadingMoreComments: commentsQuery.isFetchingNextPage,
+    loadMoreComments: () => {
+      if (commentsQuery.hasNextPage && !commentsQuery.isFetchingNextPage) {
+        void commentsQuery.fetchNextPage();
+      }
+    },
     newComment,
     setNewComment,
   };

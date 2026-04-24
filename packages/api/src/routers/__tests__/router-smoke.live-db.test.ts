@@ -110,7 +110,6 @@ describe("router live-db smoke", () => {
       total_distance: 6200,
       total_ascent: 88,
       total_descent: 80,
-      source: "vitest-live-db",
       elevation_polyline: null,
       polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
       is_public: false,

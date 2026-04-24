@@ -28,8 +28,13 @@ function getMetricIcon(metricType: string) {
 
 export default function ProfileMetricsListScreen() {
   const navigateTo = useAppNavigate();
-  const { data, isLoading, error } = api.profileMetrics.list.useQuery({ limit: 100, offset: 0 });
-  const metrics = data?.items ?? [];
+  const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    api.profileMetrics.list.useInfiniteQuery(
+      { limit: 25 },
+      { getNextPageParam: (lastPage: any) => lastPage.nextCursor },
+    );
+  const metrics = data?.pages.flatMap((page) => page.items) ?? [];
+  const total = data?.pages[0]?.total ?? metrics.length;
 
   if (isLoading) {
     return (
@@ -60,7 +65,7 @@ export default function ProfileMetricsListScreen() {
           metrics.length > 0 ? (
             <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
               <Text className="text-sm text-muted-foreground">
-                {metrics.length} {metrics.length === 1 ? "metric" : "metrics"}
+                {total} {total === 1 ? "metric" : "metrics"}
               </Text>
             </View>
           ) : null
@@ -101,6 +106,12 @@ export default function ProfileMetricsListScreen() {
             </Pressable>
           );
         }}
+        onEndReached={() => {
+          if (hasNextPage && !isFetchingNextPage) {
+            void fetchNextPage();
+          }
+        }}
+        onEndReachedThreshold={0.5}
       />
     </View>
   );

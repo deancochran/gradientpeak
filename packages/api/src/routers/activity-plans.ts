@@ -3,6 +3,7 @@ import {
   activityPlanCreateSchema,
   activityPlanStructureSchemaV2,
   activityPlanUpdateSchema,
+  saveableActivityPlanStructureSchemaV2,
 } from "@repo/core";
 import {
   type ActivityPlanInsert,
@@ -30,6 +31,28 @@ import { loadProfileIdentityMap, profileIdentitySchema } from "../utils/profile-
 const uuidSchema = z.string().uuid();
 const templateVisibilitySchema = z.enum(["private", "public"]);
 const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
+const activityCategoryFiltersSchema = z.array(publicActivityCategorySchema).min(1).max(10);
+const activityPlanCursorSchema = z.string().superRefine((value, ctx) => {
+  if (/^index:\d+$/.test(value)) {
+    return;
+  }
+
+  const [cursorDate, cursorId] = value.split("_");
+  if (!cursorDate || !cursorId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Cursor must include created_at and id",
+    });
+    return;
+  }
+
+  if (Number.isNaN(new Date(cursorDate).getTime())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Cursor date must be valid",
+    });
+  }
+});
 
 const listActivityPlansSchema = z
   .object({
@@ -39,9 +62,10 @@ const listActivityPlansSchema = z
     ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
     visibility: z.enum(["private", "public"]).optional(),
     activityCategory: activityCategoryFilterSchema.optional(),
+    activityCategories: activityCategoryFiltersSchema.optional(),
     search: z.string().optional(),
     limit: z.number().min(1).max(100).default(20),
-    cursor: z.string().optional(),
+    cursor: activityPlanCursorSchema.optional(),
     direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
@@ -86,7 +110,7 @@ const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
 }));
 
 function validateStructure(structure: unknown): void {
-  activityPlanStructureSchemaV2.parse(structure);
+  saveableActivityPlanStructureSchemaV2.parse(structure);
 }
 
 function getEstimationStore(ctx: { db?: unknown }) {
@@ -94,14 +118,14 @@ function getEstimationStore(ctx: { db?: unknown }) {
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
-  structure: activityPlanStructureSchemaV2,
+  structure: saveableActivityPlanStructureSchemaV2,
   template_visibility: templateVisibilitySchema.optional(),
   import_provider: z.string().min(1).max(64).optional(),
   import_external_id: z.string().min(1).max(255).optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
-  structure: activityPlanStructureSchemaV2.optional(),
+  structure: saveableActivityPlanStructureSchemaV2.optional(),
   template_visibility: templateVisibilitySchema.optional(),
   import_provider: z.string().min(1).max(64).nullable().optional(),
   import_external_id: z.string().min(1).max(255).nullable().optional(),
@@ -134,18 +158,16 @@ type DiscoverListActivityPlan = SerializedActivityPlan &
   Partial<
     Pick<
       EstimatedActivityPlan,
-      | "estimated_tss"
-      | "estimated_duration"
       | "estimated_calories"
-      | "estimated_distance"
       | "estimated_zones"
-      | "intensity_factor"
       | "confidence"
       | "confidence_score"
       | "estimate_computed_at"
       | "estimate_last_accessed_at"
       | "estimate_source"
       | "estimator_version"
+      | "authoritative_metrics"
+      | "route"
     >
   >;
 
@@ -258,6 +280,10 @@ export const activityPlansRouter = createTRPCRouter({
       conditions.push(eq(activityPlans.activity_category, input.activityCategory));
     }
 
+    if (input.activityCategories?.length) {
+      conditions.push(inArray(activityPlans.activity_category, input.activityCategories));
+    }
+
     const trimmedSearch = input.search?.trim();
 
     if (trimmedSearch) {
@@ -267,7 +293,11 @@ export const activityPlansRouter = createTRPCRouter({
       );
     }
 
-    if (input.cursor) {
+    const offsetCursor = input.cursor?.startsWith("index:")
+      ? Number.parseInt(input.cursor.slice(6), 10)
+      : null;
+
+    if (input.cursor && offsetCursor === null) {
       const [cursorDate, cursorId] = input.cursor.split("_");
       if (cursorDate && cursorId) {
         const cursorCreatedAt = new Date(cursorDate);
@@ -280,12 +310,21 @@ export const activityPlansRouter = createTRPCRouter({
       }
     }
 
-    const rows = await db
-      .select()
-      .from(activityPlans)
-      .where(and(...conditions))
-      .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
-      .limit(limit + 1);
+    const rows =
+      offsetCursor !== null
+        ? await db
+            .select()
+            .from(activityPlans)
+            .where(and(...conditions))
+            .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
+            .limit(limit + 1)
+            .offset(offsetCursor)
+        : await db
+            .select()
+            .from(activityPlans)
+            .where(and(...conditions))
+            .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
+            .limit(limit + 1);
 
     const parsedRows = z.array(activityPlanRowSchema).parse(rows);
 
@@ -297,14 +336,12 @@ export const activityPlansRouter = createTRPCRouter({
       ? await getActivityPlansDerivedMetrics(items, db, estimationStore, ctx.session.user.id)
       : items.map((plan) => ({
           ...plan,
-          estimated_tss: undefined,
-          estimated_duration: undefined,
           estimated_calories: undefined,
-          estimated_distance: undefined,
           estimated_zones: undefined,
-          intensity_factor: undefined,
           confidence: undefined,
           confidence_score: undefined,
+          authoritative_metrics: undefined,
+          route: undefined,
         }));
     const planIds = itemsWithOptionalEstimation.map((plan) => plan.id);
 
@@ -330,11 +367,15 @@ export const activityPlansRouter = createTRPCRouter({
 
     let nextCursor: string | undefined;
     if (hasMore && pageRows.length > 0) {
-      const lastItem = pageRows[pageRows.length - 1];
-      if (!lastItem) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Missing pagination row" });
+      if (offsetCursor !== null) {
+        nextCursor = `index:${offsetCursor + limit}`;
+      } else {
+        const lastItem = pageRows[pageRows.length - 1];
+        if (!lastItem) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Missing pagination row" });
+        }
+        nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
       }
-      nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
     }
 
     const profileIdentityMap = await loadProfileIdentityMap(

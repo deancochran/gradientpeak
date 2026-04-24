@@ -29,16 +29,22 @@ vi.mock("../../infrastructure/repositories", () => ({
 vi.mock("../../utils/activity-plan-derived-metrics", () => ({
   getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
     ...plan,
-    estimated_duration: plan.estimated_duration ?? 3600,
-    estimated_tss: plan.estimated_tss ?? 72,
-    intensity_factor: plan.intensity_factor ?? 0.88,
+    authoritative_metrics: {
+      estimated_duration: plan.authoritative_metrics?.estimated_duration ?? 3600,
+      estimated_tss: plan.authoritative_metrics?.estimated_tss ?? 72,
+      intensity_factor: plan.authoritative_metrics?.intensity_factor ?? 0.88,
+    },
+    route: plan.route ?? null,
   })),
   getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
     plans.map((plan) => ({
       ...plan,
-      estimated_duration: plan.estimated_duration ?? 3600,
-      estimated_tss: plan.estimated_tss ?? 72,
-      intensity_factor: plan.intensity_factor ?? 0.88,
+      authoritative_metrics: {
+        estimated_duration: plan.authoritative_metrics?.estimated_duration ?? 3600,
+        estimated_tss: plan.authoritative_metrics?.estimated_tss ?? 72,
+        intensity_factor: plan.authoritative_metrics?.intensity_factor ?? 0.88,
+      },
+      route: plan.route ?? null,
     })),
   ),
 }));
@@ -380,8 +386,10 @@ describe("eventsRouter generalization", () => {
       id: "11111111-1111-4111-8111-111111111111",
       name: "Tempo Builder",
       route_id: "route-1",
-      estimated_tss: 72,
-      intensity_factor: 0.88,
+      authoritative_metrics: {
+        estimated_tss: 72,
+        intensity_factor: 0.88,
+      },
       updated_at: "2026-03-01T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
     });
@@ -423,8 +431,10 @@ describe("eventsRouter generalization", () => {
       id: "11111111-1111-4111-8111-111111111111",
       name: "Threshold Ride",
       route_id: "route-2",
-      estimated_tss: 72,
-      intensity_factor: 0.88,
+      authoritative_metrics: {
+        estimated_tss: 72,
+        intensity_factor: 0.88,
+      },
       updated_at: "2026-03-02T00:00:00.000Z",
       owner: expect.objectContaining({ username: "user-prof" }),
     });

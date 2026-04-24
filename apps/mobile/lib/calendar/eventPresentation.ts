@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import type { CalendarEvent } from "./normalizeEvents";
 
@@ -65,8 +66,9 @@ export function getEventTimeLabel(event: CalendarEvent): string {
 
 export function getEventPrimaryMeta(event: CalendarEvent): string[] {
   if (event.event_type === "planned") {
-    const duration = formatEstimatedDuration(readMetric(event.activity_plan?.estimated_duration));
-    const tss = readMetric(event.activity_plan?.estimated_tss);
+    const metrics = getAuthoritativeActivityPlanMetrics(event.activity_plan);
+    const duration = formatEstimatedDuration(readMetric(metrics.estimated_duration));
+    const tss = readMetric(metrics.estimated_tss);
     return [
       formatCategoryLabel(event.activity_plan?.activity_category),
       duration,

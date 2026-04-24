@@ -25,11 +25,16 @@ export default function NewMessageScreen() {
   >([]);
   const trimmedQuery = query.trim();
 
-  const { data, isLoading } = api.social.searchUsers.useQuery({
-    query: trimmedQuery || undefined,
-    limit: 20,
-    offset: 0,
-  });
+  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    api.social.searchUsers.useInfiniteQuery(
+      {
+        query: trimmedQuery || undefined,
+        limit: 20,
+      },
+      {
+        getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+      },
+    );
   const getOrCreateDMMutation = api.messaging.getOrCreateDM.useMutation();
   const createConversationMutation = api.messaging.createConversation.useMutation({
     onSuccess: (conversation) => {
@@ -37,7 +42,7 @@ export default function NewMessageScreen() {
     },
   });
 
-  const users = data?.users ?? [];
+  const users = data?.pages.flatMap((page: any) => page.users) ?? [];
   const suggestedUsers = users.filter(
     (user) => !selectedRecipients.some((recipient) => recipient.id === user.id),
   );
@@ -151,31 +156,47 @@ export default function NewMessageScreen() {
                   <ActivityIndicator />
                 </View>
               ) : suggestedUsers.length > 0 ? (
-                suggestedUsers.map((item, index) => (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => toggleRecipient(item)}
-                    disabled={isSubmitting}
-                    className={`flex-row items-center gap-3 px-4 py-2.5 ${
-                      index < suggestedUsers.length - 1 ? "border-b border-border" : ""
-                    }`}
-                    testID={`messages-new-user-${item.id}`}
-                  >
-                    <Avatar alt={item.username ?? "User"} className="h-10 w-10">
-                      <AvatarFallback>
-                        <Text>{getInitials(item.username ?? "User")}</Text>
-                      </AvatarFallback>
-                    </Avatar>
-                    <View className="flex-1 gap-1">
-                      <Text className="text-sm font-semibold text-foreground">
-                        @{item.username}
+                <>
+                  {suggestedUsers.map((item, index) => (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => toggleRecipient(item)}
+                      disabled={isSubmitting}
+                      className={`flex-row items-center gap-3 px-4 py-2.5 ${
+                        index < suggestedUsers.length - 1 || hasNextPage
+                          ? "border-b border-border"
+                          : ""
+                      }`}
+                      testID={`messages-new-user-${item.id}`}
+                    >
+                      <Avatar alt={item.username ?? "User"} className="h-10 w-10">
+                        <AvatarFallback>
+                          <Text>{getInitials(item.username ?? "User")}</Text>
+                        </AvatarFallback>
+                      </Avatar>
+                      <View className="flex-1 gap-1">
+                        <Text className="text-sm font-semibold text-foreground">
+                          @{item.username}
+                        </Text>
+                        <Text className="text-xs text-muted-foreground">
+                          {item.is_public ? "Public profile" : "Private profile"}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                  {hasNextPage ? (
+                    <Pressable
+                      onPress={() => void fetchNextPage()}
+                      disabled={isFetchingNextPage}
+                      className="items-center px-4 py-3"
+                      testID="messages-new-load-more-users"
+                    >
+                      <Text className="text-sm font-medium text-primary">
+                        {isFetchingNextPage ? "Loading more users..." : "Load more users"}
                       </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {item.is_public ? "Public profile" : "Private profile"}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))
+                    </Pressable>
+                  ) : null}
+                </>
               ) : (
                 <View className="items-center justify-center py-8">
                   <Text className="text-sm text-muted-foreground">No users match that search.</Text>

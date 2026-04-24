@@ -209,12 +209,16 @@ describe("socialRouter", () => {
             username: "follower-one",
             avatar_url: "https://example.com/one.png",
             is_public: true,
+            created_at: "2026-04-01T12:00:00.000Z",
+            updated_at: "2026-04-01T12:00:00.000Z",
           },
           {
             id: FOLLOWER_TWO_ID,
             username: "follower-two",
             avatar_url: null,
             is_public: false,
+            created_at: "2026-03-31T12:00:00.000Z",
+            updated_at: "2026-03-31T12:00:00.000Z",
           },
         ],
         [{ value: 3 }],
@@ -222,7 +226,7 @@ describe("socialRouter", () => {
       ],
     });
 
-    const result = await caller.getFollowers({ user_id: TARGET_USER_ID, limit: 2, offset: 0 });
+    const result = await caller.getFollowers({ user_id: TARGET_USER_ID, limit: 2 });
 
     expect(result).toEqual({
       users: [
@@ -231,6 +235,8 @@ describe("socialRouter", () => {
           username: "follower-one",
           avatar_url: "https://example.com/one.png",
           is_public: true,
+          created_at: "2026-04-01T12:00:00.000Z",
+          updated_at: "2026-04-01T12:00:00.000Z",
           follow_status: "accepted",
         },
         {
@@ -238,11 +244,14 @@ describe("socialRouter", () => {
           username: "follower-two",
           avatar_url: null,
           is_public: false,
+          created_at: "2026-03-31T12:00:00.000Z",
+          updated_at: "2026-03-31T12:00:00.000Z",
           follow_status: null,
         },
       ],
       total: 3,
       hasMore: true,
+      nextCursor: "index:2",
     });
   });
 
@@ -255,12 +264,16 @@ describe("socialRouter", () => {
             username: "following-one",
             avatar_url: "https://example.com/following.png",
             is_public: true,
+            created_at: "2026-04-02T12:00:00.000Z",
+            updated_at: "2026-04-02T12:00:00.000Z",
           },
           {
             id: FOLLOWING_TWO_ID,
             username: "following-two",
             avatar_url: null,
             is_public: true,
+            created_at: "2026-04-01T12:00:00.000Z",
+            updated_at: "2026-04-01T12:00:00.000Z",
           },
         ],
         [{ value: 2 }],
@@ -268,7 +281,7 @@ describe("socialRouter", () => {
       ],
     });
 
-    const result = await caller.getFollowing({ user_id: TARGET_USER_ID, limit: 2, offset: 0 });
+    const result = await caller.getFollowing({ user_id: TARGET_USER_ID, limit: 2 });
 
     expect(result).toEqual({
       users: [
@@ -277,6 +290,8 @@ describe("socialRouter", () => {
           username: "following-one",
           avatar_url: "https://example.com/following.png",
           is_public: true,
+          created_at: "2026-04-02T12:00:00.000Z",
+          updated_at: "2026-04-02T12:00:00.000Z",
           follow_status: null,
         },
         {
@@ -284,11 +299,14 @@ describe("socialRouter", () => {
           username: "following-two",
           avatar_url: null,
           is_public: true,
+          created_at: "2026-04-01T12:00:00.000Z",
+          updated_at: "2026-04-01T12:00:00.000Z",
           follow_status: "pending",
         },
       ],
       total: 2,
       hasMore: false,
+      nextCursor: undefined,
     });
   });
 
@@ -301,6 +319,8 @@ describe("socialRouter", () => {
             username: "target-runner",
             avatar_url: null,
             is_public: true,
+            created_at: "2026-04-03T12:00:00.000Z",
+            updated_at: "2026-04-03T12:00:00.000Z",
           },
         ],
         [{ value: 1 }],
@@ -316,10 +336,13 @@ describe("socialRouter", () => {
           username: "target-runner",
           avatar_url: null,
           is_public: true,
+          created_at: "2026-04-03T12:00:00.000Z",
+          updated_at: "2026-04-03T12:00:00.000Z",
         },
       ],
       total: 1,
       hasMore: false,
+      nextCursor: undefined,
     });
   });
 
@@ -403,7 +426,6 @@ describe("socialRouter", () => {
       entity_id: ACTIVITY_ID,
       entity_type: "activity",
       limit: 1,
-      offset: 0,
     });
 
     expect(result).toEqual({
@@ -421,6 +443,7 @@ describe("socialRouter", () => {
       ],
       total: 2,
       hasMore: true,
+      nextCursor: "index:1",
     });
   });
 
@@ -455,7 +478,6 @@ describe("socialRouter", () => {
       entity_id: trainingPlanId,
       entity_type: "training_plan",
       limit: 20,
-      offset: 0,
     });
 
     expect(result).toEqual({
@@ -473,6 +495,7 @@ describe("socialRouter", () => {
       ],
       total: 1,
       hasMore: false,
+      nextCursor: undefined,
     });
   });
 });

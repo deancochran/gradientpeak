@@ -8,6 +8,7 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { format } from "date-fns";
 import React, { useState } from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 
 export type CreateEventType = "custom" | "planned";
 
@@ -16,7 +17,7 @@ export type ActivityPlanListItem = {
   name: string;
   activity_category?: string | null;
   description?: string | null;
-  estimated_duration?: number | null;
+  authoritative_metrics?: { estimated_duration?: number | null } | null;
 };
 
 export function toDateOnly(value: Date) {
@@ -203,8 +204,11 @@ export function EventEditorCard({
                       </Text>
                       <Text className="mt-1 text-xs text-muted-foreground">
                         {formatActivityCategoryLabel(selectedCreateActivityPlan.activity_category)}
-                        {formatDurationLabel(selectedCreateActivityPlan.estimated_duration)
-                          ? ` · ${formatDurationLabel(selectedCreateActivityPlan.estimated_duration)}`
+                        {formatDurationLabel(
+                          getAuthoritativeActivityPlanMetrics(selectedCreateActivityPlan)
+                            .estimated_duration,
+                        )
+                          ? ` · ${formatDurationLabel(getAuthoritativeActivityPlanMetrics(selectedCreateActivityPlan).estimated_duration)}`
                           : ""}
                       </Text>
                     </View>
@@ -235,8 +239,10 @@ export function EventEditorCard({
                             <Text className="text-sm font-medium text-foreground">{plan.name}</Text>
                             <Text className="mt-1 text-xs text-muted-foreground">
                               {formatActivityCategoryLabel(plan.activity_category)}
-                              {formatDurationLabel(plan.estimated_duration)
-                                ? ` · ${formatDurationLabel(plan.estimated_duration)}`
+                              {formatDurationLabel(
+                                getAuthoritativeActivityPlanMetrics(plan).estimated_duration,
+                              )
+                                ? ` · ${formatDurationLabel(getAuthoritativeActivityPlanMetrics(plan).estimated_duration)}`
                                 : ""}
                             </Text>
                           </TouchableOpacity>

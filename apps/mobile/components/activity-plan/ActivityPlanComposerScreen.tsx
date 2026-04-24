@@ -20,11 +20,11 @@ import { MapPin, Upload, X } from "lucide-react-native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
-import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
 import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
+import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
 import { api } from "@/lib/api";
 import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
@@ -553,6 +553,11 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                 )}
               </View>
 
+              <Text className="text-xs text-muted-foreground">
+                Route attachment is optional context. Saved IF/TSS still comes from the workout
+                structure.
+              </Text>
+
               {!form.routeId ? (
                 <Button variant="outline" onPress={handlePickGpxFile} disabled={isUploadingRoute}>
                   <Icon as={Upload} size={16} className="text-foreground" />
@@ -564,28 +569,11 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                 <View className="border border-border rounded-lg overflow-hidden">
                   {routeCoordinates && routeCoordinates.length > 0 ? (
                     <View className="h-28">
-                      <MapView
-                        style={{ flex: 1 }}
-                        provider={PROVIDER_DEFAULT}
-                        scrollEnabled={false}
-                        zoomEnabled={false}
-                        pitchEnabled={false}
-                        rotateEnabled={false}
-                        initialRegion={{
-                          latitude:
-                            routeCoordinates[Math.floor(routeCoordinates.length / 2)].latitude,
-                          longitude:
-                            routeCoordinates[Math.floor(routeCoordinates.length / 2)].longitude,
-                          latitudeDelta: 0.05,
-                          longitudeDelta: 0.05,
-                        }}
-                      >
-                        <Polyline
-                          coordinates={routeCoordinates}
-                          strokeColor="#3b82f6"
-                          strokeWidth={3}
-                        />
-                      </MapView>
+                      <StaticRouteMapPreview
+                        coordinates={routeCoordinates}
+                        strokeColor="#3b82f6"
+                        strokeWidth={3}
+                      />
                     </View>
                   ) : null}
                   <View className="p-3">
@@ -598,11 +586,19 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                         </Text>
                       </View>
                     </View>
+                    <Text className="text-xs text-muted-foreground mt-2">
+                      Route distance and elevation stay informational here. They do not define saved
+                      training load by themselves.
+                    </Text>
                   </View>
                 </View>
               ) : (
                 <Text className="text-xs text-muted-foreground">Loading route...</Text>
               )}
+
+              {validation.errors.route_id ? (
+                <Text className="text-xs text-destructive">{validation.errors.route_id}</Text>
+              ) : null}
             </CardContent>
           </Card>
 

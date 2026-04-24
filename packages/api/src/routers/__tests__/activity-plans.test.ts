@@ -6,10 +6,13 @@ const { estimationState } = vi.hoisted(() => ({
   estimationState: {
     getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
       ...plan,
-      estimated_tss: 88,
-      estimated_duration: 3600,
-      estimated_distance: 12000,
-      intensity_factor: 0.82,
+      authoritative_metrics: {
+        estimated_tss: 88,
+        estimated_duration: 3600,
+        estimated_distance: 12000,
+        intensity_factor: 0.82,
+      },
+      route: null,
       confidence: "moderate",
       confidence_score: 82,
       estimate_source: "cache",
@@ -19,10 +22,13 @@ const { estimationState } = vi.hoisted(() => ({
     getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
       plans.map((plan) => ({
         ...plan,
-        estimated_tss: 88,
-        estimated_duration: 3600,
-        estimated_distance: 12000,
-        intensity_factor: 0.82,
+        authoritative_metrics: {
+          estimated_tss: 88,
+          estimated_duration: 3600,
+          estimated_distance: 12000,
+          intensity_factor: 0.82,
+        },
+        route: null,
         confidence: "moderate",
         confidence_score: 82,
         estimate_source: "cache",
@@ -89,8 +95,8 @@ const sampleStructure: any = {
         {
           id: "44444444-4444-4444-8444-444444444444",
           name: "Ride",
-          duration: { type: "untilFinished" },
-          targets: [],
+          duration: { type: "time", seconds: 1800 },
+          targets: [{ type: "%FTP", intensity: 75 }],
         },
       ],
     },
@@ -272,7 +278,9 @@ describe("activityPlansRouter", () => {
         avatar_url: "https://example.com/avatar.png",
       },
       visibility: "private",
-      estimated_tss: 88,
+      authoritative_metrics: {
+        estimated_tss: 88,
+      },
     });
     expect(result.nextCursor).toBe(`${firstPlan.created_at.toISOString()}_${firstPlan.id}`);
   });

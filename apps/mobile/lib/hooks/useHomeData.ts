@@ -14,7 +14,7 @@ export function useHomeData() {
   const { data, isLoading, refetch } = api.home.getDashboard.useQuery({
     days: 7,
   });
-  const profileGoals = useProfileGoals();
+  const profileGoals = useProfileGoals({ loadAllPages: true });
   const profileSettings = useProfileSettings();
 
   const plan = useMemo(() => data?.activePlan, [data?.activePlan]);

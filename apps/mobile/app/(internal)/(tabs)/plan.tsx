@@ -16,6 +16,7 @@ import { AppHeader } from "@/components/shared";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
+import { useAutoPaginateInfiniteQuery } from "@/lib/hooks/useAutoPaginateInfiniteQuery";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -54,13 +55,27 @@ function PlanDashboardScreen() {
     undefined,
     scheduleAwareReadQueryOptions,
   );
-  const { data: ownPlans } = api.trainingPlans.list.useQuery(
+  const ownPlansQuery = api.trainingPlans.list.useInfiniteQuery(
     {
       includeOwnOnly: true,
       includeSystemTemplates: false,
+      limit: 25,
     },
-    scheduleAwareReadQueryOptions,
+    {
+      ...scheduleAwareReadQueryOptions,
+      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+    },
   );
+  const ownPlans = useMemo(
+    () => ownPlansQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [ownPlansQuery.data],
+  );
+  useAutoPaginateInfiniteQuery({
+    enabled: true,
+    hasNextPage: ownPlansQuery.hasNextPage,
+    isFetchingNextPage: ownPlansQuery.isFetchingNextPage,
+    fetchNextPage: ownPlansQuery.fetchNextPage,
+  });
 
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getDateKey(today), [today]);
@@ -102,7 +117,7 @@ function PlanDashboardScreen() {
     includeStatus: false,
     includeWeeklySummaries: false,
   });
-  const goals = useProfileGoals();
+  const goals = useProfileGoals({ loadAllPages: true });
   const goalEditor = usePlanGoalEditorController({
     activePlanId: activePlan?.id,
     goals,

@@ -42,6 +42,10 @@ const allowedAvatarMimeTypes = [
 ] as const;
 type AllowedAvatarMimeType = (typeof allowedAvatarMimeTypes)[number];
 
+function isAbsoluteUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
 export const Route = createFileRoute("/_protected/settings")({
   component: SettingsPage,
 });
@@ -76,6 +80,8 @@ function SettingsPage() {
   const [isPublic, setIsPublic] = useState(false);
   const [isProfileDirty, setIsProfileDirty] = useState(false);
   const loading = authLoading || profileLoading;
+  const avatarFilePath =
+    profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
 
   const normalizedProfile = useMemo(() => normalizeProfileSettingsView(profile), [profile]);
 
@@ -87,13 +93,15 @@ function SettingsPage() {
   }, [isProfileDirty, normalizedProfile]);
 
   const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
-    { filePath: profile?.avatar_url || "" },
-    { enabled: Boolean(profile?.avatar_url), refetchOnWindowFocus: false },
+    { filePath: avatarFilePath || "" },
+    { enabled: Boolean(avatarFilePath), refetchOnWindowFocus: false },
   );
 
   useEffect(() => {
-    setAvatarBlobUrl(avatarUrlData?.signedUrl ?? null);
-  }, [avatarUrlData?.signedUrl]);
+    setAvatarBlobUrl(
+      avatarFilePath ? (avatarUrlData?.signedUrl ?? null) : (profile?.avatar_url ?? null),
+    );
+  }, [avatarFilePath, avatarUrlData?.signedUrl, profile?.avatar_url]);
 
   const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -117,7 +125,7 @@ function SettingsPage() {
         return;
       }
 
-      const { signedUrl, path: filePath } = await createSignedUploadUrlMutation.mutateAsync({
+      const { signedUrl, publicUrl } = await createSignedUploadUrlMutation.mutateAsync({
         fileName: file.name,
         fileType,
       });
@@ -132,7 +140,7 @@ function SettingsPage() {
 
       await updateProfileMutation.mutateAsync({
         username: profile?.username || "",
-        avatar_url: filePath,
+        avatar_url: publicUrl,
       });
       toast.success("Avatar updated successfully");
     } catch (error) {

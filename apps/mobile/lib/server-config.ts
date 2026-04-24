@@ -146,6 +146,33 @@ export function getServerConfig() {
   return state;
 }
 
+export function getReachableSupabaseStorageUrl(rawUrl: string) {
+  try {
+    const parsedRawUrl = new URL(rawUrl);
+    const parsedSupabaseUrl = new URL(state.supabaseUrl);
+    const isStorageUrl = parsedRawUrl.pathname.startsWith("/storage/v1/");
+    const isServerLocalOnlyHost = ["127.0.0.1", "localhost", "10.0.2.2"].includes(
+      parsedRawUrl.hostname,
+    );
+
+    if (
+      !isStorageUrl ||
+      !isServerLocalOnlyHost ||
+      parsedRawUrl.origin === parsedSupabaseUrl.origin
+    ) {
+      return rawUrl;
+    }
+
+    parsedRawUrl.protocol = parsedSupabaseUrl.protocol;
+    parsedRawUrl.hostname = parsedSupabaseUrl.hostname;
+    parsedRawUrl.port = parsedSupabaseUrl.port;
+
+    return parsedRawUrl.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 export function getHostedApiUrl() {
   return hostedApiUrl;
 }

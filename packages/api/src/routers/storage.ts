@@ -6,6 +6,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 const storageService = getApiStorageService();
 
 const BUCKET_NAME = "profile-avatars";
+const BUCKET_FILE_SIZE_LIMIT = "5MB";
 const ALLOWED_MIME_TYPES = [
   "image/jpeg",
   "image/jpg",
@@ -83,6 +84,21 @@ function assertOwnedFilePath(userId: string, filePath: string) {
   }
 }
 
+async function ensureAvatarBucketExists() {
+  const { error } = await storageService.storage.createBucket(BUCKET_NAME, {
+    public: true,
+    fileSizeLimit: BUCKET_FILE_SIZE_LIMIT,
+    allowedMimeTypes: [...ALLOWED_MIME_TYPES],
+  });
+
+  if (error && !error.message.toLowerCase().includes("already exists")) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `Failed to ensure avatar bucket: ${error.message}`,
+    });
+  }
+}
+
 export const storageRouter = createTRPCRouter({
   createSignedUploadUrl: protectedProcedure
     .input(
@@ -107,6 +123,8 @@ export const storageRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       try {
+        await ensureAvatarBucketExists();
+
         const fileExt = getFileExtension(input.fileName);
         const uniqueFileName = `${ctx.session.user.id}/${Date.now()}.${fileExt}`;
 
@@ -155,6 +173,8 @@ export const storageRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       try {
+        await ensureAvatarBucketExists();
+
         assertOwnedFilePath(ctx.session.user.id, input.filePath);
 
         const { data, error } = await storageService.storage

@@ -18,6 +18,7 @@ const authStoreState = {
     id: "profile-1",
     onboarded: true,
     full_name: "Optimistic Name",
+    updated_at: "2026-04-23T00:00:00.000Z",
   },
   setProfile: setProfileMock,
   setOnboardingStatus: setOnboardingStatusMock,
@@ -28,6 +29,7 @@ const profileQueryResult = {
     id: "profile-1",
     onboarded: false,
     full_name: "Stale Name",
+    updated_at: "2026-04-22T00:00:00.000Z",
   },
   isLoading: false,
   isError: false,
@@ -105,6 +107,7 @@ describe("useAuth optimistic onboarding precedence", () => {
       id: "profile-1",
       onboarded: true,
       full_name: "Optimistic Name",
+      updated_at: "2026-04-23T00:00:00.000Z",
     });
     expect(setOnboardingStatusMock).not.toHaveBeenCalled();
     expect(setProfileMock).not.toHaveBeenCalled();
@@ -119,5 +122,33 @@ describe("useAuth optimistic onboarding precedence", () => {
       undefined,
       expect.objectContaining({ enabled: false }),
     );
+  });
+
+  it("syncs fresh profile data when only updated_at changes", () => {
+    authStoreState.onboardingStatus = false;
+    authStoreState.profile = {
+      id: "profile-1",
+      onboarded: false,
+      avatar_url: "https://old.example/avatar.png",
+      updated_at: "2026-04-22T00:00:00.000Z",
+    } as any;
+    profileQueryUseQueryMock.mockReturnValue({
+      ...profileQueryResult,
+      data: {
+        id: "profile-1",
+        onboarded: false,
+        avatar_url: "https://new.example/avatar.png",
+        updated_at: "2026-04-23T00:00:00.000Z",
+      },
+    });
+
+    renderHook(() => useAuth());
+
+    expect(setProfileMock).toHaveBeenCalledWith({
+      id: "profile-1",
+      onboarded: false,
+      avatar_url: "https://new.example/avatar.png",
+      updated_at: "2026-04-23T00:00:00.000Z",
+    });
   });
 });

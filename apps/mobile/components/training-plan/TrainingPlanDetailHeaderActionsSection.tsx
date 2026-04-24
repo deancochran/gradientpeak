@@ -1,9 +1,14 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Heart, TrendingUp } from "lucide-react-native";
-import React from "react";
+import { Heart } from "lucide-react-native";
+import React, { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
+import { TrainingPlanPeriodizationPreview } from "@/components/shared/TrainingPlanPeriodizationPreview";
+import {
+  deriveTrainingPlanSummaryMetrics,
+  deriveTrainingPlanVisual,
+} from "@/lib/trainingPlanVisual";
 import { TrainingPlanSummaryHeader } from "./TrainingPlanSummaryHeader";
 
 interface TrainingPlanDetailHeaderActionsSectionProps {
@@ -28,18 +33,8 @@ export function TrainingPlanDetailHeaderActionsSection({
   overview,
   plan,
 }: TrainingPlanDetailHeaderActionsSectionProps) {
-  const summaryBits = [
-    plan.durationWeeks?.recommended || plan.durationWeeks?.min
-      ? `${plan.durationWeeks?.recommended || plan.durationWeeks?.min} week${(plan.durationWeeks?.recommended || plan.durationWeeks?.min) === 1 ? "" : "s"}`
-      : null,
-    plan.sessions_per_week_target ? `${plan.sessions_per_week_target} sessions/week` : null,
-    Array.isArray(plan.sport) ? plan.sport.slice(0, 2).join(" • ") : null,
-    Array.isArray(plan.experienceLevel)
-      ? plan.experienceLevel.slice(0, 1).join(" • ")
-      : typeof plan.experienceLevel === "string"
-        ? plan.experienceLevel
-        : null,
-  ].filter(Boolean);
+  const summaryMetrics = useMemo(() => deriveTrainingPlanSummaryMetrics(plan), [plan]);
+  const visualModel = useMemo(() => deriveTrainingPlanVisual(plan), [plan]);
 
   return (
     <View className="gap-4 rounded-3xl border border-border bg-card p-4">
@@ -81,22 +76,31 @@ export function TrainingPlanDetailHeaderActionsSection({
         }
       />
 
-      {summaryBits.length > 0 ? (
-        <Text className="text-xs text-muted-foreground">{summaryBits.join(" • ")}</Text>
-      ) : null}
-
-      <View className="flex-row items-center gap-2">
-        <Icon as={TrendingUp} size={16} className="text-muted-foreground" />
-        <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
+      <View className="rounded-lg bg-muted/30 px-2.5 py-2">
+        <View className="flex-row justify-between gap-2">
+          <SummaryMetricCard label="Duration" value={summaryMetrics.durationLabel} compact />
+          <SummaryMetricCard label="Sessions" value={summaryMetrics.sessionsLabel} compact />
+          <SummaryMetricCard label="Sport" value={summaryMetrics.sportLabel} compact />
+          <SummaryMetricCard label="Level" value={summaryMetrics.experienceLabel} compact />
+        </View>
       </View>
+
+      <View className="gap-2">
+        <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
+        <TrainingPlanPeriodizationPreview model={visualModel} />
+      </View>
+
       {overview ? (
-        <View className="flex-row flex-wrap gap-2">
-          <SummaryMetricCard label="Microcycles" value={`${overview.microcycles}`} />
-          <SummaryMetricCard label="Sessions" value={`${overview.sessions}`} />
-          <SummaryMetricCard label="Linked workouts" value={`${overview.linkedWorkouts}`} />
-          <SummaryMetricCard label="Route-backed workouts" value={`${overview.routeBacked}`} />
-          <SummaryMetricCard label="Planned TSS" value={`${overview.plannedTss}`} />
-          <SummaryMetricCard label="Planned time" value={overview.plannedTime} />
+        <View className="gap-2">
+          <Text className="text-sm font-medium text-foreground">Plan overview</Text>
+          <View className="flex-row flex-wrap gap-2">
+            <SummaryMetricCard label="Microcycles" value={`${overview.microcycles}`} />
+            <SummaryMetricCard label="Sessions" value={`${overview.sessions}`} />
+            <SummaryMetricCard label="Linked workouts" value={`${overview.linkedWorkouts}`} />
+            <SummaryMetricCard label="Route-backed workouts" value={`${overview.routeBacked}`} />
+            <SummaryMetricCard label="Planned TSS" value={`${overview.plannedTss}`} />
+            <SummaryMetricCard label="Planned time" value={overview.plannedTime} />
+          </View>
         </View>
       ) : null}
       {plan?.owner ? <EntityOwnerRow owner={plan.owner} subtitle="Plan owner" /> : null}
@@ -104,13 +108,41 @@ export function TrainingPlanDetailHeaderActionsSection({
   );
 }
 
-function SummaryMetricCard({ label, value }: { label: string; value: string }) {
+function SummaryMetricCard({
+  label,
+  value,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  compact?: boolean;
+}) {
   return (
-    <View className="min-w-[30%] flex-1 rounded-xl border border-border/50 bg-muted/10 px-2.5 py-2">
-      <Text className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+    <View
+      className={
+        compact
+          ? "flex-1 items-center gap-0.5"
+          : "min-w-[30%] flex-1 rounded-xl border border-border/50 bg-muted/10 px-2.5 py-2"
+      }
+    >
+      <Text
+        className={
+          compact
+            ? "text-[10px] text-muted-foreground"
+            : "text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+        }
+      >
         {label}
       </Text>
-      <Text className="mt-0.5 text-sm font-semibold text-foreground">{value}</Text>
+      <Text
+        className={
+          compact
+            ? "text-[11px] font-semibold text-foreground"
+            : "mt-0.5 text-sm font-semibold text-foreground"
+        }
+      >
+        {value}
+      </Text>
     </View>
   );
 }

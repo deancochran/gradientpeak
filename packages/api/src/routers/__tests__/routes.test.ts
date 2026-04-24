@@ -85,16 +85,8 @@ function createRouteRow(overrides: Record<string, unknown> = {}) {
     total_descent: 540,
     polyline: "encoded-preview",
     elevation_polyline: "encoded-elevation",
-    source_page_url: null,
-    source_download_url: null,
-    source_license: null,
-    source_attribution: null,
-    import_provider: null,
-    import_external_id: null,
-    checksum_sha256: null,
     is_system_template: false,
     likes_count: null,
-    source: "manual",
     is_public: false,
     created_at: new Date("2026-02-01T10:00:00.000Z"),
     updated_at: new Date("2026-02-02T10:00:00.000Z"),
@@ -239,6 +231,27 @@ describe("routesRouter", () => {
     });
   });
 
+  it("accepts owner scope filtering metadata", async () => {
+    const db = {
+      select: vi.fn().mockImplementationOnce(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue([]),
+            })),
+          })),
+        })),
+      })),
+    };
+
+    const caller = createCaller(db);
+
+    await expect(caller.list({ limit: 20, ownerScope: "own" } as never)).resolves.toEqual({
+      items: [],
+      nextCursor: undefined,
+    });
+  });
+
   it("gets a single owned route with like state", async () => {
     const route = createRouteRow();
     const db = {
@@ -274,9 +287,6 @@ describe("routesRouter", () => {
       profile_id: null,
       is_public: true,
       is_system_template: true,
-      source: "running-routes",
-      import_provider: "running-routes",
-      import_external_id: "running-routes:bob-graham-round:simplified",
     });
     const db = {
       select: vi
@@ -403,7 +413,6 @@ describe("routesRouter", () => {
       activityCategory: "bike",
       fileContent: "<gpx>upload</gpx>",
       fileName: "new-route.gpx",
-      source: "gpx-import",
     });
 
     expect(mockRouteParser.validateRoute).toHaveBeenCalled();

@@ -1,11 +1,15 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
-import { type ActivityPlanCreateFormData, activityPlanCreateFormSchema } from "@repo/core";
+import {
+  type ActivityPlanCreateFormData,
+  activityPlanCreateFormSchema,
+  getSaveableActivityPlanStructureIssues,
+} from "@repo/core";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
-import { getErrorMessage, showErrorAlert } from "@/lib/utils/formErrors";
+import { showErrorAlert } from "@/lib/utils/formErrors";
 
 export type ActivityPlanFormData = ActivityPlanCreateFormData;
 
@@ -177,7 +181,32 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       const intervals = structureToValidate.intervals || [];
       if (intervals.length < 1) {
         errors.intervals = "Add at least one interval.";
+        if (routeId) {
+          errors.route_id =
+            "This route is attached for context, but you still need structure before this plan can be saved.";
+        }
       }
+
+      getSaveableActivityPlanStructureIssues(structureToValidate).forEach((issue) => {
+        const [first, intervalIndex, second, stepIndex, field] = issue.path;
+        if (first !== "intervals" || second !== "steps") {
+          return;
+        }
+
+        const interval = intervals[typeof intervalIndex === "number" ? intervalIndex : -1];
+        const step = interval?.steps?.[typeof stepIndex === "number" ? stepIndex : -1];
+        if (!interval || !step || typeof field !== "string") {
+          return;
+        }
+
+        if (field === "duration") {
+          errors[`step:${interval.id}:${step.id}:duration`] = issue.message;
+        }
+
+        if (field === "targets") {
+          errors[`step:${interval.id}:${step.id}:target`] = issue.message;
+        }
+      });
 
       intervals.forEach((interval, intervalIndex) => {
         if (!Number.isFinite(interval.repetitions) || interval.repetitions < 1) {
@@ -197,7 +226,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
             (step.duration.type === "distance" && step.duration.meters > 0) ||
             (step.duration.type === "repetitions" && step.duration.count > 0);
 
-          if (!hasPositiveDuration) {
+          if (!hasPositiveDuration && !errors[durationErrorKey]) {
             errors[durationErrorKey] =
               "Step duration must be greater than zero (time, distance, or reps).";
           }
@@ -210,7 +239,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
             Number.isFinite(primaryTarget.intensity) &&
             primaryTarget.intensity > 0;
 
-          if (!hasValidTarget) {
+          if (!hasValidTarget && !errors[targetErrorKey]) {
             errors[targetErrorKey] = "Set an intensity zone/type target for this step.";
           }
 
@@ -234,39 +263,49 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     (structureOverride = structure) => {
       const strictErrors = validateStrictStructure(structureOverride);
 
-      try {
-        activityPlanCreateFormSchema.parse({
-          name,
-          description: description || null,
-          activity_category: activityCategory,
-          route_id: routeId || null,
-          notes: notes || null,
-          structure: structureOverride,
-        });
+      const result = activityPlanCreateFormSchema.safeParse({
+        name,
+        description: description || null,
+        activity_category: activityCategory,
+        route_id: routeId || null,
+        notes: notes || null,
+        structure: structureOverride,
+      });
 
+      if (result.success) {
         return {
           isValid: Object.keys(strictErrors).length === 0,
           errors: strictErrors,
         };
-      } catch (error: any) {
-        const schemaErrors: ActivityPlanValidationErrors = { ...strictErrors };
-        if (error?.issues) {
-          error.issues.forEach((err: any) => {
-            if (err.path[0]) {
-              schemaErrors[err.path[0] as string] = err.message;
+      }
+
+      const schemaErrors: ActivityPlanValidationErrors = { ...strictErrors };
+      result.error.issues.forEach((err: any) => {
+        const [first, intervalIndex, second, stepIndex, field] = err.path ?? [];
+
+        if (first === "intervals" && second === "steps") {
+          const interval = structureOverride.intervals?.[intervalIndex];
+          const step = interval?.steps?.[stepIndex];
+
+          if (interval && step && typeof field === "string") {
+            if (field === "duration") {
+              schemaErrors[`step:${interval.id}:${step.id}:duration`] = err.message;
+              return;
             }
-          });
-          return { isValid: false, errors: schemaErrors };
+
+            if (field === "targets") {
+              schemaErrors[`step:${interval.id}:${step.id}:target`] = err.message;
+              return;
+            }
+          }
         }
 
-        return {
-          isValid: false,
-          errors: {
-            ...schemaErrors,
-            general: getErrorMessage(error),
-          },
-        };
-      }
+        if (err.path[0]) {
+          schemaErrors[err.path[0] as string] = err.message;
+        }
+      });
+
+      return { isValid: false, errors: schemaErrors };
     },
     [validateStrictStructure, name, description, activityCategory, structure, routeId, notes],
   );

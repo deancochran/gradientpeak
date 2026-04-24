@@ -162,14 +162,21 @@ describe("estimation-helpers", () => {
     );
     expect(result).toEqual(
       expect.objectContaining({
-        estimated_tss: 42,
-        estimated_duration: 4200,
         estimated_calories: 450,
-        estimated_distance: 42000,
         estimated_zones: ["Z2", "Z3"],
-        intensity_factor: 0.82,
         confidence: "moderate",
         confidence_score: 82,
+        authoritative_metrics: {
+          estimated_tss: 42,
+          estimated_duration: 4200,
+          intensity_factor: 0.82,
+          estimated_distance: 42000,
+        },
+        route: {
+          distance: 42000,
+          ascent: 350,
+          descent: 350,
+        },
       }),
     );
   });
@@ -214,7 +221,7 @@ describe("estimation-helpers", () => {
       "profile_metrics",
       "activity_routes",
     ]);
-    expect(result.estimated_distance).toBe(24000);
+    expect(result.authoritative_metrics.estimated_distance).toBe(24000);
     expect(vi.mocked(estimationCore.estimateActivity).mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ route: expect.objectContaining({ distanceMeters: 24000 }) }),
     );
@@ -279,19 +286,31 @@ describe("estimation-helpers", () => {
       2,
       expect.objectContaining({ routeIds: ["route-1", "route-2"] }),
     );
-    expect(result[0]).toEqual(expect.objectContaining({ id: "plan-1", estimated_distance: 10000 }));
-    expect(result[1]).toEqual(expect.objectContaining({ id: "plan-2", estimated_distance: 10000 }));
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        id: "plan-1",
+        authoritative_metrics: expect.objectContaining({ estimated_distance: 10000 }),
+      }),
+    );
+    expect(result[1]).toEqual(
+      expect.objectContaining({
+        id: "plan-2",
+        authoritative_metrics: expect.objectContaining({ estimated_distance: 10000 }),
+      }),
+    );
     expect(result[2]).toEqual(
       expect.objectContaining({
         id: "plan-3",
-        estimated_tss: 0,
-        estimated_duration: 0,
         estimated_zones: [],
-        intensity_factor: 0,
         confidence: "low",
         confidence_score: 0,
         estimation_status: "failed",
         counts_toward_aggregation: false,
+        authoritative_metrics: expect.objectContaining({
+          estimated_tss: 0,
+          estimated_duration: 0,
+          intensity_factor: 0,
+        }),
       }),
     );
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
@@ -323,6 +342,39 @@ describe("estimation-helpers", () => {
       intensity_factor: 0.82,
       estimated_distance_meters: 32000,
     });
+  });
+
+  it("does not treat attached route distance as authoritative when structure is present", async () => {
+    const estimationReader = createStoreReader({
+      "route-1": {
+        id: "route-1",
+        distance_meters: 32000,
+        total_ascent: 300,
+        total_descent: 300,
+      },
+    });
+
+    const result = await computePlanMetrics(
+      {
+        activity_category: "bike",
+        structure: {
+          intervals: [{ id: "interval-1", repetitions: 1, steps: [{ id: "step-1" }] }],
+        },
+        route_id: "route-1",
+      },
+      estimationReader as any,
+      "profile-1",
+    );
+
+    expect(result).toEqual({
+      estimated_tss: 42,
+      estimated_duration_seconds: 1800,
+      intensity_factor: 0.82,
+      estimated_distance_meters: 0,
+    });
+    expect(vi.mocked(estimationCore.estimateActivity).mock.calls.at(-1)?.[0]).toEqual(
+      expect.not.objectContaining({ route: expect.anything() }),
+    );
   });
 
   it("computes metrics with a legacy route row", async () => {

@@ -136,19 +136,28 @@ jest.mock("@/lib/api", () => ({
     social: {
       toggleLike: { useMutation: () => ({ mutate: toggleLikeMutateMock, isPending: false }) },
       getComments: {
-        useQuery: () => ({
+        useInfiniteQuery: () => ({
           data: {
-            total: 1,
-            comments: [
+            pages: [
               {
-                id: "comment-1",
-                content: "Nice session",
-                created_at: "2026-02-13T00:00:00.000Z",
-                profile: { username: "Runner" },
+                total: 1,
+                comments: [
+                  {
+                    id: "comment-1",
+                    content: "Nice session",
+                    created_at: "2026-02-13T00:00:00.000Z",
+                    profile: { username: "Runner" },
+                  },
+                ],
+                hasMore: false,
+                nextCursor: undefined,
               },
             ],
           },
           refetch: refetchCommentsMock,
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
         }),
       },
       addComment: {

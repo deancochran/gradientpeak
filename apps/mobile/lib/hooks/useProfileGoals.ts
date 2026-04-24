@@ -3,29 +3,44 @@ import { useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useAutoPaginateInfiniteQuery } from "./useAutoPaginateInfiniteQuery";
 
-const GOALS_PAGE_SIZE = 100;
+const GOALS_PAGE_SIZE = 25;
 
-export function useProfileGoals() {
+interface UseProfileGoalsOptions {
+  loadAllPages?: boolean;
+}
+
+export function useProfileGoals(options: UseProfileGoalsOptions = {}) {
   const profileId = useAuthStore((state) => state.profile?.id ?? null);
 
-  const query = api.goals.list.useQuery(
+  const query = api.goals.list.useInfiniteQuery(
     {
       profile_id: profileId ?? "",
       limit: GOALS_PAGE_SIZE,
-      offset: 0,
     },
     {
       enabled: !!profileId,
+      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
       ...scheduleAwareReadQueryOptions,
     },
   );
+
+  useAutoPaginateInfiniteQuery({
+    enabled: !!profileId && options.loadAllPages === true,
+    hasNextPage: query.hasNextPage,
+    isFetchingNextPage: query.isFetchingNextPage,
+    fetchNextPage: query.fetchNextPage,
+  });
+
   const goals = useMemo<ProfileGoal[]>(() => {
-    if (!Array.isArray(query.data)) {
+    const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+
+    if (!Array.isArray(items)) {
       return [];
     }
 
-    return query.data.flatMap((goal) => {
+    return items.flatMap((goal) => {
       try {
         return [parseProfileGoalRecord(goal)];
       } catch {
@@ -46,7 +61,7 @@ export function useProfileGoals() {
     profileId,
     hasProfileId: !!profileId,
     goals,
-    goalsCount: goals.length,
+    goalsCount: query.data?.pages[0]?.total ?? goals.length,
     isLoading: !!profileId && query.isLoading,
     isFetching: !!profileId && query.isFetching,
     isError: !!profileId && query.isError,

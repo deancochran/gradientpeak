@@ -17,9 +17,12 @@ interface EntityCommentsSectionProps {
     profile?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
   }>;
   helperText?: string;
+  hasMoreComments?: boolean;
+  isLoadingMoreComments?: boolean;
   newComment: string;
   onAddComment: () => void;
   onChangeNewComment: (value: string) => void;
+  onLoadMoreComments?: () => void;
   testIDPrefix: string;
 }
 
@@ -28,9 +31,12 @@ export function EntityCommentsSection({
   commentCount,
   comments,
   helperText,
+  hasMoreComments = false,
+  isLoadingMoreComments = false,
   newComment,
   onAddComment,
   onChangeNewComment,
+  onLoadMoreComments,
   testIDPrefix,
 }: EntityCommentsSectionProps) {
   return (
@@ -75,6 +81,18 @@ export function EntityCommentsSection({
               </View>
             </View>
           ))}
+          {hasMoreComments ? (
+            <View className="pl-[52px] pt-1">
+              <Button
+                variant="outline"
+                onPress={onLoadMoreComments}
+                disabled={isLoadingMoreComments}
+                testID={`${testIDPrefix}-load-more-comments-button`}
+              >
+                <Text>{isLoadingMoreComments ? "Loading comments..." : "Load more comments"}</Text>
+              </Button>
+            </View>
+          ) : null}
         </View>
       ) : (
         <Text className="text-sm text-muted-foreground">No comments yet.</Text>

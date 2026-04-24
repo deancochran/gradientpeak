@@ -3,6 +3,7 @@ import { Text } from "@repo/ui/components/text";
 import { ArrowUpRight, Lock, Play, Target, Zap } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import {
   getEventPrimaryMeta,
   getEventStatusLabel,
@@ -63,7 +64,9 @@ export function CalendarEventCard({
   const activityColor = getActivityColor(event.activity_plan?.activity_category ?? undefined);
   const timeLabel = getEventTimeLabel(event);
   const planned = event.event_type === "planned";
-  const estimatedTss = readMetric(event.activity_plan?.estimated_tss);
+  const estimatedTss = readMetric(
+    getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss,
+  );
   const plannedStepCount = getPlannedStepCount(event);
   const hasRoute = !!event.activity_plan?.route_id;
   const intensityLevel =

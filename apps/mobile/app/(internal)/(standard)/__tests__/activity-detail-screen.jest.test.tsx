@@ -161,7 +161,13 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ mutate: toggleLikeMutateMock, isPending: false }),
       },
       getComments: {
-        useQuery: () => ({ data: { comments: [], total: 0 } }),
+        useInfiniteQuery: () => ({
+          data: { pages: [{ comments: [], total: 0, hasMore: false, nextCursor: undefined }] },
+          refetch: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
+        }),
       },
       addComment: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),

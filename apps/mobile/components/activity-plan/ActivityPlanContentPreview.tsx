@@ -6,15 +6,28 @@ import type {
 import { Text } from "@repo/ui/components/text";
 import React, { useMemo } from "react";
 import { Pressable, View } from "react-native";
-import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
+import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
+import {
+  getActivityPlanRoute,
+  getAuthoritativeActivityPlanMetrics,
+} from "@/lib/activityPlanMetrics";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 type ActivityPlanPreviewLike = {
-  estimated_duration?: number | null;
   estimated_duration_minutes?: number | null;
-  estimated_tss?: number | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_distance?: number | null;
+  } | null;
+  route?: {
+    distance?: number | null;
+    ascent?: number | null;
+    descent?: number | null;
+  } | null;
   route_id?: string | null;
   structure?: unknown;
 };
@@ -125,6 +138,17 @@ function formatTarget(target: IntensityTargetV2): string {
   return `${target.intensity}${target.type}`;
 }
 
+function RouteMetricCell({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-1 items-center gap-0.5">
+      <Text className="text-[10px] text-muted-foreground">{label}</Text>
+      <Text className="text-[11px] font-semibold text-foreground" numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function calculateCoordinateDistance(
   left: { latitude: number; longitude: number },
   right: { latitude: number; longitude: number },
@@ -200,9 +224,14 @@ export function ActivityPlanContentPreview({
   tss,
 }: ActivityPlanContentPreviewProps) {
   const resolvedSize = size ?? (compact ? "small" : "large");
-  const estimatedDurationSeconds = readMetric(plan?.estimated_duration);
+  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(plan);
+  const planRoute = getActivityPlanRoute(plan);
+  const estimatedDurationSeconds = readMetric(authoritativeMetrics.estimated_duration);
   const estimatedDurationMinutes = readMetric(plan?.estimated_duration_minutes);
-  const estimatedTss = readMetric(plan?.estimated_tss);
+  const estimatedTss = readMetric(authoritativeMetrics.estimated_tss);
+  const routeDistanceMeters = readMetric(route?.total_distance ?? planRoute.distance);
+  const routeAscentMeters = readMetric(route?.total_ascent ?? planRoute.ascent);
+  const routeDescentMeters = readMetric(route?.total_descent ?? planRoute.descent);
   const structure = useMemo(() => getStructure(plan?.structure), [plan?.structure]);
   const timelineStructure = useMemo(() => getTimelineStructure(plan?.structure), [plan?.structure]);
   const steps = useMemo(() => flattenSteps(plan?.structure), [plan?.structure]);
@@ -214,15 +243,6 @@ export function ActivityPlanContentPreview({
     () => buildRouteStreams(routeFull?.coordinates),
     [routeFull?.coordinates],
   );
-  const routeInitialRegion =
-    routeCoordinates && routeCoordinates.length > 0
-      ? {
-          latitude: routeCoordinates[Math.floor(routeCoordinates.length / 2)]!.latitude,
-          longitude: routeCoordinates[Math.floor(routeCoordinates.length / 2)]!.longitude,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        }
-      : null;
   const hasTimeline = getIntervals(plan?.structure).length > 0;
   const maxVisibleSteps = resolvedSize === "small" ? 2 : resolvedSize === "medium" ? 3 : 4;
   const visibleSteps = steps.slice(0, maxVisibleSteps);
@@ -235,9 +255,10 @@ export function ActivityPlanContentPreview({
     typeof intensityFactor === "number" ||
     steps.length > 0 ||
     !!plan?.route_id ||
+    routeDistanceMeters !== null ||
     !!route?.name;
 
-  if (!plan || (!hasMetrics && !hasTimeline && visibleSteps.length === 0 && !routeInitialRegion)) {
+  if (!plan || (!hasMetrics && !hasTimeline && visibleSteps.length === 0 && !routeCoordinates)) {
     return null;
   }
 
@@ -268,53 +289,46 @@ export function ActivityPlanContentPreview({
         />
       ) : null}
 
-      {route &&
-      routeInitialRegion &&
-      routeCoordinates &&
-      routeCoordinates.length > 0 &&
-      resolvedSize !== "small" ? (
+      {route && routeCoordinates && routeCoordinates.length > 0 && resolvedSize !== "small" ? (
         <Pressable
           onPress={onRoutePress ?? undefined}
           disabled={!onRoutePress}
           className="overflow-hidden rounded-2xl border border-border bg-card"
           testID={testIDPrefix ? `${testIDPrefix}-route-card` : undefined}
         >
-          <View className="h-36">
-            <MapView
-              style={{ flex: 1 }}
-              provider={PROVIDER_DEFAULT}
-              initialRegion={routeInitialRegion}
-              scrollEnabled={false}
-              zoomEnabled={false}
-              pitchEnabled={false}
-              rotateEnabled={false}
-            >
-              <Polyline
-                coordinates={routeCoordinates}
-                strokeColor="#3b82f6"
-                strokeWidth={4}
-                lineCap="round"
-                lineJoin="round"
-              />
-            </MapView>
-          </View>
-          <View className="gap-2 border-t border-border px-3 py-3">
+          <View className="px-3 py-3 border-b border-border bg-card">
             {route.name ? (
-              <Text className="text-sm font-semibold text-foreground">{route.name}</Text>
+              <Text className="text-sm font-semibold text-foreground mb-2">{route.name}</Text>
             ) : null}
-            <View className="flex-row flex-wrap gap-3">
-              {typeof route.total_distance === "number" ? (
-                <Text className="text-xs text-muted-foreground">
-                  {(route.total_distance / 1000).toFixed(1)} km
-                </Text>
-              ) : null}
-              {typeof route.total_ascent === "number" && route.total_ascent > 0 ? (
-                <Text className="text-xs text-muted-foreground">↑ {route.total_ascent}m</Text>
-              ) : null}
-              {typeof route.total_descent === "number" && route.total_descent > 0 ? (
-                <Text className="text-xs text-muted-foreground">↓ {route.total_descent}m</Text>
-              ) : null}
+            <View className="rounded-lg bg-muted/30 px-2.5 py-2">
+              <View className="flex-row justify-between gap-2">
+                {typeof routeDistanceMeters === "number" ? (
+                  <RouteMetricCell
+                    label="Distance"
+                    value={`${(routeDistanceMeters / 1000).toFixed(1)} km`}
+                  />
+                ) : null}
+                <RouteMetricCell
+                  label="Climb"
+                  value={
+                    typeof routeAscentMeters === "number" && routeAscentMeters > 0
+                      ? `${routeAscentMeters}m`
+                      : "--"
+                  }
+                />
+                <RouteMetricCell
+                  label="Descent"
+                  value={
+                    typeof routeDescentMeters === "number" && routeDescentMeters > 0
+                      ? `${routeDescentMeters}m`
+                      : "--"
+                  }
+                />
+              </View>
             </View>
+          </View>
+          <View className="h-36">
+            <StaticRouteMapPreview coordinates={routeCoordinates} strokeColor="#3b82f6" />
           </View>
         </Pressable>
       ) : null}

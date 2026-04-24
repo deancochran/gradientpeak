@@ -11,8 +11,12 @@ type ActivityPlanListItem = {
   id: string;
   name: string;
   activity_category?: string | null;
-  estimated_duration?: number | null;
-  estimated_tss?: number | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_distance?: number | null;
+  } | null;
   description?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -96,14 +100,13 @@ function sortByRecency(plans: ActivityPlanListItem[]): ActivityPlanListItem[] {
 
 function sortBySuggestionScore(plans: ActivityPlanListItem[]): ActivityPlanListItem[] {
   return [...plans].sort((left, right) => {
-    const leftScore =
-      (left.estimated_tss ?? 0) +
-      (left.estimated_duration ?? 0) / 600 +
-      (left.description ? 10 : 0);
+    const leftEstimatedTss = left.authoritative_metrics?.estimated_tss ?? 0;
+    const leftEstimatedDuration = left.authoritative_metrics?.estimated_duration ?? 0;
+    const rightEstimatedTss = right.authoritative_metrics?.estimated_tss ?? 0;
+    const rightEstimatedDuration = right.authoritative_metrics?.estimated_duration ?? 0;
+    const leftScore = leftEstimatedTss + leftEstimatedDuration / 600 + (left.description ? 10 : 0);
     const rightScore =
-      (right.estimated_tss ?? 0) +
-      (right.estimated_duration ?? 0) / 600 +
-      (right.description ? 10 : 0);
+      rightEstimatedTss + rightEstimatedDuration / 600 + (right.description ? 10 : 0);
 
     if (rightScore !== leftScore) {
       return rightScore - leftScore;
@@ -243,7 +246,9 @@ export function CalendarPlannedActivityPickerModal({
   }, [filteredPlans, searchQuery]);
 
   const renderPlanCard = (plan: ActivityPlanListItem, sectionKey: string) => {
-    const durationLabel = formatDuration(plan.estimated_duration);
+    const estimatedDuration = plan.authoritative_metrics?.estimated_duration;
+    const estimatedTss = plan.authoritative_metrics?.estimated_tss;
+    const durationLabel = formatDuration(estimatedDuration);
     const categoryLabel = toCategoryLabel(plan.activity_category);
     const recommendationLabel =
       sectionKey === "suggested"
@@ -274,9 +279,7 @@ export function CalendarPlannedActivityPickerModal({
             <Text className="text-xs text-muted-foreground">
               {categoryLabel}
               {durationLabel ? ` • ${durationLabel}` : ""}
-              {typeof plan.estimated_tss === "number"
-                ? ` • ${Math.round(plan.estimated_tss)} TSS`
-                : ""}
+              {typeof estimatedTss === "number" ? ` • ${Math.round(estimatedTss)} TSS` : ""}
               {plan.has_liked || (plan.likes_count ?? 0) > 0
                 ? ` • ${(plan.likes_count ?? 1) > 1 ? `${plan.likes_count} likes` : "Favorite"}`
                 : ""}

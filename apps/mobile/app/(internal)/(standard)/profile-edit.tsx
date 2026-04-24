@@ -1,3 +1,4 @@
+import { calculateCriticalPower } from "@repo/core";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -22,10 +23,11 @@ import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { File as ExpoFile } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { Camera, Loader2, Upload } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { Camera, Loader2 } from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActionSheetIOS,
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -37,6 +39,8 @@ import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { applyServerFormErrors, showErrorAlert } from "@/lib/utils/formErrors";
 
 const profileEditSchema = z.object({
@@ -63,17 +67,20 @@ const AVATAR_MIME_TYPES = {
 
 type AvatarMimeType = (typeof AVATAR_MIME_TYPES)[keyof typeof AVATAR_MIME_TYPES];
 
+function isAbsoluteUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
 function ProfileEditScreen() {
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
   const [avatarUploadLoading, setAvatarUploadLoading] = useState(false);
   const utils = api.useUtils();
 
-  // Fetch estimated FTP
-  const { data: estimatedFTP } = api.analytics.predictPerformance.useQuery({
+  const { data: powerCurve } = api.analytics.getSeasonBestCurve.useQuery({
     activity_category: "bike",
     effort_type: "power",
-    duration: 3600, // 1 hour for FTP
+    days: 90,
   });
 
   // Use stable date reference to prevent infinite refetch loops
@@ -87,6 +94,25 @@ function ProfileEditScreen() {
 
   const updateProfileMutation = api.profiles.update.useMutation();
   const createAvatarUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
+  const avatarFilePath =
+    profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
+  const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
+    { filePath: avatarFilePath || "" },
+    { enabled: Boolean(avatarFilePath) },
+  );
+
+  const avatarUrl = avatarFilePath
+    ? (avatarUrlData?.signedUrl ?? null)
+    : (profile?.avatar_url ?? null);
+  const estimatedFTP = useMemo(() => {
+    const model = calculateCriticalPower(powerCurve ?? []);
+
+    if (!model) {
+      return null;
+    }
+
+    return Math.round(model.cp + model.wPrime / 3600);
+  }, [powerCurve]);
 
   const form = useZodForm({
     schema: profileEditSchema,
@@ -227,6 +253,7 @@ function ProfileEditScreen() {
         fileName,
         fileType,
       });
+      const reachableSignedUrl = getReachableSupabaseStorageUrl(signedUrl);
 
       // Create ExpoFile instance and ensure it exists before upload
       const file = new ExpoFile(uri);
@@ -235,14 +262,15 @@ function ProfileEditScreen() {
         throw new Error("Selected image could not be read");
       }
 
-      const arrayBuffer = await fetch(file.uri).then((response) => response.arrayBuffer());
+      const fileResponse = await fetch(file.uri);
+      const blob = await fileResponse.blob();
 
-      const uploadResponse = await fetch(signedUrl, {
+      const uploadResponse = await fetch(reachableSignedUrl, {
         method: "PUT",
         headers: {
           "Content-Type": fileType,
         },
-        body: arrayBuffer,
+        body: blob,
       });
 
       if (!uploadResponse.ok) {
@@ -250,13 +278,13 @@ function ProfileEditScreen() {
       }
 
       // Update profile with new avatar URL
-      await updateProfileMutation.mutateAsync({
+      const updatedProfile = await updateProfileMutation.mutateAsync({
         avatar_url: publicUrl,
       });
 
-      await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+      useAuthStore.getState().setProfile(updatedProfile);
 
-      Alert.alert("Success", "Avatar updated successfully!");
+      await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
     } catch (error) {
       console.error("Avatar upload error:", error);
       Alert.alert(
@@ -288,7 +316,7 @@ function ProfileEditScreen() {
           <CardContent className="items-center">
             <View className="relative mb-4">
               <Avatar alt={profile?.username || "User"} className="w-32 h-32">
-                {profile?.avatar_url ? <AvatarImage source={{ uri: profile.avatar_url }} /> : null}
+                {avatarUrl ? <AvatarImage source={{ uri: avatarUrl }} /> : null}
                 <AvatarFallback>
                   <Text className="text-4xl">
                     {profile?.username?.charAt(0)?.toUpperCase() || "U"}
@@ -303,7 +331,7 @@ function ProfileEditScreen() {
                 testID="profile-edit-avatar-button"
               >
                 {avatarUploadLoading ? (
-                  <Icon as={Loader2} size={20} className="text-primary-foreground animate-spin" />
+                  <ActivityIndicator size="small" color="white" />
                 ) : (
                   <Icon as={Camera} size={20} className="text-primary-foreground" />
                 )}
@@ -390,9 +418,7 @@ function ProfileEditScreen() {
                   <Text className="text-sm font-medium mb-1">Estimated FTP</Text>
                   <View className="bg-muted p-3 rounded-md">
                     <Text className="text-foreground">
-                      {estimatedFTP?.predicted_value
-                        ? `${estimatedFTP.predicted_value} W`
-                        : "Not enough data"}
+                      {estimatedFTP ? `${estimatedFTP} W` : "Not enough data"}
                     </Text>
                     <Text className="text-xs text-muted-foreground mt-1">
                       Read-only estimate from your best recent ride efforts (last 90 days).
@@ -472,7 +498,7 @@ function ProfileEditScreen() {
           >
             {isSavingProfile ? (
               <>
-                <Icon as={Loader2} size={16} className="animate-spin mr-2" />
+                <ActivityIndicator size="small" color="white" className="mr-2" />
                 <Text>Saving...</Text>
               </>
             ) : (

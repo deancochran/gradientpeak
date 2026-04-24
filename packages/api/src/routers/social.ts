@@ -13,6 +13,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -61,6 +62,8 @@ const profileListItemSchema = z
     username: nullableUsernameSchema,
     avatar_url: nullableAvatarUrlSchema,
     is_public: z.boolean().nullable(),
+    created_at: z.union([z.date(), z.string()]),
+    updated_at: z.union([z.date(), z.string()]),
   })
   .strict();
 
@@ -545,7 +548,8 @@ export const socialRouter = createTRPCRouter({
         .object({
           user_id: z.string().uuid(),
           limit: z.number().min(1).max(50).default(20),
-          offset: z.number().min(0).default(0),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
         .strict(),
     )
@@ -554,15 +558,17 @@ export const socialRouter = createTRPCRouter({
 
       try {
         const currentUserId = ctx.session.user.id;
+        const offset = parseIndexCursor(input.cursor);
 
         const followersResult = await db.execute(sql`
-          select p.id, p.username, p.avatar_url, p.is_public
+          select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
           from follows f
           join profiles p on p.id = f.follower_id
           where f.following_id = ${input.user_id}::uuid
             and f.status = 'accepted'
+          order by p.created_at desc, p.id asc
           limit ${input.limit}
-          offset ${input.offset}
+          offset ${offset}
         `);
 
         const followers = z.array(profileListItemSchema).parse(followersResult.rows);
@@ -611,7 +617,7 @@ export const socialRouter = createTRPCRouter({
         return {
           users: usersWithRelationship,
           total,
-          hasMore: input.offset + input.limit < total,
+          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
         };
       } catch (error) {
         if (error instanceof TRPCError) {
@@ -631,7 +637,8 @@ export const socialRouter = createTRPCRouter({
         .object({
           user_id: z.string().uuid(),
           limit: z.number().min(1).max(50).default(20),
-          offset: z.number().min(0).default(0),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
         .strict(),
     )
@@ -640,15 +647,17 @@ export const socialRouter = createTRPCRouter({
 
       try {
         const currentUserId = ctx.session.user.id;
+        const offset = parseIndexCursor(input.cursor);
 
         const followingResult = await db.execute(sql`
-          select p.id, p.username, p.avatar_url, p.is_public
+          select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
           from follows f
           join profiles p on p.id = f.following_id
           where f.follower_id = ${input.user_id}::uuid
             and f.status = 'accepted'
+          order by p.created_at desc, p.id asc
           limit ${input.limit}
-          offset ${input.offset}
+          offset ${offset}
         `);
 
         const following = z.array(profileListItemSchema).parse(followingResult.rows);
@@ -697,7 +706,7 @@ export const socialRouter = createTRPCRouter({
         return {
           users: usersWithRelationship,
           total,
-          hasMore: input.offset + input.limit < total,
+          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
         };
       } catch (error) {
         if (error instanceof TRPCError) {
@@ -717,7 +726,10 @@ export const socialRouter = createTRPCRouter({
         .object({
           query: z.string().optional(),
           limit: z.number().min(1).max(50).default(20),
+          cursor: indexCursorSchema.optional(),
           offset: z.number().min(0).default(0),
+          direction: z.enum(["forward", "backward"]).optional(),
+          sort_by: z.enum(["newest", "oldest", "username_asc", "username_desc"]).optional(),
         })
         .strict(),
     )
@@ -727,25 +739,34 @@ export const socialRouter = createTRPCRouter({
       try {
         const trimmedQuery = input.query?.trim() ?? "";
         const searchPattern = `%${trimmedQuery}%`;
+        const offset = input.cursor ? parseIndexCursor(input.cursor) : input.offset;
+        const profileSortClause =
+          input.sort_by === "oldest"
+            ? sql`p.created_at asc, p.id asc`
+            : input.sort_by === "username_asc"
+              ? sql`p.username asc nulls last, p.created_at desc, p.id asc`
+              : input.sort_by === "username_desc"
+                ? sql`p.username desc nulls last, p.created_at desc, p.id asc`
+                : sql`p.created_at desc, p.id asc`;
 
         const usersResult = trimmedQuery
           ? await db.execute(sql`
-              select p.id, p.username, p.avatar_url, p.is_public
+              select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
               from profiles p
-              where p.id != ${ctx.session.user.id}::uuid
-                and p.username ilike ${searchPattern}
-              order by p.username asc
-              limit ${input.limit}
-              offset ${input.offset}
-            `)
+               where p.id != ${ctx.session.user.id}::uuid
+                 and p.username ilike ${searchPattern}
+               order by ${profileSortClause}
+               limit ${input.limit}
+               offset ${offset}
+             `)
           : await db.execute(sql`
-              select p.id, p.username, p.avatar_url, p.is_public
-              from profiles p
-              where p.id != ${ctx.session.user.id}::uuid
-              order by p.username asc
-              limit ${input.limit}
-              offset ${input.offset}
-            `);
+               select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
+               from profiles p
+               where p.id != ${ctx.session.user.id}::uuid
+               order by ${profileSortClause}
+               limit ${input.limit}
+               offset ${offset}
+             `);
 
         const users = z.array(profileListItemSchema).parse(usersResult.rows);
         const total = await getCount(
@@ -766,7 +787,7 @@ export const socialRouter = createTRPCRouter({
         return {
           users,
           total,
-          hasMore: input.offset + input.limit < total,
+          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
         };
       } catch (error) {
         if (error instanceof TRPCError) {
@@ -902,13 +923,15 @@ export const socialRouter = createTRPCRouter({
           entity_id: z.string().uuid(),
           entity_type: commentEntityTypeSchema,
           limit: z.number().min(1).max(100).default(20),
-          offset: z.number().min(0).default(0),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
         .strict(),
     )
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const userId = ctx.session.user.id;
+      const offset = parseIndexCursor(input.cursor);
 
       if (input.entity_type === "activity") {
         const hasAccess = await checkActivityAccess(db, input.entity_id, userId);
@@ -957,7 +980,7 @@ export const socialRouter = createTRPCRouter({
           and c.entity_type = ${input.entity_type}
         order by c.created_at asc
         limit ${input.limit}
-        offset ${input.offset}
+        offset ${offset}
       `);
 
       const comments = z.array(commentListRowSchema).parse(commentsResult.rows);
@@ -984,7 +1007,7 @@ export const socialRouter = createTRPCRouter({
             : null,
         })),
         total,
-        hasMore: input.offset + input.limit < total,
+        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
       };
     }),
 });

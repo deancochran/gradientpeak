@@ -1,5 +1,4 @@
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,24 +8,18 @@ import {
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Ellipsis, Heart, MapPin, Trash2, TrendingDown, TrendingUp } from "lucide-react-native";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Ellipsis, Heart } from "lucide-react-native";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
-import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
+import { RouteCard } from "@/components/shared/RouteCard";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
-import { getActivityConfig } from "@/lib/constants/activities";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
-type RouteCoordinate = {
-  latitude: number;
-  longitude: number;
-  altitude?: number;
-};
+type RouteCoordinate = { latitude: number; longitude: number; altitude?: number };
 
 function calculateCoordinateDistance(left: RouteCoordinate, right: RouteCoordinate): number {
   const earthRadiusMeters = 6371e3;
@@ -40,52 +33,6 @@ function calculateCoordinateDistance(left: RouteCoordinate, right: RouteCoordina
     Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
 
   return earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
-
-function decodeRoutePolyline(polyline?: string | null): RouteCoordinate[] {
-  if (!polyline) {
-    return [];
-  }
-
-  const encoded = polyline;
-  let index = 0;
-  let latitude = 0;
-  let longitude = 0;
-  const coordinates: RouteCoordinate[] = [];
-
-  while (index < encoded.length) {
-    let result = 0;
-    let shift = 0;
-    let byte = 0;
-
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20 && index <= encoded.length);
-
-    const deltaLatitude = result & 1 ? ~(result >> 1) : result >> 1;
-    latitude += deltaLatitude;
-
-    result = 0;
-    shift = 0;
-
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20 && index <= encoded.length);
-
-    const deltaLongitude = result & 1 ? ~(result >> 1) : result >> 1;
-    longitude += deltaLongitude;
-
-    coordinates.push({
-      latitude: latitude / 1e5,
-      longitude: longitude / 1e5,
-    });
-  }
-
-  return coordinates;
 }
 
 function buildRouteStreams(
@@ -133,33 +80,10 @@ function buildRouteStreams(
   };
 }
 
-function formatDistance(meters: number) {
-  return `${(meters / 1000).toFixed(2)} km`;
-}
-
-function formatDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function MetricPill({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-      <Text className="text-xs font-medium text-foreground">
-        {label}: {value}
-      </Text>
-    </View>
-  );
-}
-
 export default function RouteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const utils = api.useUtils();
-  const mapRef = useRef<MapView>(null);
   const { Stack } = require("expo-router") as typeof import("expo-router");
 
   const { data: route, isLoading } = api.routes.get.useQuery({ id: id! }, { enabled: !!id });
@@ -206,20 +130,10 @@ export default function RouteDetailScreen() {
     }
   }, [route?.has_liked]);
 
-  const coordinates = useMemo<RouteCoordinate[]>(() => {
-    if (routeFull?.coordinates?.length) {
-      return routeFull.coordinates;
-    }
-
-    return decodeRoutePolyline(route?.polyline);
-  }, [route?.polyline, routeFull?.coordinates]);
-
   const elevationStreams = useMemo(
     () => buildRouteStreams(routeFull?.coordinates),
     [routeFull?.coordinates],
   );
-
-  const activityConfig = getActivityConfig(route?.activity_category || "other");
 
   const handleDelete = () => {
     if (!route) return;
@@ -237,19 +151,6 @@ export default function RouteDetailScreen() {
       ],
     );
   };
-
-  useEffect(() => {
-    if (coordinates.length > 0 && mapRef.current) {
-      const timeout = setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coordinates, {
-          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-          animated: false,
-        });
-      }, 100);
-
-      return () => clearTimeout(timeout);
-    }
-  }, [coordinates]);
 
   if (isLoading) {
     return (
@@ -303,23 +204,10 @@ export default function RouteDetailScreen() {
       <Stack.Screen options={{ headerRight: renderOptionsMenu }} />
       <ScrollView className="flex-1">
         <View className="p-4 gap-4 pb-6">
-          <View className="rounded-3xl border border-border bg-card p-4">
-            <View className="flex-row items-start gap-3">
-              <View className={`rounded-full p-2.5 ${activityConfig.bgColor}`}>
-                <Icon as={activityConfig.icon} size={18} className={activityConfig.color} />
-              </View>
-              <View className="min-w-0 flex-1 gap-1">
-                <Text className="text-2xl font-semibold text-foreground">{route.name}</Text>
-                {route.description ? (
-                  <Text className="text-sm leading-5 text-muted-foreground">
-                    {route.description}
-                  </Text>
-                ) : (
-                  <Text className="text-sm leading-5 text-muted-foreground">
-                    {activityConfig.name} route
-                  </Text>
-                )}
-              </View>
+          <RouteCard
+            route={route}
+            routeFull={routeFull}
+            headerAccessory={
               <Pressable
                 onPress={handleToggleLike}
                 className="rounded-full border border-border bg-background px-3 py-2"
@@ -340,159 +228,30 @@ export default function RouteDetailScreen() {
                   </Text>
                 </View>
               </Pressable>
-            </View>
-
-            <View className="mt-4 flex-row flex-wrap gap-2">
-              <MetricPill label="Distance" value={formatDistance(route.total_distance ?? 0)} />
-              {route.total_ascent != null && route.total_ascent > 0 ? (
-                <MetricPill label="Climb" value={`${route.total_ascent}m`} />
-              ) : null}
-              <MetricPill label="Uploaded" value={formatDate(route.created_at)} />
-            </View>
-
-            {route.owner ? (
-              <View className="mt-4 border-t border-border pt-4">
-                <EntityOwnerRow owner={route.owner} subtitle="Route owner" />
-              </View>
-            ) : null}
-          </View>
-
-          <View className="overflow-hidden rounded-3xl border border-border bg-card">
-            <View className="h-56 bg-muted">
-              {coordinates.length > 0 ? (
-                <MapView
-                  ref={mapRef}
-                  style={{ flex: 1 }}
-                  provider={PROVIDER_DEFAULT}
-                  initialRegion={{
-                    latitude: coordinates[Math.floor(coordinates.length / 2)]?.latitude || 0,
-                    longitude: coordinates[Math.floor(coordinates.length / 2)]?.longitude || 0,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
-                  mapType="standard"
-                  showsUserLocation={false}
-                  showsMyLocationButton={false}
-                  showsCompass={true}
-                  showsScale={true}
-                  toolbarEnabled={false}
-                >
-                  <Polyline
-                    coordinates={coordinates}
-                    strokeColor="#f97316"
-                    strokeWidth={4}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                  <Marker coordinate={coordinates[0]!} anchor={{ x: 0.5, y: 0.5 }} title="Start">
-                    <View className="h-3 w-3 rounded-full border-2 border-white bg-green-500" />
-                  </Marker>
-                  <Marker
-                    coordinate={coordinates[coordinates.length - 1]!}
-                    anchor={{ x: 0.5, y: 0.5 }}
-                    title="Finish"
-                  >
-                    <View className="h-3 w-3 rounded-full border-2 border-white bg-red-500" />
-                  </Marker>
-                </MapView>
-              ) : (
-                <View className="flex-1 items-center justify-center">
-                  <Text className="text-muted-foreground">No GPS data available</Text>
-                </View>
-              )}
-            </View>
-            <View className="border-t border-border px-3 py-3">
-              <Text className="text-sm font-semibold text-foreground">Route Preview</Text>
-              <Text className="mt-1 text-xs text-muted-foreground">
-                Review the route geometry and elevation before using it in a plan.
-              </Text>
-            </View>
-          </View>
+            }
+          />
 
           {elevationStreams ? (
             <ElevationProfileChart
               elevationStream={elevationStreams.elevationStream}
               distanceStream={elevationStreams.distanceStream}
-              title="Elevation Profile"
               height={150}
-              showStats={true}
+              showStats={false}
+              showHeader={false}
             />
           ) : null}
-
-          <Card className="rounded-3xl border border-border bg-card">
-            <CardContent className="p-4 gap-4">
-              <View className="gap-1">
-                <Text className="text-sm font-semibold text-foreground">Route details</Text>
-                <Text className="text-xs text-muted-foreground">
-                  Key route facts and source information.
-                </Text>
-              </View>
-
-              <View className="gap-3 rounded-2xl border border-border bg-muted/10 p-3">
-                <View className="flex-row items-center justify-between gap-3">
-                  <View className="flex-row items-center gap-2">
-                    <Icon as={MapPin} size={16} className="text-muted-foreground" />
-                    <Text className="text-xs text-muted-foreground">Distance</Text>
-                  </View>
-                  <Text className="text-sm font-medium text-foreground">
-                    {formatDistance(route.total_distance ?? 0)}
-                  </Text>
-                </View>
-
-                {route.total_ascent != null && route.total_ascent > 0 ? (
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-row items-center gap-2">
-                      <Icon as={TrendingUp} size={16} className="text-green-600" />
-                      <Text className="text-xs text-muted-foreground">Elevation gain</Text>
-                    </View>
-                    <Text className="text-sm font-medium text-foreground">
-                      {route.total_ascent}m
-                    </Text>
-                  </View>
-                ) : null}
-
-                {route.total_descent != null && route.total_descent > 0 ? (
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-row items-center gap-2">
-                      <Icon as={TrendingDown} size={16} className="text-red-600" />
-                      <Text className="text-xs text-muted-foreground">Elevation loss</Text>
-                    </View>
-                    <Text className="text-sm font-medium text-foreground">
-                      {route.total_descent}m
-                    </Text>
-                  </View>
-                ) : null}
-
-                <View className="flex-row items-center justify-between gap-3">
-                  <Text className="text-xs text-muted-foreground">Activity type</Text>
-                  <Text className="text-sm font-medium text-foreground">{activityConfig.name}</Text>
-                </View>
-
-                <View className="flex-row items-center justify-between gap-3">
-                  <Text className="text-xs text-muted-foreground">Uploaded</Text>
-                  <Text className="text-sm font-medium text-foreground">
-                    {formatDate(route.created_at)}
-                  </Text>
-                </View>
-
-                {route.source ? (
-                  <View className="gap-1 pt-1">
-                    <Text className="text-xs text-muted-foreground">Source</Text>
-                    <Text className="text-sm text-foreground">{route.source}</Text>
-                  </View>
-                ) : null}
-              </View>
-            </CardContent>
-          </Card>
 
           <EntityCommentsSection
             addCommentPending={comments.addCommentPending}
             commentCount={comments.commentCount}
             comments={comments.comments}
             helperText="Discuss the route and share notes before reusing it elsewhere."
+            hasMoreComments={comments.hasMoreComments}
+            isLoadingMoreComments={comments.isLoadingMoreComments}
             newComment={comments.newComment}
             onAddComment={comments.handleAddComment}
             onChangeNewComment={comments.setNewComment}
+            onLoadMoreComments={comments.loadMoreComments}
             testIDPrefix="route-detail"
           />
         </View>

@@ -37,20 +37,43 @@ describe("activity plan schema composition", () => {
 });
 
 describe("activity plan form schema composition", () => {
-  it("requires structure or route when creating an activity plan form", () => {
+  it("requires saveable structure when creating an activity plan form", () => {
     const result = activityPlanCreateFormSchema.safeParse({
       name: "Evening run",
       description: "",
       activity_category: "run",
       notes: null,
+      structure: {
+        version: 2,
+        intervals: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Main Set",
+            repetitions: 1,
+            steps: [
+              {
+                id: "22222222-2222-4222-8222-222222222222",
+                name: "Run",
+                duration: { type: "untilFinished" },
+                targets: [],
+              },
+            ],
+          },
+        ],
+      },
     });
 
     expect(result.success).toBe(false);
     expect(result.error?.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: ["structure"],
-          message: "Activity plan must have either a structure or a route",
+          path: ["structure", "intervals", 0, "steps", 0, "duration"],
+          message:
+            "Saved steps need an explicit time, distance, or repetitions duration. 'Until finished' cannot produce trustworthy IF/TSS.",
+        }),
+        expect.objectContaining({
+          path: ["structure", "intervals", 0, "steps", 0, "targets"],
+          message: "Each saved step needs an intensity target.",
         }),
       ]),
     );

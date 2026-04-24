@@ -8,6 +8,7 @@ import { profileMetricsRouter } from "../profile-metrics";
 
 type QueryPlan = {
   selectResult?: unknown[];
+  countResult?: unknown[];
   insertResult?: unknown[];
   updateResult?: unknown[];
   deleteResult?: unknown;
@@ -39,33 +40,39 @@ function createProfileMetricRow(overrides: Record<string, unknown> = {}) {
 function createDbMock(plan: QueryPlan = {}) {
   const callLog: DbCall[] = [];
 
-  const selectBuilder: any = {
-    from: (table: unknown) => {
-      callLog.push({ operation: "select.from", value: table });
-      return selectBuilder;
-    },
-    where: (payload: unknown) => {
-      callLog.push({ operation: "select.where", payload });
-      return selectBuilder;
-    },
-    orderBy: (...payload: unknown[]) => {
-      callLog.push({ operation: "select.orderBy", payload });
-      return selectBuilder;
-    },
-    limit: (value: number) => {
-      callLog.push({ operation: "select.limit", value });
-      return selectBuilder;
-    },
-    offset: (value: number) => {
-      callLog.push({ operation: "select.offset", value });
-      return selectBuilder;
-    },
-    then: (onFulfilled: (value: unknown[]) => unknown) =>
-      Promise.resolve(plan.selectResult ?? []).then(onFulfilled),
+  const createSelectBuilder = (isCountSelect = false) => {
+    const selectBuilder: any = {
+      from: (table: unknown) => {
+        callLog.push({ operation: "select.from", value: table });
+        return selectBuilder;
+      },
+      where: (payload: unknown) => {
+        callLog.push({ operation: "select.where", payload });
+        return selectBuilder;
+      },
+      orderBy: (...payload: unknown[]) => {
+        callLog.push({ operation: "select.orderBy", payload });
+        return selectBuilder;
+      },
+      limit: (value: number) => {
+        callLog.push({ operation: "select.limit", value });
+        return selectBuilder;
+      },
+      offset: (value: number) => {
+        callLog.push({ operation: "select.offset", value });
+        return selectBuilder;
+      },
+      then: (onFulfilled: (value: unknown[]) => unknown) =>
+        Promise.resolve(isCountSelect ? (plan.countResult ?? []) : (plan.selectResult ?? [])).then(
+          onFulfilled,
+        ),
+    };
+
+    return selectBuilder;
   };
 
   const db = {
-    select: () => selectBuilder,
+    select: (selection?: Record<string, unknown>) => createSelectBuilder(Boolean(selection?.total)),
     insert: (table: unknown) => {
       callLog.push({ operation: "insert.into", value: table });
 
@@ -135,18 +142,19 @@ describe("profileMetricsRouter", () => {
         value: 71.9,
       }),
     ];
-    const { caller, callLog } = createCaller({ selectResult: rows });
+    const { caller, callLog } = createCaller({ selectResult: rows, countResult: [{ total: 2 }] });
 
     const result = await caller.list({
       metric_type: "weight_kg",
       start_date: new Date("2026-03-01T00:00:00.000Z"),
       end_date: new Date("2026-03-31T23:59:59.000Z"),
       limit: 10,
-      offset: 5,
+      cursor: "index:5",
     });
 
     expect(result.items).toEqual(rows);
     expect(result.total).toBe(2);
+    expect(result.nextCursor).toBeUndefined();
     expect(callLog).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ operation: "select.where" }),

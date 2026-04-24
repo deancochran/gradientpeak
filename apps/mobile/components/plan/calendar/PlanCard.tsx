@@ -6,8 +6,10 @@ interface PlanCardProps {
     name: string;
     description?: string;
     activity_category: string;
-    estimated_duration?: number;
-    estimated_tss?: number;
+    authoritative_metrics?: {
+      estimated_duration?: number | null;
+      estimated_tss?: number | null;
+    } | null;
     created_by?: string;
     structure?: {
       steps: any[];
@@ -25,8 +27,8 @@ export function PlanCard({ plan, onPress, showOwnership: _showOwnership = true }
         name: plan.name,
         description: plan.description,
         activityType: plan.activity_category,
-        estimatedDuration: plan.estimated_duration,
-        estimatedTss: plan.estimated_tss,
+        estimatedDuration: plan.authoritative_metrics?.estimated_duration ?? undefined,
+        estimatedTss: plan.authoritative_metrics?.estimated_tss ?? undefined,
         intensityFactor: undefined,
       }}
       onPress={() => onPress(plan.id)}

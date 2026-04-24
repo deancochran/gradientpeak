@@ -54,7 +54,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     curveWindow = "tab",
   } = options;
-  const profileGoals = useProfileGoals();
+  const profileGoals = useProfileGoals({ loadAllPages: true });
   const profileSettings = useProfileSettings();
 
   const today = useMemo(() => new Date(), []);

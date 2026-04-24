@@ -31,24 +31,30 @@ function formatDistance(meters: number): string {
 function ActivitiesScreen() {
   const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
-  const [page, setPage] = useState(0);
   const limit = 20;
 
   // Query paginated activities
   const {
     data: activitiesData,
     isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
     refetch,
-  } = api.activities.listPaginated.useQuery({
-    limit,
-    offset: page * limit,
-    sort_by: "date",
-    sort_order: "desc",
-  });
+  } = api.activities.listPaginated.useInfiniteQuery(
+    {
+      limit,
+      sort_by: "date",
+      sort_order: "desc",
+    },
+    {
+      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+    },
+  );
 
-  const activities = activitiesData?.items || [];
-  const hasMore = activitiesData?.hasMore || false;
-  const total = activitiesData?.total || 0;
+  const activities = activitiesData?.pages.flatMap((page) => page.items) || [];
+  const hasMore = activitiesData?.pages[activitiesData.pages.length - 1]?.hasMore || false;
+  const total = activitiesData?.pages[0]?.total || 0;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -61,8 +67,8 @@ function ActivitiesScreen() {
   };
 
   const handleLoadMore = () => {
-    if (hasMore && !isLoading) {
-      setPage((prev) => prev + 1);
+    if (hasMore && !isFetchingNextPage) {
+      void fetchNextPage();
     }
   };
 
@@ -74,7 +80,7 @@ function ActivitiesScreen() {
     return "🎯";
   };
 
-  if (isLoading && page === 0) {
+  if (isLoading && activities.length === 0) {
     return (
       <ScrollView className="flex-1 bg-background" testID="activities-list-loading">
         <View className="p-4">
@@ -120,7 +126,7 @@ function ActivitiesScreen() {
           const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
           const isCloseToBottom =
             layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
-          if (isCloseToBottom && hasMore && !isLoading) {
+          if (isCloseToBottom && hasMore && !isFetchingNextPage) {
             handleLoadMore();
           }
         }}
@@ -231,7 +237,7 @@ function ActivitiesScreen() {
             {/* Load More */}
             {hasMore && (
               <View className="py-4 items-center">
-                {isLoading ? (
+                {isFetchingNextPage ? (
                   <Text className="text-sm text-muted-foreground">Loading more...</Text>
                 ) : (
                   <Button variant="outline" onPress={handleLoadMore}>

@@ -5,6 +5,7 @@ import { LinearGradient, useFont, vec } from "@shopify/react-native-skia";
 import React, { useMemo } from "react";
 import { View } from "react-native";
 import { Area, CartesianChart, useChartPressState } from "victory-native";
+import { useTheme } from "@/lib/stores/theme-store";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 interface ElevationProfileChartProps {
@@ -13,6 +14,7 @@ interface ElevationProfileChartProps {
   title?: string;
   height?: number;
   showStats?: boolean;
+  showHeader?: boolean;
 }
 
 export function ElevationProfileChart({
@@ -21,9 +23,12 @@ export function ElevationProfileChart({
   title = "Elevation Profile",
   height = 200,
   showStats = true,
+  showHeader = true,
 }: ElevationProfileChartProps) {
   const font = useFont(require("@/assets/fonts/SpaceMono-Regular.ttf"), 12);
   const { state, isActive } = useChartPressState({ x: 0, y: { elevation: 0 } });
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   // Prepare chart data
   const { chartData, stats } = useMemo(() => {
@@ -98,9 +103,11 @@ export function ElevationProfileChart({
   if (chartData.length === 0) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
+        {showHeader ? (
+          <CardHeader>
+            <CardTitle>{title}</CardTitle>
+          </CardHeader>
+        ) : null}
         <CardContent>
           <View style={{ height }} className="items-center justify-center bg-muted rounded-lg">
             <Text className="text-muted-foreground">No elevation data available</Text>
@@ -112,27 +119,29 @@ export function ElevationProfileChart({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {showStats && (
-          <View className="flex-row gap-4 mt-2">
-            <View>
-              <Text className="text-xs text-muted-foreground">Ascent</Text>
-              <Text className="text-sm font-semibold">{stats.totalAscent}m ↗</Text>
+      {showHeader ? (
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          {showStats && (
+            <View className="flex-row gap-4 mt-2">
+              <View>
+                <Text className="text-xs text-muted-foreground">Ascent</Text>
+                <Text className="text-sm font-semibold">{stats.totalAscent}m ↗</Text>
+              </View>
+              <View>
+                <Text className="text-xs text-muted-foreground">Descent</Text>
+                <Text className="text-sm font-semibold">{stats.totalDescent}m ↘</Text>
+              </View>
+              <View>
+                <Text className="text-xs text-muted-foreground">Range</Text>
+                <Text className="text-sm font-semibold">
+                  {stats.minElevation} - {stats.maxElevation}m
+                </Text>
+              </View>
             </View>
-            <View>
-              <Text className="text-xs text-muted-foreground">Descent</Text>
-              <Text className="text-sm font-semibold">{stats.totalDescent}m ↘</Text>
-            </View>
-            <View>
-              <Text className="text-xs text-muted-foreground">Range</Text>
-              <Text className="text-sm font-semibold">
-                {stats.minElevation} - {stats.maxElevation}m
-              </Text>
-            </View>
-          </View>
-        )}
-      </CardHeader>
+          )}
+        </CardHeader>
+      ) : null}
       <CardContent>
         <View style={{ height }}>
           {font && (
@@ -142,6 +151,9 @@ export function ElevationProfileChart({
               yKeys={["elevation"]}
               axisOptions={{
                 font,
+                labelColor: isDark ? "#a3a3a3" : "#525252",
+                lineColor: isDark ? "rgba(64,64,64,0.7)" : "rgba(212,212,212,0.85)",
+                lineWidth: 1,
                 formatXLabel: (value) =>
                   distanceStream ? `${value.toFixed(1)}km` : `${Math.floor(value / 60)}m`,
                 formatYLabel: (value) => `${value.toFixed(0)}m`,
@@ -168,8 +180,8 @@ export function ElevationProfileChart({
 
         {/* Active value display */}
         {isActive && (
-          <View className="mt-2 p-2 bg-muted rounded-lg">
-            <Text className="text-sm">
+          <View className="mt-2 rounded-lg bg-muted p-2">
+            <Text className="text-sm text-foreground">
               {distanceStream ? "Distance" : "Time"}:{" "}
               {distanceStream
                 ? `${state.x.value.value.toFixed(2)} km`

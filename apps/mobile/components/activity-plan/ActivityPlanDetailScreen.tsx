@@ -11,12 +11,17 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Ellipsis, Heart, MessageCircle } from "lucide-react-native";
+import { ChevronRight, Ellipsis, Heart, MessageCircle } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
+import { RouteCard } from "@/components/shared/RouteCard";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import {
+  getActivityPlanRoute,
+  getAuthoritativeActivityPlanMetrics,
+} from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -100,6 +105,20 @@ export function ActivityPlanDetailScreen({
   });
 
   const activityPlan = vm.activityPlan;
+  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
+  const planRoute = getActivityPlanRoute(activityPlan);
+  const routeCardRoute = route
+    ? route
+    : planRoute.distance != null || planRoute.ascent != null || planRoute.descent != null
+      ? {
+          id: routeId ?? `${activityPlan.id ?? activityPlan.name ?? "activity-plan-route"}`,
+          name: activityPlan.name ? `${activityPlan.name} Route` : "Planned Route",
+          activity_category: activityPlan.activity_category,
+          total_ascent: planRoute.ascent ?? null,
+          total_descent: planRoute.descent ?? null,
+          total_distance: planRoute.distance ?? null,
+        }
+      : null;
 
   const handleRecordNow = () => {
     if (!activityPlan) return;
@@ -278,7 +297,7 @@ export function ActivityPlanDetailScreen({
             <ActivityPlanSummary
               activityCategory={activityPlan.activity_category}
               description={activityPlan.description}
-              estimatedDuration={activityPlan.estimated_duration ?? null}
+              estimatedDuration={authoritativeMetrics.estimated_duration ?? null}
               estimatedTss={tss}
               headerAccessory={
                 <Pressable
@@ -341,10 +360,42 @@ export function ActivityPlanDetailScreen({
               </View>
             ) : null}
           </View>
+          {routeCardRoute ? (
+            <RouteCard
+              route={routeCardRoute}
+              routeFull={routeFull}
+              variant="compact"
+              onPress={
+                routeId
+                  ? () =>
+                      navigateTo({
+                        pathname: "/(internal)/(standard)/route-detail",
+                        params: { id: routeId },
+                      } as never)
+                  : undefined
+              }
+              showAttribution={false}
+              headerAccessory={
+                routeId ? (
+                  <Icon as={ChevronRight} size={18} className="mt-1 text-muted-foreground" />
+                ) : null
+              }
+            />
+          ) : null}
           <ActivityPlanContentPreview
             size="large"
             plan={activityPlan}
-            route={route}
+            route={
+              route
+                ? route
+                : planRoute
+                  ? {
+                      total_ascent: planRoute.ascent ?? null,
+                      total_descent: planRoute.descent ?? null,
+                      total_distance: planRoute.distance ?? null,
+                    }
+                  : null
+            }
             routeFull={routeFull}
             onRoutePress={
               routeId
@@ -364,9 +415,12 @@ export function ActivityPlanDetailScreen({
             commentCount={social.commentCount}
             comments={social.comments}
             helperText="Ask questions or leave context for anyone reusing this activity."
+            hasMoreComments={social.hasMoreComments}
+            isLoadingMoreComments={social.isLoadingMoreComments}
             newComment={social.newComment}
             onAddComment={social.handleAddComment}
             onChangeNewComment={social.setNewComment}
+            onLoadMoreComments={social.loadMoreComments}
             testIDPrefix="activity-plan"
           />
         </View>

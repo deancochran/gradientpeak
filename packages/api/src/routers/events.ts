@@ -1824,6 +1824,7 @@ export const eventsRouter = createTRPCRouter({
   validateConstraints: protectedProcedure
     .input(validateConstraintsSchema)
     .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
       const eventReadRepository = getEventReadRepository(ctx);
       const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
       const validateInputs = await eventReadRepository.getValidateConstraintsInputs({
@@ -1876,47 +1877,32 @@ export const eventsRouter = createTRPCRouter({
 
       const plannedThisWeekMapped = mapEvents(plannedThisWeek as PlannedEventRecord[] | null);
 
-      const ftpValue = validateInputs.best20mPower?.value
-        ? Math.round(validateInputs.best20mPower.value * 0.95)
-        : undefined;
+      const currentWeekPlans = plannedThisWeekMapped
+        .map((event) => event.activity_plan)
+        .filter(
+          (plan): plan is NonNullable<(typeof plannedThisWeekMapped)[number]["activity_plan"]> =>
+            !!plan,
+        );
 
-      const lthrValue = validateInputs.lthrMetric?.value
-        ? Number(validateInputs.lthrMetric.value)
-        : undefined;
+      const currentWeekDerivedPlans = await getActivityPlansDerivedMetrics(
+        currentWeekPlans,
+        db,
+        eventReadRepository,
+        ctx.session.user.id,
+      );
+      const currentWeeklyTSS = currentWeekDerivedPlans.reduce(
+        (sum, plan) => sum + plan.authoritative_metrics.estimated_tss,
+        0,
+      );
 
-      const userMetrics = {
-        ftp: ftpValue,
-        threshold_hr: lthrValue,
-        weight_kg: validateInputs.weightMetric?.value
-          ? Number(validateInputs.weightMetric.value)
-          : undefined,
-        dob: validateInputs.profile?.dob,
-      };
-
-      const { estimateActivity, buildEstimationContext } = await import("@repo/core");
-
-      const currentWeeklyTSS = plannedThisWeekMapped.reduce((sum, event) => {
-        if (!event.activity_plan) return sum;
-        const context = buildEstimationContext({
-          userProfile: userMetrics,
-          activityPlan: {
-            ...event.activity_plan,
-            route_id: event.activity_plan.route_id || undefined,
-          },
-        });
-        const estimation = estimateActivity(context);
-        return sum + estimation.tss;
-      }, 0);
-
-      const context = buildEstimationContext({
-        userProfile: userMetrics,
-        activityPlan: {
-          ...activityPlan,
-          route_id: activityPlan.route_id || undefined,
-        },
-      });
-      const newActivityEstimation = estimateActivity(context);
-      const newWeeklyTSS = currentWeeklyTSS + newActivityEstimation.tss;
+      const newActivityDerivedPlan = await getActivityPlanDerivedMetrics(
+        activityPlan as any,
+        db,
+        eventReadRepository,
+        ctx.session.user.id,
+      );
+      const newWeeklyTSS =
+        currentWeeklyTSS + newActivityDerivedPlan.authoritative_metrics.estimated_tss;
 
       const maxWeeklyTSS = structure.target_weekly_tss_max || Infinity;
       const weeklyTSSStatus =

@@ -4,10 +4,17 @@ export interface CalendarEventActivityPlan {
   description?: string | null;
   notes?: string | null;
   activity_category?: string | null;
-  estimated_duration?: number | null;
-  estimated_duration_minutes?: number | null;
-  estimated_tss?: number | null;
-  intensity_factor?: number | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_distance?: number | null;
+  } | null;
+  route?: {
+    distance?: number | null;
+    ascent?: number | null;
+    descent?: number | null;
+  } | null;
   route_id?: string | null;
   structure?: unknown;
 }

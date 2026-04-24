@@ -29,6 +29,7 @@ import { TrainingPlanStructureSection } from "@/components/training-plan/Trainin
 import { TrainingPlanTemplateSchedulingDialog } from "@/components/training-plan/TrainingPlanTemplateSchedulingDialog";
 import { useTrainingPlanHeaderSocialActions } from "@/components/training-plan/useTrainingPlanHeaderSocialActions";
 import { useTrainingPlanTemplateSchedulingController } from "@/components/training-plan/useTrainingPlanTemplateSchedulingController";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import {
@@ -54,10 +55,16 @@ type ActivityPlanListItem = {
   name: string;
   activity_category?: string | null;
   route_id?: string | null;
-  estimated_tss?: number | null;
-  intensity_factor?: number | null;
-  estimated_duration?: number | null;
-  estimated_duration_minutes?: number | null;
+  authoritative_metrics?: {
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_duration?: number | null;
+  } | null;
+  route?: {
+    distance?: number | null;
+    ascent?: number | null;
+    descent?: number | null;
+  } | null;
   description?: string | null;
   structure?: unknown;
 };
@@ -122,6 +129,10 @@ function countSteps(structure: unknown): number {
 
 function hasRouteAttached(activityPlan: ActivityPlanListItem): boolean {
   if (activityPlan.route_id) {
+    return true;
+  }
+
+  if (activityPlan.route) {
     return true;
   }
 
@@ -513,7 +524,10 @@ export default function TrainingPlanOverview() {
             }
 
             const linkedPlan = linkedActivityPlanById.get(session.activityPlanId);
-            return sessionTotal + readFiniteNumber(linkedPlan?.estimated_tss);
+            return (
+              sessionTotal +
+              readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_tss)
+            );
           }, 0);
 
           return weekTotal + dayTotal;
@@ -549,11 +563,13 @@ export default function TrainingPlanOverview() {
     () =>
       uniqueLinkedActivityPlans.map((linkedPlan) => ({
         ...linkedPlan,
-        estimatedTss: Math.round(readFiniteNumber(linkedPlan.estimated_tss)),
-        intensityFactor: readNumber(linkedPlan.intensity_factor) ?? null,
+        estimatedTss: Math.round(
+          readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_tss),
+        ),
+        intensityFactor:
+          readNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).intensity_factor) ?? null,
         estimatedDurationMinutes: Math.round(
-          readFiniteNumber(linkedPlan.estimated_duration_minutes) ||
-            readFiniteNumber(linkedPlan.estimated_duration) / 60,
+          readFiniteNumber(getAuthoritativeActivityPlanMetrics(linkedPlan).estimated_duration) / 60,
         ),
         usageCount: activityUsageCountById.get(linkedPlan.id) ?? 0,
         stepCount: countSteps(linkedPlan.structure),
@@ -575,7 +591,10 @@ export default function TrainingPlanOverview() {
 
         return (
           sum +
-          readFiniteNumber(linkedActivityPlanById.get(session.activityPlanId)?.estimated_duration)
+          readFiniteNumber(
+            getAuthoritativeActivityPlanMetrics(linkedActivityPlanById.get(session.activityPlanId))
+              .estimated_duration,
+          )
         );
       }, 0),
     [linkedActivityPlanById, structureSessionRows],
@@ -1061,9 +1080,12 @@ export default function TrainingPlanOverview() {
             commentCount={comments.commentCount}
             comments={comments.comments}
             helperText="Discuss the template before duplicating or scheduling it."
+            hasMoreComments={comments.hasMoreComments}
+            isLoadingMoreComments={comments.isLoadingMoreComments}
             newComment={comments.newComment}
             onAddComment={comments.handleAddComment}
             onChangeNewComment={comments.setNewComment}
+            onLoadMoreComments={comments.loadMoreComments}
             testIDPrefix="training-plan"
           />
         </View>

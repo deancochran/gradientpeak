@@ -407,9 +407,12 @@ export default function EventDetailScreen() {
             commentCount={comments.commentCount}
             comments={comments.comments}
             helperText="Use comments for context that belongs to this scheduled event."
+            hasMoreComments={comments.hasMoreComments}
+            isLoadingMoreComments={comments.isLoadingMoreComments}
             newComment={comments.newComment}
             onAddComment={comments.handleAddComment}
             onChangeNewComment={comments.setNewComment}
+            onLoadMoreComments={comments.loadMoreComments}
             testIDPrefix="event-detail"
           />
         ) : null}

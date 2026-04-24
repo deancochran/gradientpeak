@@ -23,9 +23,17 @@ export interface ActivityPlan {
   activity_category: string;
   description?: string | null;
   structure?: ActivityPlanStructureV2;
-  estimated_duration?: number | null; // in seconds
-  estimated_tss?: number | null;
-  intensity_factor?: number | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_distance?: number | null;
+  } | null;
+  route?: {
+    distance?: number | null;
+    ascent?: number | null;
+    descent?: number | null;
+  } | null;
   route_id?: string | null;
   notes?: string | null;
   profile_id?: string | null;
@@ -195,8 +203,15 @@ export function ActivityPlanCard({
             compact={isCompact}
             size={isCompact ? "small" : isHero ? "large" : "medium"}
             plan={{
-              estimated_duration: activity.estimatedDuration,
-              estimated_tss: activity.estimatedTss,
+              authoritative_metrics: {
+                estimated_duration: activity.estimatedDuration,
+                estimated_tss: activity.estimatedTss,
+                intensity_factor: activity.intensityFactor,
+                estimated_distance: activity.estimatedDistance,
+              },
+              route: {
+                distance: activity.estimatedDistance,
+              },
               route_id: activity.routeId,
               structure: activity.structure,
             }}
@@ -242,6 +257,8 @@ function transformToCardData(
 
   // Extract route info from structure if available
   const routeInfo = (plan.structure as any)?.route;
+  const authoritativeMetrics = plan.authoritative_metrics;
+  const planRoute = plan.route;
 
   return {
     id: plannedActivity?.id || plan.id,
@@ -249,10 +266,11 @@ function transformToCardData(
     activityType: plan.activity_category,
     description: plan.description || undefined,
     structure: plan.structure,
-    estimatedDuration: plan.estimated_duration || undefined,
-    estimatedTss: plan.estimated_tss || undefined,
-    intensityFactor: plan.intensity_factor || undefined,
-    estimatedDistance: routeInfo?.distance,
+    estimatedDuration: authoritativeMetrics?.estimated_duration ?? undefined,
+    estimatedTss: authoritativeMetrics?.estimated_tss ?? undefined,
+    intensityFactor: authoritativeMetrics?.intensity_factor ?? undefined,
+    estimatedDistance:
+      authoritativeMetrics?.estimated_distance ?? planRoute?.distance ?? routeInfo?.distance,
     routeId: plan.route_id || undefined,
     routeName: routeInfo?.name,
     notes: plannedActivity?.notes || plan.description || plan.notes || undefined,

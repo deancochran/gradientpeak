@@ -23,6 +23,31 @@ jest.mock("expo-crypto", () => ({ __esModule: true, randomUUID: () => "uuid-mock
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  getSaveableActivityPlanStructureIssues: (structure: any) => {
+    const issues: Array<{ path: Array<string | number>; message: string }> = [];
+    const intervals = structure?.intervals ?? [];
+
+    intervals.forEach((interval: any, intervalIndex: number) => {
+      (interval?.steps ?? []).forEach((step: any, stepIndex: number) => {
+        if (step?.duration?.type === "untilFinished") {
+          issues.push({
+            path: ["intervals", intervalIndex, "steps", stepIndex, "duration"],
+            message:
+              "Saved steps need an explicit time, distance, or repetitions duration. 'Until finished' cannot produce trustworthy IF/TSS.",
+          });
+        }
+
+        if (!Array.isArray(step?.targets) || step.targets.length === 0) {
+          issues.push({
+            path: ["intervals", intervalIndex, "steps", stepIndex, "targets"],
+            message: "Each saved step needs an intensity target.",
+          });
+        }
+      });
+    });
+
+    return issues;
+  },
   activityPlanCreateFormSchema: {
     safeParse: (data: any) => {
       const errors: Array<{ path: string[]; message: string }> = [];
@@ -169,7 +194,7 @@ describe("useActivityPlanForm", () => {
       "Step duration must be greater than zero (time, distance, or reps).",
     );
     expect(result.current.validation.errors["step:interval-1:step-1:target"]).toBe(
-      "Set an intensity zone/type target for this step.",
+      "Each saved step needs an intensity target.",
     );
 
     unmount();

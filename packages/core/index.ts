@@ -186,6 +186,7 @@ export * from "./zones"; // Canonical zones and threshold metadata
 // FIT File Parsing and Encoding Module
 // ============================================================================
 
+export * from "./calculations/critical-power";
 // Performance curves (power, pace, HR)
 export * from "./calculations/curves";
 // ============================================================================

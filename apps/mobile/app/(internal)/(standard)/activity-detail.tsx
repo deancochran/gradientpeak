@@ -824,9 +824,12 @@ function ActivityDetailScreen() {
             commentCount={comments.commentCount}
             comments={comments.comments}
             helperText="Discuss the activity after reviewing the route, metrics, and charts."
+            hasMoreComments={comments.hasMoreComments}
+            isLoadingMoreComments={comments.isLoadingMoreComments}
             newComment={comments.newComment}
             onAddComment={comments.handleAddComment}
             onChangeNewComment={comments.setNewComment}
+            onLoadMoreComments={comments.loadMoreComments}
             testIDPrefix="activity-detail"
           />
         </View>

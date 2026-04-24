@@ -2,6 +2,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useEffect, useState } from "react";
 import { Alert, Button, Image, StyleSheet, View } from "react-native";
 import { api } from "@/lib/api";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 const allowedAvatarMimeTypes = [
   "image/jpeg",
@@ -80,13 +81,15 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
         fileName,
         fileType,
       });
+      const reachableSignedUrl = getReachableSupabaseStorageUrl(signedUrl);
 
       // Upload to the signed URL
-      const arraybuffer = await fetch(image.uri).then((res) => res.arrayBuffer());
+      const fileResponse = await fetch(image.uri);
+      const blob = await fileResponse.blob();
 
-      const uploadResponse = await fetch(signedUrl, {
+      const uploadResponse = await fetch(reachableSignedUrl, {
         method: "PUT",
-        body: arraybuffer,
+        body: blob,
         headers: {
           "Content-Type": fileType,
         },

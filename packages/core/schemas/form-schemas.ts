@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod";
+import { saveableActivityPlanStructureSchemaV2 } from "./activity_plan_v2";
 import { profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   eventLifecycleSchema,
@@ -696,13 +697,11 @@ export const activityCategorySchema = canonicalSportSchema;
  * - notes: optional nullable string (enhanced: max 2000 chars)
  * - activity_category: enum ["run", "bike", "swim", "strength", "other"]
  * - route_id: optional nullable UUID
- * - structure: optional nullable JSON
+ * - structure: required V2 structure
  *
- * Note: Structure, route, and description can be combined:
- * - Structure-only: Structured workout (intervals/steps)
- * - Route-only: Just follow a route
- * - Description-only: Casual activity with no structure
- * - Combinations supported
+ * Note: Route-backed plans are still required to carry structure.
+ * The route adds geography/context, but the structure remains the
+ * canonical effort definition used for validation and derived metrics.
  */
 const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
   .pick({
@@ -723,26 +722,10 @@ const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
       z.string().max(1000, "Description must be less than 1000 characters").default(""),
     ),
     notes: activityPlanNotesSchema,
-    structure: z
-      .object({
-        version: z.literal(2),
-        intervals: z.array(z.any()).min(1),
-      })
-      .optional()
-      .nullable(),
+    structure: saveableActivityPlanStructureSchemaV2,
   });
 
-export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema.refine(
-  (data) => {
-    // At least one of structure or route_id must be provided
-    // (description is always provided as it has a default empty string)
-    return data.structure != null || data.route_id != null;
-  },
-  {
-    message: "Activity plan must have either a structure or a route",
-    path: ["structure"],
-  },
-);
+export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema;
 
 export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSchema>;
 

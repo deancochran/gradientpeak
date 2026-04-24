@@ -25,8 +25,10 @@ type ActivityPlanListItem = {
   id: string;
   name: string;
   activity_category?: string | null;
-  estimated_tss?: number | null;
-  estimated_duration?: number | null;
+  authoritative_metrics?: {
+    estimated_tss?: number | null;
+    estimated_duration?: number | null;
+  } | null;
   structure?: unknown;
 };
 

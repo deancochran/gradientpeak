@@ -7,10 +7,11 @@ import {
 } from "@repo/core";
 import { events, profileGoals, trainingPlans } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { assertProfileAccess } from "./account/profile-access";
 
 function toSafeDbErrorMessage(error: unknown): string {
@@ -45,8 +46,9 @@ const milestoneTrainingPlanIdSchema = z.string().uuid().nullable().optional();
 const goalsListInputSchema = z
   .object({
     profile_id: z.string().uuid(),
-    limit: z.number().int().min(1).max(100).default(20),
-    offset: z.number().int().min(0).default(0),
+    limit: z.number().int().min(1).max(50).default(25),
+    cursor: indexCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
@@ -340,6 +342,7 @@ async function deleteGoalMilestoneEvent(input: {
 export const goalsRouter = createTRPCRouter({
   list: protectedProcedure.input(goalsListInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
+    const offset = parseIndexCursor(input.cursor);
 
     await assertProfileAccess({
       ctx,
@@ -347,12 +350,26 @@ export const goalsRouter = createTRPCRouter({
     });
 
     try {
-      return await listProfileGoals({
-        db,
-        profileId: input.profile_id,
-        limit: input.limit,
-        offset: input.offset,
-      });
+      const [items, totalRows] = await Promise.all([
+        listProfileGoals({
+          db,
+          profileId: input.profile_id,
+          limit: input.limit,
+          offset,
+        }),
+        db
+          .select({ total: count() })
+          .from(profileGoals)
+          .where(eq(profileGoals.profile_id, input.profile_id)),
+      ]);
+
+      const total = Number(totalRows[0]?.total ?? 0);
+
+      return {
+        items,
+        total,
+        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+      };
     } catch {
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",

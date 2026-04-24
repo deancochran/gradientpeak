@@ -79,14 +79,20 @@ export const useAuth = () => {
   // FIX: Sync profile from API to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
   const lastSyncedOnboarded = useRef<boolean | null>(null);
+  const lastSyncedUpdatedAt = useRef<string | null>(null);
 
   useEffect(() => {
     if (profileQuery.data) {
       // Only update if data actually changed
       const profileId = profileQuery.data.id;
       const onboarded = profileQuery.data.onboarded;
+      const updatedAt = profileQuery.data.updated_at ?? null;
 
-      if (lastSyncedProfileId.current !== profileId || lastSyncedOnboarded.current !== onboarded) {
+      if (
+        lastSyncedProfileId.current !== profileId ||
+        lastSyncedOnboarded.current !== onboarded ||
+        lastSyncedUpdatedAt.current !== updatedAt
+      ) {
         // Prevent stale query data from overwriting optimistic 'true' status
         if (store.onboardingStatus === true && onboarded === false) {
           console.log(
@@ -97,6 +103,7 @@ export const useAuth = () => {
           store.setOnboardingStatus(onboarded);
           lastSyncedProfileId.current = profileId;
           lastSyncedOnboarded.current = onboarded;
+          lastSyncedUpdatedAt.current = updatedAt;
         }
       }
     } else if (profileQuery.isError || !isAuthenticated) {
@@ -106,6 +113,7 @@ export const useAuth = () => {
         store.setOnboardingStatus(null);
         lastSyncedProfileId.current = null;
         lastSyncedOnboarded.current = null;
+        lastSyncedUpdatedAt.current = null;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -51,14 +51,24 @@ jest.mock("@/lib/api", () => ({
   api: {
     social: {
       searchUsers: {
-        useQuery: () => ({
+        useInfiniteQuery: () => ({
           data: {
-            users: [
-              { id: "user-1", username: "coach", avatar_url: null, is_public: true },
-              { id: "user-2", username: "teammate", avatar_url: null, is_public: true },
+            pages: [
+              {
+                users: [
+                  { id: "user-1", username: "coach", avatar_url: null, is_public: true },
+                  { id: "user-2", username: "teammate", avatar_url: null, is_public: true },
+                ],
+                total: 2,
+                hasMore: false,
+                nextCursor: undefined,
+              },
             ],
           },
           isLoading: false,
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
         }),
       },
     },

@@ -14,13 +14,15 @@ import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
 
 const profileListFiltersSchema = z
   .object({
     username: z.string().optional(),
-    limit: z.number().min(1).max(100).default(20),
-    offset: z.number().min(0).default(0),
+    limit: z.number().int().min(1).max(50).default(25),
+    cursor: indexCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
@@ -581,18 +583,30 @@ export const profilesRouter = createTRPCRouter({
   list: protectedProcedure.input(profileListFiltersSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
     void ctx;
+    const offset = parseIndexCursor(input.cursor);
 
     try {
-      const rows: ProfileBaseRow[] = input.username
+      const whereClause = input.username
+        ? sql`"profiles"."username" ilike ${`%${input.username}%`}`
+        : undefined;
+      const rows: ProfileBaseRow[] = whereClause
         ? await db
             .select(profileBaseSelect)
             .from(profiles)
-            .where(sql`"profiles"."username" ilike ${`%${input.username}%`}`)
+            .where(whereClause)
             .limit(input.limit)
-            .offset(input.offset)
-        : await db.select(profileBaseSelect).from(profiles).limit(input.limit).offset(input.offset);
+            .offset(offset)
+        : await db.select(profileBaseSelect).from(profiles).limit(input.limit).offset(offset);
+      const totalRows = whereClause
+        ? await db.select({ total: sql<number>`count(*)::int` }).from(profiles).where(whereClause)
+        : await db.select({ total: sql<number>`count(*)::int` }).from(profiles);
+      const total = Number(totalRows[0]?.total ?? 0);
 
-      return rows.map((profile) => serializeProfile(profile));
+      return {
+        items: rows.map((profile) => serializeProfile(profile)),
+        total,
+        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+      };
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;

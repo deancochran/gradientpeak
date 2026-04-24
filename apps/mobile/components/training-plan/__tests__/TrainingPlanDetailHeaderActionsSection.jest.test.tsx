@@ -61,6 +61,10 @@ describe("TrainingPlanDetailHeaderActionsSection", () => {
 
     expect(screen.getByTestId("training-plan-like-button")).toBeTruthy();
     expect(screen.getByText("Plan snapshot")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-segment-7")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-visual-recovery-7")).toBeTruthy();
+    expect(screen.queryByTestId("training-plan-visual-segment-8")).toBeNull();
   });
 
   it("shows saved state copy when liked with count", async () => {

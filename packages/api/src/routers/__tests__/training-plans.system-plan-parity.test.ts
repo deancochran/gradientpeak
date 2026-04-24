@@ -35,13 +35,28 @@ function toTrainingPlanRow(plan: SamplePlan): SystemTrainingPlanRow {
   };
 }
 
-function toExpectedTemplateResponse(plan: SamplePlan) {
+function toExpectedTemplateResponse(
+  plan: SamplePlan,
+  options?: { includeSocialFields?: boolean; includeTimestamps?: boolean },
+) {
   return {
     id: plan.id,
     name: plan.name,
     description: plan.description,
     sessions_per_week_target: plan.sessions_per_week_target,
     duration_hours: plan.duration_hours,
+    ...(options?.includeSocialFields
+      ? {
+          likes_count: 0,
+          has_liked: false,
+        }
+      : {}),
+    ...(options?.includeTimestamps
+      ? {
+          created_at: "2026-03-13T00:00:00.000Z",
+          updated_at: "2026-03-13T00:00:00.000Z",
+        }
+      : {}),
     ...plan.structure,
   };
 }
@@ -68,19 +83,21 @@ function createCaller(
 
 describe("system training-plan router parity", () => {
   const rows = ALL_SAMPLE_PLANS.map(toTrainingPlanRow);
-  const expectedTemplates = ALL_SAMPLE_PLANS.map(toExpectedTemplateResponse);
+  const expectedTemplates = ALL_SAMPLE_PLANS.map((plan) =>
+    toExpectedTemplateResponse(plan, { includeSocialFields: true, includeTimestamps: true }),
+  );
 
   it("listTemplates preserves canonical system-plan payloads across routed surfaces", async () => {
     const aggregateCaller = createCaller(trainingPlansRouter, rows);
     const crudCaller = createCaller(trainingPlansCrudRouter, rows);
 
     const [aggregateResult, crudResult] = await Promise.all([
-      aggregateCaller.listTemplates(),
-      crudCaller.listTemplates(),
+      aggregateCaller.listTemplates({ limit: 25 }),
+      crudCaller.listTemplates({ limit: 25 }),
     ]);
 
-    expect(aggregateResult).toEqual(expectedTemplates);
-    expect(crudResult).toEqual(expectedTemplates);
+    expect(aggregateResult.items).toEqual(expectedTemplates);
+    expect(crudResult.items).toEqual(expectedTemplates);
   });
 
   it("getTemplate preserves a canonical plan artifact across routed surfaces", async () => {

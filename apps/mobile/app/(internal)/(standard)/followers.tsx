@@ -2,7 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Loader2 } from "lucide-react-native";
-import React, { useState } from "react";
+import React from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
@@ -15,21 +15,22 @@ function FollowersScreen() {
 
   const targetUserId = typeof userId === "string" ? userId : "";
 
-  const [page, setPage] = useState(0);
   const limit = 20;
 
   const {
     data: followersData,
     isLoading,
     isFetching,
-  } = api.social.getFollowers.useQuery(
-    { user_id: targetUserId, limit, offset: page * limit },
-    { enabled: !!targetUserId },
+    hasNextPage,
+    fetchNextPage,
+  } = api.social.getFollowers.useInfiniteQuery(
+    { user_id: targetUserId, limit },
+    { enabled: !!targetUserId, getNextPageParam: (lastPage: any) => lastPage.nextCursor },
   );
 
-  const users = followersData?.users || [];
-  const total = followersData?.total || 0;
-  const hasMore = followersData?.hasMore || false;
+  const users = followersData?.pages.flatMap((page) => page.users) || [];
+  const total = followersData?.pages[0]?.total || 0;
+  const hasMore = hasNextPage || false;
 
   const handleUserPress = (profileUserId: string) => {
     navigateTo(`/user/${profileUserId}` as any);
@@ -37,7 +38,7 @@ function FollowersScreen() {
 
   const handleLoadMore = () => {
     if (hasMore && !isFetching) {
-      setPage((prev) => prev + 1);
+      void fetchNextPage();
     }
   };
 

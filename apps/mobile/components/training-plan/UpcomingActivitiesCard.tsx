@@ -13,8 +13,10 @@ interface UpcomingActivity {
     id: string;
     name: string;
     activity_category: string;
-    estimated_duration: number;
-    estimated_tss: number;
+    authoritative_metrics?: {
+      estimated_duration?: number | null;
+      estimated_tss?: number | null;
+    } | null;
   } | null;
 }
 
@@ -81,6 +83,10 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
         {activities.map((activity, index) => {
           if (!activity.activity_plan) return null;
 
+          const estimatedDuration =
+            activity.activity_plan.authoritative_metrics?.estimated_duration;
+          const estimatedTss = activity.activity_plan.authoritative_metrics?.estimated_tss;
+
           return (
             <View key={activity.id}>
               <TouchableOpacity
@@ -101,15 +107,17 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
                     </Text>
 
                     <View className="flex-row items-center gap-3">
-                      <View className="flex-row items-center gap-1">
-                        <Icon as={Clock} size={12} className="text-muted-foreground" />
+                      {typeof estimatedDuration === "number" ? (
+                        <View className="flex-row items-center gap-1">
+                          <Icon as={Clock} size={12} className="text-muted-foreground" />
+                          <Text className="text-xs text-muted-foreground">
+                            {formatDurationSec(estimatedDuration)}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {typeof estimatedTss === "number" && estimatedTss > 0 ? (
                         <Text className="text-xs text-muted-foreground">
-                          {formatDurationSec(activity.activity_plan.estimated_duration)}
-                        </Text>
-                      </View>
-                      {activity.activity_plan.estimated_tss ? (
-                        <Text className="text-xs text-muted-foreground">
-                          {Math.round(activity.activity_plan.estimated_tss)} TSS
+                          {Math.round(estimatedTss)} TSS
                         </Text>
                       ) : null}
                       <Text className="text-xs capitalize text-muted-foreground">

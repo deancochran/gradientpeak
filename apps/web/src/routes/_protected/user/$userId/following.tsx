@@ -2,7 +2,7 @@ import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { UserCheck, UserMinus, UserPlus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 
 import { RelationshipList } from "../../../../components/protected/relationship-list";
@@ -26,35 +26,11 @@ function FollowingPage() {
   const { user } = useAuth();
   const { userId } = Route.useParams();
   const utils = api.useUtils();
-  const [page, setPage] = useState(0);
-  const [loadedPages, setLoadedPages] = useState<Record<number, FollowingProfile[]>>({});
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const limit = 20;
-  const followingQuery = api.social.getFollowing.useQuery(
-    { user_id: userId, limit, offset: page * limit },
-    { enabled: Boolean(userId) },
+  const followingQuery = api.social.getFollowing.useInfiniteQuery(
+    { user_id: userId, limit },
+    { enabled: Boolean(userId), getNextPageParam: (lastPage: any) => lastPage.nextCursor },
   );
-
-  useEffect(() => {
-    setPage(0);
-    setLoadedPages({});
-    setTotal(0);
-    setHasMore(false);
-  }, [userId]);
-
-  useEffect(() => {
-    if (!followingQuery.data) {
-      return;
-    }
-
-    setLoadedPages((previous) => ({
-      ...previous,
-      [page]: followingQuery.data.users,
-    }));
-    setTotal(followingQuery.data.total);
-    setHasMore(followingQuery.data.hasMore);
-  }, [followingQuery.data, page]);
 
   const followMutation = api.social.followUser.useMutation({
     onSuccess: async (_data, variables) => {
@@ -66,18 +42,6 @@ function FollowingPage() {
 
   const unfollowMutation = api.social.unfollowUser.useMutation({
     onSuccess: async (_data, variables) => {
-      if (user?.id === userId) {
-        setLoadedPages((previous) =>
-          Object.fromEntries(
-            Object.entries(previous).map(([pageIndex, users]) => [
-              pageIndex,
-              users.filter((profile) => profile.id !== variables.target_user_id),
-            ]),
-          ),
-        );
-        setTotal((currentTotal) => Math.max(currentTotal - 1, 0));
-      }
-
       await invalidateRelationshipQueries(utils, [userId, user?.id, variables.target_user_id]);
       toast.success("Unfollowed user");
     },
@@ -87,19 +51,18 @@ function FollowingPage() {
   const users = useMemo(() => {
     const seenUserIds = new Set<string>();
 
-    return Object.keys(loadedPages)
-      .map(Number)
-      .sort((left, right) => left - right)
-      .flatMap((pageIndex) => loadedPages[pageIndex] ?? [])
-      .filter((profile) => {
-        if (seenUserIds.has(profile.id)) {
-          return false;
-        }
+    return (followingQuery.data?.pages.flatMap((page) => page.users) ?? []).filter((profile) => {
+      if (seenUserIds.has(profile.id)) {
+        return false;
+      }
 
-        seenUserIds.add(profile.id);
-        return true;
-      });
-  }, [loadedPages]);
+      seenUserIds.add(profile.id);
+      return true;
+    });
+  }, [followingQuery.data]);
+
+  const total = followingQuery.data?.pages[0]?.total ?? 0;
+  const hasMore = followingQuery.hasNextPage ?? false;
 
   return (
     <div className="container max-w-3xl space-y-6 py-8">
@@ -122,7 +85,7 @@ function FollowingPage() {
         hasMore={hasMore}
         onLoadMore={() => {
           if (hasMore && !followingQuery.isFetching) {
-            setPage((currentPage) => currentPage + 1);
+            void followingQuery.fetchNextPage();
           }
         }}
         onOpenProfile={(profileUserId) =>

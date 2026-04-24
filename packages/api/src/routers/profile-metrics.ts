@@ -18,10 +18,11 @@ import {
   publicProfileMetricTypeSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
 
 const createProfileMetricInputSchema = z
@@ -52,8 +53,9 @@ const listProfileMetricsInputSchema = z
     metric_type: publicProfileMetricTypeSchema.optional(),
     start_date: z.date().optional(),
     end_date: z.date().optional(),
-    limit: z.number().min(1).max(100).default(50),
-    offset: z.number().min(0).default(0),
+    limit: z.number().int().min(1).max(50).default(25),
+    cursor: indexCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
@@ -75,6 +77,8 @@ const profileMetricListOutputSchema = z
   .object({
     items: profileMetricRowArraySchema,
     total: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().optional(),
   })
   .strict();
 const deleteProfileMetricOutputSchema = z.object({ success: z.literal(true) }).strict();
@@ -94,6 +98,7 @@ export const profileMetricsRouter = createTRPCRouter({
    */
   list: protectedProcedure.input(listProfileMetricsInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
+    const offset = parseIndexCursor(input.cursor);
 
     const conditions = [eq(profileMetrics.profile_id, ctx.session.user.id)];
 
@@ -101,17 +106,24 @@ export const profileMetricsRouter = createTRPCRouter({
     if (input.start_date) conditions.push(gte(profileMetrics.recorded_at, input.start_date));
     if (input.end_date) conditions.push(lte(profileMetrics.recorded_at, input.end_date));
 
-    const data = await db
-      .select()
-      .from(profileMetrics)
-      .where(and(...conditions))
-      .orderBy(desc(profileMetrics.recorded_at))
-      .limit(input.limit)
-      .offset(input.offset);
+    const whereClause = and(...conditions);
+    const [data, totalRows] = await Promise.all([
+      db
+        .select()
+        .from(profileMetrics)
+        .where(whereClause)
+        .orderBy(desc(profileMetrics.recorded_at))
+        .limit(input.limit)
+        .offset(offset),
+      db.select({ total: count() }).from(profileMetrics).where(whereClause),
+    ]);
+    const total = Number(totalRows[0]?.total ?? 0);
+    const pageInfo = buildIndexPageInfo({ offset, limit: input.limit, total });
 
     return profileMetricListOutputSchema.parse({
       items: profileMetricRowArraySchema.parse(data ?? []),
-      total: data.length,
+      total,
+      ...pageInfo,
     });
   }),
 

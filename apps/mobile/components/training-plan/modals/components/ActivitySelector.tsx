@@ -10,8 +10,10 @@ export interface ActivityOption {
   id: string;
   name: string;
   activity_category: string;
-  estimated_duration?: number | null;
-  estimated_tss?: number | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+  } | null;
   description?: string | null;
 }
 
@@ -93,6 +95,8 @@ export function ActivitySelector({
 
   const renderActivityItem = ({ item }: { item: ActivityOption }) => {
     const isSelected = selectedActivityId === item.id;
+    const estimatedDuration = item.authoritative_metrics?.estimated_duration;
+    const estimatedTss = item.authoritative_metrics?.estimated_tss;
 
     return (
       <Pressable
@@ -126,15 +130,11 @@ export function ActivitySelector({
               </Text>
             )}
             <View className="flex-row mt-2 space-x-4">
-              {typeof item.estimated_duration === "number" ? (
-                <Text className="text-sm text-gray-600">
-                  ⏱️ {formatDuration(item.estimated_duration)}
-                </Text>
+              {typeof estimatedDuration === "number" ? (
+                <Text className="text-sm text-gray-600">⏱️ {formatDuration(estimatedDuration)}</Text>
               ) : null}
-              {typeof item.estimated_tss === "number" ? (
-                <Text className="text-sm text-gray-600">
-                  📊 {Math.round(item.estimated_tss)} TSS
-                </Text>
+              {typeof estimatedTss === "number" ? (
+                <Text className="text-sm text-gray-600">📊 {Math.round(estimatedTss)} TSS</Text>
               ) : null}
             </View>
           </View>

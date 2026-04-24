@@ -8,6 +8,10 @@ import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { ActivityPlanCard, ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
+import {
+  getActivityPlanRoute,
+  getAuthoritativeActivityPlanMetrics,
+} from "@/lib/activityPlanMetrics";
 import { GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
 
 export interface ActivityListProps {
@@ -28,15 +32,17 @@ interface GroupSectionProps {
 // Transform planned activity to card data format
 function transformToCardData(plannedActivity: any): ActivityPlanCardData {
   const plan = plannedActivity.activity_plan;
+  const planMetrics = getAuthoritativeActivityPlanMetrics(plan);
+  const planRoute = getActivityPlanRoute(plan);
   return {
     id: plannedActivity.id,
     name: plan?.name || "Unnamed Activity",
     activityType: plan?.activity_category || "other",
     structure: plan?.structure,
-    estimatedDuration: plan?.estimated_duration,
-    estimatedTss: plan?.estimated_tss,
-    estimatedDistance: (plan?.structure as any)?.route?.distance,
-    routeId: (plan?.structure as any)?.route_id,
+    estimatedDuration: planMetrics.estimated_duration ?? undefined,
+    estimatedTss: planMetrics.estimated_tss ?? undefined,
+    estimatedDistance: planRoute.distance ?? undefined,
+    routeId: plan?.route_id,
     routeName: (plan?.structure as any)?.route?.name,
     notes: plannedActivity.notes,
     scheduledDate: plannedActivity.scheduled_date,

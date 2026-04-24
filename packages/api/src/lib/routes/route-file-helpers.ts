@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import {
   calculateRouteStats,
   encodeElevationPolyline,
@@ -44,7 +42,6 @@ export const parsedRouteSchema = z
   .strict();
 
 export interface RouteFileArtifacts {
-  checksumSha256: string;
   elevationPolyline: string | null;
   parsed: ParsedRoute;
   polyline: string;
@@ -77,7 +74,6 @@ export function buildRouteFileArtifacts(fileContent: string): RouteFileArtifacts
   const tolerance = calculateSimplificationTolerance(parsed.data.coordinates.length);
   const simplified = simplifyCoordinates(parsed.data.coordinates, tolerance);
   const polyline = encodePolyline(simplified);
-  const checksumSha256 = createHash("sha256").update(fileContent).digest("hex");
 
   let elevationPolyline: string | null = null;
   if (simplified.some((coord) => coord.altitude !== undefined)) {
@@ -85,7 +81,6 @@ export function buildRouteFileArtifacts(fileContent: string): RouteFileArtifacts
   }
 
   return {
-    checksumSha256,
     elevationPolyline,
     parsed: parsed.data,
     polyline,

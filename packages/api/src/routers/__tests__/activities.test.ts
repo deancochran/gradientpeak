@@ -325,13 +325,14 @@ describe("activitiesRouter", () => {
     const caller = createCaller(db);
     const result = await caller.listPaginated({
       limit: 2,
-      offset: 1,
+      cursor: "index:1",
       sort_by: "tss",
       sort_order: "desc",
     });
 
     expect(result.total).toBe(3);
     expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeUndefined();
     expect(result.items.map((item: any) => item.id)).toEqual([ACTIVITY_ID_3, ACTIVITY_ID]);
   });
 

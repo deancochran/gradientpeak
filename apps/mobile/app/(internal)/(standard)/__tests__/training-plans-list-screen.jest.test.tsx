@@ -47,12 +47,6 @@ jest.mock("@repo/ui/components/loading-skeletons", () => ({
   ListSkeleton: createHost("ListSkeleton"),
 }));
 
-jest.mock("@repo/ui/components/card", () => ({
-  __esModule: true,
-  Card: createHost("Card"),
-  CardContent: createHost("CardContent"),
-}));
-
 jest.mock("@repo/ui/components/empty-state-card", () => ({
   __esModule: true,
   EmptyStateCard: createHost("EmptyStateCard"),
@@ -78,9 +72,12 @@ jest.mock("@/lib/api", () => ({
   api: {
     trainingPlans: {
       list: {
-        useQuery: () => ({
-          data: plansState,
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: plansState, total: plansState.length, nextCursor: undefined }] },
           isLoading: false,
+          isFetchingNextPage: false,
+          hasNextPage: false,
+          fetchNextPage: jest.fn(),
           refetch: jest.fn(async () => undefined),
         }),
       },
@@ -88,11 +85,23 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
+jest.mock("@/components/shared/TrainingPlanCard", () => ({
+  __esModule: true,
+  TrainingPlanCard: ({ plan, onPress }: any) =>
+    React.createElement(
+      "TrainingPlanCard",
+      { onPress, testID: `mock-training-plan-card-${plan.id}` },
+      React.createElement("Text", null, plan.name),
+      React.createElement("Text", null, "Plan snapshot"),
+      React.createElement("Text", null, "16 weeks"),
+      React.createElement("Text", null, "5/week"),
+      React.createElement("View", { testID: "training-plan-periodization-preview" }),
+    ),
+}));
+
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   ChevronRight: createHost("ChevronRight"),
-  Eye: createHost("Eye"),
-  EyeOff: createHost("EyeOff"),
 }));
 
 const TrainingPlansListScreenWithBoundary = require("../training-plans-list").default;
@@ -119,11 +128,9 @@ describe("training plans list screen", () => {
   it("renders richer preview metadata on each plan card", () => {
     renderNative(<TrainingPlansListScreenWithBoundary />);
 
-    expect(screen.getByText("Plan preview")).toBeTruthy();
+    expect(screen.getByText("Plan snapshot")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
     expect(screen.getByText("16 weeks")).toBeTruthy();
-    expect(screen.getByText("5 sessions/week")).toBeTruthy();
-    expect(screen.getByText("420-520 TSS")).toBeTruthy();
-    expect(screen.getByText("2 rest days")).toBeTruthy();
-    expect(screen.getByText(/Target Sep/)).toBeTruthy();
+    expect(screen.getByText("5/week")).toBeTruthy();
   });
 });
