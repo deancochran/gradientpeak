@@ -28,6 +28,10 @@ const forgotPasswordServerActionSchema = forgotPasswordFormSchema;
 const updatePasswordServerActionSchema = updatePasswordFormSchema.extend({
   token: z.string().min(1, "Missing or invalid reset token"),
 });
+const verifyEmailServerActionSchema = z.object({
+  email: z.email("Enter a valid email address"),
+  source: z.string().optional(),
+});
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) {
@@ -81,6 +85,23 @@ function normalizeUpdatePasswordServerActionInput(data: unknown) {
   };
 }
 
+function normalizeVerifyEmailServerActionInput(data: unknown) {
+  const parsed = verifyEmailServerActionSchema.parse(
+    data instanceof FormData ? Object.fromEntries(data.entries()) : data,
+  );
+
+  return {
+    ...parsed,
+    _native: data instanceof FormData,
+  };
+}
+
+function getEmailVerificationCallbackUrl() {
+  return toAbsoluteAppUrl(
+    "/auth/confirm?target=web&intent=email-verification&fallback=/auth/verification-success",
+  );
+}
+
 function buildLoginRedirectHref(
   redirectTo?: string,
   flashMessage?: string,
@@ -105,6 +126,23 @@ function buildUpdatePasswordRedirectHref(
 
   if (token) {
     url.searchParams.set("token", token);
+  }
+
+  const nextHref = `${url.pathname}${url.search}`;
+  return flashMessage ? buildFlashHref(nextHref, flashMessage, flashType) : nextHref;
+}
+
+function buildVerifyEmailRedirectHref(
+  email: string,
+  source?: string,
+  flashMessage?: string,
+  flashType: "success" | "error" | "info" = "info",
+) {
+  const url = new URL("/auth/verify", "http://gradientpeak.local");
+  url.searchParams.set("email", email);
+
+  if (source) {
+    url.searchParams.set("source", source);
   }
 
   const nextHref = `${url.pathname}${url.search}`;
@@ -153,7 +191,7 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
           email: data.email,
           password: data.password,
           name: data.email.split("@")[0] || data.email,
-          callbackURL: toAbsoluteAppUrl("/auth/confirm"),
+          callbackURL: getEmailVerificationCallbackUrl(),
         },
       });
     } catch (error) {
@@ -169,7 +207,10 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
       throw new Error(formError.message);
     }
 
-    throw redirect({ href: "/auth/sign-up-success", statusCode: 303 });
+    throw redirect({
+      href: `/auth/sign-up-success?email=${encodeURIComponent(data.email)}`,
+      statusCode: 303,
+    });
   });
 
 export const requestPasswordResetAction = createServerFn({ method: "POST" })
@@ -230,6 +271,42 @@ export const resetPasswordAction = createServerFn({ method: "POST" })
 
     throw redirect({
       href: "/auth/login?flash=Password%20updated%20successfully&flashType=success",
+      statusCode: 303,
+    });
+  });
+
+export const sendVerificationEmailAction = createServerFn({ method: "POST" })
+  .inputValidator((data) => normalizeVerifyEmailServerActionInput(data))
+  .handler(async ({ data }) => {
+    const auth = getGradientPeakAuth();
+
+    try {
+      await auth.api.sendVerificationEmail({
+        body: {
+          email: data.email,
+          callbackURL: getEmailVerificationCallbackUrl(),
+        },
+      });
+    } catch (error) {
+      const message = "Unable to resend verification email";
+
+      if (data._native) {
+        throw redirect({
+          href: buildVerifyEmailRedirectHref(data.email, data.source, message, "error"),
+          statusCode: 303,
+        });
+      }
+
+      throw new Error(message);
+    }
+
+    throw redirect({
+      href: buildVerifyEmailRedirectHref(
+        data.email,
+        data.source,
+        "Verification email sent. Check your inbox and spam folder.",
+        "success",
+      ),
       statusCode: 303,
     });
   });
