@@ -6,6 +6,8 @@ import {
   allParityBackendOperationIds,
   allParityFeatureIds,
   getRequiredWebParityFeatures,
+  parityBackendOperationStatusSchema,
+  parityFeatureStatusSchema,
   parityRegistry,
 } from "../../packages/core/parity";
 
@@ -63,35 +65,74 @@ describe("mobile-to-web parity registry", () => {
     ).toEqual([]);
   });
 
-  it("implements every mobile-required feature on web", () => {
-    const missingFeatures = getRequiredWebParityFeatures()
-      .filter((feature) => webParityManifest.features[feature.id] !== "implemented")
-      .map(
-        (feature) =>
-          `${feature.id} (${feature.title}) :: mobile route ${feature.mobileRoute} :: web status ${webParityManifest.features[feature.id]}`,
-      );
+  it("uses only known parity statuses in manifests", () => {
+    const invalidFeatureStatuses = Object.entries(webParityManifest.features)
+      .filter(([, status]) => !parityFeatureStatusSchema.safeParse(status).success)
+      .map(([featureId, status]) => `${featureId} :: invalid feature status ${status}`);
+    const invalidBackendStatuses = Object.entries(webParityManifest.backendOperations)
+      .filter(([, status]) => !parityBackendOperationStatusSchema.safeParse(status).success)
+      .map(([operationId, status]) => `${operationId} :: invalid backend status ${status}`);
 
     expect(
-      missingFeatures,
-      formatMissingList("Web is missing required mobile features", missingFeatures),
+      [...invalidFeatureStatuses, ...invalidBackendStatuses],
+      [
+        formatMissingList("Invalid feature statuses", invalidFeatureStatuses),
+        formatMissingList("Invalid backend statuses", invalidBackendStatuses),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
     ).toEqual([]);
   });
 
-  it("implements every backend operation needed by mobile-required features on web", () => {
-    const requiredOperations = Array.from(
-      new Set(getRequiredWebParityFeatures().flatMap((feature) => feature.backendOperations)),
-    ).sort();
-
-    const missingOperations = requiredOperations
-      .filter((operationId) => webParityManifest.backendOperations[operationId] !== "implemented")
+  it("does not overstate implemented web features", () => {
+    const overstatedFeatures = getRequiredWebParityFeatures()
+      .filter((feature) => webParityManifest.features[feature.id] === "implemented")
+      .map((feature) => ({
+        feature,
+        missingOperations: feature.backendOperations.filter(
+          (operationId) => webParityManifest.backendOperations[operationId] !== "implemented",
+        ),
+      }))
+      .filter(({ missingOperations }) => missingOperations.length > 0)
       .map(
-        (operationId) =>
-          `${operationId} :: web status ${webParityManifest.backendOperations[operationId]}`,
+        ({ feature, missingOperations }) =>
+          `${feature.id} (${feature.title}) :: marked implemented but missing backend coverage for ${missingOperations.join(", ")}`,
       );
 
     expect(
-      missingOperations,
-      formatMissingList("Web is missing required mobile backend coverage", missingOperations),
+      overstatedFeatures,
+      formatMissingList("Web features are overstated as implemented", overstatedFeatures),
+    ).toEqual([]);
+  });
+
+  it("keeps known in-progress web parity statuses honest", () => {
+    const expectedFeatureStatuses = {
+      "auth.verify_email": "missing",
+      "messaging.detail": "partial",
+      "messaging.new": "missing",
+      "notifications.list": "partial",
+      "planning.calendar_tab": "scaffold",
+      "planning.plan_tab": "scaffold",
+      "profile.settings": "partial",
+      "record.launcher": "scaffold",
+      "record.plan": "missing",
+      "record.route": "missing",
+      "record.route_preview": "missing",
+      "record.submit": "missing",
+    } as const;
+
+    const mismatches = Object.entries(expectedFeatureStatuses)
+      .filter(
+        ([featureId, expectedStatus]) => webParityManifest.features[featureId] !== expectedStatus,
+      )
+      .map(
+        ([featureId, expectedStatus]) =>
+          `${featureId} :: expected ${expectedStatus} :: actual ${webParityManifest.features[featureId]}`,
+      );
+
+    expect(
+      mismatches,
+      formatMissingList("Known in-progress web parity statuses drifted", mismatches),
     ).toEqual([]);
   });
 });

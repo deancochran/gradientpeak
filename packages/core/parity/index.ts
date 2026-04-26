@@ -3,6 +3,12 @@ import { z } from "zod";
 export const parityPolicySchema = z.enum(["required_on_web", "web_only"]);
 export type ParityPolicy = z.infer<typeof parityPolicySchema>;
 
+export const parityFeatureStatusSchema = z.enum(["implemented", "partial", "scaffold", "missing"]);
+export type ParityFeatureStatus = z.infer<typeof parityFeatureStatusSchema>;
+
+export const parityBackendOperationStatusSchema = z.enum(["implemented", "missing"]);
+export type ParityBackendOperationStatus = z.infer<typeof parityBackendOperationStatusSchema>;
+
 export const parityFeatureSchema = z.object({
   area: z.string().min(1),
   backendOperations: z.array(z.string().min(1)).default([]),
@@ -49,7 +55,7 @@ export const parityRegistry = [
   },
   {
     area: "auth",
-    backendOperations: ["auth.verifyEmail"],
+    backendOperations: ["auth.sendVerificationEmail"],
     id: "auth.verify_email",
     mobileRoute: "/(external)/verify",
     policy: "required_on_web",
@@ -89,7 +95,7 @@ export const parityRegistry = [
   },
   {
     area: "onboarding",
-    backendOperations: ["profiles.get", "profiles.update"],
+    backendOperations: ["profiles.get", "integrations.getAuthUrl", "onboarding.completeOnboarding"],
     id: "account.onboarding",
     mobileRoute: "/(internal)/(standard)/onboarding",
     policy: "required_on_web",
@@ -105,7 +111,12 @@ export const parityRegistry = [
   },
   {
     area: "discover",
-    backendOperations: ["profiles.list", "routes.list"],
+    backendOperations: [
+      "activityPlans.list",
+      "trainingPlans.listTemplates",
+      "routes.list",
+      "social.searchUsers",
+    ],
     id: "discover.browse",
     mobileRoute: "/(internal)/(tabs)/discover",
     policy: "required_on_web",
@@ -122,6 +133,43 @@ export const parityRegistry = [
   {
     area: "record",
     backendOperations: [],
+    id: "record.activity",
+    mobileRoute: "/(internal)/record/activity",
+    policy: "required_on_web",
+    title: "Recording activity selector",
+  },
+  {
+    area: "record",
+    backendOperations: [
+      "events.getToday",
+      "events.getById",
+      "activityPlans.getById",
+      "routes.loadFull",
+    ],
+    id: "record.plan",
+    mobileRoute: "/(internal)/record/plan",
+    policy: "required_on_web",
+    title: "Recording plan selector",
+  },
+  {
+    area: "record",
+    backendOperations: ["routes.list"],
+    id: "record.route",
+    mobileRoute: "/(internal)/record/route",
+    policy: "required_on_web",
+    title: "Recording route selector",
+  },
+  {
+    area: "record",
+    backendOperations: ["routes.get", "routes.loadFull"],
+    id: "record.route_preview",
+    mobileRoute: "/(internal)/record/route-preview",
+    policy: "required_on_web",
+    title: "Recording route preview",
+  },
+  {
+    area: "record",
+    backendOperations: ["profiles.getZones", "routes.loadFull"],
     id: "record.session",
     mobileRoute: "/(internal)/record/index",
     policy: "required_on_web",
@@ -138,6 +186,14 @@ export const parityRegistry = [
   {
     area: "record",
     backendOperations: [],
+    id: "record.ftms",
+    mobileRoute: "/(internal)/record/ftms",
+    policy: "required_on_web",
+    title: "Trainer control",
+  },
+  {
+    area: "record",
+    backendOperations: ["fitFiles.getSignedUploadUrl", "fitFiles.processFitFile"],
     id: "record.submit",
     mobileRoute: "/(internal)/record/submit",
     policy: "required_on_web",
@@ -145,7 +201,18 @@ export const parityRegistry = [
   },
   {
     area: "planning",
-    backendOperations: ["goals.list", "trainingPlans.list", "activityPlans.list"],
+    backendOperations: [
+      "trainingPlans.getActivePlan",
+      "trainingPlans.list",
+      "events.list",
+      "goals.list",
+      "trainingPlans.get",
+      "trainingPlans.getInsightTimeline",
+      "trainingPlans.getActualCurve",
+      "trainingPlans.getIdealCurve",
+      "goals.create",
+      "goals.update",
+    ],
     id: "planning.plan_tab",
     mobileRoute: "/(internal)/(tabs)/plan",
     policy: "required_on_web",
@@ -153,7 +220,7 @@ export const parityRegistry = [
   },
   {
     area: "planning",
-    backendOperations: ["calendar.getEvents"],
+    backendOperations: ["events.list", "goals.list"],
     id: "planning.calendar_tab",
     mobileRoute: "/(internal)/(tabs)/calendar",
     policy: "required_on_web",
@@ -161,7 +228,7 @@ export const parityRegistry = [
   },
   {
     area: "activities",
-    backendOperations: ["activities.list"],
+    backendOperations: ["activities.listPaginated"],
     id: "activities.list",
     mobileRoute: "/(internal)/(standard)/activities-list",
     policy: "required_on_web",
@@ -169,7 +236,16 @@ export const parityRegistry = [
   },
   {
     area: "activities",
-    backendOperations: ["activities.getById"],
+    backendOperations: [
+      "activities.getById",
+      "profiles.getPublicById",
+      "fitFiles.getStreams",
+      "activities.update",
+      "activities.delete",
+      "social.toggleLike",
+      "social.getComments",
+      "social.addComment",
+    ],
     id: "activities.detail",
     mobileRoute: "/(internal)/(standard)/activity-detail",
     policy: "required_on_web",
@@ -177,7 +253,7 @@ export const parityRegistry = [
   },
   {
     area: "activities",
-    backendOperations: ["activities.import"],
+    backendOperations: ["fitFiles.getSignedUploadUrl", "fitFiles.processFitFile"],
     id: "activities.import",
     mobileRoute: "/(internal)/(standard)/activity-import",
     policy: "required_on_web",
@@ -193,7 +269,14 @@ export const parityRegistry = [
   },
   {
     area: "routes",
-    backendOperations: ["routes.getById"],
+    backendOperations: [
+      "routes.get",
+      "routes.loadFull",
+      "routes.delete",
+      "social.toggleLike",
+      "social.getComments",
+      "social.addComment",
+    ],
     id: "routes.detail",
     mobileRoute: "/(internal)/(standard)/route-detail",
     policy: "required_on_web",
@@ -209,7 +292,7 @@ export const parityRegistry = [
   },
   {
     area: "activity_efforts",
-    backendOperations: ["activityEfforts.list"],
+    backendOperations: ["activityEfforts.getForProfile"],
     id: "activity_efforts.list",
     mobileRoute: "/(internal)/(standard)/activity-efforts-list",
     policy: "required_on_web",
@@ -217,7 +300,7 @@ export const parityRegistry = [
   },
   {
     area: "activity_efforts",
-    backendOperations: ["activityEfforts.getById"],
+    backendOperations: ["activityEfforts.getById", "activities.getById", "activityEfforts.delete"],
     id: "activity_efforts.detail",
     mobileRoute: "/(internal)/(standard)/activity-effort-detail",
     policy: "required_on_web",
@@ -241,7 +324,18 @@ export const parityRegistry = [
   },
   {
     area: "activity_plans",
-    backendOperations: ["activityPlans.getById"],
+    backendOperations: [
+      "activityPlans.getById",
+      "events.getById",
+      "routes.get",
+      "routes.loadFull",
+      "activityPlans.delete",
+      "activityPlans.duplicate",
+      "events.delete",
+      "events.validateConstraints",
+      "events.create",
+      "events.update",
+    ],
     id: "activity_plans.detail",
     mobileRoute: "/(internal)/(standard)/activity-plan-detail",
     policy: "required_on_web",
@@ -249,7 +343,13 @@ export const parityRegistry = [
   },
   {
     area: "activity_plans",
-    backendOperations: ["activityPlans.create"],
+    backendOperations: [
+      "routes.upload",
+      "routes.get",
+      "activityPlans.getById",
+      "activityPlans.create",
+      "activityPlans.update",
+    ],
     id: "activity_plans.create",
     mobileRoute: "/(internal)/(standard)/create-activity-plan",
     policy: "required_on_web",
@@ -257,7 +357,7 @@ export const parityRegistry = [
   },
   {
     area: "scheduled_activities",
-    backendOperations: ["calendar.getScheduledActivities"],
+    backendOperations: ["events.list"],
     id: "scheduled_activities.list",
     mobileRoute: "/(internal)/(standard)/scheduled-activities-list",
     policy: "required_on_web",
@@ -265,7 +365,13 @@ export const parityRegistry = [
   },
   {
     area: "scheduled_activities",
-    backendOperations: ["calendar.getEventById"],
+    backendOperations: [
+      "events.getById",
+      "trainingPlans.getById",
+      "activityPlans.list",
+      "events.create",
+      "events.delete",
+    ],
     id: "scheduled_activities.event_detail",
     mobileRoute: "/(internal)/(standard)/event-detail",
     policy: "required_on_web",
@@ -273,7 +379,7 @@ export const parityRegistry = [
   },
   {
     area: "scheduled_activities",
-    backendOperations: ["calendar.updateEvent"],
+    backendOperations: ["events.getById", "events.update"],
     id: "scheduled_activities.event_update",
     mobileRoute: "/(internal)/(standard)/event-detail-update",
     policy: "required_on_web",
@@ -281,7 +387,7 @@ export const parityRegistry = [
   },
   {
     area: "scheduled_activities",
-    backendOperations: ["calendar.getDayAgenda"],
+    backendOperations: ["events.list", "goals.list"],
     id: "scheduled_activities.calendar_day",
     mobileRoute: "/(internal)/(standard)/calendar-day",
     policy: "required_on_web",
@@ -289,7 +395,7 @@ export const parityRegistry = [
   },
   {
     area: "goals",
-    backendOperations: ["goals.getById"],
+    backendOperations: ["goals.getById", "goals.update", "goals.delete"],
     id: "goals.detail",
     mobileRoute: "/(internal)/(standard)/goal-detail",
     policy: "required_on_web",
@@ -305,7 +411,21 @@ export const parityRegistry = [
   },
   {
     area: "training_plans",
-    backendOperations: ["trainingPlans.getById"],
+    backendOperations: [
+      "trainingPlans.getTemplate",
+      "trainingPlans.get",
+      "trainingPlans.getInsightTimeline",
+      "trainingPlans.getActualCurve",
+      "trainingPlans.getIdealCurve",
+      "trainingPlans.getActivePlan",
+      "trainingPlans.applyTemplate",
+      "trainingPlans.updateActivePlanStatus",
+      "trainingPlans.delete",
+      "trainingPlans.update",
+      "trainingPlans.duplicate",
+      "activityPlans.list",
+      "activityPlans.getManyByIds",
+    ],
     id: "training_plans.detail",
     mobileRoute: "/(internal)/(standard)/training-plan-detail",
     policy: "required_on_web",
@@ -313,7 +433,11 @@ export const parityRegistry = [
   },
   {
     area: "training_plans",
-    backendOperations: ["trainingPlans.create"],
+    backendOperations: [
+      "trainingPlans.getCreationSuggestions",
+      "trainingPlans.createFromCreationConfig",
+      "trainingPlans.update",
+    ],
     id: "training_plans.create",
     mobileRoute: "/(internal)/(standard)/training-plan-create",
     policy: "required_on_web",
@@ -321,7 +445,11 @@ export const parityRegistry = [
   },
   {
     area: "training_plans",
-    backendOperations: ["trainingPlans.update"],
+    backendOperations: [
+      "trainingPlans.get",
+      "trainingPlans.updateFromCreationConfig",
+      "trainingPlans.update",
+    ],
     id: "training_plans.edit",
     mobileRoute: "/(internal)/(standard)/training-plan-edit",
     policy: "required_on_web",
@@ -329,7 +457,7 @@ export const parityRegistry = [
   },
   {
     area: "training_plans",
-    backendOperations: ["trainingPlans.reorderWorkouts"],
+    backendOperations: ["events.list", "events.update"],
     id: "training_plans.reorder_workouts",
     mobileRoute: "/(internal)/(standard)/workouts-reorder",
     policy: "required_on_web",
@@ -337,7 +465,12 @@ export const parityRegistry = [
   },
   {
     area: "profile",
-    backendOperations: ["profiles.getPublicById"],
+    backendOperations: [
+      "profiles.getPublicById",
+      "social.followUser",
+      "social.unfollowUser",
+      "messaging.getOrCreateDM",
+    ],
     id: "profile.user_detail",
     mobileRoute: "/(internal)/(standard)/user/[userId]",
     policy: "required_on_web",
@@ -361,7 +494,13 @@ export const parityRegistry = [
   },
   {
     area: "profile",
-    backendOperations: ["profiles.update"],
+    backendOperations: [
+      "analytics.getSeasonBestCurve",
+      "profileMetrics.getAtDate",
+      "storage.getSignedUrl",
+      "storage.createSignedUploadUrl",
+      "profiles.update",
+    ],
     id: "profile.edit",
     mobileRoute: "/(internal)/(standard)/profile-edit",
     policy: "required_on_web",
@@ -377,7 +516,7 @@ export const parityRegistry = [
   },
   {
     area: "profile",
-    backendOperations: ["profileMetrics.getById"],
+    backendOperations: ["profileMetrics.getById", "activities.getById", "profileMetrics.delete"],
     id: "profile.metric_detail",
     mobileRoute: "/(internal)/(standard)/profile-metric-detail",
     policy: "required_on_web",
@@ -385,7 +524,7 @@ export const parityRegistry = [
   },
   {
     area: "profile",
-    backendOperations: ["profiles.update"],
+    backendOperations: ["profileSettings.getForProfile", "profileSettings.upsert"],
     id: "profile.training_preferences",
     mobileRoute: "/(internal)/(standard)/training-preferences",
     policy: "required_on_web",
@@ -393,15 +532,15 @@ export const parityRegistry = [
   },
   {
     area: "profile",
-    backendOperations: ["profiles.get", "profiles.update"],
+    backendOperations: ["profiles.getPublicById", "integrations.list"],
     id: "profile.settings",
-    mobileRoute: "/(internal)/(standard)/notifications",
+    mobileRoute: "/(internal)/(standard)/user/[userId]",
     policy: "required_on_web",
     title: "Settings surface",
   },
   {
     area: "integrations",
-    backendOperations: ["integrations.list", "integrations.connect", "integrations.disconnect"],
+    backendOperations: ["integrations.list", "integrations.getAuthUrl", "integrations.disconnect"],
     id: "integrations.management",
     mobileRoute: "/(internal)/(standard)/integrations",
     policy: "required_on_web",
@@ -417,7 +556,12 @@ export const parityRegistry = [
   },
   {
     area: "messaging",
-    backendOperations: ["messaging.getMessages", "messaging.sendMessage"],
+    backendOperations: [
+      "messaging.getMessages",
+      "messaging.getConversations",
+      "messaging.markAsRead",
+      "messaging.sendMessage",
+    ],
     id: "messaging.detail",
     mobileRoute: "/(internal)/(standard)/messages/[id]",
     policy: "required_on_web",
@@ -425,7 +569,11 @@ export const parityRegistry = [
   },
   {
     area: "messaging",
-    backendOperations: ["messaging.getOrCreateDM"],
+    backendOperations: [
+      "social.searchUsers",
+      "messaging.getOrCreateDM",
+      "messaging.createConversation",
+    ],
     id: "messaging.new",
     mobileRoute: "/(internal)/(standard)/messages/new",
     policy: "required_on_web",
@@ -435,8 +583,9 @@ export const parityRegistry = [
     area: "notifications",
     backendOperations: [
       "notifications.getRecent",
-      "notifications.getUnreadCount",
       "notifications.markRead",
+      "social.acceptFollowRequest",
+      "social.rejectFollowRequest",
     ],
     id: "notifications.list",
     mobileRoute: "/(internal)/(standard)/notifications/index",
