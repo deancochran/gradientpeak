@@ -9,10 +9,10 @@ import {
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
+import { useZodForm } from "@repo/ui/hooks";
 import { randomUUID } from "expo-crypto";
 import * as DocumentPicker from "expo-document-picker";
 import { useNavigation, useRouter } from "expo-router";
@@ -20,6 +20,7 @@ import { MapPin, Upload, X } from "lucide-react-native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
+import { z } from "zod";
 import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
 import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
@@ -65,6 +66,12 @@ const createDefaultInterval = (category: ActivityCategory, index: number): Inter
   name: `Interval ${index + 1}`,
   repetitions: 1,
   steps: [createDefaultStep(category)],
+});
+
+const basicsSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  notes: z.string(),
 });
 
 export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContract) {
@@ -185,6 +192,43 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   };
 
   const intervals = form.structure.intervals || [];
+  const basicsForm = useZodForm({
+    schema: basicsSchema,
+    defaultValues: {
+      name: form.name,
+      description: form.description,
+      notes: form.notes,
+    },
+  });
+  const basicsName = basicsForm.watch("name") || "";
+  const basicsDescription = basicsForm.watch("description") || "";
+  const basicsNotes = basicsForm.watch("notes") || "";
+
+  useEffect(() => {
+    basicsForm.reset({
+      name: form.name,
+      description: form.description,
+      notes: form.notes,
+    });
+  }, [basicsForm, form.description, form.name, form.notes]);
+
+  useEffect(() => {
+    if (basicsName !== form.name) {
+      setName(basicsName);
+    }
+  }, [basicsName, form.name, setName]);
+
+  useEffect(() => {
+    if (basicsDescription !== form.description) {
+      setDescription(basicsDescription);
+    }
+  }, [basicsDescription, form.description, setDescription]);
+
+  useEffect(() => {
+    if (basicsNotes !== form.notes) {
+      setNotes(basicsNotes);
+    }
+  }, [basicsNotes, form.notes, setNotes]);
 
   const stepBeingEdited = useMemo(() => {
     if (!editingIntervalId || !editingStepId) {
@@ -504,12 +548,16 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                   onChange={(category) => setActivityCategory(category as ActivityCategory)}
                   compact
                 />
-                <Input
-                  value={form.name}
-                  onChangeText={setName}
-                  placeholder="Plan name"
-                  className="flex-1 h-[48px]"
-                />
+                <View className="flex-1">
+                  <Form {...basicsForm}>
+                    <FormTextField
+                      control={basicsForm.control}
+                      label="Plan name"
+                      name="name"
+                      placeholder="Plan name"
+                    />
+                  </Form>
+                </View>
               </View>
               {validation.errors.name ? (
                 <Text className="text-xs text-destructive">{validation.errors.name}</Text>
@@ -521,19 +569,22 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                 </Text>
               ) : null}
 
-              <Textarea
-                value={form.description}
-                onChangeText={setDescription}
-                placeholder="Description (optional)"
-                className="min-h-[64px]"
-              />
-
-              <Textarea
-                value={form.notes}
-                onChangeText={setNotes}
-                placeholder="Notes (optional)"
-                className="min-h-[64px]"
-              />
+              <Form {...basicsForm}>
+                <FormTextareaField
+                  control={basicsForm.control}
+                  label="Description"
+                  name="description"
+                  placeholder="Description (optional)"
+                  className="min-h-[64px]"
+                />
+                <FormTextareaField
+                  control={basicsForm.control}
+                  label="Notes"
+                  name="notes"
+                  placeholder="Notes (optional)"
+                  className="min-h-[64px]"
+                />
+              </Form>
             </CardContent>
           </Card>
 

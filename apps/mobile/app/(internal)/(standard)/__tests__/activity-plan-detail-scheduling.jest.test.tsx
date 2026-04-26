@@ -449,6 +449,24 @@ describe("activity plan detail scheduling", () => {
     expect(routerMock.back).not.toHaveBeenCalled();
   });
 
+  it("hides schedule actions when the plan is opened from an event", () => {
+    fetchedPlanMock.current = {
+      id: "owned-plan-1",
+      name: "Owned Builder",
+      activity_category: "run",
+      profile_id: "profile-1",
+      structure: { intervals: [] },
+    };
+    localSearchParamsMock.planId = "owned-plan-1";
+    localSearchParamsMock.eventId = "event-1";
+
+    renderNative(<ActivityPlanDetail />);
+
+    expect(screen.queryByTestId("activity-plan-options-schedule")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-options-open-event")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-options-remove-schedule")).toBeNull();
+  });
+
   it("shows the new summary-first detail context and hides placeholder share UI", () => {
     localSearchParamsMock.template = JSON.stringify({
       id: "11111111-1111-1111-1111-111111111111",

@@ -25,3 +25,30 @@ export function getRequestBaseUrl(request: Request) {
 export function toAbsoluteAppUrl(path: string) {
   return new URL(path, getConfiguredAppBaseUrl()).toString();
 }
+
+export function getSafeAppRedirectTarget(
+  redirectTarget: string | null | undefined,
+  fallback = "/",
+) {
+  if (!redirectTarget) {
+    return fallback;
+  }
+
+  if (redirectTarget.startsWith("/")) {
+    return redirectTarget;
+  }
+
+  try {
+    const baseUrl = typeof window !== "undefined" ? getAppBaseUrl() : getConfiguredAppBaseUrl();
+    const parsedTarget = new URL(redirectTarget);
+    const parsedBase = new URL(baseUrl);
+
+    if (parsedTarget.origin !== parsedBase.origin) {
+      return fallback;
+    }
+
+    return `${parsedTarget.pathname}${parsedTarget.search}${parsedTarget.hash}`;
+  } catch {
+    return fallback;
+  }
+}

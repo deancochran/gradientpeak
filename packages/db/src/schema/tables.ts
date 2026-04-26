@@ -698,9 +698,6 @@ export const profileGoals = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id),
-    milestone_event_id: uuid("milestone_event_id")
-      .notNull()
-      .references(() => events.id),
     title: text("title").notNull(),
     priority: integer("priority").notNull(),
     activity_category: text("activity_category"),
@@ -709,10 +706,7 @@ export const profileGoals = pgTable(
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
   },
-  (table) => [
-    index("idx_profile_goals_profile_id").on(table.profile_id),
-    index("idx_profile_goals_milestone_event_id").on(table.milestone_event_id),
-  ],
+  (table) => [index("idx_profile_goals_profile_id").on(table.profile_id)],
 );
 
 export const oauthStates = pgTable(

@@ -285,6 +285,7 @@ function PlannedActivityListItem({
   onPress,
 }: PlannedActivityListItemProps) {
   const activityPlan = plannedActivity.activity_plan;
+  const hasTrainingPlanSource = typeof plannedActivity.training_plan_id === "string";
 
   // Format the scheduled time
   const scheduledTime = new Date(plannedActivity.scheduled_date).toLocaleTimeString("en-US", {
@@ -319,6 +320,9 @@ function PlannedActivityListItem({
             )}
           </View>
           <Text className="text-base font-medium">{activityPlan?.name || "Unnamed Activity"}</Text>
+          {hasTrainingPlanSource ? (
+            <Text className="text-xs text-muted-foreground mt-1">From training plan</Text>
+          ) : null}
           {activityPlan?.description && (
             <Text className="text-sm text-muted-foreground mt-1">{activityPlan.description}</Text>
           )}

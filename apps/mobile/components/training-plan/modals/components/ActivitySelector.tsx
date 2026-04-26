@@ -104,37 +104,41 @@ export function ActivitySelector({
         disabled={disabled}
         className={`
           mb-2 rounded-lg border-2 p-3
-          ${isSelected ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white"}
+          ${isSelected ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-border bg-card"}
           ${disabled ? "opacity-50" : ""}
         `}
       >
         <View className="flex-row items-start">
           {/* Activity Type Icon */}
-          <View className="mr-3 items-center justify-center w-10 h-10 rounded-full bg-gray-100">
+          <View className="mr-3 items-center justify-center w-10 h-10 rounded-full bg-muted">
             <Text className="text-2xl">{getActivityTypeIcon(item.activity_category)}</Text>
           </View>
 
           {/* Activity Details */}
           <View className="flex-1">
             <Text
-              className={`font-semibold text-base ${isSelected ? "text-blue-700" : "text-gray-900"}`}
+              className={`font-semibold text-base ${isSelected ? "text-blue-700 dark:text-blue-300" : "text-foreground"}`}
             >
               {item.name}
             </Text>
-            <Text className="text-sm text-gray-600 mt-0.5">
+            <Text className="text-sm text-muted-foreground mt-0.5">
               {getActivityTypeLabel(item.activity_category)}
             </Text>
             {item.description && (
-              <Text className="text-xs text-gray-500 mt-1" numberOfLines={2}>
+              <Text className="text-xs text-muted-foreground mt-1" numberOfLines={2}>
                 {item.description}
               </Text>
             )}
             <View className="flex-row mt-2 space-x-4">
               {typeof estimatedDuration === "number" ? (
-                <Text className="text-sm text-gray-600">⏱️ {formatDuration(estimatedDuration)}</Text>
+                <Text className="text-sm text-muted-foreground">
+                  ⏱️ {formatDuration(estimatedDuration)}
+                </Text>
               ) : null}
               {typeof estimatedTss === "number" ? (
-                <Text className="text-sm text-gray-600">📊 {Math.round(estimatedTss)} TSS</Text>
+                <Text className="text-sm text-muted-foreground">
+                  📊 {Math.round(estimatedTss)} TSS
+                </Text>
               ) : null}
             </View>
           </View>
@@ -153,25 +157,25 @@ export function ActivitySelector({
   return (
     <View className="flex-1">
       {/* Header */}
-      <Text className="text-sm font-semibold text-gray-700 mb-2">Select a Activity</Text>
+      <Text className="text-sm font-semibold text-foreground mb-2">Select an Activity</Text>
 
       {/* Search Input */}
       <View className="relative mb-3">
         <View className="absolute left-3 top-3 z-10">
-          <Search size={20} className="text-gray-400" />
+          <Search size={20} className="text-muted-foreground" />
         </View>
         <Input
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder="Search activities..."
-          className="h-12 border-gray-300 bg-white pl-10 pr-4 text-base"
+          className="h-12 pl-10 pr-4 text-base"
           editable={!disabled}
         />
       </View>
 
       {/* Activity Count */}
       {searchQuery && (
-        <Text className="text-sm text-gray-600 mb-2">
+        <Text className="text-sm text-muted-foreground mb-2">
           {filteredActivities.length} activity
           {filteredActivities.length !== 1 ? "s" : ""} found
         </Text>
@@ -180,7 +184,7 @@ export function ActivitySelector({
       {/* Activity List */}
       {filteredActivities.length === 0 ? (
         <View className="flex-1 items-center justify-center py-8">
-          <Text className="text-gray-500 text-center">
+          <Text className="text-muted-foreground text-center">
             {searchQuery ? "No activities match your search" : "No activities available"}
           </Text>
         </View>

@@ -4,14 +4,15 @@ import type {
   IntervalV2,
 } from "@repo/core/schemas/activity_plan_v2";
 import { Button } from "@repo/ui/components/button";
-import { Dialog, DialogContent } from "@repo/ui/components/dialog";
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
+import { Form, FormNumberField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import * as Haptics from "expo-haptics";
 import { useEffect, useState } from "react";
-import { Dimensions, ScrollView, View } from "react-native";
+import { View } from "react-native";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
+import { z } from "zod";
+import { AppFormModal } from "@/components/shared/AppFormModal";
 import { convertUIToV2Duration } from "@/lib/utils/durationConversion";
 
 interface IntervalWizardProps {
@@ -34,6 +35,21 @@ interface IntervalConfig {
   restIntensity: number;
 }
 
+const intervalWizardSchema = z.object({
+  segmentName: z.string().trim().min(1, "Enter a segment name"),
+  repeatCount: z.number().int().min(1, "Add at least one repeat"),
+  workName: z.string().trim().min(1, "Enter a work step name"),
+  workDuration: z.number().positive("Enter a valid work duration"),
+  workUnit: z.enum(["seconds", "minutes"]),
+  workIntensity: z.number().positive("Enter a valid work intensity"),
+  restName: z.string().trim().min(1, "Enter a rest step name"),
+  restDuration: z.number().positive("Enter a valid rest duration"),
+  restUnit: z.enum(["seconds", "minutes"]),
+  restIntensity: z.number().positive("Enter a valid rest intensity"),
+});
+
+type IntervalWizardValues = z.infer<typeof intervalWizardSchema>;
+
 export function IntervalWizard({
   open,
   onOpenChange,
@@ -52,21 +68,33 @@ export function IntervalWizard({
     restUnit: "minutes",
     restIntensity: 50,
   });
+  const form = useZodForm({
+    schema: intervalWizardSchema,
+    defaultValues: config,
+  });
 
   useEffect(() => {
     if (open && defaultSegmentName) {
-      setConfig((prev) => ({ ...prev, segmentName: defaultSegmentName }));
+      const next = { ...form.getValues(), segmentName: defaultSegmentName } as IntervalWizardValues;
+      setConfig(next);
+      form.reset(next);
     }
-  }, [open, defaultSegmentName]);
+  }, [defaultSegmentName, form, open]);
+
+  useEffect(() => {
+    form.reset(config);
+  }, [config, form]);
+
+  const values = form.watch() as IntervalWizardValues;
 
   const workDurationSeconds =
-    config.workUnit === "minutes" ? config.workDuration * 60 : config.workDuration;
+    values.workUnit === "minutes" ? values.workDuration * 60 : values.workDuration;
   const restDurationSeconds =
-    config.restUnit === "minutes" ? config.restDuration * 60 : config.restDuration;
+    values.restUnit === "minutes" ? values.restDuration * 60 : values.restDuration;
 
   const intervalDuration = workDurationSeconds + restDurationSeconds;
-  const totalDuration = intervalDuration * config.repeatCount;
-  const totalSteps = config.repeatCount * 2;
+  const totalDuration = intervalDuration * values.repeatCount;
+  const totalSteps = values.repeatCount * 2;
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -77,47 +105,45 @@ export function IntervalWizard({
     return `${secs}s`;
   };
 
-  const handleSave = () => {
+  const handleSave = (nextConfig: IntervalWizardValues) => {
     const steps: IntervalStepV2[] = [];
 
-    // Work step
     steps.push({
       id: require("expo-crypto").randomUUID(),
-      name: config.workName,
+      name: nextConfig.workName,
       duration: convertUIToV2Duration({
         type: "time",
-        value: config.workDuration,
-        unit: config.workUnit,
+        value: nextConfig.workDuration,
+        unit: nextConfig.workUnit,
       }),
       targets: [
         {
           type: "%FTP",
-          intensity: config.workIntensity,
+          intensity: nextConfig.workIntensity,
         } as IntensityTargetV2,
       ],
     });
 
-    // Rest step
     steps.push({
       id: require("expo-crypto").randomUUID(),
-      name: config.restName,
+      name: nextConfig.restName,
       duration: convertUIToV2Duration({
         type: "time",
-        value: config.restDuration,
-        unit: config.restUnit,
+        value: nextConfig.restDuration,
+        unit: nextConfig.restUnit,
       }),
       targets: [
         {
           type: "%FTP",
-          intensity: config.restIntensity,
+          intensity: nextConfig.restIntensity,
         } as IntensityTargetV2,
       ],
     });
 
     const interval: IntervalV2 = {
       id: require("expo-crypto").randomUUID(),
-      name: config.segmentName,
-      repetitions: config.repeatCount,
+      name: nextConfig.segmentName,
+      repetitions: nextConfig.repeatCount,
       steps: steps,
     };
 
@@ -126,18 +152,15 @@ export function IntervalWizard({
     onOpenChange(false);
   };
 
-  const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-  const dialogWidth = Math.min(screenWidth * 0.95, 450);
-  const dialogHeight = Math.min(screenHeight * 0.9, screenHeight - 80);
-
   // SVG Preview dimensions
-  const previewWidth = dialogWidth - 80;
+  const previewWidth = 320;
   const previewHeight = 100;
   const barHeight = 40;
 
   // Calculate bar widths proportionally
-  const workPercent = workDurationSeconds / intervalDuration;
-  const restPercent = restDurationSeconds / intervalDuration;
+  const safeIntervalDuration = intervalDuration > 0 ? intervalDuration : 1;
+  const workPercent = workDurationSeconds / safeIntervalDuration;
+  const restPercent = restDurationSeconds / safeIntervalDuration;
 
   const getIntensityColor = (intensity: number): string => {
     if (intensity >= 106) return "#dc2626"; // Z5 - Red
@@ -147,293 +170,272 @@ export function IntervalWizard({
     return "#06b6d4"; // Z1 - Light Blue
   };
 
+  if (!open) {
+    return null;
+  }
+
+  const submitForm = useZodFormSubmit<IntervalWizardValues>({
+    form,
+    onSubmit: handleSave,
+  });
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        style={{
-          width: dialogWidth,
-          height: dialogHeight,
-          margin: 20,
-        }}
-        className="bg-background border border-border shadow-xl"
-      >
-        {/* Header */}
-        <View className="flex-row items-center justify-between p-4 border-b">
-          <Text className="text-lg font-medium flex-1 text-center">Create Intervals</Text>
-          <Button onPress={handleSave} size="sm">
-            <Text className="text-primary-foreground">Create</Text>
-          </Button>
-        </View>
+    <AppFormModal
+      description="Configure the interval pattern, work/rest durations, and intensity before adding it to the workout."
+      onClose={() => onOpenChange(false)}
+      primaryAction={
+        <Button onPress={submitForm.handleSubmit} testID="interval-wizard-save-button">
+          <Text className="text-primary-foreground font-semibold">Create Intervals</Text>
+        </Button>
+      }
+      secondaryAction={
+        <Button
+          onPress={() => onOpenChange(false)}
+          variant="outline"
+          testID="interval-wizard-cancel-button"
+        >
+          <Text className="text-foreground font-medium">Cancel</Text>
+        </Button>
+      }
+      testID="interval-wizard-modal"
+      title="Create Intervals"
+    >
+      <Form {...form}>
+        <View className="gap-4">
+          <FormTextField
+            control={form.control}
+            label="Segment Name"
+            name="segmentName"
+            placeholder="e.g., Intervals, Main Set"
+            required
+          />
 
-        <View className="flex-1">
-          <ScrollView
-            style={{ flex: 1 }}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
-          >
-            <View className="gap-4 p-4">
-              {/* Segment Name */}
-              <View>
-                <Label>Segment Name</Label>
-                <Input
-                  value={config.segmentName}
-                  onChangeText={(text) => setConfig({ ...config, segmentName: text })}
-                  placeholder="e.g., Intervals, Main Set"
-                />
-              </View>
+          <FormNumberField
+            control={form.control}
+            label="Number of Repeats"
+            name="repeatCount"
+            allowDecimal={false}
+            min={1}
+            placeholder="5"
+            required
+          />
 
-              {/* Repeat Count */}
-              <View>
-                <Label>Number of Repeats</Label>
-                <Input
-                  value={config.repeatCount.toString()}
-                  onChangeText={(text) => {
-                    const num = parseInt(text) || 0;
-                    setConfig({ ...config, repeatCount: Math.max(1, num) });
-                  }}
-                  keyboardType="numeric"
-                  placeholder="5"
-                />
-              </View>
+          <View className="rounded-lg border border-border bg-muted/30 p-4">
+            <Text className="mb-3 text-base font-semibold">Work Phase</Text>
 
-              {/* Work Section */}
-              <View className="border border-border rounded-lg p-4 bg-muted/30">
-                <Text className="text-base font-semibold mb-3">Work Phase</Text>
+            <View className="gap-3">
+              <FormTextField
+                control={form.control}
+                label="Work Name"
+                name="workName"
+                placeholder="Work"
+                required
+              />
 
-                <View className="gap-3">
-                  <View>
-                    <Label>Work Name</Label>
-                    <Input
-                      value={config.workName}
-                      onChangeText={(text) => setConfig({ ...config, workName: text })}
-                      placeholder="Work"
-                    />
-                  </View>
-
-                  <View className="flex-row gap-2">
-                    <View className="flex-1">
-                      <Label>Duration</Label>
-                      <Input
-                        value={config.workDuration.toString()}
-                        onChangeText={(text) => {
-                          const num = parseFloat(text) || 0;
-                          setConfig({ ...config, workDuration: num });
-                        }}
-                        keyboardType="numeric"
-                        placeholder="2"
-                      />
-                    </View>
-                    <View className="w-28">
-                      <Label>Unit</Label>
-                      <View className="flex-row gap-1">
-                        <Button
-                          variant={config.workUnit === "seconds" ? "default" : "outline"}
-                          size="sm"
-                          onPress={() => setConfig({ ...config, workUnit: "seconds" })}
-                          className="flex-1"
-                        >
-                          <Text
-                            className={
-                              config.workUnit === "seconds"
-                                ? "text-primary-foreground text-xs"
-                                : "text-xs"
-                            }
-                          >
-                            sec
-                          </Text>
-                        </Button>
-                        <Button
-                          variant={config.workUnit === "minutes" ? "default" : "outline"}
-                          size="sm"
-                          onPress={() => setConfig({ ...config, workUnit: "minutes" })}
-                          className="flex-1"
-                        >
-                          <Text
-                            className={
-                              config.workUnit === "minutes"
-                                ? "text-primary-foreground text-xs"
-                                : "text-xs"
-                            }
-                          >
-                            min
-                          </Text>
-                        </Button>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View>
-                    <Label>Intensity (% FTP)</Label>
-                    <Input
-                      value={config.workIntensity.toString()}
-                      onChangeText={(text) => {
-                        const num = parseInt(text) || 0;
-                        setConfig({ ...config, workIntensity: num });
-                      }}
-                      keyboardType="numeric"
-                      placeholder="95"
-                    />
-                  </View>
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <FormNumberField
+                    control={form.control}
+                    label="Duration"
+                    name="workDuration"
+                    min={0.01}
+                    placeholder="2"
+                    required
+                  />
                 </View>
-              </View>
-
-              {/* Rest Section */}
-              <View className="border border-border rounded-lg p-4 bg-muted/30">
-                <Text className="text-base font-semibold mb-3">Rest Phase</Text>
-
-                <View className="gap-3">
-                  <View>
-                    <Label>Rest Name</Label>
-                    <Input
-                      value={config.restName}
-                      onChangeText={(text) => setConfig({ ...config, restName: text })}
-                      placeholder="Rest"
-                    />
-                  </View>
-
-                  <View className="flex-row gap-2">
-                    <View className="flex-1">
-                      <Label>Duration</Label>
-                      <Input
-                        value={config.restDuration.toString()}
-                        onChangeText={(text) => {
-                          const num = parseFloat(text) || 0;
-                          setConfig({ ...config, restDuration: num });
-                        }}
-                        keyboardType="numeric"
-                        placeholder="1"
-                      />
-                    </View>
-                    <View className="w-28">
-                      <Label>Unit</Label>
-                      <View className="flex-row gap-1">
-                        <Button
-                          variant={config.restUnit === "seconds" ? "default" : "outline"}
-                          size="sm"
-                          onPress={() => setConfig({ ...config, restUnit: "seconds" })}
-                          className="flex-1"
-                        >
-                          <Text
-                            className={
-                              config.restUnit === "seconds"
-                                ? "text-primary-foreground text-xs"
-                                : "text-xs"
-                            }
-                          >
-                            sec
-                          </Text>
-                        </Button>
-                        <Button
-                          variant={config.restUnit === "minutes" ? "default" : "outline"}
-                          size="sm"
-                          onPress={() => setConfig({ ...config, restUnit: "minutes" })}
-                          className="flex-1"
-                        >
-                          <Text
-                            className={
-                              config.restUnit === "minutes"
-                                ? "text-primary-foreground text-xs"
-                                : "text-xs"
-                            }
-                          >
-                            min
-                          </Text>
-                        </Button>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View>
-                    <Label>Intensity (% FTP)</Label>
-                    <Input
-                      value={config.restIntensity.toString()}
-                      onChangeText={(text) => {
-                        const num = parseInt(text) || 0;
-                        setConfig({ ...config, restIntensity: num });
-                      }}
-                      keyboardType="numeric"
-                      placeholder="50"
-                    />
-                  </View>
-                </View>
-              </View>
-
-              {/* Preview */}
-              <View className="border border-border rounded-lg p-4 bg-background">
-                <Text className="text-base font-semibold mb-3">Preview</Text>
-
-                {/* Summary Stats */}
-                <View className="flex-row justify-between mb-4">
-                  <View>
-                    <Text className="text-xs text-muted-foreground">Total Steps</Text>
-                    <Text className="text-lg font-semibold">{totalSteps}</Text>
-                  </View>
-                  <View>
-                    <Text className="text-xs text-muted-foreground">Interval Duration</Text>
-                    <Text className="text-lg font-semibold">{formatTime(intervalDuration)}</Text>
-                  </View>
-                  <View>
-                    <Text className="text-xs text-muted-foreground">Total Duration</Text>
-                    <Text className="text-lg font-semibold">{formatTime(totalDuration)}</Text>
-                  </View>
-                </View>
-
-                {/* SVG Visual Preview */}
-                <View>
-                  <Text className="text-xs text-muted-foreground mb-2">Interval Pattern</Text>
-                  <Svg width={previewWidth} height={previewHeight}>
-                    {/* Single interval visualization */}
-                    <Rect
-                      x="0"
-                      y={(previewHeight - barHeight) / 2}
-                      width={previewWidth * workPercent}
-                      height={barHeight}
-                      fill={getIntensityColor(config.workIntensity)}
-                      rx="4"
-                    />
-                    <SvgText
-                      x={(previewWidth * workPercent) / 2}
-                      y={previewHeight / 2}
-                      fontSize="12"
-                      fill="white"
-                      textAnchor="middle"
-                      alignmentBaseline="middle"
-                      fontWeight="600"
+                <View className="w-28 gap-2">
+                  <Text className="text-sm font-medium text-foreground">Unit</Text>
+                  <View className="flex-row gap-1">
+                    <Button
+                      variant={values.workUnit === "seconds" ? "default" : "outline"}
+                      size="sm"
+                      onPress={() => form.setValue("workUnit", "seconds", { shouldDirty: true })}
+                      className="flex-1"
                     >
-                      {config.workName}
-                    </SvgText>
-
-                    <Rect
-                      x={previewWidth * workPercent}
-                      y={(previewHeight - barHeight) / 2}
-                      width={previewWidth * restPercent}
-                      height={barHeight}
-                      fill={getIntensityColor(config.restIntensity)}
-                      rx="4"
-                    />
-                    <SvgText
-                      x={previewWidth * workPercent + (previewWidth * restPercent) / 2}
-                      y={previewHeight / 2}
-                      fontSize="12"
-                      fill="white"
-                      textAnchor="middle"
-                      alignmentBaseline="middle"
-                      fontWeight="600"
+                      <Text
+                        className={
+                          values.workUnit === "seconds"
+                            ? "text-primary-foreground text-xs"
+                            : "text-xs"
+                        }
+                      >
+                        sec
+                      </Text>
+                    </Button>
+                    <Button
+                      variant={values.workUnit === "minutes" ? "default" : "outline"}
+                      size="sm"
+                      onPress={() => form.setValue("workUnit", "minutes", { shouldDirty: true })}
+                      className="flex-1"
                     >
-                      {config.restName}
-                    </SvgText>
-                  </Svg>
-
-                  <Text className="text-xs text-muted-foreground text-center mt-2">
-                    This pattern will repeat {config.repeatCount} time
-                    {config.repeatCount !== 1 ? "s" : ""}
-                  </Text>
+                      <Text
+                        className={
+                          values.workUnit === "minutes"
+                            ? "text-primary-foreground text-xs"
+                            : "text-xs"
+                        }
+                      >
+                        min
+                      </Text>
+                    </Button>
+                  </View>
                 </View>
+              </View>
+
+              <FormNumberField
+                control={form.control}
+                label="Intensity (% FTP)"
+                name="workIntensity"
+                min={1}
+                placeholder="95"
+                required
+              />
+            </View>
+          </View>
+
+          <View className="rounded-lg border border-border bg-muted/30 p-4">
+            <Text className="mb-3 text-base font-semibold">Rest Phase</Text>
+
+            <View className="gap-3">
+              <FormTextField
+                control={form.control}
+                label="Rest Name"
+                name="restName"
+                placeholder="Rest"
+                required
+              />
+
+              <View className="flex-row gap-2">
+                <View className="flex-1">
+                  <FormNumberField
+                    control={form.control}
+                    label="Duration"
+                    name="restDuration"
+                    min={0.01}
+                    placeholder="1"
+                    required
+                  />
+                </View>
+                <View className="w-28 gap-2">
+                  <Text className="text-sm font-medium text-foreground">Unit</Text>
+                  <View className="flex-row gap-1">
+                    <Button
+                      variant={values.restUnit === "seconds" ? "default" : "outline"}
+                      size="sm"
+                      onPress={() => form.setValue("restUnit", "seconds", { shouldDirty: true })}
+                      className="flex-1"
+                    >
+                      <Text
+                        className={
+                          values.restUnit === "seconds"
+                            ? "text-primary-foreground text-xs"
+                            : "text-xs"
+                        }
+                      >
+                        sec
+                      </Text>
+                    </Button>
+                    <Button
+                      variant={values.restUnit === "minutes" ? "default" : "outline"}
+                      size="sm"
+                      onPress={() => form.setValue("restUnit", "minutes", { shouldDirty: true })}
+                      className="flex-1"
+                    >
+                      <Text
+                        className={
+                          values.restUnit === "minutes"
+                            ? "text-primary-foreground text-xs"
+                            : "text-xs"
+                        }
+                      >
+                        min
+                      </Text>
+                    </Button>
+                  </View>
+                </View>
+              </View>
+
+              <FormNumberField
+                control={form.control}
+                label="Intensity (% FTP)"
+                name="restIntensity"
+                min={1}
+                placeholder="50"
+                required
+              />
+            </View>
+          </View>
+
+          <View className="rounded-lg border border-border bg-background p-4">
+            <Text className="mb-3 text-base font-semibold">Preview</Text>
+
+            <View className="mb-4 flex-row justify-between">
+              <View>
+                <Text className="text-xs text-muted-foreground">Total Steps</Text>
+                <Text className="text-lg font-semibold">{totalSteps}</Text>
+              </View>
+              <View>
+                <Text className="text-xs text-muted-foreground">Interval Duration</Text>
+                <Text className="text-lg font-semibold">{formatTime(intervalDuration)}</Text>
+              </View>
+              <View>
+                <Text className="text-xs text-muted-foreground">Total Duration</Text>
+                <Text className="text-lg font-semibold">{formatTime(totalDuration)}</Text>
               </View>
             </View>
-          </ScrollView>
+
+            <View>
+              <Text className="mb-2 text-xs text-muted-foreground">Interval Pattern</Text>
+              <Svg width={previewWidth} height={previewHeight}>
+                <Rect
+                  x="0"
+                  y={(previewHeight - barHeight) / 2}
+                  width={previewWidth * workPercent}
+                  height={barHeight}
+                  fill={getIntensityColor(values.workIntensity)}
+                  rx="4"
+                />
+                <SvgText
+                  x={(previewWidth * workPercent) / 2}
+                  y={previewHeight / 2}
+                  fontSize="12"
+                  fill="white"
+                  textAnchor="middle"
+                  alignmentBaseline="middle"
+                  fontWeight="600"
+                >
+                  {values.workName}
+                </SvgText>
+
+                <Rect
+                  x={previewWidth * workPercent}
+                  y={(previewHeight - barHeight) / 2}
+                  width={previewWidth * restPercent}
+                  height={barHeight}
+                  fill={getIntensityColor(values.restIntensity)}
+                  rx="4"
+                />
+                <SvgText
+                  x={previewWidth * workPercent + (previewWidth * restPercent) / 2}
+                  y={previewHeight / 2}
+                  fontSize="12"
+                  fill="white"
+                  textAnchor="middle"
+                  alignmentBaseline="middle"
+                  fontWeight="600"
+                >
+                  {values.restName}
+                </SvgText>
+              </Svg>
+
+              <Text className="mt-2 text-center text-xs text-muted-foreground">
+                This pattern will repeat {values.repeatCount} time
+                {values.repeatCount !== 1 ? "s" : ""}
+              </Text>
+            </View>
+          </View>
         </View>
-      </DialogContent>
-    </Dialog>
+      </Form>
+    </AppFormModal>
   );
 }

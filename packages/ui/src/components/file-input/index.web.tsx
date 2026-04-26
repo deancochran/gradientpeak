@@ -22,6 +22,7 @@ function FileInput({
   helperText,
   id,
   label,
+  name,
   multiple = false,
   onFilesChange,
   required = false,
@@ -39,6 +40,7 @@ function FileInput({
         accept={accept}
         id={inputId}
         multiple={multiple}
+        name={name}
         onChange={(event) => onFilesChange?.(toSelectedFiles(event.currentTarget.files))}
         testId={testId}
         type="file"

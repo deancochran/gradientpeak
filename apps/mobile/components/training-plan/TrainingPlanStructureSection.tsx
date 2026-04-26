@@ -1,17 +1,9 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@repo/ui/components/dialog";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
+import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 
 type StructureSessionRow = {
   key: string;
@@ -212,71 +204,46 @@ export function TrainingPlanStructureSection({
         </Card>
       )}
 
-      <Dialog open={showActivityPicker} onOpenChange={onActivityPickerOpenChange}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedSessionRow?.activityPlanId
-                ? "Replace activity plan"
-                : "Assign activity plan"}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedSessionRow
-                ? `Select an activity plan for ${selectedSessionRow.title}.`
-                : "Select an activity plan for this session."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <View className="max-h-80">
-            {isLoadingActivityPlans ? (
-              <View className="py-6 items-center gap-2">
-                <ActivityIndicator size="small" />
-                <Text className="text-xs text-muted-foreground">Loading activity plans...</Text>
-              </View>
-            ) : activityPlanItems.length === 0 ? (
-              <View className="py-6 items-center gap-2">
-                <Text className="text-sm text-muted-foreground text-center">
-                  You do not have any activity plans yet.
-                </Text>
-              </View>
-            ) : (
-              <ScrollView>
-                <View className="gap-2 py-1">
-                  {activityPlanItems.map((activityPlan) => (
-                    <TouchableOpacity
-                      key={activityPlan.id}
-                      className="rounded-md border border-border px-3 py-2"
-                      activeOpacity={0.8}
-                      disabled={updatePlanStructurePending}
-                      onPress={() => void onSelectActivityForSession(activityPlan)}
-                    >
-                      <Text className="text-sm font-medium text-foreground">
-                        {activityPlan.name}
-                      </Text>
-                      <Text className="text-[11px] text-muted-foreground">{activityPlan.id}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            )}
-          </View>
-
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" disabled={updatePlanStructurePending}>
-                <Text className="text-foreground font-medium">Close</Text>
-              </Button>
-            </DialogClose>
-            <Button
-              variant="outline"
-              disabled={isLoadingActivityPlans || updatePlanStructurePending}
-              onPress={onRefreshActivityPlans}
-            >
-              <Text className="text-foreground font-medium">Refresh</Text>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {showActivityPicker ? (
+        <AppSelectionModal
+          description={
+            selectedSessionRow
+              ? `Select an activity plan for ${selectedSessionRow.title}.`
+              : "Select an activity plan for this session."
+          }
+          emptyMessage={
+            !isLoadingActivityPlans && activityPlanItems.length === 0
+              ? "You do not have any activity plans yet."
+              : undefined
+          }
+          isLoading={isLoadingActivityPlans}
+          loadingMessage="Loading activity plans..."
+          onClose={() => onActivityPickerOpenChange(false)}
+          onRefresh={onRefreshActivityPlans}
+          refreshDisabled={isLoadingActivityPlans || updatePlanStructurePending}
+          testID="training-plan-activity-picker-modal"
+          title={
+            selectedSessionRow?.activityPlanId ? "Replace activity plan" : "Assign activity plan"
+          }
+        >
+          <ScrollView>
+            <View className="gap-2 py-1">
+              {activityPlanItems.map((activityPlan) => (
+                <TouchableOpacity
+                  key={activityPlan.id}
+                  className="rounded-md border border-border px-3 py-2"
+                  activeOpacity={0.8}
+                  disabled={updatePlanStructurePending}
+                  onPress={() => void onSelectActivityForSession(activityPlan)}
+                >
+                  <Text className="text-sm font-medium text-foreground">{activityPlan.name}</Text>
+                  <Text className="text-[11px] text-muted-foreground">{activityPlan.id}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+        </AppSelectionModal>
+      ) : null}
     </>
   );
 }

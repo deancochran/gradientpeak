@@ -203,8 +203,8 @@ export function ZoneDistributionOverTimeChart({
           </View>
 
           {/* Polarization assessment */}
-          <View className="mt-3 p-2 bg-blue-50 rounded">
-            <Text className="text-xs text-gray-700">
+          <View className="mt-3 rounded bg-blue-50 p-2 dark:bg-blue-950/30">
+            <Text className="text-xs text-blue-900 dark:text-blue-100">
               {easyPercentage >= 70
                 ? "✅ Good polarization: ~80% easy, 20% hard is ideal"
                 : easyPercentage < 50

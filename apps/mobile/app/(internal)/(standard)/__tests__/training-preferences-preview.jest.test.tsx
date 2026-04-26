@@ -76,7 +76,6 @@ const previewGoalsFixture = [
   {
     id: "goal-1",
     profile_id: "profile-1",
-    milestone_event_id: "event-1",
     title: "Spring Bike Test",
     activity_category: "bike",
     priority: 7,

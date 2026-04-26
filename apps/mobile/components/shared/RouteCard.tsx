@@ -38,10 +38,7 @@ type RouteCardFullRoute = {
 type RouteCardProps = {
   route: RouteCardRoute;
   routeFull?: RouteCardFullRoute | null;
-  headerAccessory?: React.ReactNode;
   onPress?: () => void;
-  showAttribution?: boolean;
-  variant?: "default" | "compact";
 };
 
 function decodeRoutePolyline(polyline?: string | null): RouteCoordinate[] {
@@ -105,16 +102,8 @@ function MetricCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function RouteCard({
-  route,
-  routeFull,
-  headerAccessory,
-  onPress,
-  showAttribution = true,
-  variant = "default",
-}: RouteCardProps) {
+export function RouteCard({ route, routeFull, onPress }: RouteCardProps) {
   const activityConfig = getActivityCategoryConfig(route.activity_category || "other");
-  const isCompact = variant === "compact";
   const Wrapper = onPress ? TouchableOpacity : View;
 
   const coordinates = useMemo<RouteCoordinate[]>(() => {
@@ -127,32 +116,22 @@ export function RouteCard({
 
   return (
     <Wrapper onPress={onPress} activeOpacity={onPress ? 0.85 : 1} disabled={!onPress}>
-      <Card className={isCompact ? "py-2" : "py-3"}>
-        <CardContent className={isCompact ? "px-2" : "px-3"}>
+      <Card className="py-3">
+        <CardContent className="px-3">
           <View className="flex-row items-start gap-3">
             <View className={`rounded-full p-2.5 ${activityConfig.bgColor}`}>
               <Icon as={activityConfig.icon} size={18} className={activityConfig.color} />
             </View>
             <View className="min-w-0 flex-1 gap-1">
-              <Text
-                className={`${isCompact ? "text-lg" : "text-xl"} font-semibold text-foreground`}
-              >
-                {route.name}
-              </Text>
+              <Text className="text-xl font-semibold text-foreground">{route.name}</Text>
               {route.description ? (
-                <Text
-                  className="text-sm leading-5 text-muted-foreground"
-                  numberOfLines={isCompact ? 2 : undefined}
-                >
-                  {route.description}
-                </Text>
+                <Text className="text-sm leading-5 text-muted-foreground">{route.description}</Text>
               ) : (
                 <Text className="text-sm leading-5 text-muted-foreground">
                   {activityConfig.name} route
                 </Text>
               )}
             </View>
-            {headerAccessory}
           </View>
 
           <View className="mt-3 rounded-lg bg-muted/30 px-2.5 py-2">
@@ -178,7 +157,7 @@ export function RouteCard({
           </View>
 
           <View className="mt-3 overflow-hidden rounded-2xl border border-border bg-card">
-            <View className={`${isCompact ? "aspect-[2.15/1]" : "aspect-[16/9]"} bg-muted`}>
+            <View className="aspect-[16/9] bg-muted">
               {coordinates.length > 0 ? (
                 <StaticRouteMapPreview
                   coordinates={coordinates}
@@ -194,13 +173,10 @@ export function RouteCard({
             </View>
           </View>
 
-          {showAttribution ? (
-            <ActivityPlanAttributionRow
-              compact={isCompact}
-              owner={route.owner ?? null}
-              updatedAt={route.updated_at ?? route.created_at ?? null}
-            />
-          ) : null}
+          <ActivityPlanAttributionRow
+            owner={route.owner ?? null}
+            updatedAt={route.updated_at ?? route.created_at ?? null}
+          />
         </CardContent>
       </Card>
     </Wrapper>

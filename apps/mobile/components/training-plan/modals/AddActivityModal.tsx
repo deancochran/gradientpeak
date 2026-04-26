@@ -134,19 +134,19 @@ export function AddActivityModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View className="flex-1 bg-white">
+      <View className="flex-1 bg-background">
         {/* Header */}
-        <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
+        <View className="flex-row items-center justify-between px-4 py-4 border-b border-border bg-background">
           <View className="flex-1">
-            <Text className="text-xl font-bold text-gray-900">Schedule Activity</Text>
-            <Text className="text-sm text-gray-600 mt-0.5">{formatDate(selectedDate)}</Text>
+            <Text className="text-xl font-bold text-foreground">Schedule Activity</Text>
+            <Text className="text-sm text-muted-foreground mt-0.5">{formatDate(selectedDate)}</Text>
           </View>
           <Pressable
             onPress={onClose}
-            className="p-2 rounded-full bg-gray-100"
+            className="p-2 rounded-full bg-muted"
             disabled={scheduleMutation.isPending}
           >
-            <X size={24} className="text-gray-600" />
+            <X size={24} className="text-muted-foreground" />
           </Pressable>
         </View>
 
@@ -161,7 +161,7 @@ export function AddActivityModal({
             {activitiesLoading && (
               <View className="py-8 items-center">
                 <ActivityIndicator size="large" />
-                <Text className="text-gray-600 mt-2">Loading activities...</Text>
+                <Text className="text-muted-foreground mt-2">Loading activities...</Text>
               </View>
             )}
 
@@ -210,7 +210,7 @@ export function AddActivityModal({
         </ScrollView>
 
         {/* Footer Actions */}
-        <View className="px-4 py-4 border-t border-gray-200 bg-white">
+        <View className="px-4 py-4 border-t border-border bg-background">
           <View className="flex-row space-x-3">
             <Button
               variant="outline"
@@ -237,7 +237,7 @@ export function AddActivityModal({
 
           {/* Helper text */}
           {selectedActivity && (
-            <Text className="text-xs text-gray-500 text-center mt-2">
+            <Text className="text-xs text-muted-foreground text-center mt-2">
               {validation && !validation.canSchedule
                 ? "⚠️ This will override constraint violations"
                 : validation?.hasWarnings

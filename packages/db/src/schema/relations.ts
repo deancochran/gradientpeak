@@ -208,10 +208,6 @@ export const profileGoalsRelations = relations(profileGoals, ({ one }) => ({
     fields: [profileGoals.profile_id],
     references: [profiles.id],
   }),
-  milestoneEvent: one(events, {
-    fields: [profileGoals.milestone_event_id],
-    references: [events.id],
-  }),
 }));
 
 export const oauthStatesRelations = relations(oauthStates, ({ one }) => ({

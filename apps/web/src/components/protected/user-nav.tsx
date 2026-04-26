@@ -8,10 +8,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@repo/ui/components/dropdown-menu";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { Bell, Home, LogOut, MessageSquare, Settings, UserRound, Users } from "lucide-react";
 import { useState } from "react";
-import { authClient } from "../../lib/auth/client";
+
+import { signOutAction } from "../../lib/auth/server-actions";
 import { useAuth } from "../providers/auth-provider";
 
 function getInitials(email: string | null | undefined) {
@@ -20,8 +22,8 @@ function getInitials(email: string | null | undefined) {
 }
 
 export function UserNav() {
-  const { user, refreshSession } = useAuth();
-  const navigate = useNavigate();
+  const { user } = useAuth();
+  const signOut = useServerFn(signOutAction);
   const [isPending, setIsPending] = useState(false);
   const displayName = user?.email ?? "User";
   type AccountLink = {
@@ -40,14 +42,7 @@ export function UserNav() {
   const handleSignOut = async () => {
     setIsPending(true);
     try {
-      const result = await authClient.signOut();
-
-      if (result.error) {
-        throw result.error;
-      }
-
-      await refreshSession();
-      await navigate({ to: "/auth/login" });
+      await signOut();
     } catch (error) {
       console.error("Logout failed:", error);
     } finally {
@@ -80,7 +75,12 @@ export function UserNav() {
         <DropdownMenuGroup>
           {user?.id ? (
             <DropdownMenuItem asChild>
-              <Link to="/user/$userId" params={{ userId: user.id }} className="cursor-pointer">
+              <Link
+                to="/user/$userId"
+                params={{ userId: user.id }}
+                search={{ flash: undefined, flashType: undefined }}
+                className="cursor-pointer"
+              >
                 <UserRound className="mr-2 h-4 w-4" />
                 <span>Profile</span>
               </Link>
@@ -96,13 +96,18 @@ export function UserNav() {
           ))}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          disabled={isPending}
-          onClick={() => void handleSignOut()}
-          className="cursor-pointer"
-        >
-          <LogOut className="mr-2 h-4 w-4" />
-          <span>{isPending ? "Logging out..." : "Log out"}</span>
+        <DropdownMenuItem asChild disabled={isPending} className="cursor-pointer">
+          <form
+            action={signOutAction.url}
+            method="post"
+            onSubmit={handleSignOut}
+            className="w-full"
+          >
+            <button type="submit" className="flex w-full items-center gap-2" disabled={isPending}>
+              <LogOut className="h-4 w-4" />
+              <span>{isPending ? "Logging out..." : "Log out"}</span>
+            </button>
+          </form>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

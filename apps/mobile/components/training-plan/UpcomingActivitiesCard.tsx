@@ -9,6 +9,7 @@ import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 interface UpcomingActivity {
   id: string;
   scheduled_date: string;
+  training_plan_id?: string | null;
   activity_plan: {
     id: string;
     name: string;
@@ -86,6 +87,7 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
           const estimatedDuration =
             activity.activity_plan.authoritative_metrics?.estimated_duration;
           const estimatedTss = activity.activity_plan.authoritative_metrics?.estimated_tss;
+          const hasTrainingPlanSource = typeof activity.training_plan_id === "string";
 
           return (
             <View key={activity.id}>
@@ -105,6 +107,9 @@ export function UpcomingActivitiesCard({ activities }: UpcomingActivitiesCardPro
                     <Text className="mb-1 text-base font-semibold text-foreground">
                       {activity.activity_plan.name}
                     </Text>
+                    {hasTrainingPlanSource ? (
+                      <Text className="mb-1 text-xs text-muted-foreground">From training plan</Text>
+                    ) : null}
 
                     <View className="flex-row items-center gap-3">
                       {typeof estimatedDuration === "number" ? (

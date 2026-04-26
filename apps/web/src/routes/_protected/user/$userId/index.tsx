@@ -1,4 +1,3 @@
-import { invalidateRelationshipQueries } from "@repo/api/react";
 import { normalizePublicProfileView } from "@repo/core/profile";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
@@ -9,49 +8,36 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { Clock, Loader2, Lock, MessageSquare, UserCheck, UserMinus, UserPlus } from "lucide-react";
-import { toast } from "sonner";
-
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Clock, Loader2, Lock } from "lucide-react";
+import { FollowActionForm } from "../../../../components/protected/follow-action-form";
+import { MessageActionForm } from "../../../../components/protected/message-action-form";
 import { useAuth } from "../../../../components/providers/auth-provider";
+import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
 
 export const Route = createFileRoute("/_protected/user/$userId/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    flash: typeof search.flash === "string" ? search.flash : undefined,
+    flashType:
+      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
+        ? (search.flashType as RouteFlashType)
+        : undefined,
+  }),
   component: UserProfilePage,
 });
 
 function UserProfilePage() {
+  const navigate = Route.useNavigate();
+  const { flash, flashType } = Route.useSearch();
   const { user } = useAuth();
-  const navigate = useNavigate();
   const { userId } = Route.useParams();
-  const utils = api.useUtils();
   const profileQuery = api.profiles.getPublicById.useQuery(
     { id: userId },
     { enabled: Boolean(userId) },
   );
   const profile = normalizePublicProfileView(profileQuery.data);
   const isSelf = user?.id === userId;
-
-  const followMutation = api.social.followUser.useMutation({
-    onSuccess: async () => {
-      await invalidateRelationshipQueries(utils, [userId, user?.id]);
-      toast.success("Follow request sent");
-    },
-    onError: (error) => toast.error(error.message),
-  });
-
-  const unfollowMutation = api.social.unfollowUser.useMutation({
-    onSuccess: async () => {
-      await invalidateRelationshipQueries(utils, [userId, user?.id]);
-      toast.success("Unfollowed user");
-    },
-    onError: (error) => toast.error(error.message),
-  });
-
-  const messageMutation = api.messaging.getOrCreateDM.useMutation({
-    onSuccess: async () => navigate({ to: "/messages" }),
-    onError: (error) => toast.error(error.message),
-  });
 
   if (profileQuery.isLoading) {
     return (
@@ -79,23 +65,23 @@ function UserProfilePage() {
   const isPendingFollower = profile.follow_status === "pending";
   const canViewDetails = isSelf || !isPrivate || isAcceptedFollower;
 
-  const handleFollowToggle = () => {
-    if (isAcceptedFollower || isPendingFollower) {
-      unfollowMutation.mutate({ target_user_id: userId });
-      return;
-    }
-
-    followMutation.mutate({ target_user_id: userId });
-  };
-
-  const handleMessage = () => {
-    messageMutation.mutate({ target_user_id: userId });
-  };
-
   const profileInitials = (profile.username || "GP").slice(0, 2).toUpperCase();
+  const redirectTo = `/user/${userId}`;
 
   return (
     <div className="container max-w-3xl space-y-8 py-8">
+      <RouteFlashToast
+        message={flash}
+        type={flashType}
+        clear={() =>
+          void navigate({
+            to: "/user/$userId",
+            params: { userId },
+            search: { flash: undefined, flashType: undefined },
+            replace: true,
+          })
+        }
+      />
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col items-center gap-6 md:flex-row">
@@ -121,7 +107,11 @@ function UserProfilePage() {
                     variant="ghost"
                     className="h-auto p-0 text-muted-foreground hover:text-foreground"
                   >
-                    <Link to="/user/$userId/followers" params={{ userId }}>
+                    <Link
+                      to="/user/$userId/followers"
+                      params={{ userId }}
+                      search={{ cursor: undefined, flash: undefined, flashType: undefined }}
+                    >
                       <span className="font-semibold text-foreground">
                         {profile.followers_count ?? 0}
                       </span>{" "}
@@ -133,7 +123,11 @@ function UserProfilePage() {
                     variant="ghost"
                     className="h-auto p-0 text-muted-foreground hover:text-foreground"
                   >
-                    <Link to="/user/$userId/following" params={{ userId }}>
+                    <Link
+                      to="/user/$userId/following"
+                      params={{ userId }}
+                      search={{ cursor: undefined, flash: undefined, flashType: undefined }}
+                    >
                       <span className="font-semibold text-foreground">
                         {profile.following_count ?? 0}
                       </span>{" "}
@@ -153,41 +147,14 @@ function UserProfilePage() {
                   ) : null}
 
                   <div className="flex flex-wrap items-center justify-center gap-3 md:justify-start">
-                    <Button
-                      variant={
-                        isAcceptedFollower ? "outline" : isPendingFollower ? "secondary" : "default"
-                      }
-                      onClick={handleFollowToggle}
-                      disabled={followMutation.isPending || unfollowMutation.isPending}
-                      className="w-32"
-                    >
-                      {isAcceptedFollower ? (
-                        <>
-                          <UserCheck className="mr-2 h-4 w-4" />
-                          Following
-                        </>
-                      ) : isPendingFollower ? (
-                        <>
-                          <UserMinus className="mr-2 h-4 w-4" />
-                          Requested
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus className="mr-2 h-4 w-4" />
-                          Follow
-                        </>
-                      )}
-                    </Button>
+                    <FollowActionForm
+                      isFollowing={isAcceptedFollower}
+                      isPending={isPendingFollower}
+                      redirectTo={redirectTo}
+                      targetUserId={userId}
+                    />
 
-                    <Button
-                      variant="outline"
-                      onClick={handleMessage}
-                      disabled={messageMutation.isPending}
-                      className="w-32"
-                    >
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      Message
-                    </Button>
+                    <MessageActionForm redirectTo={redirectTo} targetUserId={userId} />
                   </div>
                 </div>
               ) : null}

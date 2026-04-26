@@ -21,6 +21,7 @@ import {
   ensureCalendarQueryWindowCovers,
 } from "@/lib/calendar/queryWindow";
 import { ROUTES } from "@/lib/constants/routes";
+import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 
@@ -104,6 +105,11 @@ function CalendarScreen() {
     [activitiesData?.items],
   );
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
+  const profileGoals = useProfileGoals();
+  const goalDates = useMemo(
+    () => new Set(profileGoals.goals.map((goal) => goal.target_date)),
+    [profileGoals.goals],
+  );
 
   const extendMonthRangeBackward = useCallback(() => {
     setRangeStart((current) =>
@@ -212,6 +218,7 @@ function CalendarScreen() {
           visibleMonthAnchor={visibleAnchor}
           todayKey={todayKey}
           eventsByDate={eventsByDate}
+          goalDates={goalDates}
           onVisibleMonthChange={handleVisibleMonthChange}
           onReachStart={extendMonthRangeBackward}
           onReachEnd={extendMonthRangeForward}

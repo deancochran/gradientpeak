@@ -1,3 +1,5 @@
+import { toDateKey } from "@/lib/calendar/dateMath";
+
 export interface CalendarEventActivityPlan {
   id?: string | null;
   name?: string | null;
@@ -33,12 +35,37 @@ export interface CalendarEvent {
   recurrence_rule?: string | null;
   recurrence?: { rule?: string | null } | null;
   linked_activity_id?: string | null;
+  training_plan_id?: string | null;
   completed?: boolean | null;
   status?: string | null;
   activity_plan?: CalendarEventActivityPlan | null;
 }
 
 export type CalendarEventsByDate = Map<string, CalendarEvent[]>;
+
+function getEventStartDateKey(event: CalendarEvent): string | null {
+  if (event.scheduled_date) {
+    return event.scheduled_date;
+  }
+
+  if (event.starts_at) {
+    const startsAt = new Date(event.starts_at);
+    if (!Number.isNaN(startsAt.getTime())) {
+      return toDateKey(startsAt);
+    }
+  }
+
+  return null;
+}
+
+function getScheduledDateKey(event: CalendarEvent): string | null {
+  const startDateKey = getEventStartDateKey(event);
+  if (!startDateKey) {
+    return null;
+  }
+
+  return startDateKey;
+}
 
 function compareEvents(left: CalendarEvent, right: CalendarEvent): number {
   if (left.all_day && !right.all_day) return -1;
@@ -53,7 +80,7 @@ export function buildEventsByDate(events: CalendarEvent[]): CalendarEventsByDate
   const map = new Map<string, CalendarEvent[]>();
 
   for (const event of events) {
-    const dateKey = event.scheduled_date;
+    const dateKey = getScheduledDateKey(event);
     if (!dateKey) continue;
     const current = map.get(dateKey) ?? [];
     current.push(event);

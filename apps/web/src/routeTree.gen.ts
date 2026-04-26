@@ -22,9 +22,13 @@ import { Route as AuthErrorRouteImport } from './routes/auth/error'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
+import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
+import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
+import { Route as ProtectedPlanRouteImport } from './routes/_protected/plan'
 import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/notifications'
 import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
 import { Route as ProtectedCoachingRouteImport } from './routes/_protected/coaching'
+import { Route as ProtectedCalendarRouteImport } from './routes/_protected/calendar'
 import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/wahoo'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -101,6 +105,21 @@ const ProtectedSettingsRoute = ProtectedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ProtectedRoute,
 } as any)
+const ProtectedSearchRoute = ProtectedSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedRecordRoute = ProtectedRecordRouteImport.update({
+  id: '/record',
+  path: '/record',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedPlanRoute = ProtectedPlanRouteImport.update({
+  id: '/plan',
+  path: '/plan',
+  getParentRoute: () => ProtectedRoute,
+} as any)
 const ProtectedNotificationsRoute = ProtectedNotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
@@ -114,6 +133,11 @@ const ProtectedMessagesRoute = ProtectedMessagesRouteImport.update({
 const ProtectedCoachingRoute = ProtectedCoachingRouteImport.update({
   id: '/coaching',
   path: '/coaching',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedCalendarRoute = ProtectedCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
   getParentRoute: () => ProtectedRoute,
 } as any)
 const ApiWebhooksWahooRoute = ApiWebhooksWahooRouteImport.update({
@@ -183,9 +207,13 @@ const ApiInternalProviderSyncWahooDrainRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ProtectedIndexRoute
   '/about': typeof AboutRoute
+  '/calendar': typeof ProtectedCalendarRoute
   '/coaching': typeof ProtectedCoachingRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
+  '/plan': typeof ProtectedPlanRoute
+  '/record': typeof ProtectedRecordRoute
+  '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -210,9 +238,13 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
+  '/calendar': typeof ProtectedCalendarRoute
   '/coaching': typeof ProtectedCoachingRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
+  '/plan': typeof ProtectedPlanRoute
+  '/record': typeof ProtectedRecordRoute
+  '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -240,9 +272,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_protected': typeof ProtectedRouteWithChildren
   '/about': typeof AboutRoute
+  '/_protected/calendar': typeof ProtectedCalendarRoute
   '/_protected/coaching': typeof ProtectedCoachingRoute
   '/_protected/messages': typeof ProtectedMessagesRoute
   '/_protected/notifications': typeof ProtectedNotificationsRoute
+  '/_protected/plan': typeof ProtectedPlanRoute
+  '/_protected/record': typeof ProtectedRecordRoute
+  '/_protected/search': typeof ProtectedSearchRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -271,9 +307,13 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/calendar'
     | '/coaching'
     | '/messages'
     | '/notifications'
+    | '/plan'
+    | '/record'
+    | '/search'
     | '/settings'
     | '/api/health'
     | '/auth/confirm'
@@ -298,9 +338,13 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/about'
+    | '/calendar'
     | '/coaching'
     | '/messages'
     | '/notifications'
+    | '/plan'
+    | '/record'
+    | '/search'
     | '/settings'
     | '/api/health'
     | '/auth/confirm'
@@ -327,9 +371,13 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_protected'
     | '/about'
+    | '/_protected/calendar'
     | '/_protected/coaching'
     | '/_protected/messages'
     | '/_protected/notifications'
+    | '/_protected/plan'
+    | '/_protected/record'
+    | '/_protected/search'
     | '/_protected/settings'
     | '/api/health'
     | '/auth/confirm'
@@ -469,6 +517,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedSettingsRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/_protected/search': {
+      id: '/_protected/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof ProtectedSearchRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/record': {
+      id: '/_protected/record'
+      path: '/record'
+      fullPath: '/record'
+      preLoaderRoute: typeof ProtectedRecordRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/plan': {
+      id: '/_protected/plan'
+      path: '/plan'
+      fullPath: '/plan'
+      preLoaderRoute: typeof ProtectedPlanRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
     '/_protected/notifications': {
       id: '/_protected/notifications'
       path: '/notifications'
@@ -488,6 +557,13 @@ declare module '@tanstack/react-router' {
       path: '/coaching'
       fullPath: '/coaching'
       preLoaderRoute: typeof ProtectedCoachingRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/calendar': {
+      id: '/_protected/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof ProtectedCalendarRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/api/webhooks/wahoo': {
@@ -571,9 +647,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface ProtectedRouteChildren {
+  ProtectedCalendarRoute: typeof ProtectedCalendarRoute
   ProtectedCoachingRoute: typeof ProtectedCoachingRoute
   ProtectedMessagesRoute: typeof ProtectedMessagesRoute
   ProtectedNotificationsRoute: typeof ProtectedNotificationsRoute
+  ProtectedPlanRoute: typeof ProtectedPlanRoute
+  ProtectedRecordRoute: typeof ProtectedRecordRoute
+  ProtectedSearchRoute: typeof ProtectedSearchRoute
   ProtectedSettingsRoute: typeof ProtectedSettingsRoute
   ProtectedIndexRoute: typeof ProtectedIndexRoute
   ProtectedUserUserIdFollowersRoute: typeof ProtectedUserUserIdFollowersRoute
@@ -582,9 +662,13 @@ interface ProtectedRouteChildren {
 }
 
 const ProtectedRouteChildren: ProtectedRouteChildren = {
+  ProtectedCalendarRoute: ProtectedCalendarRoute,
   ProtectedCoachingRoute: ProtectedCoachingRoute,
   ProtectedMessagesRoute: ProtectedMessagesRoute,
   ProtectedNotificationsRoute: ProtectedNotificationsRoute,
+  ProtectedPlanRoute: ProtectedPlanRoute,
+  ProtectedRecordRoute: ProtectedRecordRoute,
+  ProtectedSearchRoute: ProtectedSearchRoute,
   ProtectedSettingsRoute: ProtectedSettingsRoute,
   ProtectedIndexRoute: ProtectedIndexRoute,
   ProtectedUserUserIdFollowersRoute: ProtectedUserUserIdFollowersRoute,

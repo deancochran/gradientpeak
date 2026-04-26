@@ -21,6 +21,7 @@ import {
   View,
 } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { TrainingPlanDetailFocusBanner } from "@/components/training-plan/TrainingPlanDetailFocusBanner";
 import { TrainingPlanDetailHeaderActionsSection } from "@/components/training-plan/TrainingPlanDetailHeaderActionsSection";
@@ -41,6 +42,7 @@ import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsContro
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 
 type StructureSessionRow = {
   key: string;
@@ -353,6 +355,15 @@ export default function TrainingPlanOverview() {
     null,
   );
   const [activeMicrocycle, setActiveMicrocycle] = useState<number | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRemoveScheduledConfirm, setShowRemoveScheduledConfirm] = useState(false);
+  const [pendingActivityRemovalSession, setPendingActivityRemovalSession] =
+    useState<StructureSessionRow | null>(null);
+  const [statusModal, setStatusModal] = useState<null | {
+    title: string;
+    description: string;
+    onClose?: () => void;
+  }>(null);
 
   const handleOpenCalendar = useCallback(() => {
     router.navigate(ROUTES.CALENDAR as any);
@@ -365,6 +376,7 @@ export default function TrainingPlanOverview() {
     router,
     utils,
   });
+  const isCurrentScheduledPlan = !!plan?.id && scheduling.activePlan?.id === plan.id;
   const headerActions = useTrainingPlanHeaderSocialActions({
     plan,
     router,
@@ -375,15 +387,38 @@ export default function TrainingPlanOverview() {
   const deletePlanMutation = useReliableMutation(api.trainingPlans.delete, {
     invalidate: [utils.trainingPlans],
     onSuccess: () => {
-      Alert.alert("Plan Deleted", "Your training plan has been deleted", [
-        {
-          text: "OK",
-          onPress: () => router.navigate(ROUTES.PLAN.INDEX),
-        },
-      ]);
+      setShowDeleteConfirm(false);
+      setStatusModal({
+        title: "Plan Deleted",
+        description: "Your training plan has been deleted.",
+        onClose: () => router.navigate(ROUTES.PLAN.INDEX),
+      });
     },
     onError: (error) => {
-      Alert.alert("Delete Failed", error.message || "Failed to delete plan");
+      setStatusModal({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete plan.",
+      });
+    },
+  });
+  const removeScheduledPlanMutation = api.trainingPlans.updateActivePlanStatus.useMutation({
+    onSuccess: async (result) => {
+      await Promise.all([
+        invalidateTrainingPlanQueries(utils),
+        snapshot.refetchAll(),
+        refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation"),
+      ]);
+      setShowRemoveScheduledConfirm(false);
+      setStatusModal({
+        title: "Scheduled sessions removed",
+        description: `Removed ${result.scheduled_sessions_removed} scheduled session${result.scheduled_sessions_removed === 1 ? "" : "s"}. Completed sessions remain in history.`,
+      });
+    },
+    onError: (error) => {
+      setStatusModal({
+        title: "Remove failed",
+        description: error.message || "Could not remove the scheduled sessions.",
+      });
     },
   });
 
@@ -432,12 +467,18 @@ export default function TrainingPlanOverview() {
   const updatePlanStructureMutation = api.trainingPlans.update.useMutation({
     onSuccess: async () => {
       await Promise.all([invalidateTrainingPlanQueries(utils), snapshot.refetchAll()]);
-      Alert.alert("Session updated", "Training plan structure was saved.");
+      setStatusModal({
+        title: "Session updated",
+        description: "Training plan structure was saved.",
+      });
       setShowActivityPicker(false);
       setSelectedSessionRow(null);
     },
     onError: (error) => {
-      Alert.alert("Update failed", error.message || "Could not update this session assignment.");
+      setStatusModal({
+        title: "Update failed",
+        description: error.message || "Could not update this session assignment.",
+      });
     },
   });
 
@@ -458,7 +499,10 @@ export default function TrainingPlanOverview() {
 
   const handleEditStructure = useCallback(() => {
     if (!isOwnedByUser) {
-      Alert.alert("Template is read-only", "Only the template owner can edit structure.");
+      setStatusModal({
+        title: "Template is read-only",
+        description: "Only the template owner can edit structure.",
+      });
       return;
     }
     navigateTo({
@@ -469,21 +513,16 @@ export default function TrainingPlanOverview() {
 
   const handleDeletePlan = useCallback(() => {
     if (!plan) return;
-    Alert.alert(
-      "Delete Training Plan?",
-      "This action cannot be undone. All planned activities associated with this training plan will also be deleted.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            await deletePlanMutation.mutateAsync({ id: plan.id });
-          },
-        },
-      ],
-    );
+    setShowDeleteConfirm(true);
   }, [deletePlanMutation, plan]);
+
+  const handleRemoveScheduledSessions = useCallback(() => {
+    if (!plan?.id) {
+      return;
+    }
+
+    setShowRemoveScheduledConfirm(true);
+  }, [plan?.id, removeScheduledPlanMutation]);
 
   const handleOpenLinkedActivityPlan = useCallback(
     (activityPlanId: string) => {
@@ -675,19 +714,28 @@ export default function TrainingPlanOverview() {
       fallbackSessionTitle?: string,
     ) => {
       if (!plan?.id || !plan?.structure) {
-        Alert.alert("Update failed", "Training plan structure is unavailable.");
+        setStatusModal({
+          title: "Update failed",
+          description: "Training plan structure is unavailable.",
+        });
         return;
       }
 
       const nextStructure = cloneStructure(plan.structure);
       if (!nextStructure) {
-        Alert.alert("Update failed", "Training plan structure is invalid.");
+        setStatusModal({
+          title: "Update failed",
+          description: "Training plan structure is invalid.",
+        });
         return;
       }
 
       const targetSession = readSessionFromPath(nextStructure, sessionRow.sourcePath);
       if (!targetSession) {
-        Alert.alert("Update failed", "Could not locate the selected session.");
+        setStatusModal({
+          title: "Update failed",
+          description: "Could not locate the selected session.",
+        });
         return;
       }
 
@@ -740,25 +788,9 @@ export default function TrainingPlanOverview() {
     [commitSessionActivityPlan, selectedSessionRow],
   );
 
-  const handleRemoveActivityFromSession = useCallback(
-    (sessionRow: StructureSessionRow) => {
-      Alert.alert(
-        "Remove linked activity?",
-        "This session will no longer reference an activity plan.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Remove",
-            style: "destructive",
-            onPress: () => {
-              void commitSessionActivityPlan(sessionRow, null);
-            },
-          },
-        ],
-      );
-    },
-    [commitSessionActivityPlan],
-  );
+  const handleRemoveActivityFromSession = useCallback((sessionRow: StructureSessionRow) => {
+    setPendingActivityRemovalSession(sessionRow);
+  }, []);
 
   const focusContext = useMemo(() => {
     if (normalizedNextStepIntent === TPV_NEXT_STEP_INTENTS.REFINE && isOwnedByUser) {
@@ -886,6 +918,15 @@ export default function TrainingPlanOverview() {
         >
           <Text>Schedule</Text>
         </DropdownMenuItem>
+        {isCurrentScheduledPlan ? (
+          <DropdownMenuItem
+            onPress={handleRemoveScheduledSessions}
+            variant="destructive"
+            testID="training-plan-options-remove-scheduled"
+          >
+            <Text>Remove Scheduled Sessions</Text>
+          </DropdownMenuItem>
+        ) : null}
         {isOwnedByUser ? (
           <DropdownMenuItem
             onPress={handleDeletePlan}
@@ -918,6 +959,7 @@ export default function TrainingPlanOverview() {
 
           <TrainingPlanDetailHeaderActionsSection
             handleToggleLike={headerActions.handleToggleLike}
+            isCurrentScheduledPlan={isCurrentScheduledPlan}
             isLiked={headerActions.isLiked}
             likesCount={headerActions.likesCount}
             overview={{
@@ -1065,6 +1107,7 @@ export default function TrainingPlanOverview() {
             onApply={scheduling.handleApplyTemplate}
             onConcurrencyOpenChange={scheduling.setShowConcurrencyWarning}
             onOpenActivePlan={scheduling.handleOpenActivePlan}
+            onReplaceScheduledPlan={scheduling.handleReplaceScheduledPlan}
             onScheduleModalOpenChange={scheduling.setShowApplyModal}
             onSelectScheduleAnchorMode={scheduling.handleSelectScheduleAnchorMode}
             scheduleAnchorContent={scheduling.scheduleAnchorContent}
@@ -1090,6 +1133,107 @@ export default function TrainingPlanOverview() {
           />
         </View>
       </ScrollView>
+
+      {showDeleteConfirm && plan ? (
+        <AppConfirmModal
+          description="This action cannot be undone. All planned activities associated with this training plan will also be deleted."
+          onClose={() => setShowDeleteConfirm(false)}
+          primaryAction={{
+            label: deletePlanMutation.isPending ? "Deleting..." : "Delete Training Plan",
+            onPress: () => {
+              void deletePlanMutation.mutateAsync({ id: plan.id });
+            },
+            testID: "training-plan-delete-confirm",
+            variant: "destructive",
+            disabled: deletePlanMutation.isPending,
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteConfirm(false),
+            variant: "outline",
+          }}
+          testID="training-plan-delete-modal"
+          title="Delete Training Plan?"
+        />
+      ) : null}
+
+      {showRemoveScheduledConfirm && plan ? (
+        <AppConfirmModal
+          description="This removes the current scheduled set for this plan while keeping completed history."
+          onClose={() => setShowRemoveScheduledConfirm(false)}
+          primaryAction={{
+            label: removeScheduledPlanMutation.isPending
+              ? "Removing..."
+              : "Remove Scheduled Sessions",
+            onPress: () => {
+              removeScheduledPlanMutation.mutate({
+                id: plan.id,
+                status: "abandoned",
+              });
+            },
+            testID: "training-plan-remove-scheduled-confirm",
+            variant: "destructive",
+            disabled: removeScheduledPlanMutation.isPending,
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowRemoveScheduledConfirm(false),
+            variant: "outline",
+          }}
+          testID="training-plan-remove-scheduled-modal"
+          title="Remove scheduled sessions?"
+        />
+      ) : null}
+
+      {pendingActivityRemovalSession ? (
+        <AppConfirmModal
+          description="This session will no longer reference an activity plan."
+          onClose={() => setPendingActivityRemovalSession(null)}
+          primaryAction={{
+            label: updatePlanStructureMutation.isPending ? "Removing..." : "Remove Linked Activity",
+            onPress: () => {
+              void commitSessionActivityPlan(
+                pendingActivityRemovalSession,
+                null,
+                pendingActivityRemovalSession.title,
+              );
+              setPendingActivityRemovalSession(null);
+            },
+            testID: "training-plan-remove-linked-activity-confirm",
+            variant: "destructive",
+            disabled: updatePlanStructureMutation.isPending,
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setPendingActivityRemovalSession(null),
+            variant: "outline",
+          }}
+          testID="training-plan-remove-linked-activity-modal"
+          title="Remove linked activity?"
+        />
+      ) : null}
+
+      {statusModal ? (
+        <AppConfirmModal
+          description={statusModal.description}
+          onClose={() => {
+            const next = statusModal.onClose;
+            setStatusModal(null);
+            next?.();
+          }}
+          primaryAction={{
+            label: "OK",
+            onPress: () => {
+              const next = statusModal.onClose;
+              setStatusModal(null);
+              next?.();
+            },
+            testID: "training-plan-status-confirm",
+          }}
+          testID="training-plan-status-modal"
+          title={statusModal.title}
+        />
+      ) : null}
     </>
   );
 }

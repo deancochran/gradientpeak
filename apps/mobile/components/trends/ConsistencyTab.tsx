@@ -93,9 +93,9 @@ export function ConsistencyTab({
               </Text>
             </View>
           ) : (
-            <View className="p-3 bg-gray-50 rounded-lg">
-              <Text className="text-sm font-medium text-gray-900 mb-1">No Active Streak</Text>
-              <Text className="text-xs text-gray-700">
+            <View className="p-3 bg-muted rounded-lg">
+              <Text className="text-sm font-medium text-foreground mb-1">No Active Streak</Text>
+              <Text className="text-xs text-muted-foreground">
                 Complete an activity today to start a new streak!
               </Text>
             </View>

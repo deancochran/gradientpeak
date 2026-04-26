@@ -10,5 +10,6 @@ export {
   FormSwitchField,
   FormTextareaField,
   FormTextField,
+  FormTimeInputField,
   FormWeightInputField,
 } from "../form-fields/index.web";

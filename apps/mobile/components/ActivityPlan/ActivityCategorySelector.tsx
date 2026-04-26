@@ -1,10 +1,10 @@
 import { ACTIVITY_CATEGORY_CONFIG } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@repo/ui/components/dialog";
 import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";
 import { memo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
+import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 
 interface ActivityTypeSelectorProps {
   value: string;
@@ -40,11 +40,13 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
           <Text className="text-2xl">{selectedConfig?.icon || "🏃"}</Text>
         </Pressable>
 
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent className="w-[90%] max-w-[400px]">
-            <DialogHeader>
-              <DialogTitle>Select Activity Type</DialogTitle>
-            </DialogHeader>
+        {open ? (
+          <AppSelectionModal
+            description="Choose the activity type for this workout."
+            onClose={() => setOpen(false)}
+            testID="activity-type-selector-modal"
+            title="Select Activity Type"
+          >
             <ScrollView className="max-h-[400px]" showsVerticalScrollIndicator={false}>
               <View className="gap-2 py-2">
                 {Object.entries(ACTIVITY_CATEGORY_CONFIG).map(([key, config]) => {
@@ -55,10 +57,10 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
                     <Pressable
                       key={key}
                       onPress={() => handleSelect(key)}
-                      className={`flex-row items-center gap-3 p-3 rounded-lg border ${
+                      className={`flex-row items-center gap-3 rounded-lg border p-3 ${
                         isSelected
-                          ? "bg-primary/10 border-primary"
-                          : "bg-card border-border active:bg-muted"
+                          ? "border-primary bg-primary/10"
+                          : "border-border bg-card active:bg-muted"
                       }`}
                     >
                       <Text className="text-2xl">{activityConfig.icon}</Text>
@@ -69,14 +71,14 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
                       >
                         {activityConfig.shortName || activityConfig.name}
                       </Text>
-                      {isSelected && <Text className="ml-auto text-primary">✓</Text>}
+                      {isSelected ? <Text className="ml-auto text-primary">✓</Text> : null}
                     </Pressable>
                   );
                 })}
               </View>
             </ScrollView>
-          </DialogContent>
-        </Dialog>
+          </AppSelectionModal>
+        ) : null}
       </>
     );
   }
@@ -158,11 +160,13 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
             <Text className="text-2xl">{selectedConfig?.icon || "⚡"}</Text>
           </Pressable>
 
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogContent className="w-[90%] max-w-[400px]">
-              <DialogHeader>
-                <DialogTitle>Select Activity Category</DialogTitle>
-              </DialogHeader>
+          {open ? (
+            <AppSelectionModal
+              description="Choose the activity category for this workout."
+              onClose={() => setOpen(false)}
+              testID="activity-category-selector-modal"
+              title="Select Activity Category"
+            >
               <ScrollView className="max-h-[400px]" showsVerticalScrollIndicator={false}>
                 <View className="gap-2 py-2">
                   {Object.entries(ACTIVITY_CATEGORY_CONFIG).map(([key, config]) => {
@@ -172,10 +176,10 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
                       <Pressable
                         key={key}
                         onPress={() => handleSelect(key)}
-                        className={`flex-row items-center gap-3 p-3 rounded-lg border ${
+                        className={`flex-row items-center gap-3 rounded-lg border p-3 ${
                           isSelected
-                            ? "bg-primary/10 border-primary"
-                            : "bg-card border-border active:bg-muted"
+                            ? "border-primary bg-primary/10"
+                            : "border-border bg-card active:bg-muted"
                         }`}
                       >
                         <Text className="text-2xl">{config.icon}</Text>
@@ -186,14 +190,14 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
                         >
                           {config.name}
                         </Text>
-                        {isSelected && <Text className="ml-auto text-primary">✓</Text>}
+                        {isSelected ? <Text className="ml-auto text-primary">✓</Text> : null}
                       </Pressable>
                     );
                   })}
                 </View>
               </ScrollView>
-            </DialogContent>
-          </Dialog>
+            </AppSelectionModal>
+          ) : null}
         </>
       );
     }

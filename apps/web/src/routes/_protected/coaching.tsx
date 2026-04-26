@@ -11,14 +11,6 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu";
-import {
   Table,
   TableBody,
   TableCell,
@@ -26,10 +18,10 @@ import {
   TableHeader,
   TableRow,
 } from "@repo/ui/components/table";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { MoreHorizontal, Plus } from "lucide-react";
-import { toast } from "sonner";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Plus } from "lucide-react";
 
+import { MessageActionForm } from "../../components/protected/message-action-form";
 import { api } from "../../lib/api/client";
 
 export const Route = createFileRoute("/_protected/coaching")({
@@ -37,7 +29,6 @@ export const Route = createFileRoute("/_protected/coaching")({
 });
 
 function CoachingPage() {
-  const navigate = useNavigate();
   const { data: roster = [], isLoading } = api.coaching.getRoster.useQuery();
 
   return (
@@ -82,14 +73,7 @@ function CoachingPage() {
                 </TableHeader>
                 <TableBody>
                   {roster.map((entry) => (
-                    <RosterRow
-                      key={entry.athlete_id}
-                      entry={entry}
-                      onMessage={() => toast.info("Messaging starts from the Messages view today.")}
-                      onViewProfile={() =>
-                        navigate({ to: "/user/$userId", params: { userId: entry.athlete_id } })
-                      }
-                    />
+                    <RosterRow key={entry.athlete_id} entry={entry} />
                   ))}
                 </TableBody>
               </Table>
@@ -101,15 +85,7 @@ function CoachingPage() {
   );
 }
 
-function RosterRow({
-  entry,
-  onMessage,
-  onViewProfile,
-}: {
-  entry: CoachRosterEntry;
-  onMessage: () => void;
-  onViewProfile: () => void;
-}) {
+function RosterRow({ entry }: { entry: CoachRosterEntry }) {
   const profile = entry.profile;
   const name = getProfileDisplayName(profile);
   const username = profile?.username ? `@${profile.username}` : null;
@@ -134,27 +110,18 @@ function RosterRow({
         </Badge>
       </TableCell>
       <TableCell>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Open athlete actions</span>
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuItem asChild>
-              <Link to="/user/$userId" params={{ userId: entry.athlete_id }}>
-                View Profile
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onMessage}>Message</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-600" disabled>
-              Remove Athlete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center justify-end gap-2">
+          <Button asChild variant="ghost" size="sm">
+            <Link
+              to="/user/$userId"
+              params={{ userId: entry.athlete_id }}
+              search={{ flash: undefined, flashType: undefined }}
+            >
+              View Profile
+            </Link>
+          </Button>
+          <MessageActionForm redirectTo="/coaching" targetUserId={entry.athlete_id} />
+        </div>
       </TableCell>
     </TableRow>
   );

@@ -24,9 +24,8 @@ import { File as ExpoFile } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { Camera, Loader2 } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
@@ -37,6 +36,8 @@ import {
 } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
+import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
@@ -75,6 +76,19 @@ function ProfileEditScreen() {
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
   const [avatarUploadLoading, setAvatarUploadLoading] = useState(false);
+  const [showAvatarSourceModal, setShowAvatarSourceModal] = useState(false);
+  const [statusModal, setStatusModal] = useState<null | {
+    title: string;
+    description: string;
+    onClose?: () => void;
+  }>(null);
+  const avatarSourceActionsRef = useRef<{
+    launchCamera: () => Promise<void>;
+    launchImageLibrary: () => Promise<void>;
+  }>({
+    launchCamera: async () => undefined,
+    launchImageLibrary: async () => undefined,
+  });
   const utils = api.useUtils();
 
   const { data: powerCurve } = api.analytics.getSeasonBestCurve.useQuery({
@@ -127,6 +141,18 @@ function ProfileEditScreen() {
     },
   });
 
+  useEffect(() => {
+    form.reset({
+      username: profile?.username || null,
+      bio: profile?.bio || null,
+      dob: profile?.dob || null,
+      weight_kg: profile?.weight_kg || null,
+      preferred_units: profile?.preferred_units || "metric",
+      language: profile?.language || "en",
+      is_public: profile?.is_public ?? true,
+    });
+  }, [form, profile]);
+
   const preferredWeightUnit = form.watch("preferred_units") === "imperial" ? "lbs" : "kg";
 
   const submitForm = useZodFormSubmit<ProfileEditForm>({
@@ -134,21 +160,25 @@ function ProfileEditScreen() {
     onSubmit: async (data) => {
       try {
         await updateProfileMutation.mutateAsync({
-          username: data.username || undefined,
-          bio: data.bio || undefined,
-          dob: data.dob || undefined,
-          weight_kg: data.weight_kg || undefined,
-          preferred_units: data.preferred_units || undefined,
-          language: data.language || undefined,
+          username: data.username || null,
+          bio: data.bio || null,
+          dob: data.dob || null,
+          weight_kg: data.weight_kg || null,
+          preferred_units: data.preferred_units || null,
+          language: data.language || null,
           is_public: data.is_public ?? undefined,
         });
 
         await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
-        Alert.alert("Success", "Profile updated successfully!");
-
-        if (!avatarUploadLoading) {
-          router.back();
-        }
+        setStatusModal({
+          title: "Success",
+          description: "Profile updated successfully!",
+          onClose: () => {
+            if (!avatarUploadLoading) {
+              router.back();
+            }
+          },
+        });
       } catch (error) {
         if (applyServerFormErrors(form, error)) {
           return;
@@ -179,32 +209,8 @@ function ProfileEditScreen() {
       return;
     }
 
-    // Show options (Camera or Library)
-    const showOptions = () => {
-      if (Platform.OS === "ios") {
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            options: ["Cancel", "Take Photo", "Choose from Library"],
-            cancelButtonIndex: 0,
-          },
-          async (buttonIndex) => {
-            if (buttonIndex === 1) {
-              await launchCamera();
-            } else if (buttonIndex === 2) {
-              await launchImageLibrary();
-            }
-          },
-        );
-      } else {
-        Alert.alert("Select Avatar", "Choose an option", [
-          { text: "Cancel", style: "cancel" },
-          { text: "Take Photo", onPress: launchCamera },
-          { text: "Choose from Library", onPress: launchImageLibrary },
-        ]);
-      }
-    };
-
     const launchCamera = async () => {
+      setShowAvatarSourceModal(false);
       const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
       if (cameraStatus !== "granted") {
         Alert.alert("Permission Required", "Camera permission is required to take photos.");
@@ -224,6 +230,7 @@ function ProfileEditScreen() {
     };
 
     const launchImageLibrary = async () => {
+      setShowAvatarSourceModal(false);
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: "images",
         allowsEditing: true,
@@ -236,7 +243,11 @@ function ProfileEditScreen() {
       }
     };
 
-    showOptions();
+    setShowAvatarSourceModal(true);
+    avatarSourceActionsRef.current = {
+      launchCamera,
+      launchImageLibrary,
+    };
   };
 
   const uploadAvatar = async (uri: string) => {
@@ -287,10 +298,10 @@ function ProfileEditScreen() {
       await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
     } catch (error) {
       console.error("Avatar upload error:", error);
-      Alert.alert(
-        "Upload Failed",
-        error instanceof Error ? error.message : "Failed to upload avatar",
-      );
+      setStatusModal({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload avatar",
+      });
     } finally {
       setAvatarUploadLoading(false);
     }
@@ -507,6 +518,58 @@ function ProfileEditScreen() {
           </Button>
         </View>
       </ScrollView>
+      {showAvatarSourceModal ? (
+        <AppSelectionModal
+          description="Choose how you want to update your profile photo."
+          onClose={() => setShowAvatarSourceModal(false)}
+          testID="profile-avatar-source-modal"
+          title="Select Avatar"
+        >
+          <View className="gap-3">
+            <TouchableOpacity
+              onPress={() => {
+                void avatarSourceActionsRef.current.launchCamera();
+              }}
+              className="rounded-xl border border-border bg-card px-4 py-4"
+              activeOpacity={0.8}
+              testID="profile-avatar-source-camera"
+            >
+              <Text className="text-sm font-semibold text-foreground">Take Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                void avatarSourceActionsRef.current.launchImageLibrary();
+              }}
+              className="rounded-xl border border-border bg-card px-4 py-4"
+              activeOpacity={0.8}
+              testID="profile-avatar-source-library"
+            >
+              <Text className="text-sm font-semibold text-foreground">Choose from Library</Text>
+            </TouchableOpacity>
+          </View>
+        </AppSelectionModal>
+      ) : null}
+      {statusModal ? (
+        <AppConfirmModal
+          description={statusModal.description}
+          onClose={() => {
+            const next = statusModal.onClose;
+            setStatusModal(null);
+            next?.();
+          }}
+          primaryAction={{
+            label: "OK",
+            onPress: () => {
+              const next = statusModal.onClose;
+              setStatusModal(null);
+              next?.();
+            },
+            testID: "profile-edit-status-confirm",
+          }}
+          testID="profile-edit-status-modal"
+          title={statusModal.title}
+        />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }

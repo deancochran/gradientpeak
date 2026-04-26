@@ -83,6 +83,32 @@ function buildProjectionLookupKey(activityPlanId: string, fingerprint: string) {
   return `${activityPlanId}:${fingerprint}`;
 }
 
+function dedupeProjectionUpserts(rows: ActivityPlanDerivedMetricsCacheInsert[]) {
+  const deduped = new Map<string, ActivityPlanDerivedMetricsCacheInsert>();
+
+  for (const row of rows) {
+    deduped.set(buildProjectionLookupKey(row.activity_plan_id, row.input_fingerprint), row);
+  }
+
+  return [...deduped.values()];
+}
+
+function toRoundedIntegerOrNull(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.round(value);
+}
+
+function toFiniteNumberOrNull(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return value;
+}
+
 function normalizeRouteForEstimation(
   route:
     | {
@@ -179,20 +205,18 @@ function buildProjectionUpsert<TPlan extends EstimationActivityPlanInput>(
     profile_id: profileId,
     estimator_version: ESTIMATOR_VERSION,
     input_fingerprint: fingerprint,
-    estimated_tss: Math.round(estimatedPlan.authoritative_metrics.estimated_tss),
-    estimated_duration_seconds: Math.round(estimatedPlan.authoritative_metrics.estimated_duration),
-    intensity_factor: estimatedPlan.authoritative_metrics.intensity_factor,
-    estimated_calories:
-      estimatedPlan.estimated_calories === undefined
-        ? null
-        : Math.round(estimatedPlan.estimated_calories),
-    estimated_distance_meters:
-      estimatedPlan.authoritative_metrics.estimated_distance === undefined
-        ? null
-        : Math.round(estimatedPlan.authoritative_metrics.estimated_distance),
+    estimated_tss: toRoundedIntegerOrNull(estimatedPlan.authoritative_metrics.estimated_tss),
+    estimated_duration_seconds: toRoundedIntegerOrNull(
+      estimatedPlan.authoritative_metrics.estimated_duration,
+    ),
+    intensity_factor: toFiniteNumberOrNull(estimatedPlan.authoritative_metrics.intensity_factor),
+    estimated_calories: toRoundedIntegerOrNull(estimatedPlan.estimated_calories),
+    estimated_distance_meters: toRoundedIntegerOrNull(
+      estimatedPlan.authoritative_metrics.estimated_distance,
+    ),
     estimated_zones: estimatedPlan.estimated_zones ?? [],
     confidence: estimatedPlan.confidence,
-    confidence_score: Math.round(estimatedPlan.confidence_score),
+    confidence_score: toRoundedIntegerOrNull(estimatedPlan.confidence_score),
     computed_at: now,
     last_accessed_at: now,
     updated_at: now,
@@ -259,9 +283,11 @@ async function upsertActivityPlanProjections(
 ) {
   if (rows.length === 0) return;
 
+  const dedupedRows = dedupeProjectionUpserts(rows);
+
   await db
     .insert(activityPlanDerivedMetricsCache)
-    .values(rows)
+    .values(dedupedRows)
     .onConflictDoUpdate({
       target: [
         activityPlanDerivedMetricsCache.activity_plan_id,

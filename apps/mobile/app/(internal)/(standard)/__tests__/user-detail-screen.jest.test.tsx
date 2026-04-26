@@ -83,6 +83,13 @@ jest.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
 }));
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
+}));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/input", () => ({ __esModule: true, Input: createHost("Input") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
@@ -114,6 +121,7 @@ jest.mock("@repo/ui/components/toggle-group", () => {
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Check: createHost("Check"),
+  Ellipsis: createHost("Ellipsis"),
   UserPlus: createHost("UserPlus"),
   UserMinus: createHost("UserMinus"),
   Clock: createHost("Clock"),
@@ -175,7 +183,8 @@ describe("user detail own vs other controls", () => {
 
     renderNative(<UserDetailScreenWithErrorBoundary />);
 
-    expect(screen.getByTestId("user-detail-edit-trigger")).toBeTruthy();
+    expect(screen.getByTestId("user-detail-options-trigger")).toBeTruthy();
+    expect(screen.getByTestId("user-detail-options-edit")).toBeTruthy();
     expect(screen.getByTestId("account-section")).toBeTruthy();
     expect(screen.getByText("Your account")).toBeTruthy();
     expect(screen.getByText("Quick Links")).toBeTruthy();
@@ -199,7 +208,7 @@ describe("user detail own vs other controls", () => {
 
     renderNative(<UserDetailScreenWithErrorBoundary />);
 
-    expect(screen.queryByTestId("user-detail-edit-trigger")).toBeNull();
+    expect(screen.queryByTestId("user-detail-options-trigger")).toBeNull();
     expect(screen.queryByTestId("account-section")).toBeNull();
   });
 

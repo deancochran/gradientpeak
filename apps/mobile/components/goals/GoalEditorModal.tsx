@@ -6,10 +6,13 @@ import {
 } from "@repo/core";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
-import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { DurationInput } from "@repo/ui/components/duration-input";
-import { Input } from "@repo/ui/components/input";
-import { IntegerStepper } from "@repo/ui/components/integer-stepper";
+import {
+  Form,
+  FormDateInputField,
+  FormIntegerStepperField,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { PaceInput } from "@repo/ui/components/pace-input";
 import {
   NativeSelectScrollView,
@@ -21,8 +24,11 @@ import {
 } from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
-import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, TouchableOpacity, View } from "react-native";
+import { useZodForm } from "@repo/ui/hooks";
+import React, { useEffect, useMemo } from "react";
+import { Pressable, ScrollView, View } from "react-native";
+import { z } from "zod";
+import { AppFormModal } from "@/components/shared/AppFormModal";
 
 interface GoalEditorModalProps {
   visible: boolean;
@@ -241,6 +247,30 @@ function SelectionIndicator({ active }: { active: boolean }) {
   );
 }
 
+const goalEditorFormSchema = z.object({
+  title: z.string(),
+  targetDate: z.string(),
+  importance: z.number(),
+  goalType: z.enum([
+    "race_performance",
+    "completion",
+    "pace_threshold",
+    "power_threshold",
+    "hr_threshold",
+    "consistency",
+  ]),
+  activityCategory: z.enum(["run", "bike", "swim", "other"]),
+  raceDistanceKm: z.number().nullable().optional(),
+  raceTargetMode: z.enum(["time", "pace"]).optional(),
+  targetDuration: z.string().optional(),
+  targetPace: z.string().optional(),
+  thresholdTestDuration: z.string().optional(),
+  targetWatts: z.number().nullable().optional(),
+  targetBpm: z.number().nullable().optional(),
+  consistencySessionsPerWeek: z.number().nullable().optional(),
+  consistencyWeeks: z.number().nullable().optional(),
+});
+
 export function GoalEditorModal({
   visible,
   initialValue,
@@ -250,18 +280,25 @@ export function GoalEditorModal({
   onClose,
   onSubmit,
 }: GoalEditorModalProps) {
-  const [draft, setDraft] = useState<GoalEditorDraft>(initialValue);
+  const form = useZodForm({
+    schema: goalEditorFormSchema,
+    defaultValues: {
+      ...createEmptyGoalDraft(),
+      ...initialValue,
+    },
+  });
+  const draft = form.watch() as GoalEditorDraft;
 
   useEffect(() => {
     if (!visible) {
       return;
     }
 
-    setDraft({
+    form.reset({
       ...createEmptyGoalDraft(),
       ...initialValue,
     });
-  }, [initialValue, visible]);
+  }, [form, initialValue, visible]);
 
   const goalTypeOption = useMemo(() => getGoalTypeOption(draft.goalType), [draft.goalType]);
   const distancePresets = useMemo(
@@ -276,13 +313,18 @@ export function GoalEditorModal({
     !isSubmitting;
 
   const updateDraft = (patch: Partial<GoalEditorDraft>) => {
-    setDraft((current) => ({ ...current, ...patch }));
+    for (const [key, value] of Object.entries(patch)) {
+      form.setValue(key as keyof z.infer<typeof goalEditorFormSchema>, value as never, {
+        shouldDirty: true,
+      });
+    }
   };
 
   const handleGoalTypeChange = (goalType: GoalEditorGoalType) => {
     const base = createEmptyGoalDraft();
+    const current = form.getValues() as GoalEditorDraft;
 
-    setDraft((current) => ({
+    form.reset({
       ...base,
       title: current.title,
       targetDate: current.targetDate,
@@ -294,13 +336,14 @@ export function GoalEditorModal({
           : goalType === "power_threshold"
             ? "bike"
             : current.activityCategory,
-    }));
+    });
   };
 
   const handlePresetPress = (preset: GoalPreset) => {
     const base = createEmptyGoalDraft();
+    const current = form.getValues() as GoalEditorDraft;
 
-    setDraft((current) => ({
+    form.reset({
       ...base,
       title: preset.title,
       targetDate: current.targetDate,
@@ -309,29 +352,28 @@ export function GoalEditorModal({
       activityCategory: preset.activityCategory,
       raceDistanceKm: preset.raceDistanceKm ?? base.raceDistanceKm,
       raceTargetMode: preset.raceTargetMode ?? base.raceTargetMode,
-    }));
+    });
   };
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <View className="flex-1 bg-background">
-        <View className="flex-row items-center justify-between border-b border-border px-4 py-4">
-          <Text className="text-lg font-semibold text-foreground">{title}</Text>
-          <TouchableOpacity
-            onPress={onClose}
-            className="rounded-md bg-muted px-3 py-2"
-            activeOpacity={0.8}
-          >
-            <Text className="text-xs text-foreground">Close</Text>
-          </TouchableOpacity>
-        </View>
+  if (!visible) {
+    return null;
+  }
 
-        <ScrollView className="flex-1" contentContainerClassName="gap-4 px-4 py-4">
+  return (
+    <AppFormModal
+      onClose={onClose}
+      primaryAction={
+        <Button onPress={() => onSubmit(form.getValues() as GoalEditorDraft)} disabled={!canSubmit}>
+          <Text className="text-primary-foreground">
+            {isSubmitting ? "Saving..." : submitLabel}
+          </Text>
+        </Button>
+      }
+      testID="goal-editor-modal"
+      title={title}
+    >
+      <Form {...form}>
+        <View className="gap-4">
           <View className="gap-1 rounded-md border border-border bg-muted/10 px-3 py-3">
             <Text className="text-sm font-medium text-foreground">
               {goalTypeOption?.label ?? "Goal"}
@@ -389,24 +431,23 @@ export function GoalEditorModal({
             </Select>
           </View>
 
-          <View className="gap-2">
-            <Text className="text-sm font-medium text-foreground">Goal title</Text>
-            <Input
-              value={draft.title}
-              onChangeText={(text) => updateDraft({ title: text })}
-              placeholder="e.g., Spring 10K or Raise FTP"
-              editable={!isSubmitting}
-            />
-          </View>
+          <FormTextField
+            control={form.control}
+            disabled={isSubmitting}
+            label="Goal title"
+            name="title"
+            placeholder="e.g., Spring 10K or Raise FTP"
+            testId="goal-editor-title-input"
+          />
 
-          <DateField
-            id="goal-target-date"
+          <FormDateInputField
+            control={form.control}
             label="Target date"
-            value={draft.targetDate || undefined}
-            onChange={(value) => updateDraft({ targetDate: value ?? "" })}
+            name="targetDate"
             minimumDate={new Date()}
             required
-            helperText="Goals stay linked to a milestone date."
+            description="Choose the date this goal should be tracked against on your calendar."
+            testId="goal-target-date"
           />
 
           {supportsActivityChoice(draft.goalType) ? (
@@ -640,46 +681,38 @@ export function GoalEditorModal({
           {draft.goalType === "consistency" ? (
             <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
               <Text className="text-sm font-medium text-foreground">Consistency target</Text>
-              <IntegerStepper
-                id="goal-consistency-sessions"
+              <FormIntegerStepperField
+                control={form.control}
                 label="Sessions per week"
-                value={draft.consistencySessionsPerWeek ?? 0}
+                name="consistencySessionsPerWeek"
                 min={0}
                 max={14}
-                onChange={(value) => updateDraft({ consistencySessionsPerWeek: value })}
-                helperText="Choose the weekly rhythm you actually want to keep."
+                description="Choose the weekly rhythm you actually want to keep."
+                testId="goal-consistency-sessions"
               />
-              <IntegerStepper
-                id="goal-consistency-weeks"
+              <FormIntegerStepperField
+                control={form.control}
                 label="Planned weeks"
-                value={draft.consistencyWeeks ?? 0}
+                name="consistencyWeeks"
                 min={0}
                 max={52}
-                onChange={(value) => updateDraft({ consistencyWeeks: value })}
-                helperText="Optional, but useful when the consistency block has an end date."
+                description="Optional, but useful when the consistency block has an end date."
+                testId="goal-consistency-weeks"
               />
             </View>
           ) : null}
 
-          <IntegerStepper
-            id="goal-importance"
+          <FormIntegerStepperField
+            control={form.control}
             label="Importance"
-            value={draft.importance}
+            name="importance"
             min={0}
             max={10}
-            onChange={(value) => updateDraft({ importance: value })}
-            helperText="Higher priority goals get more planning attention."
+            description="Higher priority goals get more planning attention."
+            testId="goal-importance"
           />
-        </ScrollView>
-
-        <View className="border-t border-border px-4 py-4">
-          <Button onPress={() => onSubmit(draft)} disabled={!canSubmit} className="w-full">
-            <Text className="text-primary-foreground">
-              {isSubmitting ? "Saving..." : submitLabel}
-            </Text>
-          </Button>
         </View>
-      </View>
-    </Modal>
+      </Form>
+    </AppFormModal>
   );
 }

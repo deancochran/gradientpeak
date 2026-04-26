@@ -1,21 +1,14 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/alert";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import { DateInput } from "@repo/ui/components/date-input";
 import { Icon } from "@repo/ui/components/icon";
 import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import {
-  AlertCircle,
-  Calendar as CalendarIcon,
-  CheckCircle,
-  Lock,
-  TrendingUp,
-} from "lucide-react-native";
+import { AlertCircle, CheckCircle, Lock, TrendingUp } from "lucide-react-native";
 import React from "react";
-import { Platform, View } from "react-native";
+import { View } from "react-native";
 
 interface PeriodizationTemplate {
   starting_ctl: number;
@@ -38,7 +31,6 @@ export function PeriodizationForm({
   currentCTL = 0, // Default to 0 for new users
 }: PeriodizationFormProps) {
   const [isEnabled, setIsEnabled] = React.useState(!!data);
-  const [showDatePicker, setShowDatePicker] = React.useState(false);
 
   // Use currentCTL as starting point (not editable)
   const startingCtl = currentCTL;
@@ -122,21 +114,6 @@ export function PeriodizationForm({
     }
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === "ios");
-    if (selectedDate) {
-      setTargetDate(selectedDate);
-      if (isEnabled) {
-        onChange({
-          starting_ctl: startingCtl,
-          target_ctl: parseInt(targetCtlText) || 85,
-          ramp_rate: (parseInt(rampRateText) || 5) / 100,
-          target_date: selectedDate.toISOString().split("T")[0] || "",
-        });
-      }
-    }
-  };
-
   return (
     <View className="gap-6">
       {/* Header */}
@@ -144,7 +121,7 @@ export function PeriodizationForm({
         <Text className="text-2xl font-bold">Periodization Planning</Text>
         <Text className="text-muted-foreground">
           Use periodization to progressively build your Chronic Training Load (CTL) toward a
-          specific goal or event.
+          specific goal target.
         </Text>
       </View>
 
@@ -233,25 +210,32 @@ export function PeriodizationForm({
           <View className="gap-3">
             <Label className="text-base font-semibold">Target Date</Label>
             <Text className="text-sm text-muted-foreground">
-              Your goal date (event, race, or fitness milestone)
+              Your goal date for this fitness target
             </Text>
-            <Button
-              variant="outline"
-              onPress={() => setShowDatePicker(true)}
-              className="justify-start"
-            >
-              <Icon as={CalendarIcon} size={18} className="text-foreground mr-2" />
-              <Text className="text-foreground">{targetDate.toLocaleDateString()}</Text>
-            </Button>
-            {showDatePicker && (
-              <DateTimePicker
-                value={targetDate}
-                mode="date"
-                display="default"
-                onChange={handleDateChange}
-                minimumDate={new Date()}
-              />
-            )}
+            <DateInput
+              accessibilityHint="Choose the goal date for this target"
+              id="periodization-target-date"
+              label="Target Date"
+              minimumDate={new Date()}
+              onChange={(value) => {
+                if (!value) {
+                  return;
+                }
+
+                const selectedDate = new Date(`${value}T12:00:00.000Z`);
+                setTargetDate(selectedDate);
+                if (isEnabled) {
+                  onChange({
+                    starting_ctl: startingCtl,
+                    target_ctl: parseInt(targetCtlText) || 85,
+                    ramp_rate: (parseInt(rampRateText) || 5) / 100,
+                    target_date: value,
+                  });
+                }
+              }}
+              pickerPresentation="modal"
+              value={targetDate.toISOString().split("T")[0] || ""}
+            />
             {errors.target_date && (
               <Text className="text-destructive text-xs">{errors.target_date}</Text>
             )}

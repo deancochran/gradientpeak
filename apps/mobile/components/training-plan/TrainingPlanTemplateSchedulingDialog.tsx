@@ -1,17 +1,9 @@
 import { Button } from "@repo/ui/components/button";
 import { DateInput as DateField } from "@repo/ui/components/date-input";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@repo/ui/components/dialog";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
+import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
 
 type ScheduleAnchorMode = "start" | "finish";
 
@@ -20,6 +12,7 @@ interface TrainingPlanTemplateSchedulingDialogProps {
   onApply: () => void;
   onConcurrencyOpenChange: (open: boolean) => void;
   onOpenActivePlan: () => void;
+  onReplaceScheduledPlan: () => void;
   onScheduleModalOpenChange: (open: boolean) => void;
   onSelectScheduleAnchorMode: (mode: ScheduleAnchorMode) => void;
   scheduleAnchorContent: {
@@ -51,6 +44,7 @@ export function TrainingPlanTemplateSchedulingDialog({
   onApply,
   onConcurrencyOpenChange,
   onOpenActivePlan,
+  onReplaceScheduledPlan,
   onScheduleModalOpenChange,
   onSelectScheduleAnchorMode,
   scheduleAnchorContent,
@@ -60,74 +54,23 @@ export function TrainingPlanTemplateSchedulingDialog({
   showScheduleModal,
   templateAnchorDate,
 }: TrainingPlanTemplateSchedulingDialogProps) {
+  const handleClose = () => {
+    onConcurrencyOpenChange(false);
+    onScheduleModalOpenChange(false);
+  };
+
+  const handleOpenCurrentPlan = () => {
+    onConcurrencyOpenChange(false);
+    onOpenActivePlan();
+  };
+
   return (
     <>
-      <Dialog open={showScheduleModal} onOpenChange={onScheduleModalOpenChange}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Schedule this plan</DialogTitle>
-            <DialogDescription>
-              Choose one anchor for this schedule. You can either place week 1 on a date or finish
-              the whole plan by a date.
-            </DialogDescription>
-          </DialogHeader>
-          <View className="gap-4 py-4">
-            <View className="gap-2">
-              <Text className="text-sm font-medium">How should this schedule line up?</Text>
-              <View className="gap-2">
-                <TouchableOpacity
-                  onPress={() => onSelectScheduleAnchorMode("start")}
-                  className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
-                  activeOpacity={0.8}
-                  testID="training-plan-anchor-start"
-                >
-                  <View className="flex-row items-start gap-3">
-                    <SelectionIndicator active={scheduleAnchorMode === "start"} />
-                    <View className="flex-1">
-                      <Text className="text-sm font-semibold text-foreground">Start On</Text>
-                      <Text className="mt-1 text-xs text-muted-foreground">
-                        Put week 1 on a specific date.
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => onSelectScheduleAnchorMode("finish")}
-                  className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "finish" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
-                  activeOpacity={0.8}
-                  testID="training-plan-anchor-finish"
-                >
-                  <View className="flex-row items-start gap-3">
-                    <SelectionIndicator active={scheduleAnchorMode === "finish"} />
-                    <View className="flex-1">
-                      <Text className="text-sm font-semibold text-foreground">Finish By</Text>
-                      <Text className="mt-1 text-xs text-muted-foreground">
-                        Back-schedule the plan so the final session lands by a specific date.
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </View>
-            <View className="gap-2">
-              <DateField
-                id="apply-template-anchor-date"
-                label={scheduleAnchorContent.fieldLabel}
-                value={templateAnchorDate || undefined}
-                onChange={(nextDate) => setTemplateAnchorDate(nextDate ?? "")}
-                placeholder={scheduleAnchorContent.fieldPlaceholder}
-                helperText={scheduleAnchorContent.helperText}
-                clearable
-                pickerPresentation="modal"
-              />
-            </View>
-          </View>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline" testID="training-plan-schedule-cancel">
-                <Text className="text-foreground font-medium">Cancel</Text>
-              </Button>
-            </DialogClose>
+      {showScheduleModal ? (
+        <AppFormModal
+          description="Choose one anchor for this schedule. You can either place week 1 on a date or finish the whole plan by a date."
+          onClose={handleClose}
+          primaryAction={
             <Button
               onPress={onApply}
               disabled={applyPending}
@@ -137,31 +80,93 @@ export function TrainingPlanTemplateSchedulingDialog({
                 {applyPending ? "Scheduling..." : "Schedule"}
               </Text>
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showConcurrencyWarning} onOpenChange={onConcurrencyOpenChange}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Current plan already scheduled</DialogTitle>
-          </DialogHeader>
-          <DialogDescription>
-            You already have scheduled sessions from a training plan. Finish or abandon that plan
-            before scheduling another one.
-          </DialogDescription>
-          <DialogFooter className="mt-4">
-            <DialogClose asChild>
-              <Button variant="outline">
-                <Text className="text-foreground font-medium">Cancel</Text>
-              </Button>
-            </DialogClose>
-            <Button onPress={onOpenActivePlan}>
-              <Text className="text-primary-foreground font-semibold">Open Current Plan</Text>
+          }
+          secondaryAction={
+            <Button variant="outline" onPress={handleClose} testID="training-plan-schedule-cancel">
+              <Text className="text-foreground font-medium">Cancel</Text>
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          }
+          testID="training-plan-schedule-modal"
+          title="Schedule this plan"
+        >
+          <View className="gap-2 rounded-2xl border border-border bg-card p-4">
+            <Text className="text-sm font-medium text-foreground">
+              How should this schedule line up?
+            </Text>
+            <View className="gap-2">
+              <TouchableOpacity
+                onPress={() => onSelectScheduleAnchorMode("start")}
+                className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+                activeOpacity={0.8}
+                testID="training-plan-anchor-start"
+              >
+                <View className="flex-row items-start gap-3">
+                  <SelectionIndicator active={scheduleAnchorMode === "start"} />
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-foreground">Start On</Text>
+                    <Text className="mt-1 text-xs text-muted-foreground">
+                      Put week 1 on a specific date.
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onSelectScheduleAnchorMode("finish")}
+                className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "finish" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+                activeOpacity={0.8}
+                testID="training-plan-anchor-finish"
+              >
+                <View className="flex-row items-start gap-3">
+                  <SelectionIndicator active={scheduleAnchorMode === "finish"} />
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-foreground">Finish By</Text>
+                    <Text className="mt-1 text-xs text-muted-foreground">
+                      Back-schedule the plan so the final session lands by a specific date.
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View className="rounded-2xl border border-border bg-card p-4">
+            <DateField
+              id="apply-template-anchor-date"
+              label={scheduleAnchorContent.fieldLabel}
+              value={templateAnchorDate || undefined}
+              onChange={(nextDate) => setTemplateAnchorDate(nextDate ?? "")}
+              placeholder={scheduleAnchorContent.fieldPlaceholder}
+              helperText={scheduleAnchorContent.helperText}
+              clearable
+              pickerPresentation="modal"
+            />
+          </View>
+        </AppFormModal>
+      ) : null}
+
+      {showConcurrencyWarning ? (
+        <AppConfirmModal
+          description="Replacing it will remove the current scheduled set while keeping completed history."
+          onClose={handleClose}
+          primaryAction={{
+            label: "Replace Scheduled Plan",
+            onPress: onReplaceScheduledPlan,
+            testID: "training-plan-replace-confirm",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: handleClose,
+            variant: "outline",
+          }}
+          tertiaryAction={{
+            label: "Open Current Plan",
+            onPress: handleOpenCurrentPlan,
+            variant: "outline",
+          }}
+          testID="training-plan-replace-modal"
+          title="Current plan already scheduled"
+        />
+      ) : null}
     </>
   );
 }

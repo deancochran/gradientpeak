@@ -86,6 +86,19 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => pushMock,
 }));
 
+jest.mock("@/lib/hooks/useProfileGoals", () => ({
+  __esModule: true,
+  useProfileGoals: () => ({
+    goals: [
+      {
+        id: "goal-1",
+        title: "Spring A Race",
+        target_date: today,
+      },
+    ],
+  }),
+}));
+
 jest.mock("@react-navigation/native", () => ({
   __esModule: true,
   useFocusEffect: (callback: () => void) => callback(),
@@ -406,8 +419,18 @@ describe("calendar redesign screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(screen.getByTestId("calendar-month-planned-signal-2026-03-23")).toBeTruthy();
+    expect(screen.getByTestId("calendar-month-day-chip-2026-03-23").props.className).toContain(
+      "bg-primary",
+    );
     expect(screen.queryByTestId("calendar-month-planned-signal-2026-03-24")).toBeNull();
     expect(screen.queryByTestId("calendar-month-planned-signal-2026-03-25")).toBeNull();
+  });
+
+  it("renders a lightweight goal signal on goal target days", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-month-goal-signal-2026-03-23")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-month-goal-signal-2026-03-24")).toBeNull();
   });
 
   it("renders out-of-month filler cells as non-interactive blanks", () => {

@@ -21,6 +21,8 @@ const navigateToMock = jest.fn();
 const routeCardMock = jest.fn((props: any) =>
   React.createElement("RouteCard", props, props.children),
 );
+const routeGetUseQueryMock = jest.fn(() => ({ data: routeMock }));
+const routeLoadFullUseQueryMock = jest.fn(() => ({ data: routeFullMock }));
 
 const fetchedPlanMock = {
   id: "plan-123",
@@ -150,8 +152,10 @@ jest.mock("@/lib/api", () => ({
       getById: { useQuery: () => ({ data: null, error: null, isLoading: false }) },
     },
     routes: {
-      get: { useQuery: () => ({ data: routeMock }) },
-      loadFull: { useQuery: () => ({ data: routeFullMock }) },
+      get: { useQuery: (input: any, options: any) => routeGetUseQueryMock(input, options) },
+      loadFull: {
+        useQuery: (input: any, options: any) => routeLoadFullUseQueryMock(input, options),
+      },
     },
     social: {
       toggleLike: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
@@ -250,6 +254,12 @@ describe("activity plan detail route card", () => {
   beforeEach(() => {
     navigateToMock.mockReset();
     routeCardMock.mockClear();
+    routeGetUseQueryMock.mockClear();
+    routeLoadFullUseQueryMock.mockClear();
+    routeGetUseQueryMock.mockImplementation(() => ({ data: routeMock }));
+    routeLoadFullUseQueryMock.mockImplementation(() => ({ data: routeFullMock }));
+    localSearchParamsMock.planId = "plan-123";
+    delete localSearchParamsMock.template;
   });
 
   it("renders the shared route card and opens route detail on press", () => {
@@ -259,8 +269,6 @@ describe("activity plan detail route card", () => {
       expect.objectContaining({
         route: routeMock,
         routeFull: routeFullMock,
-        showAttribution: false,
-        variant: "compact",
       }),
     );
 
@@ -272,5 +280,33 @@ describe("activity plan detail route card", () => {
       pathname: "/(internal)/(standard)/route-detail",
       params: { id: "route-123" },
     });
+  });
+
+  it("loads the route preview when opened from a template payload", () => {
+    localSearchParamsMock.planId = undefined;
+    localSearchParamsMock.template = JSON.stringify({
+      id: "template-1",
+      activity_category: "bike",
+      name: "Template ride",
+      route_id: "route-123",
+      structure: { intervals: [] },
+    });
+
+    renderNative(<ActivityPlanDetail />);
+
+    expect(routeGetUseQueryMock).toHaveBeenCalledWith(
+      { id: "route-123" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(routeLoadFullUseQueryMock).toHaveBeenCalledWith(
+      { id: "route-123" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(routeCardMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: routeMock,
+        routeFull: routeFullMock,
+      }),
+    );
   });
 });

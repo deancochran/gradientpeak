@@ -1,6 +1,6 @@
 import React from "react";
 import { createButtonComponent } from "../../../../test/mock-components";
-import { renderNative, screen } from "../../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const routeData = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -18,6 +18,7 @@ const routeData = {
 const backMock = jest.fn();
 const deleteMutateMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
+const authState = { user: { id: "profile-1" } };
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -82,6 +83,11 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
+jest.mock("@/lib/hooks/useAuth", () => ({
+  __esModule: true,
+  useAuth: () => authState,
+}));
+
 jest.mock("@repo/ui/components/textarea", () => ({
   __esModule: true,
   Textarea: createHost("Textarea"),
@@ -101,7 +107,7 @@ jest.mock("@/lib/api", () => ({
     useUtils: () => ({ routes: {} }),
     routes: {
       get: {
-        useQuery: () => ({ data: routeData, isLoading: false }),
+        useQuery: () => ({ data: { ...routeData, profile_id: "profile-1" }, isLoading: false }),
       },
       loadFull: {
         useQuery: () => ({
@@ -157,6 +163,7 @@ describe("route detail screen", () => {
     backMock.mockReset();
     deleteMutateMock.mockReset();
     toggleLikeMutateMock.mockReset();
+    authState.user.id = "profile-1";
   });
 
   it("shows the new identity-first route layout", () => {
@@ -164,17 +171,41 @@ describe("route detail screen", () => {
 
     expect(screen.getByText("River Loop")).toBeTruthy();
     expect(screen.getByText("Flat start, climb home.")).toBeTruthy();
-    expect(screen.getByText("Distance: 10.20 km")).toBeTruthy();
-    expect(screen.getByText("Climb: 180m")).toBeTruthy();
-    expect(screen.getByText("Descent: 175m")).toBeTruthy();
-    expect(screen.getByText("Type: Run")).toBeTruthy();
-    expect(screen.getAllByText(/Uploaded/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("10.20 km")).toBeTruthy();
+    expect(screen.getByText("Climb")).toBeTruthy();
+    expect(screen.getByText("180m")).toBeTruthy();
+    expect(screen.getByText("Descent")).toBeTruthy();
+    expect(screen.getByText("175m")).toBeTruthy();
+    expect(screen.getByText("System Template")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
   });
 
   it("moves delete into the header overflow menu", () => {
     renderNative(<RouteDetailScreen />);
 
+    expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
     expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
+  });
+
+  it("hides route overflow actions for non-owners", () => {
+    authState.user.id = "profile-2";
+
+    renderNative(<RouteDetailScreen />);
+
+    expect(screen.queryByTestId("route-detail-options-trigger")).toBeNull();
+  });
+
+  it("uses a confirm modal before deleting a route", () => {
+    renderNative(<RouteDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("route-detail-options-delete"));
+
+    expect(screen.getByTestId("route-detail-delete-modal")).toBeTruthy();
+    expect(deleteMutateMock).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByTestId("route-detail-delete-confirm"));
+
+    expect(deleteMutateMock).toHaveBeenCalledWith({ id: "11111111-1111-4111-8111-111111111111" });
   });
 });

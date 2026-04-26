@@ -1,129 +1,124 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@repo/ui/components/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
 import { cn } from "@repo/ui/lib/cn";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { authClient } from "../lib/auth/client";
+import { Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useForm } from "react-hook-form";
 import { getLoginFormError } from "../lib/auth/form-errors";
 import { type LoginFormValues, loginFormSchema } from "../lib/auth/form-schemas";
-import { useAuth } from "./providers/auth-provider";
+import { signInWithEmailAction } from "../lib/auth/server-actions";
+import { AuthCardShell } from "./auth-card-shell";
 
-export function LoginForm({ className, ...props }: React.ComponentPropsWithoutRef<"div">) {
-  const navigate = useNavigate();
-  const { refreshSession } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<Partial<Record<"email" | "password" | "root", string>>>({});
-  const [isPending, setIsPending] = useState(false);
+type LoginFormProps = React.ComponentPropsWithoutRef<"div"> & {
+  redirectTo?: string;
+};
 
-  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
+  const signIn = useServerFn(signInWithEmailAction);
+  const form = useForm<LoginFormValues>({
+    resolver: zodResolver(loginFormSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
 
-    const parsed = loginFormSchema.safeParse({ email, password });
-
-    if (!parsed.success) {
-      const fieldErrors = parsed.error.flatten().fieldErrors;
-      setErrors({
-        email: fieldErrors.email?.[0],
-        password: fieldErrors.password?.[0],
-      });
-      return;
-    }
-
-    const values: LoginFormValues = parsed.data;
-    setErrors({});
-    setIsPending(true);
+  const handleLogin = form.handleSubmit(async (values) => {
+    form.clearErrors();
 
     try {
-      const result = await authClient.signIn.email({
-        email: values.email,
-        password: values.password,
-      });
-
-      if (result.error) {
-        throw result.error;
-      }
-
-      await refreshSession();
-      await navigate({ to: "/", replace: true });
+      await signIn({ data: { ...values, redirect: redirectTo } });
     } catch (error: unknown) {
       const formError = getLoginFormError(error);
-      setErrors((current) => ({ ...current, [formError.target]: formError.message }));
-    } finally {
-      setIsPending(false);
+
+      if (formError.target === "root") {
+        form.setError("root", { message: formError.message });
+        return;
+      }
+
+      form.setError(formError.target, { message: formError.message });
     }
-  };
+  });
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">Login</CardTitle>
-          <CardDescription>Enter your email below to login to your account</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin}>
+      <AuthCardShell title="Login" description="Enter your email below to login to your account">
+        <Form {...form}>
+          <form action={signInWithEmailAction.url} method="post" onSubmit={handleLogin}>
+            <input type="hidden" name="redirect" value={redirectTo ?? ""} />
             <div className="flex flex-col gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="login-email">Email *</Label>
-                <Input
-                  id="login-email"
-                  autoComplete="email"
-                  type="email"
-                  placeholder="m@example.com"
-                  value={email}
-                  onChange={(event) => setEmail(event.currentTarget.value)}
-                  aria-invalid={Boolean(errors.email)}
-                />
-                {errors.email ? <p className="text-destructive text-sm">{errors.email}</p> : null}
-              </div>
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email *</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        autoComplete="email"
+                        type="email"
+                        placeholder="m@example.com"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor="login-password">Password *</Label>
-                  <Link
-                    to="/auth/forgot-password"
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
-                  >
-                    Forgot your password?
-                  </Link>
-                </div>
-                <Input
-                  id="login-password"
-                  autoComplete="current-password"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.currentTarget.value)}
-                  aria-invalid={Boolean(errors.password)}
-                />
-                {errors.password ? (
-                  <p className="text-destructive text-sm">{errors.password}</p>
-                ) : null}
-              </div>
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center justify-between gap-3">
+                      <FormLabel>Password *</FormLabel>
+                      <Link
+                        to="/auth/forgot-password"
+                        search={{ flash: undefined, flashType: undefined }}
+                        className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
+                      >
+                        Forgot your password?
+                      </Link>
+                    </div>
+                    <FormControl>
+                      <Input {...field} autoComplete="current-password" type="password" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-              {errors.root ? <p className="text-destructive text-sm">{errors.root}</p> : null}
+              {form.formState.errors.root ? (
+                <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+              ) : null}
 
-              <Button disabled={isPending} type="submit">
-                {isPending ? "Logging in..." : "Login"}
+              <Button disabled={form.formState.isSubmitting} type="submit">
+                {form.formState.isSubmitting ? "Logging in..." : "Login"}
               </Button>
             </div>
             <div className="mt-4 text-center text-sm">
               Don&apos;t have an account?{" "}
-              <Link to="/auth/sign-up" className="underline underline-offset-4">
+              <Link
+                to="/auth/sign-up"
+                search={{ flash: undefined, flashType: undefined }}
+                className="underline underline-offset-4"
+              >
                 Sign up
               </Link>
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </Form>
+      </AuthCardShell>
 
       <p className="text-center text-sm text-muted-foreground">
         Returning to the main app?{" "}

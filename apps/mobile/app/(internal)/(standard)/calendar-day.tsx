@@ -4,13 +4,18 @@ import { format } from "date-fns";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import {
+  EventAgendaCard,
+  GoalAgendaCard,
+  PlannedAgendaEventCard,
+} from "@/components/calendar/AgendaCards";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
-import { getEventStatusLabel, getEventTitle } from "@/lib/calendar/eventPresentation";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { ROUTES } from "@/lib/constants/routes";
+import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 
@@ -62,77 +67,6 @@ function readEventPlace(event: CalendarEvent): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function EventStatusPill({ label }: { label: string }) {
-  return (
-    <View className="rounded-full border border-border/60 bg-muted/60 px-2 py-1">
-      <Text className="text-[11px] font-medium text-muted-foreground">{label}</Text>
-    </View>
-  );
-}
-
-function PlannedAgendaEventCard({ event, onPress }: { event: CalendarEvent; onPress: () => void }) {
-  const eventNote = event.notes?.trim() || event.description?.trim() || null;
-  const statusLabel = getEventStatusLabel(event);
-
-  return (
-    <View
-      className="rounded-3xl border border-border bg-card p-4"
-      testID={`schedule-event-${event.id}`}
-    >
-      <TouchableOpacity onPress={onPress} activeOpacity={0.85} className="gap-3">
-        <View className="flex-row flex-wrap items-center gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {formatTimeRange(event)}
-          </Text>
-          <EventStatusPill label="Planned" />
-          {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
-        </View>
-        <Text className="text-xl font-semibold text-foreground">{getEventTitle(event)}</Text>
-        {eventNote ? (
-          <Text className="text-sm leading-5 text-muted-foreground">{eventNote}</Text>
-        ) : null}
-
-        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Linked plan
-        </Text>
-        <ActivityPlanCard activityPlan={event.activity_plan as any} variant="compact" />
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function SimpleAgendaEventCard({ event, onPress }: { event: CalendarEvent; onPress: () => void }) {
-  const place = readEventPlace(event);
-  const statusLabel = getEventStatusLabel(event);
-
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.85}
-      className="rounded-3xl border border-border bg-card px-4 py-4"
-      testID={`schedule-event-${event.id}`}
-    >
-      <View className="gap-2">
-        <View className="flex-row flex-wrap items-center gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {formatTimeRange(event)}
-          </Text>
-          {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
-        </View>
-        <Text className="text-xl font-semibold text-foreground">
-          {event.title || "Scheduled event"}
-        </Text>
-        {event.description || event.notes ? (
-          <Text className="text-sm leading-5 text-muted-foreground">
-            {event.description || event.notes}
-          </Text>
-        ) : null}
-        {place ? <Text className="text-xs text-muted-foreground">{place}</Text> : null}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
 export default function CalendarDayScreen() {
   const params = useLocalSearchParams<{ date?: string }>();
   const navigateTo = useAppNavigate();
@@ -159,10 +93,20 @@ export default function CalendarDayScreen() {
 
   const events = useMemo(() => (data?.items ?? []) as CalendarEvent[], [data?.items]);
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
+  const profileGoals = useProfileGoals();
   const visibleEvents = useMemo(
     () => (eventsByDate.get(dateKey) ?? []).filter((event) => event.event_type !== "rest_day"),
     [dateKey, eventsByDate],
   );
+  const plannedEventsOnDate = useMemo(
+    () => visibleEvents.filter((event) => event.event_type === "planned" && event.activity_plan),
+    [visibleEvents],
+  );
+  const goalsOnDate = useMemo(
+    () => profileGoals.goals.filter((goal) => goal.target_date === dateKey),
+    [dateKey, profileGoals.goals],
+  );
+  const isRestDay = plannedEventsOnDate.length === 0 && goalsOnDate.length === 0;
   const title = useMemo(() => formatCalendarDayTitle(dateKey, todayKey), [dateKey, todayKey]);
 
   const handleOpenEvent = (event: CalendarEvent) => {
@@ -184,6 +128,15 @@ export default function CalendarDayScreen() {
       pathname: "/(internal)/(standard)/event-detail",
       params: { mode: "create", date: dateKey },
     } as never);
+  };
+
+  const handleOpenGoal = () => {
+    const primaryGoal = goalsOnDate[0];
+    if (!primaryGoal?.id) {
+      return;
+    }
+
+    navigateTo(ROUTES.PLAN.GOAL_DETAIL(primaryGoal.id) as never);
   };
 
   return (
@@ -219,6 +172,24 @@ export default function CalendarDayScreen() {
         </View>
       ) : (
         <ScrollView className="flex-1 px-4 pb-6 pt-4" contentContainerStyle={{ gap: 12 }}>
+          {isRestDay ? (
+            <View
+              className="rounded-3xl border border-border bg-card px-5 py-5"
+              testID={`calendar-rest-day-state-${dateKey}`}
+            >
+              <Text className="text-sm font-semibold text-foreground">Rest day</Text>
+              <Text className="mt-1 text-sm text-muted-foreground">
+                {visibleEvents.length > 0
+                  ? "No activity plan or goal is scheduled for this day, even if other events are on your calendar."
+                  : "Nothing scheduled."}
+              </Text>
+            </View>
+          ) : null}
+
+          {goalsOnDate.length > 0 ? (
+            <GoalAgendaCard onPress={handleOpenGoal} title={goalsOnDate[0]?.title ?? "Goal"} />
+          ) : null}
+
           {visibleEvents.length > 0 ? (
             <>
               <View className="rounded-3xl border border-border bg-card px-4 py-4">
@@ -239,25 +210,30 @@ export default function CalendarDayScreen() {
                     key={event.id}
                     event={event}
                     onPress={() => handleOpenEvent(event)}
+                    scheduleLabel={formatTimeRange(event)}
                   />
                 ) : (
-                  <SimpleAgendaEventCard
+                  <EventAgendaCard
                     key={event.id}
                     event={event}
                     onPress={() => handleOpenEvent(event)}
+                    place={readEventPlace(event)}
+                    scheduleLabel={formatTimeRange(event)}
                   />
                 ),
               )}
             </>
-          ) : (
+          ) : !isRestDay ? (
             <View
               className="rounded-3xl border border-border bg-card px-5 py-5"
-              testID={`calendar-rest-day-state-${dateKey}`}
+              testID={`calendar-no-events-state-${dateKey}`}
             >
-              <Text className="text-sm font-semibold text-foreground">Rest day</Text>
-              <Text className="mt-1 text-sm text-muted-foreground">Nothing scheduled.</Text>
+              <Text className="text-sm font-semibold text-foreground">No events scheduled</Text>
+              <Text className="mt-1 text-sm text-muted-foreground">
+                Your goal target is marked above, but there are no calendar events on this date.
+              </Text>
             </View>
-          )}
+          ) : null}
         </ScrollView>
       )}
     </View>

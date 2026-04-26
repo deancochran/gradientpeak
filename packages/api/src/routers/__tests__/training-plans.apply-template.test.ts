@@ -17,6 +17,137 @@ function createCaller(queryMap: QueryMap) {
 }
 
 describe("trainingPlansRouter.applyTemplate", () => {
+  it("fails when another scheduled plan exists and replacement was not confirmed", async () => {
+    const { caller, callLog } = createCaller({
+      events: {
+        data: [
+          {
+            training_plan_id: "22222222-2222-4222-8222-222222222222",
+            schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+            starts_at: "2026-03-12T00:00:00.000Z",
+          },
+        ],
+        error: null,
+      },
+      training_plans: {
+        data: {
+          id: "22222222-2222-4222-8222-222222222222",
+          name: "Current Plan",
+          description: null,
+          profile_id: "profile-123",
+          is_system_template: false,
+          template_visibility: "private",
+          sessions_per_week_target: 4,
+          duration_hours: 9,
+          structure: {},
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.applyTemplate({
+        template_type: "training_plan",
+        template_id: "11111111-1111-4111-8111-111111111111",
+        start_date: "2026-03-10",
+      }),
+    ).rejects.toThrow(
+      "You already have scheduled sessions from another training plan. Replace them first.",
+    );
+
+    expect(
+      callLog.find((call) => call.table === "events" && call.operation === "insert"),
+    ).toBeUndefined();
+  });
+
+  it("replaces the active scheduled batch before creating the new schedule", async () => {
+    const { caller, callLog } = createCaller({
+      events: [
+        {
+          data: [
+            {
+              training_plan_id: "22222222-2222-4222-8222-222222222222",
+              schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+              starts_at: "2026-03-12T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        },
+        {
+          data: [{ id: "removed-1" }, { id: "removed-2" }],
+          error: null,
+        },
+        {
+          data: [{ id: "event-1" }, { id: "event-2" }],
+          error: null,
+        },
+      ],
+      training_plans: [
+        {
+          data: {
+            id: "22222222-2222-4222-8222-222222222222",
+            name: "Current Plan",
+            description: null,
+            profile_id: "profile-123",
+            is_system_template: false,
+            template_visibility: "private",
+            sessions_per_week_target: 4,
+            duration_hours: 9,
+            structure: {},
+          },
+          error: null,
+        },
+        {
+          data: {
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Template Plan",
+            description: null,
+            profile_id: "template-owner",
+            is_system_template: false,
+            template_visibility: "public",
+            sessions_per_week_target: 4,
+            duration_hours: 9,
+            structure: {
+              start_date: "2026-01-01",
+              sessions: [
+                {
+                  offset_days: 0,
+                  title: "Session A",
+                  activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                },
+                {
+                  offset_days: 2,
+                  title: "Session B",
+                },
+              ],
+            },
+          },
+          error: null,
+        },
+      ],
+      activity_plans: {
+        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" }],
+        error: null,
+      },
+    });
+
+    const result = await caller.applyTemplate({
+      template_type: "training_plan",
+      template_id: "11111111-1111-4111-8111-111111111111",
+      start_date: "2026-03-10",
+      replace_existing: true,
+    });
+
+    const insertCall = callLog.find(
+      (call) => call.table === "events" && call.operation === "insert",
+    );
+    const insertedRows = (insertCall?.payload as Array<Record<string, unknown>>) ?? [];
+
+    expect(result.scheduled_sessions_replaced).toBe(2);
+    expect(result.scheduled_sessions_created).toBe(2);
+    expect(insertedRows).toHaveLength(2);
+  });
+
   it("creates planned events with shared schedule_batch_id", async () => {
     const { caller, callLog } = createCaller({
       events: [
@@ -76,7 +207,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
     const insertedRows = (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
 
     expect(result.applied_plan_id).toBe("11111111-1111-4111-8111-111111111111");
-    expect(result.created_event_count).toBe(2);
+    expect(result.scheduled_sessions_created).toBe(2);
     expect(typeof result.schedule_batch_id).toBe("string");
     expect(insertedRows).toHaveLength(2);
     expect(insertedRows[0]?.title).toBe("Tempo Builder");
@@ -89,6 +220,52 @@ describe("trainingPlansRouter.applyTemplate", () => {
       (call) => call.table === "training_plans" && call.operation === "insert",
     );
     expect(createdPlanInsert).toBeUndefined();
+  });
+
+  it("returns explicit scheduled-session removal counts when abandoning an active scheduled set", async () => {
+    const { caller } = createCaller({
+      events: [
+        {
+          data: [
+            {
+              training_plan_id: "11111111-1111-4111-8111-111111111111",
+              schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+              starts_at: "2026-03-12T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        },
+        {
+          data: [{ id: "future-1" }],
+          error: null,
+        },
+        {
+          data: [{ id: "removed-1" }, { id: "removed-2" }],
+          error: null,
+        },
+      ],
+      training_plans: {
+        data: {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Current Plan",
+          description: null,
+          profile_id: "profile-123",
+          is_system_template: false,
+          template_visibility: "private",
+          sessions_per_week_target: 4,
+          duration_hours: 9,
+          structure: {},
+        },
+        error: null,
+      },
+    });
+
+    const result = await caller.updateActivePlanStatus({
+      id: "11111111-1111-4111-8111-111111111111",
+      status: "abandoned",
+    });
+
+    expect(result.scheduled_sessions_removed).toBe(2);
   });
 
   it("prefers event_title_override over linked activity plan name when scheduling linked sessions", async () => {

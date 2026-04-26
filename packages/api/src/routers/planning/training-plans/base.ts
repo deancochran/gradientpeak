@@ -49,11 +49,11 @@ import {
   type ProjectionRecoverySegment,
   parseDateOnlyUtc,
   parseProfileGoalRecord,
+  persistedTrainingPlanStructureSchema,
   postCreateBehaviorSchema,
   previewCreationConfigInputSchema,
   type ReadinessDeltaDiagnostics,
   resolveConstraintConflicts,
-  resolveGoalEventDate,
   type TrainingPlanCreationConfig,
   templateApplyInputSchema,
   trainingPlanCalibrationConfigSchema,
@@ -71,7 +71,7 @@ import {
   type TrainingPlanRow,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   createFromCreationConfigUseCase,
@@ -128,13 +128,7 @@ type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings"
 
 type ProfileGoalSqlRow = Pick<
   ProfileGoalRow,
-  | "id"
-  | "profile_id"
-  | "milestone_event_id"
-  | "title"
-  | "priority"
-  | "activity_category"
-  | "target_payload"
+  "id" | "profile_id" | "title" | "priority" | "activity_category" | "target_payload"
 >;
 
 type TrainingPlanCountRow = { value: number | string };
@@ -403,6 +397,78 @@ type TrainingPlanTemplateListFilters = {
     | "sessions_asc";
 };
 
+type TrainingPlanTemplateHealthIssueCode =
+  | "invalid_persisted_structure"
+  | "legacy_structure"
+  | "missing_sport_metadata"
+  | "missing_experience_level_metadata"
+  | "missing_duration_weeks_metadata";
+
+function auditTrainingPlanTemplateStructureHealth(input: { structure: unknown }): {
+  isHealthy: boolean;
+  isPersistedCompatible: boolean;
+  isCurrentSchemaCompatible: boolean;
+  missingMetadata: Array<"sport" | "experienceLevel" | "durationWeeks">;
+  issueCodes: TrainingPlanTemplateHealthIssueCode[];
+} {
+  const persistedResult = persistedTrainingPlanStructureSchema.safeParse(input.structure);
+  const currentResult = trainingPlanCreateSchema.safeParse(input.structure);
+  const structure =
+    input.structure && typeof input.structure === "object"
+      ? (input.structure as Record<string, unknown>)
+      : null;
+
+  const missingMetadata: Array<"sport" | "experienceLevel" | "durationWeeks"> = [];
+
+  if (!Array.isArray(structure?.sport) || structure.sport.length === 0) {
+    missingMetadata.push("sport");
+  }
+
+  if (!Array.isArray(structure?.experienceLevel) || structure.experienceLevel.length === 0) {
+    missingMetadata.push("experienceLevel");
+  }
+
+  const durationWeeks =
+    structure?.durationWeeks && typeof structure.durationWeeks === "object"
+      ? (structure.durationWeeks as Record<string, unknown>)
+      : null;
+
+  if (
+    typeof durationWeeks?.recommended !== "number" ||
+    !Number.isFinite(durationWeeks.recommended)
+  ) {
+    missingMetadata.push("durationWeeks");
+  }
+
+  const issueCodes: TrainingPlanTemplateHealthIssueCode[] = [];
+
+  if (!persistedResult.success) {
+    issueCodes.push("invalid_persisted_structure");
+  } else if (!currentResult.success) {
+    issueCodes.push("legacy_structure");
+  }
+
+  if (missingMetadata.includes("sport")) {
+    issueCodes.push("missing_sport_metadata");
+  }
+
+  if (missingMetadata.includes("experienceLevel")) {
+    issueCodes.push("missing_experience_level_metadata");
+  }
+
+  if (missingMetadata.includes("durationWeeks")) {
+    issueCodes.push("missing_duration_weeks_metadata");
+  }
+
+  return {
+    isHealthy: issueCodes.length === 0,
+    isPersistedCompatible: persistedResult.success,
+    isCurrentSchemaCompatible: currentResult.success,
+    missingMetadata,
+    issueCodes,
+  };
+}
+
 function serializeTrainingPlanTemplate(t: any) {
   return {
     id: t.id,
@@ -521,6 +587,7 @@ function todayDateOnlyUtc(): string {
 }
 
 type ActivePlanLookup = {
+  scheduleBatchId: string | null;
   trainingPlanId: string;
   trainingPlan: TrainingPlanRow;
   nextEventAt: string;
@@ -535,6 +602,7 @@ async function getActivePlanFromFutureEvents(input: {
     const upcomingEvents = await input.db
       .select({
         training_plan_id: schema.events.training_plan_id,
+        schedule_batch_id: schema.events.schedule_batch_id,
         starts_at: schema.events.starts_at,
       })
       .from(schema.events)
@@ -570,6 +638,7 @@ async function getActivePlanFromFutureEvents(input: {
     }
 
     return {
+      scheduleBatchId: nextScheduledPlanEvent.schedule_batch_id ?? null,
       trainingPlanId,
       trainingPlan,
       nextEventAt: nextScheduledPlanEvent.starts_at.toISOString(),
@@ -585,7 +654,7 @@ async function getActivePlanFromFutureEvents(input: {
 
   let eventsQuery: any = input.supabase
     .from("events")
-    .select("training_plan_id, starts_at")
+    .select("training_plan_id, schedule_batch_id, starts_at")
     .eq("profile_id", input.profileId)
     .eq("event_type", plannedEventType);
 
@@ -641,6 +710,7 @@ async function getActivePlanFromFutureEvents(input: {
   }
 
   return {
+    scheduleBatchId: ((nextScheduledPlanEvent as any).schedule_batch_id as string | null) ?? null,
     trainingPlanId,
     trainingPlan: trainingPlan as TrainingPlanRow,
     nextEventAt,
@@ -2277,7 +2347,6 @@ async function loadProfileGoalsWithTargetDates(input: {
       select
         id,
         profile_id,
-        milestone_event_id,
         title,
         priority,
         activity_category,
@@ -2292,9 +2361,7 @@ async function loadProfileGoalsWithTargetDates(input: {
   } else if (input.supabase) {
     const { data, error } = await input.supabase
       .from("profile_goals")
-      .select(
-        "id, profile_id, milestone_event_id, title, priority, activity_category, target_payload",
-      )
+      .select("id, profile_id, title, priority, activity_category, target_payload")
       .eq("profile_id", input.profileId)
       .order("created_at", { ascending: true })
       .limit(40);
@@ -3929,7 +3996,7 @@ export const trainingPlansRouter = createTRPCRouter({
         // Validate structure
         try {
           if (data.structure) {
-            trainingPlanSchema.parse(data.structure);
+            persistedTrainingPlanStructureSchema.parse(data.structure);
           }
         } catch (validationError) {
           console.error(
@@ -3968,7 +4035,7 @@ export const trainingPlansRouter = createTRPCRouter({
       // Validate structure on read (defensive programming)
       try {
         if (data.structure) {
-          trainingPlanSchema.parse(data.structure);
+          persistedTrainingPlanStructureSchema.parse(data.structure);
         }
       } catch (validationError) {
         console.error("Invalid structure in database for training plan", data.id, validationError);
@@ -4554,7 +4621,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       try {
         if (sourcePlan.structure) {
-          trainingPlanSchema.parse(sourcePlan.structure);
+          persistedTrainingPlanStructureSchema.parse(sourcePlan.structure);
         }
       } catch (validationError) {
         throw new TRPCError({
@@ -4565,13 +4632,16 @@ export const trainingPlansRouter = createTRPCRouter({
       }
 
       const duplicatedPlanId = crypto.randomUUID();
-      const duplicatedStructure = {
-        ...(sourcePlan.structure as Record<string, unknown>),
-        id: duplicatedPlanId,
-      };
+      const parsedCurrentSourceStructure = trainingPlanSchema.safeParse(sourcePlan.structure);
+      const duplicatedStructure = parsedCurrentSourceStructure.success
+        ? {
+            ...parsedCurrentSourceStructure.data,
+            id: duplicatedPlanId,
+          }
+        : ({ ...(sourcePlan.structure as Record<string, unknown>) } as Record<string, unknown>);
 
       try {
-        trainingPlanSchema.parse(duplicatedStructure);
+        persistedTrainingPlanStructureSchema.parse(duplicatedStructure);
       } catch (validationError) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -4618,7 +4688,7 @@ export const trainingPlansRouter = createTRPCRouter({
       // Validate structure on read
       try {
         if (data.structure) {
-          trainingPlanSchema.parse(data.structure);
+          persistedTrainingPlanStructureSchema.parse(data.structure);
         }
       } catch (validationError) {
         console.error("Invalid structure in database for training plan", input.id, validationError);
@@ -5845,6 +5915,31 @@ export const trainingPlansRouter = createTRPCRouter({
       };
     }),
 
+  auditTemplateHealth: protectedProcedure.query(async ({ ctx }) => {
+    const db = getRequiredDb(ctx);
+    const templates = await listPublicTemplateTrainingPlans(db);
+    const items = templates.map((template) => {
+      const health = auditTrainingPlanTemplateStructureHealth({ structure: template.structure });
+
+      return {
+        id: template.id,
+        name: template.name,
+        ...health,
+      };
+    });
+
+    return {
+      total: items.length,
+      healthy_count: items.filter((item) => item.isHealthy).length,
+      legacy_count: items.filter(
+        (item) => item.isPersistedCompatible && !item.isCurrentSchemaCompatible,
+      ).length,
+      invalid_count: items.filter((item) => !item.isPersistedCompatible).length,
+      metadata_gap_count: items.filter((item) => item.missingMetadata.length > 0).length,
+      items,
+    };
+  }),
+
   // ------------------------------
   // Get single training plan template
   // ------------------------------
@@ -5889,12 +5984,37 @@ export const trainingPlansRouter = createTRPCRouter({
         db,
         profileId,
       });
+      let scheduled_sessions_replaced = 0;
 
       if (activePlanLookup) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "You already have an active training plan. Please complete or abandon it first.",
-        });
+        if (!input.replace_existing) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message:
+              "You already have scheduled sessions from another training plan. Replace them first.",
+          });
+        }
+
+        const deleteBaseFilters = [
+          eq(schema.events.profile_id, profileId),
+          eq(schema.events.event_type, plannedEventType),
+          gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
+          ne(schema.events.status, "completed"),
+        ] as const;
+
+        const removedEvents = await db
+          .delete(schema.events)
+          .where(
+            and(
+              ...deleteBaseFilters,
+              activePlanLookup.scheduleBatchId
+                ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)
+                : eq(schema.events.training_plan_id, activePlanLookup.trainingPlanId),
+            ),
+          )
+          .returning({ id: schema.events.id });
+
+        scheduled_sessions_replaced = removedEvents.length;
       }
 
       const templatePlan = await getAccessibleTrainingPlan({
@@ -6010,7 +6130,7 @@ export const trainingPlansRouter = createTRPCRouter({
         );
 
       const schedule_batch_id = crypto.randomUUID();
-      let created_event_count = 0;
+      let scheduled_sessions_created = 0;
 
       if (eventRows.length === 0) {
         const plannedSessionCount = materializedSessions.filter(
@@ -6036,13 +6156,14 @@ export const trainingPlansRouter = createTRPCRouter({
         )
         .returning({ id: schema.events.id });
 
-      created_event_count = insertedEvents.length;
+      scheduled_sessions_created = insertedEvents.length;
 
       return {
         applied_plan_id: appliedPlanId,
         training_plan_id: templatePlan.id,
         schedule_batch_id,
-        created_event_count,
+        scheduled_sessions_created,
+        scheduled_sessions_replaced,
         cache_tags: ["events.list", "trainingPlans.list"],
       };
     }),
@@ -6061,6 +6182,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const profileId = ctx.session.user.id;
       const windowStartIso = todayStartIsoUtc();
       const db = getRequiredDb(ctx);
+      const activePlanLookup = await getActivePlanFromFutureEvents({
+        db,
+        profileId,
+      });
 
       const futurePlanEvents = await db
         .select({ id: schema.events.id, training_plan_id: schema.events.training_plan_id })
@@ -6114,7 +6239,7 @@ export const trainingPlansRouter = createTRPCRouter({
           training_plan_id: input.id,
           profile_id: profileId,
           status: input.status,
-          updated_event_count: 0,
+          scheduled_sessions_removed: 0,
         };
       }
 
@@ -6124,8 +6249,11 @@ export const trainingPlansRouter = createTRPCRouter({
           and(
             eq(schema.events.profile_id, profileId),
             eq(schema.events.event_type, plannedEventType),
-            eq(schema.events.training_plan_id, input.id),
+            activePlanLookup?.trainingPlanId === input.id && activePlanLookup.scheduleBatchId
+              ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)
+              : eq(schema.events.training_plan_id, input.id),
             gte(schema.events.starts_at, new Date(windowStartIso)),
+            ne(schema.events.status, "completed"),
           ),
         )
         .returning({ id: schema.events.id });
@@ -6135,7 +6263,7 @@ export const trainingPlansRouter = createTRPCRouter({
         training_plan_id: input.id,
         profile_id: profileId,
         status: input.status,
-        updated_event_count: deletedEvents?.length ?? 0,
+        scheduled_sessions_removed: deletedEvents?.length ?? 0,
       };
     }),
 
@@ -6154,6 +6282,7 @@ export const trainingPlansRouter = createTRPCRouter({
       id: activePlanLookup.trainingPlanId,
       profile_id: ctx.session.user.id,
       training_plan_id: activePlanLookup.trainingPlanId,
+      schedule_batch_id: activePlanLookup.scheduleBatchId,
       status: "active",
       next_event_at: activePlanLookup.nextEventAt,
       training_plan: activePlanLookup.trainingPlan,

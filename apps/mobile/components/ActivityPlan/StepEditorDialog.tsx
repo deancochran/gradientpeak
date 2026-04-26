@@ -1,6 +1,5 @@
 import type { IntensityTargetV2, IntervalStepV2 } from "@repo/core/schemas/activity_plan_v2";
 import { Button } from "@repo/ui/components/button";
-import { Dialog, DialogContent } from "@repo/ui/components/dialog";
 import {
   Form,
   FormNumberField,
@@ -14,9 +13,9 @@ import { useZodForm } from "@repo/ui/hooks";
 import * as Haptics from "expo-haptics";
 import { Plus, Trash2 } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { Controller } from "react-hook-form";
-import { Dimensions, ScrollView, View } from "react-native";
+import { View } from "react-native";
 import { z } from "zod";
+import { AppFormModal } from "@/components/shared/AppFormModal";
 import { StepDurationField } from "./StepDurationField";
 
 interface StepEditorDialogProps {
@@ -190,172 +189,144 @@ export function StepEditorDialog({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const handleDurationTypeChange = (value: string) => {
-    if (!isMountedRef.current) return;
-
-    if (value === "time") {
-      form.setValue("duration", { type: "time", seconds: 600 }); // 10 minutes
-    } else if (value === "distance") {
-      form.setValue("duration", { type: "distance", meters: 1000 }); // 1km
-    } else if (value === "repetitions") {
-      form.setValue("duration", { type: "repetitions", count: 10 });
-    }
-  };
-
-  const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-  const dialogWidth = Math.min(screenWidth * 0.9, 400);
-  const dialogHeight = Math.min(screenHeight * 0.85, screenHeight - 100);
+  if (!open) {
+    return null;
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        style={{
-          width: dialogWidth,
-          height: dialogHeight,
-          margin: 20,
-        }}
-        className="bg-background border border-border shadow-xl"
-      >
-        {/* Custom Header */}
-        <View className="flex-row items-center justify-between p-4 border-b">
-          <Text className="text-lg font-medium flex-1 text-center">
-            {step ? "Edit Step" : "Add Step"}
+    <AppFormModal
+      description="Configure the step duration, targets, and notes before saving it into the interval."
+      onClose={() => onOpenChange(false)}
+      primaryAction={
+        <Button onPress={handleSave} testID="step-editor-save-button">
+          <Text className="text-primary-foreground font-semibold">
+            {step ? "Save Step" : "Add Step"}
           </Text>
+        </Button>
+      }
+      secondaryAction={
+        <Button
+          onPress={() => onOpenChange(false)}
+          variant="outline"
+          testID="step-editor-cancel-button"
+        >
+          <Text className="text-foreground font-medium">Cancel</Text>
+        </Button>
+      }
+      testID="step-editor-modal"
+      title={step ? "Edit Step" : "Add Step"}
+    >
+      <View className="gap-4">
+        <Form {...form}>
+          <FormTextField
+            control={form.control}
+            label="Step Name"
+            name="name"
+            placeholder="e.g., Warm-up, Main Set, Cool-down"
+          />
+        </Form>
 
-          <Button onPress={handleSave} size="sm">
-            <Text className="text-primary-foreground">{step ? "Save" : "Add"}</Text>
-          </Button>
-        </View>
+        <Form {...form}>
+          <FormTextField
+            control={form.control}
+            label="Description"
+            name="description"
+            placeholder="Brief description of this step"
+          />
+        </Form>
 
-        <View className="flex-1">
-          <ScrollView
-            style={{ flex: 1 }}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
-          >
-            <View className="gap-4 p-4">
-              {/* Step Name */}
-              <Form {...form}>
-                <FormTextField
-                  control={form.control}
-                  label="Step Name"
-                  name="name"
-                  placeholder="e.g., Warm-up, Main Set, Cool-down"
-                />
-              </Form>
+        <Form {...form}>
+          <StepDurationField form={form as never} />
+        </Form>
 
-              {/* Description */}
-              <Form {...form}>
-                <FormTextField
-                  control={form.control}
-                  label="Description"
-                  name="description"
-                  placeholder="Brief description of this step"
-                />
-              </Form>
+        <View>
+          <View className="mb-2 flex-row items-center justify-between">
+            <Label>Intensity Targets</Label>
+            {targets.length < 3 && (
+              <Button variant="outline" size="sm" onPress={handleAddTarget} className="h-8">
+                <Plus size={14} className="text-primary" />
+                <Text className="ml-1 text-xs">Add Target</Text>
+              </Button>
+            )}
+          </View>
 
-              <Form {...form}>
-                <StepDurationField form={form as never} />
-              </Form>
+          {targets.length === 0 ? (
+            <View className="rounded-lg border-2 border-dashed border-muted p-4">
+              <Text className="text-center text-sm text-muted-foreground">
+                Add at least one target before saving.
+              </Text>
+            </View>
+          ) : null}
 
-              {/* Intensity Targets */}
-              <View>
-                <View className="flex-row items-center justify-between mb-2">
-                  <Label>Intensity Targets</Label>
-                  {targets.length < 3 && (
-                    <Button variant="outline" size="sm" onPress={handleAddTarget} className="h-8">
-                      <Plus size={14} className="text-primary" />
-                      <Text className="text-xs ml-1">Add Target</Text>
-                    </Button>
-                  )}
+          {targets.map((target, index) => (
+            <View key={index} className="mb-2 rounded-lg border border-border p-3">
+              <View className="flex-row items-start gap-2">
+                <View className="flex-1">
+                  <Label nativeID={`target-type-${index}`} className="mb-1 text-xs">
+                    Type
+                  </Label>
+                  <Form {...form}>
+                    <FormSelectField
+                      control={form.control}
+                      label="Type"
+                      name={`targets.${index}.type` as never}
+                      options={INTENSITY_TYPES}
+                      placeholder="Select type"
+                      testId={`target-type-${index}`}
+                    />
+                  </Form>
                 </View>
 
-                {targets.length === 0 && (
-                  <View className="border-2 border-dashed border-muted rounded-lg p-4">
-                    <Text className="text-sm text-muted-foreground text-center">
-                      Add at least one target before saving.
-                    </Text>
-                  </View>
-                )}
+                <View className="w-20">
+                  <Label nativeID={`target-value-${index}`} className="mb-1 text-xs">
+                    Value
+                  </Label>
+                  <Form {...form}>
+                    <FormNumberField
+                      allowDecimal
+                      control={form.control}
+                      label="Value"
+                      min={0}
+                      name={`targets.${index}.intensity` as never}
+                      placeholder="0"
+                      testId={`target-value-${index}`}
+                    />
+                  </Form>
+                </View>
 
-                {targets.map((target, index) => (
-                  <View key={index} className="border border-border rounded-lg p-3 mb-2">
-                    <View className="flex-row items-start gap-2">
-                      {/* Target Type */}
-                      <View className="flex-1">
-                        <Label nativeID={`target-type-${index}`} className="text-xs mb-1">
-                          Type
-                        </Label>
-                        <Form {...form}>
-                          <FormSelectField
-                            control={form.control}
-                            label="Type"
-                            name={`targets.${index}.type` as never}
-                            options={INTENSITY_TYPES}
-                            placeholder="Select type"
-                            testId={`target-type-${index}`}
-                          />
-                        </Form>
-                      </View>
-
-                      {/* Target Value */}
-                      <View className="w-20">
-                        <Label nativeID={`target-value-${index}`} className="text-xs mb-1">
-                          Value
-                        </Label>
-                        <Form {...form}>
-                          <FormNumberField
-                            allowDecimal
-                            control={form.control}
-                            label="Value"
-                            min={0}
-                            name={`targets.${index}.intensity` as never}
-                            placeholder="0"
-                            testId={`target-value-${index}`}
-                          />
-                        </Form>
-                      </View>
-
-                      {/* Delete Button */}
-                      <View className="pt-5">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onPress={() => handleRemoveTarget(index)}
-                          className="h-10 w-10 p-0"
-                        >
-                          <Trash2 size={16} className="text-destructive" />
-                        </Button>
-                      </View>
-                    </View>
-                  </View>
-                ))}
-
-                {targets.length === 3 && (
-                  <Text className="text-xs text-muted-foreground mt-1">
-                    Maximum 3 targets per step
-                  </Text>
-                )}
-              </View>
-
-              {saveError ? <Text className="text-xs text-destructive">{saveError}</Text> : null}
-
-              {/* Notes */}
-              <View>
-                <Form {...form}>
-                  <FormTextareaField
-                    control={form.control}
-                    label="Notes"
-                    name="notes"
-                    placeholder="Add any additional notes or instructions..."
-                    className="min-h-[80px]"
-                  />
-                </Form>
+                <View className="pt-5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => handleRemoveTarget(index)}
+                    className="h-10 w-10 p-0"
+                  >
+                    <Trash2 size={16} className="text-destructive" />
+                  </Button>
+                </View>
               </View>
             </View>
-          </ScrollView>
+          ))}
+
+          {targets.length === 3 ? (
+            <Text className="mt-1 text-xs text-muted-foreground">Maximum 3 targets per step</Text>
+          ) : null}
         </View>
-      </DialogContent>
-    </Dialog>
+
+        {saveError ? <Text className="text-xs text-destructive">{saveError}</Text> : null}
+
+        <View>
+          <Form {...form}>
+            <FormTextareaField
+              control={form.control}
+              label="Notes"
+              name="notes"
+              placeholder="Add any additional notes or instructions..."
+              className="min-h-[80px]"
+            />
+          </Form>
+        </View>
+      </View>
+    </AppFormModal>
   );
 }

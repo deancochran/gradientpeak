@@ -1,0 +1,25 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "../../packages/ui/src/theme/web.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@repo/ui/lib/cn",
+    "ui": "@repo/ui/components",
+    "lib": "@/lib",
+    "hooks": "@repo/ui/hooks"
+  },
+  "iconLibrary": "lucide",
+  "registries": {
+    "@shadcn": "https://ui.shadcn.com/r/styles/{style}/{name}.json",
+    "@rnr-nativewind": "https://reactnativereusables.com/r/nativewind/{name}.json"
+  }
+}

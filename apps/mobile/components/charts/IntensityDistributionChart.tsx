@@ -3,6 +3,8 @@
 import { Text } from "@repo/ui/components/text";
 import { Dimensions, Pressable, View } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
+import { useTheme } from "@/lib/stores/theme-store";
+import { getResolvedThemeScale } from "@/lib/theme";
 
 export interface IntensityZone {
   key: string;
@@ -37,6 +39,8 @@ export function IntensityDistributionChart({
 }: IntensityDistributionChartProps) {
   const screenWidth = Dimensions.get("window").width;
   const chartSize = Math.min(screenWidth - 64, height - 60);
+  const { resolvedTheme } = useTheme();
+  const theme = getResolvedThemeScale(resolvedTheme);
 
   // Define intensity zones with colors and metadata
   const intensityZones: IntensityZone[] = [
@@ -110,11 +114,11 @@ export function IntensityDistributionChart({
 
   if (activeZones.length === 0) {
     return (
-      <View className="bg-white rounded-lg border border-gray-200 p-4" style={{ height }}>
-        <Text className="text-base font-semibold text-gray-900 mb-2">Intensity Distribution</Text>
+      <View className="bg-card rounded-lg border border-border p-4" style={{ height }}>
+        <Text className="text-base font-semibold text-foreground mb-2">Intensity Distribution</Text>
         <View className="flex-1 items-center justify-center">
-          <Text className="text-gray-500">No intensity data available</Text>
-          <Text className="text-xs text-gray-400 mt-1 text-center">
+          <Text className="text-muted-foreground">No intensity data available</Text>
+          <Text className="text-xs text-muted-foreground mt-1 text-center">
             Complete activities with power data to see distribution
           </Text>
         </View>
@@ -174,9 +178,9 @@ export function IntensityDistributionChart({
   });
 
   return (
-    <View className="bg-white rounded-lg border border-gray-200 p-4">
-      <Text className="text-base font-semibold text-gray-900 mb-2">Intensity Distribution</Text>
-      <Text className="text-xs text-gray-500 mb-4">
+    <View className="bg-card rounded-lg border border-border p-4">
+      <Text className="text-base font-semibold text-foreground mb-2">Intensity Distribution</Text>
+      <Text className="text-xs text-muted-foreground mb-4">
         Training zones based on Intensity Factor (IF)
       </Text>
 
@@ -194,8 +198,8 @@ export function IntensityDistributionChart({
               cx={centerX}
               cy={centerY}
               r={innerRadius}
-              fill="#ffffff"
-              stroke="#f3f4f6"
+              fill={theme.card}
+              stroke={theme.border}
               strokeWidth={2}
             />
           </Svg>
@@ -211,10 +215,10 @@ export function IntensityDistributionChart({
             }}
           >
             <Text className="text-2xl mb-1">{dominantZone.emoji}</Text>
-            <Text className="text-xs font-semibold text-gray-900 text-center">
+            <Text className="text-xs font-semibold text-foreground text-center">
               {dominantZone.label}
             </Text>
-            <Text className="text-xs text-gray-600 text-center">
+            <Text className="text-xs text-muted-foreground text-center">
               {dominantZone.percentage.toFixed(1)}%
             </Text>
           </View>
@@ -227,26 +231,26 @@ export function IntensityDistributionChart({
           <Pressable
             key={zone.key}
             onPress={() => onZonePress?.(zone.key)}
-            className="flex-row items-center justify-between py-2 px-3 rounded-lg bg-gray-50 active:bg-gray-100"
+            className="flex-row items-center justify-between rounded-lg bg-muted px-3 py-2 active:bg-accent"
           >
             <View className="flex-row items-center flex-1">
               <View className="w-4 h-4 rounded-full mr-3" style={{ backgroundColor: zone.color }} />
               <View className="flex-1">
-                <Text className="text-sm font-medium text-gray-900">{zone.label}</Text>
-                <Text className="text-xs text-gray-500">{zone.description}</Text>
+                <Text className="text-sm font-medium text-foreground">{zone.label}</Text>
+                <Text className="text-xs text-muted-foreground">{zone.description}</Text>
               </View>
             </View>
             <View className="items-end">
-              <Text className="text-sm font-semibold text-gray-900">
+              <Text className="text-sm font-semibold text-foreground">
                 {zone.percentage.toFixed(1)}%
               </Text>
-              <Text className="text-xs text-gray-500">{zone.tss} TSS</Text>
+              <Text className="text-xs text-muted-foreground">{zone.tss} TSS</Text>
             </View>
           </Pressable>
         ))}
 
         {activeZones.length > 4 && (
-          <Text className="text-xs text-gray-500 text-center pt-2">
+          <Text className="text-xs text-muted-foreground text-center pt-2">
             +{activeZones.length - 4} more zones with activity
           </Text>
         )}

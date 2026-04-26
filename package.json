@@ -7,7 +7,8 @@
     "knip": "^6.4.1",
     "lefthook": "^2.1.6",
     "turbo": "^2.6.3",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=18"
@@ -48,6 +49,7 @@
     "db:drizzle:studio": "pnpm --filter @repo/db db:drizzle:studio",
     "check-types": "turbo run check-types",
     "test": "turbo run test",
+    "test:parity": "pnpm exec vitest run --config vitest.parity.config.ts",
     "test:e2e:web": "pnpm --filter web test:e2e",
     "self-host:up": "pnpm --filter @repo/db self-host:up",
     "self-host:down": "pnpm --filter @repo/db self-host:down"

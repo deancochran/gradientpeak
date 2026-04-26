@@ -9,7 +9,6 @@ import {
 } from "../draft";
 
 const profileId = "11111111-1111-4111-8111-111111111111";
-const milestoneEventId = "22222222-2222-4222-8222-222222222222";
 
 describe("goal draft helpers", () => {
   it("builds a race payload from athlete-friendly pace input", () => {
@@ -58,7 +57,6 @@ describe("goal draft helpers", () => {
       goal: {
         id: "33333333-3333-4333-8333-333333333333",
         profile_id: profileId,
-        milestone_event_id: milestoneEventId,
         target_date: "2026-06-01",
         title: "Raise FTP",
         priority: 7,
@@ -82,7 +80,6 @@ describe("goal draft helpers", () => {
     const goal = {
       id: "33333333-3333-4333-8333-333333333333",
       profile_id: profileId,
-      milestone_event_id: milestoneEventId,
       target_date: "2026-06-01",
       title: "Spring 5K",
       priority: 8,

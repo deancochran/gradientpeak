@@ -46,6 +46,21 @@ function formatPriorityLabel(priority: number | undefined | null) {
   return "Low";
 }
 
+function formatPlanAnchorDate(value: string | null | undefined) {
+  if (!value) return null;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function PlanDashboardScreen() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
@@ -118,10 +133,7 @@ function PlanDashboardScreen() {
     includeWeeklySummaries: false,
   });
   const goals = useProfileGoals({ loadAllPages: true });
-  const goalEditor = usePlanGoalEditorController({
-    activePlanId: activePlan?.id,
-    goals,
-  });
+  const goalEditor = usePlanGoalEditorController({ goals });
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
 
   const dashboard = usePlanDashboardViewModel({
@@ -133,6 +145,7 @@ function PlanDashboardScreen() {
     recentPlannedEvents: recentPlannedEventsQuery.data?.items,
     today,
   });
+  const primaryActivePlan = dashboard.activePlansInProgress[0] ?? null;
 
   useEffect(() => {
     const refreshKey = [
@@ -251,6 +264,55 @@ function PlanDashboardScreen() {
                       year: "numeric",
                     })}
                   </Text>
+                </View>
+              ) : null}
+
+              {activePlan?.id && dashboard.nextGoal ? (
+                <TouchableOpacity
+                  onPress={() =>
+                    navigateTo({
+                      pathname: "/goal-detail",
+                      params: { id: dashboard.nextGoal?.goal.id },
+                    } as any)
+                  }
+                  className="rounded-md border border-primary/20 bg-primary/5 px-3 py-3 gap-1"
+                  activeOpacity={0.8}
+                  testID="plan-next-goal-anchor"
+                >
+                  <Text className="text-[11px] uppercase tracking-wide text-primary">
+                    Next anchor for current plan
+                  </Text>
+                  <Text className="text-sm font-semibold text-foreground">
+                    {dashboard.nextGoal.goal.title}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">
+                    Keep your current schedule aligned to this target day.
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {primaryActivePlan && dashboard.nextGoal ? (
+                <View
+                  className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-2"
+                  testID="plan-execution-summary"
+                >
+                  <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Execution summary
+                  </Text>
+                  <View className="flex-row items-start justify-between gap-3">
+                    <View className="flex-1 gap-1">
+                      <Text className="text-xs text-muted-foreground">Next scheduled session</Text>
+                      <Text className="text-sm font-semibold text-foreground">
+                        {formatPlanAnchorDate(primaryActivePlan.nextEventAt) ?? "Scheduled soon"}
+                      </Text>
+                    </View>
+                    <View className="flex-1 gap-1">
+                      <Text className="text-xs text-muted-foreground">Next goal day</Text>
+                      <Text className="text-sm font-semibold text-foreground">
+                        {formatPlanAnchorDate(dashboard.nextGoal.goal.target_date) ?? "Not set"}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               ) : null}
 

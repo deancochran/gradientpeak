@@ -17,14 +17,10 @@ type PlanGoalEditorGoals = Pick<
 >;
 
 type UsePlanGoalEditorControllerParams = {
-  activePlanId: string | null | undefined;
   goals: PlanGoalEditorGoals;
 };
 
-export function usePlanGoalEditorController({
-  activePlanId,
-  goals,
-}: UsePlanGoalEditorControllerParams) {
+export function usePlanGoalEditorController({ goals }: UsePlanGoalEditorControllerParams) {
   const utils = api.useUtils();
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
@@ -72,16 +68,12 @@ export function usePlanGoalEditorController({
         if (editingGoalId) {
           await updateGoalMutation.mutateAsync({
             id: editingGoalId,
-            data: {
-              ...buildGoalUpdatePayload({ draft }),
-              training_plan_id: activePlanId ?? undefined,
-            },
+            data: buildGoalUpdatePayload({ draft }),
           });
 
           await Promise.all([
             invalidateGoalQueries(utils, {
               goalId: editingGoalId,
-              includeEventDetail: true,
             }),
             goals.refetch(),
           ]);
@@ -94,7 +86,6 @@ export function usePlanGoalEditorController({
             draft,
             profileId: goals.profileId,
           }),
-          training_plan_id: activePlanId ?? undefined,
         });
 
         await Promise.all([invalidateGoalQueries(utils), goals.refetch()]);
@@ -106,15 +97,7 @@ export function usePlanGoalEditorController({
         );
       }
     },
-    [
-      activePlanId,
-      closeGoalEditor,
-      createGoalMutation,
-      editingGoalId,
-      goals,
-      updateGoalMutation,
-      utils,
-    ],
+    [closeGoalEditor, createGoalMutation, editingGoalId, goals, updateGoalMutation, utils],
   );
 
   return {

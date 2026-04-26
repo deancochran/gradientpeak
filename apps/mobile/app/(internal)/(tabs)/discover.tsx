@@ -2005,15 +2005,7 @@ interface RouteCardProps {
 }
 
 function RouteCard({ route, onPress }: RouteCardProps) {
-  return (
-    <SharedRouteCard
-      route={route}
-      onPress={onPress}
-      variant="compact"
-      showAttribution={false}
-      headerAccessory={<Icon as={ChevronRight} size={18} className="mt-1 text-muted-foreground" />}
-    />
-  );
+  return <SharedRouteCard route={route} onPress={onPress} />;
 }
 
 interface UserCardProps {

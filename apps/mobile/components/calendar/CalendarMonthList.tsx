@@ -23,6 +23,7 @@ type CalendarMonthListProps = {
   visibleMonthAnchor: string;
   todayKey: string;
   eventsByDate: CalendarEventsByDate;
+  goalDates: Set<string>;
   onVisibleMonthChange: (monthStartKey: string) => void;
   onReachStart: () => void;
   onReachEnd: () => void;
@@ -63,6 +64,34 @@ function getPlannedDaySignal(
   return { count: plannedEvents.length, level };
 }
 
+function getPlannedDayChipClass(level: 1 | 2 | 3 | 4 | null, isToday: boolean) {
+  if (level === 4) {
+    return isToday
+      ? "border border-primary bg-primary/25"
+      : "border border-primary/60 bg-primary/20";
+  }
+
+  if (level === 3) {
+    return isToday
+      ? "border border-primary bg-primary/18"
+      : "border border-primary/45 bg-primary/14";
+  }
+
+  if (level === 2) {
+    return isToday
+      ? "border border-primary bg-primary/12"
+      : "border border-primary/35 bg-primary/10";
+  }
+
+  if (level === 1) {
+    return isToday
+      ? "border border-primary bg-primary/10"
+      : "border border-primary/25 bg-primary/5";
+  }
+
+  return isToday ? "border border-primary bg-primary/5" : "bg-transparent";
+}
+
 export function getVisibleMonthIndex(months: string[], visibleMonthAnchor: string): number {
   return Math.max(
     0,
@@ -79,6 +108,7 @@ export function CalendarMonthList({
   visibleMonthAnchor,
   todayKey,
   eventsByDate,
+  goalDates,
   onVisibleMonthChange,
   onReachStart,
   onReachEnd,
@@ -178,9 +208,14 @@ export function CalendarMonthList({
                   const dayEvents = eventsByDate.get(dateKey) ?? [];
                   const density = getMonthDensity(eventsByDate, dateKey);
                   const plannedSignal = getPlannedDaySignal(dayEvents);
+                  const hasGoalAnchor = goalDates.has(dateKey);
                   const hasVisibleEvents = density > 0;
                   const isInMonth = isSameMonth(dateKey, item);
                   const isToday = isInMonth && dateKey === todayKey;
+                  const dayChipClassName = getPlannedDayChipClass(
+                    plannedSignal?.level ?? null,
+                    isToday,
+                  );
 
                   if (!isInMonth) {
                     return (
@@ -204,27 +239,37 @@ export function CalendarMonthList({
                       testID={`calendar-month-cell-${dateKey}`}
                     >
                       <View
-                        className={`h-11 w-11 items-center justify-center rounded-2xl ${isToday ? "border border-primary bg-primary/5" : "bg-transparent"}`}
+                        className={`h-11 w-11 items-center justify-center rounded-2xl ${dayChipClassName}`}
+                        testID={`calendar-month-day-chip-${dateKey}`}
                       >
                         <Text className="text-sm font-semibold text-foreground">
                           {format(parseDateKey(dateKey), "d")}
                         </Text>
                       </View>
                       <View className="mt-1 h-3 items-center justify-start gap-1">
+                        {hasGoalAnchor ? (
+                          <View
+                            className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                            testID={`calendar-month-goal-signal-${dateKey}`}
+                          />
+                        ) : null}
                         {plannedSignal ? (
                           <View
-                            className={`h-1 rounded-full ${
+                            className={`min-w-4 rounded-full px-1.5 py-[1px] ${
                               plannedSignal.level >= 4
                                 ? "bg-primary"
                                 : plannedSignal.level === 3
-                                  ? "bg-primary/85"
+                                  ? "bg-primary/90"
                                   : plannedSignal.level === 2
-                                    ? "bg-primary/70"
-                                    : "bg-primary/50"
+                                    ? "bg-primary/80"
+                                    : "bg-primary/65"
                             }`}
-                            style={{ width: plannedSignal.count > 1 ? 16 : 10 }}
                             testID={`calendar-month-planned-signal-${dateKey}`}
-                          />
+                          >
+                            <Text className="text-[9px] font-semibold text-primary-foreground">
+                              {plannedSignal.count}
+                            </Text>
+                          </View>
                         ) : null}
                         <View className="h-1.5 flex-row items-center justify-center gap-1">
                           {hasVisibleEvents

@@ -44,7 +44,7 @@ export function GoalSelectionStep({
         currentStep={currentStep}
         totalSteps={totalSteps}
         title="What's your goal?"
-        description="Set your main event with the reusable goal editor"
+        description="Set your primary goal and target date with the reusable goal editor"
         onBack={onBack}
         onNext={onNext}
         nextDisabled={!isValid}
@@ -83,7 +83,7 @@ export function GoalSelectionStep({
           <Card className="bg-destructive/10 border-destructive/20">
             <CardContent className="p-4">
               <Text className="text-sm text-destructive">
-                Add an event name and target date to continue.
+                Add a goal name and target date to continue.
               </Text>
             </CardContent>
           </Card>

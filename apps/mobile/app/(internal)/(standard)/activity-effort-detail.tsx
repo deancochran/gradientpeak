@@ -11,9 +11,10 @@ import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Activity, Clock3, Ellipsis, Timer, Zap } from "lucide-react-native";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -37,6 +38,7 @@ export default function ActivityEffortDetailScreen() {
   const navigateTo = useAppNavigate();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const utils = api.useUtils();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const { data: effort, isLoading } = api.activityEfforts.getById.useQuery(
     { id: id! },
@@ -63,14 +65,7 @@ export default function ActivityEffortDetailScreen() {
 
   const handleDelete = () => {
     if (!effort) return;
-    Alert.alert("Delete Effort", "Are you sure you want to delete this activity effort?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => deleteMutation.mutate({ id: effort.id }),
-      },
-    ]);
+    setShowDeleteConfirm(true);
   };
 
   const renderHeaderActions = () => (
@@ -239,6 +234,25 @@ export default function ActivityEffortDetailScreen() {
           ) : null}
         </View>
       </ScrollView>
+      {showDeleteConfirm ? (
+        <AppConfirmModal
+          description="Are you sure you want to delete this activity effort?"
+          onClose={() => setShowDeleteConfirm(false)}
+          primaryAction={{
+            label: deleteMutation.isPending ? "Deleting..." : "Delete Effort",
+            onPress: () => deleteMutation.mutate({ id: effort.id }),
+            testID: "activity-effort-detail-delete-confirm",
+            variant: "destructive",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteConfirm(false),
+            variant: "outline",
+          }}
+          testID="activity-effort-detail-delete-modal"
+          title="Delete Effort"
+        />
+      ) : null}
     </View>
   );
 }

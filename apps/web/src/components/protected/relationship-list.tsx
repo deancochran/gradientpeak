@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import { Link } from "@tanstack/react-router";
 import { Loader2, Lock, UserRound } from "lucide-react";
 
 type RelationshipProfile = {
@@ -14,22 +15,24 @@ type RelationshipProfile = {
 export function RelationshipList({
   action,
   emptyMessage,
+  getProfileLink,
   hasMore,
-  isFetching,
   isLoading,
-  onLoadMore,
-  onOpenProfile,
+  loadMoreLink,
   title,
   total,
   users,
 }: {
   action?: (profile: RelationshipProfile) => React.ReactNode;
   emptyMessage: string;
+  getProfileLink: (userId: string) => {
+    params: { userId: string };
+    search: { flash: undefined; flashType: undefined };
+    to: "/user/$userId";
+  };
   hasMore: boolean;
-  isFetching: boolean;
   isLoading: boolean;
-  onLoadMore: () => void;
-  onOpenProfile: (userId: string) => void;
+  loadMoreLink?: React.ReactNode;
   title: string;
   total: number;
   users: readonly RelationshipProfile[];
@@ -58,9 +61,9 @@ export function RelationshipList({
                 key={profile.id}
                 className="flex items-center justify-between gap-3 rounded-lg p-3 transition-colors hover:bg-accent/50"
               >
-                <button
+                <Link
+                  {...getProfileLink(profile.id)}
                   className="flex flex-1 items-center gap-3 text-left"
-                  onClick={() => onOpenProfile(profile.id)}
                 >
                   <Avatar className="h-12 w-12">
                     <AvatarImage src={profile.avatar_url || ""} alt={profile.username || "User"} />
@@ -77,7 +80,7 @@ export function RelationshipList({
                       </div>
                     ) : null}
                   </div>
-                </button>
+                </Link>
 
                 {action ? action(profile) : null}
               </div>
@@ -85,20 +88,7 @@ export function RelationshipList({
           </div>
         )}
 
-        {hasMore ? (
-          <div className="mt-4 text-center">
-            <Button variant="outline" onClick={onLoadMore} disabled={isFetching}>
-              {isFetching ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading...
-                </>
-              ) : (
-                "Load more"
-              )}
-            </Button>
-          </div>
-        ) : null}
+        {hasMore && loadMoreLink ? <div className="mt-4 text-center">{loadMoreLink}</div> : null}
       </CardContent>
     </Card>
   );

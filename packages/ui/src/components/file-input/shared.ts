@@ -10,6 +10,7 @@ export type SelectedFile = {
 
 export interface FileInputProps extends TestProps {
   label: string;
+  name?: string;
   files?: SelectedFile[];
   onFilesChange?: (files: SelectedFile[]) => void;
   helperText?: string;

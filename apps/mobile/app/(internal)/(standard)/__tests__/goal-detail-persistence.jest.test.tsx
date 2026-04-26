@@ -91,7 +91,7 @@ jest.mock("@/lib/api", () => ({
   api: {
     useUtils: () => ({
       goals: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
-      events: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
+      events: { list: { invalidate: jest.fn() } },
     }),
     goals: {
       getById: {
@@ -99,7 +99,6 @@ jest.mock("@/lib/api", () => ({
           data: {
             id: "goal-1",
             profile_id: "22222222-2222-4222-8222-222222222222",
-            milestone_event_id: "33333333-3333-4333-8333-333333333333",
             target_date: "2026-06-01",
             title: "Spring 5K",
             priority: 8,

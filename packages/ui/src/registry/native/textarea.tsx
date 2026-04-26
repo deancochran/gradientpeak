@@ -1,5 +1,6 @@
-import { Platform, TextInput, View } from "react-native";
+import { Platform, TextInput, useColorScheme, View } from "react-native";
 import { cn } from "../../lib/cn";
+import { getResolvedNativeTheme } from "../../lib/native-theme";
 
 function Textarea({
   className,
@@ -8,6 +9,8 @@ function Textarea({
   placeholderClassName,
   ...props
 }: React.ComponentProps<typeof TextInput>) {
+  const theme = getResolvedNativeTheme(useColorScheme());
+
   return (
     <View
       className={cn(
@@ -21,7 +24,10 @@ function Textarea({
     >
       <TextInput
         {...props}
-        style={[styles.textarea, props.style]}
+        cursorColor={props.cursorColor ?? theme.primary}
+        placeholderTextColor={props.placeholderTextColor ?? theme.mutedForeground}
+        selectionColor={props.selectionColor ?? theme.primary}
+        style={[styles.textarea, { color: theme.foreground }, props.style]}
         multiline={multiline}
         numberOfLines={numberOfLines}
         textAlignVertical="top"

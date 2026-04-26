@@ -12,6 +12,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Activity, Ellipsis, HeartPulse, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -40,6 +41,7 @@ export default function ProfileMetricDetailScreen() {
   const navigateTo = useAppNavigate();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const utils = api.useUtils();
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 
   const { data: metric, isLoading } = api.profileMetrics.getById.useQuery(
     { id: id! },
@@ -61,14 +63,7 @@ export default function ProfileMetricDetailScreen() {
 
   const handleDelete = () => {
     if (!metric) return;
-    Alert.alert("Delete Metric", "Are you sure you want to delete this profile metric?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => deleteMutation.mutate({ id: metric.id }),
-      },
-    ]);
+    setShowDeleteConfirm(true);
   };
 
   const renderHeaderActions = () => (
@@ -184,6 +179,25 @@ export default function ProfileMetricDetailScreen() {
           ) : null}
         </View>
       </ScrollView>
+      {showDeleteConfirm ? (
+        <AppConfirmModal
+          description="Are you sure you want to delete this profile metric?"
+          onClose={() => setShowDeleteConfirm(false)}
+          primaryAction={{
+            label: deleteMutation.isPending ? "Deleting..." : "Delete Metric",
+            onPress: () => deleteMutation.mutate({ id: metric.id }),
+            testID: "profile-metric-detail-delete-confirm",
+            variant: "destructive",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteConfirm(false),
+            variant: "outline",
+          }}
+          testID="profile-metric-detail-delete-modal"
+          title="Delete Metric"
+        />
+      ) : null}
     </View>
   );
 }

@@ -1,21 +1,39 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
-import { Switch } from "@repo/ui/components/switch";
+import {
+  Form,
+  FormDateInputField,
+  FormSwitchField,
+  FormTextareaField,
+  FormTextField,
+  FormTimeInputField,
+} from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { format } from "date-fns";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect } from "react";
 import { Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { z } from "zod";
 
 export type ManualEventCreateType = "race_target" | "custom";
 
 type CalendarManualCreateFormValues = {
   title: string;
-  notes: string;
-  startsAt: Date;
-  allDay: boolean;
+  notes: string | null;
+  scheduled_date: string;
+  scheduled_time: string | null;
+  all_day: boolean;
 };
+
+const calendarManualCreateSchema = z.object({
+  title: z.string().min(1),
+  notes: z.string().nullable(),
+  scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  scheduled_time: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .nullable(),
+  all_day: z.boolean(),
+});
 
 type CalendarManualCreateModalProps = {
   visible: boolean;
@@ -37,12 +55,39 @@ function buildInitialValues(
   activeDate: string,
   createType: ManualEventCreateType,
 ): CalendarManualCreateFormValues {
+  const startsAt = new Date(`${activeDate}T09:00:00.000Z`);
+
   return {
     title: "",
-    notes: "",
-    startsAt: new Date(`${activeDate}T09:00:00.000Z`),
-    allDay: false,
+    notes: null,
+    scheduled_date: activeDate,
+    scheduled_time: format(startsAt, "HH:mm"),
+    all_day: false,
   };
+}
+
+function buildStartsAt(input: {
+  scheduledDate: string;
+  scheduledTime: string | null;
+  allDay: boolean;
+}) {
+  const [year, month, day] = input.scheduledDate.split("-").map(Number);
+  const startsAt = new Date(
+    year ?? 1970,
+    (month ?? 1) - 1,
+    day ?? 1,
+    input.allDay ? 9 : 0,
+    0,
+    0,
+    0,
+  );
+
+  if (!input.allDay && input.scheduledTime) {
+    const [hours, minutes] = input.scheduledTime.split(":").map(Number);
+    startsAt.setHours(hours ?? 0, minutes ?? 0, 0, 0);
+  }
+
+  return startsAt;
 }
 
 function getManualCreateTitle(createType: ManualEventCreateType): string {
@@ -72,69 +117,42 @@ export function CalendarManualCreateModal({
   onClose,
   onSubmit,
 }: CalendarManualCreateModalProps) {
-  const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
-  const [startsAt, setStartsAt] = useState(new Date());
-  const [allDay, setAllDay] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const form = useZodForm({
+    schema: calendarManualCreateSchema,
+    defaultValues: buildInitialValues(activeDate, createType ?? "custom"),
+  });
+
+  const title = form.watch("title");
+  const allDay = form.watch("all_day");
 
   useEffect(() => {
     if (!visible || !createType) {
-      setShowDatePicker(false);
-      setShowTimePicker(false);
       return;
     }
 
-    const initialValues = buildInitialValues(activeDate, createType);
-    setTitle(initialValues.title);
-    setNotes(initialValues.notes);
-    setStartsAt(initialValues.startsAt);
-    setAllDay(initialValues.allDay);
-    setShowDatePicker(false);
-    setShowTimePicker(false);
-  }, [activeDate, createType, visible]);
+    form.reset(buildInitialValues(activeDate, createType));
+  }, [activeDate, createType, form, visible]);
 
-  const handleDateChange = useCallback(
-    (_: unknown, nextDate?: Date) => {
-      setShowDatePicker(false);
-      if (!nextDate) return;
+  const submitForm = useZodFormSubmit<CalendarManualCreateFormValues>({
+    form,
+    onSubmit: async (data) => {
+      if (!createType) return;
 
-      const updatedDate = new Date(startsAt);
-      updatedDate.setFullYear(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate());
-      setStartsAt(updatedDate);
+      onSubmit({
+        createType,
+        title: data.title,
+        notes: data.notes ?? "",
+        startsAt: buildStartsAt({
+          scheduledDate: data.scheduled_date,
+          scheduledTime: data.scheduled_time,
+          allDay: data.all_day,
+        }),
+        allDay: data.all_day,
+      });
     },
-    [startsAt],
-  );
+  });
 
-  const handleTimeChange = useCallback(
-    (_: unknown, nextDate?: Date) => {
-      setShowTimePicker(false);
-      if (!nextDate) return;
-
-      const updatedDate = new Date(startsAt);
-      updatedDate.setHours(nextDate.getHours(), nextDate.getMinutes(), 0, 0);
-      setStartsAt(updatedDate);
-    },
-    [startsAt],
-  );
-
-  const canSubmit = useMemo(
-    () => !!createType && !submitting && title.trim().length > 0,
-    [createType, submitting, title],
-  );
-
-  const handleSubmit = useCallback(() => {
-    if (!createType) return;
-
-    onSubmit({
-      createType,
-      title,
-      notes,
-      startsAt,
-      allDay,
-    });
-  }, [allDay, createType, notes, onSubmit, startsAt, title]);
+  const canSubmit = !!createType && !submitting && title.trim().length > 0;
 
   if (!visible || !createType) {
     return null;
@@ -157,60 +175,60 @@ export function CalendarManualCreateModal({
 
         <ScrollView className="flex-1">
           <View className="gap-4 px-4 py-4" testID="manual-create-modal">
-            <View>
-              <Text className="mb-2 text-sm font-medium">Title</Text>
-              <Input
-                value={title}
-                onChangeText={setTitle}
-                placeholder={getTitlePlaceholder(createType)}
-                editable={!submitting}
-                testID="manual-create-title-input"
-              />
-            </View>
+            <Form {...form}>
+              <View className="gap-4">
+                <FormTextField
+                  control={form.control}
+                  disabled={submitting}
+                  label="Title"
+                  name="title"
+                  placeholder={getTitlePlaceholder(createType)}
+                  testId="manual-create-title-input"
+                />
 
-            <View>
-              <Text className="mb-2 text-sm font-medium">Date</Text>
-              <TouchableOpacity
-                onPress={() => setShowDatePicker(true)}
-                className="rounded-md border border-border bg-card px-3 py-3"
-                activeOpacity={0.8}
-                testID="manual-create-date-button"
-              >
-                <Text className="text-sm">{format(startsAt, "EEEE, MMM d, yyyy")}</Text>
-              </TouchableOpacity>
-            </View>
+                <FormDateInputField
+                  accessibilityHint="Choose the day for this event"
+                  control={form.control}
+                  disabled={submitting}
+                  label="Date"
+                  name="scheduled_date"
+                  pickerPresentation="modal"
+                  testId="manual-create-date-button"
+                />
 
-            <View className="gap-2">
-              <View className="flex-row items-center justify-between">
-                <Text className="text-sm font-medium">All day</Text>
-                <Switch
-                  checked={allDay}
-                  onCheckedChange={setAllDay}
-                  testID="manual-create-all-day-toggle"
+                <FormSwitchField
+                  control={form.control}
+                  disabled={submitting}
+                  label="All day"
+                  name="all_day"
+                  switchLabel="All day"
+                  testId="manual-create-all-day-toggle"
+                />
+
+                {!allDay ? (
+                  <FormTimeInputField
+                    accessibilityHint="Choose the start time for this event"
+                    control={form.control}
+                    disabled={submitting}
+                    label="Time"
+                    name="scheduled_time"
+                    pickerPresentation="modal"
+                    testId="manual-create-time-button"
+                  />
+                ) : null}
+
+                <FormTextareaField
+                  control={form.control}
+                  disabled={submitting}
+                  formatValue={(value) => value ?? ""}
+                  label="Notes (optional)"
+                  name="notes"
+                  parseValue={(value) => value || null}
+                  placeholder="Add notes"
+                  testId="manual-create-notes-input"
                 />
               </View>
-              {!allDay ? (
-                <TouchableOpacity
-                  onPress={() => setShowTimePicker(true)}
-                  className="rounded-md border border-border bg-card px-3 py-3"
-                  activeOpacity={0.8}
-                  testID="manual-create-time-button"
-                >
-                  <Text className="text-sm">{format(startsAt, "h:mm a")}</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-
-            <View>
-              <Text className="mb-2 text-sm font-medium">Notes (optional)</Text>
-              <Textarea
-                value={notes}
-                onChangeText={setNotes}
-                placeholder="Add notes"
-                editable={!submitting}
-                testID="manual-create-notes-input"
-              />
-            </View>
+            </Form>
 
             {errorMessage ? (
               <View className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
@@ -227,7 +245,7 @@ export function CalendarManualCreateModal({
             </Button>
             <Button
               className="flex-1"
-              onPress={handleSubmit}
+              onPress={submitForm.handleSubmit}
               disabled={!canSubmit}
               testID="manual-create-submit"
             >
@@ -237,23 +255,6 @@ export function CalendarManualCreateModal({
             </Button>
           </View>
         </View>
-
-        {showDatePicker ? (
-          <DateTimePicker
-            value={startsAt}
-            mode="date"
-            display="default"
-            onChange={handleDateChange}
-          />
-        ) : null}
-        {showTimePicker ? (
-          <DateTimePicker
-            value={startsAt}
-            mode="time"
-            display="default"
-            onChange={handleTimeChange}
-          />
-        ) : null}
       </View>
     </Modal>
   );

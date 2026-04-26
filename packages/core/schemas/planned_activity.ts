@@ -292,7 +292,7 @@ export const editableEventPatchSchema = z
     description: z.string().max(5000).nullable().optional(),
     activity_plan_id: z.string().uuid().nullable().optional(),
     training_plan_id: z.string().uuid().nullable().optional(),
-    recurrence: eventRecurrenceSchema.optional(),
+    recurrence: eventRecurrenceSchema.nullable().optional(),
     lifecycle: eventLifecycleSchema.optional(),
     event_type: editableEventTypeSchema.optional(),
     source: z.undefined().optional(),

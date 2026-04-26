@@ -326,7 +326,6 @@ CREATE TABLE "oauth_states" (
 CREATE TABLE "profile_goals" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"profile_id" uuid NOT NULL,
-	"milestone_event_id" uuid NOT NULL,
 	"title" text NOT NULL,
 	"priority" integer NOT NULL,
 	"activity_category" text,
@@ -450,7 +449,6 @@ ALTER TABLE "notifications" ADD CONSTRAINT "notifications_user_id_profiles_id_fk
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_actor_id_profiles_id_fk" FOREIGN KEY ("actor_id") REFERENCES "public"."profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "oauth_states" ADD CONSTRAINT "oauth_states_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "profile_goals" ADD CONSTRAINT "profile_goals_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "profile_goals" ADD CONSTRAINT "profile_goals_milestone_event_id_events_id_fk" FOREIGN KEY ("milestone_event_id") REFERENCES "public"."events"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "profile_metrics" ADD CONSTRAINT "profile_metrics_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "profile_metrics" ADD CONSTRAINT "profile_metrics_reference_activity_id_activities_id_fk" FOREIGN KEY ("reference_activity_id") REFERENCES "public"."activities"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "profile_training_settings" ADD CONSTRAINT "profile_training_settings_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -507,7 +505,6 @@ CREATE INDEX "idx_notifications_read_at" ON "notifications" USING btree ("read_a
 CREATE INDEX "idx_oauth_states_expires_at" ON "oauth_states" USING btree ("expires_at");--> statement-breakpoint
 CREATE INDEX "idx_oauth_states_profile_id" ON "oauth_states" USING btree ("profile_id");--> statement-breakpoint
 CREATE INDEX "idx_profile_goals_profile_id" ON "profile_goals" USING btree ("profile_id");--> statement-breakpoint
-CREATE INDEX "idx_profile_goals_milestone_event_id" ON "profile_goals" USING btree ("milestone_event_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "profile_metrics_idx_key" ON "profile_metrics" USING btree ("idx");--> statement-breakpoint
 CREATE INDEX "idx_profile_metrics_profile" ON "profile_metrics" USING btree ("profile_id","recorded_at");--> statement-breakpoint
 CREATE INDEX "idx_profile_metrics_recorded_at" ON "profile_metrics" USING btree ("recorded_at");--> statement-breakpoint

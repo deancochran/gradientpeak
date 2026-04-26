@@ -1,3 +1,6 @@
+@source "./**/*.{ts,tsx}";
+@source "../../packages/ui/src/**/*.{ts,tsx}";
+
 @import "@repo/tailwindcss/web.css";
 
 html,

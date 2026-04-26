@@ -20,6 +20,7 @@ import { Activity, ArrowRight, Check, ChevronRight } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { Alert, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 
@@ -378,12 +379,18 @@ const CssStep = ({ data, updateData }: StepProps) => (
 
 const IntegrationsStep = ({ data, updateData }: StepProps) => {
   const [connected, setConnected] = useState<string[]>([]);
+  const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
+    null,
+  );
   const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
 
   const handleConnect = async (provider: string) => {
     if (provider === "Apple Health") {
       if (Platform.OS !== "ios") {
-        Alert.alert("Not Available", "Apple Health is only available on iOS.");
+        setStatusModal({
+          title: "Not Available",
+          description: "Apple Health is only available on iOS.",
+        });
         return;
       }
 
@@ -391,7 +398,10 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
       try {
         AppleHealthKit = require("react-native-health").default as AppleHealthKitModule;
       } catch {
-        Alert.alert("Not Available", "Apple Health integration is not available in this build.");
+        setStatusModal({
+          title: "Not Available",
+          description: "Apple Health integration is not available in this build.",
+        });
         return;
       }
 
@@ -416,12 +426,12 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
       AppleHealthKit.initHealthKit(permissions, (error) => {
         if (error) {
           console.error("[HealthKit] Error:", error);
-          Alert.alert("Error", "Failed to connect to Apple Health.");
+          setStatusModal({ title: "Error", description: "Failed to connect to Apple Health." });
           return;
         }
         // Success
         setConnected((prev) => [...prev, "Apple Health"]);
-        Alert.alert("Success", "Connected to Apple Health!");
+        setStatusModal({ title: "Success", description: "Connected to Apple Health!" });
       });
       return;
     }
@@ -437,7 +447,10 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
 
     const providerKey = providerMap[provider];
     if (!providerKey) {
-      Alert.alert("Coming Soon", `Connection to ${provider} will be available in the next update.`);
+      setStatusModal({
+        title: "Coming Soon",
+        description: `Connection to ${provider} will be available in the next update.`,
+      });
       return;
     }
 
@@ -452,11 +465,11 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
 
       if (result.type === "success") {
         setConnected((prev) => [...prev, provider]);
-        Alert.alert("Success", `Connected to ${provider}`);
+        setStatusModal({ title: "Success", description: `Connected to ${provider}` });
       }
     } catch (error) {
       console.error(error);
-      Alert.alert("Error", `Failed to connect to ${provider}.`);
+      setStatusModal({ title: "Error", description: `Failed to connect to ${provider}.` });
     }
   };
 
@@ -499,6 +512,19 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
           )}
         </TouchableOpacity>
       ))}
+      {statusModal ? (
+        <AppConfirmModal
+          description={statusModal.description}
+          onClose={() => setStatusModal(null)}
+          primaryAction={{
+            label: "OK",
+            onPress: () => setStatusModal(null),
+            testID: "onboarding-integrations-status-confirm",
+          }}
+          testID="onboarding-integrations-status-modal"
+          title={statusModal.title}
+        />
+      ) : null}
     </View>
   );
 };
@@ -582,6 +608,9 @@ export default function OnboardingScreen() {
   const [data, setData] = useState<OnboardingData>(INITIAL_DATA);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
+    null,
+  );
   const { completeOnboarding } = useAuth();
   const { data: profile } = api.profiles.get.useQuery();
   const completeOnboardingMutation = api.onboarding.completeOnboarding.useMutation();
@@ -720,7 +749,7 @@ export default function OnboardingScreen() {
 
     try {
       if (!profile?.id) {
-        Alert.alert("Error", "User profile not found.");
+        setStatusModal({ title: "Error", description: "User profile not found." });
         return;
       }
 
@@ -729,7 +758,7 @@ export default function OnboardingScreen() {
       const dobDate = data.dob ? new Date(data.dob) : undefined;
 
       if (dobDate && dobDate.toString() === "Invalid Date") {
-        Alert.alert("Error", "Please enter a valid date of birth.");
+        setStatusModal({ title: "Error", description: "Please enter a valid date of birth." });
         return;
       }
 
@@ -754,7 +783,7 @@ export default function OnboardingScreen() {
       // Hand control back to the global auth gate.
       router.replace("/");
     } catch (error) {
-      Alert.alert("Error", "Failed to save profile. Please try again.");
+      setStatusModal({ title: "Error", description: "Failed to save profile. Please try again." });
       console.error(error);
     } finally {
       setIsSubmitting(false);
@@ -809,6 +838,19 @@ export default function OnboardingScreen() {
             {!isLastStep && <Icon as={ArrowRight} className="ml-2 text-primary-foreground" />}
           </Button>
         </View>
+        {statusModal ? (
+          <AppConfirmModal
+            description={statusModal.description}
+            onClose={() => setStatusModal(null)}
+            primaryAction={{
+              label: "OK",
+              onPress: () => setStatusModal(null),
+              testID: "onboarding-status-confirm",
+            }}
+            testID="onboarding-status-modal"
+            title={statusModal.title}
+          />
+        ) : null}
       </View>
     </SafeAreaView>
   );

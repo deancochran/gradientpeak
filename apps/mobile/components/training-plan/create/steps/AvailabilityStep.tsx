@@ -8,12 +8,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormNumberField } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
 import { AlertCircle, ChevronDown, ChevronUp } from "lucide-react-native";
 import React, { useState } from "react";
 import { Pressable, View } from "react-native";
+import { z } from "zod";
 import { WizardStep } from "../WizardStep";
 
 interface AvailabilityStepProps {
@@ -75,6 +77,44 @@ export function AvailabilityStep({
   totalSteps,
 }: AvailabilityStepProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const form = useZodForm({
+    schema: z.object({
+      max_hours_per_week: z.number().nullable().optional(),
+      max_sessions_per_week: z.number().nullable().optional(),
+      min_rest_days_per_week: z.number().min(0),
+    }),
+    defaultValues: {
+      max_hours_per_week: constraints.max_hours_per_week ?? null,
+      max_sessions_per_week: constraints.max_sessions_per_week ?? null,
+      min_rest_days_per_week: constraints.min_rest_days_per_week,
+    },
+  });
+
+  const hoursPerWeek = form.watch("max_hours_per_week");
+  const sessionsPerWeek = form.watch("max_sessions_per_week");
+  const minRestDays = form.watch("min_rest_days_per_week");
+
+  React.useEffect(() => {
+    form.reset({
+      max_hours_per_week: constraints.max_hours_per_week ?? null,
+      max_sessions_per_week: constraints.max_sessions_per_week ?? null,
+      min_rest_days_per_week: constraints.min_rest_days_per_week,
+    });
+  }, [
+    constraints.max_hours_per_week,
+    constraints.max_sessions_per_week,
+    constraints.min_rest_days_per_week,
+    form,
+  ]);
+
+  React.useEffect(() => {
+    onConstraintsChange({
+      ...constraints,
+      max_hours_per_week: hoursPerWeek ?? undefined,
+      max_sessions_per_week: sessionsPerWeek ?? undefined,
+      min_rest_days_per_week: minRestDays,
+    });
+  }, [constraints, hoursPerWeek, minRestDays, onConstraintsChange, sessionsPerWeek]);
 
   const handlePresetSelect = (preset: (typeof LIFESTYLE_PRESETS)[number]) => {
     onConstraintsChange({
@@ -152,72 +192,44 @@ export function AvailabilityStep({
           <CardDescription>Adjust to match your exact availability</CardDescription>
         </CardHeader>
         <CardContent>
-          <View className="gap-4">
-            {/* Hours per Week */}
-            <View className="gap-2">
-              <Label nativeID="hours-per-week">Hours per Week (Optional)</Label>
-              <Input
+          <Form {...form}>
+            <View className="gap-4">
+              {/* Hours per Week */}
+              <FormNumberField
+                control={form.control}
+                label="Hours per Week"
+                name="max_hours_per_week"
                 placeholder="e.g., 8"
-                value={
-                  constraints.max_hours_per_week !== undefined
-                    ? constraints.max_hours_per_week.toString()
-                    : ""
-                }
-                onChangeText={(text) => {
-                  const value = parseFloat(text);
-                  onConstraintsChange({
-                    ...constraints,
-                    max_hours_per_week: isNaN(value) ? undefined : value,
-                  });
-                }}
-                keyboardType="numeric"
-                accessibilityLabel="Hours per Week"
+                allowDecimal
+                min={0}
               />
-            </View>
 
-            {/* Sessions per Week */}
-            <View className="gap-2">
-              <Label nativeID="sessions-per-week">Sessions per Week (Optional)</Label>
-              <Input
+              {/* Sessions per Week */}
+              <FormNumberField
+                control={form.control}
+                label="Sessions per Week"
+                name="max_sessions_per_week"
                 placeholder="e.g., 5"
-                value={
-                  constraints.max_sessions_per_week !== undefined
-                    ? constraints.max_sessions_per_week.toString()
-                    : ""
-                }
-                onChangeText={(text) => {
-                  const value = parseInt(text);
-                  onConstraintsChange({
-                    ...constraints,
-                    max_sessions_per_week: isNaN(value) ? undefined : value,
-                  });
-                }}
-                keyboardType="numeric"
-                accessibilityLabel="Sessions per Week"
+                allowDecimal={false}
+                min={0}
               />
-            </View>
 
-            {/* Min Rest Days */}
-            <View className="gap-2">
-              <Label nativeID="min-rest-days">Minimum Rest Days per Week</Label>
-              <Input
-                placeholder="e.g., 1"
-                value={constraints.min_rest_days_per_week.toString()}
-                onChangeText={(text) => {
-                  const value = parseInt(text);
-                  onConstraintsChange({
-                    ...constraints,
-                    min_rest_days_per_week: isNaN(value) || value < 0 ? 1 : value,
-                  });
-                }}
-                keyboardType="numeric"
-                accessibilityLabel="Minimum Rest Days per Week"
-              />
-              <Text className="text-xs text-muted-foreground">
-                Recovery is essential for improvement
-              </Text>
+              {/* Min Rest Days */}
+              <View className="gap-2">
+                <FormNumberField
+                  control={form.control}
+                  label="Minimum Rest Days per Week"
+                  name="min_rest_days_per_week"
+                  placeholder="e.g., 1"
+                  allowDecimal={false}
+                  min={0}
+                />
+                <Text className="text-xs text-muted-foreground">
+                  Recovery is essential for improvement
+                </Text>
+              </View>
             </View>
-          </View>
+          </Form>
         </CardContent>
       </Card>
 

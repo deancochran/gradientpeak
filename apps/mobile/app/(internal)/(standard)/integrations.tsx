@@ -9,7 +9,6 @@ import { Check, ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
   Platform,
   Pressable,
@@ -17,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
@@ -53,6 +53,12 @@ export default function IntegrationsScreen() {
   const [pendingByProvider, setPendingByProvider] = useState<
     Partial<Record<IntegrationProvider, "connect" | "disconnect">>
   >({});
+  const [disconnectingProvider, setDisconnectingProvider] = useState<IntegrationProvider | null>(
+    null,
+  );
+  const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
+    null,
+  );
 
   const utils = api.useUtils();
   const {
@@ -78,7 +84,10 @@ export default function IntegrationsScreen() {
         const errorDetail = url.searchParams.get("error_detail");
 
         if (success === "true") {
-          Alert.alert("Success", `Successfully connected to ${provider}!`);
+          setStatusModal({
+            title: "Success",
+            description: `Successfully connected to ${provider}!`,
+          });
           refetch();
         } else if (error) {
           refetch();
@@ -109,7 +118,7 @@ export default function IntegrationsScreen() {
             default:
               errorMessage = `Failed to connect: ${error}`;
           }
-          Alert.alert("Error", errorMessage);
+          setStatusModal({ title: "Error", description: errorMessage });
         }
       } catch (err) {
         console.error("Failed to parse deep link:", err);
@@ -148,43 +157,40 @@ export default function IntegrationsScreen() {
       });
 
       if (result.type === "cancel") {
-        Alert.alert("Cancelled", "OAuth flow was cancelled");
+        setStatusModal({ title: "Cancelled", description: "OAuth flow was cancelled" });
       } else if (result.type === "success" && "url" in result && result.url) {
         handleDeepLink({ url: result.url });
       }
     } catch (error) {
       console.error("OAuth initiation error:", error);
-      Alert.alert("Error", "Failed to initiate connection. Please try again.");
+      setStatusModal({
+        title: "Error",
+        description: "Failed to initiate connection. Please try again.",
+      });
     } finally {
       setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
     }
   };
 
   const handleDisconnect = async (provider: IntegrationProvider) => {
-    Alert.alert(
-      "Disconnect Integration",
-      `Are you sure you want to disconnect from ${getProviderDisplayName(provider)}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: async () => {
-            setPendingByProvider((prev) => ({ ...prev, [provider]: "disconnect" }));
-            try {
-              await disconnectMutation.mutateAsync({ provider });
-              refetch();
-              Alert.alert("Success", "Integration disconnected successfully");
-            } catch (error) {
-              console.error("Disconnect error:", error);
-              Alert.alert("Error", "Failed to disconnect. Please try again.");
-            } finally {
-              setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
-            }
-          },
-        },
-      ],
-    );
+    setDisconnectingProvider(provider);
+  };
+
+  const confirmDisconnect = async () => {
+    if (!disconnectingProvider) return;
+    const provider = disconnectingProvider;
+    setPendingByProvider((prev) => ({ ...prev, [provider]: "disconnect" }));
+    try {
+      await disconnectMutation.mutateAsync({ provider });
+      refetch();
+      setDisconnectingProvider(null);
+      setStatusModal({ title: "Success", description: "Integration disconnected successfully" });
+    } catch (error) {
+      console.error("Disconnect error:", error);
+      setStatusModal({ title: "Error", description: "Failed to disconnect. Please try again." });
+    } finally {
+      setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
+    }
   };
 
   const isConnected = (provider: IntegrationProvider) => {
@@ -273,6 +279,41 @@ export default function IntegrationsScreen() {
           </Text>
         </View>
       </ScrollView>
+      {disconnectingProvider ? (
+        <AppConfirmModal
+          description={`Are you sure you want to disconnect from ${getProviderDisplayName(disconnectingProvider)}?`}
+          onClose={() => setDisconnectingProvider(null)}
+          primaryAction={{
+            label: "Disconnect",
+            onPress: () => {
+              void confirmDisconnect();
+            },
+            variant: "destructive",
+            testID: "integration-disconnect-confirm",
+            disabled: pendingByProvider[disconnectingProvider] === "disconnect",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setDisconnectingProvider(null),
+            variant: "outline",
+          }}
+          testID="integration-disconnect-modal"
+          title="Disconnect Integration"
+        />
+      ) : null}
+      {statusModal ? (
+        <AppConfirmModal
+          description={statusModal.description}
+          onClose={() => setStatusModal(null)}
+          primaryAction={{
+            label: "OK",
+            onPress: () => setStatusModal(null),
+            testID: "integrations-status-confirm",
+          }}
+          testID="integrations-status-modal"
+          title={statusModal.title}
+        />
+      ) : null}
     </View>
   );
 }

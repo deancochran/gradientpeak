@@ -21,11 +21,7 @@ export default function RoutesLibraryScreen() {
 
   const renderRouteCard = ({ item }: { item: any }) => {
     return (
-      <RouteCard
-        route={item}
-        onPress={() => navigateTo(`/route-detail?id=${item.id}` as any)}
-        variant="compact"
-      />
+      <RouteCard route={item} onPress={() => navigateTo(`/route-detail?id=${item.id}` as any)} />
     );
   };
 

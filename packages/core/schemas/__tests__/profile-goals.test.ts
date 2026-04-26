@@ -6,7 +6,6 @@ import {
   profileGoalCreateSchema,
   profileGoalRecordSchema,
   profileGoalSchema,
-  resolveGoalEventDate,
 } from "../goals/profile_goals";
 
 describe("canonical profile goal schemas", () => {
@@ -23,7 +22,7 @@ describe("canonical profile goal schemas", () => {
 
   it("accepts canonical create payloads for supported goal fixtures", () => {
     for (const fixture of canonicalGoalFixtures) {
-      const { id: _id, milestone_event_id: _milestoneEventId, ...createInput } = fixture.record;
+      const { id: _id, ...createInput } = fixture.record;
       const parsed = profileGoalCreateSchema.parse(createInput);
 
       expect(parsed.target_payload).toEqual(fixture.goal.objective);
@@ -116,32 +115,6 @@ describe("canonical profile goal schemas", () => {
 });
 
 describe("canonical profile goal helpers", () => {
-  it("resolves linked event dates from milestone events", () => {
-    for (const fixture of canonicalGoalFixtures) {
-      expect(resolveGoalEventDate(fixture.goal, fixture.linkedEvent)).toBe(
-        fixture.resolvedEventDate,
-      );
-    }
-  });
-
-  it("rejects mismatched linked events during date resolution", () => {
-    expect(() =>
-      resolveGoalEventDate(canonicalGoalFixtures[0]!.goal, {
-        ...canonicalGoalFixtures[0]!.linkedEvent,
-        id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-      }),
-    ).toThrow("linked event id must match goal.milestone_event_id for timing resolution");
-  });
-
-  it("rejects milestone events that drift from the canonical goal date", () => {
-    expect(() =>
-      resolveGoalEventDate(canonicalGoalFixtures[0]!.goal, {
-        ...canonicalGoalFixtures[0]!.linkedEvent,
-        starts_at: "2026-09-14T13:00:00.000Z",
-      }),
-    ).toThrow("linked event date must match goal.target_date for timing resolution");
-  });
-
   it("derives deterministic demand profiles for supported canonical goal types", () => {
     for (const fixture of canonicalGoalFixtures) {
       expect(deriveGoalDemandProfile(fixture.goal)).toEqual(fixture.demandProfile);

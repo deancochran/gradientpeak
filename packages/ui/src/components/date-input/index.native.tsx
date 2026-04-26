@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import React, { useMemo, useState } from "react";
 import { formatDateOnly, parseDateOnlyToDate } from "../../lib/fitness-inputs";
 import { Modal, Platform, Pressable, View } from "../../lib/react-native";
+import { getNativeTestProps } from "../../lib/test-props";
 import { Button } from "../button/index.native";
 import { Label } from "../label/index.native";
 import { Text } from "../text/index.native";
@@ -24,6 +25,7 @@ function DateInput({
   pickerPresentation = "inline",
   placeholder = "Select date",
   required = false,
+  testId,
   value,
 }: DateInputProps) {
   const [isPickerVisible, setIsPickerVisible] = useState(false);
@@ -32,6 +34,11 @@ function DateInput({
   const selectedDate = useMemo(() => parseDateOnlyToDate(value), [value]);
   const usesModalPresentation = pickerPresentation === "modal";
   const formattedValue = value ? format(selectedDate, "EEE, MMM d, yyyy") : placeholder;
+  const { role: _unusedRole, ...nativeTestProps } = getNativeTestProps({
+    accessibilityLabel: label,
+    id,
+    testId,
+  });
 
   const commitSelectedDate = (nextDate: Date) => {
     onChange(formatDateOnly(nextDate));
@@ -83,10 +90,10 @@ function DateInput({
       </Label>
       <Pressable
         accessibilityHint={accessibilityHint ?? "Opens date picker. Format yyyy-mm-dd"}
-        accessibilityLabel={label}
         accessibilityRole="button"
         className={`rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
         onPress={handleOpenPicker}
+        {...nativeTestProps}
       >
         <Text className="text-foreground">{formattedValue}</Text>
       </Pressable>

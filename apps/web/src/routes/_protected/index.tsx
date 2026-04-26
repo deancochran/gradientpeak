@@ -1,4 +1,3 @@
-import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
@@ -6,9 +5,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, Bell, CalendarDays, MessageSquare, Settings } from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
+import { Activity, CalendarDays, Target } from "lucide-react";
 
+import { SearchLauncher } from "../../components/protected/search-launcher";
 import { useAuth } from "../../components/providers/auth-provider";
 import { api } from "../../lib/api/client";
 
@@ -26,16 +26,14 @@ function DashboardPage() {
   return (
     <div className="space-y-8">
       <section className="space-y-3">
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">
-          Dashboard
-        </p>
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
           <p className="mt-2 text-muted-foreground">{user?.email ?? "Athlete"}</p>
         </div>
+        <SearchLauncher mode="bar" />
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
           title="Current Form"
           value={dashboard ? dashboard.currentStatus.form : "..."}
@@ -57,16 +55,6 @@ function DashboardPage() {
           icon={<CalendarDays className="h-4 w-4" />}
         />
         <MetricCard
-          title="This Week"
-          value={dashboard ? `${dashboard.weeklySummary.actual.count} sessions` : "..."}
-          description={
-            dashboard
-              ? `${Math.round(dashboard.weeklySummary.actual.tss)} TSS completed`
-              : "Loading weekly summary"
-          }
-          icon={<Activity className="h-4 w-4" />}
-        />
-        <MetricCard
           title="Active Plan"
           value={dashboard?.activePlan?.name ?? "No active plan"}
           description={
@@ -78,7 +66,7 @@ function DashboardPage() {
         />
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+      <section className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
         <Card>
           <CardHeader>
             <CardTitle>Upcoming Schedule</CardTitle>
@@ -115,21 +103,24 @@ function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Quick Links</CardTitle>
-            <CardDescription>Jump into the migrated areas of the app.</CardDescription>
+            <CardTitle>Current Focus</CardTitle>
+            <CardDescription>Keep the home surface lightweight and task-oriented.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <QuickLink
-              to="/messages"
-              icon={<MessageSquare className="h-4 w-4" />}
-              label="Messages"
-            />
-            <QuickLink
-              to="/notifications"
-              icon={<Bell className="h-4 w-4" />}
-              label="Notifications"
-            />
-            <QuickLink to="/settings" icon={<Settings className="h-4 w-4" />} label="Settings" />
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border p-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Target className="h-4 w-4 text-muted-foreground" />
+                {dashboard?.activePlan?.name ?? "No active plan"}
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {dashboard?.activePlan?.phase
+                  ? `Phase: ${dashboard.activePlan.phase}`
+                  : "Use search to jump directly into planning, messages, settings, or calendar workflows."}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Search is now the primary jump-off point for deeper areas of the web app.
+            </p>
           </CardContent>
         </Card>
       </section>
@@ -159,24 +150,5 @@ function MetricCard({
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
-  );
-}
-
-function QuickLink({
-  to,
-  icon,
-  label,
-}: {
-  to: "/messages" | "/notifications" | "/settings";
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <Button asChild variant="outline" className="w-full justify-start gap-2">
-      <Link to={to}>
-        {icon}
-        {label}
-      </Link>
-    </Button>
   );
 }

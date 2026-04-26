@@ -779,6 +779,7 @@ function ensurePersistableRecurrence(
         exdates?: string[];
         exceptions?: unknown[];
       }
+    | null
     | undefined,
 ): void {
   if (!recurrence) return;
@@ -1218,8 +1219,8 @@ export const eventsRouter = createTRPCRouter({
       ...(patch.ends_at !== undefined ? { ends_at: patch.ends_at } : {}),
       ...(patch.recurrence !== undefined
         ? {
-            recurrence_rule: patch.recurrence.rule,
-            recurrence_timezone: patch.recurrence.timezone,
+            recurrence_rule: patch.recurrence?.rule ?? null,
+            recurrence_timezone: patch.recurrence?.timezone ?? null,
           }
         : {}),
     };

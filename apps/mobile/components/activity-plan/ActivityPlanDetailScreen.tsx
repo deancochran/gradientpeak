@@ -11,7 +11,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { ChevronRight, Ellipsis, Heart, MessageCircle } from "lucide-react-native";
+import { Ellipsis, Heart, MessageCircle } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
@@ -40,6 +40,30 @@ export interface ActivityPlanDetailRouteParams {
   action?: string;
   template?: string;
   activityPlan?: string;
+}
+
+type RouteSeedPlan = {
+  route_id?: string | null;
+};
+
+function parseRouteSeedPlan(template?: string, activityPlanParam?: string): RouteSeedPlan | null {
+  if (template) {
+    try {
+      return JSON.parse(template) as RouteSeedPlan;
+    } catch (error) {
+      console.error("Failed to parse template:", error);
+    }
+  }
+
+  if (activityPlanParam) {
+    try {
+      return JSON.parse(activityPlanParam) as RouteSeedPlan;
+    } catch (error) {
+      console.error("Failed to parse activityPlan:", error);
+    }
+  }
+
+  return null;
 }
 
 export function ActivityPlanDetailScreen({
@@ -76,7 +100,12 @@ export function ActivityPlanDetailScreen({
     redirectOnNotFound(plannedActivityError);
   }, [plannedActivityError, redirectOnNotFound]);
 
-  const routeId = fetchedPlan?.route_id || plannedActivity?.activity_plan?.route_id;
+  const routeSeedPlan = React.useMemo(
+    () => parseRouteSeedPlan(template, activityPlanParam),
+    [activityPlanParam, template],
+  );
+  const routeId =
+    fetchedPlan?.route_id ?? plannedActivity?.activity_plan?.route_id ?? routeSeedPlan?.route_id;
   const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
   const { data: routeFull } = api.routes.loadFull.useQuery(
     { id: routeId! },
@@ -107,18 +136,6 @@ export function ActivityPlanDetailScreen({
   const activityPlan = vm.activityPlan;
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
   const planRoute = getActivityPlanRoute(activityPlan);
-  const routeCardRoute = route
-    ? route
-    : planRoute.distance != null || planRoute.ascent != null || planRoute.descent != null
-      ? {
-          id: routeId ?? `${activityPlan.id ?? activityPlan.name ?? "activity-plan-route"}`,
-          name: activityPlan.name ? `${activityPlan.name} Route` : "Planned Route",
-          activity_category: activityPlan.activity_category,
-          total_ascent: planRoute.ascent ?? null,
-          total_descent: planRoute.descent ?? null,
-          total_distance: planRoute.distance ?? null,
-        }
-      : null;
 
   const handleRecordNow = () => {
     if (!activityPlan) return;
@@ -223,6 +240,7 @@ export function ActivityPlanDetailScreen({
   const tss = vm.tss;
   const intensityFactor = vm.intensityFactor;
   const isOwnedByUser = vm.isOwnedByUser;
+  const isEventContext = !!eventId;
   const primaryScheduleLabel = scheduling.primaryScheduleLabel;
   const { Stack } = require("expo-router") as typeof import("expo-router");
 
@@ -237,13 +255,17 @@ export function ActivityPlanDetailScreen({
         <DropdownMenuItem onPress={handleRecordNow} testID="activity-plan-options-start">
           <Text>Start Activity</Text>
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onPress={scheduling.isScheduled ? scheduling.handleReschedule : scheduling.handleSchedule}
-          testID="activity-plan-options-schedule"
-        >
-          <Text>{primaryScheduleLabel}</Text>
-        </DropdownMenuItem>
-        {eventId ? (
+        {!isEventContext ? (
+          <DropdownMenuItem
+            onPress={
+              scheduling.isScheduled ? scheduling.handleReschedule : scheduling.handleSchedule
+            }
+            testID="activity-plan-options-schedule"
+          >
+            <Text>{primaryScheduleLabel}</Text>
+          </DropdownMenuItem>
+        ) : null}
+        {!isEventContext && eventId ? (
           <DropdownMenuItem
             onPress={() => navigateTo(ROUTES.PLAN.EVENT_DETAIL(eventId) as never)}
             testID="activity-plan-options-open-event"
@@ -251,7 +273,7 @@ export function ActivityPlanDetailScreen({
             <Text>Open Scheduled Event</Text>
           </DropdownMenuItem>
         ) : null}
-        {scheduling.isScheduled && eventId ? (
+        {!isEventContext && scheduling.isScheduled && eventId ? (
           <DropdownMenuItem
             onPress={scheduling.handleRemoveSchedule}
             testID="activity-plan-options-remove-schedule"
@@ -360,11 +382,10 @@ export function ActivityPlanDetailScreen({
               </View>
             ) : null}
           </View>
-          {routeCardRoute ? (
+          {route ? (
             <RouteCard
-              route={routeCardRoute}
+              route={route}
               routeFull={routeFull}
-              variant="compact"
               onPress={
                 routeId
                   ? () =>
@@ -373,12 +394,6 @@ export function ActivityPlanDetailScreen({
                         params: { id: routeId },
                       } as never)
                   : undefined
-              }
-              showAttribution={false}
-              headerAccessory={
-                routeId ? (
-                  <Icon as={ChevronRight} size={18} className="mt-1 text-muted-foreground" />
-                ) : null
               }
             />
           ) : null}

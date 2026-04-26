@@ -113,7 +113,6 @@ jest.mock("@/lib/hooks/useProfileGoals", () => ({
         title: "Race A",
         priority: 8,
         target_date: "2026-08-01",
-        milestone_event_id: "event-1",
         profile_id: "profile-1",
         activity_category: "run",
         objective: {
@@ -128,7 +127,6 @@ jest.mock("@/lib/hooks/useProfileGoals", () => ({
         title: "Race B",
         priority: 6,
         target_date: "2026-09-01",
-        milestone_event_id: "event-2",
         profile_id: "profile-1",
         activity_category: "run",
         objective: {
@@ -240,8 +238,6 @@ jest.mock("@repo/core", () => ({
   buildGoalCreatePayload: jest.fn(),
   buildGoalDraftFromGoal: jest.fn(),
   buildGoalUpdatePayload: jest.fn(),
-  buildMilestoneEventCreateInput: jest.fn(),
-  buildMilestoneEventUpdatePatch: jest.fn(),
   createEmptyGoalDraft: jest.fn(() => ({ title: "", objective: null })),
   formatGoalTypeLabel: jest.fn(() => "Race"),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
@@ -270,7 +266,16 @@ jest.mock("@/lib/api", () => ({
           };
         },
       },
-      list: { useQuery: () => ({ data: [{ id: "active-1", name: "Current Plan" }] }) },
+      list: {
+        useInfiniteQuery: () => ({
+          data: {
+            pages: [{ items: [{ id: "active-1", name: "Current Plan" }], nextCursor: null }],
+          },
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
+        }),
+      },
     },
     events: {
       list: {
@@ -355,6 +360,9 @@ describe("plan dashboard navigation", () => {
     expect(screen.getByText("Goals")).toBeTruthy();
     expect(screen.getAllByText("150%")[0]).toBeTruthy();
     expect(screen.getByText("This week's load")).toBeTruthy();
+    expect(screen.getByTestId("plan-execution-summary")).toBeTruthy();
+    expect(screen.getByText("Next scheduled session")).toBeTruthy();
+    expect(screen.getByText("Next goal day")).toBeTruthy();
   });
 
   it("navigates to goal detail when a goal card is pressed", () => {
@@ -381,6 +389,17 @@ describe("plan dashboard navigation", () => {
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: ROUTES.PLAN.TRAINING_PREFERENCES,
+    });
+  });
+
+  it("opens the next goal anchor from the plan projection card", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("plan-next-goal-anchor"));
+
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/goal-detail",
+      params: { id: "goal-1" },
     });
   });
 

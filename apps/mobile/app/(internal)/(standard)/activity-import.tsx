@@ -1,23 +1,16 @@
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Input } from "@repo/ui/components/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
+import { Form, FormSelectField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { CheckCircle, FileText, History, Upload } from "lucide-react-native";
 import React, { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
+import { z } from "zod";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -30,6 +23,12 @@ const ACTIVITY_TYPES = [
   { value: "strength", label: "Strength" },
   { value: "other", label: "Other" },
 ] as const;
+
+const activityImportSchema = z.object({
+  historicalName: z.string().trim().min(1, "Enter a name for this imported activity."),
+  historicalNotes: z.string(),
+  historicalActivityType: z.enum(["run", "bike", "swim", "strength", "other"]),
+});
 
 function isFitParseFailureMessage(message: string) {
   const normalized = message.toLowerCase();
@@ -59,14 +58,12 @@ export default function ActivityImportScreen() {
   const navigateTo = useAppNavigate();
   const queryClient = useQueryClient();
   const utils = api.useUtils();
-  const [historicalName, setHistoricalName] = useState("");
-  const [historicalNotes, setHistoricalNotes] = useState("");
-  const [historicalActivityType, setHistoricalActivityType] = useState<string>("bike");
   const [selectedFitFile, setSelectedFitFile] = useState<{
     name: string;
     uri: string;
     size: number;
   } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [importSummary, setImportSummary] = useState<{
     activityId: string;
     name: string;
@@ -76,6 +73,14 @@ export default function ActivityImportScreen() {
   const getSignedUrlMutation = api.fitFiles.getSignedUploadUrl.useMutation();
   const processFitFileMutation = api.fitFiles.processFitFile.useMutation();
   const isImporting = getSignedUrlMutation.isPending || processFitFileMutation.isPending;
+  const form = useZodForm({
+    schema: activityImportSchema,
+    defaultValues: {
+      historicalActivityType: "bike",
+      historicalName: "",
+      historicalNotes: "",
+    },
+  });
 
   const handlePickFitFile = async () => {
     try {
@@ -108,9 +113,10 @@ export default function ActivityImportScreen() {
         uri: asset.uri,
         size: fileSize,
       });
+      setImportError(null);
 
-      if (!historicalName.trim()) {
-        setHistoricalName(asset.name.replace(/\.fit$/i, ""));
+      if (!(form.getValues("historicalName") || "").trim()) {
+        form.setValue("historicalName", asset.name.replace(/\.fit$/i, ""), { shouldDirty: true });
       }
     } catch (error) {
       console.error("Failed to pick FIT file", error);
@@ -118,18 +124,15 @@ export default function ActivityImportScreen() {
     }
   };
 
-  const handleHistoricalImport = async () => {
-    const trimmedName = historicalName.trim();
+  const handleHistoricalImport = async (data: z.infer<typeof activityImportSchema>) => {
+    const trimmedName = data.historicalName.trim();
 
     if (!selectedFitFile) {
-      Alert.alert("Missing file", "Choose a FIT file to import.");
+      setImportError("Choose a FIT file to import.");
       return;
     }
 
-    if (!trimmedName) {
-      Alert.alert("Missing activity name", "Enter a name for this imported activity.");
-      return;
-    }
+    setImportError(null);
 
     try {
       const signedUrlData = await getSignedUrlMutation.mutateAsync({
@@ -152,8 +155,8 @@ export default function ActivityImportScreen() {
       const result = await processFitFileMutation.mutateAsync({
         fitFilePath: signedUrlData.filePath,
         name: trimmedName,
-        notes: historicalNotes.trim() || undefined,
-        activityType: historicalActivityType,
+        notes: data.historicalNotes.trim() || undefined,
+        activityType: data.historicalActivityType,
         importProvenance: buildManualHistoricalImportProvenance(selectedFitFile.name),
       });
 
@@ -164,6 +167,12 @@ export default function ActivityImportScreen() {
         activityId: result.activity.id,
         name: result.activity.name,
         fileName: selectedFitFile.name,
+      });
+      setSelectedFitFile(null);
+      form.reset({
+        historicalActivityType: "bike",
+        historicalName: "",
+        historicalNotes: "",
       });
     } catch (error) {
       console.error("Historical FIT import failed", error);
@@ -182,12 +191,14 @@ export default function ActivityImportScreen() {
         return;
       }
 
-      Alert.alert(
-        "Import failed",
-        "The FIT activity could not be imported right now. Please try again.",
-      );
+      setImportError("The FIT activity could not be imported right now. Please try again.");
     }
   };
+
+  const submitForm = useZodFormSubmit<z.infer<typeof activityImportSchema>>({
+    form,
+    onSubmit: handleHistoricalImport,
+  });
 
   return (
     <View className="flex-1 bg-background" testID="activity-import-screen">
@@ -247,47 +258,50 @@ export default function ActivityImportScreen() {
               </View>
             )}
 
-            <Input
-              value={historicalName}
-              onChangeText={setHistoricalName}
-              placeholder="Activity name"
-              autoCapitalize="sentences"
-              testID="activity-import-name-input"
-            />
+            <Form {...form}>
+              <View className="gap-4">
+                <FormTextField
+                  autoCapitalize="sentences"
+                  control={form.control}
+                  disabled={isImporting}
+                  label="Activity name"
+                  name="historicalName"
+                  placeholder="Activity name"
+                  testId="activity-import-name-input"
+                />
 
-            <Select
-              value={createOption(historicalActivityType)}
-              onValueChange={(option: { value: string; label: string } | undefined) => {
-                if (option) setHistoricalActivityType(option.value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose activity type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {ACTIVITY_TYPES.map((activityType) => (
-                    <SelectItem
-                      key={activityType.value}
-                      value={activityType.value}
-                      label={activityType.label}
-                    />
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+                <FormSelectField
+                  control={form.control}
+                  label="Activity type"
+                  name="historicalActivityType"
+                  options={ACTIVITY_TYPES.map((activityType) =>
+                    createOption(activityType.value, activityType.label),
+                  )}
+                  placeholder="Choose activity type"
+                  testId="activity-import-type-select"
+                />
 
-            <Textarea
-              value={historicalNotes}
-              onChangeText={setHistoricalNotes}
-              placeholder="Optional notes"
-              className="min-h-[88px]"
-              testID="activity-import-notes-input"
-            />
+                <FormTextareaField
+                  control={form.control}
+                  disabled={isImporting}
+                  label="Notes"
+                  name="historicalNotes"
+                  placeholder="Optional notes"
+                  className="min-h-[88px]"
+                  testId="activity-import-notes-input"
+                />
+              </View>
+            </Form>
+
+            {importError ? (
+              <View className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3">
+                <Text className="text-sm text-destructive">{importError}</Text>
+              </View>
+            ) : null}
 
             <Button
-              onPress={handleHistoricalImport}
-              disabled={isImporting || !selectedFitFile || !historicalName.trim()}
+              onPress={submitForm.handleSubmit}
+              disabled={isImporting || !selectedFitFile}
               testID="activity-import-submit-button"
             >
               <Text className="font-semibold text-primary-foreground">

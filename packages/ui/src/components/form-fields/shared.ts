@@ -14,6 +14,7 @@ import type { DurationInputProps } from "../duration-input/shared";
 import type { IntegerStepperProps } from "../integer-stepper/shared";
 import type { PaceInputProps } from "../pace-input/shared";
 import type { Option } from "../select/shared";
+import type { TimeInputProps } from "../time-input/shared";
 import type { WeightInputFieldProps } from "../weight-input-field/shared";
 
 type SharedTextFieldInputProps = {
@@ -137,6 +138,12 @@ export type FormDateInputFieldProps<
   TName extends FieldPath<TFieldValues>,
 > = ControlledFieldProps<TFieldValues, TName> &
   Omit<DateInputProps, "error" | "helperText" | "id" | "label" | "onChange" | "required" | "value">;
+
+export type FormTimeInputFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = ControlledFieldProps<TFieldValues, TName> &
+  Omit<TimeInputProps, "error" | "helperText" | "id" | "label" | "onChange" | "required" | "value">;
 
 export type FormDurationFieldProps<
   TFieldValues extends FieldValues,

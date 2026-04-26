@@ -26,6 +26,62 @@ function buildWeeklySessions(weeks: ReadonlyArray<ReadonlyArray<SamplePlanSessio
   );
 }
 
+function addDays(dateOnly: string, days: number) {
+  const date = new Date(`${dateOnly}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildActivityDistribution(sports: readonly string[]) {
+  const weight = 1 / sports.length;
+
+  return Object.fromEntries(
+    sports.map((sport) => [sport, { target_percentage: weight }]),
+  ) as Record<string, { target_percentage: number }>;
+}
+
+function buildModernCompatibleTemplateStructure(input: {
+  name: string;
+  description: string;
+  startDate: string;
+  durationWeeks: number;
+  sports: readonly string[];
+  experienceLevel: readonly ("beginner" | "intermediate" | "advanced")[];
+  weeklyTssRange: { min: number; max: number };
+  sessionsPerWeekTarget: number;
+  minRestDaysPerWeek: number;
+  maxConsecutiveDays: number;
+  sessions: unknown[];
+}) {
+  return {
+    version: 1,
+    plan_type: "maintenance" as const,
+    name: input.name,
+    description: input.description,
+    start_date: input.startDate,
+    end_date: addDays(input.startDate, input.durationWeeks * 7 - 1),
+    sport: [...input.sports],
+    experienceLevel: [...input.experienceLevel],
+    durationWeeks: { recommended: input.durationWeeks },
+    activity_distribution: buildActivityDistribution(input.sports),
+    target_weekly_tss_range: input.weeklyTssRange,
+    target_sessions_per_week_range: {
+      min: input.sessionsPerWeekTarget,
+      max: input.sessionsPerWeekTarget,
+    },
+    constraints: {
+      min_rest_days_per_week: input.minRestDaysPerWeek,
+      max_consecutive_training_days: input.maxConsecutiveDays,
+    },
+    target_weekly_tss_min: input.weeklyTssRange.min,
+    target_weekly_tss_max: input.weeklyTssRange.max,
+    target_activities_per_week: input.sessionsPerWeekTarget,
+    max_consecutive_days: input.maxConsecutiveDays,
+    min_rest_days_per_week: input.minRestDaysPerWeek,
+    sessions: input.sessions,
+  };
+}
+
 const RUN_EASY_ID = "1b4c5d6e-7f8a-9b0c-1d2e-3f4a5b6c7d8e";
 const RUN_AEROBIC_ID = "3b6c7d8e-9f0a-1b2c-3d4e-5f6a7b8c9d0e";
 const RUN_TEMPO_ID = "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f";
@@ -521,16 +577,20 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       "Progressive marathon base with four key sessions per week and one weekly long run.",
     sessions_per_week_target: 4,
     duration_hours: 3.6,
-    structure: {
-      version: 1,
-      start_date: "2026-01-05",
-      target_weekly_tss_min: 280,
-      target_weekly_tss_max: 420,
-      target_activities_per_week: 4,
-      max_consecutive_days: 3,
-      min_rest_days_per_week: 2,
+    structure: buildModernCompatibleTemplateStructure({
+      name: "Marathon Foundation (12 weeks)",
+      description:
+        "Progressive marathon base with four key sessions per week and one weekly long run.",
+      startDate: "2026-01-05",
+      durationWeeks: 12,
+      sports: ["run"],
+      experienceLevel: ["beginner"],
+      weeklyTssRange: { min: 280, max: 420 },
+      sessionsPerWeekTarget: 4,
+      minRestDaysPerWeek: 2,
+      maxConsecutiveDays: 3,
       sessions: buildWeeklySessions(MARATHON_FOUNDATION_WEEKS),
-    },
+    }),
   },
   {
     id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913002",
@@ -539,16 +599,20 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       "Balanced half-marathon cycle with threshold development and race-specific long efforts.",
     sessions_per_week_target: 4,
     duration_hours: 4,
-    structure: {
-      version: 1,
-      start_date: "2026-02-02",
-      target_weekly_tss_min: 240,
-      target_weekly_tss_max: 360,
-      target_activities_per_week: 4,
-      max_consecutive_days: 3,
-      min_rest_days_per_week: 2,
+    structure: buildModernCompatibleTemplateStructure({
+      name: "Half Marathon Build (10 weeks)",
+      description:
+        "Balanced half-marathon cycle with threshold development and race-specific long efforts.",
+      startDate: "2026-02-02",
+      durationWeeks: 10,
+      sports: ["run"],
+      experienceLevel: ["intermediate"],
+      weeklyTssRange: { min: 240, max: 360 },
+      sessionsPerWeekTarget: 4,
+      minRestDaysPerWeek: 2,
+      maxConsecutiveDays: 3,
       sessions: buildWeeklySessions(HALF_MARATHON_BUILD_WEEKS),
-    },
+    }),
   },
   {
     id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913003",
@@ -557,16 +621,20 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       "Short race cycle emphasizing quality intervals, neuromuscular speed, and recovery balance.",
     sessions_per_week_target: 4,
     duration_hours: 3.3,
-    structure: {
-      version: 1,
-      start_date: "2026-03-02",
-      target_weekly_tss_min: 180,
-      target_weekly_tss_max: 240,
-      target_activities_per_week: 4,
-      max_consecutive_days: 2,
-      min_rest_days_per_week: 2,
+    structure: buildModernCompatibleTemplateStructure({
+      name: "5K Speed Block (8 weeks)",
+      description:
+        "Short race cycle emphasizing quality intervals, neuromuscular speed, and recovery balance.",
+      startDate: "2026-03-02",
+      durationWeeks: 8,
+      sports: ["run"],
+      experienceLevel: ["intermediate"],
+      weeklyTssRange: { min: 180, max: 240 },
+      sessionsPerWeekTarget: 4,
+      minRestDaysPerWeek: 2,
+      maxConsecutiveDays: 2,
       sessions: buildWeeklySessions(FIVE_K_SPEED_BLOCK_WEEKS),
-    },
+    }),
   },
   {
     id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913004",
@@ -575,16 +643,20 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       "Endurance-focused bike progression with two quality rides and one long weekend ride.",
     sessions_per_week_target: 4,
     duration_hours: 5.1,
-    structure: {
-      version: 1,
-      start_date: "2026-01-12",
-      target_weekly_tss_min: 220,
-      target_weekly_tss_max: 280,
-      target_activities_per_week: 4,
-      max_consecutive_days: 3,
-      min_rest_days_per_week: 2,
+    structure: buildModernCompatibleTemplateStructure({
+      name: "Cycling Endurance Builder (12 weeks)",
+      description:
+        "Endurance-focused bike progression with two quality rides and one long weekend ride.",
+      startDate: "2026-01-12",
+      durationWeeks: 12,
+      sports: ["bike"],
+      experienceLevel: ["beginner", "intermediate"],
+      weeklyTssRange: { min: 220, max: 280 },
+      sessionsPerWeekTarget: 4,
+      minRestDaysPerWeek: 2,
+      maxConsecutiveDays: 3,
       sessions: buildWeeklySessions(CYCLING_ENDURANCE_BUILDER_WEEKS),
-    },
+    }),
   },
   {
     id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913005",
@@ -592,14 +664,17 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
     description: "Triathlon starter cycle balancing swim, bike, run, and weekly brick practice.",
     sessions_per_week_target: 5,
     duration_hours: 8,
-    structure: {
-      version: 1,
-      start_date: "2026-02-09",
-      target_weekly_tss_min: 260,
-      target_weekly_tss_max: 390,
-      target_activities_per_week: 5,
-      max_consecutive_days: 3,
-      min_rest_days_per_week: 1,
+    structure: buildModernCompatibleTemplateStructure({
+      name: "Sprint Triathlon Base (10 weeks)",
+      description: "Triathlon starter cycle balancing swim, bike, run, and weekly brick practice.",
+      startDate: "2026-02-09",
+      durationWeeks: 10,
+      sports: ["swim", "bike", "run"],
+      experienceLevel: ["beginner"],
+      weeklyTssRange: { min: 260, max: 390 },
+      sessionsPerWeekTarget: 5,
+      minRestDaysPerWeek: 1,
+      maxConsecutiveDays: 3,
       sessions: [
         {
           offset_days: 1,
@@ -662,7 +737,7 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
           activity_plan_id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
         },
       ],
-    },
+    }),
   },
   {
     id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913006",
@@ -671,14 +746,18 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       "Low-friction maintenance template to stay consistent with mixed aerobic and strength sessions.",
     sessions_per_week_target: 3,
     duration_hours: 5.5,
-    structure: {
-      version: 1,
-      start_date: "2026-01-05",
-      target_weekly_tss_min: 180,
-      target_weekly_tss_max: 280,
-      target_activities_per_week: 3,
-      max_consecutive_days: 2,
-      min_rest_days_per_week: 2,
+    structure: buildModernCompatibleTemplateStructure({
+      name: "General Fitness Maintenance (6 weeks)",
+      description:
+        "Low-friction maintenance template to stay consistent with mixed aerobic and strength sessions.",
+      startDate: "2026-01-05",
+      durationWeeks: 6,
+      sports: ["run", "strength", "bike"],
+      experienceLevel: ["beginner", "intermediate"],
+      weeklyTssRange: { min: 180, max: 280 },
+      sessionsPerWeekTarget: 3,
+      minRestDaysPerWeek: 2,
+      maxConsecutiveDays: 2,
       sessions: [
         {
           offset_days: 1,
@@ -735,7 +814,7 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
           activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
         },
       ],
-    },
+    }),
   },
 ];
 

@@ -393,40 +393,6 @@ export function buildGoalUpdatePayload(input: { draft: GoalEditorDraft }) {
   };
 }
 
-export function buildMilestoneEventCreateInput(input: {
-  draft: GoalEditorDraft;
-  trainingPlanId?: string | null;
-}) {
-  const eventType =
-    input.draft.goalType === "race_performance" ? ("race_target" as const) : ("custom" as const);
-
-  return {
-    title: input.draft.title.trim(),
-    starts_at: `${input.draft.targetDate}T12:00:00.000Z`,
-    all_day: true,
-    timezone: "UTC",
-    training_plan_id: input.trainingPlanId ?? undefined,
-    event_type: eventType,
-  };
-}
-
-export function buildMilestoneEventUpdatePatch(input: {
-  draft: GoalEditorDraft;
-  trainingPlanId?: string | null;
-}) {
-  const eventType =
-    input.draft.goalType === "race_performance" ? ("race_target" as const) : ("custom" as const);
-
-  return {
-    title: input.draft.title.trim(),
-    starts_at: `${input.draft.targetDate}T12:00:00.000Z`,
-    all_day: true,
-    timezone: "UTC",
-    training_plan_id: input.trainingPlanId ?? null,
-    event_type: eventType,
-  };
-}
-
 export function formatGoalTypeLabel(goal: ProfileGoal): string {
   switch (goal.objective.type) {
     case "event_performance":

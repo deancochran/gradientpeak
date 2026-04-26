@@ -2,18 +2,21 @@ import { Button } from "@repo/ui/components/button";
 import { cn } from "@repo/ui/lib/cn";
 import { Link, useLocation } from "@tanstack/react-router";
 
+import { useAuth } from "../providers/auth-provider";
 import { MessagesButton } from "./messages-button";
 import { NotificationsButton } from "./notifications-button";
+import { SearchLauncher } from "./search-launcher";
 import { UserNav } from "./user-nav";
 
 export function ProtectedHeader() {
   const location = useLocation();
+  const { user } = useAuth();
   const primaryLinks = [
-    { to: "/", label: "Dashboard" },
+    { to: "/", label: "Home" },
+    { to: "/record", label: "Record" },
+    { to: "/plan", label: "Plan" },
+    { to: "/calendar", label: "Calendar" },
     { to: "/coaching", label: "Coaching" },
-    { to: "/messages", label: "Messages" },
-    { to: "/notifications", label: "Notifications" },
-    { to: "/settings", label: "Settings" },
   ] as const;
 
   return (
@@ -46,8 +49,25 @@ export function ProtectedHeader() {
         })}
       </nav>
       <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        <SearchLauncher />
         <MessagesButton />
         <NotificationsButton />
+        {user?.id ? (
+          <Button asChild variant="ghost" size="sm" className="hidden lg:inline-flex">
+            <Link
+              to="/user/$userId"
+              params={{ userId: user.id }}
+              search={{ flash: undefined, flashType: undefined }}
+            >
+              Profile
+            </Link>
+          </Button>
+        ) : null}
+        <Button asChild variant="ghost" size="sm" className="hidden lg:inline-flex">
+          <Link to="/settings" search={{ flash: undefined, flashType: undefined }}>
+            Settings
+          </Link>
+        </Button>
         <UserNav />
       </div>
     </header>

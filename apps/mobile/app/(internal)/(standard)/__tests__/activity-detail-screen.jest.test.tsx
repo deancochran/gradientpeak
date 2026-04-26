@@ -1,5 +1,5 @@
 import React from "react";
-import { renderNative, screen } from "../../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const activityData = {
   activity: {
@@ -39,6 +39,8 @@ const activityData = {
 };
 
 const toggleLikeMutateMock = jest.fn();
+const deleteMutateMock = jest.fn();
+const authState = { user: { id: "profile-1" } };
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -123,7 +125,7 @@ jest.mock("@/components/activity/maps/ActivityRouteMap", () => ({
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
-  useAuth: () => ({ user: { id: "profile-1" } }),
+  useAuth: () => authState,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -140,7 +142,7 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({ data: activityData, isLoading: false }),
       },
       delete: {
-        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+        useMutation: () => ({ mutate: deleteMutateMock, isPending: false }),
       },
       update: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
@@ -201,7 +203,9 @@ const ActivityDetailScreen = require("../activity-detail").default;
 
 describe("activity detail screen", () => {
   beforeEach(() => {
+    deleteMutateMock.mockReset();
     toggleLikeMutateMock.mockReset();
+    authState.user.id = "profile-1";
   });
 
   it("shows the new identity-first activity layout", () => {
@@ -227,5 +231,26 @@ describe("activity detail screen", () => {
       entity_id: "11111111-1111-4111-8111-111111111111",
       entity_type: "activity",
     });
+  });
+
+  it("hides owner-only overflow actions for non-owners", () => {
+    authState.user.id = "profile-2";
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.queryByTestId("activity-detail-options-trigger")).toBeNull();
+  });
+
+  it("uses a confirm modal before deleting an activity", () => {
+    renderNative(<ActivityDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("activity-detail-options-delete"));
+
+    expect(screen.getByTestId("activity-detail-delete-modal")).toBeTruthy();
+    expect(deleteMutateMock).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByTestId("activity-detail-delete-confirm"));
+
+    expect(deleteMutateMock).toHaveBeenCalledWith({ id: "11111111-1111-4111-8111-111111111111" });
   });
 });

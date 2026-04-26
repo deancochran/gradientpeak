@@ -139,14 +139,14 @@ export function ActivityListModal({
     >
       <View className="flex-1 bg-background">
         {/* Header */}
-        <View className="bg-white border-b border-gray-200 px-4 pt-12 pb-4">
+        <View className="bg-background border-b border-border px-4 pt-12 pb-4">
           <View className="flex-row items-center justify-between mb-2">
             <View className="flex-1">
-              <Text className="text-xl font-bold text-gray-900">{title}</Text>
-              {subtitle && <Text className="text-sm text-gray-600 mt-1">{subtitle}</Text>}
+              <Text className="text-xl font-bold text-foreground">{title}</Text>
+              {subtitle && <Text className="text-sm text-muted-foreground mt-1">{subtitle}</Text>}
             </View>
-            <TouchableOpacity onPress={onClose} className="ml-4 p-2 rounded-full bg-gray-100">
-              <Icon as={X} size={20} className="text-gray-600" />
+            <TouchableOpacity onPress={onClose} className="ml-4 p-2 rounded-full bg-muted">
+              <Icon as={X} size={20} className="text-muted-foreground" />
             </TouchableOpacity>
           </View>
 
@@ -171,7 +171,7 @@ export function ActivityListModal({
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
             <ActivityIndicator size="large" />
-            <Text className="text-gray-600 mt-2">Loading activities...</Text>
+            <Text className="text-muted-foreground mt-2">Loading activities...</Text>
           </View>
         ) : filteredActivities.length === 0 ? (
           <View className="flex-1 justify-center p-6">
@@ -225,18 +225,18 @@ export function ActivityListModal({
                   <Pressable
                     key={activity.id}
                     onPress={() => handleActivityPress(activity.id)}
-                    className="bg-white rounded-lg border border-gray-200 p-4 active:bg-gray-50"
+                    className="bg-card rounded-lg border border-border p-4 active:bg-muted"
                   >
                     {/* Header */}
                     <View className="flex-row items-start justify-between mb-3">
                       <View className="flex-1 mr-3">
                         <Text
-                          className="text-base font-semibold text-gray-900 mb-1"
+                          className="text-base font-semibold text-foreground mb-1"
                           numberOfLines={1}
                         >
                           {activity.name || "Untitled Activity"}
                         </Text>
-                        <Text className="text-xs text-gray-500">
+                        <Text className="text-xs text-muted-foreground">
                           {formatDate(activity.started_at)}
                         </Text>
                       </View>
@@ -250,9 +250,9 @@ export function ActivityListModal({
                       <Icon
                         as={getActivityIcon(activity.type)}
                         size={14}
-                        className="text-gray-600"
+                        className="text-muted-foreground"
                       />
-                      <Text className="text-sm text-gray-600">
+                      <Text className="text-sm text-muted-foreground">
                         {formatActivityType(activity.type)}
                       </Text>
                     </View>
@@ -260,21 +260,21 @@ export function ActivityListModal({
                     {/* Metrics */}
                     <View className="flex-row items-center gap-4">
                       <View className="flex-row items-center gap-1">
-                        <Icon as={Clock} size={14} className="text-gray-500" />
-                        <Text className="text-sm text-gray-700">
+                        <Icon as={Clock} size={14} className="text-muted-foreground" />
+                        <Text className="text-sm text-foreground">
                           {formatDuration(activity.duration_seconds || 0)}
                         </Text>
                       </View>
 
-                      <Text className="text-gray-400">•</Text>
+                      <Text className="text-muted-foreground">•</Text>
 
-                      <Text className="text-sm text-gray-700">
+                      <Text className="text-sm text-foreground">
                         {Math.round(activity.derived?.tss || 0)} TSS
                       </Text>
 
                       {activity.derived?.intensity_factor && (
                         <>
-                          <Text className="text-gray-400">•</Text>
+                          <Text className="text-muted-foreground">•</Text>
                           <View className="flex-row items-center gap-1">
                             <Icon
                               as={Zap}

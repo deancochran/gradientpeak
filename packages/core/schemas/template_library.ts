@@ -10,6 +10,7 @@ export const templateApplyInputSchema = z
     template_id: z.string().uuid(),
     start_date: dateOnlySchema.optional(),
     target_date: dateOnlySchema.optional(),
+    replace_existing: z.boolean().optional(),
   })
   .refine((data) => !(data.start_date && data.target_date), {
     message: "Cannot provide both start_date and target_date",

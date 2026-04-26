@@ -1,4 +1,4 @@
-import { invalidateConversationQueries } from "@repo/api/react";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   getConversationDisplayName,
   getConversationInitials,
@@ -6,6 +6,7 @@ import {
 } from "@repo/core/messaging";
 import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
+import { Form, FormControl, FormField, FormItem, FormMessage } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import {
   ResizableHandle,
@@ -15,25 +16,52 @@ import {
 import { ScrollArea } from "@repo/ui/components/scroll-area";
 import { Separator } from "@repo/ui/components/separator";
 import { cn } from "@repo/ui/lib/cn";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { Send } from "lucide-react";
-import { useEffect, useState } from "react";
-
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 import { useAuth } from "../../components/providers/auth-provider";
+import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
+import { sendMessageAction } from "../../lib/messaging/server-actions";
 
-export const Route = createFileRoute("/_protected/messages")({ component: MessagesPage });
+const messageComposerSchema = z.object({
+  content: z.string().trim().min(1, "Message is required"),
+});
+
+type MessageComposerValues = z.infer<typeof messageComposerSchema>;
+
+export const Route = createFileRoute("/_protected/messages")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    conversationId: typeof search.conversationId === "string" ? search.conversationId : undefined,
+    flash: typeof search.flash === "string" ? search.flash : undefined,
+    flashType:
+      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
+        ? (search.flashType as RouteFlashType)
+        : undefined,
+  }),
+  component: MessagesPage,
+});
 
 function MessagesPage() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [inputText, setInputText] = useState("");
   const { user } = useAuth();
-  const utils = api.useUtils();
+  const sendMessage = useServerFn(sendMessageAction);
+  const navigate = Route.useNavigate();
+  const { conversationId, flash, flashType } = Route.useSearch();
   const { data: conversations = [] } = api.messaging.getConversations.useQuery();
+  const selectedId = conversationId ?? conversations[0]?.id ?? null;
+  const form = useForm<MessageComposerValues>({
+    resolver: zodResolver(messageComposerSchema),
+    defaultValues: {
+      content: "",
+    },
+  });
 
   useEffect(() => {
-    if (!selectedId && conversations.length > 0) setSelectedId(conversations[0]?.id ?? null);
-  }, [conversations, selectedId]);
+    form.reset({ content: "" });
+  }, [form, selectedId]);
 
   const selectedConversation =
     conversations.find((conversation) => conversation.id === selectedId) ?? null;
@@ -41,20 +69,33 @@ function MessagesPage() {
     { conversation_id: selectedId! },
     { enabled: Boolean(selectedId), refetchInterval: 5000 },
   );
-  const sendMessageMutation = api.messaging.sendMessage.useMutation({
-    onSuccess: async () => {
-      setInputText("");
-      if (selectedId) await invalidateConversationQueries(utils, selectedId);
-    },
-  });
+  const handleSend = form.handleSubmit(async (values) => {
+    if (!selectedId) {
+      return;
+    }
 
-  const handleSend = () => {
-    if (!selectedId || !inputText.trim()) return;
-    sendMessageMutation.mutate({ conversation_id: selectedId, content: inputText });
-  };
+    await sendMessage({
+      data: {
+        content: values.content,
+        conversation_id: selectedId,
+        redirectTo: `/messages?conversationId=${selectedId}`,
+      },
+    });
+  });
 
   return (
     <div className="h-[calc(100vh-8rem)] w-full overflow-hidden rounded-lg border bg-background">
+      <RouteFlashToast
+        message={flash}
+        type={flashType}
+        clear={() =>
+          void navigate({
+            to: "/messages",
+            search: { conversationId, flash: undefined, flashType: undefined },
+            replace: true,
+          })
+        }
+      />
       <ResizablePanelGroup className="h-full w-full">
         <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
           <div className="flex h-full flex-col">
@@ -63,13 +104,18 @@ function MessagesPage() {
             <ScrollArea className="flex-1">
               <div className="flex flex-col gap-2 p-4">
                 {conversations.map((conversation) => (
-                  <button
+                  <Link
                     key={conversation.id}
+                    to="/messages"
+                    search={{
+                      conversationId: conversation.id,
+                      flash: undefined,
+                      flashType: undefined,
+                    }}
                     className={cn(
                       "flex flex-col items-start gap-2 rounded-lg border p-3 text-left text-sm transition-all hover:bg-accent",
                       selectedId === conversation.id && "bg-accent",
                     )}
-                    onClick={() => setSelectedId(conversation.id)}
                   >
                     <div className="flex w-full flex-col gap-1">
                       <div className="flex items-center">
@@ -88,7 +134,7 @@ function MessagesPage() {
                     <div className="line-clamp-2 text-xs text-muted-foreground">
                       {getConversationPreviewText(conversation)}
                     </div>
-                  </button>
+                  </Link>
                 ))}
               </div>
             </ScrollArea>
@@ -127,26 +173,46 @@ function MessagesPage() {
                 </div>
               </ScrollArea>
               <div className="border-t p-4">
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="Type a message..."
-                    value={inputText}
-                    onChange={(event) => setInputText(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                  />
-                  <Button
-                    size="icon"
-                    onClick={handleSend}
-                    disabled={!inputText.trim() || sendMessageMutation.isPending}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
+                <Form {...form}>
+                  <form action={sendMessageAction.url} method="post" onSubmit={handleSend}>
+                    <input type="hidden" name="conversation_id" value={selectedId ?? ""} />
+                    <input
+                      type="hidden"
+                      name="redirectTo"
+                      value={selectedId ? `/messages?conversationId=${selectedId}` : "/messages"}
+                    />
+                    <div className="flex items-center gap-2">
+                      <FormField
+                        control={form.control}
+                        name="content"
+                        render={({ field }) => (
+                          <FormItem className="flex-1">
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder="Type a message..."
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" && !event.shiftKey) {
+                                    event.preventDefault();
+                                    void handleSend();
+                                  }
+                                }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <Button
+                        size="icon"
+                        type="submit"
+                        disabled={!selectedId || form.formState.isSubmitting}
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
               </div>
             </div>
           ) : (

@@ -23,6 +23,7 @@ import {
 } from "../select/index.native";
 import { Switch } from "../switch/index.native";
 import { Textarea } from "../textarea/index.native";
+import { TimeInput } from "../time-input/index.native";
 import { WeightInputField } from "../weight-input-field/index.native";
 import {
   defaultFormatValue,
@@ -36,6 +37,7 @@ import {
   type FormSwitchFieldProps,
   type FormTextareaFieldProps,
   type FormTextFieldProps,
+  type FormTimeInputFieldProps,
   type FormWeightInputFieldProps,
 } from "./shared";
 
@@ -453,6 +455,41 @@ function FormDateInputField<
   );
 }
 
+function FormTimeInputField<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
+  control,
+  description,
+  label,
+  name,
+  required,
+  rules,
+  testId,
+  ...timeProps
+}: FormTimeInputFieldProps<TFieldValues, TName>) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      rules={rules}
+      render={({ field, fieldState }) => (
+        <TimeInput
+          {...timeProps}
+          error={fieldState.error?.message}
+          helperText={description}
+          id={String(name)}
+          label={label}
+          onChange={(value) => field.onChange(value ?? null)}
+          required={required}
+          testId={testId}
+          value={typeof field.value === "string" ? field.value : undefined}
+        />
+      )}
+    />
+  );
+}
+
 function FormDurationField<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
@@ -566,5 +603,6 @@ export {
   FormSwitchField,
   FormTextareaField,
   FormTextField,
+  FormTimeInputField,
   FormWeightInputField,
 };

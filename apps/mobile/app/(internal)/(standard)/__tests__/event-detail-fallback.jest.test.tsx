@@ -26,9 +26,11 @@ const eventDetailData = {
     estimated_duration: 3600,
     estimated_tss: 72,
   },
+  recurrence_rule: null as string | null,
 };
 
 const routerNavigateMock = jest.fn();
+const deleteEventMutateMock = jest.fn();
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -73,11 +75,6 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 jest.mock("@/components/ScheduleActivityModal", () => ({
   __esModule: true,
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
-}));
-
-jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
-  __esModule: true,
-  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
@@ -181,7 +178,7 @@ jest.mock("@/lib/api", () => ({
       delete: {
         useMutation: () => ({
           isPending: false,
-          mutate: jest.fn(),
+          mutate: deleteEventMutateMock,
         }),
       },
     },
@@ -193,6 +190,11 @@ jest.mock("@/lib/api", () => ({
           error: null,
           refetch: jest.fn(),
         }),
+      },
+    },
+    trainingPlans: {
+      getById: {
+        useQuery: () => ({ data: null }),
       },
     },
     routes: {
@@ -223,37 +225,48 @@ jest.mock("@/lib/api", () => ({
 describe("event detail fallback screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    eventDetailData.recurrence_rule = null;
   });
 
   it("renders planned activity content directly instead of the fallback note", () => {
     const rendered = renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Advanced event detail")).toBeNull();
+    expect(screen.getByText("Scheduled activity")).toBeTruthy();
     expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.activityPlan).toEqual(
-      expect.objectContaining({
-        id: "plan-1",
-        name: "Tempo Builder",
-      }),
-    );
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.onPress).toEqual(
-      expect.any(Function),
+      expect.objectContaining({ id: "plan-1", name: "Tempo Builder" }),
     );
     expect(screen.getByText("Monday, March 23, 2026")).toBeTruthy();
     expect(screen.getByText(format(new Date(eventDetailData.starts_at), "h:mm a"))).toBeTruthy();
-    expect(screen.queryByText("Schedule details")).toBeNull();
-    expect(screen.queryByText("Date")).toBeNull();
-    expect(screen.queryByText("Time")).toBeNull();
-    expect(screen.getByTestId("event-detail-edit-trigger")).toBeTruthy();
-    expect(screen.queryByTestId("event-detail-open-linked-plan")).toBeNull();
-    expect(screen.queryByTestId("event-detail-options-trigger")).toBeNull();
+    expect(screen.queryByText("Event details")).toBeNull();
+    expect(screen.getByText("Linked activity plan")).toBeTruthy();
+    expect(screen.getByTestId("event-detail-options-trigger")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
   });
 
-  it("routes the existing edit trigger to the dedicated update screen", () => {
+  it("routes the overflow edit action to the dedicated update screen", () => {
     renderNative(<EventDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-edit-trigger"));
+    fireEvent.press(screen.getByTestId("event-detail-options-edit"));
 
     expect(routerNavigateMock).toHaveBeenCalledWith(ROUTES.PLAN.EVENT_UPDATE("event-1"));
+  });
+
+  it("goes straight to delete confirmation for recurring planned events", () => {
+    eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
+
+    renderNative(<EventDetailScreen />);
+
+    expect(screen.getByText("Event details")).toBeTruthy();
+    expect(screen.getByText("Repeats")).toBeTruthy();
+    expect(screen.getByText("Every week until May 30, 2026")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("event-detail-options-delete"));
+
+    expect(screen.getByTestId("event-detail-delete-confirm-modal")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
+
+    expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "single" });
   });
 });

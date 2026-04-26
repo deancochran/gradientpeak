@@ -74,16 +74,16 @@ interface ConstraintValidatorProps {
 export function ConstraintValidator({ validation, isLoading = false }: ConstraintValidatorProps) {
   if (isLoading) {
     return (
-      <View className="p-4 bg-gray-50 rounded-lg">
-        <Text className="text-sm text-gray-600 text-center">Validating constraints...</Text>
+      <View className="p-4 bg-muted rounded-lg">
+        <Text className="text-sm text-muted-foreground text-center">Validating constraints...</Text>
       </View>
     );
   }
 
   if (!validation) {
     return (
-      <View className="p-4 bg-gray-50 rounded-lg">
-        <Text className="text-sm text-gray-500 text-center">
+      <View className="p-4 bg-muted rounded-lg">
+        <Text className="text-sm text-muted-foreground text-center">
           Select a activity to see constraint validation
         </Text>
       </View>
@@ -96,7 +96,7 @@ export function ConstraintValidator({ validation, isLoading = false }: Constrain
     <View className="space-y-3">
       {/* Header */}
       <View className="flex-row items-center justify-between mb-2">
-        <Text className="text-base font-semibold text-gray-900">Constraint Validation</Text>
+        <Text className="text-base font-semibold text-foreground">Constraint Validation</Text>
         {canSchedule && !hasWarnings && (
           <View className="flex-row items-center">
             <Text className="text-sm font-medium text-green-600">✓ All constraints satisfied</Text>

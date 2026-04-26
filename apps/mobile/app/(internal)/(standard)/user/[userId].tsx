@@ -2,16 +2,23 @@ import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@repo/ui/components/dropdown-menu";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { Clock, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
+import { Clock, Ellipsis, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -101,6 +108,14 @@ function UserDetailScreen() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
+  const [showDeleteAccountFinalConfirm, setShowDeleteAccountFinalConfirm] = useState(false);
+  const [statusModal, setStatusModal] = useState<null | {
+    title: string;
+    description: string;
+    onClose?: () => void;
+  }>(null);
 
   const followMutation = api.social.followUser.useMutation({
     onSuccess: async () => invalidateRelationshipQueries(utils, [targetUserId, user?.id]),
@@ -122,74 +137,50 @@ function UserDetailScreen() {
   });
 
   const handleSignOut = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            setIsSigningOut(true);
-            await authStore.clearSession();
-            await utils.profiles.invalidate();
-            router.replace("/(external)/sign-in" as any);
-          } catch (error) {
-            Alert.alert("Error", error instanceof Error ? error.message : "Failed to sign out");
-          } finally {
-            setIsSigningOut(false);
-          }
-        },
-      },
-    ]);
+    setShowSignOutConfirm(true);
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently lost.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Final Confirmation",
-              "This is your last chance. Are you absolutely sure you want to delete your account?",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, Delete My Account",
-                  style: "destructive",
-                  onPress: async () => {
-                    try {
-                      await deleteAccount();
-                      await authStore.clearSession();
-                      await utils.profiles.invalidate();
-                      router.replace("/(external)/sign-in" as any);
+    setShowDeleteAccountConfirm(true);
+  };
 
-                      setTimeout(() => {
-                        Alert.alert(
-                          "Account Deleted",
-                          "Your account has been successfully deleted.",
-                        );
-                      }, 500);
-                    } catch (error) {
-                      Alert.alert(
-                        "Error",
-                        error instanceof Error
-                          ? error.message
-                          : "Failed to delete account. Please contact support.",
-                      );
-                    }
-                  },
-                },
-              ],
-            );
-          },
-        },
-      ],
-    );
+  const confirmSignOut = async () => {
+    try {
+      setIsSigningOut(true);
+      await authStore.clearSession();
+      await utils.profiles.invalidate();
+      router.replace("/(external)/sign-in" as any);
+    } catch (error) {
+      setStatusModal({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to sign out",
+      });
+    } finally {
+      setIsSigningOut(false);
+      setShowSignOutConfirm(false);
+    }
+  };
+
+  const confirmDeleteAccount = async () => {
+    try {
+      await deleteAccount();
+      await authStore.clearSession();
+      await utils.profiles.invalidate();
+      router.replace("/(external)/sign-in" as any);
+      setShowDeleteAccountFinalConfirm(false);
+      setStatusModal({
+        title: "Account Deleted",
+        description: "Your account has been successfully deleted.",
+      });
+    } catch (error) {
+      setStatusModal({
+        title: "Error",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete account. Please contact support.",
+      });
+    }
   };
 
   const handleUpdatePassword = () => {
@@ -340,458 +331,558 @@ function UserDetailScreen() {
 
   const renderHeaderActions = () =>
     isOwnProfile ? (
-      <TouchableOpacity
-        onPress={() => navigateTo(ROUTES.PROFILE_EDIT as any)}
-        className="mr-2 rounded-full px-2 py-1"
-        testID="user-detail-edit-trigger"
-      >
-        <Text className="text-sm font-medium text-primary">Edit</Text>
-      </TouchableOpacity>
+      <DropdownMenu>
+        <DropdownMenuTrigger testID="user-detail-options-trigger">
+          <View className="mr-2 rounded-full p-2">
+            <Icon as={Ellipsis} size={18} className="text-foreground" />
+          </View>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6}>
+          <DropdownMenuItem
+            onPress={() => navigateTo(ROUTES.PROFILE_EDIT as any)}
+            testID="user-detail-options-edit"
+          >
+            <Text>Edit Profile</Text>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     ) : null;
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerClassName="p-6 gap-6"
-      showsVerticalScrollIndicator={false}
-      testID="user-detail-screen"
-    >
-      <Stack.Screen options={{ headerRight: renderHeaderActions }} />
+    <>
+      <ScrollView
+        className="flex-1 bg-background"
+        contentContainerClassName="p-6 gap-6"
+        showsVerticalScrollIndicator={false}
+        testID="user-detail-screen"
+      >
+        <Stack.Screen options={{ headerRight: renderHeaderActions }} />
 
-      <Card className="rounded-3xl border border-border bg-card">
-        <CardContent className="gap-5 p-6">
-          <View className="flex-row items-start gap-4">
-            <Avatar alt={renderedProfile?.username || "User"} className="h-24 w-24">
-              {renderedProfile?.avatar_url ? (
-                <AvatarImage
-                  source={{ uri: renderedProfile.avatar_url }}
-                  key={renderedProfile.avatar_url}
-                />
-              ) : null}
-              <AvatarFallback>
-                <Text className="text-3xl">
-                  {renderedProfile?.username?.charAt(0)?.toUpperCase() ||
-                    (isOwnProfile ? user?.email?.charAt(0)?.toUpperCase() : null) ||
-                    "U"}
-                </Text>
-              </AvatarFallback>
-            </Avatar>
-
-            <View className="flex-1 gap-2">
-              <View className="gap-1">
-                <Text className="text-2xl font-semibold text-foreground">{displayName}</Text>
-                {usernameLabel ? (
-                  <Text className="text-sm text-muted-foreground">{usernameLabel}</Text>
+        <Card className="rounded-3xl border border-border bg-card">
+          <CardContent className="gap-5 p-6">
+            <View className="flex-row items-start gap-4">
+              <Avatar alt={renderedProfile?.username || "User"} className="h-24 w-24">
+                {renderedProfile?.avatar_url ? (
+                  <AvatarImage
+                    source={{ uri: renderedProfile.avatar_url }}
+                    key={renderedProfile.avatar_url}
+                  />
                 ) : null}
-                {isOwnProfile && user?.email ? (
-                  <Text className="text-sm text-muted-foreground">{user.email}</Text>
-                ) : null}
-              </View>
-
-              <View className="flex-row flex-wrap items-center gap-2">
-                <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                  <Text className="text-xs font-medium text-foreground">
-                    {renderedProfile?.is_public ? "Public profile" : "Private profile"}
+                <AvatarFallback>
+                  <Text className="text-3xl">
+                    {renderedProfile?.username?.charAt(0)?.toUpperCase() ||
+                      (isOwnProfile ? user?.email?.charAt(0)?.toUpperCase() : null) ||
+                      "U"}
                   </Text>
-                </View>
-                {isOwnProfile ? (
-                  <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
-                    <Text className="text-xs font-medium text-foreground">Your account</Text>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-          </View>
+                </AvatarFallback>
+              </Avatar>
 
-          <Text className="text-sm text-muted-foreground">
-            {isOwnProfile
-              ? "Your public profile summary lives here. Account tools stay below so profile details remain easy to scan."
-              : renderedProfile?.is_public
-                ? "Open profile details, then follow or message if this looks like the right connection."
-                : "This profile stays private until your follow request is accepted."}
-          </Text>
-
-          <View className="flex-row gap-3">
-            <TouchableProfileStat
-              label="Followers"
-              value={renderedProfile?.followers_count ?? 0}
-              onPress={() => navigateTo(`/followers?userId=${targetUserId}` as any)}
-            />
-            <TouchableProfileStat
-              label="Following"
-              value={renderedProfile?.following_count ?? 0}
-              onPress={() => navigateTo(`/following?userId=${targetUserId}` as any)}
-            />
-          </View>
-
-          {!isOwnProfile && renderedProfile?.follow_status === "pending" && (
-            <View className="flex-row items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 dark:bg-amber-900">
-              <Icon as={Clock} size={16} className="text-amber-600 dark:text-amber-400" />
-              <Text className="text-sm text-amber-700 dark:text-amber-300">
-                Follow request pending
-              </Text>
-            </View>
-          )}
-
-          {!isOwnProfile ? (
-            <View className="flex-row gap-3">
-              {renderedProfile?.follow_status === "accepted" ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
-                  className="flex-row gap-2"
-                  disabled={unfollowMutation.isPending}
-                  testID="user-detail-unfollow-button"
-                >
-                  <Icon as={UserMinus} size={16} />
-                  <Text>Unfollow</Text>
-                </Button>
-              ) : renderedProfile?.follow_status === "pending" ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
-                  className="flex-row gap-2"
-                  disabled={unfollowMutation.isPending}
-                  testID="user-detail-requested-button"
-                >
-                  <Icon as={Clock} size={16} />
-                  <Text>Requested</Text>
-                </Button>
-              ) : (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onPress={() => followMutation.mutate({ target_user_id: targetUserId })}
-                  className="flex-row gap-2"
-                  disabled={followMutation.isPending}
-                  testID="user-detail-follow-button"
-                >
-                  <Icon as={UserPlus} size={16} />
-                  <Text>Follow</Text>
-                </Button>
-              )}
-
-              <Button
-                variant="outline"
-                size="sm"
-                onPress={() => messageMutation.mutate({ target_user_id: targetUserId })}
-                className="flex-row gap-2"
-                disabled={messageMutation.isPending}
-                testID="user-detail-message-button"
-              >
-                <Icon as={MessageCircle} size={16} />
-                <Text>Message</Text>
-              </Button>
-            </View>
-          ) : null}
-
-          {!isOwnProfile &&
-          renderedProfile?.is_public === false &&
-          renderedProfile?.follow_status !== "accepted" ? (
-            <View className="items-center border-t border-border py-6">
-              <Text className="text-base font-semibold text-foreground">
-                This account is private
-              </Text>
-              <Text className="mt-1 text-center text-sm text-muted-foreground">
-                Follow this account to see their activities and profile details.
-              </Text>
-            </View>
-          ) : hasProfileMetadata ? (
-            <View className="gap-3 border-t border-border pt-4">
-              {renderedProfile.bio ? (
-                <View>
-                  <Text className="mb-1 text-xs uppercase text-muted-foreground">Bio</Text>
-                  <Text className="text-sm text-foreground">{renderedProfile.bio}</Text>
-                </View>
-              ) : null}
-
-              <View className="flex-row flex-wrap gap-4">
-                {age !== null ? (
-                  <View className="min-w-[45%] flex-1">
-                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Age</Text>
-                    <Text className="text-sm font-medium text-foreground">{age} years</Text>
-                  </View>
-                ) : null}
-
-                {renderedProfile.gender ? (
-                  <View className="min-w-[45%] flex-1">
-                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Gender</Text>
-                    <Text className="text-sm font-medium capitalize text-foreground">
-                      {renderedProfile.gender}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {renderedProfile.preferred_units ? (
-                  <View className="min-w-[45%] flex-1">
-                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Units</Text>
-                    <Text className="text-sm font-medium capitalize text-foreground">
-                      {renderedProfile.preferred_units}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {renderedProfile.language ? (
-                  <View className="min-w-[45%] flex-1">
-                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Language</Text>
-                    <Text className="text-sm font-medium uppercase text-foreground">
-                      {renderedProfile.language}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {isOwnProfile ? (
-        <>
-          <Card className="rounded-3xl border border-border bg-card" testID="my-records-section">
-            <CardContent className="gap-4 p-6">
-              <View className="gap-1">
-                <Text className="text-lg font-semibold text-foreground">Quick Links</Text>
-                <Text className="text-sm text-muted-foreground">
-                  Open your saved training data without turning this page into a search surface.
-                </Text>
-              </View>
-
-              <View className="flex-row flex-wrap gap-3">
-                {quickLinks.map((link) => (
-                  <QuickLinkTile key={link.testID} {...link} />
-                ))}
-              </View>
-            </CardContent>
-          </Card>
-
-          <SettingsGroup
-            title="My Account"
-            description="Email, password, session, and account ownership actions"
-            testID="account-section"
-          >
-            <SettingItem
-              type="button"
-              label="Email"
-              description={user?.email || "Not set"}
-              buttonLabel={canUpdateEmail ? "Change" : "Unavailable"}
-              variant="outline"
-              onPress={() => {
-                if (canUpdateEmail) {
-                  setIsEmailUpdateVisible((value) => !value);
-                } else {
-                  Alert.alert(
-                    "Temporarily unavailable",
-                    updateEmailUnavailableReason ?? "Email changes are currently unavailable.",
-                  );
-                }
-              }}
-              disabled={!canUpdateEmail}
-              testID="update-email"
-            />
-
-            {isEmailUpdateVisible && (
-              <View className="bg-card p-4 rounded-lg border border-border mb-4">
-                <Text className="text-sm font-medium mb-3">Update Email Address</Text>
-                <Text className="text-xs text-muted-foreground mb-3">
-                  We&apos;ll send a confirmation link to your new email address to complete this
-                  change.
-                </Text>
-                <Input
-                  value={newEmail}
-                  onChangeText={setNewEmail}
-                  placeholder="New email address"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  className="mb-3"
-                  testID="account-email-input"
-                />
-                <Button onPress={handleUpdateEmail} testID="account-email-submit-button">
-                  <Text>Send Verification Email</Text>
-                </Button>
-              </View>
-            )}
-
-            <SettingItem
-              type="button"
-              label="Password"
-              description="Change your password"
-              buttonLabel={isPasswordChangeVisible ? "Cancel" : "Change"}
-              variant="outline"
-              onPress={() => setIsPasswordChangeVisible(!isPasswordChangeVisible)}
-              testID="change-password"
-            />
-
-            {isPasswordChangeVisible && (
-              <View className="bg-card p-4 rounded-lg border border-border mb-4">
-                <Text className="text-sm font-medium mb-3">Change Your Password</Text>
-                <Input
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  placeholder="Current password"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  className="mb-3"
-                  testID="account-current-password-input"
-                />
-                <Input
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  placeholder="New password (min 6 characters)"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  className="mb-3"
-                  testID="account-new-password-input"
-                />
-                <Input
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder="Confirm new password"
-                  secureTextEntry
-                  autoCapitalize="none"
-                  className="mb-3"
-                  testID="account-confirm-password-input"
-                />
-                <Button onPress={handleUpdatePassword} testID="account-password-submit-button">
-                  <Text>Update Password</Text>
-                </Button>
-              </View>
-            )}
-
-            <SettingItem
-              type="custom"
-              label="Theme"
-              description={`Current: ${resolvedTheme === "dark" ? "Dark" : "Light"}${theme === "system" ? " (System)" : ""}`}
-              testID="dark-mode"
-            >
-              <View className="ml-3 w-[220px] rounded-lg bg-muted p-1">
-                <ToggleGroup
-                  type="single"
-                  value={theme}
-                  onValueChange={(nextValue: string | undefined) => {
-                    if (nextValue) {
-                      void setTheme(nextValue as "system" | "light" | "dark");
-                    }
-                  }}
-                  className="w-full"
-                  testId="theme-toggle-group"
-                >
-                  {themeOptions.map((option, index) => {
-                    const isSelected = theme === option.value;
-
-                    return (
-                      <ToggleGroupItem
-                        key={option.value}
-                        value={option.value}
-                        testId={`theme-option-${option.value}`}
-                        isFirst={index === 0}
-                        isLast={index === themeOptions.length - 1}
-                        className={`flex-1 px-3 py-2 ${isSelected ? "bg-background" : "bg-transparent"}`}
-                      >
-                        <Text className={isSelected ? "text-foreground" : "text-muted-foreground"}>
-                          {option.label}
-                        </Text>
-                      </ToggleGroupItem>
-                    );
-                  })}
-                </ToggleGroup>
-              </View>
-            </SettingItem>
-
-            <SettingItem
-              type="button"
-              label="Sign Out"
-              description="Sign out of your account on this device"
-              buttonLabel={isSigningOut ? "Signing out..." : "Sign Out"}
-              variant="destructive"
-              onPress={handleSignOut}
-              disabled={isSigningOut}
-              testID="sign-out"
-            />
-
-            <SettingItem
-              type="button"
-              label="Delete Account"
-              description="Permanently delete your account and all data"
-              buttonLabel="Delete"
-              variant="destructive"
-              onPress={handleDeleteAccount}
-              testID="delete-account"
-            />
-          </SettingsGroup>
-
-          <Card className="rounded-3xl border border-border bg-card" testID="integrations-card">
-            <CardContent className="gap-4 p-6">
-              <View className="gap-1">
-                <Text className="text-lg font-semibold text-foreground">Integrations</Text>
-                <Text className="text-sm text-muted-foreground">
-                  Connection state for your third-party services.
-                </Text>
-              </View>
-
-              <View className="gap-3 rounded-2xl border border-border bg-muted/20 p-4">
+              <View className="flex-1 gap-2">
                 <View className="gap-1">
-                  <Text className="text-sm font-medium text-foreground">
-                    {integrations.length > 0
-                      ? `${integrations.length} connected ${integrations.length === 1 ? "service" : "services"}`
-                      : "No services connected"}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    {integrations.length > 0
-                      ? integrations
-                          .map(
-                            (integration) =>
-                              integrationProviderLabels[integration.provider] ??
-                              integration.provider,
-                          )
-                          .join(", ")
-                      : "Connect Strava, Garmin, Wahoo, and other providers from the dedicated integrations screen."}
-                  </Text>
+                  <Text className="text-2xl font-semibold text-foreground">{displayName}</Text>
+                  {usernameLabel ? (
+                    <Text className="text-sm text-muted-foreground">{usernameLabel}</Text>
+                  ) : null}
+                  {isOwnProfile && user?.email ? (
+                    <Text className="text-sm text-muted-foreground">{user.email}</Text>
+                  ) : null}
                 </View>
+
+                <View className="flex-row flex-wrap items-center gap-2">
+                  <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                    <Text className="text-xs font-medium text-foreground">
+                      {renderedProfile?.is_public ? "Public profile" : "Private profile"}
+                    </Text>
+                  </View>
+                  {isOwnProfile ? (
+                    <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                      <Text className="text-xs font-medium text-foreground">Your account</Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            </View>
+
+            <Text className="text-sm text-muted-foreground">
+              {isOwnProfile
+                ? "Your public profile summary lives here. Account tools stay below so profile details remain easy to scan."
+                : renderedProfile?.is_public
+                  ? "Open profile details, then follow or message if this looks like the right connection."
+                  : "This profile stays private until your follow request is accepted."}
+            </Text>
+
+            <View className="flex-row gap-3">
+              <TouchableProfileStat
+                label="Followers"
+                value={renderedProfile?.followers_count ?? 0}
+                onPress={() => navigateTo(`/followers?userId=${targetUserId}` as any)}
+              />
+              <TouchableProfileStat
+                label="Following"
+                value={renderedProfile?.following_count ?? 0}
+                onPress={() => navigateTo(`/following?userId=${targetUserId}` as any)}
+              />
+            </View>
+
+            {!isOwnProfile && renderedProfile?.follow_status === "pending" && (
+              <View className="flex-row items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 dark:bg-amber-900">
+                <Icon as={Clock} size={16} className="text-amber-600 dark:text-amber-400" />
+                <Text className="text-sm text-amber-700 dark:text-amber-300">
+                  Follow request pending
+                </Text>
+              </View>
+            )}
+
+            {!isOwnProfile ? (
+              <View className="flex-row gap-3">
+                {renderedProfile?.follow_status === "accepted" ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
+                    className="flex-row gap-2"
+                    disabled={unfollowMutation.isPending}
+                    testID="user-detail-unfollow-button"
+                  >
+                    <Icon as={UserMinus} size={16} />
+                    <Text>Unfollow</Text>
+                  </Button>
+                ) : renderedProfile?.follow_status === "pending" ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => unfollowMutation.mutate({ target_user_id: targetUserId })}
+                    className="flex-row gap-2"
+                    disabled={unfollowMutation.isPending}
+                    testID="user-detail-requested-button"
+                  >
+                    <Icon as={Clock} size={16} />
+                    <Text>Requested</Text>
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onPress={() => followMutation.mutate({ target_user_id: targetUserId })}
+                    className="flex-row gap-2"
+                    disabled={followMutation.isPending}
+                    testID="user-detail-follow-button"
+                  >
+                    <Icon as={UserPlus} size={16} />
+                    <Text>Follow</Text>
+                  </Button>
+                )}
 
                 <Button
                   variant="outline"
                   size="sm"
-                  className="self-start"
-                  onPress={() => navigateTo(ROUTES.INTEGRATIONS as any)}
-                  testID="manage-integrations-button"
+                  onPress={() => messageMutation.mutate({ target_user_id: targetUserId })}
+                  className="flex-row gap-2"
+                  disabled={messageMutation.isPending}
+                  testID="user-detail-message-button"
                 >
-                  <Text>Manage Third-Party Integrations</Text>
+                  <Icon as={MessageCircle} size={16} />
+                  <Text>Message</Text>
                 </Button>
               </View>
-            </CardContent>
-          </Card>
+            ) : null}
 
-          <SettingsGroup title="About" testID="about-section">
-            <View className="gap-2">
-              <View className="flex-row justify-between items-center">
-                <Text className="text-sm text-muted-foreground">Version</Text>
-                <Text className="text-sm font-medium">1.0.0</Text>
+            {!isOwnProfile &&
+            renderedProfile?.is_public === false &&
+            renderedProfile?.follow_status !== "accepted" ? (
+              <View className="items-center border-t border-border py-6">
+                <Text className="text-base font-semibold text-foreground">
+                  This account is private
+                </Text>
+                <Text className="mt-1 text-center text-sm text-muted-foreground">
+                  Follow this account to see their activities and profile details.
+                </Text>
               </View>
-              <View className="flex-row justify-between items-center">
-                <Text className="text-sm text-muted-foreground">Build</Text>
-                <Text className="text-sm font-medium">12345</Text>
-              </View>
-            </View>
-          </SettingsGroup>
+            ) : hasProfileMetadata ? (
+              <View className="gap-3 border-t border-border pt-4">
+                {renderedProfile.bio ? (
+                  <View>
+                    <Text className="mb-1 text-xs uppercase text-muted-foreground">Bio</Text>
+                    <Text className="text-sm text-foreground">{renderedProfile.bio}</Text>
+                  </View>
+                ) : null}
 
-          {typeof __DEV__ !== "undefined" && __DEV__ && (
-            <SettingsGroup title="Debug" testID="debug-section">
-              <View className="gap-1">
-                <Text className="text-muted-foreground text-xs">User ID: {user?.id || "None"}</Text>
-                <Text className="text-muted-foreground text-xs">
-                  Email: {user?.email || "None"}
-                </Text>
-                <Text className="text-muted-foreground text-xs">
-                  Profile ID: {profile?.id || "None"}
-                </Text>
+                <View className="flex-row flex-wrap gap-4">
+                  {age !== null ? (
+                    <View className="min-w-[45%] flex-1">
+                      <Text className="mb-1 text-xs uppercase text-muted-foreground">Age</Text>
+                      <Text className="text-sm font-medium text-foreground">{age} years</Text>
+                    </View>
+                  ) : null}
+
+                  {renderedProfile.gender ? (
+                    <View className="min-w-[45%] flex-1">
+                      <Text className="mb-1 text-xs uppercase text-muted-foreground">Gender</Text>
+                      <Text className="text-sm font-medium capitalize text-foreground">
+                        {renderedProfile.gender}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {renderedProfile.preferred_units ? (
+                    <View className="min-w-[45%] flex-1">
+                      <Text className="mb-1 text-xs uppercase text-muted-foreground">Units</Text>
+                      <Text className="text-sm font-medium capitalize text-foreground">
+                        {renderedProfile.preferred_units}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {renderedProfile.language ? (
+                    <View className="min-w-[45%] flex-1">
+                      <Text className="mb-1 text-xs uppercase text-muted-foreground">Language</Text>
+                      <Text className="text-sm font-medium uppercase text-foreground">
+                        {renderedProfile.language}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        {isOwnProfile ? (
+          <>
+            <Card className="rounded-3xl border border-border bg-card" testID="my-records-section">
+              <CardContent className="gap-4 p-6">
+                <View className="gap-1">
+                  <Text className="text-lg font-semibold text-foreground">Quick Links</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Open your saved training data without turning this page into a search surface.
+                  </Text>
+                </View>
+
+                <View className="flex-row flex-wrap gap-3">
+                  {quickLinks.map((link) => (
+                    <QuickLinkTile key={link.testID} {...link} />
+                  ))}
+                </View>
+              </CardContent>
+            </Card>
+
+            <SettingsGroup
+              title="My Account"
+              description="Email, password, session, and account ownership actions"
+              testID="account-section"
+            >
+              <SettingItem
+                type="button"
+                label="Email"
+                description={user?.email || "Not set"}
+                buttonLabel={canUpdateEmail ? "Change" : "Unavailable"}
+                variant="outline"
+                onPress={() => {
+                  if (canUpdateEmail) {
+                    setIsEmailUpdateVisible((value) => !value);
+                  } else {
+                    Alert.alert(
+                      "Temporarily unavailable",
+                      updateEmailUnavailableReason ?? "Email changes are currently unavailable.",
+                    );
+                  }
+                }}
+                disabled={!canUpdateEmail}
+                testID="update-email"
+              />
+
+              {isEmailUpdateVisible && (
+                <View className="bg-card p-4 rounded-lg border border-border mb-4">
+                  <Text className="text-sm font-medium mb-3">Update Email Address</Text>
+                  <Text className="text-xs text-muted-foreground mb-3">
+                    We&apos;ll send a confirmation link to your new email address to complete this
+                    change.
+                  </Text>
+                  <Input
+                    value={newEmail}
+                    onChangeText={setNewEmail}
+                    placeholder="New email address"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    className="mb-3"
+                    testID="account-email-input"
+                  />
+                  <Button onPress={handleUpdateEmail} testID="account-email-submit-button">
+                    <Text>Send Verification Email</Text>
+                  </Button>
+                </View>
+              )}
+
+              <SettingItem
+                type="button"
+                label="Password"
+                description="Change your password"
+                buttonLabel={isPasswordChangeVisible ? "Cancel" : "Change"}
+                variant="outline"
+                onPress={() => setIsPasswordChangeVisible(!isPasswordChangeVisible)}
+                testID="change-password"
+              />
+
+              {isPasswordChangeVisible && (
+                <View className="bg-card p-4 rounded-lg border border-border mb-4">
+                  <Text className="text-sm font-medium mb-3">Change Your Password</Text>
+                  <Input
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    placeholder="Current password"
+                    secureTextEntry
+                    autoCapitalize="none"
+                    className="mb-3"
+                    testID="account-current-password-input"
+                  />
+                  <Input
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    placeholder="New password (min 6 characters)"
+                    secureTextEntry
+                    autoCapitalize="none"
+                    className="mb-3"
+                    testID="account-new-password-input"
+                  />
+                  <Input
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Confirm new password"
+                    secureTextEntry
+                    autoCapitalize="none"
+                    className="mb-3"
+                    testID="account-confirm-password-input"
+                  />
+                  <Button onPress={handleUpdatePassword} testID="account-password-submit-button">
+                    <Text>Update Password</Text>
+                  </Button>
+                </View>
+              )}
+
+              <SettingItem
+                type="custom"
+                label="Theme"
+                description={`Current: ${resolvedTheme === "dark" ? "Dark" : "Light"}${theme === "system" ? " (System)" : ""}`}
+                testID="dark-mode"
+              >
+                <View className="ml-3 w-[220px] rounded-lg bg-muted p-1">
+                  <ToggleGroup
+                    type="single"
+                    value={theme}
+                    onValueChange={(nextValue: string | undefined) => {
+                      if (nextValue) {
+                        void setTheme(nextValue as "system" | "light" | "dark");
+                      }
+                    }}
+                    className="w-full"
+                    testId="theme-toggle-group"
+                  >
+                    {themeOptions.map((option, index) => {
+                      const isSelected = theme === option.value;
+
+                      return (
+                        <ToggleGroupItem
+                          key={option.value}
+                          value={option.value}
+                          testId={`theme-option-${option.value}`}
+                          isFirst={index === 0}
+                          isLast={index === themeOptions.length - 1}
+                          className={`flex-1 px-3 py-2 ${isSelected ? "bg-background" : "bg-transparent"}`}
+                        >
+                          <Text
+                            className={isSelected ? "text-foreground" : "text-muted-foreground"}
+                          >
+                            {option.label}
+                          </Text>
+                        </ToggleGroupItem>
+                      );
+                    })}
+                  </ToggleGroup>
+                </View>
+              </SettingItem>
+
+              <SettingItem
+                type="button"
+                label="Sign Out"
+                description="Sign out of your account on this device"
+                buttonLabel={isSigningOut ? "Signing out..." : "Sign Out"}
+                variant="destructive"
+                onPress={handleSignOut}
+                disabled={isSigningOut}
+                testID="sign-out"
+              />
+
+              <SettingItem
+                type="button"
+                label="Delete Account"
+                description="Permanently delete your account and all data"
+                buttonLabel="Delete"
+                variant="destructive"
+                onPress={handleDeleteAccount}
+                testID="delete-account"
+              />
+            </SettingsGroup>
+
+            <Card className="rounded-3xl border border-border bg-card" testID="integrations-card">
+              <CardContent className="gap-4 p-6">
+                <View className="gap-1">
+                  <Text className="text-lg font-semibold text-foreground">Integrations</Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Connection state for your third-party services.
+                  </Text>
+                </View>
+
+                <View className="gap-3 rounded-2xl border border-border bg-muted/20 p-4">
+                  <View className="gap-1">
+                    <Text className="text-sm font-medium text-foreground">
+                      {integrations.length > 0
+                        ? `${integrations.length} connected ${integrations.length === 1 ? "service" : "services"}`
+                        : "No services connected"}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {integrations.length > 0
+                        ? integrations
+                            .map(
+                              (integration) =>
+                                integrationProviderLabels[integration.provider] ??
+                                integration.provider,
+                            )
+                            .join(", ")
+                        : "Connect Strava, Garmin, Wahoo, and other providers from the dedicated integrations screen."}
+                    </Text>
+                  </View>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="self-start"
+                    onPress={() => navigateTo(ROUTES.INTEGRATIONS as any)}
+                    testID="manage-integrations-button"
+                  >
+                    <Text>Manage Third-Party Integrations</Text>
+                  </Button>
+                </View>
+              </CardContent>
+            </Card>
+
+            <SettingsGroup title="About" testID="about-section">
+              <View className="gap-2">
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-sm text-muted-foreground">Version</Text>
+                  <Text className="text-sm font-medium">1.0.0</Text>
+                </View>
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-sm text-muted-foreground">Build</Text>
+                  <Text className="text-sm font-medium">12345</Text>
+                </View>
               </View>
             </SettingsGroup>
-          )}
-        </>
+
+            {typeof __DEV__ !== "undefined" && __DEV__ && (
+              <SettingsGroup title="Debug" testID="debug-section">
+                <View className="gap-1">
+                  <Text className="text-muted-foreground text-xs">
+                    User ID: {user?.id || "None"}
+                  </Text>
+                  <Text className="text-muted-foreground text-xs">
+                    Email: {user?.email || "None"}
+                  </Text>
+                  <Text className="text-muted-foreground text-xs">
+                    Profile ID: {profile?.id || "None"}
+                  </Text>
+                </View>
+              </SettingsGroup>
+            )}
+          </>
+        ) : null}
+      </ScrollView>
+      {showSignOutConfirm ? (
+        <AppConfirmModal
+          description="Are you sure you want to sign out?"
+          onClose={() => setShowSignOutConfirm(false)}
+          primaryAction={{
+            label: isSigningOut ? "Signing out..." : "Sign Out",
+            onPress: () => {
+              void confirmSignOut();
+            },
+            variant: "destructive",
+            disabled: isSigningOut,
+            testID: "user-detail-signout-confirm",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowSignOutConfirm(false),
+            variant: "outline",
+          }}
+          testID="user-detail-signout-modal"
+          title="Sign Out"
+        />
       ) : null}
-    </ScrollView>
+      {showDeleteAccountConfirm ? (
+        <AppConfirmModal
+          description="Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently lost."
+          onClose={() => setShowDeleteAccountConfirm(false)}
+          primaryAction={{
+            label: "Delete",
+            onPress: () => {
+              setShowDeleteAccountConfirm(false);
+              setShowDeleteAccountFinalConfirm(true);
+            },
+            variant: "destructive",
+            testID: "user-detail-delete-account-confirm",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteAccountConfirm(false),
+            variant: "outline",
+          }}
+          testID="user-detail-delete-account-modal"
+          title="Delete Account"
+        />
+      ) : null}
+      {showDeleteAccountFinalConfirm ? (
+        <AppConfirmModal
+          description="This is your last chance. Are you absolutely sure you want to delete your account?"
+          onClose={() => setShowDeleteAccountFinalConfirm(false)}
+          primaryAction={{
+            label: "Yes, Delete My Account",
+            onPress: () => {
+              void confirmDeleteAccount();
+            },
+            variant: "destructive",
+            testID: "user-detail-delete-account-final-confirm",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteAccountFinalConfirm(false),
+            variant: "outline",
+          }}
+          testID="user-detail-delete-account-final-modal"
+          title="Final Confirmation"
+        />
+      ) : null}
+      {statusModal ? (
+        <AppConfirmModal
+          description={statusModal.description}
+          onClose={() => {
+            const next = statusModal.onClose;
+            setStatusModal(null);
+            next?.();
+          }}
+          primaryAction={{
+            label: "OK",
+            onPress: () => {
+              const next = statusModal.onClose;
+              setStatusModal(null);
+              next?.();
+            },
+            testID: "user-detail-status-confirm",
+          }}
+          testID="user-detail-status-modal"
+          title={statusModal.title}
+        />
+      ) : null}
+    </>
   );
 }
 

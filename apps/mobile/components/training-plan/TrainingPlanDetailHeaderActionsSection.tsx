@@ -13,6 +13,7 @@ import { TrainingPlanSummaryHeader } from "./TrainingPlanSummaryHeader";
 
 interface TrainingPlanDetailHeaderActionsSectionProps {
   handleToggleLike: () => void;
+  isCurrentScheduledPlan?: boolean;
   isLiked: boolean;
   likesCount: number;
   overview?: {
@@ -28,6 +29,7 @@ interface TrainingPlanDetailHeaderActionsSectionProps {
 
 export function TrainingPlanDetailHeaderActionsSection({
   handleToggleLike,
+  isCurrentScheduledPlan = false,
   isLiked,
   likesCount,
   overview,
@@ -41,10 +43,11 @@ export function TrainingPlanDetailHeaderActionsSection({
       <TrainingPlanSummaryHeader
         title={plan.name}
         description={plan.description || undefined}
-        isActive={false}
+        isActive={isCurrentScheduledPlan}
+        activeLabel="Current scheduled plan"
         inactiveLabel="Template"
         createdAt={plan.created_at}
-        showStatusDot={false}
+        showStatusDot={isCurrentScheduledPlan}
         formatStartedDate={(date) =>
           date.toLocaleDateString("en-US", {
             month: "short",
@@ -75,6 +78,17 @@ export function TrainingPlanDetailHeaderActionsSection({
           </Pressable>
         }
       />
+
+      {isCurrentScheduledPlan ? (
+        <View className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-3">
+          <Text className="text-sm font-medium text-foreground">
+            This is your currently scheduled plan.
+          </Text>
+          <Text className="mt-1 text-sm text-muted-foreground">
+            Removing the scheduled set keeps completed sessions in history.
+          </Text>
+        </View>
+      ) : null}
 
       <View className="rounded-lg bg-muted/30 px-2.5 py-2">
         <View className="flex-row justify-between gap-2">

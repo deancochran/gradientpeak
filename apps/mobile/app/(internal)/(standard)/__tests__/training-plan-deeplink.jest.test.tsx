@@ -12,6 +12,7 @@ function createHost(type: string) {
 var mockAlert = jest.fn();
 var mockApplyTemplateMutate = jest.fn();
 var mockDuplicateMutate = jest.fn();
+var mockUpdateActivePlanStatusMutate = jest.fn();
 var mockUpdatePlanMutate = jest.fn();
 var mockActivePlanData: any = null;
 var mockApplyTemplateResult: any = null;
@@ -109,6 +110,12 @@ jest.mock("@/lib/api", () => ({
       },
       update: {
         useMutation: () => ({ mutate: mockUpdatePlanMutate, isPending: false }),
+      },
+      updateActivePlanStatus: {
+        useMutation: () => ({
+          mutate: mockUpdateActivePlanStatusMutate,
+          isPending: false,
+        }),
       },
       duplicate: {
         useMutation: (options: any) => ({
@@ -419,6 +426,7 @@ const resetTestState = () => {
   nativeAlertMock.mockReset();
   mockApplyTemplateMutate.mockReset();
   mockDuplicateMutate.mockReset();
+  mockUpdateActivePlanStatusMutate.mockReset();
   mockUpdatePlanMutate.mockReset();
   mockActivePlanData = null;
   mockApplyTemplateResult = null;
@@ -577,6 +585,10 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     renderNative(<TrainingPlanOverview />);
 
+    act(() => {
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
+    });
+
     expect(hasTextContaining("How should this schedule line up?")).toBe(true);
     expect(hasTextContaining("Start On")).toBe(true);
     expect(hasTextContaining("Finish By")).toBe(true);
@@ -599,15 +611,15 @@ describe("TrainingPlanOverview deep-link routing", () => {
     renderNative(<TrainingPlanOverview />);
 
     act(() => {
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
+    });
+
+    act(() => {
       findTouchableByText("Finish By").props.onPress();
     });
 
     act(() => {
       getDateFields()[0].props.onChange("2026-04-30");
-    });
-
-    act(() => {
-      findNodeByTestId("training-plan-options-schedule").props.onPress();
     });
 
     act(() => {
@@ -636,11 +648,11 @@ describe("TrainingPlanOverview deep-link routing", () => {
     renderNative(<TrainingPlanOverview />);
 
     await act(async () => {
-      findTouchableByText("Finish By").props.onPress();
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
     });
 
     await act(async () => {
-      findNodeByTestId("training-plan-options-schedule").props.onPress();
+      findTouchableByText("Finish By").props.onPress();
     });
 
     await act(async () => {
@@ -679,7 +691,43 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
 
     expect(findButtonByText("Open Current Plan")).toBeTruthy();
+    expect(findButtonByText("Replace Scheduled Plan")).toBeTruthy();
     expect(mockApplyTemplateMutate).not.toHaveBeenCalled();
+  });
+
+  it("replaces the scheduled plan when confirmed from the concurrency warning", async () => {
+    mockSnapshotState.plan = {
+      id: "plan-owned-anchor-4b",
+      name: "Anchor Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    mockLocalSearchParams.id = "plan-owned-anchor-4b";
+    mockActivePlanData = { id: "active-plan-1" };
+
+    renderNative(<TrainingPlanOverview />);
+
+    await act(async () => {
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByTestId("training-plan-replace-confirm").props.onPress();
+    });
+
+    expect(mockApplyTemplateMutate).toHaveBeenCalledWith({
+      template_type: "training_plan",
+      template_id: "plan-owned-anchor-4b",
+      start_date: undefined,
+      target_date: undefined,
+      replace_existing: true,
+    });
   });
 
   it("opens the current active plan from the concurrency warning CTA", async () => {
@@ -723,7 +771,11 @@ describe("TrainingPlanOverview deep-link routing", () => {
       structure: {},
     } as any;
     mockLocalSearchParams.id = "plan-owned-anchor-6";
-    mockApplyTemplateResult = { applied_plan_id: "scheduled-plan-1", created_event_count: 3 };
+    mockApplyTemplateResult = {
+      applied_plan_id: "scheduled-plan-1",
+      scheduled_sessions_created: 3,
+      scheduled_sessions_replaced: 0,
+    };
 
     renderNative(<TrainingPlanOverview />);
 
@@ -753,6 +805,52 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(mockRouterReplace).toHaveBeenCalledWith(
       ROUTES.PLAN.TRAINING_PLAN.DETAIL("scheduled-plan-1"),
     );
+  });
+
+  it("shows a remove scheduled sessions action when viewing the active plan", () => {
+    mockSnapshotState.plan = {
+      id: "active-plan-1",
+      name: "Active Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    mockLocalSearchParams.id = "active-plan-1";
+    mockActivePlanData = { id: "active-plan-1" };
+
+    renderNative(<TrainingPlanOverview />);
+
+    expect(hasTextContaining("currently scheduled plan")).toBe(true);
+    expect(hasTextContaining("Remove Scheduled Sessions")).toBe(true);
+  });
+
+  it("removes the active plan's scheduled sessions after confirmation", async () => {
+    mockSnapshotState.plan = {
+      id: "active-plan-2",
+      name: "Active Plan",
+      profile_id: "test-profile-id",
+      template_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure: {},
+    } as any;
+    mockLocalSearchParams.id = "active-plan-2";
+    mockActivePlanData = { id: "active-plan-2" };
+
+    renderNative(<TrainingPlanOverview />);
+
+    act(() => {
+      findNodeByTestId("training-plan-options-remove-scheduled").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByTestId("training-plan-remove-scheduled-confirm").props.onPress();
+    });
+
+    expect(mockUpdateActivePlanStatusMutate).toHaveBeenCalledWith({
+      id: "active-plan-2",
+      status: "abandoned",
+    });
   });
 
   it("routes review-activity intent CTA to activity detail", () => {

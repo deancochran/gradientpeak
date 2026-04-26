@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { SYSTEM_TEMPLATES, type SystemTrainingPlanTemplate } from "../../samples";
+import { ALL_SAMPLE_PLANS, SYSTEM_TEMPLATES, type SystemTrainingPlanTemplate } from "../../samples";
+import { persistedTrainingPlanStructureSchema, trainingPlanCreateSchema } from "../../schemas";
 import {
   buildSystemActivityTemplateCatalog,
   normalizeActivityTemplateStructureForAudit,
@@ -24,6 +25,34 @@ describe("system activity-template catalog", () => {
           entry.session_archetype.length > 0,
       ),
     ).toBe(true);
+  });
+
+  it("accepts every shipped system training plan as a persisted compatible structure", () => {
+    for (const plan of ALL_SAMPLE_PLANS) {
+      expect(() => persistedTrainingPlanStructureSchema.parse(plan.structure)).not.toThrow();
+    }
+  });
+
+  it("ships UI metadata for every system training plan template", () => {
+    for (const plan of ALL_SAMPLE_PLANS) {
+      const structure = plan.structure as {
+        durationWeeks?: { recommended?: number };
+        experienceLevel?: string[];
+        sport?: string[];
+      };
+
+      expect(Array.isArray(structure.sport)).toBe(true);
+      expect(structure.sport?.length).toBeGreaterThan(0);
+      expect(Array.isArray(structure.experienceLevel)).toBe(true);
+      expect(structure.experienceLevel?.length).toBeGreaterThan(0);
+      expect(structure.durationWeeks?.recommended).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps every shipped system training plan current-schema compatible", () => {
+    for (const plan of ALL_SAMPLE_PLANS) {
+      expect(() => trainingPlanCreateSchema.parse(plan.structure)).not.toThrow();
+    }
   });
 
   it("uses normalized ids instead of names when duplicate names exist", () => {

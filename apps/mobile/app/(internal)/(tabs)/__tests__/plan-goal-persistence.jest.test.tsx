@@ -44,7 +44,6 @@ jest.mock("@repo/core", () => ({
   createEmptyGoalDraft: jest.fn(() => ({ title: "", objective: null })),
   buildGoalDraftFromGoal: jest.fn(),
   buildGoalUpdatePayload: jest.fn(),
-  buildMilestoneEventUpdatePatch: jest.fn(),
   formatGoalTypeLabel: jest.fn(() => "Race"),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
 }));
@@ -126,7 +125,10 @@ jest.mock("@/lib/api", () => ({
           refetch: jest.fn(async () => undefined),
         }),
       },
-      list: { useQuery: () => ({ data: [] }) },
+      list: {
+        useQuery: () => ({ data: [] }),
+        useInfiniteQuery: () => ({ data: { pages: [{ items: [], total: 0 }] } }),
+      },
     },
     events: {
       list: { useQuery: () => ({ data: { items: [] }, refetch: jest.fn() }) },
@@ -168,7 +170,6 @@ describe("plan goal persistence", () => {
       expect.objectContaining({
         profile_id: "11111111-1111-4111-8111-111111111111",
         target_date: "2026-06-01",
-        training_plan_id: "33333333-3333-4333-8333-333333333333",
         title: "Spring 5K",
         priority: 8,
         activity_category: "run",

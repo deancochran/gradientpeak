@@ -1,28 +1,21 @@
 import { type DurationV2, type IntensityTargetV2, type PlanStepV2 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@repo/ui/components/dialog";
+  Form,
+  FormNumberField,
+  FormSelectField,
+  FormTextareaField,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Copy, Trash2 } from "lucide-react-native";
 import { useEffect, useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
+import { z } from "zod";
+import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
 
 interface StepEditSheetProps {
   isVisible: boolean;
@@ -43,154 +36,183 @@ export function StepEditSheet({
   onDelete,
   onDuplicate,
 }: StepEditSheetProps) {
-  // Form state
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [notes, setNotes] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const stepEditSchema = z
+    .object({
+      name: z.string().trim().min(1, "Please enter a step name"),
+      description: z.string(),
+      notes: z.string(),
+      durationType: z.enum(["time", "distance", "repetitions", "untilFinished"]),
+      durationValue: z.string(),
+      durationUnit: z.enum(["seconds", "minutes", "hours", "meters", "km", "reps"]),
+      targetType: z.enum([
+        "%FTP",
+        "%MaxHR",
+        "%ThresholdHR",
+        "watts",
+        "bpm",
+        "speed",
+        "cadence",
+        "RPE",
+      ]),
+      targetIntensity: z.string(),
+    })
+    .superRefine((value, ctx) => {
+      if (value.durationType !== "untilFinished") {
+        const parsed = Number(value.durationValue);
+        if (!value.durationValue.trim() || !Number.isFinite(parsed) || parsed <= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Please enter a valid duration",
+            path: ["durationValue"],
+          });
+        }
+      }
 
-  // Duration state
-  const [durationType, setDurationType] = useState<
-    "time" | "distance" | "repetitions" | "untilFinished"
-  >("time");
-  const [durationValue, setDurationValue] = useState("");
-  const [durationUnit, setDurationUnit] = useState<
-    "seconds" | "minutes" | "hours" | "meters" | "km"
-  >("minutes");
+      if (value.targetIntensity.trim()) {
+        const parsed = Number(value.targetIntensity);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Please enter a valid target intensity",
+            path: ["targetIntensity"],
+          });
+        }
+      }
+    });
 
-  // Target state
-  const [targetType, setTargetType] = useState<string>("%FTP");
-  const [targetIntensity, setTargetIntensity] = useState("");
+  type StepEditFormValues = z.infer<typeof stepEditSchema>;
+
+  const form = useZodForm({
+    schema: stepEditSchema,
+    defaultValues: {
+      name: "",
+      description: "",
+      notes: "",
+      durationType: "time",
+      durationValue: "",
+      durationUnit: "minutes",
+      targetType: "%FTP",
+      targetIntensity: "",
+    } satisfies StepEditFormValues,
+  });
+
+  const durationType = form.watch("durationType");
 
   // Sync form with step prop
   useEffect(() => {
     if (step) {
-      setName(step.name || "");
-      setDescription(step.description || "");
-      setNotes(step.notes || "");
+      const nextValues: StepEditFormValues = {
+        name: step.name || "",
+        description: step.description || "",
+        notes: step.notes || "",
+        durationType: step.duration.type,
+        durationValue: "",
+        durationUnit: "minutes",
+        targetType: "%FTP",
+        targetIntensity: "",
+      };
 
-      // Set duration (V2 format)
       const duration = step.duration;
-      setDurationType(duration.type);
-
       if (duration.type === "time") {
-        // Convert seconds to appropriate unit
         if (duration.seconds >= 3600) {
-          setDurationValue((duration.seconds / 3600).toString());
-          setDurationUnit("hours");
+          nextValues.durationValue = String(duration.seconds / 3600);
+          nextValues.durationUnit = "hours";
         } else if (duration.seconds >= 60) {
-          setDurationValue((duration.seconds / 60).toString());
-          setDurationUnit("minutes");
+          nextValues.durationValue = String(duration.seconds / 60);
+          nextValues.durationUnit = "minutes";
         } else {
-          setDurationValue(duration.seconds.toString());
-          setDurationUnit("seconds");
+          nextValues.durationValue = String(duration.seconds);
+          nextValues.durationUnit = "seconds";
         }
       } else if (duration.type === "distance") {
-        // Convert meters to appropriate unit
         if (duration.meters >= 1000) {
-          setDurationValue((duration.meters / 1000).toString());
-          setDurationUnit("km");
+          nextValues.durationValue = String(duration.meters / 1000);
+          nextValues.durationUnit = "km";
         } else {
-          setDurationValue(duration.meters.toString());
-          setDurationUnit("meters");
+          nextValues.durationValue = String(duration.meters);
+          nextValues.durationUnit = "meters";
         }
       } else if (duration.type === "repetitions") {
-        setDurationValue(duration.count.toString());
-        setDurationUnit("seconds"); // Placeholder, not used for reps
+        nextValues.durationValue = String(duration.count);
+        nextValues.durationUnit = "reps";
       } else if (duration.type === "untilFinished") {
-        setDurationValue("");
-        setDurationUnit("minutes");
+        nextValues.durationValue = "";
+        nextValues.durationUnit = "minutes";
       }
 
-      // Set target
       if (step.targets && step.targets.length > 0) {
         const target = step.targets[0];
-        setTargetType(target.type);
-        setTargetIntensity(target.intensity.toString());
-      } else {
-        setTargetType("%FTP");
-        setTargetIntensity("");
+        nextValues.targetType = target.type as StepEditFormValues["targetType"];
+        nextValues.targetIntensity = String(target.intensity);
       }
+
+      form.reset(nextValues);
     } else {
-      // Reset for new step
-      setName("");
-      setDescription("");
-      setNotes("");
-      setDurationType("time");
-      setDurationValue("");
-      setDurationUnit("minutes");
-      setTargetType("%FTP");
-      setTargetIntensity("");
+      form.reset({
+        name: "",
+        description: "",
+        notes: "",
+        durationType: "time",
+        durationValue: "",
+        durationUnit: "minutes",
+        targetType: "%FTP",
+        targetIntensity: "",
+      });
     }
-  }, [step, isVisible]);
+  }, [form, isVisible, step]);
 
-  const handleSave = () => {
-    // Validation
-    if (!name.trim()) {
-      Alert.alert("Validation Error", "Please enter a step name");
-      return;
+  useEffect(() => {
+    if (durationType === "time") {
+      form.setValue("durationUnit", "minutes", { shouldDirty: true });
+    } else if (durationType === "distance") {
+      form.setValue("durationUnit", "km", { shouldDirty: true });
+    } else if (durationType === "repetitions") {
+      form.setValue("durationUnit", "reps", { shouldDirty: true });
     }
+  }, [durationType, form]);
 
-    // Build duration object (V2 format)
+  const handleSave = (values: StepEditFormValues) => {
     let duration: DurationV2;
 
-    if (durationType === "untilFinished") {
+    if (values.durationType === "untilFinished") {
       duration = { type: "untilFinished" };
+    } else if (values.durationType === "time") {
+      const durationVal = Number(values.durationValue);
+      let seconds = durationVal;
+      if (values.durationUnit === "minutes") {
+        seconds = durationVal * 60;
+      } else if (values.durationUnit === "hours") {
+        seconds = durationVal * 3600;
+      }
+      duration = { type: "time", seconds: Math.round(seconds) };
+    } else if (values.durationType === "distance") {
+      const durationVal = Number(values.durationValue);
+      let meters = durationVal;
+      if (values.durationUnit === "km") {
+        meters = durationVal * 1000;
+      }
+      duration = { type: "distance", meters: Math.round(meters) };
     } else {
-      const durationVal = parseFloat(durationValue);
-      if (!durationValue || isNaN(durationVal) || durationVal <= 0) {
-        Alert.alert("Validation Error", "Please enter a valid duration");
-        return;
-      }
-
-      if (durationType === "time") {
-        // Convert to seconds
-        let seconds = durationVal;
-        if (durationUnit === "minutes") {
-          seconds = durationVal * 60;
-        } else if (durationUnit === "hours") {
-          seconds = durationVal * 3600;
-        }
-        duration = { type: "time", seconds: Math.round(seconds) };
-      } else if (durationType === "distance") {
-        // Convert to meters
-        let meters = durationVal;
-        if (durationUnit === "km") {
-          meters = durationVal * 1000;
-        }
-        duration = { type: "distance", meters: Math.round(meters) };
-      } else if (durationType === "repetitions") {
-        duration = { type: "repetitions", count: Math.round(durationVal) };
-      } else {
-        Alert.alert("Validation Error", "Invalid duration type");
-        return;
-      }
+      duration = { type: "repetitions", count: Math.round(Number(values.durationValue)) };
     }
 
-    // Build target object (optional for V2)
     let targets: IntensityTargetV2[] | undefined;
 
-    if (targetIntensity.trim()) {
-      const intensityVal = parseFloat(targetIntensity);
-      if (isNaN(intensityVal) || intensityVal <= 0) {
-        Alert.alert("Validation Error", "Please enter a valid target intensity");
-        return;
-      }
-
+    if (values.targetIntensity.trim()) {
       const target: IntensityTargetV2 = {
-        type: targetType as any,
-        intensity: intensityVal,
+        type: values.targetType as any,
+        intensity: Number(values.targetIntensity),
       };
       targets = [target];
     }
 
-    // Build updated step (V2 format)
     const updatedStep: PlanStepV2 = {
-      name: name.trim(),
-      description: description.trim() || undefined,
-      notes: notes.trim() || undefined,
+      name: values.name.trim(),
+      description: values.description.trim() || undefined,
+      notes: values.notes.trim() || undefined,
       duration,
       targets,
-      // Preserve existing metadata if editing
       segmentName: step?.segmentName,
       segmentIndex: step?.segmentIndex,
       originalRepetitionCount: step?.originalRepetitionCount,
@@ -200,292 +222,186 @@ export function StepEditSheet({
   };
 
   const handleDelete = () => {
-    Alert.alert("Delete Step", "Are you sure you want to delete this step?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: onDelete,
-      },
-    ]);
+    setShowDeleteConfirm(true);
   };
 
-  const handleDurationTypeChange = (option: { value: string; label: string } | undefined) => {
-    if (!option) return;
-    const durType = option.value as "time" | "distance" | "repetitions" | "untilFinished";
-    setDurationType(durType);
+  if (!isVisible) {
+    return null;
+  }
 
-    // Auto-adjust unit based on type
-    if (durType === "time") {
-      setDurationUnit("minutes");
-    } else if (durType === "distance") {
-      setDurationUnit("km");
-    } else if (durType === "repetitions") {
-      setDurationUnit("seconds"); // Placeholder
-    } else if (durType === "untilFinished") {
-      setDurationValue("");
-      setDurationUnit("minutes");
-    }
-  };
-
-  // Helper to convert durationType to Option
-  const durationTypeOption = {
-    value: durationType,
-    label:
-      durationType === "time"
-        ? "Time"
-        : durationType === "distance"
-          ? "Distance"
-          : durationType === "repetitions"
-            ? "Repetitions"
-            : "Until Finished",
-  };
-
-  // Helper to convert durationUnit to Option
-  const durationUnitOption = {
-    value: durationUnit,
-    label:
-      durationUnit === "seconds"
-        ? "Seconds"
-        : durationUnit === "minutes"
-          ? "Minutes"
-          : durationUnit === "hours"
-            ? "Hours"
-            : durationUnit === "meters"
-              ? "Meters"
-              : durationUnit === "km"
-                ? "Kilometers"
-                : "Reps",
-  };
-
-  // Helper to convert targetType to Option
-  const targetTypeOption = {
-    value: targetType,
-    label:
-      targetType === "%FTP"
-        ? "% FTP (Power)"
-        : targetType === "%MaxHR"
-          ? "% Max HR"
-          : targetType === "%ThresholdHR"
-            ? "% Threshold HR"
-            : targetType === "watts"
-              ? "Watts"
-              : targetType === "bpm"
-                ? "BPM"
-                : targetType === "speed"
-                  ? "Speed (m/s)"
-                  : targetType === "cadence"
-                    ? "Cadence (rpm)"
-                    : "RPE (1-10)",
-  };
+  const submitForm = useZodFormSubmit<StepEditFormValues>({
+    form,
+    onSubmit: handleSave,
+  });
 
   return (
-    <Dialog open={isVisible} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-full max-w-lg mx-4 max-h-[85%]">
-        <DialogHeader>
-          <DialogTitle>{step ? `Edit Step ${(stepIndex ?? 0) + 1}` : "Add New Step"}</DialogTitle>
-          <DialogDescription>Configure the step duration and target intensity</DialogDescription>
-        </DialogHeader>
+    <>
+      <AppFormModal
+        description="Configure the step duration and target intensity."
+        onClose={onClose}
+        primaryAction={
+          <Button onPress={submitForm.handleSubmit} testID="step-edit-sheet-save-button">
+            <Text className="text-primary-foreground">{step ? "Save Changes" : "Add Step"}</Text>
+          </Button>
+        }
+        secondaryAction={
+          <Button variant="outline" onPress={onClose} testID="step-edit-sheet-cancel-button">
+            <Text>Cancel</Text>
+          </Button>
+        }
+        testID="step-edit-sheet-modal"
+        title={step ? `Edit Step ${(stepIndex ?? 0) + 1}` : "Add New Step"}
+      >
+        {step ? (
+          <View className="flex-row gap-2">
+            <Button variant="outline" onPress={onDuplicate} className="flex-1">
+              <Icon as={Copy} size={16} className="text-foreground" />
+              <Text>Duplicate</Text>
+            </Button>
+            <Button variant="outline" onPress={handleDelete} className="flex-1">
+              <Icon as={Trash2} size={16} className="text-destructive" />
+              <Text className="text-destructive">Delete</Text>
+            </Button>
+          </View>
+        ) : null}
 
         <ScrollView className="max-h-[500px]">
-          <View className="flex flex-col gap-4 py-4">
-            {/* Step Name */}
-            <View className="gap-2">
-              <Label>Step Name *</Label>
-              <Input
-                value={name}
-                onChangeText={setName}
+          <Form {...form}>
+            <View className="flex flex-col gap-4">
+              <FormTextField
+                control={form.control}
+                label="Step Name"
+                name="name"
                 placeholder="e.g., Warm-up, Interval, Cool-down"
+                required
               />
-            </View>
 
-            {/* Description */}
-            <View className="gap-2">
-              <Label>Description (optional)</Label>
-              <Textarea
-                value={description}
-                onChangeText={setDescription}
+              <FormTextareaField
+                control={form.control}
+                label="Description"
+                name="description"
                 placeholder="Brief description of this step"
                 numberOfLines={2}
               />
-            </View>
 
-            <View className="gap-3">
-              <Text className="font-semibold text-foreground">Duration</Text>
+              <View className="gap-3">
+                <Text className="font-semibold text-foreground">Duration</Text>
 
-              <View className="gap-2">
-                <Label>Duration Type</Label>
-                <Select value={durationTypeOption} onValueChange={handleDurationTypeChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select duration type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem label="Time" value="time">
-                      Time
-                    </SelectItem>
-                    <SelectItem label="Distance" value="distance">
-                      Distance
-                    </SelectItem>
-                    <SelectItem label="Repetitions" value="repetitions">
-                      Repetitions
-                    </SelectItem>
-                    <SelectItem label="Until Finished" value="untilFinished">
-                      Until Finished
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <FormSelectField
+                  control={form.control}
+                  label="Duration Type"
+                  name="durationType"
+                  options={[
+                    { label: "Time", value: "time" },
+                    { label: "Distance", value: "distance" },
+                    { label: "Repetitions", value: "repetitions" },
+                    { label: "Until Finished", value: "untilFinished" },
+                  ]}
+                  placeholder="Select duration type"
+                />
+
+                {durationType !== "untilFinished" ? (
+                  <View className="flex-row gap-2">
+                    <View className="flex-1">
+                      <FormTextField
+                        control={form.control}
+                        label="Value"
+                        name="durationValue"
+                        placeholder="e.g., 5"
+                        required
+                        keyboardType="numeric"
+                      />
+                    </View>
+
+                    {durationType !== "repetitions" ? (
+                      <View className="flex-1">
+                        <FormSelectField
+                          control={form.control}
+                          label="Unit"
+                          name="durationUnit"
+                          options={
+                            durationType === "time"
+                              ? [
+                                  { label: "Seconds", value: "seconds" },
+                                  { label: "Minutes", value: "minutes" },
+                                  { label: "Hours", value: "hours" },
+                                ]
+                              : [
+                                  { label: "Meters", value: "meters" },
+                                  { label: "Kilometers", value: "km" },
+                                ]
+                          }
+                          placeholder="Unit"
+                        />
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
 
-              {durationType !== "untilFinished" && (
-                <View className="flex-row gap-2">
-                  <View className="flex-1 gap-2">
-                    <Label>Value *</Label>
-                    <Input
-                      value={durationValue}
-                      onChangeText={setDurationValue}
-                      placeholder="e.g., 5"
-                      keyboardType="numeric"
-                    />
-                  </View>
+              <View className="gap-3">
+                <Text className="font-semibold text-foreground">Target Intensity (optional)</Text>
 
-                  <View className="flex-1 gap-2">
-                    <Label>Unit</Label>
-                    <Select
-                      value={durationUnitOption}
-                      onValueChange={(option) => option && setDurationUnit(option.value as any)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Unit" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {durationType === "time" && (
-                          <>
-                            <SelectItem label="Seconds" value="seconds">
-                              Seconds
-                            </SelectItem>
-                            <SelectItem label="Minutes" value="minutes">
-                              Minutes
-                            </SelectItem>
-                            <SelectItem label="Hours" value="hours">
-                              Hours
-                            </SelectItem>
-                          </>
-                        )}
-                        {durationType === "distance" && (
-                          <>
-                            <SelectItem label="Meters" value="meters">
-                              Meters
-                            </SelectItem>
-                            <SelectItem label="Kilometers" value="km">
-                              Kilometers
-                            </SelectItem>
-                          </>
-                        )}
-                        {durationType === "repetitions" && (
-                          <SelectItem label="Reps" value="reps">
-                            Reps
-                          </SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </View>
-                </View>
-              )}
-            </View>
+                <FormSelectField
+                  control={form.control}
+                  label="Target Type"
+                  name="targetType"
+                  options={[
+                    { label: "% FTP (Power)", value: "%FTP" },
+                    { label: "% Max HR", value: "%MaxHR" },
+                    { label: "% Threshold HR", value: "%ThresholdHR" },
+                    { label: "Watts", value: "watts" },
+                    { label: "BPM", value: "bpm" },
+                    { label: "Speed (m/s)", value: "speed" },
+                    { label: "Cadence (rpm)", value: "cadence" },
+                    { label: "RPE (1-10)", value: "RPE" },
+                  ]}
+                  placeholder="Select target type"
+                />
 
-            <View className="gap-3">
-              <Text className="font-semibold text-foreground">Target Intensity (optional)</Text>
-
-              <View className="gap-2">
-                <Label>Target Type</Label>
-                <Select
-                  value={targetTypeOption}
-                  onValueChange={(option) => option && setTargetType(option.value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select target type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem label="% FTP (Power)" value="%FTP">
-                      % FTP (Power)
-                    </SelectItem>
-                    <SelectItem label="% Max HR" value="%MaxHR">
-                      % Max HR
-                    </SelectItem>
-                    <SelectItem label="% Threshold HR" value="%ThresholdHR">
-                      % Threshold HR
-                    </SelectItem>
-                    <SelectItem label="Watts" value="watts">
-                      Watts
-                    </SelectItem>
-                    <SelectItem label="BPM" value="bpm">
-                      BPM
-                    </SelectItem>
-                    <SelectItem label="Speed (m/s)" value="speed">
-                      Speed (m/s)
-                    </SelectItem>
-                    <SelectItem label="Cadence (rpm)" value="cadence">
-                      Cadence (rpm)
-                    </SelectItem>
-                    <SelectItem label="RPE (1-10)" value="RPE">
-                      RPE (1-10)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </View>
-
-              <View className="gap-2">
-                <Label>Intensity Value</Label>
-                <Input
-                  value={targetIntensity}
-                  onChangeText={setTargetIntensity}
-                  placeholder={
-                    targetType.includes("%")
-                      ? "e.g., 85"
-                      : targetType === "RPE"
-                        ? "1-10"
-                        : "e.g., 200"
-                  }
+                <FormTextField
+                  control={form.control}
+                  label="Intensity Value"
+                  name="targetIntensity"
+                  placeholder="e.g., 85"
                   keyboardType="numeric"
                 />
               </View>
-            </View>
 
-            <View className="gap-2">
-              <Label>Notes (optional)</Label>
-              <Textarea
-                value={notes}
-                onChangeText={setNotes}
+              <FormTextareaField
+                control={form.control}
+                label="Notes"
+                name="notes"
                 placeholder="Additional notes or instructions"
                 numberOfLines={3}
               />
             </View>
-          </View>
+          </Form>
         </ScrollView>
+      </AppFormModal>
 
-        <DialogFooter className="flex flex-row gap-2">
-          <Button variant="outline" onPress={onClose}>
-            <Text>Cancel</Text>
-          </Button>
-
-          {step && (
-            <>
-              <Button variant="outline" onPress={onDuplicate}>
-                <Icon as={Copy} size={16} className="text-foreground" />
-                <Text>Duplicate</Text>
-              </Button>
-
-              <Button variant="destructive" onPress={handleDelete}>
-                <Icon as={Trash2} size={16} className="text-destructive-foreground" />
-              </Button>
-            </>
-          )}
-
-          <Button onPress={handleSave}>
-            <Text className="text-primary-foreground">{step ? "Save Changes" : "Add Step"}</Text>
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {showDeleteConfirm ? (
+        <AppConfirmModal
+          description="Are you sure you want to delete this step?"
+          onClose={() => setShowDeleteConfirm(false)}
+          primaryAction={{
+            label: "Delete Step",
+            onPress: () => {
+              setShowDeleteConfirm(false);
+              onDelete();
+            },
+            variant: "destructive",
+            testID: "step-edit-sheet-delete-confirm",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteConfirm(false),
+            variant: "outline",
+          }}
+          testID="step-edit-sheet-delete-modal"
+          title="Delete Step"
+        />
+      ) : null}
+    </>
   );
 }

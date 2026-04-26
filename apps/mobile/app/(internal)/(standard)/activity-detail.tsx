@@ -34,6 +34,7 @@ import { ElevationProfileChart } from "@/components/activity/charts/ElevationPro
 import { StreamChart } from "@/components/activity/charts/StreamChart";
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -199,6 +200,7 @@ function ActivityDetailScreen() {
   };
 
   const comments = useEntityCommentsController({ entityId: activity?.id, entityType: "activity" });
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Get current user to check ownership
   const { user } = useAuth();
@@ -206,18 +208,7 @@ function ActivityDetailScreen() {
 
   const handleDelete = () => {
     if (!activity) return;
-    Alert.alert(
-      "Delete Activity",
-      `Are you sure you want to delete "${activity.name}"? This action cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteMutation.mutate({ id: activity.id }),
-        },
-      ],
-    );
+    setShowDeleteConfirm(true);
   };
 
   const handleToggleVisibility = () => {
@@ -408,15 +399,19 @@ function ActivityDetailScreen() {
     );
   }
 
-  const renderHeaderActions = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger testID="activity-detail-options-trigger">
-        <View className="rounded-full p-2">
-          <Icon as={Ellipsis} size={18} className="text-foreground" />
-        </View>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6}>
-        {isOwner ? (
+  const renderHeaderActions = () => {
+    if (!isOwner) {
+      return null;
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger testID="activity-detail-options-trigger">
+          <View className="rounded-full p-2">
+            <Icon as={Ellipsis} size={18} className="text-foreground" />
+          </View>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6}>
           <DropdownMenuItem
             onPress={handleToggleVisibility}
             disabled={updatePrivacyMutation.isPending}
@@ -424,17 +419,17 @@ function ActivityDetailScreen() {
           >
             <Text>{activity.is_private ? "Make Public" : "Make Private"}</Text>
           </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuItem
-          onPress={handleDelete}
-          variant="destructive"
-          testID="activity-detail-options-delete"
-        >
-          <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Activity"}</Text>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+          <DropdownMenuItem
+            onPress={handleDelete}
+            variant="destructive"
+            testID="activity-detail-options-delete"
+          >
+            <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Activity"}</Text>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
   return (
     <View className="flex-1 bg-background" testID="activity-detail-screen">
@@ -834,6 +829,25 @@ function ActivityDetailScreen() {
           />
         </View>
       </ScrollView>
+      {showDeleteConfirm ? (
+        <AppConfirmModal
+          description={`Are you sure you want to delete "${activity.name}"? This action cannot be undone.`}
+          onClose={() => setShowDeleteConfirm(false)}
+          primaryAction={{
+            label: deleteMutation.isPending ? "Deleting..." : "Delete Activity",
+            onPress: () => deleteMutation.mutate({ id: activity.id }),
+            testID: "activity-detail-delete-confirm",
+            variant: "destructive",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteConfirm(false),
+            variant: "outline",
+          }}
+          testID="activity-detail-delete-modal"
+          title="Delete Activity"
+        />
+      ) : null}
     </View>
   );
 }

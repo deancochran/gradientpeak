@@ -12,9 +12,11 @@ import { Ellipsis, Heart } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { RouteCard } from "@/components/shared/RouteCard";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
@@ -85,6 +87,7 @@ export default function RouteDetailScreen() {
   const router = useRouter();
   const utils = api.useUtils();
   const { Stack } = require("expo-router") as typeof import("expo-router");
+  const { user } = useAuth();
 
   const { data: route, isLoading } = api.routes.get.useQuery({ id: id! }, { enabled: !!id });
   const { data: routeFull } = api.routes.loadFull.useQuery({ id: id! }, { enabled: !!id });
@@ -97,6 +100,7 @@ export default function RouteDetailScreen() {
 
   const [isLiked, setIsLiked] = useState(route?.has_liked ?? false);
   const [likesCount, setLikesCount] = useState(route?.has_liked ? 1 : 0);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const comments = useEntityCommentsController({ entityId: route?.id, entityType: "route" });
 
   const toggleLikeMutation = api.social.toggleLike.useMutation({
@@ -130,6 +134,8 @@ export default function RouteDetailScreen() {
     }
   }, [route?.has_liked]);
 
+  const isOwner = !!user?.id && user.id === route?.profile_id;
+
   const elevationStreams = useMemo(
     () => buildRouteStreams(routeFull?.coordinates),
     [routeFull?.coordinates],
@@ -138,18 +144,7 @@ export default function RouteDetailScreen() {
   const handleDelete = () => {
     if (!route) return;
 
-    Alert.alert(
-      "Delete Route",
-      `Are you sure you want to delete "${route.name}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteMutation.mutate({ id: route.id }),
-        },
-      ],
-    );
+    setShowDeleteConfirm(true);
   };
 
   if (isLoading) {
@@ -180,56 +175,58 @@ export default function RouteDetailScreen() {
     );
   }
 
-  const renderOptionsMenu = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger testID="route-detail-options-trigger">
-        <View className="rounded-full p-2">
-          <Icon as={Ellipsis} size={18} className="text-foreground" />
-        </View>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem
-          onPress={handleDelete}
-          variant="destructive"
-          testID="route-detail-options-delete"
-        >
-          <Text>Delete Route</Text>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const renderOptionsMenu = () => {
+    if (!isOwner) {
+      return null;
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger testID="route-detail-options-trigger">
+          <View className="rounded-full p-2">
+            <Icon as={Ellipsis} size={18} className="text-foreground" />
+          </View>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6}>
+          <DropdownMenuItem
+            onPress={handleDelete}
+            variant="destructive"
+            testID="route-detail-options-delete"
+          >
+            <Text>Delete Route</Text>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
   return (
     <View className="flex-1 bg-background" testID="route-detail-screen">
       <Stack.Screen options={{ headerRight: renderOptionsMenu }} />
       <ScrollView className="flex-1">
         <View className="p-4 gap-4 pb-6">
-          <RouteCard
-            route={route}
-            routeFull={routeFull}
-            headerAccessory={
-              <Pressable
-                onPress={handleToggleLike}
-                className="rounded-full border border-border bg-background px-3 py-2"
-                testID="route-detail-like-button"
+          <RouteCard route={route} routeFull={routeFull} />
+
+          <Pressable
+            onPress={handleToggleLike}
+            className="self-start rounded-full border border-border bg-background px-3 py-2"
+            testID="route-detail-like-button"
+          >
+            <View className="flex-row items-center gap-1.5">
+              <Icon
+                as={Heart}
+                size={16}
+                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
+              />
+              <Text
+                className={
+                  isLiked ? "text-red-500 text-sm font-medium" : "text-muted-foreground text-sm"
+                }
               >
-                <View className="flex-row items-center gap-1.5">
-                  <Icon
-                    as={Heart}
-                    size={16}
-                    className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-                  />
-                  <Text
-                    className={
-                      isLiked ? "text-red-500 text-sm font-medium" : "text-muted-foreground text-sm"
-                    }
-                  >
-                    {likesCount > 0 ? `${likesCount}` : isLiked ? "Liked" : "Like"}
-                  </Text>
-                </View>
-              </Pressable>
-            }
-          />
+                {likesCount > 0 ? `${likesCount}` : isLiked ? "Liked" : "Like"}
+              </Text>
+            </View>
+          </Pressable>
 
           {elevationStreams ? (
             <ElevationProfileChart
@@ -256,6 +253,25 @@ export default function RouteDetailScreen() {
           />
         </View>
       </ScrollView>
+      {showDeleteConfirm ? (
+        <AppConfirmModal
+          description={`Are you sure you want to delete "${route.name}"? This cannot be undone.`}
+          onClose={() => setShowDeleteConfirm(false)}
+          primaryAction={{
+            label: "Delete Route",
+            onPress: () => deleteMutation.mutate({ id: route.id }),
+            testID: "route-detail-delete-confirm",
+            variant: "destructive",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteConfirm(false),
+            variant: "outline",
+          }}
+          testID="route-detail-delete-modal"
+          title="Delete Route"
+        />
+      ) : null}
     </View>
   );
 }

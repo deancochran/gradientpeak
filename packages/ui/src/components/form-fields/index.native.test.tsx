@@ -11,6 +11,7 @@ import {
   FormPaceField,
   FormTextareaField,
   FormTextField,
+  FormTimeInputField,
   FormWeightInputField,
 } from "./index.native";
 
@@ -20,6 +21,7 @@ const profileSchema = z.object({
   ftp: z.number().optional(),
   max_sessions: z.number(),
   pace: z.string(),
+  wake_time: z.string().nullable(),
   weight_kg: z.number().nullable(),
   username: z.string(),
 });
@@ -33,6 +35,7 @@ function FormFieldsHarness() {
       ftp: 250,
       max_sessions: 3,
       pace: "4:30",
+      wake_time: "06:30",
       weight_kg: 70,
       username: "Avery",
     },
@@ -56,6 +59,13 @@ function FormFieldsHarness() {
         min={0}
         name="max_sessions"
       />
+      <FormTimeInputField
+        control={methods.control}
+        label="Wake Time"
+        name="wake_time"
+        pickerPresentation="modal"
+        testId="wake-time-field"
+      />
       <FormBoundedNumberField control={methods.control} decimals={0} label="FTP" name="ftp" />
       <FormPaceField control={methods.control} label="Pace" name="pace" />
       <FormWeightInputField control={methods.control} label="Weight" name="weight_kg" unit="kg" />
@@ -73,6 +83,7 @@ function DetachedFormLabelHarness() {
       ftp: 250,
       max_sessions: 3,
       pace: "4:30",
+      wake_time: "06:30",
       weight_kg: 70,
       username: "Avery",
     },
@@ -89,10 +100,18 @@ function DetachedFormLabelHarness() {
 
 describe("Form fields native", () => {
   it("binds shared controlled wrappers to react-hook-form", () => {
-    const { getByLabelText, getByText } = renderNative(<FormFieldsHarness />);
+    const { getByLabelText, getByTestId, getByText, UNSAFE_getAllByType } = renderNative(
+      <FormFieldsHarness />,
+    );
 
     fireEvent(getByLabelText("Username"), "changeText", "Taylor");
     fireEvent(getByLabelText("Bio"), "changeText", "Coach");
+    fireEvent.press(getByTestId("wake-time-field"));
+    const timePicker = (UNSAFE_getAllByType("DateTimePicker" as any) as any[]).find(
+      (node) => node.props.mode === "time",
+    ) as any;
+    fireEvent(timePicker, "change", {}, new Date("2026-03-23T07:45:00.000Z"));
+    fireEvent.press(getByText("Done"));
     fireEvent(getByLabelText("Duration"), "changeText", "45:00");
     fireEvent(getByLabelText("Duration"), "blur");
     fireEvent.press(getByText("+"));
@@ -105,6 +124,7 @@ describe("Form fields native", () => {
 
     expect(getByText(/"username":"Taylor"/)).toBeTruthy();
     expect(getByText(/"bio":"Coach"/)).toBeTruthy();
+    expect(getByText(/"wake_time":"03:45"/)).toBeTruthy();
     expect(getByText(/"duration":"0:45:00"/)).toBeTruthy();
     expect(getByText(/"max_sessions":4/)).toBeTruthy();
     expect(getByText(/"ftp":300/)).toBeTruthy();

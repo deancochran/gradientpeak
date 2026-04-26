@@ -64,13 +64,13 @@ export function TimeRangeSelector({ value, onChange, disabled = false }: TimeRan
                 value={option.value}
                 isFirst={isFirst}
                 isLast={isLast}
-                className={`flex-1 px-3 py-2 ${isSelected ? "bg-white shadow-sm" : "bg-transparent"}`}
+                className={`flex-1 px-3 py-2 ${isSelected ? "bg-card shadow-sm" : "bg-transparent"}`}
               >
                 <Text
                   className={`
-                  text-center font-medium text-sm
-                  ${isSelected ? "text-blue-600" : "text-gray-600"}
-                `}
+                   text-center font-medium text-sm
+                   ${isSelected ? "text-blue-600 dark:text-blue-300" : "text-muted-foreground"}
+                 `}
                 >
                   {option.label}
                 </Text>

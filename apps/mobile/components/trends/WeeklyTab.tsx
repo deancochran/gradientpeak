@@ -84,10 +84,10 @@ export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyT
             >
               <View className="mb-3 flex-row items-center justify-between">
                 <View>
-                  <Text className="text-sm font-semibold text-gray-900">
+                  <Text className="text-sm font-semibold text-foreground">
                     Week {weeklySummary.length - index}
                   </Text>
-                  <Text className="text-xs text-gray-600">
+                  <Text className="text-xs text-muted-foreground">
                     {new Date(week.weekStart).toLocaleDateString()} -{" "}
                     {new Date(week.weekEnd).toLocaleDateString()}
                   </Text>
@@ -114,8 +114,8 @@ export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyT
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <View className="flex-row items-center justify-between">
-      <Text className="text-sm text-gray-600">{label}</Text>
-      <Text className="text-sm font-medium text-gray-900">{value}</Text>
+      <Text className="text-sm text-muted-foreground">{label}</Text>
+      <Text className="text-sm font-medium text-foreground">{value}</Text>
     </View>
   );
 }

@@ -62,14 +62,9 @@ jest.mock("@/components/ScheduleActivityModal", () => ({
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
 }));
 
-jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
-}));
-
-jest.mock("@/components/shared/ActivityPlanSummary", () => ({
-  __esModule: true,
-  ActivityPlanSummary: createHost("ActivityPlanSummary"),
+  ActivityPlanCard: createHost("ActivityPlanCard"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -228,6 +223,11 @@ jest.mock("@/lib/api", () => ({
           error: null,
           refetch: jest.fn(),
         }),
+      },
+    },
+    trainingPlans: {
+      getById: {
+        useQuery: () => ({ data: null }),
       },
     },
   },

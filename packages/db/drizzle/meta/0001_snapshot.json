@@ -3089,12 +3089,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "milestone_event_id": {
-          "name": "milestone_event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "title": {
           "name": "title",
           "type": "text",
@@ -3153,21 +3147,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_profile_goals_milestone_event_id": {
-          "name": "idx_profile_goals_milestone_event_id",
-          "columns": [
-            {
-              "expression": "milestone_event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -3176,15 +3155,6 @@
           "tableFrom": "profile_goals",
           "tableTo": "profiles",
           "columnsFrom": ["profile_id"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "profile_goals_milestone_event_id_events_id_fk": {
-          "name": "profile_goals_milestone_event_id_events_id_fk",
-          "tableFrom": "profile_goals",
-          "tableTo": "events",
-          "columnsFrom": ["milestone_event_id"],
           "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"

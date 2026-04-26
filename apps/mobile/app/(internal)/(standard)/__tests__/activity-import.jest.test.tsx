@@ -113,6 +113,54 @@ jest.mock("@repo/ui/components/card", () => ({
   CardContent: createHost("CardContent"),
 }));
 
+jest.mock("@repo/ui/components/form", () => ({
+  __esModule: true,
+  Form: ({ children }: any) => children,
+  FormTextField: ({ control, name, testId, placeholder, ...props }: any) => {
+    const { Controller } = require("react-hook-form");
+    return React.createElement(Controller, {
+      control,
+      name,
+      render: ({ field }: any) =>
+        React.createElement("TextInput", {
+          testID: testId,
+          placeholder,
+          value: field.value,
+          onChangeText: field.onChange,
+          ...props,
+        }),
+    });
+  },
+  FormSelectField: ({ control, name, testId }: any) => {
+    const { Controller } = require("react-hook-form");
+    return React.createElement(Controller, {
+      control,
+      name,
+      render: ({ field }: any) =>
+        React.createElement("TextInput", {
+          testID: testId,
+          value: field.value,
+          onChangeText: field.onChange,
+        }),
+    });
+  },
+  FormTextareaField: ({ control, name, testId, placeholder, ...props }: any) => {
+    const { Controller } = require("react-hook-form");
+    return React.createElement(Controller, {
+      control,
+      name,
+      render: ({ field }: any) =>
+        React.createElement("TextInput", {
+          testID: testId,
+          placeholder,
+          value: field.value,
+          onChangeText: field.onChange,
+          ...props,
+        }),
+    });
+  },
+}));
+
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
   Input: ({ value, onChangeText, placeholder, ...props }: any) =>
@@ -233,7 +281,7 @@ describe("activity import screen", () => {
 
     fireEvent.changeText(screen.getByDisplayValue("morning-ride"), "  Morning Ride  ");
     fireEvent.changeText(
-      screen.getByPlaceholderText("Optional notes"),
+      screen.getByTestId("activity-import-notes-input"),
       "  Imported from archive  ",
     );
     fireEvent.press(screen.getByText("Import FIT Activity"));

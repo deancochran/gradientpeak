@@ -1,5 +1,4 @@
 import type { AuthUser } from "@repo/auth/session";
-import { useNavigate } from "@tanstack/react-router";
 import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 
 import { authClient, normalizeWebAuthSession } from "../../lib/auth/client";
@@ -51,30 +50,4 @@ export function useAuth() {
   }
 
   return context;
-}
-
-export function useRequireAuth(redirectTo: "/auth/login" = "/auth/login") {
-  const { user, isLoading, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      void navigate({ to: redirectTo, replace: true });
-    }
-  }, [isAuthenticated, isLoading, navigate, redirectTo]);
-
-  return { user, isLoading, isAuthenticated };
-}
-
-export function useRedirectIfAuthenticated(redirectTo: "/" = "/") {
-  const { isLoading, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      void navigate({ to: redirectTo, replace: true });
-    }
-  }, [isAuthenticated, isLoading, navigate, redirectTo]);
-
-  return { isLoading, isAuthenticated };
 }

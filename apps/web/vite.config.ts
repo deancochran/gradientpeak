@@ -26,10 +26,10 @@ const config = defineConfig(({ mode }) => {
     resolve: { tsconfigPaths: true },
     plugins: [
       devtools(),
-      nitro({ rollupConfig: { external: [/^@sentry\//] } }),
       tailwindcss(),
       tanstackStart(),
       viteReact(),
+      nitro({ rollupConfig: { external: [/^@sentry\//] } }),
     ],
   };
 });

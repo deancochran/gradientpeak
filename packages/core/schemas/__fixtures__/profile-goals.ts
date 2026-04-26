@@ -1,7 +1,6 @@
 import type {
   GoalDemandProfile,
   ProfileGoal,
-  ProfileGoalLinkedEvent,
   ProfileGoalRecordInput,
 } from "../goals/profile_goals";
 
@@ -9,8 +8,6 @@ export interface CanonicalGoalFixture {
   name: string;
   record: ProfileGoalRecordInput;
   goal: ProfileGoal;
-  linkedEvent: ProfileGoalLinkedEvent;
-  resolvedEventDate: string;
   demandProfile: GoalDemandProfile;
 }
 
@@ -20,7 +17,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
     record: {
       id: "11111111-1111-4111-8111-111111111111",
       profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      milestone_event_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       target_date: "2026-09-13",
       title: "Break 20 for 5K",
       priority: 1,
@@ -37,7 +33,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
     goal: {
       id: "11111111-1111-4111-8111-111111111111",
       profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      milestone_event_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       target_date: "2026-09-13",
       title: "Break 20 for 5K",
       priority: 1,
@@ -51,11 +46,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
         environment: "road",
       },
     },
-    linkedEvent: {
-      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-      starts_at: "2026-09-13T13:00:00.000Z",
-    },
-    resolvedEventDate: "2026-09-13",
     demandProfile: {
       endurance_demand: 0.5,
       threshold_demand: 0.9,
@@ -70,7 +60,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
     record: {
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      milestone_event_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       target_date: "2026-07-01",
       title: "Raise FTP to 280W",
       priority: 2,
@@ -87,7 +76,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
     goal: {
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      milestone_event_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       target_date: "2026-07-01",
       title: "Raise FTP to 280W",
       priority: 2,
@@ -101,11 +89,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
         tolerance_pct: 0.03,
       },
     },
-    linkedEvent: {
-      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      starts_at: "2026-07-01T08:30:00.000Z",
-    },
-    resolvedEventDate: "2026-07-01",
     demandProfile: {
       endurance_demand: 0.62,
       threshold_demand: 0.95,
@@ -120,7 +103,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
     record: {
       id: "33333333-3333-4333-8333-333333333333",
       profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      milestone_event_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       target_date: "2026-11-08",
       title: "Finish my first marathon",
       priority: 3,
@@ -135,7 +117,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
     goal: {
       id: "33333333-3333-4333-8333-333333333333",
       profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      milestone_event_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
       target_date: "2026-11-08",
       title: "Finish my first marathon",
       priority: 3,
@@ -147,11 +128,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
         duration_s: 16200,
       },
     },
-    linkedEvent: {
-      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      starts_at: "2026-11-08T07:00:00.000Z",
-    },
-    resolvedEventDate: "2026-11-08",
     demandProfile: {
       endurance_demand: 0.9,
       threshold_demand: 0.4,
@@ -166,7 +142,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
     record: {
       id: "44444444-4444-4444-8444-444444444444",
       profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       target_date: "2026-06-15",
       title: "Train four times each week",
       priority: 4,
@@ -180,7 +155,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
     goal: {
       id: "44444444-4444-4444-8444-444444444444",
       profile_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      milestone_event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       target_date: "2026-06-15",
       title: "Train four times each week",
       priority: 4,
@@ -191,11 +165,6 @@ export const canonicalGoalFixtures: CanonicalGoalFixture[] = [
         target_weeks: 12,
       },
     },
-    linkedEvent: {
-      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-      starts_at: "2026-06-15T10:15:00.000Z",
-    },
-    resolvedEventDate: "2026-06-15",
     demandProfile: {
       endurance_demand: 0.5,
       threshold_demand: 0.2,

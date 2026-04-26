@@ -61,7 +61,7 @@ export function ConstraintIndicator({
       case "violated":
         return "text-red-600";
       default:
-        return "text-gray-600";
+        return "text-muted-foreground";
     }
   };
 
@@ -74,7 +74,7 @@ export function ConstraintIndicator({
       case "violated":
         return "bg-red-100";
       default:
-        return "bg-gray-100";
+        return "bg-muted";
     }
   };
 
@@ -100,28 +100,28 @@ export function ConstraintIndicator({
   };
 
   return (
-    <View className="mb-3 rounded-lg border border-gray-200 p-3">
+    <View className="mb-3 rounded-lg border border-border bg-card p-3">
       <View className="flex-row items-center justify-between">
         {/* Left: Icon and Label */}
         <View className="flex-row items-center flex-1">
           <View className={`rounded-full p-1 ${getStatusBgColor()}`}>{getStatusIcon()}</View>
-          <Text className="ml-3 font-semibold text-base">{label}</Text>
+          <Text className="ml-3 text-base font-semibold text-foreground">{label}</Text>
         </View>
 
         {/* Right: Values */}
         <View className="items-end">
           {currentValue !== undefined && newValue !== undefined && (
             <View className="flex-row items-center">
-              <Text className="text-sm text-gray-600">{formatValue(currentValue)}</Text>
-              <Text className="mx-1 text-gray-400">→</Text>
+              <Text className="text-sm text-muted-foreground">{formatValue(currentValue)}</Text>
+              <Text className="mx-1 text-muted-foreground">→</Text>
               <Text className={`text-sm font-semibold ${getStatusColor()}`}>
                 {formatValue(newValue)}
               </Text>
-              {unit && <Text className="ml-1 text-xs text-gray-500">{unit}</Text>}
+              {unit && <Text className="ml-1 text-xs text-muted-foreground">{unit}</Text>}
             </View>
           )}
           {limit !== undefined && (
-            <Text className="text-xs text-gray-500 mt-0.5">
+            <Text className="text-xs text-muted-foreground mt-0.5">
               Limit: {formatValue(limit)} {unit || ""}
             </Text>
           )}
@@ -129,7 +129,9 @@ export function ConstraintIndicator({
       </View>
 
       {/* Description */}
-      {description && <Text className="mt-2 text-sm text-gray-600 ml-9">{description}</Text>}
+      {description && (
+        <Text className="mt-2 ml-9 text-sm text-muted-foreground">{description}</Text>
+      )}
 
       {/* Status Message */}
       {status === "warning" && (

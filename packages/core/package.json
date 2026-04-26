@@ -33,6 +33,7 @@
     "./goals/*": "./goals/*.ts",
     "./notifications": "./notifications/index.ts",
     "./notifications/*": "./notifications/*.ts",
+    "./parity": "./parity/index.ts",
     "./plan": "./plan/index.ts",
     "./plan/*": "./plan/*.ts",
     "./profile": "./profile/index.ts",

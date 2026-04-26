@@ -4,7 +4,8 @@ import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { ChevronRight, Clock3, Heart, Search, Sparkles } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
+import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
 
 type ActivityPlanListItem = {
@@ -297,77 +298,63 @@ export function CalendarPlannedActivityPickerModal({
     );
   };
 
+  if (!visible) {
+    return null;
+  }
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
+    <AppSelectionModal
+      description={`Stay on ${toDisplayDateLabel(selectedDate)} and choose one of your saved activity plans.`}
+      onClose={onClose}
+      onRefresh={() => void refetch()}
+      refreshDisabled={isLoading}
+      testID="calendar-planned-activity-modal"
+      title="Schedule Activity"
     >
-      <View className="flex-1 bg-background">
-        <View className="border-b border-border px-4 py-4">
-          <View className="flex-row items-start justify-between gap-3">
-            <View className="flex-1">
-              <Text className="text-lg font-semibold text-foreground">Schedule Activity</Text>
-              <Text className="mt-1 text-sm text-muted-foreground">
-                Stay on {toDisplayDateLabel(selectedDate)} and choose one of your saved activity
-                plans.
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={onClose}
-              className="rounded-md bg-muted px-3 py-2"
-              activeOpacity={0.8}
-              testID="calendar-planned-activity-close"
-            >
-              <Text className="text-xs font-medium text-foreground">Close</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View className="mt-4 flex-row items-center rounded-lg border border-border bg-card px-3">
-            <Icon as={Search} size={14} className="text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search your activity plans"
-              className="flex-1 border-0 bg-transparent"
-              testID="calendar-planned-activity-search"
-            />
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerClassName="mt-4 gap-2"
-          >
-            {categoryOptions.map((category) => {
-              const isSelected = selectedCategory === category;
-              return (
-                <TouchableOpacity
-                  key={category}
-                  onPress={() => setSelectedCategory(category)}
-                  className={`rounded-full border px-3 py-2 ${
-                    isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
-                  }`}
-                  activeOpacity={0.8}
-                  testID={`calendar-planned-activity-filter-${category}`}
-                >
-                  <Text
-                    className={`text-xs font-semibold ${
-                      isSelected ? "text-primary" : "text-foreground"
-                    }`}
-                  >
-                    {category === "all" ? "All Sports" : toCategoryLabel(category)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+      <View className="gap-4">
+        <View className="flex-row items-center rounded-lg border border-border bg-card px-3">
+          <Icon as={Search} size={14} className="text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search your activity plans"
+            className="flex-1 border-0 bg-transparent"
+            testID="calendar-planned-activity-search"
+          />
         </View>
 
         <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerClassName="gap-2"
+        >
+          {categoryOptions.map((category) => {
+            const isSelected = selectedCategory === category;
+            return (
+              <TouchableOpacity
+                key={category}
+                onPress={() => setSelectedCategory(category)}
+                className={`rounded-full border px-3 py-2 ${
+                  isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
+                }`}
+                activeOpacity={0.8}
+                testID={`calendar-planned-activity-filter-${category}`}
+              >
+                <Text
+                  className={`text-xs font-semibold ${
+                    isSelected ? "text-primary" : "text-foreground"
+                  }`}
+                >
+                  {category === "all" ? "All Sports" : toCategoryLabel(category)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <ScrollView
           className="flex-1"
-          contentContainerClassName="gap-3 px-4 py-4"
+          contentContainerClassName="gap-3"
           keyboardShouldPersistTaps="handled"
         >
           {isLoading ? (
@@ -447,12 +434,10 @@ export function CalendarPlannedActivityPickerModal({
             : null}
         </ScrollView>
 
-        <View className="px-4 pb-4 pt-2">
-          <Text className="text-center text-xs text-muted-foreground">
-            Choose a plan to continue into the scheduling form.
-          </Text>
-        </View>
+        <Text className="text-center text-xs text-muted-foreground">
+          Choose a plan to continue into the scheduling form.
+        </Text>
       </View>
-    </Modal>
+    </AppSelectionModal>
   );
 }

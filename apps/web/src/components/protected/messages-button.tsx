@@ -18,7 +18,10 @@ export function MessagesButton() {
       aria-label={label}
       title={label}
     >
-      <Link to="/messages">
+      <Link
+        to="/messages"
+        search={{ conversationId: undefined, flash: undefined, flashType: undefined }}
+      >
         <MessageSquare className="h-5 w-5" />
         {unreadCount > 0 ? (
           <Badge

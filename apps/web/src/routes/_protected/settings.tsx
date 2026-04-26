@@ -1,3 +1,4 @@
+import { zodResolver } from "@hookform/resolvers/zod";
 import { getProfileQuickUpdateDefaults, normalizeProfileSettingsView } from "@repo/core/profile";
 import {
   AlertDialog,
@@ -21,38 +22,58 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { FileInput } from "@repo/ui/components/file-input";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-
 import { useAuth } from "../../components/providers/auth-provider";
+import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
-import { authClient } from "../../lib/auth/client";
-
-const allowedAvatarMimeTypes = [
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-] as const;
-type AllowedAvatarMimeType = (typeof allowedAvatarMimeTypes)[number];
+import { signOutAction } from "../../lib/auth/server-actions";
+import {
+  type SettingsProfileFormValues,
+  settingsProfileFormSchema,
+} from "../../lib/profile/form-schemas";
+import {
+  updateSettingsProfileAction,
+  uploadProfileAvatarAction,
+} from "../../lib/profile/server-actions";
 
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
 
 export const Route = createFileRoute("/_protected/settings")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    flash: typeof search.flash === "string" ? search.flash : undefined,
+    flashType:
+      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
+        ? (search.flashType as RouteFlashType)
+        : undefined,
+  }),
   component: SettingsPage,
 });
 
 function SettingsPage() {
-  const navigate = useNavigate();
-  const { user, isLoading: authLoading, refreshSession } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
+  const signOut = useServerFn(signOutAction);
+  const updateProfile = useServerFn(updateSettingsProfileAction);
+  const uploadAvatar = useServerFn(uploadProfileAvatarAction);
+  const navigate = Route.useNavigate();
+  const { flash, flashType } = Route.useSearch();
   const {
     data: profile,
     isLoading: profileLoading,
@@ -72,25 +93,33 @@ function SettingsPage() {
     },
   });
 
-  const createSignedUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
+  const [avatarFiles, setAvatarFiles] = useState<Array<{ file?: File; name: string }>>([]);
   const [signingOut, setSigningOut] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [username, setUsername] = useState("");
-  const [isPublic, setIsPublic] = useState(false);
-  const [isProfileDirty, setIsProfileDirty] = useState(false);
   const loading = authLoading || profileLoading;
   const avatarFilePath =
     profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
 
   const normalizedProfile = useMemo(() => normalizeProfileSettingsView(profile), [profile]);
 
+  const form = useForm<SettingsProfileFormValues>({
+    resolver: zodResolver(settingsProfileFormSchema),
+    defaultValues: {
+      is_public: false,
+      username: "",
+    },
+  });
+
   useEffect(() => {
-    if (!normalizedProfile || isProfileDirty) return;
+    if (!normalizedProfile || form.formState.isDirty) return;
+
     const defaults = getProfileQuickUpdateDefaults(normalizedProfile);
-    setUsername(typeof defaults.username === "string" ? defaults.username : "");
-    setIsPublic(defaults.is_public ?? false);
-  }, [isProfileDirty, normalizedProfile]);
+    form.reset({
+      is_public: defaults.is_public ?? false,
+      username: typeof defaults.username === "string" ? defaults.username : "",
+    });
+  }, [form, form.formState.isDirty, normalizedProfile]);
 
   const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
     { filePath: avatarFilePath || "" },
@@ -103,46 +132,20 @@ function SettingsPage() {
     );
   }, [avatarFilePath, avatarUrlData?.signedUrl, profile?.avatar_url]);
 
-  const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await updateProfileMutation.mutateAsync({ username, is_public: isPublic });
-    setIsProfileDirty(false);
-  };
+  const handleProfileSubmit = form.handleSubmit(async (values) => {
+    await updateProfile({ data: values });
+    form.reset(values);
+  });
 
-  const handleAvatarUpload = async (files: Array<{ file?: File }>) => {
-    const file = files[0]?.file;
+  const handleAvatarUpload = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const file = avatarFiles[0]?.file;
     if (!file || !user) return;
 
     try {
       setUploadingAvatar(true);
-      if (!allowedAvatarMimeTypes.includes(file.type as AllowedAvatarMimeType)) {
-        toast.error("Please select an image file");
-        return;
-      }
-      const fileType = file.type as AllowedAvatarMimeType;
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("File size must be less than 5MB");
-        return;
-      }
-
-      const { signedUrl, publicUrl } = await createSignedUploadUrlMutation.mutateAsync({
-        fileName: file.name,
-        fileType,
-      });
-
-      const uploadResponse = await fetch(signedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": fileType },
-      });
-
-      if (!uploadResponse.ok) throw new Error("Upload failed");
-
-      await updateProfileMutation.mutateAsync({
-        username: profile?.username || "",
-        avatar_url: publicUrl,
-      });
-      toast.success("Avatar updated successfully");
+      await uploadAvatar({ data: new FormData(event.currentTarget as HTMLFormElement) });
     } catch (error) {
       console.error("Error:", error);
       toast.error("Failed to upload avatar");
@@ -154,11 +157,7 @@ function SettingsPage() {
   const handleSignOut = async () => {
     setSigningOut(true);
     try {
-      const result = await authClient.signOut();
-      if (result.error) throw result.error;
-      await refreshSession();
-      toast.success("Signed out successfully");
-      await navigate({ to: "/auth/login" });
+      await signOut();
     } catch (error) {
       console.error("Error signing out:", error);
       toast.error("Failed to sign out");
@@ -187,6 +186,17 @@ function SettingsPage() {
     <div className="container mx-auto max-w-4xl py-4">
       <div className="space-y-8">
         <div>
+          <RouteFlashToast
+            message={flash}
+            type={flashType}
+            clear={() =>
+              void navigate({
+                to: "/settings",
+                search: { flash: undefined, flashType: undefined },
+                replace: true,
+              })
+            }
+          />
           <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
           <p className="text-muted-foreground">Manage your account settings and preferences.</p>
         </div>
@@ -214,14 +224,6 @@ function SettingsPage() {
                     <Camera className="h-6 w-6 text-white" />
                   )}
                 </div>
-                <div className="absolute inset-0 opacity-0">
-                  <FileInput
-                    accept="image/*"
-                    buttonLabel="Upload avatar"
-                    label="Avatar upload"
-                    onFilesChange={handleAvatarUpload}
-                  />
-                </div>
               </div>
               <div>
                 <h3 className="font-medium">{profile?.username || "No name set"}</h3>
@@ -231,45 +233,85 @@ function SettingsPage() {
                 </p>
               </div>
             </div>
-            <form onSubmit={handleProfileSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="settings-username">Username</Label>
-                <Input
-                  id="settings-username"
-                  value={username}
-                  placeholder="Enter your username"
-                  onChange={(event) => {
-                    setUsername(event.currentTarget.value);
-                    setIsProfileDirty(true);
-                  }}
-                />
-                <p className="text-sm text-muted-foreground">
-                  This is the username that will be displayed on your profile.
-                </p>
-              </div>
-              <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-                <div className="space-y-1">
-                  <Label htmlFor="settings-public-account">Public Account</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Make your profile and activities visible to everyone.
-                  </p>
-                </div>
-                <Switch
-                  id="settings-public-account"
-                  checked={isPublic}
-                  onCheckedChange={(checked) => {
-                    setIsPublic(checked);
-                    setIsProfileDirty(true);
-                  }}
-                />
-              </div>
-              <Button type="submit" disabled={updateProfileMutation.isPending || !isProfileDirty}>
-                {updateProfileMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Update Profile
+            <form
+              action={uploadProfileAvatarAction.url}
+              method="post"
+              encType="multipart/form-data"
+              onSubmit={handleAvatarUpload}
+              className="space-y-3"
+            >
+              <FileInput
+                accept="image/*"
+                buttonLabel="Upload avatar"
+                label="Avatar upload"
+                name="avatar"
+                files={avatarFiles}
+                onFilesChange={(files) => setAvatarFiles(files)}
+              />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={uploadingAvatar || avatarFiles.length === 0}
+              >
+                {uploadingAvatar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Upload Avatar
               </Button>
             </form>
+            <Form {...form}>
+              <form
+                action={updateSettingsProfileAction.url}
+                method="post"
+                onSubmit={handleProfileSubmit}
+                className="space-y-4"
+              >
+                <FormField
+                  control={form.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Username</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Enter your username" />
+                      </FormControl>
+                      <p className="text-sm text-muted-foreground">
+                        This is the username that will be displayed on your profile.
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="is_public"
+                  render={({ field }) => (
+                    <FormItem className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                      <div className="space-y-1">
+                        <FormLabel>Public Account</FormLabel>
+                        <p className="text-sm text-muted-foreground">
+                          Make your profile and activities visible to everyone.
+                        </p>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value ?? false} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  type="submit"
+                  disabled={
+                    updateProfileMutation.isPending ||
+                    form.formState.isSubmitting ||
+                    !form.formState.isDirty
+                  }
+                >
+                  {updateProfileMutation.isPending || form.formState.isSubmitting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Update Profile
+                </Button>
+              </form>
+            </Form>
           </CardContent>
         </Card>
         <Card>
@@ -311,14 +353,17 @@ function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row">
-              <Button
-                variant="outline"
-                onClick={handleSignOut}
-                disabled={signingOut}
+              <form
+                action={signOutAction.url}
+                method="post"
+                onSubmit={handleSignOut}
                 className="flex-1"
               >
-                {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Sign Out
-              </Button>
+                <Button variant="outline" type="submit" disabled={signingOut} className="w-full">
+                  {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Sign Out
+                </Button>
+              </form>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" className="flex-1">

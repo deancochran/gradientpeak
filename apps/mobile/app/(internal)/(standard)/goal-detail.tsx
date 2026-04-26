@@ -21,22 +21,21 @@ import {
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Calendar, Ellipsis, Target } from "lucide-react-native";
+import { Ellipsis, Target } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import { GoalEditorModal } from "@/components/goals/GoalEditorModal";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
-import { ROUTES } from "@/lib/constants/routes";
-import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 export default function GoalDetailScreen() {
   const router = useRouter();
-  const navigateTo = useAppNavigate();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const utils = api.useUtils();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
   const [showEditor, setShowEditor] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const {
     data: goal,
@@ -57,10 +56,7 @@ export default function GoalDetailScreen() {
 
   const updateGoalMutation = api.goals.update.useMutation({
     onSuccess: async () => {
-      await Promise.all([
-        invalidateGoalQueries(utils, { goalId, includeEventDetail: true }),
-        refetch(),
-      ]);
+      await Promise.all([invalidateGoalQueries(utils, { goalId }), refetch()]);
       setShowEditor(false);
     },
   });
@@ -82,22 +78,20 @@ export default function GoalDetailScreen() {
   const distanceBadge = goalRecord ? getGoalDistanceBadge(goalRecord) : null;
   const objectiveSummary = goalRecord ? getGoalObjectiveSummary(goalRecord) : null;
   const targetDate = goalRecord?.target_date ?? null;
+  const formattedTargetDate = targetDate
+    ? new Date(`${targetDate}T12:00:00.000Z`).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
 
   const handleDeleteGoal = () => {
     if (!goalRecord) {
       return;
     }
 
-    Alert.alert("Delete Goal", "Are you sure you want to delete this goal?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          deleteGoalMutation.mutate({ id: goalRecord.id });
-        },
-      },
-    ]);
+    setShowDeleteConfirm(true);
   };
 
   const handleSubmitGoal = async (draft: GoalEditorDraft) => {
@@ -206,37 +200,6 @@ export default function GoalDetailScreen() {
           </CardContent>
         </Card>
 
-        {goalRecord.milestone_event_id ? (
-          <Card className="rounded-3xl border border-border bg-card">
-            <CardContent className="gap-4 p-4">
-              <View className="gap-1">
-                <Text className="text-sm font-semibold text-foreground">Milestone</Text>
-                <Text className="text-xs text-muted-foreground">
-                  Open the scheduled milestone tied to this goal.
-                </Text>
-              </View>
-
-              <Pressable
-                onPress={() =>
-                  navigateTo(ROUTES.PLAN.EVENT_DETAIL(goalRecord.milestone_event_id) as any)
-                }
-                className="rounded-2xl border border-border bg-muted/10 px-4 py-3"
-                testID="goal-detail-open-milestone"
-              >
-                <View className="flex-row items-center gap-2">
-                  <Icon as={Calendar} size={16} className="text-muted-foreground" />
-                  <Text className="text-sm font-medium text-foreground">
-                    {targetDate || "No target date set"}
-                  </Text>
-                </View>
-                <Text className="mt-1 text-xs text-muted-foreground">
-                  Tap to view the linked milestone event.
-                </Text>
-              </Pressable>
-            </CardContent>
-          </Card>
-        ) : null}
-
         <Card className="rounded-3xl border border-border bg-card">
           <CardContent className="gap-4 p-4">
             <View className="gap-1">
@@ -250,7 +213,7 @@ export default function GoalDetailScreen() {
               <View className="flex-row items-center justify-between gap-3">
                 <Text className="text-xs text-muted-foreground">Target date</Text>
                 <Text className="text-sm font-medium text-foreground">
-                  {targetDate || "Not set"}
+                  {formattedTargetDate || "Not set"}
                 </Text>
               </View>
               <View className="flex-row items-center justify-between gap-3">
@@ -304,6 +267,31 @@ export default function GoalDetailScreen() {
           void handleSubmitGoal(draft);
         }}
       />
+      {showDeleteConfirm ? (
+        <AppConfirmModal
+          description="Are you sure you want to delete this goal?"
+          onClose={() => setShowDeleteConfirm(false)}
+          primaryAction={{
+            label: deleteGoalMutation.isPending ? "Deleting..." : "Delete Goal",
+            onPress: () => {
+              if (!goalRecord) {
+                setShowDeleteConfirm(false);
+                return;
+              }
+              deleteGoalMutation.mutate({ id: goalRecord.id });
+            },
+            testID: "goal-detail-delete-confirm",
+            variant: "destructive",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setShowDeleteConfirm(false),
+            variant: "outline",
+          }}
+          testID="goal-detail-delete-modal"
+          title="Delete Goal"
+        />
+      ) : null}
     </View>
   );
 }

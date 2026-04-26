@@ -1,11 +1,13 @@
 import React from "react";
-import { renderNative, screen } from "../../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
     return React.createElement(type, props, props.children);
   };
 }
+
+const deleteMutateMock = jest.fn();
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -79,7 +81,7 @@ jest.mock("@/lib/api", () => ({
         }),
       },
       delete: {
-        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+        useMutation: () => ({ mutate: deleteMutateMock, isPending: false }),
       },
     },
     activities: {
@@ -128,6 +130,10 @@ jest.mock("lucide-react-native", () => ({
 const ActivityEffortDetailScreen = require("../activity-effort-detail").default;
 
 describe("activity effort detail screen", () => {
+  beforeEach(() => {
+    deleteMutateMock.mockReset();
+  });
+
   it("shows linked activity and segment context", () => {
     const rendered = renderNative(<ActivityEffortDetailScreen />);
 
@@ -137,5 +143,18 @@ describe("activity effort detail screen", () => {
     expect(screen.getByText("Hill Repeats")).toBeTruthy();
     expect(screen.getByText("Segment duration")).toBeTruthy();
     expect((rendered as any).UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
+  });
+
+  it("uses a confirm modal before deleting an effort", () => {
+    renderNative(<ActivityEffortDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("activity-effort-detail-options-delete"));
+
+    expect(screen.getByTestId("activity-effort-detail-delete-modal")).toBeTruthy();
+    expect(deleteMutateMock).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByTestId("activity-effort-detail-delete-confirm"));
+
+    expect(deleteMutateMock).toHaveBeenCalledWith({ id: "effort-1" });
   });
 });

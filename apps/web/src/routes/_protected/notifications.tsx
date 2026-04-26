@@ -1,4 +1,3 @@
-import { invalidateNotificationQueries, invalidateRelationshipQueries } from "@repo/api/react";
 import {
   getNotificationViewModel,
   getUnreadNotificationIds,
@@ -13,18 +12,33 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { ScrollArea } from "@repo/ui/components/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { cn } from "@repo/ui/lib/cn";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Bell, Mail, UserPlus } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
 
+import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
+import { markNotificationsReadAction } from "../../lib/notifications/server-actions";
+import {
+  acceptFollowRequestAction,
+  rejectFollowRequestAction,
+} from "../../lib/social/server-actions";
 
-export const Route = createFileRoute("/_protected/notifications")({ component: NotificationsPage });
+export const Route = createFileRoute("/_protected/notifications")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    flash: typeof search.flash === "string" ? search.flash : undefined,
+    flashType:
+      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
+        ? (search.flashType as RouteFlashType)
+        : undefined,
+    view: search.view === "unread" ? "unread" : "all",
+  }),
+  component: NotificationsPage,
+});
 
 function NotificationsPage() {
+  const navigate = Route.useNavigate();
+  const { flash, flashType, view } = Route.useSearch();
   const { data: notifications = [], isLoading } = api.notifications.getRecent.useQuery({
     limit: 50,
   });
@@ -36,28 +50,44 @@ function NotificationsPage() {
       ): notification is NonNullable<ReturnType<typeof normalizeNotificationListItem>> =>
         notification !== null,
     );
-  const utils = api.useUtils();
-  const markReadMutation = api.notifications.markRead.useMutation({
-    onSuccess: async () => invalidateNotificationQueries(utils),
-  });
   const unreadNotifications = normalizedNotifications.filter(
     (notification) => getNotificationViewModel(notification).isUnread,
   );
-  const handleReadAll = () => {
-    const unreadIds = getUnreadNotificationIds(normalizedNotifications);
-    if (unreadIds.length > 0) markReadMutation.mutate({ notification_ids: unreadIds });
-  };
+  const unreadIds = getUnreadNotificationIds(normalizedNotifications);
+  const visibleNotifications = view === "unread" ? unreadNotifications : normalizedNotifications;
 
   return (
     <div className="flex h-full flex-1 flex-col space-y-8">
+      <RouteFlashToast
+        message={flash}
+        type={flashType}
+        clear={() =>
+          void navigate({
+            to: "/notifications",
+            search: { flash: undefined, flashType: undefined, view },
+            replace: true,
+          })
+        }
+      />
       <div className="flex items-center justify-between space-y-2">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Notifications</h2>
           <p className="text-muted-foreground">Manage your notifications and alerts.</p>
         </div>
-        <Button onClick={handleReadAll} disabled={unreadNotifications.length === 0}>
-          Mark all as read
-        </Button>
+        <form action={markNotificationsReadAction.url} method="post">
+          <input type="hidden" name="redirectTo" value="/notifications" />
+          {unreadIds.map((notificationId) => (
+            <input
+              key={notificationId}
+              type="hidden"
+              name="notification_ids"
+              value={notificationId}
+            />
+          ))}
+          <Button type="submit" disabled={unreadNotifications.length === 0}>
+            Mark all as read
+          </Button>
+        </form>
       </div>
       <Card>
         <CardHeader>
@@ -67,38 +97,41 @@ function NotificationsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <Tabs defaultValue="all">
-            <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-6">
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="unread">Unread</TabsTrigger>
-            </TabsList>
-            <ScrollArea className="h-[calc(100vh-22rem)]">
-              <TabsContent value="all">
-                {isLoading ? (
-                  <div className="p-8 text-center text-muted-foreground">Loading...</div>
-                ) : normalizedNotifications.length > 0 ? (
-                  normalizedNotifications.map((notification) => (
-                    <NotificationItem key={notification.id} notification={notification} />
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-muted-foreground">No notifications yet.</div>
-                )}
-              </TabsContent>
-              <TabsContent value="unread">
-                {isLoading ? (
-                  <div className="p-8 text-center text-muted-foreground">Loading...</div>
-                ) : unreadNotifications.length > 0 ? (
-                  unreadNotifications.map((notification) => (
-                    <NotificationItem key={notification.id} notification={notification} />
-                  ))
-                ) : (
-                  <div className="p-8 text-center text-muted-foreground">
-                    No unread notifications.
-                  </div>
-                )}
-              </TabsContent>
-            </ScrollArea>
-          </Tabs>
+          <div className="flex w-full justify-start gap-2 border-b px-6 py-3">
+            <Button asChild variant={view === "all" ? "default" : "ghost"} size="sm">
+              <Link
+                to="/notifications"
+                search={{ flash: undefined, flashType: undefined, view: "all" }}
+              >
+                All
+              </Link>
+            </Button>
+            <Button asChild variant={view === "unread" ? "default" : "ghost"} size="sm">
+              <Link
+                to="/notifications"
+                search={{ flash: undefined, flashType: undefined, view: "unread" }}
+              >
+                Unread
+              </Link>
+            </Button>
+          </div>
+          <ScrollArea className="h-[calc(100vh-22rem)]">
+            {isLoading ? (
+              <div className="p-8 text-center text-muted-foreground">Loading...</div>
+            ) : visibleNotifications.length > 0 ? (
+              visibleNotifications.map((notification) => (
+                <NotificationItem
+                  key={notification.id}
+                  notification={notification}
+                  redirectTo={`/notifications?view=${view}`}
+                />
+              ))
+            ) : (
+              <div className="p-8 text-center text-muted-foreground">
+                {view === "unread" ? "No unread notifications." : "No notifications yet."}
+              </div>
+            )}
+          </ScrollArea>
         </CardContent>
       </Card>
     </div>
@@ -107,34 +140,12 @@ function NotificationsPage() {
 
 function NotificationItem({
   notification,
+  redirectTo,
 }: {
   notification: NonNullable<ReturnType<typeof normalizeNotificationListItem>>;
+  redirectTo: string;
 }) {
-  const [handled, setHandled] = useState(false);
-  const itemUtils = api.useUtils();
   const item = getNotificationViewModel(notification);
-  const acceptMutation = api.social.acceptFollowRequest.useMutation({
-    onSuccess: async () => {
-      toast.success("Follow request accepted");
-      setHandled(true);
-      await Promise.all([
-        invalidateNotificationQueries(itemUtils),
-        invalidateRelationshipQueries(itemUtils, [item.actorId]),
-      ]);
-    },
-    onError: (err) => toast.error(err.message),
-  });
-  const rejectMutation = api.social.rejectFollowRequest.useMutation({
-    onSuccess: async () => {
-      toast.success("Follow request rejected");
-      setHandled(true);
-      await Promise.all([
-        invalidateNotificationQueries(itemUtils),
-        invalidateRelationshipQueries(itemUtils, [item.actorId]),
-      ]);
-    },
-    onError: (err) => toast.error(err.message),
-  });
 
   let Icon = Bell;
   let title = "Notification";
@@ -161,27 +172,26 @@ function NotificationItem({
       <div className="flex-1">
         <p className={cn("font-medium", item.isUnread && "font-bold")}>{title}</p>
         <p className="text-sm text-muted-foreground">{description}</p>
-        {item.requiresFollowRequestAction && !handled ? (
+        {item.requiresFollowRequestAction ? (
           <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              onClick={() =>
-                item.actorId ? acceptMutation.mutate({ follower_id: item.actorId }) : undefined
-              }
-              disabled={acceptMutation.isPending || rejectMutation.isPending}
-            >
-              Accept
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                item.actorId ? rejectMutation.mutate({ follower_id: item.actorId }) : undefined
-              }
-              disabled={acceptMutation.isPending || rejectMutation.isPending}
-            >
-              Reject
-            </Button>
+            {item.actorId ? (
+              <>
+                <form action={acceptFollowRequestAction.url} method="post">
+                  <input type="hidden" name="follower_id" value={item.actorId} />
+                  <input type="hidden" name="redirectTo" value={redirectTo} />
+                  <Button size="sm" type="submit">
+                    Accept
+                  </Button>
+                </form>
+                <form action={rejectFollowRequestAction.url} method="post">
+                  <input type="hidden" name="follower_id" value={item.actorId} />
+                  <input type="hidden" name="redirectTo" value={redirectTo} />
+                  <Button size="sm" variant="outline" type="submit">
+                    Reject
+                  </Button>
+                </form>
+              </>
+            ) : null}
           </div>
         ) : null}
         <p className="mt-1 text-xs text-muted-foreground">

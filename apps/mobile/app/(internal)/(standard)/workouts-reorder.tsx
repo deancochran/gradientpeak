@@ -6,8 +6,9 @@ import { format } from "date-fns";
 import { useRouter } from "expo-router";
 import { AlertCircle, ArrowLeft, Calendar, GripVertical, Save } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { normalizeDate } from "@/lib/utils/plan/dateGrouping";
 
@@ -34,6 +35,12 @@ export default function WorkoutsReorder() {
   const [activities, setActivities] = useState<any[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [statusModal, setStatusModal] = useState<null | {
+    title: string;
+    description: string;
+    onClose?: () => void;
+  }>(null);
 
   // Initialize activities from query
   React.useEffect(() => {
@@ -125,17 +132,16 @@ export default function WorkoutsReorder() {
 
       await Promise.all(updatePromises);
 
-      Alert.alert("Success", "Workouts reordered successfully", [
-        {
-          text: "OK",
-          onPress: () => {
-            setHasChanges(false);
-            refetch();
-          },
+      setStatusModal({
+        title: "Success",
+        description: "Workouts reordered successfully",
+        onClose: () => {
+          setHasChanges(false);
+          refetch();
         },
-      ]);
+      });
     } catch (error) {
-      Alert.alert("Error", "Failed to save changes. Please try again.");
+      setStatusModal({ title: "Error", description: "Failed to save changes. Please try again." });
     } finally {
       setSaving(false);
     }
@@ -144,18 +150,7 @@ export default function WorkoutsReorder() {
   // Handle cancel
   const handleCancel = () => {
     if (hasChanges) {
-      Alert.alert(
-        "Discard Changes?",
-        "You have unsaved changes. Are you sure you want to discard them?",
-        [
-          { text: "Keep Editing", style: "cancel" },
-          {
-            text: "Discard",
-            style: "destructive",
-            onPress: () => router.back(),
-          },
-        ],
-      );
+      setShowDiscardConfirm(true);
     } else {
       router.back();
     }
@@ -257,6 +252,13 @@ export default function WorkoutsReorder() {
                             variant="compact"
                             showScheduleInfo={false}
                           />
+                          {typeof activity.training_plan_id === "string" ? (
+                            <View className="px-3 pb-3">
+                              <Text className="text-xs text-muted-foreground">
+                                From training plan
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                       </View>
 
@@ -310,6 +312,46 @@ export default function WorkoutsReorder() {
           </View>
         </View>
       )}
+      {showDiscardConfirm ? (
+        <AppConfirmModal
+          description="You have unsaved changes. Are you sure you want to discard them?"
+          onClose={() => setShowDiscardConfirm(false)}
+          primaryAction={{
+            label: "Discard",
+            onPress: () => router.back(),
+            variant: "destructive",
+            testID: "workouts-reorder-discard-confirm",
+          }}
+          secondaryAction={{
+            label: "Keep Editing",
+            onPress: () => setShowDiscardConfirm(false),
+            variant: "outline",
+          }}
+          testID="workouts-reorder-discard-modal"
+          title="Discard Changes?"
+        />
+      ) : null}
+      {statusModal ? (
+        <AppConfirmModal
+          description={statusModal.description}
+          onClose={() => {
+            const next = statusModal.onClose;
+            setStatusModal(null);
+            next?.();
+          }}
+          primaryAction={{
+            label: "OK",
+            onPress: () => {
+              const next = statusModal.onClose;
+              setStatusModal(null);
+              next?.();
+            },
+            testID: "workouts-reorder-status-confirm",
+          }}
+          testID="workouts-reorder-status-modal"
+          title={statusModal.title}
+        />
+      ) : null}
     </View>
   );
 }

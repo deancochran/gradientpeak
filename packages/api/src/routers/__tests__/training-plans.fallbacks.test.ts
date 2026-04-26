@@ -295,7 +295,6 @@ describe("training plan projection fallbacks", () => {
             {
               id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
               profile_id: "profile-123",
-              milestone_event_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
               target_date: "2026-09-14",
               title: "Broken goal",
               priority: 7,
@@ -617,7 +616,6 @@ describe("training plan projection fallbacks", () => {
             {
               id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
               profile_id: "profile-123",
-              milestone_event_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
               target_date: "2026-09-14",
               title: "10K",
               priority: 7,

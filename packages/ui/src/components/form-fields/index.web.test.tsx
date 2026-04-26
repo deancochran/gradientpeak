@@ -13,6 +13,7 @@ import {
   FormSwitchField,
   FormTextareaField,
   FormTextField,
+  FormTimeInputField,
   FormWeightInputField,
 } from "./index.web";
 
@@ -31,6 +32,7 @@ const profileSchema = z.object({
   ftp: z.number().optional(),
   max_sessions: z.number(),
   pace: z.string(),
+  wake_time: z.string().nullable(),
   is_public: z.boolean(),
   weight_kg: z.number().nullable(),
   username: z.string(),
@@ -47,6 +49,7 @@ function FormFieldsHarness() {
       max_sessions: 3,
       is_public: false,
       pace: "4:30",
+      wake_time: null,
       weight_kg: 70,
       username: "Avery",
     },
@@ -64,6 +67,7 @@ function FormFieldsHarness() {
           parseValue={(value) => value || null}
         />
         <FormDateInputField control={methods.control} label="Date of Birth" name="dob" />
+        <FormTimeInputField control={methods.control} label="Wake Time" name="wake_time" />
         <FormDurationField control={methods.control} label="Duration" name="duration" />
         <FormIntegerStepperField
           control={methods.control}
@@ -99,6 +103,7 @@ function DetachedFormLabelHarness() {
       max_sessions: 3,
       is_public: false,
       pace: "4:30",
+      wake_time: null,
       weight_kg: 70,
       username: "Avery",
     },
@@ -126,6 +131,9 @@ describe("Form fields web", () => {
     fireEvent.change(screen.getByLabelText("Date of Birth"), {
       target: { value: "1990-05-01" },
     });
+    fireEvent.change(screen.getByLabelText("Wake Time"), {
+      target: { value: "06:45" },
+    });
     fireEvent.change(screen.getByLabelText("Duration"), {
       target: { value: "45:00" },
     });
@@ -149,6 +157,7 @@ describe("Form fields web", () => {
     expect(screen.getByLabelText("FTP")).toHaveValue("300");
     expect(screen.getByTestId("values").textContent).toContain('"bio":"Coach"');
     expect(screen.getByTestId("values").textContent).toContain('"dob":"1990-05-01"');
+    expect(screen.getByTestId("values").textContent).toContain('"wake_time":"06:45"');
     expect(screen.getByTestId("values").textContent).toContain('"duration":"0:45:00"');
     expect(screen.getByTestId("values").textContent).toContain('"max_sessions":4');
     expect(screen.getByTestId("values").textContent).toContain('"is_public":true');

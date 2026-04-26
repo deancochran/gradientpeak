@@ -5,7 +5,6 @@ import { goalsRouter } from "../goals";
 type GoalRow = {
   id: string;
   profile_id: string;
-  milestone_event_id: string;
   target_date: string;
   title: string;
   priority: number;
@@ -31,40 +30,31 @@ type QueryMap = {
   profileGoalsCount?: Array<{ total: number }>;
   profileGoalsInsert?: GoalRow[];
   profileGoalsUpdate?: GoalRow[];
-  milestoneEventsInsert?: Array<{ id: string }>;
-  milestoneEventsSelect?: Array<{
-    id: string;
-    profile_id: string;
-    training_plan_id: string | null;
-  }>;
   profileAccess?: Array<{ has_access: boolean }>;
-  trainingPlansSelect?: Array<{ id: string }>;
 };
 
 type CallLogEntry =
   | {
       operation: "insert";
-      table: "profile_goals" | "events";
+      table: "profile_goals";
       payload: Record<string, unknown>;
     }
   | {
       operation: "update";
-      table: "profile_goals" | "events";
+      table: "profile_goals";
       payload: Record<string, unknown>;
     }
   | {
       operation: "delete";
-      table: "profile_goals" | "events";
+      table: "profile_goals";
     };
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
 const GOAL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const EVENT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 
-function getTableName(table: any): "profile_goals" | "events" | "training_plans" {
+function getTableName(table: any): "profile_goals" | "training_plans" {
   const name = String(table?.[Symbol.for("drizzle:Name")] ?? table?._?.name ?? "");
-  if (name.includes("events")) return "events";
   if (name.includes("training_plans")) return "training_plans";
   return "profile_goals";
 }
@@ -73,7 +63,6 @@ function createGoalRow(overrides: Partial<GoalRow> = {}): GoalRow {
   return {
     id: GOAL_ID,
     profile_id: OWNER_ID,
-    milestone_event_id: EVENT_ID,
     target_date: "2026-06-01",
     title: "10K Goal",
     priority: 7,
@@ -91,25 +80,13 @@ function createGoalRow(overrides: Partial<GoalRow> = {}): GoalRow {
 function createDbMock(queryMap: QueryMap = {}) {
   const selectCounters = new Map<string, number>();
   const callLog: CallLogEntry[] = [];
-  let activeTable: "profile_goals" | "events" | "training_plans" = "profile_goals";
+  let activeTable: "profile_goals" | "training_plans" = "profile_goals";
 
   const nextSelectResult = (isCountSelect = false): any[] => {
     if (isCountSelect) {
       return (
         queryMap.profileGoalsCount ?? [
           { total: Array.isArray(queryMap.profileGoalsSelect) ? 1 : 0 },
-        ]
-      );
-    }
-
-    if (activeTable === "training_plans") {
-      return queryMap.trainingPlansSelect ?? [];
-    }
-
-    if (activeTable === "events") {
-      return (
-        queryMap.milestoneEventsSelect ?? [
-          { id: EVENT_ID, profile_id: OWNER_ID, training_plan_id: null },
         ]
       );
     }
@@ -160,10 +137,7 @@ function createDbMock(queryMap: QueryMap = {}) {
 
         callLog.push({ operation: "insert", table: tableName, payload });
         return {
-          returning: async () =>
-            tableName === "events"
-              ? (queryMap.milestoneEventsInsert ?? [{ id: EVENT_ID }])
-              : (queryMap.profileGoalsInsert ?? []),
+          returning: async () => queryMap.profileGoalsInsert ?? [],
         };
       },
     }),
@@ -177,8 +151,7 @@ function createDbMock(queryMap: QueryMap = {}) {
         callLog.push({ operation: "update", table: tableName, payload });
         return {
           where: () => ({
-            returning: async () =>
-              tableName === "events" ? [] : (queryMap.profileGoalsUpdate ?? []),
+            returning: async () => queryMap.profileGoalsUpdate ?? [],
           }),
         };
       },
@@ -249,6 +222,27 @@ describe("goalsRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
+  it("rejects create input with removed training plan linkage", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.create({
+        profile_id: OWNER_ID,
+        target_date: "2026-06-10",
+        title: "Canonical Goal",
+        priority: 6,
+        activity_category: "run",
+        training_plan_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        target_payload: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 5000,
+          target_time_s: 1500,
+        },
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+  });
+
   it("allows an authorized coach to fetch a goal by id", async () => {
     const goal = createGoalRow();
     const { caller } = createCaller({
@@ -296,21 +290,10 @@ describe("goalsRouter", () => {
     });
     expect(callLog).toContainEqual({
       operation: "insert",
-      table: "events",
-      payload: expect.objectContaining({
-        profile_id: OWNER_ID,
-        event_type: "race",
-        title: "Canonical Goal",
-        all_day: true,
-      }),
-    });
-    expect(callLog).toContainEqual({
-      operation: "insert",
       table: "profile_goals",
       payload: expect.objectContaining({
         id: expect.any(String),
         profile_id: OWNER_ID,
-        milestone_event_id: EVENT_ID,
         target_date: "2026-06-10",
         title: "Canonical Goal",
         priority: 6,
@@ -344,7 +327,6 @@ describe("goalsRouter", () => {
       queryMap: {
         profileGoalsSelect: [[existingGoal]],
         profileGoalsUpdate: [updatedGoal],
-        milestoneEventsSelect: [{ id: EVENT_ID, profile_id: OWNER_ID, training_plan_id: null }],
       },
     });
 
@@ -368,18 +350,8 @@ describe("goalsRouter", () => {
     });
     expect(callLog).toContainEqual({
       operation: "update",
-      table: "events",
-      payload: expect.objectContaining({
-        event_type: "race",
-        title: "Updated Goal",
-        all_day: true,
-      }),
-    });
-    expect(callLog).toContainEqual({
-      operation: "update",
       table: "profile_goals",
       payload: expect.objectContaining({
-        milestone_event_id: EVENT_ID,
         target_date: "2026-07-01",
         title: "Updated Goal",
         priority: 5,
@@ -413,7 +385,6 @@ describe("goalsRouter", () => {
     const { caller, callLog } = createCaller({
       queryMap: {
         profileGoalsSelect: [[createGoalRow()]],
-        milestoneEventsSelect: [{ id: EVENT_ID, profile_id: OWNER_ID, training_plan_id: null }],
       },
     });
 
@@ -424,7 +395,6 @@ describe("goalsRouter", () => {
       cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
     });
     expect(callLog).toContainEqual({ operation: "delete", table: "profile_goals" });
-    expect(callLog).toContainEqual({ operation: "delete", table: "events" });
   });
 
   it("rejects delete input with unexpected keys", async () => {

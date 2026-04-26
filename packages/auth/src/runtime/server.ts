@@ -4,6 +4,7 @@ import { resolveDatabaseUrl } from "@repo/db/client";
 import { relationalSchema, schema } from "@repo/db/schema";
 import { compare, hash } from "bcryptjs";
 import { betterAuth } from "better-auth";
+import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import {
@@ -182,7 +183,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
       },
     },
     trustedOrigins: createTrustedOrigins(env.appUrl, env.mobileScheme, options.trustedOrigins),
-    plugins: [expo(), ...(options.plugins ?? [])],
+    plugins: [expo(), ...(options.plugins ?? []), tanstackStartCookies()],
   });
 }
 

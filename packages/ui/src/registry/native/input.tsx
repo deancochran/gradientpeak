@@ -1,7 +1,10 @@
-import { Platform, TextInput, View } from "react-native";
+import { Platform, TextInput, useColorScheme, View } from "react-native";
 import { cn } from "../../lib/cn";
+import { getResolvedNativeTheme } from "../../lib/native-theme";
 
 function Input({ className, ...props }: React.ComponentProps<typeof TextInput>) {
+  const theme = getResolvedNativeTheme(useColorScheme());
+
   return (
     <View
       className={cn(
@@ -21,7 +24,13 @@ function Input({ className, ...props }: React.ComponentProps<typeof TextInput>) 
         className,
       )}
     >
-      <TextInput {...props} style={[styles.input, props.style]} />
+      <TextInput
+        {...props}
+        cursorColor={props.cursorColor ?? theme.primary}
+        placeholderTextColor={props.placeholderTextColor ?? theme.mutedForeground}
+        selectionColor={props.selectionColor ?? theme.primary}
+        style={[styles.input, { color: theme.foreground }, props.style]}
+      />
     </View>
   );
 }
