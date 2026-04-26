@@ -13,6 +13,8 @@ export function ProtectedHeader() {
   const { user } = useAuth();
   const primaryLinks = [
     { to: "/", label: "Home" },
+    { to: "/activities", label: "Activities" },
+    { to: "/routes", label: "Routes" },
     { to: "/record", label: "Record" },
     { to: "/plan", label: "Plan" },
     { to: "/calendar", label: "Calendar" },
