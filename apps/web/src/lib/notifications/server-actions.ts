@@ -9,6 +9,7 @@ import { createServerActionCaller } from "../server-action-api";
 const notificationIdsActionSchema = z.object({
   notification_ids: z.array(z.string().uuid()).min(1),
   redirectTo: z.string().optional(),
+  successMessage: z.string().optional(),
 });
 
 function normalizeNotificationInput(data: unknown) {
@@ -16,10 +17,13 @@ function normalizeNotificationInput(data: unknown) {
 
   if (data instanceof FormData) {
     const redirectToValue = data.get("redirectTo");
+    const successMessageValue = data.get("successMessage");
+
     return {
       ...notificationIdsActionSchema.parse({
         notification_ids: data.getAll("notification_ids").map((value) => String(value)),
         redirectTo: typeof redirectToValue === "string" ? redirectToValue : undefined,
+        successMessage: typeof successMessageValue === "string" ? successMessageValue : undefined,
       }),
       _native: native,
     };
@@ -57,7 +61,7 @@ export const markNotificationsReadAction = createServerFn({ method: "POST" })
     throw redirect({
       href: buildFlashHref(
         getSafeAppRedirectTarget(data.redirectTo, "/notifications"),
-        "Notifications updated",
+        data.successMessage ?? "Notifications updated",
         "success",
       ),
       statusCode: 303,
