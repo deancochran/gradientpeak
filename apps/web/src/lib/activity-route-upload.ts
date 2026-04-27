@@ -5,7 +5,9 @@ export type SelectedUploadFile = {
 };
 
 export function getSingleFileSelection(
-  files: Array<{ file?: File; name: string; size?: number }> | undefined,
+  files:
+    | Array<{ file?: File; name: string; size?: number | null; type?: string | null }>
+    | undefined,
 ) {
   const file = files?.[0]?.file;
 

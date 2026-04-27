@@ -11,23 +11,16 @@ import { Label } from "@repo/ui/components/label";
 import { Textarea } from "@repo/ui/components/textarea";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api } from "../../../../../lib/api/client";
-import {
-  buildAllDayStartIso,
-  buildTimedEndIso,
-  buildTimedStartIso,
-  getEventDurationMs,
-  getMonthKey,
-} from "../../../../../lib/planning";
-
-const monthSearchPattern = /^\d{4}-\d{2}$/;
+import { getMonthKey, isValidMonthKey } from "../../../../../lib/planning";
+import { updateCalendarEventAction } from "../../../../../lib/planning/server-actions";
 
 export const Route = createFileRoute("/_protected/calendar/events/$eventId/edit")({
   validateSearch: (search: Record<string, unknown>) => ({
     month:
-      typeof search.month === "string" && monthSearchPattern.test(search.month)
+      typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
         : getMonthKey(new Date()),
     view: search.view === "agenda" ? "agenda" : "month",
@@ -35,26 +28,34 @@ export const Route = createFileRoute("/_protected/calendar/events/$eventId/edit"
   component: EventEditPage,
 });
 
+function formatTimeForInput(startsAtIso: string, timeZone: string | null | undefined) {
+  const startsAt = new Date(startsAtIso);
+  if (Number.isNaN(startsAt.getTime())) {
+    return null;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timeZone ?? "UTC",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(startsAt);
+  const values = Object.fromEntries(
+    parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]),
+  );
+
+  if (typeof values.hour !== "string" || typeof values.minute !== "string") {
+    return null;
+  }
+
+  return `${values.hour}:${values.minute}`;
+}
+
 function EventEditPage() {
-  const navigate = Route.useNavigate();
-  const utils = api.useUtils();
   const { eventId } = Route.useParams();
   const { month, view } = Route.useSearch();
   const eventQuery = api.events.getById.useQuery({ id: eventId }, { enabled: Boolean(eventId) });
   const event = eventQuery.data;
-  const updateMutation = api.events.update.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.events.invalidate(),
-        utils.trainingPlans.getActivePlan.invalidate(),
-      ]);
-      void navigate({
-        to: "/calendar/events/$eventId",
-        params: { eventId },
-        search: { month, view },
-      });
-    },
-  });
 
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
@@ -73,11 +74,9 @@ function EventEditPage() {
     setNotes(event.notes ?? "");
 
     if (event.starts_at) {
-      const startsAt = new Date(event.starts_at);
-      if (!Number.isNaN(startsAt.getTime())) {
-        setTime(
-          `${String(startsAt.getHours()).padStart(2, "0")}:${String(startsAt.getMinutes()).padStart(2, "0")}`,
-        );
+      const formattedTime = formatTimeForInput(event.starts_at, event.timezone);
+      if (formattedTime) {
+        setTime(formattedTime);
       }
     }
   }, [event]);
@@ -94,34 +93,15 @@ function EventEditPage() {
     return <p className="text-sm text-muted-foreground">Imported events are read-only.</p>;
   }
 
-  const submit = (formEvent: FormEvent<HTMLFormElement>) => {
-    formEvent.preventDefault();
-
-    const normalizedTitle = title.trim();
-    if (!normalizedTitle || !date) {
-      return;
-    }
-
-    const startsAt = allDay ? buildAllDayStartIso(date) : buildTimedStartIso(date, time);
-    updateMutation.mutate({
-      id: event.id,
-      scope: "single",
-      patch: {
-        title: normalizedTitle,
-        notes: notes.trim() ? notes.trim() : null,
-        all_day: allDay,
-        timezone: "UTC",
-        starts_at: startsAt,
-        ends_at: allDay ? undefined : buildTimedEndIso(startsAt, getEventDurationMs(event)),
-      },
-    });
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Button asChild variant="outline" size="sm">
-          <Link to="/calendar/events/$eventId" params={{ eventId }} search={{ month, view }}>
+          <Link
+            to="/calendar/events/$eventId"
+            params={{ eventId }}
+            search={{ flash: undefined, flashType: undefined, month, view }}
+          >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to event
           </Link>
@@ -140,11 +120,18 @@ function EventEditPage() {
           <CardDescription>This route updates one event instance at a time.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="space-y-4" onSubmit={submit}>
+          <form action={updateCalendarEventAction.url} method="post" className="space-y-4">
+            <input type="hidden" name="event_id" value={event.id} />
+            <input
+              type="hidden"
+              name="redirectTo"
+              value={`/calendar/events/${event.id}?month=${month}&view=${view}`}
+            />
             <div className="space-y-2">
               <Label htmlFor="event-title">Title</Label>
               <Input
                 id="event-title"
+                name="title"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
               />
@@ -155,6 +142,7 @@ function EventEditPage() {
                 <Label htmlFor="event-date">Date</Label>
                 <Input
                   id="event-date"
+                  name="date"
                   type="date"
                   value={date}
                   onChange={(event) => setDate(event.target.value)}
@@ -164,6 +152,7 @@ function EventEditPage() {
                 <Label htmlFor="event-time">Time</Label>
                 <Input
                   id="event-time"
+                  name="time"
                   type="time"
                   value={time}
                   disabled={allDay}
@@ -175,7 +164,9 @@ function EventEditPage() {
             <label className="flex items-center gap-2 text-sm">
               <input
                 checked={allDay}
+                name="all_day"
                 type="checkbox"
+                value="true"
                 onChange={(event) => setAllDay(event.target.checked)}
               />
               All day event
@@ -185,17 +176,22 @@ function EventEditPage() {
               <Label htmlFor="event-notes">Notes</Label>
               <Textarea
                 id="event-notes"
+                name="notes"
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
               />
             </div>
 
             <div className="flex gap-2">
-              <Button type="submit" disabled={updateMutation.isPending}>
+              <Button type="submit" disabled={!title.trim() || !date}>
                 Save changes
               </Button>
               <Button asChild variant="outline">
-                <Link to="/calendar/events/$eventId" params={{ eventId }} search={{ month, view }}>
+                <Link
+                  to="/calendar/events/$eventId"
+                  params={{ eventId }}
+                  search={{ flash: undefined, flashType: undefined, month, view }}
+                >
                   Cancel
                 </Link>
               </Button>

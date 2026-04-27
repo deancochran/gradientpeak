@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 export const settingsProfileFormSchema = z.object({
-  is_public: z.boolean().optional(),
+  is_public: z
+    .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
+    .optional(),
   username: z
     .string()
     .trim()

@@ -2,6 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { useServerFn } from "@tanstack/react-start";
 import { MessageSquare } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { startDirectMessageAction } from "../../lib/social/server-actions";
 
@@ -21,6 +22,8 @@ export function MessageActionForm({
     try {
       event.preventDefault();
       await startDirectMessage({ data: { redirectTo, target_user_id: targetUserId } });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to start conversation");
     } finally {
       setIsPending(false);
     }

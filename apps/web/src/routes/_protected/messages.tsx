@@ -10,11 +10,6 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@repo/ui/components/resizable";
 import { ScrollArea } from "@repo/ui/components/scroll-area";
 import { Separator } from "@repo/ui/components/separator";
 import { cn } from "@repo/ui/lib/cn";
@@ -23,6 +18,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { Loader2, Plus, Search, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
 
 import { useAuth } from "../../components/providers/auth-provider";
@@ -43,10 +39,59 @@ type ComposeRecipient = {
   username: string | null;
 };
 
+function parseComposeRecipients(value: unknown): ComposeRecipient[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((recipient) => typeof recipient?.id === "string")
+      .map((recipient) => ({
+        avatar_url: typeof recipient.avatar_url === "string" ? recipient.avatar_url : null,
+        id: recipient.id,
+        is_public: typeof recipient.is_public === "boolean" ? recipient.is_public : null,
+        username: typeof recipient.username === "string" ? recipient.username : null,
+      }));
+  }
+
+  if (typeof value !== "string" || value.length === 0) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Array<
+      Pick<ComposeRecipient, "id" | "is_public" | "username">
+    >;
+    return parsed
+      .filter((recipient) => typeof recipient?.id === "string")
+      .map((recipient) => ({
+        id: recipient.id,
+        is_public: typeof recipient.is_public === "boolean" ? recipient.is_public : null,
+        username: typeof recipient.username === "string" ? recipient.username : null,
+        avatar_url: null,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function serializeComposeRecipients(recipients: ComposeRecipient[]) {
+  if (recipients.length === 0) {
+    return undefined;
+  }
+
+  return JSON.stringify(
+    recipients.map((recipient) => ({
+      id: recipient.id,
+      is_public: recipient.is_public,
+      username: recipient.username,
+    })),
+  );
+}
+
 export const Route = createFileRoute("/_protected/messages")({
   validateSearch: (search: Record<string, unknown>) => ({
     compose: search.compose === "true",
+    composeGroup: typeof search.composeGroup === "string" ? search.composeGroup : undefined,
     composeQuery: typeof search.composeQuery === "string" ? search.composeQuery : undefined,
+    composeRecipients: parseComposeRecipients(search.composeRecipients),
     conversationId: typeof search.conversationId === "string" ? search.conversationId : undefined,
     flash: typeof search.flash === "string" ? search.flash : undefined,
     flashType:
@@ -62,8 +107,18 @@ function MessagesPage() {
   const utils = api.useUtils();
   const sendMessage = useServerFn(sendMessageAction);
   const navigate = Route.useNavigate();
-  const { compose, composeQuery, conversationId, flash, flashType } = Route.useSearch();
-  const { data: conversations = [] } = api.messaging.getConversations.useQuery();
+  const {
+    compose,
+    composeGroup,
+    composeQuery,
+    composeRecipients,
+    conversationId,
+    flash,
+    flashType,
+  } = Route.useSearch();
+  const { data: conversations = [] } = api.messaging.getConversations.useQuery(undefined, {
+    refetchInterval: 5000,
+  });
   const selectedConversation = compose
     ? null
     : (conversations.find((conversation) => conversation.id === conversationId) ??
@@ -87,8 +142,9 @@ function MessagesPage() {
   });
   const getOrCreateDMMutation = api.messaging.getOrCreateDM.useMutation();
   const createConversationMutation = api.messaging.createConversation.useMutation();
-  const [selectedRecipients, setSelectedRecipients] = useState<ComposeRecipient[]>([]);
-  const [groupName, setGroupName] = useState("");
+  const [selectedRecipients, setSelectedRecipients] =
+    useState<ComposeRecipient[]>(composeRecipients);
+  const [groupName, setGroupName] = useState(composeGroup ?? "");
   const [composeError, setComposeError] = useState<string | null>(null);
   const lastMarkedConversationRef = useRef<string | null>(null);
   const form = useForm<MessageComposerValues>({
@@ -116,22 +172,40 @@ function MessagesPage() {
       return;
     }
 
-    lastMarkedConversationRef.current = unreadSignature;
-    markAsReadMutation.mutate({ conversation_id: selectedId });
+    markAsReadMutation.mutate(
+      { conversation_id: selectedId },
+      {
+        onSuccess: () => {
+          lastMarkedConversationRef.current = unreadSignature;
+        },
+      },
+    );
   }, [markAsReadMutation, messages.length, selectedConversation, selectedId]);
+
+  useEffect(() => {
+    setSelectedRecipients(composeRecipients);
+  }, [composeRecipients]);
+
+  useEffect(() => {
+    setGroupName(composeGroup ?? "");
+  }, [composeGroup]);
 
   const handleSend = form.handleSubmit(async (values) => {
     if (!selectedId) {
       return;
     }
 
-    await sendMessage({
-      data: {
-        content: values.content,
-        conversation_id: selectedId,
-        redirectTo: `/messages?conversationId=${selectedId}`,
-      },
-    });
+    try {
+      await sendMessage({
+        data: {
+          content: values.content,
+          conversation_id: selectedId,
+          redirectTo: `/messages?conversationId=${selectedId}`,
+        },
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to send message");
+    }
   });
 
   const visibleUsers = (searchedUsers?.users ?? []).filter(
@@ -140,15 +214,34 @@ function MessagesPage() {
   const isCreatingConversation =
     getOrCreateDMMutation.isPending || createConversationMutation.isPending;
 
+  const updateComposeSearch = (
+    updates: Partial<{ composeGroup: string | undefined; composeRecipients: ComposeRecipient[] }>,
+  ) => {
+    void navigate({
+      to: "/messages",
+      search: {
+        compose: true,
+        composeGroup: updates.composeGroup ?? (groupName || undefined),
+        composeQuery,
+        composeRecipients: updates.composeRecipients ?? selectedRecipients,
+        conversationId: undefined,
+        flash: undefined,
+        flashType: undefined,
+      },
+      replace: true,
+    });
+  };
+
   const toggleRecipient = (recipient: ComposeRecipient) => {
     setComposeError(null);
     setSelectedRecipients((current) => {
       const isSelected = current.some((entry) => entry.id === recipient.id);
-      if (isSelected) {
-        return current.filter((entry) => entry.id !== recipient.id);
-      }
+      const nextRecipients = isSelected
+        ? current.filter((entry) => entry.id !== recipient.id)
+        : [...current, recipient];
 
-      return [...current, recipient];
+      updateComposeSearch({ composeRecipients: nextRecipients });
+      return nextRecipients;
     });
   };
 
@@ -161,8 +254,10 @@ function MessagesPage() {
     await navigate({
       to: "/messages",
       search: {
-        compose: undefined,
+        compose: false,
+        composeGroup: undefined,
         composeQuery: undefined,
+        composeRecipients: [],
         conversationId: id,
         flash: successMessage,
         flashType: "success",
@@ -180,8 +275,14 @@ function MessagesPage() {
 
     try {
       if (selectedRecipients.length === 1) {
+        const targetRecipient = selectedRecipients[0];
+        if (!targetRecipient) {
+          setComposeError("Select at least one recipient.");
+          return;
+        }
+
         const conversation = await getOrCreateDMMutation.mutateAsync({
-          target_user_id: selectedRecipients[0].id,
+          target_user_id: targetRecipient.id,
         });
 
         await openConversation(conversation.id, "Conversation ready");
@@ -196,6 +297,7 @@ function MessagesPage() {
       await openConversation(conversation.id, "Conversation created");
     } catch (error) {
       setComposeError(error instanceof Error ? error.message : "Failed to create conversation");
+      toast.error(error instanceof Error ? error.message : "Failed to create conversation");
     }
   };
 
@@ -208,8 +310,10 @@ function MessagesPage() {
           void navigate({
             to: "/messages",
             search: {
-              compose: compose ? true : undefined,
+              compose,
+              composeGroup,
               composeQuery,
+              composeRecipients,
               conversationId,
               flash: undefined,
               flashType: undefined,
@@ -218,8 +322,8 @@ function MessagesPage() {
           })
         }
       />
-      <ResizablePanelGroup className="h-full w-full" direction="horizontal">
-        <ResizablePanel defaultSize={28} minSize={22} maxSize={40}>
+      <div className="flex h-full w-full">
+        <div className="hidden h-full w-[28%] min-w-[18rem] max-w-[28rem] shrink-0 border-r xl:block">
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between gap-3 p-4">
               <div>
@@ -234,7 +338,9 @@ function MessagesPage() {
                   to="/messages"
                   search={{
                     compose: true,
+                    composeGroup: undefined,
                     composeQuery: undefined,
+                    composeRecipients: [],
                     conversationId: undefined,
                     flash: undefined,
                     flashType: undefined,
@@ -256,8 +362,10 @@ function MessagesPage() {
                       key={conversation.id}
                       to="/messages"
                       search={{
-                        compose: undefined,
+                        compose: false,
+                        composeGroup: undefined,
                         composeQuery: undefined,
+                        composeRecipients: [],
                         conversationId: conversation.id,
                         flash: undefined,
                         flashType: undefined,
@@ -317,9 +425,40 @@ function MessagesPage() {
               </div>
             </ScrollArea>
           </div>
-        </ResizablePanel>
-        <ResizableHandle />
-        <ResizablePanel defaultSize={72}>
+        </div>
+        <div className="flex-1">
+          {!compose && conversations.length > 1 ? (
+            <div className="border-b p-3 xl:hidden">
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Conversations
+              </div>
+              <ScrollArea className="w-full whitespace-nowrap">
+                <div className="flex gap-2">
+                  {conversations.map((conversation) => (
+                    <Link
+                      key={`mobile-${conversation.id}`}
+                      to="/messages"
+                      search={{
+                        compose: false,
+                        composeGroup: undefined,
+                        composeQuery: undefined,
+                        composeRecipients: [],
+                        conversationId: conversation.id,
+                        flash: undefined,
+                        flashType: undefined,
+                      }}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm transition-colors hover:bg-accent",
+                        selectedId === conversation.id && "bg-accent",
+                      )}
+                    >
+                      {getConversationDisplayName(conversation)}
+                    </Link>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          ) : null}
           {compose ? (
             <div className="flex h-full flex-col">
               <div className="flex items-center justify-between border-b p-4">
@@ -333,8 +472,10 @@ function MessagesPage() {
                   <Link
                     to="/messages"
                     search={{
-                      compose: undefined,
+                      compose: false,
+                      composeGroup: undefined,
                       composeQuery: undefined,
+                      composeRecipients: [],
                       conversationId: conversationId ?? conversations[0]?.id,
                       flash: undefined,
                       flashType: undefined,
@@ -349,6 +490,12 @@ function MessagesPage() {
                 <div className="space-y-6 p-4">
                   <form method="get" action="/messages" className="flex gap-2">
                     <input type="hidden" name="compose" value="true" />
+                    <input type="hidden" name="composeGroup" value={groupName} />
+                    <input
+                      type="hidden"
+                      name="composeRecipients"
+                      value={serializeComposeRecipients(selectedRecipients) ?? ""}
+                    />
                     <Input
                       name="composeQuery"
                       defaultValue={composeQuery ?? ""}
@@ -391,7 +538,11 @@ function MessagesPage() {
                       <Input
                         id="group-name"
                         value={groupName}
-                        onChange={(event) => setGroupName(event.target.value)}
+                        onChange={(event) => {
+                          const nextGroupName = event.target.value;
+                          setGroupName(nextGroupName);
+                          updateComposeSearch({ composeGroup: nextGroupName || undefined });
+                        }}
                         placeholder="Optional group name"
                       />
                     </div>
@@ -573,7 +724,9 @@ function MessagesPage() {
                   to="/messages"
                   search={{
                     compose: true,
+                    composeGroup: undefined,
                     composeQuery: undefined,
+                    composeRecipients: [],
                     conversationId: undefined,
                     flash: undefined,
                     flashType: undefined,
@@ -585,8 +738,8 @@ function MessagesPage() {
               </Button>
             </div>
           )}
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        </div>
+      </div>
     </div>
   );
 }

@@ -28,7 +28,7 @@ function RouteUploadPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const [files, setFiles] = useState<
-    Array<{ file?: File; name: string; size?: number; type?: string }>
+    Array<{ file?: File; name: string; size?: number | null; type?: string | null }>
   >([]);
   const selectedFile = getSingleFileSelection(files);
   const form = useForm<RouteUploadFormValues>({

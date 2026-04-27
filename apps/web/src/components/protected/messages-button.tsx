@@ -20,7 +20,15 @@ export function MessagesButton() {
     >
       <Link
         to="/messages"
-        search={{ conversationId: undefined, flash: undefined, flashType: undefined }}
+        search={{
+          compose: false,
+          composeGroup: undefined,
+          composeQuery: undefined,
+          composeRecipients: [],
+          conversationId: undefined,
+          flash: undefined,
+          flashType: undefined,
+        }}
       >
         <MessageSquare className="h-5 w-5" />
         {unreadCount > 0 ? (

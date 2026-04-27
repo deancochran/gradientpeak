@@ -24,7 +24,6 @@ function RoutesLibraryPage() {
     },
   );
   const routes = routesQuery.data?.pages.flatMap((page) => page.items) ?? [];
-  const total = routesQuery.data?.pages[0]?.total ?? routes.length;
 
   return (
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
@@ -42,7 +41,10 @@ function RoutesLibraryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{total} routes available</CardTitle>
+          <CardTitle>
+            {routes.length}
+            {routesQuery.hasNextPage ? "+" : ""} routes loaded
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {routes.length === 0 ? (

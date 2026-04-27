@@ -8,12 +8,22 @@ type UploadFileFieldProps = {
   description: string;
   disabled?: boolean;
   error?: string;
-  files: Array<{ file?: File; name: string }>;
+  files: Array<{
+    file?: File;
+    name: string;
+    size?: number | null;
+    type?: string | null;
+  }>;
   helperText: string;
   id: string;
   label: string;
   onFilesChange: (
-    files: Array<{ file?: File; name: string; size?: number; type?: string }>,
+    files: Array<{
+      file?: File;
+      name: string;
+      size?: number | null;
+      type?: string | null;
+    }>,
   ) => void;
   onReset?: () => void;
   required?: boolean;

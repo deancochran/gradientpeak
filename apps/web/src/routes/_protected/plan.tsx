@@ -17,26 +17,29 @@ import {
 } from "@repo/ui/components/dialog";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
 import { createFileRoute } from "@tanstack/react-router";
 import { CalendarDays, Flag, Target } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
+import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
 import { formatShortDayLabel, getTodayDateKey, type PlanningEvent } from "../../lib/planning";
+import { createPlanGoalAction } from "../../lib/planning/server-actions";
 
 export const Route = createFileRoute("/_protected/plan")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    flash: typeof search.flash === "string" ? search.flash : undefined,
+    flashType:
+      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
+        ? (search.flashType as RouteFlashType)
+        : undefined,
+  }),
   component: PlanPage,
 });
 
 function PlanPage() {
-  const utils = api.useUtils();
+  const navigate = Route.useNavigate();
+  const { flash, flashType } = Route.useSearch();
   const [goalTitle, setGoalTitle] = useState("");
   const [goalDate, setGoalDate] = useState(getTodayDateKey());
   const [goalPriority, setGoalPriority] = useState("5");
@@ -75,40 +78,19 @@ function PlanPage() {
     return goals.sort((a, b) => a.target_date.localeCompare(b.target_date))[0] ?? null;
   }, [goalsQuery.data?.items]);
 
-  const createGoalMutation = api.goals.create.useMutation({
-    onSuccess: async () => {
-      await utils.goals.list.invalidate();
-      setGoalTitle("");
-      setGoalDate(getTodayDateKey());
-      setGoalPriority("5");
-      setGoalActivityCategory("run");
-      setGoalSessionsPerWeek("4");
-      setGoalWeeks("8");
-    },
-  });
-
-  const submitGoal = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!profileQuery.data?.id || !goalTitle.trim()) {
-      return;
-    }
-
-    createGoalMutation.mutate({
-      profile_id: profileQuery.data.id,
-      target_date: goalDate,
-      title: goalTitle.trim(),
-      priority: Number(goalPriority),
-      activity_category: goalActivityCategory as "run" | "bike" | "swim" | "other",
-      target_payload: {
-        type: "consistency",
-        target_sessions_per_week: Number(goalSessionsPerWeek),
-        target_weeks: Number(goalWeeks),
-      },
-    });
-  };
-
   return (
     <div className="space-y-6">
+      <RouteFlashToast
+        message={flash}
+        type={flashType}
+        clear={() =>
+          void navigate({
+            to: "/plan",
+            search: { flash: undefined, flashType: undefined },
+            replace: true,
+          })
+        }
+      />
       <div>
         <h1 className="flex items-center gap-2 text-3xl font-semibold tracking-tight">
           <Target className="h-6 w-6 text-muted-foreground" />
@@ -241,11 +223,14 @@ function PlanPage() {
                       This first slice creates consistency-style goals directly from the plan page.
                     </DialogDescription>
                   </DialogHeader>
-                  <form className="space-y-4" onSubmit={submitGoal}>
+                  <form action={createPlanGoalAction.url} method="post" className="space-y-4">
+                    <input type="hidden" name="profile_id" value={profileQuery.data?.id ?? ""} />
+                    <input type="hidden" name="redirectTo" value="/plan" />
                     <div className="space-y-2">
                       <Label htmlFor="goal-title">Title</Label>
                       <Input
                         id="goal-title"
+                        name="title"
                         value={goalTitle}
                         onChange={(event) => setGoalTitle(event.target.value)}
                       />
@@ -255,27 +240,26 @@ function PlanPage() {
                         <Label htmlFor="goal-date">Target date</Label>
                         <Input
                           id="goal-date"
+                          name="target_date"
                           type="date"
                           value={goalDate}
                           onChange={(event) => setGoalDate(event.target.value)}
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Activity</Label>
-                        <Select
+                        <Label htmlFor="goal-activity">Activity</Label>
+                        <select
+                          id="goal-activity"
+                          name="activity_category"
                           value={goalActivityCategory}
-                          onValueChange={setGoalActivityCategory}
+                          onChange={(event) => setGoalActivityCategory(event.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                         >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select activity" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="run">Run</SelectItem>
-                            <SelectItem value="bike">Bike</SelectItem>
-                            <SelectItem value="swim">Swim</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          <option value="run">Run</option>
+                          <option value="bike">Bike</option>
+                          <option value="swim">Swim</option>
+                          <option value="other">Other</option>
+                        </select>
                       </div>
                     </div>
                     <div className="grid gap-4 sm:grid-cols-3">
@@ -283,6 +267,7 @@ function PlanPage() {
                         <Label htmlFor="goal-priority">Priority</Label>
                         <Input
                           id="goal-priority"
+                          name="priority"
                           type="number"
                           min="0"
                           max="10"
@@ -294,6 +279,7 @@ function PlanPage() {
                         <Label htmlFor="goal-sessions">Sessions / week</Label>
                         <Input
                           id="goal-sessions"
+                          name="target_sessions_per_week"
                           type="number"
                           min="1"
                           value={goalSessionsPerWeek}
@@ -304,6 +290,7 @@ function PlanPage() {
                         <Label htmlFor="goal-weeks">Weeks</Label>
                         <Input
                           id="goal-weeks"
+                          name="target_weeks"
                           type="number"
                           min="1"
                           value={goalWeeks}
@@ -311,10 +298,7 @@ function PlanPage() {
                         />
                       </div>
                     </div>
-                    <Button
-                      type="submit"
-                      disabled={createGoalMutation.isPending || !profileQuery.data?.id}
-                    >
+                    <Button type="submit" disabled={!profileQuery.data?.id || !goalTitle.trim()}>
                       Create goal
                     </Button>
                   </form>

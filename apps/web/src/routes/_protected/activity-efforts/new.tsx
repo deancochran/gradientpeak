@@ -14,12 +14,15 @@ import { Input } from "@repo/ui/components/input";
 import { createFileRoute } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 import {
   type ActivityEffortFormValues,
   activityEffortFormSchema,
   activityTypeOptions,
 } from "../../../lib/activity-route-form-schemas";
 import { api } from "../../../lib/api/client";
+
+type ActivityEffortFormInput = z.input<typeof activityEffortFormSchema>;
 
 function toDateTimeLocalValue(value: Date) {
   const offsetDate = new Date(value.getTime() - value.getTimezoneOffset() * 60_000);
@@ -33,7 +36,7 @@ export const Route = createFileRoute("/_protected/activity-efforts/new")({
 function ActivityEffortCreatePage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const form = useForm<ActivityEffortFormValues>({
+  const form = useForm<ActivityEffortFormInput, undefined, ActivityEffortFormValues>({
     defaultValues: {
       activity_category: "run",
       duration_seconds: 60,

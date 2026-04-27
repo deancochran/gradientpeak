@@ -13,6 +13,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, ChevronLeft, ChevronRight, List } from "lucide-react";
 import { useMemo } from "react";
 
+import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
 import {
   compareEventsByStart,
@@ -31,6 +32,11 @@ import {
 
 export const Route = createFileRoute("/_protected/calendar/")({
   validateSearch: (search: Record<string, unknown>) => ({
+    flash: typeof search.flash === "string" ? search.flash : undefined,
+    flashType:
+      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
+        ? (search.flashType as RouteFlashType)
+        : undefined,
     month:
       typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
@@ -42,7 +48,7 @@ export const Route = createFileRoute("/_protected/calendar/")({
 
 function CalendarIndexPage() {
   const navigate = Route.useNavigate();
-  const { month, view } = Route.useSearch();
+  const { flash, flashType, month, view } = Route.useSearch();
   const { startKey, endKey } = useMemo(() => getMonthWindow(month), [month]);
   const todayKey = getTodayDateKey();
   const profileQuery = api.profiles.get.useQuery();
@@ -83,6 +89,17 @@ function CalendarIndexPage() {
 
   return (
     <div className="space-y-6">
+      <RouteFlashToast
+        message={flash}
+        type={flashType}
+        clear={() =>
+          void navigate({
+            to: "/calendar",
+            search: { flash: undefined, flashType: undefined, month, view },
+            replace: true,
+          })
+        }
+      />
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Calendar</h1>
@@ -97,7 +114,12 @@ function CalendarIndexPage() {
             onClick={() =>
               void navigate({
                 to: "/calendar",
-                search: { month: shiftMonthKey(month, -1), view },
+                search: {
+                  flash: undefined,
+                  flashType: undefined,
+                  month: shiftMonthKey(month, -1),
+                  view,
+                },
               })
             }
           >
@@ -110,7 +132,12 @@ function CalendarIndexPage() {
             onClick={() =>
               void navigate({
                 to: "/calendar",
-                search: { month: shiftMonthKey(month, 1), view },
+                search: {
+                  flash: undefined,
+                  flashType: undefined,
+                  month: shiftMonthKey(month, 1),
+                  view,
+                },
               })
             }
           >
@@ -145,7 +172,12 @@ function CalendarIndexPage() {
         onValueChange={(nextView) =>
           void navigate({
             to: "/calendar",
-            search: { month, view: nextView === "agenda" ? "agenda" : "month" },
+            search: {
+              flash: undefined,
+              flashType: undefined,
+              month,
+              view: nextView === "agenda" ? "agenda" : "month",
+            },
           })
         }
       >
@@ -236,7 +268,7 @@ function CalendarIndexPage() {
                       key={event.id}
                       to="/calendar/events/$eventId"
                       params={{ eventId: event.id }}
-                      search={{ month, view }}
+                      search={{ flash: undefined, flashType: undefined, month, view }}
                       className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

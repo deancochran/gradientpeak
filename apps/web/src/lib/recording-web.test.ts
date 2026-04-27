@@ -12,11 +12,17 @@ describe("validateRecordingSearch", () => {
   });
 
   it("keeps an explicit indoor gps override", () => {
-    expect(validateRecordingSearch({ category: "bike", gps: "off", routeId: "route-1" })).toEqual({
+    expect(
+      validateRecordingSearch({
+        category: "bike",
+        gps: "off",
+        routeId: "11111111-1111-4111-8111-111111111111",
+      }),
+    ).toEqual({
       category: "bike",
       gps: "off",
       eventId: undefined,
-      routeId: "route-1",
+      routeId: "11111111-1111-4111-8111-111111111111",
     });
   });
 });

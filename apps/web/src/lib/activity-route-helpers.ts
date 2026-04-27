@@ -261,7 +261,7 @@ export function buildElevationPolylinePoints(coordinates: RouteCoordinate[]) {
 
   return elevatedPoints
     .map((point, index) => {
-      const x = (cumulativeDistances[index] / distanceSpan) * 100;
+      const x = ((cumulativeDistances[index] ?? 0) / distanceSpan) * 100;
       const y = 100 - (((point.altitude as number) - minAltitude) / altitudeSpan) * 100;
       return `${x.toFixed(2)},${y.toFixed(2)}`;
     })

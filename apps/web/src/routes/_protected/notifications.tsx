@@ -217,6 +217,7 @@ function NotificationItem({
               <>
                 <form action={acceptFollowRequestAction.url} method="post">
                   <input type="hidden" name="follower_id" value={item.actorId} />
+                  <input type="hidden" name="notification_id" value={notification.id} />
                   <input type="hidden" name="redirectTo" value={redirectTo} />
                   <Button size="sm" type="submit">
                     Accept
@@ -224,6 +225,7 @@ function NotificationItem({
                 </form>
                 <form action={rejectFollowRequestAction.url} method="post">
                   <input type="hidden" name="follower_id" value={item.actorId} />
+                  <input type="hidden" name="notification_id" value={notification.id} />
                   <input type="hidden" name="redirectTo" value={redirectTo} />
                   <Button size="sm" variant="outline" type="submit">
                     Reject

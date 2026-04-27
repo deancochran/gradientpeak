@@ -13,6 +13,7 @@ const targetUserActionSchema = z.object({
 
 const followerActionSchema = z.object({
   follower_id: z.string().uuid(),
+  notification_id: z.string().uuid().optional(),
   redirectTo: z.string().optional(),
 });
 
@@ -102,6 +103,9 @@ export const acceptFollowRequestAction = createServerFn({ method: "POST" })
     try {
       const caller = await createServerActionCaller();
       await caller.social.acceptFollowRequest({ follower_id: data.follower_id });
+      if (data.notification_id) {
+        await caller.notifications.markRead({ notification_ids: [data.notification_id] });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to accept follow request";
 
@@ -135,6 +139,9 @@ export const rejectFollowRequestAction = createServerFn({ method: "POST" })
     try {
       const caller = await createServerActionCaller();
       await caller.social.rejectFollowRequest({ follower_id: data.follower_id });
+      if (data.notification_id) {
+        await caller.notifications.markRead({ notification_ids: [data.notification_id] });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to reject follow request";
 

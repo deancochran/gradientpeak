@@ -62,14 +62,19 @@ export function validateRecordingSearch(search: Record<string, unknown>): Record
   const category = normalizeRecordingActivityCategory(search.category, "run");
   const gps =
     search.gps === "on" || search.gps === "off" ? search.gps : defaultGpsModeForCategory(category);
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   return {
     category,
     gps,
     eventId:
-      typeof search.eventId === "string" && search.eventId.length > 0 ? search.eventId : undefined,
+      typeof search.eventId === "string" && uuidPattern.test(search.eventId)
+        ? search.eventId
+        : undefined,
     routeId:
-      typeof search.routeId === "string" && search.routeId.length > 0 ? search.routeId : undefined,
+      typeof search.routeId === "string" && uuidPattern.test(search.routeId)
+        ? search.routeId
+        : undefined,
   };
 }
 
@@ -100,6 +105,10 @@ export function formatDistance(meters: number | null | undefined) {
 export function formatScheduledTime(dateLike: string | Date | null | undefined) {
   if (!dateLike) {
     return "Any time";
+  }
+
+  if (typeof dateLike === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateLike)) {
+    return "Scheduled today";
   }
 
   const date = new Date(dateLike);

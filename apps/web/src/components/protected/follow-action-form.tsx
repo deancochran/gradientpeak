@@ -2,6 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { useServerFn } from "@tanstack/react-start";
 import { UserCheck, UserMinus, UserPlus } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { followUserAction, unfollowUserAction } from "../../lib/social/server-actions";
 
@@ -36,6 +37,8 @@ export function FollowActionForm({
       }
 
       await followUser({ data: { redirectTo, target_user_id: targetUserId } });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update follow state");
     } finally {
       setIsPendingSubmit(false);
     }

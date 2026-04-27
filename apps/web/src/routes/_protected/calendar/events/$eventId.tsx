@@ -21,6 +21,7 @@ import {
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
 
+import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
 import {
   formatDayLabel,
@@ -29,14 +30,19 @@ import {
   getEventTypeLabel,
   getMonthKey,
   getTodayDateKey,
+  isValidMonthKey,
 } from "../../../../lib/planning";
-
-const monthSearchPattern = /^\d{4}-\d{2}$/;
+import { deleteCalendarEventAction } from "../../../../lib/planning/server-actions";
 
 export const Route = createFileRoute("/_protected/calendar/events/$eventId")({
   validateSearch: (search: Record<string, unknown>) => ({
+    flash: typeof search.flash === "string" ? search.flash : undefined,
+    flashType:
+      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
+        ? (search.flashType as RouteFlashType)
+        : undefined,
     month:
-      typeof search.month === "string" && monthSearchPattern.test(search.month)
+      typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
         : getMonthKey(new Date()),
     view: search.view === "agenda" ? "agenda" : "month",
@@ -45,26 +51,15 @@ export const Route = createFileRoute("/_protected/calendar/events/$eventId")({
 });
 
 function EventDetailPage() {
-  const navigate = Route.useNavigate();
-  const utils = api.useUtils();
   const { eventId } = Route.useParams();
-  const { month, view } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const { flash, flashType, month, view } = Route.useSearch();
   const eventQuery = api.events.getById.useQuery({ id: eventId }, { enabled: Boolean(eventId) });
   const event = eventQuery.data;
   const trainingPlanQuery = api.trainingPlans.getById.useQuery(
     { id: event?.training_plan_id ?? "00000000-0000-0000-0000-000000000000" },
     { enabled: Boolean(event?.training_plan_id) },
   );
-  const deleteMutation = api.events.delete.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.events.invalidate(),
-        utils.trainingPlans.getActivePlan.invalidate(),
-      ]);
-      void navigate({ to: "/calendar", search: { month, view } });
-    },
-  });
-
   if (eventQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading event...</p>;
   }
@@ -77,6 +72,18 @@ function EventDetailPage() {
 
   return (
     <div className="space-y-6">
+      <RouteFlashToast
+        message={flash}
+        type={flashType}
+        clear={() =>
+          void navigate({
+            to: "/calendar/events/$eventId",
+            params: { eventId },
+            search: { flash: undefined, flashType: undefined, month, view },
+            replace: true,
+          })
+        }
+      />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button asChild variant="outline" size="sm">
@@ -100,7 +107,7 @@ function EventDetailPage() {
               <Link
                 to="/calendar/events/$eventId/edit"
                 params={{ eventId: event.id }}
-                search={{ month, view }}
+                search={{ flash: undefined, flashType: undefined, month, view }}
               >
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit event
@@ -124,11 +131,15 @@ function EventDetailPage() {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => deleteMutation.mutate({ id: event.id, scope: "single" })}
-                  >
-                    Delete event
-                  </AlertDialogAction>
+                  <form action={deleteCalendarEventAction.url} method="post">
+                    <input type="hidden" name="event_id" value={event.id} />
+                    <input
+                      type="hidden"
+                      name="redirectTo"
+                      value={`/calendar?month=${month}&view=${view}`}
+                    />
+                    <AlertDialogAction type="submit">Delete event</AlertDialogAction>
+                  </form>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>

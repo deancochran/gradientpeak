@@ -128,7 +128,9 @@ function SearchPage() {
               to="/messages"
               search={{
                 compose: true,
+                composeGroup: undefined,
                 composeQuery: query || undefined,
+                composeRecipients: [],
                 conversationId: undefined,
                 flash: undefined,
                 flashType: undefined,
@@ -186,7 +188,9 @@ function SearchPage() {
                       to="/messages"
                       search={{
                         compose: true,
+                        composeGroup: undefined,
                         composeQuery: user.username ?? undefined,
+                        composeRecipients: [],
                         conversationId: undefined,
                         flash: undefined,
                         flashType: undefined,

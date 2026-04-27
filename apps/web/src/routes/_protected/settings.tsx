@@ -34,11 +34,11 @@ import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 import { useAuth } from "../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
@@ -51,6 +51,8 @@ import {
   updateSettingsProfileAction,
   uploadProfileAvatarAction,
 } from "../../lib/profile/server-actions";
+
+type SettingsProfileFormInput = z.input<typeof settingsProfileFormSchema>;
 
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
@@ -69,9 +71,6 @@ export const Route = createFileRoute("/_protected/settings")({
 
 function SettingsPage() {
   const { user, isLoading: authLoading } = useAuth();
-  const signOut = useServerFn(signOutAction);
-  const updateProfile = useServerFn(updateSettingsProfileAction);
-  const uploadAvatar = useServerFn(uploadProfileAvatarAction);
   const navigate = Route.useNavigate();
   const { flash, flashType } = Route.useSearch();
   const {
@@ -84,15 +83,15 @@ function SettingsPage() {
 
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [avatarFiles, setAvatarFiles] = useState<Array<{ file?: File; name: string }>>([]);
-  const [signingOut, setSigningOut] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const profileSubmitValidatedRef = useRef(false);
   const loading = authLoading || profileLoading;
   const avatarFilePath =
     profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
 
   const normalizedProfile = useMemo(() => normalizeProfileSettingsView(profile), [profile]);
 
-  const form = useForm<SettingsProfileFormValues>({
+  const form = useForm<SettingsProfileFormInput, undefined, SettingsProfileFormValues>({
     resolver: zodResolver(settingsProfileFormSchema),
     defaultValues: {
       is_public: false,
@@ -121,47 +120,18 @@ function SettingsPage() {
     );
   }, [avatarFilePath, avatarUrlData?.signedUrl, profile?.avatar_url]);
 
-  const handleProfileSubmit = form.handleSubmit(async (values) => {
-    try {
-      await updateProfile({ data: values });
-      await refetchProfile();
-      form.reset(values);
-      toast.success("Profile updated successfully");
-    } catch (error) {
-      console.error("Error updating profile:", error);
-      toast.error("Failed to update profile");
+  const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    if (profileSubmitValidatedRef.current) {
+      profileSubmitValidatedRef.current = false;
+      return;
     }
-  });
 
-  const handleAvatarUpload = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const valid = await form.trigger();
 
-    const file = avatarFiles[0]?.file;
-    if (!file || !user) return;
-
-    try {
-      setUploadingAvatar(true);
-      await uploadAvatar({ data: new FormData(event.currentTarget as HTMLFormElement) });
-      await refetchProfile();
-      setAvatarFiles([]);
-      toast.success("Avatar updated successfully");
-    } catch (error) {
-      console.error("Error:", error);
-      toast.error("Failed to upload avatar");
-    } finally {
-      setUploadingAvatar(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    try {
-      await signOut();
-    } catch (error) {
-      console.error("Error signing out:", error);
-      toast.error("Failed to sign out");
-    } finally {
-      setSigningOut(false);
+    if (valid) {
+      profileSubmitValidatedRef.current = true;
+      event.currentTarget.requestSubmit();
     }
   };
 
@@ -210,7 +180,7 @@ function SettingsPage() {
           <CardContent className="space-y-6">
             <div className="flex items-center gap-6">
               <div className="group relative">
-                <Avatar className="h-20 w-20 cursor-pointer transition-all duration-200 group-hover:opacity-70">
+                <Avatar className="h-20 w-20 transition-all duration-200 group-hover:opacity-90">
                   <AvatarImage src={avatarBlobUrl || ""} alt="User" />
                   <AvatarFallback className="text-lg">
                     <UserRound className="h-8 w-8" />
@@ -228,7 +198,7 @@ function SettingsPage() {
                 <h3 className="font-medium">{profile?.username || "No name set"}</h3>
                 <p className="text-sm text-muted-foreground">{user?.email}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Click avatar to change picture (max 5MB)
+                  Use the upload field below to change your picture (max 5MB)
                 </p>
               </div>
             </div>
@@ -236,7 +206,6 @@ function SettingsPage() {
               action={uploadProfileAvatarAction.url}
               method="post"
               encType="multipart/form-data"
-              onSubmit={handleAvatarUpload}
               className="space-y-3"
             >
               <FileInput
@@ -260,7 +229,9 @@ function SettingsPage() {
               <form
                 action={updateSettingsProfileAction.url}
                 method="post"
-                onSubmit={handleProfileSubmit}
+                onSubmit={(event) => {
+                  void handleProfileSubmit(event);
+                }}
                 className="space-y-4"
               >
                 <FormField
@@ -291,7 +262,19 @@ function SettingsPage() {
                         </p>
                       </div>
                       <FormControl>
-                        <Switch checked={field.value ?? false} onCheckedChange={field.onChange} />
+                        <>
+                          <input
+                            type="hidden"
+                            name="is_public"
+                            value={
+                              field.value === true || field.value === "true" ? "true" : "false"
+                            }
+                          />
+                          <Switch
+                            checked={field.value === true || field.value === "true"}
+                            onCheckedChange={field.onChange}
+                          />
+                        </>
                       </FormControl>
                     </FormItem>
                   )}
@@ -378,14 +361,8 @@ function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-4 sm:flex-row">
-              <form
-                action={signOutAction.url}
-                method="post"
-                onSubmit={handleSignOut}
-                className="flex-1"
-              >
-                <Button variant="outline" type="submit" disabled={signingOut} className="w-full">
-                  {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              <form action={signOutAction.url} method="post" className="flex-1">
+                <Button variant="outline" type="submit" className="w-full">
                   Sign Out
                 </Button>
               </form>

@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
-import { activitySubmissionFormSchema } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -27,6 +26,7 @@ import { CheckCircle2, FileUp, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 import { api } from "../../../lib/api/client";
 import {
   buildManualHistoricalImportProvenance,
@@ -35,15 +35,19 @@ import {
   validateRecordingSearch,
 } from "../../../lib/recording-web";
 
-const importMetadataSchema = activitySubmissionFormSchema.pick({
-  name: true,
-  notes: true,
+const importMetadataSchema = z.object({
+  name: z.string().trim().min(1, "Enter an activity name."),
+  notes: z
+    .string()
+    .trim()
+    .max(5000)
+    .optional()
+    .nullable()
+    .transform((value) => value || null),
 });
 
-type ImportMetadataValues = {
-  name: string;
-  notes?: string | null;
-};
+type ImportMetadataValues = z.output<typeof importMetadataSchema>;
+type ImportMetadataInput = z.input<typeof importMetadataSchema>;
 
 export const Route = createFileRoute("/_protected/record/submit")({
   validateSearch: (search: Record<string, unknown>) => validateRecordingSearch(search),
@@ -67,7 +71,7 @@ function RecordSubmitPage() {
     fileName: string;
     name: string;
   } | null>(null);
-  const form = useForm<ImportMetadataValues>({
+  const form = useForm<ImportMetadataInput, undefined, ImportMetadataValues>({
     resolver: zodResolver(importMetadataSchema),
     defaultValues: {
       name: "",
@@ -77,7 +81,8 @@ function RecordSubmitPage() {
 
   useEffect(() => {
     const fileName = selectedFiles[0]?.name;
-    if (!fileName || form.getValues("name").trim().length > 0) {
+    const currentName = form.getValues("name");
+    if (!fileName || (typeof currentName === "string" && currentName.trim().length > 0)) {
       return;
     }
 

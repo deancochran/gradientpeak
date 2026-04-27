@@ -31,7 +31,7 @@ function ActivityImportPage() {
   const queryClient = useQueryClient();
   const utils = api.useUtils();
   const [files, setFiles] = useState<
-    Array<{ file?: File; name: string; size?: number; type?: string }>
+    Array<{ file?: File; name: string; size?: number | null; type?: string | null }>
   >([]);
   const selectedFile = getSingleFileSelection(files);
   const form = useForm<ActivityImportFormValues>({

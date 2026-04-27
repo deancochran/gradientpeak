@@ -8,6 +8,7 @@ export type PlanningEvent = {
   all_day?: boolean | null;
   status?: string | null;
   notes?: string | null;
+  timezone?: string | null;
   training_plan_id?: string | null;
   activity_plan?: {
     id: string;
@@ -37,7 +38,7 @@ export function isValidMonthKey(monthKey: string) {
     return false;
   }
 
-  const [year, month] = monthKey.split("-").map(Number);
+  const [year = Number.NaN, month = Number.NaN] = monthKey.split("-").map(Number);
   if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
     return false;
   }
@@ -46,8 +47,8 @@ export function isValidMonthKey(monthKey: string) {
 }
 
 export function parseMonthKey(monthKey: string) {
-  const [year, month] = monthKey.split("-").map(Number);
-  return new Date(year ?? 1970, (month ?? 1) - 1, 1, 12, 0, 0, 0);
+  const [year = 1970, month = 1] = monthKey.split("-").map(Number);
+  return new Date(year, month - 1, 1, 12, 0, 0, 0);
 }
 
 export function isValidDateKey(dateKey: string) {
@@ -55,7 +56,7 @@ export function isValidDateKey(dateKey: string) {
     return false;
   }
 
-  const [year, month, day] = dateKey.split("-").map(Number);
+  const [year = Number.NaN, month = Number.NaN, day = Number.NaN] = dateKey.split("-").map(Number);
   if (
     !Number.isInteger(year) ||
     !Number.isInteger(month) ||

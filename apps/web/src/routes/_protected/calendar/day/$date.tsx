@@ -67,7 +67,7 @@ function CalendarDayPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Button asChild variant="outline" size="sm">
-          <Link to="/calendar" search={{ month, view }}>
+          <Link to="/calendar" search={{ flash: undefined, flashType: undefined, month, view }}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to calendar
           </Link>
@@ -121,7 +121,7 @@ function CalendarDayPage() {
                   key={event.id}
                   to="/calendar/events/$eventId"
                   params={{ eventId: event.id }}
-                  search={{ month, view }}
+                  search={{ flash: undefined, flashType: undefined, month, view }}
                   className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
                 >
                   <div className="flex items-start justify-between gap-3">
