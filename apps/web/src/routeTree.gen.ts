@@ -23,6 +23,9 @@ import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-pas
 import { Route as AuthErrorRouteImport } from './routes/auth/error'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ProtectedActivityEffortsNewRouteImport } from './routes/_protected/activity-efforts/new'
+import { Route as ProtectedActivitiesImportRouteImport } from './routes/_protected/activities/import'
+import { Route as ProtectedRoutesUploadRouteImport } from './routes/_protected/routes/upload'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
 import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
@@ -31,9 +34,15 @@ import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/
 import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
 import { Route as ProtectedCoachingRouteImport } from './routes/_protected/coaching'
 import { Route as ProtectedCalendarRouteImport } from './routes/_protected/calendar'
+import { Route as ProtectedRoutesIndexRouteImport } from './routes/_protected/routes/index'
+import { Route as ProtectedActivitiesIndexRouteImport } from './routes/_protected/activities/index'
+import { Route as ProtectedActivityEffortsIndexRouteImport } from './routes/_protected/activity-efforts/index'
 import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/wahoo'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ProtectedRoutesRouteIdIndexRouteImport } from './routes/_protected/routes/$routeId/index'
+import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
+import { Route as ProtectedActivityEffortsEffortIdIndexRouteImport } from './routes/_protected/activity-efforts/$effortId/index'
 import { Route as ProtectedUserUserIdIndexRouteImport } from './routes/_protected/user/$userId/index'
 import { Route as ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRouteImport } from './routes/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
 import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
@@ -112,6 +121,21 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProtectedActivityEffortsNewRoute = ProtectedActivityEffortsNewRouteImport.update({
+  id: '/activity-efforts/new',
+  path: '/activity-efforts/new',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedActivitiesImportRoute = ProtectedActivitiesImportRouteImport.update({
+  id: '/activities/import',
+  path: '/activities/import',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedRoutesUploadRoute = ProtectedRoutesUploadRouteImport.update({
+  id: '/routes/upload',
+  path: '/routes/upload',
+  getParentRoute: () => ProtectedRoute,
+} as any)
 const ProtectedSettingsRoute = ProtectedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -152,6 +176,21 @@ const ProtectedCalendarRoute = ProtectedCalendarRouteImport.update({
   path: '/calendar',
   getParentRoute: () => ProtectedRoute,
 } as any)
+const ProtectedRoutesIndexRoute = ProtectedRoutesIndexRouteImport.update({
+  id: '/routes/',
+  path: '/routes',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedActivitiesIndexRoute = ProtectedActivitiesIndexRouteImport.update({
+  id: '/activities/',
+  path: '/activities',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedActivityEffortsIndexRoute = ProtectedActivityEffortsIndexRouteImport.update({
+  id: '/activity-efforts/',
+  path: '/activity-efforts',
+  getParentRoute: () => ProtectedRoute,
+} as any)
 const ApiWebhooksWahooRoute = ApiWebhooksWahooRouteImport.update({
   id: '/api/webhooks/wahoo',
   path: '/api/webhooks/wahoo',
@@ -167,6 +206,24 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProtectedRoutesRouteIdIndexRoute =
+  ProtectedRoutesRouteIdIndexRouteImport.update({
+    id: '/routes/$routeId/',
+    path: '/routes/$routeId',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedActivitiesActivityIdIndexRoute =
+  ProtectedActivitiesActivityIdIndexRouteImport.update({
+    id: '/activities/$activityId/',
+    path: '/activities/$activityId',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
+const ProtectedActivityEffortsEffortIdIndexRoute =
+  ProtectedActivityEffortsEffortIdIndexRouteImport.update({
+    id: '/activity-efforts/$effortId/',
+    path: '/activity-efforts/$effortId',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
 const ProtectedUserUserIdIndexRoute =
   ProtectedUserUserIdIndexRouteImport.update({
     id: '/user/$userId/',
@@ -219,12 +276,21 @@ const ApiInternalProviderSyncWahooDrainRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ProtectedIndexRoute
   '/about': typeof AboutRoute
+  '/activities/$activityId/': typeof ProtectedActivitiesActivityIdIndexRoute
+  '/activities/': typeof ProtectedActivitiesIndexRoute
+  '/activities/import': typeof ProtectedActivitiesImportRoute
+  '/activity-efforts/$effortId/': typeof ProtectedActivityEffortsEffortIdIndexRoute
+  '/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
+  '/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/calendar': typeof ProtectedCalendarRoute
   '/coaching': typeof ProtectedCoachingRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
   '/plan': typeof ProtectedPlanRoute
   '/record': typeof ProtectedRecordRoute
+  '/routes/$routeId/': typeof ProtectedRoutesRouteIdIndexRoute
+  '/routes/': typeof ProtectedRoutesIndexRoute
+  '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
@@ -252,12 +318,21 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
+  '/activities': typeof ProtectedActivitiesIndexRoute
+  '/activities/$activityId': typeof ProtectedActivitiesActivityIdIndexRoute
+  '/activities/import': typeof ProtectedActivitiesImportRoute
+  '/activity-efforts': typeof ProtectedActivityEffortsIndexRoute
+  '/activity-efforts/$effortId': typeof ProtectedActivityEffortsEffortIdIndexRoute
+  '/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/calendar': typeof ProtectedCalendarRoute
   '/coaching': typeof ProtectedCoachingRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
   '/plan': typeof ProtectedPlanRoute
   '/record': typeof ProtectedRecordRoute
+  '/routes': typeof ProtectedRoutesIndexRoute
+  '/routes/$routeId': typeof ProtectedRoutesRouteIdIndexRoute
+  '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
@@ -288,12 +363,21 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_protected': typeof ProtectedRouteWithChildren
   '/about': typeof AboutRoute
+  '/_protected/activities/$activityId/': typeof ProtectedActivitiesActivityIdIndexRoute
+  '/_protected/activities/': typeof ProtectedActivitiesIndexRoute
+  '/_protected/activities/import': typeof ProtectedActivitiesImportRoute
+  '/_protected/activity-efforts/$effortId/': typeof ProtectedActivityEffortsEffortIdIndexRoute
+  '/_protected/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
+  '/_protected/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/_protected/calendar': typeof ProtectedCalendarRoute
   '/_protected/coaching': typeof ProtectedCoachingRoute
   '/_protected/messages': typeof ProtectedMessagesRoute
   '/_protected/notifications': typeof ProtectedNotificationsRoute
   '/_protected/plan': typeof ProtectedPlanRoute
   '/_protected/record': typeof ProtectedRecordRoute
+  '/_protected/routes/$routeId/': typeof ProtectedRoutesRouteIdIndexRoute
+  '/_protected/routes/': typeof ProtectedRoutesIndexRoute
+  '/_protected/routes/upload': typeof ProtectedRoutesUploadRoute
   '/_protected/search': typeof ProtectedSearchRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
@@ -325,12 +409,21 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/activities/$activityId/'
+    | '/activities/'
+    | '/activities/import'
+    | '/activity-efforts/$effortId/'
+    | '/activity-efforts/'
+    | '/activity-efforts/new'
     | '/calendar'
     | '/coaching'
     | '/messages'
     | '/notifications'
     | '/plan'
     | '/record'
+    | '/routes/$routeId/'
+    | '/routes/'
+    | '/routes/upload'
     | '/search'
     | '/settings'
     | '/api/health'
@@ -358,12 +451,21 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/about'
+    | '/activities'
+    | '/activities/$activityId'
+    | '/activities/import'
+    | '/activity-efforts'
+    | '/activity-efforts/$effortId'
+    | '/activity-efforts/new'
     | '/calendar'
     | '/coaching'
     | '/messages'
     | '/notifications'
     | '/plan'
     | '/record'
+    | '/routes'
+    | '/routes/$routeId'
+    | '/routes/upload'
     | '/search'
     | '/settings'
     | '/api/health'
@@ -393,12 +495,21 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_protected'
     | '/about'
+    | '/_protected/activities/$activityId/'
+    | '/_protected/activities/'
+    | '/_protected/activities/import'
+    | '/_protected/activity-efforts/$effortId/'
+    | '/_protected/activity-efforts/'
+    | '/_protected/activity-efforts/new'
     | '/_protected/calendar'
     | '/_protected/coaching'
     | '/_protected/messages'
     | '/_protected/notifications'
     | '/_protected/plan'
     | '/_protected/record'
+    | '/_protected/routes/$routeId/'
+    | '/_protected/routes/'
+    | '/_protected/routes/upload'
     | '/_protected/search'
     | '/_protected/settings'
     | '/api/health'
@@ -471,6 +582,27 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof ProtectedIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/activity-efforts/new': {
+      id: '/_protected/activity-efforts/new'
+      path: '/activity-efforts/new'
+      fullPath: '/activity-efforts/new'
+      preLoaderRoute: typeof ProtectedActivityEffortsNewRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/activities/import': {
+      id: '/_protected/activities/import'
+      path: '/activities/import'
+      fullPath: '/activities/import'
+      preLoaderRoute: typeof ProtectedActivitiesImportRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/routes/upload': {
+      id: '/_protected/routes/upload'
+      path: '/routes/upload'
+      fullPath: '/routes/upload'
+      preLoaderRoute: typeof ProtectedRoutesUploadRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/auth/update-password': {
@@ -606,6 +738,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedCalendarRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/_protected/routes/': {
+      id: '/_protected/routes/'
+      path: '/routes'
+      fullPath: '/routes/'
+      preLoaderRoute: typeof ProtectedRoutesIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/activities/': {
+      id: '/_protected/activities/'
+      path: '/activities'
+      fullPath: '/activities/'
+      preLoaderRoute: typeof ProtectedActivitiesIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/activity-efforts/': {
+      id: '/_protected/activity-efforts/'
+      path: '/activity-efforts'
+      fullPath: '/activity-efforts/'
+      preLoaderRoute: typeof ProtectedActivityEffortsIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
     '/api/webhooks/wahoo': {
       id: '/api/webhooks/wahoo'
       path: '/api/webhooks/wahoo'
@@ -626,6 +779,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_protected/routes/$routeId/': {
+      id: '/_protected/routes/$routeId/'
+      path: '/routes/$routeId'
+      fullPath: '/routes/$routeId/'
+      preLoaderRoute: typeof ProtectedRoutesRouteIdIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/activities/$activityId/': {
+      id: '/_protected/activities/$activityId/'
+      path: '/activities/$activityId'
+      fullPath: '/activities/$activityId/'
+      preLoaderRoute: typeof ProtectedActivitiesActivityIdIndexRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/activity-efforts/$effortId/': {
+      id: '/_protected/activity-efforts/$effortId/'
+      path: '/activity-efforts/$effortId'
+      fullPath: '/activity-efforts/$effortId/'
+      preLoaderRoute: typeof ProtectedActivityEffortsEffortIdIndexRouteImport
+      parentRoute: typeof ProtectedRoute
     }
     '/_protected/user/$userId/': {
       id: '/_protected/user/$userId/'
@@ -687,12 +861,21 @@ declare module '@tanstack/react-router' {
 }
 
 interface ProtectedRouteChildren {
+  ProtectedActivityEffortsNewRoute: typeof ProtectedActivityEffortsNewRoute
+  ProtectedActivitiesImportRoute: typeof ProtectedActivitiesImportRoute
+  ProtectedRoutesUploadRoute: typeof ProtectedRoutesUploadRoute
+  ProtectedRoutesIndexRoute: typeof ProtectedRoutesIndexRoute
+  ProtectedActivitiesIndexRoute: typeof ProtectedActivitiesIndexRoute
+  ProtectedActivityEffortsIndexRoute: typeof ProtectedActivityEffortsIndexRoute
   ProtectedCalendarRoute: typeof ProtectedCalendarRoute
   ProtectedCoachingRoute: typeof ProtectedCoachingRoute
   ProtectedMessagesRoute: typeof ProtectedMessagesRoute
   ProtectedNotificationsRoute: typeof ProtectedNotificationsRoute
   ProtectedPlanRoute: typeof ProtectedPlanRoute
   ProtectedRecordRoute: typeof ProtectedRecordRoute
+  ProtectedRoutesRouteIdIndexRoute: typeof ProtectedRoutesRouteIdIndexRoute
+  ProtectedActivitiesActivityIdIndexRoute: typeof ProtectedActivitiesActivityIdIndexRoute
+  ProtectedActivityEffortsEffortIdIndexRoute: typeof ProtectedActivityEffortsEffortIdIndexRoute
   ProtectedSearchRoute: typeof ProtectedSearchRoute
   ProtectedSettingsRoute: typeof ProtectedSettingsRoute
   ProtectedIndexRoute: typeof ProtectedIndexRoute
@@ -702,12 +885,21 @@ interface ProtectedRouteChildren {
 }
 
 const ProtectedRouteChildren: ProtectedRouteChildren = {
+  ProtectedActivityEffortsNewRoute: ProtectedActivityEffortsNewRoute,
+  ProtectedActivitiesImportRoute: ProtectedActivitiesImportRoute,
+  ProtectedRoutesUploadRoute: ProtectedRoutesUploadRoute,
+  ProtectedRoutesIndexRoute: ProtectedRoutesIndexRoute,
+  ProtectedActivitiesIndexRoute: ProtectedActivitiesIndexRoute,
+  ProtectedActivityEffortsIndexRoute: ProtectedActivityEffortsIndexRoute,
   ProtectedCalendarRoute: ProtectedCalendarRoute,
   ProtectedCoachingRoute: ProtectedCoachingRoute,
   ProtectedMessagesRoute: ProtectedMessagesRoute,
   ProtectedNotificationsRoute: ProtectedNotificationsRoute,
   ProtectedPlanRoute: ProtectedPlanRoute,
   ProtectedRecordRoute: ProtectedRecordRoute,
+  ProtectedRoutesRouteIdIndexRoute: ProtectedRoutesRouteIdIndexRoute,
+  ProtectedActivitiesActivityIdIndexRoute: ProtectedActivitiesActivityIdIndexRoute,
+  ProtectedActivityEffortsEffortIdIndexRoute: ProtectedActivityEffortsEffortIdIndexRoute,
   ProtectedSearchRoute: ProtectedSearchRoute,
   ProtectedSettingsRoute: ProtectedSettingsRoute,
   ProtectedIndexRoute: ProtectedIndexRoute,

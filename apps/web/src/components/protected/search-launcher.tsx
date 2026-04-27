@@ -10,9 +10,11 @@ import {
 import { cn } from "@repo/ui/lib/cn";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  Activity,
   Calendar,
   Circle,
   Home,
+  Map,
   MessageSquare,
   Search,
   Settings,
@@ -30,11 +32,24 @@ type SearchDestination = {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   search?: Record<string, string | undefined>;
-  to: "/" | "/calendar" | "/coaching" | "/messages" | "/plan" | "/record" | "/settings";
+  to:
+    | "/"
+    | "/activities"
+    | "/activity-efforts"
+    | "/calendar"
+    | "/coaching"
+    | "/messages"
+    | "/plan"
+    | "/record"
+    | "/routes"
+    | "/settings";
 };
 
 const SEARCH_DESTINATIONS: SearchDestination[] = [
   { icon: Home, label: "Home", to: "/" },
+  { icon: Activity, label: "Activities", to: "/activities" },
+  { icon: Activity, label: "Activity Efforts", to: "/activity-efforts" },
+  { icon: Map, label: "Routes", to: "/routes" },
   { icon: Circle, label: "Record", to: "/record" },
   { icon: Target, label: "Plan", to: "/plan" },
   { icon: Calendar, label: "Calendar", to: "/calendar" },
