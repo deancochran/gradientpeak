@@ -72,7 +72,7 @@ function NotificationsPage() {
       <div className="flex items-center justify-between space-y-2">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Notifications</h2>
-          <p className="text-muted-foreground">Manage your notifications and alerts.</p>
+          <p className="text-muted-foreground">Open, review, and clear the latest activity.</p>
         </div>
         <form action={markNotificationsReadAction.url} method="post">
           <input type="hidden" name="redirectTo" value="/notifications" />
@@ -138,6 +138,28 @@ function NotificationsPage() {
   );
 }
 
+function getNotificationTargetHref(
+  notification: NonNullable<ReturnType<typeof normalizeNotificationListItem>>,
+) {
+  const item = getNotificationViewModel(notification);
+
+  switch (item.type) {
+    case "new_message":
+      return typeof notification.entity_id === "string"
+        ? `/messages?conversationId=${notification.entity_id}`
+        : "/messages";
+    case "new_follower":
+    case "follow_request":
+      return item.actorId ? `/user/${item.actorId}` : "/notifications";
+    case "coaching_invitation":
+    case "coaching_invitation_accepted":
+    case "coaching_invitation_declined":
+      return item.actorId ? `/user/${item.actorId}` : "/coaching";
+    default:
+      return "/notifications";
+  }
+}
+
 function NotificationItem({
   notification,
   redirectTo,
@@ -146,10 +168,11 @@ function NotificationItem({
   redirectTo: string;
 }) {
   const item = getNotificationViewModel(notification);
+  const targetHref = getNotificationTargetHref(notification);
 
   let Icon = Bell;
   let title = "Notification";
-  let description = "Tap to view details.";
+  let description = "Open to view details.";
   if (item.type === "new_message") {
     Icon = Mail;
     title = item.title;
@@ -157,7 +180,9 @@ function NotificationItem({
   } else if (
     item.type === "coaching_invitation" ||
     item.type === "new_follower" ||
-    item.type === "follow_request"
+    item.type === "follow_request" ||
+    item.type === "coaching_invitation_accepted" ||
+    item.type === "coaching_invitation_declined"
   ) {
     Icon = UserPlus;
     title = item.title;
@@ -172,9 +197,23 @@ function NotificationItem({
       <div className="flex-1">
         <p className={cn("font-medium", item.isUnread && "font-bold")}>{title}</p>
         <p className="text-sm text-muted-foreground">{description}</p>
-        {item.requiresFollowRequestAction ? (
-          <div className="mt-2 flex gap-2">
-            {item.actorId ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {item.isUnread ? (
+            <form action={markNotificationsReadAction.url} method="post">
+              <input type="hidden" name="notification_ids" value={notification.id} />
+              <input type="hidden" name="redirectTo" value={targetHref} />
+              <input type="hidden" name="successMessage" value="Notification marked as read" />
+              <Button size="sm" type="submit">
+                Open
+              </Button>
+            </form>
+          ) : (
+            <Button asChild size="sm" variant="outline">
+              <a href={targetHref}>Open</a>
+            </Button>
+          )}
+          {item.requiresFollowRequestAction ? (
+            item.actorId ? (
               <>
                 <form action={acceptFollowRequestAction.url} method="post">
                   <input type="hidden" name="follower_id" value={item.actorId} />
@@ -191,10 +230,10 @@ function NotificationItem({
                   </Button>
                 </form>
               </>
-            ) : null}
-          </div>
-        ) : null}
-        <p className="mt-1 text-xs text-muted-foreground">
+            ) : null
+          ) : null}
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
           {item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}
         </p>
       </div>

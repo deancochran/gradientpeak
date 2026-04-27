@@ -165,15 +165,24 @@ export const rejectFollowRequestAction = createServerFn({ method: "POST" })
 export const startDirectMessageAction = createServerFn({ method: "POST" })
   .inputValidator((data) => normalizeTargetUserInput(data))
   .handler(async ({ data }) => {
+    let conversationId: string | null = null;
+
     try {
       const caller = await createServerActionCaller();
-      await caller.messaging.getOrCreateDM({ target_user_id: data.target_user_id });
+      const conversation = await caller.messaging.getOrCreateDM({
+        target_user_id: data.target_user_id,
+      });
+      conversationId = conversation.id;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to start conversation";
 
       if (data._native) {
         throw redirect({
-          href: buildFlashHref("/messages", message, "error"),
+          href: buildFlashHref(
+            getSafeAppRedirectTarget(data.redirectTo, "/messages"),
+            message,
+            "error",
+          ),
           statusCode: 303,
         });
       }
@@ -182,7 +191,11 @@ export const startDirectMessageAction = createServerFn({ method: "POST" })
     }
 
     throw redirect({
-      href: buildFlashHref("/messages", "Conversation ready", "success"),
+      href: buildFlashHref(
+        conversationId ? `/messages?conversationId=${conversationId}` : "/messages",
+        "Conversation ready",
+        "success",
+      ),
       statusCode: 303,
     });
   });
