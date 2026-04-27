@@ -13,6 +13,8 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as ProtectedRouteImport } from './routes/_protected'
 import { Route as ProtectedIndexRouteImport } from './routes/_protected/index'
 import { Route as AuthUpdatePasswordRouteImport } from './routes/auth/update-password'
+import { Route as AuthVerificationSuccessRouteImport } from './routes/auth/verification-success'
+import { Route as AuthVerifyRouteImport } from './routes/auth/verify'
 import { Route as AuthSignUpSuccessRouteImport } from './routes/auth/sign-up-success'
 import { Route as AuthSignUpRouteImport } from './routes/auth/sign-up'
 import { Route as AuthOpenRouteImport } from './routes/auth/open'
@@ -58,6 +60,16 @@ const ProtectedIndexRoute = ProtectedIndexRouteImport.update({
 const AuthUpdatePasswordRoute = AuthUpdatePasswordRouteImport.update({
   id: '/auth/update-password',
   path: '/auth/update-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthVerificationSuccessRoute = AuthVerificationSuccessRouteImport.update({
+  id: '/auth/verification-success',
+  path: '/auth/verification-success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthVerifyRoute = AuthVerifyRouteImport.update({
+  id: '/auth/verify',
+  path: '/auth/verify',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthSignUpSuccessRoute = AuthSignUpSuccessRouteImport.update({
@@ -224,6 +236,8 @@ export interface FileRoutesByFullPath {
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/sign-up-success': typeof AuthSignUpSuccessRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
+  '/auth/verification-success': typeof AuthVerificationSuccessRoute
+  '/auth/verify': typeof AuthVerifyRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
@@ -255,6 +269,8 @@ export interface FileRoutesByTo {
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/sign-up-success': typeof AuthSignUpSuccessRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
+  '/auth/verification-success': typeof AuthVerificationSuccessRoute
+  '/auth/verify': typeof AuthVerifyRoute
   '/': typeof ProtectedIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -289,6 +305,8 @@ export interface FileRoutesById {
   '/auth/sign-up': typeof AuthSignUpRoute
   '/auth/sign-up-success': typeof AuthSignUpSuccessRoute
   '/auth/update-password': typeof AuthUpdatePasswordRoute
+  '/auth/verification-success': typeof AuthVerificationSuccessRoute
+  '/auth/verify': typeof AuthVerifyRoute
   '/_protected/': typeof ProtectedIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
@@ -324,6 +342,8 @@ export interface FileRouteTypes {
     | '/auth/sign-up'
     | '/auth/sign-up-success'
     | '/auth/update-password'
+    | '/auth/verification-success'
+    | '/auth/verify'
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/api/webhooks/wahoo'
@@ -355,6 +375,8 @@ export interface FileRouteTypes {
     | '/auth/sign-up'
     | '/auth/sign-up-success'
     | '/auth/update-password'
+    | '/auth/verification-success'
+    | '/auth/verify'
     | '/'
     | '/api/auth/$'
     | '/api/trpc/$'
@@ -388,6 +410,8 @@ export interface FileRouteTypes {
     | '/auth/sign-up'
     | '/auth/sign-up-success'
     | '/auth/update-password'
+    | '/auth/verification-success'
+    | '/auth/verify'
     | '/_protected/'
     | '/api/auth/$'
     | '/api/trpc/$'
@@ -414,6 +438,8 @@ export interface RootRouteChildren {
   AuthSignUpRoute: typeof AuthSignUpRoute
   AuthSignUpSuccessRoute: typeof AuthSignUpSuccessRoute
   AuthUpdatePasswordRoute: typeof AuthUpdatePasswordRoute
+  AuthVerificationSuccessRoute: typeof AuthVerificationSuccessRoute
+  AuthVerifyRoute: typeof AuthVerifyRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   ApiWebhooksWahooRoute: typeof ApiWebhooksWahooRoute
@@ -452,6 +478,20 @@ declare module '@tanstack/react-router' {
       path: '/auth/update-password'
       fullPath: '/auth/update-password'
       preLoaderRoute: typeof AuthUpdatePasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/verification-success': {
+      id: '/auth/verification-success'
+      path: '/auth/verification-success'
+      fullPath: '/auth/verification-success'
+      preLoaderRoute: typeof AuthVerificationSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/verify': {
+      id: '/auth/verify'
+      path: '/auth/verify'
+      fullPath: '/auth/verify'
+      preLoaderRoute: typeof AuthVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/sign-up-success': {
@@ -692,6 +732,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthSignUpRoute: AuthSignUpRoute,
   AuthSignUpSuccessRoute: AuthSignUpSuccessRoute,
   AuthUpdatePasswordRoute: AuthUpdatePasswordRoute,
+  AuthVerificationSuccessRoute: AuthVerificationSuccessRoute,
+  AuthVerifyRoute: AuthVerifyRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   ApiWebhooksWahooRoute: ApiWebhooksWahooRoute,

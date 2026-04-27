@@ -82,17 +82,6 @@ function SettingsPage() {
     enabled: Boolean(user),
   });
 
-  const updateProfileMutation = api.profiles.update.useMutation({
-    onSuccess: async () => {
-      await refetchProfile();
-      toast.success("Profile updated successfully");
-    },
-    onError: (error) => {
-      console.error("Error updating profile:", error);
-      toast.error("Failed to update profile");
-    },
-  });
-
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [avatarFiles, setAvatarFiles] = useState<Array<{ file?: File; name: string }>>([]);
   const [signingOut, setSigningOut] = useState(false);
@@ -133,8 +122,15 @@ function SettingsPage() {
   }, [avatarFilePath, avatarUrlData?.signedUrl, profile?.avatar_url]);
 
   const handleProfileSubmit = form.handleSubmit(async (values) => {
-    await updateProfile({ data: values });
-    form.reset(values);
+    try {
+      await updateProfile({ data: values });
+      await refetchProfile();
+      form.reset(values);
+      toast.success("Profile updated successfully");
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast.error("Failed to update profile");
+    }
   });
 
   const handleAvatarUpload = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -146,6 +142,9 @@ function SettingsPage() {
     try {
       setUploadingAvatar(true);
       await uploadAvatar({ data: new FormData(event.currentTarget as HTMLFormElement) });
+      await refetchProfile();
+      setAvatarFiles([]);
+      toast.success("Avatar updated successfully");
     } catch (error) {
       console.error("Error:", error);
       toast.error("Failed to upload avatar");
@@ -299,19 +298,45 @@ function SettingsPage() {
                 />
                 <Button
                   type="submit"
-                  disabled={
-                    updateProfileMutation.isPending ||
-                    form.formState.isSubmitting ||
-                    !form.formState.isDirty
-                  }
+                  disabled={form.formState.isSubmitting || !form.formState.isDirty}
                 >
-                  {updateProfileMutation.isPending || form.formState.isSubmitting ? (
+                  {form.formState.isSubmitting ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : null}
                   Update Profile
                 </Button>
               </form>
             </Form>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Account Surfaces</CardTitle>
+            <CardDescription>
+              Progressive account flows are being split into dedicated web surfaces. Until those
+              pages land, use this hub as the stable entry point.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-lg border p-4">
+              <h3 className="font-medium">Profile Edit</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Username, avatar, and account visibility are already editable above.
+              </p>
+            </div>
+            <div className="rounded-lg border p-4">
+              <h3 className="font-medium">Training Preferences</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Dedicated planning preferences are queued for the next account pass.
+              </p>
+            </div>
+            <div className="rounded-lg border p-4">
+              <h3 className="font-medium">Integrations And Metrics</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Provider management and profile metrics will live alongside settings instead of
+                hiding behind the avatar menu.
+              </p>
+            </div>
           </CardContent>
         </Card>
         <Card>
