@@ -19,8 +19,10 @@ describe("calendar event presentation", () => {
       starts_at: "2026-03-23T06:30:00.000Z",
       activity_plan: {
         activity_category: "outdoor_run",
-        estimated_duration: 3600,
-        estimated_tss: 72,
+        authoritative_metrics: {
+          estimated_duration: 3600,
+          estimated_tss: 72,
+        },
         description: "Progressive tempo with a strong finish.",
       },
     };
@@ -39,7 +41,9 @@ describe("calendar event presentation", () => {
       recurrence_rule: "RRULE:FREQ=WEEKLY",
       activity_plan: {
         activity_category: "indoor_bike",
-        estimated_tss: 88,
+        authoritative_metrics: {
+          estimated_tss: 88,
+        },
       },
     };
 

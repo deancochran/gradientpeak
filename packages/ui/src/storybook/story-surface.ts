@@ -96,6 +96,7 @@ export const NATIVE_STORY_COMPONENTS = [
   "tabs",
   "text",
   "textarea",
+  "time-input",
   "toggle",
   "toggle-group",
   "tooltip",
