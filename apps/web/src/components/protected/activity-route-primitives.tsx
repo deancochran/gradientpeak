@@ -240,7 +240,6 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: an
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-semibold text-foreground">{route.name}</h3>
-              <Badge variant="secondary">{getActivityBadgeLabel(route.activity_category)}</Badge>
             </div>
             <p className="text-sm text-muted-foreground">Saved {formatDate(route.created_at)}</p>
             {route.description ? (

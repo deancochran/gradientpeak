@@ -14,6 +14,8 @@ const requestPermissionMock = jest.fn(async () => true);
 const service = {
   currentRoute: null,
   plan: null,
+  attachRoute: jest.fn(async () => undefined),
+  prepareRouteAttachment: jest.fn(),
   selectActivityFromPayload: jest.fn(),
   updateMetrics: jest.fn(),
   refreshAndCheckAllPermissions: jest.fn(async () => true),
@@ -49,9 +51,9 @@ jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-jest.mock("@/components/ActivitySelectionModal", () => ({
+jest.mock("@/components/recording/RecordingActivityQuickEdit", () => ({
   __esModule: true,
-  ActivitySelectionModal: createHost("ActivitySelectionModal"),
+  RecordingActivityQuickEdit: createHost("RecordingActivityQuickEdit"),
 }));
 
 jest.mock("@/components/ErrorBoundary", () => ({
@@ -60,9 +62,9 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
-jest.mock("@/components/recording/footer", () => ({
+jest.mock("@/components/recording/cockpit", () => ({
   __esModule: true,
-  RecordingFooter: ({ onStart, onPause, onResume, onLap, onFinish }: any) =>
+  RecordingLiveCockpit: ({ onStart, onPause, onResume, onLap, onFinish }: any) =>
     React.createElement(
       "View",
       null,
@@ -90,16 +92,9 @@ jest.mock("@/components/recording/footer", () => ({
     ),
 }));
 
-jest.mock("@/components/recording/zones", () => ({
-  __esModule: true,
-  RecordingZones: createHost("RecordingZones"),
-  ZoneFocusOverlay: createHost("ZoneFocusOverlay"),
-}));
-
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
   useActivityStatus: () => ({ gpsRecordingEnabled: false, activityCategory: "bike" }),
-  useIntensityScale: () => "power",
   usePlan: () => ({ hasPlan: true }),
   useRecorderActions: () => ({
     start: startMock,
@@ -118,7 +113,27 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 
 jest.mock("@/lib/hooks/useRecordingConfig", () => ({
   __esModule: true,
-  useRecordingCapabilities: () => ({ canUseTrainerControl: true }),
+  useRecordingSessionContract: () => ({
+    guidance: { hasPlan: true, hasRoute: false, routeMode: "none" },
+    devices: { hasTrainer: false, trainerControllable: false },
+    editing: { canEditActivity: false, canEditGps: true, canEditPlan: true, canEditRoute: true },
+    ui: {
+      backdropMode: "ambient",
+      floatingPanel: {
+        defaultCard: "workout_interval",
+        availableCards: ["workout_interval", "metrics"],
+        forcedExpanded: true,
+        canMinimize: false,
+      },
+      controls: { quickActions: ["plan", "sensors"] },
+    },
+    surfaces: {
+      defaultPrimarySurface: "workout",
+      availablePrimarySurfaces: ["workout", "metrics"],
+      quickActions: ["plan", "sensors"],
+    },
+    validation: { consequences: [] },
+  }),
 }));
 
 jest.mock("@/lib/hooks/useStandalonePermissions", () => ({
@@ -139,6 +154,11 @@ jest.mock("@/lib/services/permissions-check", () => ({
 jest.mock("@/lib/stores/activitySelectionStore", () => ({
   __esModule: true,
   activitySelectionStore: activitySelectionStoreMock,
+  defaultRecordLaunchPayload: jest.fn(() => ({
+    launchSource: "record_tab",
+    category: "run",
+    gpsRecordingEnabled: true,
+  })),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -184,6 +204,7 @@ const RecordScreen = require("../index").default;
 describe("record screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    service.attachRoute.mockResolvedValue(undefined);
     service.refreshAndCheckAllPermissions.mockResolvedValue(true);
     service.validatePlanRequirements.mockReturnValue({ isValid: true, warnings: [] });
     activitySelectionStoreMock.peekSelection.mockReturnValue({
@@ -203,6 +224,30 @@ describe("record screen", () => {
       );
     });
     expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
+  });
+
+  it("initializes explicit route launches without waiting for route geometry", async () => {
+    activitySelectionStoreMock.peekSelection.mockReturnValue({
+      launchSource: "route",
+      category: "bike",
+      gpsRecordingEnabled: false,
+      routeId: "route-1",
+    } as any);
+
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(service.selectActivityFromPayload).toHaveBeenCalledWith(
+        expect.objectContaining({ category: "bike", routeId: "route-1" }),
+      );
+      expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
+      expect(service.prepareRouteAttachment).toHaveBeenCalledWith("route-1");
+      expect(screen.getByText("Start")).toBeTruthy();
+    });
+
+    expect(service.attachRoute).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalledWith("Route Not Attached", expect.any(String));
+    expect(backMock).not.toHaveBeenCalled();
   });
 
   it("requests missing permissions before starting the recorder", async () => {

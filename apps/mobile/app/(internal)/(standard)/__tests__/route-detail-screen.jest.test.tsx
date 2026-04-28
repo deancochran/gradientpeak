@@ -5,7 +5,6 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 const routeData = {
   id: "11111111-1111-4111-8111-111111111111",
   name: "River Loop",
-  activity_category: "run",
   total_distance: 10200,
   total_ascent: 180,
   total_descent: 175,

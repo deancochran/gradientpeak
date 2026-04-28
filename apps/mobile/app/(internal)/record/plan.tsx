@@ -1,14 +1,14 @@
 /**
  * Activity Plan Picker Page
  *
- * Full-screen page for selecting or detaching an activity plan before start.
- * Accessed via navigation from the setup section of the recording footer.
+ * Full-screen page for selecting or detaching an activity plan.
+ * Accessed via navigation from the control dock quick actions.
  *
  * Features:
- * - Display list of today's planned activities
+ * - Display accessible public and user-owned activity plans
  * - Search and filter functionality
  * - "Detach Plan" option if plan currently attached
- * - Plan changes are locked once recording has started
+ * - During an active recording, only plans matching the active activity category can attach
  * - Standard back navigation via header
  * - Recording continues in background
  */
@@ -24,15 +24,16 @@ import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { router } from "expo-router";
-import { CalendarDays, Check, Search } from "lucide-react-native";
+import { CalendarDays, Check, Search, Trash2 } from "lucide-react-native";
 import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
 import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
+import { useRecordingSessionContract } from "@/lib/hooks/useRecordingConfig";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 
 type RouterOutputs = inferRouterOutputs<AppRouter>;
-type PlannedActivity = RouterOutputs["events"]["getToday"][number];
+type ActivityPlanListItem = RouterOutputs["activityPlans"]["list"]["items"][number];
 
 const CATEGORY_OPTIONS: {
   value: ActivityCategory | "all";
@@ -49,31 +50,44 @@ const CATEGORY_OPTIONS: {
 export default function PlanPickerPage() {
   const service = useSharedActivityRecorder();
   const recordingState = useRecordingState(service);
-  const utils = api.useUtils();
+  const sessionContract = useRecordingSessionContract(service);
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<ActivityCategory | "all">("all");
 
-  // Fetch today's planned events
-  const { data: plannedActivities, isLoading } = api.events.getToday.useQuery();
+  const { data: plans, isLoading } = api.activityPlans.list.useInfiniteQuery(
+    {
+      includeOwnOnly: false,
+      ownerScope: "all",
+      limit: 100,
+    },
+    {
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+    },
+  );
   const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
+  const canEditPlan = sessionContract?.editing.canEditPlan ?? true;
+  const hasPlan = sessionContract?.guidance.hasPlan ?? false;
+  const activeCategory = service?.selectedActivityCategory;
+  const plansList = React.useMemo(() => plans?.pages.flatMap((page) => page.items) ?? [], [plans]);
 
-  // Filter planned activities by search and category filter
-  const filteredPlannedActivities = React.useMemo(() => {
-    if (!plannedActivities) return [];
+  const filteredPlans = React.useMemo(() => {
+    return plansList.filter((plan) => {
+      if (isSetupLocked && activeCategory && plan.activity_category !== activeCategory) {
+        return false;
+      }
 
-    return plannedActivities.filter((pa) => {
       // Category filter
-      if (categoryFilter !== "all" && pa.activity_plan?.activity_category !== categoryFilter) {
+      if (categoryFilter !== "all" && plan.activity_category !== categoryFilter) {
         return false;
       }
 
       // Search filter (searches name and description)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const name = pa.activity_plan?.name?.toLowerCase() || "";
-        const description = pa.activity_plan?.description?.toLowerCase() || "";
+        const name = plan.name?.toLowerCase() || "";
+        const description = plan.description?.toLowerCase() || "";
 
         if (!name.includes(query) && !description.includes(query)) {
           return false;
@@ -82,32 +96,22 @@ export default function PlanPickerPage() {
 
       return true;
     });
-  }, [plannedActivities, searchQuery, categoryFilter]);
+  }, [activeCategory, categoryFilter, isSetupLocked, plansList, searchQuery]);
 
-  // Handle planned activity selection
   const attachPlan = useCallback(
-    async (eventId: string) => {
-      if (!service || isSetupLocked) {
+    async (planData: ActivityPlanListItem) => {
+      if (!service || !canEditPlan) {
         return false;
       }
 
-      const eventData = await utils.client.events.getById.query({ id: eventId });
-
-      if (!eventData?.activity_plan_id) {
-        return false;
-      }
-
-      const planData = await utils.client.activityPlans.getById.query({
-        id: eventData.activity_plan_id,
-      });
-
-      if (!planData) {
+      if (isSetupLocked && planData.activity_category !== service.selectedActivityCategory) {
         return false;
       }
 
       const parsedStructure = activityPlanStructureSchemaV2.parse(planData.structure);
 
       const selectedPlan: RecordingServiceActivityPlan = {
+        id: planData.id,
         name: planData.name,
         description: planData.description ?? "",
         structure: parsedStructure,
@@ -116,15 +120,15 @@ export default function PlanPickerPage() {
         route_id: planData.route_id ?? null,
       };
 
-      service.selectPlan(selectedPlan, eventId);
+      service.selectPlan(selectedPlan);
       return true;
     },
-    [isSetupLocked, service, utils.client.activityPlans.getById, utils.client.events.getById],
+    [canEditPlan, isSetupLocked, service],
   );
 
   const handlePlanPress = useCallback(
-    async (eventId: string) => {
-      if (await attachPlan(eventId)) {
+    async (planData: ActivityPlanListItem) => {
+      if (await attachPlan(planData)) {
         router.back();
       }
     },
@@ -133,11 +137,13 @@ export default function PlanPickerPage() {
 
   // Handle detach plan
   const handleDetach = useCallback(() => {
+    if (!canEditPlan) return;
+
     service?.clearPlan();
     router.back();
-  }, [service]);
+  }, [canEditPlan, service]);
 
-  const currentEventId = service?.recordingMetadata?.eventId;
+  const currentPlanId = service?.plan?.id ?? null;
 
   return (
     <View className="flex-1 bg-background" testID="record-plan-screen">
@@ -199,7 +205,7 @@ export default function PlanPickerPage() {
           </View>
         )}
 
-        {isSetupLocked && (
+        {!canEditPlan && (
           <View className="mb-3 rounded-lg border border-border bg-card p-4">
             <Text className="text-base font-medium text-foreground">
               Plan setup is locked after recording starts
@@ -210,8 +216,20 @@ export default function PlanPickerPage() {
           </View>
         )}
 
+        {canEditPlan && hasPlan ? (
+          <View className="mb-3 rounded-lg border border-border bg-card p-4">
+            <Text className="text-base font-medium text-foreground">
+              Current workout is plan-led
+            </Text>
+            <Text className="mt-1 text-sm text-muted-foreground">
+              During recording you can remove this plan or attach another plan that matches the
+              active activity category.
+            </Text>
+          </View>
+        ) : null}
+
         {/* Detach Plan Option (if plan attached) */}
-        {!isLoading && currentEventId && !isSetupLocked && (
+        {!isLoading && hasPlan && canEditPlan && (
           <Pressable
             onPress={handleDetach}
             testID="record-plan-detach-button"
@@ -219,27 +237,27 @@ export default function PlanPickerPage() {
           >
             <View className="flex-row items-center justify-between">
               <View className="flex-1">
-                <Text className="text-base font-medium text-destructive">
-                  Detach Current Activity Plan
-                </Text>
-                <Text className="text-sm text-muted-foreground mt-1">
-                  Remove activity plan from this workout
-                </Text>
+                <View className="flex-row items-center gap-2">
+                  <Icon as={Trash2} size={16} className="text-destructive" />
+                  <Text className="text-base font-medium text-destructive">
+                    Remove Activity Plan
+                  </Text>
+                </View>
               </View>
             </View>
           </Pressable>
         )}
 
-        {/* Planned Activities List */}
-        {!isLoading && filteredPlannedActivities && filteredPlannedActivities.length > 0 ? (
+        {/* Activity Plans List */}
+        {!isLoading && filteredPlans.length > 0 ? (
           <View className="gap-3 pb-6">
-            {filteredPlannedActivities.map((plannedActivity) => (
-              <PlannedActivityListItem
-                key={plannedActivity.id}
-                plannedActivity={plannedActivity}
-                isSelected={plannedActivity.id === currentEventId}
-                disabled={isSetupLocked}
-                onPress={() => handlePlanPress(plannedActivity.id)}
+            {filteredPlans.map((plan) => (
+              <ActivityPlanListItemRow
+                key={plan.id}
+                plan={plan}
+                isSelected={plan.id === currentPlanId}
+                disabled={!canEditPlan}
+                onPress={() => handlePlanPress(plan)}
               />
             ))}
           </View>
@@ -250,13 +268,13 @@ export default function PlanPickerPage() {
                 icon={CalendarDays}
                 title={
                   searchQuery || categoryFilter !== "all"
-                    ? "No matching activities found"
-                    : "No planned activities for today"
+                    ? "No matching activity plans found"
+                    : "No activity plans available"
                 }
                 description={
                   searchQuery || categoryFilter !== "all"
                     ? "Try adjusting your search or filter"
-                    : "Schedule activities from the Plan tab"
+                    : "Create or save activity plans from the Plan tab"
                 }
                 iconSize={32}
               />
@@ -271,34 +289,24 @@ export default function PlanPickerPage() {
 /**
  * Planned Activity List Item Component
  */
-interface PlannedActivityListItemProps {
-  plannedActivity: PlannedActivity;
+interface ActivityPlanListItemRowProps {
+  plan: ActivityPlanListItem;
   isSelected: boolean;
   disabled?: boolean;
   onPress: () => void;
 }
 
-function PlannedActivityListItem({
-  plannedActivity,
+function ActivityPlanListItemRow({
+  plan,
   isSelected,
   disabled = false,
   onPress,
-}: PlannedActivityListItemProps) {
-  const activityPlan = plannedActivity.activity_plan;
-  const hasTrainingPlanSource = typeof plannedActivity.training_plan_id === "string";
-
-  // Format the scheduled time
-  const scheduledTime = new Date(plannedActivity.scheduled_date).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-
+}: ActivityPlanListItemRowProps) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      testID={`record-plan-item-${plannedActivity.id}`}
+      testID={`record-plan-item-${plan.id}`}
       className="bg-card p-4 rounded-lg border border-border"
       style={{
         borderColor: isSelected ? "rgb(34, 197, 94)" : undefined,
@@ -309,22 +317,17 @@ function PlannedActivityListItem({
       <View className="flex-row items-center justify-between">
         <View className="flex-1">
           <View className="flex-row items-center gap-2 mb-1">
-            <Text className="text-xs text-muted-foreground">{scheduledTime}</Text>
-            {activityPlan && (
-              <>
-                <Text className="text-xs text-muted-foreground">•</Text>
-                <Text className="text-xs text-muted-foreground capitalize">
-                  {activityPlan.activity_category}
-                </Text>
-              </>
-            )}
+            <Text className="text-xs text-muted-foreground capitalize">
+              {plan.activity_category}
+            </Text>
+            <Text className="text-xs text-muted-foreground">•</Text>
+            <Text className="text-xs text-muted-foreground">
+              {plan.template_visibility === "public" ? "Public" : "Private"}
+            </Text>
           </View>
-          <Text className="text-base font-medium">{activityPlan?.name || "Unnamed Activity"}</Text>
-          {hasTrainingPlanSource ? (
-            <Text className="text-xs text-muted-foreground mt-1">From training plan</Text>
-          ) : null}
-          {activityPlan?.description && (
-            <Text className="text-sm text-muted-foreground mt-1">{activityPlan.description}</Text>
+          <Text className="text-base font-medium">{plan.name || "Unnamed Activity Plan"}</Text>
+          {plan.description && (
+            <Text className="text-sm text-muted-foreground mt-1">{plan.description}</Text>
           )}
         </View>
 

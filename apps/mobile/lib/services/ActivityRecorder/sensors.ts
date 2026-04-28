@@ -331,7 +331,13 @@ export class SensorsManager {
   }
 
   private notifyConnectionChange(sensor: ConnectedSensor): void {
-    this.connectionCallbacks.forEach((cb) => cb(sensor));
+    this.connectionCallbacks.forEach((cb) => {
+      try {
+        cb(sensor);
+      } catch (error) {
+        console.error("[SensorsManager] Connection callback failed:", error);
+      }
+    });
   }
 
   private createEmptyTrainerState(): TrainerStateSnapshot {
@@ -664,9 +670,11 @@ export class SensorsManager {
         return;
       }
 
-      throw new Error("Reconnection returned null");
+      console.log(
+        `[SensorsManager] Reconnection attempt ${attempt} did not restore ${sensor.name}`,
+      );
     } catch (error) {
-      console.error(
+      console.warn(
         `[SensorsManager] Reconnection attempt ${attempt} failed for ${sensor.name}:`,
         error,
       );
@@ -906,7 +914,7 @@ export class SensorsManager {
       this.notifyConnectionChange(connectedSensor);
       return connectedSensor;
     } catch (err) {
-      console.error("Connect error", err);
+      console.warn("Connect error", err);
 
       const existingSensor = this.connectedSensors.get(deviceId);
       if (existingSensor) {
@@ -1299,8 +1307,7 @@ export class SensorsManager {
     const sensor = this.connectedSensors.get(sensorId);
     if (sensor) {
       sensor.batteryLevel = level;
-      // Notify connection callbacks so UI can update
-      this.connectionCallbacks.forEach((cb) => cb(sensor));
+      this.notifyConnectionChange(sensor);
     }
 
     // Log warnings for low battery (no user-facing notifications)

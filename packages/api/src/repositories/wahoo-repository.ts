@@ -80,7 +80,6 @@ export interface WahooRepository {
     thresholdHr: number | null;
   } | null>;
   getRouteForSync(input: { profileId: string; routeId: string }): Promise<{
-    activityCategory: string;
     description: string | null;
     filePath: string;
     id: string;

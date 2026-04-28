@@ -12,7 +12,10 @@ import {
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import {
+  activitySelectionStore,
+  type RecordingLaunchPayload,
+} from "@/lib/stores/activitySelectionStore";
 
 type EventMutationScope = "single" | "future" | "series";
 type ManualEventCreateType = "race_target" | "custom";
@@ -189,11 +192,13 @@ export function useCalendarScreenController({
         return;
       }
 
-      const payload: ActivityPayload = {
+      const payload: RecordingLaunchPayload = {
+        launchSource: "calendar_event" as const,
         category: activityPlan.activity_category as ActivityPayload["category"],
         gpsRecordingEnabled: true,
         eventId: event.id,
         plan: activityPlan as ActivityPayload["plan"],
+        routeId: activityPlan.route_id ?? null,
       };
 
       activitySelectionStore.setSelection(payload);

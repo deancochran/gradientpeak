@@ -65,7 +65,6 @@ interface WahooRepository {
     profileId: string,
   ): Promise<{ ftp: number | null; thresholdHr: number | null } | null>;
   getRouteForSync(input: { profileId: string; routeId: string }): Promise<{
-    activityCategory: string;
     description: string | null;
     filePath: string;
     id: string;
@@ -226,7 +225,7 @@ export class WahooSyncService {
                 filePath: route.filePath,
                 name: route.name,
                 description: route.description ?? undefined,
-                activityType: toActivityType(route.activityCategory as PublicActivityCategory),
+                activityType,
                 totalDistance: route.totalDistance,
                 totalAscent: route.totalAscent ?? undefined,
                 totalDescent: route.totalDescent ?? undefined,

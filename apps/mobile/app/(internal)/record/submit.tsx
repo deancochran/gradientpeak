@@ -58,9 +58,7 @@ function SubmitScreen() {
       if (service) {
         await service.cleanup();
       }
-      // Navigate back twice: once to close submit screen, once to close record modal
-      router.back();
-      router.back();
+      router.replace("/(internal)/(tabs)" as any);
     },
     [submission, service, router],
   );
@@ -79,9 +77,7 @@ function SubmitScreen() {
           if (service) {
             await service.cleanup();
           }
-          // Navigate back twice: once to close submit screen, once to close record modal
-          router.back();
-          router.back();
+          router.replace("/(internal)/(tabs)" as any);
         },
       },
     ]);

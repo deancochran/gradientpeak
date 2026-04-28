@@ -396,7 +396,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
       uploadRouteMutation.mutate({
         name: fileName,
         description: `Uploaded for ${form.name || "activity plan"}`,
-        activityCategory: form.activityCategory,
         fileContent: content,
         fileName: file.name,
       });

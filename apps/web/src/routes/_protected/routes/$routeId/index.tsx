@@ -29,7 +29,6 @@ import {
   formatDate,
   formatDistance,
   formatElevation,
-  getActivityBadgeLabel,
 } from "../../../../lib/activity-route-helpers";
 import { api } from "../../../../lib/api/client";
 
@@ -135,11 +134,7 @@ function RouteDetailPage() {
             ) : null}
           </>
         }
-        badges={[
-          getActivityBadgeLabel(route.activity_category),
-          route.is_public ? "Public" : "Private",
-          `Saved ${formatDate(route.created_at)}`,
-        ]}
+        badges={[route.is_public ? "Public" : "Private", `Saved ${formatDate(route.created_at)}`]}
         description={route.description || "No route description yet."}
         eyebrow="Route detail"
         title={route.name}

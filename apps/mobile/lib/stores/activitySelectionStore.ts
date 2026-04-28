@@ -1,4 +1,19 @@
-import { ActivityPayload } from "@repo/core";
+import type { ActivityPayload, RecordingActivityCategory } from "@repo/core";
+
+export interface RecordingLaunchPayload extends ActivityPayload {
+  launchSource: "record_tab" | "activity_plan" | "calendar_event" | "route" | "manual";
+  routeId?: string | null;
+}
+
+export function defaultRecordLaunchPayload(
+  category: RecordingActivityCategory = "run",
+): RecordingLaunchPayload {
+  return {
+    launchSource: "record_tab",
+    category,
+    gpsRecordingEnabled: category === "run" || category === "bike",
+  };
+}
 
 /**
  * ActivitySelectionStore - Simple singleton store for activity selection
@@ -13,17 +28,19 @@ import { ActivityPayload } from "@repo/core";
  * - Clean navigation with no URL parameters
  */
 class ActivitySelectionStore {
-  private selection: ActivityPayload | null = null;
+  private selection: RecordingLaunchPayload | null = null;
 
   /**
    * Set a new activity selection
    */
-  setSelection(payload: ActivityPayload): void {
+  setSelection(payload: RecordingLaunchPayload): void {
     console.log("[ActivitySelectionStore] Setting selection:", {
+      launchSource: payload.launchSource,
       category: payload.category,
       gpsRecordingEnabled: payload.gpsRecordingEnabled,
       hasPlan: !!payload.plan,
       eventId: payload.eventId,
+      routeId: payload.routeId ?? payload.plan?.route_id ?? null,
     });
     this.selection = payload;
   }
@@ -32,7 +49,7 @@ class ActivitySelectionStore {
    * Get and clear selection (consume-once pattern)
    * This ensures each selection is used only once
    */
-  consumeSelection(): ActivityPayload | null {
+  consumeSelection(): RecordingLaunchPayload | null {
     const current = this.selection;
     if (current) {
       console.log(
@@ -51,7 +68,7 @@ class ActivitySelectionStore {
    * Peek at selection without consuming it
    * Useful for debugging or conditional logic
    */
-  peekSelection(): ActivityPayload | null {
+  peekSelection(): RecordingLaunchPayload | null {
     return this.selection;
   }
 

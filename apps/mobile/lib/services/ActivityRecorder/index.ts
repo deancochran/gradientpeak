@@ -28,6 +28,7 @@ import {
   type RecordingConfiguration,
   type RecordingLaunchIntent,
   RecordingServiceActivityPlan,
+  type RecordingSessionContract,
   resolveMetricSources as resolveCoreMetricSources,
 } from "@repo/core";
 import { EventEmitter } from "expo";
@@ -177,6 +178,7 @@ type LoadedRoute = {
   coordinates: Array<{
     latitude: number;
     longitude: number;
+    altitude?: number;
     elevation?: number;
   }>;
   polyline?: string | null;
@@ -193,8 +195,9 @@ type LoadedRoute = {
 export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Public State ===
   public state: RecordingState = "pending";
-  public selectedActivityCategory: RecordingActivityCategory = "bike";
+  public selectedActivityCategory: RecordingActivityCategory = "run";
   private _gpsRecordingEnabled: boolean = true;
+  private currentLaunchSource: RecordingConfiguration["input"]["launchSource"] = "manual";
   public recordingMetadata?: RecordingMetadata;
   private finalizedArtifact: RecordingSessionArtifact | null = null;
   private readonly sessionController = new RecordingSessionController();
@@ -297,6 +300,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.publishSessionUpdate();
     });
     this.liveMetricsManager.addListener("statsUpdate", () => {
+      this.updateIndoorRouteProgressFromSessionDistance();
       this.publishSessionUpdate();
     });
     this.liveMetricsManager.addListener("metricsUpdated", () => {
@@ -875,6 +879,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         isLast: false,
         isFinished: false,
         canAdvance: false,
+        canSkip: false,
+        canGoBack: false,
         planTimeRemaining: 0,
       };
     }
@@ -893,6 +899,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       isLast: info.isLast,
       isFinished: info.isFinished,
       canAdvance: info.progress?.canAdvance ?? false,
+      canSkip: info.total > 0 && info.index < info.total - 1,
+      canGoBack: info.index > 0,
       planTimeRemaining: this.planTimeRemaining,
     };
   }
@@ -1032,6 +1040,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const intent = this.buildRecordingLaunchIntent();
     const configuration = RecordingConfigResolver.resolveFromLaunchIntent(intent, {
       plan: this.buildPlanConfigInput(),
+      routeGeometryAvailable: this.hasCurrentRouteGeometry(),
       devices: this.buildConfigDevicesInput(),
       gpsAvailable: this._gpsAvailable,
     });
@@ -1095,6 +1104,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         ? {
             deviceId: ftmsTrainer.id,
             autoControlEnabled: !this.isTrainerManualMode(),
+            controlReady: Boolean(ftmsTrainer.isControllable && ftmsTrainer.ftmsController),
           }
         : undefined,
       hasPowerMeter: sourceTypes.includes("power_meter") || sourceTypes.includes("trainer_power"),
@@ -1185,6 +1195,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._currentRoute;
   }
 
+  private hasCurrentRouteGeometry(): boolean {
+    return Boolean(this._currentRoute?.coordinates?.length);
+  }
+
   get attachedRouteId(): string | null {
     return this.getAttachedRouteId();
   }
@@ -1244,13 +1258,17 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Find the segment we're currently on
     let segmentIndex = 0;
-    for (let i = 0; i < profile.length - 1; i++) {
-      if (
-        this._currentRouteDistance >= profile[i].distance &&
-        this._currentRouteDistance < profile[i + 1].distance
-      ) {
-        segmentIndex = i;
-        break;
+    if (this._currentRouteDistance >= profile[profile.length - 1]!.distance) {
+      segmentIndex = Math.max(0, profile.length - 2);
+    } else {
+      for (let i = 0; i < profile.length - 1; i++) {
+        if (
+          this._currentRouteDistance >= profile[i].distance &&
+          this._currentRouteDistance < profile[i + 1].distance
+        ) {
+          segmentIndex = i;
+          break;
+        }
       }
     }
 
@@ -1286,7 +1304,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   selectPlan(plan: RecordingServiceActivityPlan, eventId?: string): void {
-    if (!this.ensureMutableSessionIdentity("Plan selection")) {
+    if (
+      this.isSessionIdentityLocked() &&
+      plan.activity_category !== this.selectedActivityCategory
+    ) {
+      const message = "Plan selection must match the active recording activity category.";
+      console.warn(`[Service] ${message}`);
+      this.emit("error", message);
       return;
     }
 
@@ -1342,10 +1366,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   clearPlan(): void {
-    if (!this.ensureMutableSessionIdentity("Plan clearing")) {
-      return;
-    }
-
     console.log("[Service] Clearing plan");
 
     this._plan = undefined;
@@ -1359,10 +1379,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public async attachRoute(routeId: string): Promise<void> {
-    if (!this.ensureMutableSessionIdentity("Route attachment")) {
-      return;
-    }
-
     if (!routeId) {
       return;
     }
@@ -1388,11 +1404,22 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
   }
 
-  public detachRoute(): void {
-    if (!this.ensureMutableSessionIdentity("Route detachment")) {
+  public prepareRouteAttachment(routeId: string): void {
+    if (!routeId) {
       return;
     }
 
+    this._routeOverrideId = routeId;
+    this.clearCurrentRouteState();
+    this.publishSessionUpdate();
+
+    this.loadRoute(routeId).catch((error) => {
+      console.error("[Service] Failed to load prepared route:", error);
+      this.publishSessionUpdate();
+    });
+  }
+
+  public detachRoute(): void {
     this._routeOverrideId = null;
     this.clearCurrentRouteState();
     this.publishSessionUpdate();
@@ -1418,10 +1445,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         return;
       }
 
-      this._currentRoute = route;
+      const normalizedRoute = this.normalizeLoadedRoute(route);
+      this._currentRoute = normalizedRoute;
 
       // Calculate total route distance
-      this._routeDistance = this.calculateRouteDistance(route.coordinates);
+      this._routeDistance = this.calculateRouteDistance(normalizedRoute.coordinates);
       this._currentRouteDistance = 0;
 
       console.log("[Service] Route loaded successfully:", {
@@ -1459,6 +1487,52 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     return totalDistance;
+  }
+
+  private normalizeLoadedRoute(route: LoadedRoute): LoadedRoute {
+    const coordinates = route.coordinates.map((coordinate) => ({
+      ...coordinate,
+      elevation: coordinate.elevation ?? coordinate.altitude,
+    }));
+
+    return {
+      ...route,
+      coordinates,
+      elevation_profile:
+        route.elevation_profile && route.elevation_profile.length > 1
+          ? route.elevation_profile
+          : this.buildElevationProfile(coordinates),
+    };
+  }
+
+  private buildElevationProfile(
+    coordinates: Array<{ latitude: number; longitude: number; elevation?: number }>,
+  ): Array<{ distance: number; elevation: number }> | undefined {
+    let cumulativeDistance = 0;
+    const profile: Array<{ distance: number; elevation: number }> = [];
+
+    for (let index = 0; index < coordinates.length; index += 1) {
+      const coordinate = coordinates[index];
+      if (!coordinate) continue;
+
+      if (index > 0) {
+        const previous = coordinates[index - 1];
+        if (previous) {
+          cumulativeDistance += this.calculateDistance(
+            previous.latitude,
+            previous.longitude,
+            coordinate.latitude,
+            coordinate.longitude,
+          );
+        }
+      }
+
+      if (typeof coordinate.elevation === "number" && Number.isFinite(coordinate.elevation)) {
+        profile.push({ distance: cumulativeDistance, elevation: coordinate.elevation });
+      }
+    }
+
+    return profile.length > 1 ? profile : undefined;
   }
 
   /**
@@ -1526,6 +1600,27 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.state === "recording" &&
       !this.isTrainerManualMode() &&
       Math.abs(distanceAlongRoute - previousDistance) > 10 // Only update every 10m
+    ) {
+      this.trainerControl.applyRouteGrade(this.currentRouteGrade).catch(console.error);
+    }
+  }
+
+  private updateIndoorRouteProgressFromSessionDistance(): void {
+    if (this._gpsRecordingEnabled || !this.hasRoute || this._routeDistance <= 0) return;
+
+    const stats = this.liveMetricsManager.getSessionStats();
+    const nextDistance = Math.min(this._routeDistance, Math.max(0, stats.distance ?? 0));
+    this.updateVirtualRouteDistance(nextDistance);
+  }
+
+  private updateVirtualRouteDistance(distanceAlongRoute: number): void {
+    const previousDistance = this._currentRouteDistance;
+    this._currentRouteDistance = distanceAlongRoute;
+
+    if (
+      this.state === "recording" &&
+      !this.isTrainerManualMode() &&
+      Math.abs(distanceAlongRoute - previousDistance) > 10
     ) {
       this.trainerControl.applyRouteGrade(this.currentRouteGrade).catch(console.error);
     }
@@ -1640,9 +1735,60 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     console.log(`[Service] Advancing to step ${this.stepIndex + 1}`);
 
-    this.planExecution.advance(this.getMovingTime());
+    this.navigatePlanStep(() => this.planExecution.advance(this.getMovingTime()), "advance");
+  }
+
+  skipStep(): void {
+    if (!this.hasPlan || !this.currentStep) {
+      console.warn("[Service] Cannot skip step - no plan active");
+      return;
+    }
+
+    if (!this.navigatePlanStep(() => this.planExecution.skip(this.getMovingTime()), "skip")) {
+      console.warn("[Service] Cannot skip step");
+    }
+  }
+
+  previousStep(): void {
+    if (!this.hasPlan || !this.currentStep) {
+      console.warn("[Service] Cannot go back - no plan active");
+      return;
+    }
+
+    if (
+      !this.navigatePlanStep(() => this.planExecution.previous(this.getMovingTime()), "previous")
+    ) {
+      console.warn("[Service] Cannot go back");
+    }
+  }
+
+  goToStep(index: number): void {
+    if (!this.hasPlan || !this.currentStep) {
+      console.warn("[Service] Cannot change step - no plan active");
+      return;
+    }
+
+    if (
+      !this.navigatePlanStep(
+        () => this.planExecution.goToStep(index, this.getMovingTime()),
+        "go_to",
+      )
+    ) {
+      console.warn(`[Service] Cannot change to step ${index}`);
+    }
+  }
+
+  private navigatePlanStep(
+    navigate: () => boolean,
+    reason: "advance" | "skip" | "previous" | "go_to",
+  ): boolean {
+    const changed = navigate();
+    if (!changed) {
+      return false;
+    }
 
     this.emit("stepChanged", this.getStepInfo());
+    this.publishSessionUpdate();
 
     if (this.state === "recording" && this.currentStep) {
       this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
@@ -1652,6 +1798,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       console.log("[Service] Plan completed!");
       this.emit("planCompleted");
     }
+
+    console.log(`[Service] Plan step navigation completed: ${reason}`);
+    return true;
   }
 
   public getTrainerMachineType() {
@@ -1785,13 +1934,19 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const sessionSnapshot = this.getSessionSnapshot();
     const baseConfiguration = sessionSnapshot
       ? RecordingConfigResolver.resolveFromSessionSnapshot(sessionSnapshot, {
+          launchSource: this.currentLaunchSource,
           plan: this.buildPlanConfigInput(),
+          routeGeometryAvailable: this.hasCurrentRouteGeometry(),
           gpsAvailable: this._gpsAvailable,
+          session: { identityLocked: this.isSessionIdentityLocked() },
         })
       : RecordingConfigResolver.resolveFromLaunchIntent(this.buildRecordingLaunchIntent(), {
+          launchSource: this.currentLaunchSource,
           plan: this.buildPlanConfigInput(),
+          routeGeometryAvailable: this.hasCurrentRouteGeometry(),
           devices: this.buildConfigDevicesInput(),
           gpsAvailable: this._gpsAvailable,
+          session: { identityLocked: this.isSessionIdentityLocked() },
         });
 
     const validation = this.validatePlanRequirements();
@@ -1806,7 +1961,38 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           baseConfiguration.capabilities.errors,
         warnings: validation?.warnings ?? baseConfiguration.capabilities.warnings,
       },
+      session: {
+        ...baseConfiguration.session,
+        degraded: {
+          ...baseConfiguration.session.degraded,
+          ...this.buildRuntimeDegradedState(),
+        },
+      },
     };
+  }
+
+  private buildRuntimeDegradedState(): Partial<RecordingSessionContract["degraded"]> {
+    const degraded: Partial<RecordingSessionContract["degraded"]> = {};
+    const runtimeSourceState = this.getRuntimeSourceState();
+    const trainerView = this.buildTrainerView();
+
+    if (runtimeSourceState.degradedState.metrics.length > 0) {
+      degraded.sensors = runtimeSourceState.degradedState.metrics.join(",");
+    }
+
+    if (trainerView.lastCommandStatus?.success === false) {
+      degraded.trainer = "command_failed";
+    } else if (trainerView.recoveryState === "failed") {
+      degraded.trainer = "recovery_failed";
+    } else if (trainerView.recoveryState === "applying_reconnect_recovery") {
+      degraded.trainer = "recovering";
+    }
+
+    return degraded;
+  }
+
+  public getRecordingSessionContract(): RecordingSessionContract {
+    return this.getRecordingConfiguration().session;
   }
 
   async startRecording() {
@@ -2145,6 +2331,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     console.log("[Service] Initializing from payload:", payload);
 
     try {
+      this.currentLaunchSource =
+        (payload as { launchSource?: RecordingConfiguration["input"]["launchSource"] })
+          .launchSource ?? "manual";
+
       if (!this.ensureMutableSessionIdentity("Activity payload changes")) {
         this.emit("payloadProcessed", payload);
         return;

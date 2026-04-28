@@ -5,6 +5,10 @@ import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
+import {
+  activitySelectionStore,
+  defaultRecordLaunchPayload,
+} from "@/lib/stores/activitySelectionStore";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getNavigationTheme, getResolvedThemeScale } from "@/lib/theme";
 
@@ -59,7 +63,12 @@ export default function InternalLayout() {
               <TouchableOpacity
                 {...(props as any)}
                 testID="tab-button-record"
-                onPress={() => guardNavigation(() => navigateTo("/record"))}
+                onPress={() =>
+                  guardNavigation(() => {
+                    activitySelectionStore.setSelection(defaultRecordLaunchPayload());
+                    navigateTo("/record");
+                  })
+                }
               />
             ),
           }}

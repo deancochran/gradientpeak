@@ -178,6 +178,20 @@ export class LocationManager {
   }
 
   // --- Foreground GPS ---
+  async getLastKnownLocation(): Promise<Location.LocationObject | null> {
+    try {
+      const location = await Location.getLastKnownPositionAsync();
+      if (!location || !isLocationValid(location)) {
+        return null;
+      }
+
+      return location;
+    } catch (error) {
+      console.warn("Failed to load last known location:", error);
+      return null;
+    }
+  }
+
   async startForegroundTracking(): Promise<void> {
     if (this.locationSubscription) return;
 

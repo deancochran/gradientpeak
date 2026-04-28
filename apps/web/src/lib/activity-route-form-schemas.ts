@@ -9,7 +9,6 @@ export const activityTypeOptions = [
 ] as const;
 
 export const routeUploadFormSchema = z.object({
-  activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]),
   description: z.string(),
   name: z.string().trim().min(1, "Enter a route name."),
 });

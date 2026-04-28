@@ -160,7 +160,31 @@ export class PlanExecution {
       return false;
     }
 
-    this.stepIndex += 1;
+    return this.goToStep(this.stepIndex + 1, currentMovingTime);
+  }
+
+  public skip(currentMovingTime: number): boolean {
+    if (this.stepIndex >= this.steps.length - 1) {
+      return false;
+    }
+
+    return this.goToStep(this.stepIndex + 1, currentMovingTime);
+  }
+
+  public previous(currentMovingTime: number): boolean {
+    if (this.stepIndex <= 0) {
+      return false;
+    }
+
+    return this.goToStep(this.stepIndex - 1, currentMovingTime);
+  }
+
+  public goToStep(index: number, currentMovingTime: number): boolean {
+    if (!Number.isInteger(index) || index < 0 || index >= this.steps.length) {
+      return false;
+    }
+
+    this.stepIndex = index;
     this.stepStartMovingTime = currentMovingTime;
     return true;
   }

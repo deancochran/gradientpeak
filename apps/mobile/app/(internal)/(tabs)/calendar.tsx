@@ -28,6 +28,59 @@ import { useCalendarStore } from "@/lib/stores/calendar-store";
 const CALENDAR_EVENT_QUERY_LIMIT = 500;
 const MONTH_RANGE_EXTENSION = 2;
 
+function formatCalendarSummaryDate(dateKey: string) {
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    return dateKey;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function buildSelectedDaySummary({
+  dateKey,
+  todayKey,
+  events,
+  hasGoal,
+}: {
+  dateKey: string;
+  todayKey: string;
+  events: CalendarEvent[];
+  hasGoal: boolean;
+}) {
+  const plannedEvents = events.filter((event) => event.event_type === "planned");
+  const primaryTitle =
+    plannedEvents[0]?.activity_plan?.name ?? plannedEvents[0]?.title ?? events[0]?.title ?? null;
+
+  let headline = "No workouts scheduled";
+  if (events.length === 1) {
+    headline = "1 session scheduled";
+  } else if (events.length > 1) {
+    headline = `${events.length} sessions scheduled`;
+  }
+
+  if (hasGoal && events.length === 0) {
+    headline = "Goal milestone day";
+  }
+
+  let detail = hasGoal ? "Goal milestone on this day." : "Check the full day for details.";
+  if (primaryTitle) {
+    detail = primaryTitle;
+  } else if (plannedEvents.length > 0) {
+    detail = `${plannedEvents.length} planned workout${plannedEvents.length === 1 ? "" : "s"}.`;
+  }
+
+  return {
+    label: dateKey === todayKey ? "Today" : formatCalendarSummaryDate(dateKey),
+    headline,
+    detail,
+  };
+}
+
 function CalendarScreen() {
   const hasNormalizedInitialVisibleAnchorRef = useRef(false);
   const navigateTo = useAppNavigate();
@@ -110,6 +163,20 @@ function CalendarScreen() {
     () => new Set(profileGoals.goals.map((goal) => goal.target_date)),
     [profileGoals.goals],
   );
+  const selectedDayEvents = useMemo(
+    () => eventsByDate.get(activeDate) ?? [],
+    [activeDate, eventsByDate],
+  );
+  const selectedDaySummary = useMemo(
+    () =>
+      buildSelectedDaySummary({
+        dateKey: activeDate,
+        todayKey,
+        events: selectedDayEvents,
+        hasGoal: goalDates.has(activeDate),
+      }),
+    [activeDate, goalDates, selectedDayEvents, todayKey],
+  );
 
   const extendMonthRangeBackward = useCallback(() => {
     setRangeStart((current) =>
@@ -170,10 +237,17 @@ function CalendarScreen() {
   const handleMonthDayPress = useCallback(
     (dateKey: string) => {
       selectDate(dateKey);
-      navigateTo(ROUTES.PLAN.CALENDAR_DAY(dateKey));
     },
-    [navigateTo, selectDate],
+    [selectDate],
   );
+
+  const handleOpenSelectedDay = useCallback(() => {
+    navigateTo(ROUTES.PLAN.CALENDAR_DAY(activeDate));
+  }, [activeDate, navigateTo]);
+
+  const handleJumpToToday = useCallback(() => {
+    selectDate(todayKey);
+  }, [selectDate, todayKey]);
 
   if (loadingEvents && !activitiesData) {
     return (
@@ -212,7 +286,46 @@ function CalendarScreen() {
       <AppHeader title="Calendar" />
 
       <View className="flex-1" testID="calendar-screen-content-ready">
+        <View className="px-4 pb-3 pt-4">
+          <View className="rounded-3xl border border-border bg-card px-4 py-4">
+            <View className="flex-row items-start justify-between gap-3">
+              <View className="flex-1 gap-1">
+                <Text className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {selectedDaySummary.label}
+                </Text>
+                <Text className="text-lg font-semibold text-foreground">
+                  {selectedDaySummary.headline}
+                </Text>
+                <Text className="text-sm text-muted-foreground">{selectedDaySummary.detail}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleJumpToToday}
+                className={`rounded-full px-3 py-2 ${activeDate === todayKey ? "bg-primary/10" : "border border-border bg-background"}`}
+                activeOpacity={0.8}
+                testID="calendar-today-button"
+              >
+                <Text
+                  className={`text-sm font-medium ${activeDate === todayKey ? "text-primary" : "text-foreground"}`}
+                >
+                  Today
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              onPress={handleOpenSelectedDay}
+              className="mt-4 rounded-full border border-primary/20 bg-primary/5 px-4 py-3"
+              activeOpacity={0.8}
+              testID="calendar-open-day-button"
+            >
+              <Text className="text-center text-sm font-medium text-primary">
+                {activeDate === todayKey ? "Open Today" : "Open Day"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <CalendarMonthList
+          activeDate={activeDate}
           rangeStart={rangeStart}
           rangeEnd={rangeEnd}
           visibleMonthAnchor={visibleAnchor}

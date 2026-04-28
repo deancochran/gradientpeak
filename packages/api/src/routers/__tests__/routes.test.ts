@@ -78,7 +78,6 @@ function createRouteRow(overrides: Record<string, unknown> = {}) {
     profile_id: OWNER_ID,
     name: "River Loop",
     description: "Steady weekend route",
-    activity_category: "bike",
     file_path: `${OWNER_ID}/route.gpx`,
     total_distance: 42195,
     total_ascent: 550,
@@ -175,7 +174,7 @@ describe("routesRouter", () => {
     };
 
     const caller = createCaller(db);
-    const result = await caller.list({ limit: 2, activityCategory: "bike", search: "Loop" });
+    const result = await caller.list({ limit: 2, search: "Loop" });
 
     expect(result).toEqual({
       items: [
@@ -205,9 +204,9 @@ describe("routesRouter", () => {
 
     const caller = createCaller(db);
 
-    await expect(
-      caller.list({ limit: 2, activityCategory: "bike", unexpected: true } as never),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.list({ limit: 2, unexpected: true } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
   });
 
   it("accepts infinite-query direction metadata", async () => {
@@ -335,7 +334,6 @@ describe("routesRouter", () => {
       totalDistance: 42195,
       totalAscent: 550,
       totalDescent: 540,
-      activityCategory: "bike",
     });
   });
 
@@ -410,7 +408,6 @@ describe("routesRouter", () => {
     const result = await caller.upload({
       name: "New Route",
       description: "Uploaded from file",
-      activityCategory: "bike",
       fileContent: "<gpx>upload</gpx>",
       fileName: "new-route.gpx",
     });
@@ -430,6 +427,41 @@ describe("routesRouter", () => {
       created_at: "2026-02-01T10:00:00.000Z",
       updated_at: "2026-02-02T10:00:00.000Z",
     });
+  });
+
+  it("uploads TCX routes through the TCX parser and stores TCX content type", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_706_000_000_000);
+
+    const insertedRoute = createRouteRow({
+      id: UPLOADED_ROUTE_ID,
+      file_path: `${OWNER_ID}/1706000000000.tcx`,
+    });
+
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          returning: vi.fn().mockResolvedValue([insertedRoute]),
+        })),
+      })),
+    };
+
+    const caller = createCaller(db);
+    await caller.upload({
+      name: "New Route",
+      description: "Uploaded from TCX",
+      fileContent: "<TrainingCenterDatabase />",
+      fileName: "new-route.tcx",
+    });
+
+    expect(mockRouteParser.parseRoute).toHaveBeenCalledWith("<TrainingCenterDatabase />", "tcx");
+    expect(mockStorage.upload).toHaveBeenCalledWith(
+      `${OWNER_ID}/1706000000000.tcx`,
+      "<TrainingCenterDatabase />",
+      {
+        contentType: "application/vnd.garmin.tcx+xml",
+        upsert: false,
+      },
+    );
   });
 
   it("deletes an unused route and removes its stored file", async () => {

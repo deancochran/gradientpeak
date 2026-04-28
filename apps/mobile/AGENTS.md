@@ -32,6 +32,11 @@ Use this file when working in `apps/mobile`.
 - Keep app-local components focused on mobile-specific behavior and composition.
 - Preserve established NativeWind token usage instead of ad hoc color and spacing choices.
 - Keep `app/` route-only, `components/` composition-only, and `lib/` runtime-logic-only.
+- Start screen and component layout from content hierarchy, not from wrapper containers.
+- Prefer one strong parent surface with light child sections, and avoid card-inside-card composition unless the nested card is a truly separate object.
+- Use vertical flow by default for rich content like charts, maps, previews, and session structure, and only switch to horizontal layout when scanning clearly improves.
+- Remove duplicate identity and metadata where possible, and treat repeated titles, icons, and category labels as a design smell.
+- Flatten wrapper-only containers that only add spacing, padding, border, or muted background when the owning content block can carry that responsibility directly.
 
 ## Avoid
 

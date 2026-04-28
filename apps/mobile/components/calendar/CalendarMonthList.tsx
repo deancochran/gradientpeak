@@ -18,6 +18,7 @@ import {
 } from "@/lib/calendar/normalizeEvents";
 
 type CalendarMonthListProps = {
+  activeDate: string;
   rangeStart: string;
   rangeEnd: string;
   visibleMonthAnchor: string;
@@ -92,6 +93,18 @@ function getPlannedDayChipClass(level: 1 | 2 | 3 | 4 | null, isToday: boolean) {
   return isToday ? "border border-primary bg-primary/5" : "bg-transparent";
 }
 
+function getSelectedDayChipClass(isSelected: boolean, isToday: boolean) {
+  if (isSelected) {
+    return "border-2 border-primary bg-primary";
+  }
+
+  if (isToday) {
+    return "border border-primary bg-primary/5";
+  }
+
+  return "";
+}
+
 export function getVisibleMonthIndex(months: string[], visibleMonthAnchor: string): number {
   return Math.max(
     0,
@@ -103,6 +116,7 @@ export function getVisibleMonthIndex(months: string[], visibleMonthAnchor: strin
 }
 
 export function CalendarMonthList({
+  activeDate,
   rangeStart,
   rangeEnd,
   visibleMonthAnchor,
@@ -211,11 +225,10 @@ export function CalendarMonthList({
                   const hasGoalAnchor = goalDates.has(dateKey);
                   const hasVisibleEvents = density > 0;
                   const isInMonth = isSameMonth(dateKey, item);
+                  const isSelected = isInMonth && dateKey === activeDate;
                   const isToday = isInMonth && dateKey === todayKey;
-                  const dayChipClassName = getPlannedDayChipClass(
-                    plannedSignal?.level ?? null,
-                    isToday,
-                  );
+                  const dayChipClassName =
+                    `${getPlannedDayChipClass(plannedSignal?.level ?? null, isToday)} ${getSelectedDayChipClass(isSelected, isToday)}`.trim();
 
                   if (!isInMonth) {
                     return (
@@ -242,18 +255,20 @@ export function CalendarMonthList({
                         className={`h-11 w-11 items-center justify-center rounded-2xl ${dayChipClassName}`}
                         testID={`calendar-month-day-chip-${dateKey}`}
                       >
-                        <Text className="text-sm font-semibold text-foreground">
+                        <Text
+                          className={`text-sm font-semibold ${isSelected ? "text-primary" : "text-foreground"}`}
+                        >
                           {format(parseDateKey(dateKey), "d")}
                         </Text>
                       </View>
                       <View className="mt-1 h-3 items-center justify-start gap-1">
                         {hasGoalAnchor ? (
                           <View
-                            className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                            className={`h-1.5 w-1.5 rounded-full ${isSelected ? "bg-primary-foreground" : "bg-amber-500"}`}
                             testID={`calendar-month-goal-signal-${dateKey}`}
                           />
                         ) : null}
-                        {plannedSignal ? (
+                        {plannedSignal && plannedSignal.count > 1 ? (
                           <View
                             className={`min-w-4 rounded-full px-1.5 py-[1px] ${
                               plannedSignal.level >= 4
@@ -271,16 +286,11 @@ export function CalendarMonthList({
                             </Text>
                           </View>
                         ) : null}
-                        <View className="h-1.5 flex-row items-center justify-center gap-1">
-                          {hasVisibleEvents
-                            ? Array.from({ length: Math.min(3, density) }, (_, index) => (
-                                <View
-                                  key={`${dateKey}-${index}`}
-                                  className="h-1.5 w-1.5 rounded-full bg-primary/70"
-                                />
-                              ))
-                            : null}
-                        </View>
+                        {!hasGoalAnchor && hasVisibleEvents && !plannedSignal ? (
+                          <View
+                            className={`h-1.5 w-1.5 rounded-full ${isSelected ? "bg-primary-foreground/80" : "bg-primary/70"}`}
+                          />
+                        ) : null}
                       </View>
                     </TouchableOpacity>
                   );

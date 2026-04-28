@@ -1,11 +1,8 @@
 import { normalizeSystemRouteTemplateId } from "./template-ids";
 
-export type SystemRouteActivityCategory = "run" | "bike" | "other";
-
 export type SystemRouteArchiveFormat = "gpx" | "zip";
 
 export interface SystemRouteTemplate {
-  activity_category: SystemRouteActivityCategory;
   description: string;
   download_url: string;
   id: string;
@@ -20,7 +17,6 @@ function createSystemRouteTemplate(
     ...input,
     id: normalizeSystemRouteTemplateId({
       id: input.id,
-      activityCategory: input.activity_category,
       name: input.name,
     }),
   };
@@ -28,7 +24,6 @@ function createSystemRouteTemplate(
 
 export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
   createSystemRouteTemplate({
-    activity_category: "run",
     description:
       "Legendary Lake District fell-running challenge covering 42 peaks in a single simplified GPX track.",
     id: "running-routes-bob-graham-round",
@@ -38,7 +33,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://thomasturrell.github.io/running-routes/assets/gpx/fell/bob-graham-round/bob-graham-round-simplified.gpx",
   }),
   createSystemRouteTemplate({
-    activity_category: "run",
     description:
       "Classic Scottish 24-hour mountain round through Lochaber, published as a simplified GPX route.",
     id: "running-routes-ramsay-round",
@@ -48,7 +42,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://thomasturrell.github.io/running-routes/assets/gpx/fell/ramsay-round/ramsay-round-simplified.gpx",
   }),
   createSystemRouteTemplate({
-    activity_category: "run",
     description:
       "Snowdonia's iconic Paddy Buckley Round captured as a simplified point-to-point challenge GPX.",
     id: "running-routes-paddy-buckley-round",
@@ -58,7 +51,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://thomasturrell.github.io/running-routes/assets/gpx/fell/paddy-buckley-round/paddy-buckley-round-simplified.gpx",
   }),
   createSystemRouteTemplate({
-    activity_category: "run",
     description:
       "Road marathon race course through Manchester, published as a simplified GPX for race-day previews.",
     id: "running-routes-manchester-marathon-2026",
@@ -68,7 +60,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://thomasturrell.github.io/running-routes/assets/gpx/road/manchester-marathon-2026/manchester-marathon-2026-simplified.gpx",
   }),
   createSystemRouteTemplate({
-    activity_category: "run",
     description:
       "Fast Inverness city-centre half marathon route published as a simplified GPX course.",
     id: "running-routes-inverness-half-marathon",
@@ -78,7 +69,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://thomasturrell.github.io/running-routes/assets/gpx/road/inverness-half-marathon/inverness-half-marathon-simplified.gpx",
   }),
   createSystemRouteTemplate({
-    activity_category: "bike",
     description:
       "Eifel mountain-bike loop near Raeren with technical off-road terrain, distributed as a downloadable GPX zip.",
     id: "gpx-adventures-mtb-raeren",
@@ -88,7 +78,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://h2n6j5b3.rocketcdn.me/wp-content/uploads/2023/04/GPXadventures-MTB-raeren.gpx_.zip",
   }),
   createSystemRouteTemplate({
-    activity_category: "bike",
     description:
       "Winter mountain-bike route through Naturpark Eifel, published as a zipped GPX trail file.",
     id: "gpx-adventures-naturpark-eifel",
@@ -98,7 +87,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://h2n6j5b3.rocketcdn.me/wp-content/uploads/2022/02/Naturpark-Eifel-DE.gpx_.zip",
   }),
   createSystemRouteTemplate({
-    activity_category: "bike",
     description:
       "Scenic Cap Blanc Nez summer mountain-bike route published as a zipped GPX course.",
     id: "gpx-adventures-cap-blanc-nez",
@@ -107,7 +95,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
     download_url: "https://h2n6j5b3.rocketcdn.me/wp-content/uploads/2022/09/Cap-blanc-nez.gpx_.zip",
   }),
   createSystemRouteTemplate({
-    activity_category: "other",
     description: "Short canyon hike in Belgium with a public zipped GPX file for the full route.",
     id: "gpx-adventures-tros-marets",
     name: "Tros Marets Canyon Hike",
@@ -116,7 +103,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://h2n6j5b3.rocketcdn.me/wp-content/uploads/2023/04/GPX-Adventures-Tros-Marets.gpx_.zip",
   }),
   createSystemRouteTemplate({
-    activity_category: "other",
     description:
       "Classic Zermatt-area hike linking the Matterhorn five lakes, distributed as a zipped GPX file.",
     id: "gpx-adventures-matterhorn-5-lakes",
@@ -126,7 +112,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://h2n6j5b3.rocketcdn.me/wp-content/uploads/2021/10/Matterhorn-5-lakes-gpx.zip",
   }),
   createSystemRouteTemplate({
-    activity_category: "other",
     description: "Easy circuit around Lago di Braies, published as a zipped GPX hiking route.",
     id: "gpx-adventures-lago-di-braies",
     name: "Lago di Braies Loop",
@@ -135,7 +120,6 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://h2n6j5b3.rocketcdn.me/wp-content/uploads/2021/10/Lago-di-braies.gpx_.zip",
   }),
   createSystemRouteTemplate({
-    activity_category: "other",
     description:
       "More demanding Dolomites out-and-back hike to Lago di Sorapis, distributed as a zipped GPX route.",
     id: "gpx-adventures-lago-di-sorapis",
@@ -145,9 +129,3 @@ export const SYSTEM_ROUTE_TEMPLATES: SystemRouteTemplate[] = [
       "https://h2n6j5b3.rocketcdn.me/wp-content/uploads/2021/10/Lago-di-sorapis.gpx_.zip",
   }),
 ];
-
-export function getSystemRoutesByCategory(
-  category: SystemRouteTemplate["activity_category"],
-): SystemRouteTemplate[] {
-  return SYSTEM_ROUTE_TEMPLATES.filter((route) => route.activity_category === category);
-}

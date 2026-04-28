@@ -11,11 +11,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2, MapPin, Route as RouteIcon } from "lucide-react";
 import { RoutePreviewMap } from "../../../../components/recording/route-preview-map";
 import { api } from "../../../../lib/api/client";
-import {
-  formatDistance,
-  normalizeRecordingActivityCategory,
-  validateRecordingSearch,
-} from "../../../../lib/recording-web";
+import { formatDistance, validateRecordingSearch } from "../../../../lib/recording-web";
 
 export const Route = createFileRoute("/_protected/record/route-preview/$routeId")({
   validateSearch: (search: Record<string, unknown>) => validateRecordingSearch(search),
@@ -38,10 +34,6 @@ function RecordRoutePreviewPage() {
       to: "/record",
       search: {
         ...launcher,
-        category: normalizeRecordingActivityCategory(
-          routeQuery.data.activity_category,
-          launcher.category,
-        ),
         routeId,
       },
     });
@@ -108,9 +100,6 @@ function RecordRoutePreviewPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">{formatDistance(route.total_distance)}</Badge>
-              <Badge variant="outline">
-                {normalizeRecordingActivityCategory(route.activity_category, "other")}
-              </Badge>
               {isAttached ? <Badge>Currently attached</Badge> : null}
             </div>
           </div>

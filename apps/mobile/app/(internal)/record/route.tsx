@@ -2,55 +2,39 @@
  * Route Picker Page
  *
  * Full-screen page for selecting/detaching routes during recording.
- * Accessed via navigation from footer "Route" tile.
+ * Accessed via navigation from the control dock route quick action.
  *
  * Features:
  * - Display list of available routes
- * - Search and filter functionality
+ * - Search functionality
  * - "Detach Route" option if route currently attached
  * - Preview/Confirmation workflow before attaching
  * - Standard back navigation via header
  * - Recording continues in background
  */
 
-import type { ActivityCategory } from "@repo/core";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
-import { Check, Route, Search } from "lucide-react-native";
+import { Check, Route, Search, Trash2 } from "lucide-react-native";
 import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
-import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-
-const CATEGORY_OPTIONS: {
-  value: ActivityCategory | "all";
-  label: string;
-}[] = [
-  { value: "all", label: "All Categories" },
-  { value: "run", label: "Run" },
-  { value: "bike", label: "Bike" },
-  { value: "swim", label: "Swim" },
-  { value: "strength", label: "Strength" },
-  { value: "other", label: "Other" },
-];
 
 export default function RoutePickerPage() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const service = useSharedActivityRecorder();
-  const recordingState = useRecordingState(service);
-  const { attachedRouteId, detachRoute } = useRecordingConfiguration(service);
-  const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
+  const { attachedRouteId, detachRoute, sessionContract } = useRecordingConfiguration(service);
+  const canEditRoute = sessionContract?.editing.canEditRoute ?? true;
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<ActivityCategory | "all">("all");
 
   // Fetch routes (no category filter in query since we filter client-side)
   const { data: routes, isLoading } = api.routes.list.useInfiniteQuery(
@@ -65,33 +49,32 @@ export default function RoutePickerPage() {
   // Handle route selection - Navigate to preview/confirmation screen
   const handleRoutePress = useCallback(
     (routeId: string) => {
+      if (!canEditRoute) return;
+
       navigateTo({
         pathname: "/record/route-preview",
         params: { routeId },
       } as any);
     },
-    [navigateTo],
+    [canEditRoute, navigateTo],
   );
 
   // Handle detach route
   const handleDetach = useCallback(() => {
+    if (!canEditRoute) return;
+
     detachRoute();
     router.back();
-  }, [detachRoute]);
+  }, [canEditRoute, detachRoute, router]);
 
   const currentRouteId = attachedRouteId;
 
   // Extract routes from paginated response
   const routesList = routes?.pages.flatMap((page: any) => page.items) || [];
 
-  // Filter routes by search and category filter
+  // Filter routes by search
   const filteredRoutes = React.useMemo(() => {
     return routesList.filter((route: any) => {
-      // Category filter
-      if (categoryFilter !== "all" && route.activity_category !== categoryFilter) {
-        return false;
-      }
-
       // Search filter (searches name and description)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
@@ -105,7 +88,7 @@ export default function RoutePickerPage() {
 
       return true;
     });
-  }, [routesList, searchQuery, categoryFilter]);
+  }, [routesList, searchQuery]);
 
   return (
     <View className="flex-1 bg-background" testID="record-route-screen">
@@ -129,35 +112,6 @@ export default function RoutePickerPage() {
           </View>
         </View>
 
-        {/* Category Filter Dropdown */}
-        <View className="mb-3">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="gap-2">
-            <View className="flex-row gap-2">
-              {CATEGORY_OPTIONS.map((option) => (
-                <Pressable
-                  key={option.value}
-                  onPress={() => setCategoryFilter(option.value)}
-                  className="px-3 py-2 rounded-full border border-border"
-                  testID={`record-route-filter-${option.value}`}
-                  style={{
-                    backgroundColor:
-                      categoryFilter === option.value ? "rgb(34, 197, 94)" : undefined,
-                  }}
-                >
-                  <Text
-                    className="text-sm font-medium"
-                    style={{
-                      color: categoryFilter === option.value ? "white" : undefined,
-                    }}
-                  >
-                    {option.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-
         {/* Loading State */}
         {isLoading && (
           <View className="items-center justify-center py-8">
@@ -166,19 +120,17 @@ export default function RoutePickerPage() {
           </View>
         )}
 
-        {isSetupLocked && (
+        {canEditRoute && sessionContract?.guidance.hasRoute ? (
           <View className="mb-3 rounded-lg border border-border bg-card p-4">
-            <Text className="text-base font-medium text-foreground">
-              Route setup is locked after recording starts
-            </Text>
+            <Text className="text-base font-medium text-foreground">Route guidance is active</Text>
             <Text className="mt-1 text-sm text-muted-foreground">
-              Finish this workout to attach a different route or detach the current one.
+              GPS on enables live navigation. GPS off keeps the route available as virtual guidance.
             </Text>
           </View>
-        )}
+        ) : null}
 
         {/* Detach Route Option (if route attached) */}
-        {!isLoading && currentRouteId && !isSetupLocked && (
+        {!isLoading && currentRouteId && canEditRoute && (
           <Pressable
             onPress={handleDetach}
             className="bg-card p-4 rounded-lg border border-border mb-3"
@@ -186,10 +138,10 @@ export default function RoutePickerPage() {
           >
             <View className="flex-row items-center justify-between">
               <View className="flex-1">
-                <Text className="text-base font-medium text-destructive">Detach Current Route</Text>
-                <Text className="text-sm text-muted-foreground mt-1">
-                  Remove route from this workout
-                </Text>
+                <View className="flex-row items-center gap-2">
+                  <Icon as={Trash2} size={16} className="text-destructive" />
+                  <Text className="text-base font-medium text-destructive">Remove Route</Text>
+                </View>
               </View>
             </View>
           </Pressable>
@@ -202,7 +154,7 @@ export default function RoutePickerPage() {
               <RouteListItem
                 key={route.id}
                 route={route}
-                disabled={isSetupLocked}
+                disabled={!canEditRoute}
                 isSelected={route.id === currentRouteId}
                 onPress={() => handleRoutePress(route.id)}
               />
@@ -212,13 +164,9 @@ export default function RoutePickerPage() {
           !isLoading && (
             <EmptyStateCard
               icon={Route}
-              title={
-                searchQuery || categoryFilter !== "all"
-                  ? "No matching routes found"
-                  : "No routes available"
-              }
+              title={searchQuery ? "No matching routes found" : "No routes available"}
               description={
-                searchQuery || categoryFilter !== "all"
+                searchQuery
                   ? "Try adjusting your search or filter"
                   : "Upload routes from the Library tab"
               }
@@ -240,7 +188,6 @@ interface RouteListItemProps {
     name: string;
     description: string | null;
     total_distance: number;
-    activity_category: string;
   };
   isSelected: boolean;
   disabled?: boolean;
@@ -268,10 +215,6 @@ function RouteListItem({ route, isSelected, disabled = false, onPress }: RouteLi
           <Text className="text-base font-medium">{route.name}</Text>
           <View className="flex-row items-center gap-2 mt-1">
             <Text className="text-sm text-muted-foreground">{distanceKm} km</Text>
-            <Text className="text-sm text-muted-foreground">•</Text>
-            <Text className="text-sm text-muted-foreground capitalize">
-              {route.activity_category}
-            </Text>
           </View>
           {route.description && (
             <Text className="text-sm text-muted-foreground mt-1">{route.description}</Text>

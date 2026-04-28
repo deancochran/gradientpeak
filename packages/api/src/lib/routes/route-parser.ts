@@ -55,6 +55,38 @@ export function parseGPX(gpxContent: string): ParsedRoute {
 }
 
 /**
+ * Parse TCX course/activity content and extract route data.
+ */
+export function parseTCX(tcxContent: string): ParsedRoute {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(tcxContent, "text/xml");
+
+  const parserError = doc.getElementsByTagName("parsererror")[0];
+  if (parserError) {
+    throw new Error("Invalid TCX file: XML parsing error");
+  }
+
+  const rootName = doc.documentElement.nodeName.toLowerCase();
+  if (!rootName.endsWith("trainingcenterdatabase")) {
+    throw new Error("Invalid TCX file: root element must be <TrainingCenterDatabase>");
+  }
+
+  const name = extractFirstText(doc, "Name") ?? extractFirstText(doc, "Id");
+  const time = extractFirstText(doc, "Id");
+  const coordinates = extractTCXCoordinates(doc);
+
+  if (coordinates.length === 0) {
+    throw new Error("No valid coordinates found in TCX file");
+  }
+
+  return {
+    name,
+    coordinates,
+    metadata: time ? { time } : undefined,
+  };
+}
+
+/**
  * Extract route name from GPX
  */
 function extractName(doc: Document): string | undefined {
@@ -203,7 +235,7 @@ function parseTrackPoint(element: Element): LatLngAlt | null {
   return {
     latitude: lat,
     longitude: lon,
-    altitude: altitude && !isNaN(altitude) ? altitude : undefined,
+    altitude: typeof altitude === "number" && !isNaN(altitude) ? altitude : undefined,
   };
 }
 
@@ -235,6 +267,10 @@ export function parseRoute(routeContent: string, fileType?: string): ParsedRoute
     case "text/xml":
       return parseGPX(routeContent);
 
+    case "tcx":
+    case "application/vnd.garmin.tcx+xml":
+      return parseTCX(routeContent);
+
     default:
       throw new Error(`Unsupported route file type: ${detectedType}`);
   }
@@ -250,7 +286,52 @@ function detectFileType(content: string): string {
     return "gpx";
   }
 
+  if (trimmed.includes("<TrainingCenterDatabase")) {
+    return "tcx";
+  }
+
   throw new Error("Unable to detect route file type");
+}
+
+function extractTCXCoordinates(doc: Document): LatLngAlt[] {
+  const coordinates: LatLngAlt[] = [];
+  const trackpoints = doc.getElementsByTagName("Trackpoint");
+
+  for (let index = 0; index < trackpoints.length; index += 1) {
+    const point = parseTCXTrackpoint(trackpoints[index]);
+    if (point) coordinates.push(point);
+  }
+
+  return coordinates;
+}
+
+function parseTCXTrackpoint(element: Element | undefined): LatLngAlt | null {
+  if (!element) return null;
+
+  const position = element.getElementsByTagName("Position")[0];
+  if (!position) return null;
+
+  const latitude = parseNumberText(position, "LatitudeDegrees");
+  const longitude = parseNumberText(position, "LongitudeDegrees");
+  if (latitude === undefined || longitude === undefined) return null;
+
+  return {
+    latitude,
+    longitude,
+    altitude: parseNumberText(element, "AltitudeMeters"),
+  };
+}
+
+function parseNumberText(element: Element, tagName: string) {
+  const text = extractFirstText(element, tagName);
+  if (!text) return undefined;
+
+  const value = Number.parseFloat(text);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function extractFirstText(element: Document | Element, tagName: string) {
+  return element.getElementsByTagName(tagName)[0]?.textContent?.trim() || undefined;
 }
 
 /**

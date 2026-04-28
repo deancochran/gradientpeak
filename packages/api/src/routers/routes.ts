@@ -4,7 +4,6 @@ import {
   activityPlans,
   activityRoutes,
   likes,
-  publicActivityCategorySchema,
   publicActivityRoutesRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
@@ -26,8 +25,6 @@ import { loadProfileIdentityMap, profileIdentitySchema } from "../utils/profile-
 const storageService = getApiStorageService();
 
 // Input schemas
-const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
-const activityCategoryFiltersSchema = z.array(publicActivityCategorySchema).min(1).max(10);
 const routeOwnerScopeSchema = z.enum(["own", "system", "public", "all"]);
 
 const routeIdSchema = z.string().uuid();
@@ -97,7 +94,6 @@ const loadFullRouteOutputSchema = z
     totalDistance: z.number().nullable(),
     totalAscent: z.number().nullable(),
     totalDescent: z.number().nullable(),
-    activityCategory: publicActivityCategorySchema,
   })
   .strict();
 
@@ -105,8 +101,6 @@ const deleteRouteOutputSchema = z.object({ success: z.literal(true) }).strict();
 
 const listRoutesSchema = z
   .object({
-    activityCategory: activityCategoryFilterSchema.optional(),
-    activityCategories: activityCategoryFiltersSchema.optional(),
     search: z.string().optional(),
     min_distance_m: z.number().min(0).optional(),
     max_distance_m: z.number().min(0).optional(),
@@ -138,7 +132,6 @@ const uploadRouteSchema = z
   .object({
     name: z.string().min(1).max(100),
     description: z.string().max(1000).optional(),
-    activityCategory: publicActivityCategorySchema,
     fileContent: z.string().min(1),
     fileName: z.string().min(1),
   })
@@ -178,14 +171,6 @@ export const routesRouter = createTRPCRouter({
       }
 
       const conditions = [visibilityCondition];
-
-      if (input.activityCategory && input.activityCategory !== "all") {
-        conditions.push(eq(activityRoutes.activity_category, input.activityCategory));
-      }
-
-      if (input.activityCategories?.length) {
-        conditions.push(inArray(activityRoutes.activity_category, input.activityCategories));
-      }
 
       const trimmedSearch = input.search?.trim();
 
@@ -427,7 +412,7 @@ export const routesRouter = createTRPCRouter({
       let parsed;
 
       try {
-        parsed = parseStoredRouteFile(fileContent);
+        parsed = parseStoredRouteFile(fileContent, routeData.file_path);
       } catch (error) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -445,7 +430,6 @@ export const routesRouter = createTRPCRouter({
         totalDistance: routeData.total_distance,
         totalAscent: routeData.total_ascent,
         totalDescent: routeData.total_descent,
-        activityCategory: routeData.activity_category,
       });
     }),
 
@@ -458,7 +442,7 @@ export const routesRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       try {
         const db = getRequiredDb(ctx);
-        const artifacts = buildRouteFileArtifacts(input.fileContent);
+        const artifacts = buildRouteFileArtifacts(input.fileContent, input.fileName);
 
         // Generate unique file path
         const fileExtension = inferRouteFileExtension(input.fileName);
@@ -489,7 +473,6 @@ export const routesRouter = createTRPCRouter({
               profile_id: ctx.session.user.id,
               name: input.name,
               description: input.description,
-              activity_category: input.activityCategory,
               file_path: filePath,
               total_distance: artifacts.totalDistance,
               total_ascent: artifacts.totalAscent,

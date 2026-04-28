@@ -356,13 +356,14 @@ describe("plan dashboard navigation", () => {
   it("renders dashboard sections", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    expect(screen.getAllByText("Forecasted Projection")[0]).toBeTruthy();
+    expect(screen.getAllByText("This Week")[0]).toBeTruthy();
+    expect(screen.getAllByText("Projection")[0]).toBeTruthy();
     expect(screen.getByText("Goals")).toBeTruthy();
-    expect(screen.getAllByText("150%")[0]).toBeTruthy();
-    expect(screen.getByText("This week's load")).toBeTruthy();
-    expect(screen.getByTestId("plan-execution-summary")).toBeTruthy();
-    expect(screen.getByText("Next scheduled session")).toBeTruthy();
-    expect(screen.getByText("Next goal day")).toBeTruthy();
+    expect(screen.getAllByText(/150% ready/)[0]).toBeTruthy();
+    expect(screen.getByText("Next session")).toBeTruthy();
+    expect(screen.getByText("Load target")).toBeTruthy();
+    expect(screen.getByTestId("plan-open-schedule-button")).toBeTruthy();
+    expect(screen.getByTestId("plan-next-goal-card")).toBeTruthy();
   });
 
   it("navigates to goal detail when a goal card is pressed", () => {
@@ -392,15 +393,23 @@ describe("plan dashboard navigation", () => {
     });
   });
 
-  it("opens the next goal anchor from the plan projection card", () => {
+  it("opens the next goal card from the plan summary stack", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    fireEvent.press(screen.getByTestId("plan-next-goal-anchor"));
+    fireEvent.press(screen.getByTestId("plan-next-goal-card"));
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: "/goal-detail",
       params: { id: "goal-1" },
     });
+  });
+
+  it("opens the schedule tab from the weekly summary card", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("plan-open-schedule-button"));
+
+    expect(navigateMock).toHaveBeenCalledWith(ROUTES.CALENDAR);
   });
 
   it("does not render active-plan navigation action", () => {

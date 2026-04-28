@@ -351,9 +351,9 @@ describe("calendar redesign screen", () => {
     expect(screen.queryByTestId("calendar-reset-button")).toBeNull();
     expect(screen.queryByTestId("calendar-mode-switcher")).toBeNull();
     expect(screen.getByTestId("calendar-month-page-2026-03-01")).toBeTruthy();
-    expect(screen.queryByTestId("calendar-selected-day-agenda")).toBeNull();
-    expect(screen.queryByText("Week Of")).toBeNull();
-    expect(screen.queryByText("Next event")).toBeNull();
+    expect(screen.getByTestId("calendar-open-day-button")).toBeTruthy();
+    expect(screen.getByTestId("calendar-today-button")).toBeTruthy();
+    expect(screen.getAllByText("Today")[0]).toBeTruthy();
   });
 
   it("initializes the query window from the selected day even when the visible month diverges", () => {
@@ -369,7 +369,7 @@ describe("calendar redesign screen", () => {
     );
   });
 
-  it("opens the dedicated day route from a month cell tap", () => {
+  it("updates the selected day from a month cell tap without navigating away", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(screen.getByTestId("calendar-month-page-2026-03-01")).toBeTruthy();
@@ -377,16 +377,16 @@ describe("calendar redesign screen", () => {
     fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
 
     expect(useCalendarStore.getState().activeDate).toBe("2026-03-24");
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/calendar-day",
-      params: { date: "2026-03-24" },
-    });
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Tue, Mar 24")).toBeTruthy();
+    expect(screen.getByText("1 session scheduled")).toBeTruthy();
   });
 
-  it("opens the day route for a selected day even without visible events", () => {
+  it("opens the day route from the summary CTA", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-25"));
+    fireEvent.press(screen.getByTestId("calendar-open-day-button"));
 
     expect(useCalendarStore.getState().activeDate).toBe("2026-03-25");
     expect(pushMock).toHaveBeenCalledWith({
@@ -395,35 +395,40 @@ describe("calendar redesign screen", () => {
     });
   });
 
-  it("does not keep a persistent selected style after choosing an event day", () => {
+  it("keeps a persistent selected style after choosing a day", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
 
-    const selectedCell = screen.getByTestId("calendar-month-cell-2026-03-24");
-    expect(selectedCell.props.children[0].props.className).toContain("bg-transparent");
-    expect(selectedCell.props.children[0].props.className).not.toContain("bg-primary");
+    const selectedChip = screen.getByTestId("calendar-month-day-chip-2026-03-24");
+    expect(selectedChip.props.className).toContain("border-2");
+    expect(selectedChip.props.className).toContain("bg-primary");
   });
 
   it("does not render month density markers for rest-day-only dates", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    const restDayCell = screen.getByTestId("calendar-month-cell-2026-03-25");
     expect(screen.queryByTestId("calendar-month-planned-signal-2026-03-25")).toBeNull();
-    expect(
-      (restDayCell.props.children[1]?.props?.children?.[1]?.props?.children ?? []).length ?? 0,
-    ).toBe(0);
   });
 
   it("renders a lightweight planned-workout signal on planned days", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
-    expect(screen.getByTestId("calendar-month-planned-signal-2026-03-23")).toBeTruthy();
     expect(screen.getByTestId("calendar-month-day-chip-2026-03-23").props.className).toContain(
       "bg-primary",
     );
     expect(screen.queryByTestId("calendar-month-planned-signal-2026-03-24")).toBeNull();
     expect(screen.queryByTestId("calendar-month-planned-signal-2026-03-25")).toBeNull();
+  });
+
+  it("jumps back to today from the summary action", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-03-24"));
+    fireEvent.press(screen.getByTestId("calendar-today-button"));
+
+    expect(useCalendarStore.getState().activeDate).toBe(today);
+    expect(screen.getAllByText("Today")[0]).toBeTruthy();
   });
 
   it("renders a lightweight goal signal on goal target days", () => {

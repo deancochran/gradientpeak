@@ -1,14 +1,14 @@
 /**
- * RecordingErrorBoundary - Isolate zone failures to prevent full app crash
+ * RecordingErrorBoundary - Isolate recording surface failures to prevent full app crash
  *
- * Wraps each recording zone independently to catch and handle errors gracefully.
- * If a zone crashes, the error is isolated and recording continues uninterrupted.
+ * Wraps recording surfaces independently to catch and handle errors gracefully.
+ * If a surface crashes, the error is isolated and recording continues uninterrupted.
  *
  * Features:
- * - Error isolation per zone
+ * - Error isolation per surface
  * - User-friendly error message
- * - "Reload Zone" button to attempt recovery
- * - Recording continues even if zone fails
+ * - "Reload" button to attempt recovery
+ * - Recording continues even if a surface fails
  * - Detailed error logging for debugging
  */
 
@@ -29,12 +29,12 @@ interface RecordingErrorBoundaryState {
 }
 
 /**
- * Error boundary component for recording zones
+ * Error boundary component for recording surfaces
  *
  * Usage:
  * ```tsx
- * <RecordingErrorBoundary componentName="Zone A">
- *   <ZoneA {...props} />
+ * <RecordingErrorBoundary componentName="Route Surface">
+ *   <RouteSurface {...props} />
  * </RecordingErrorBoundary>
  * ```
  */
@@ -137,7 +137,7 @@ export class RecordingErrorBoundary extends Component<
  *
  * @example
  * ```tsx
- * const SafeZoneA = withErrorBoundary(ZoneA, "Zone A");
+ * const SafeRouteSurface = withErrorBoundary(RouteSurface, "Route Surface");
  * ```
  */
 export function withErrorBoundary<P extends object>(

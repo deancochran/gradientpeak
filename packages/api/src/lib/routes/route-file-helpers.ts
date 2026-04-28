@@ -50,8 +50,8 @@ export interface RouteFileArtifacts {
   totalDistance: number;
 }
 
-export function parseStoredRouteFile(fileContent: string): ParsedRoute {
-  const parsed = parsedRouteSchema.safeParse(parseRoute(fileContent, "gpx"));
+export function parseStoredRouteFile(fileContent: string, fileName?: string): ParsedRoute {
+  const parsed = parsedRouteSchema.safeParse(parseRoute(fileContent, inferRouteFileType(fileName)));
   if (!parsed.success) {
     throw new Error("Stored route file contained invalid route data");
   }
@@ -59,8 +59,11 @@ export function parseStoredRouteFile(fileContent: string): ParsedRoute {
   return parsed.data;
 }
 
-export function buildRouteFileArtifacts(fileContent: string): RouteFileArtifacts {
-  const parsed = parsedRouteSchema.safeParse(parseRoute(fileContent, "gpx"));
+export function buildRouteFileArtifacts(
+  fileContent: string,
+  fileName?: string,
+): RouteFileArtifacts {
+  const parsed = parsedRouteSchema.safeParse(parseRoute(fileContent, inferRouteFileType(fileName)));
   if (!parsed.success) {
     throw new Error("Failed to process route file");
   }
@@ -97,12 +100,23 @@ export function inferRouteContentType(fileName: string): string {
     return "application/gpx+xml";
   }
 
+  if (lowerName.endsWith(".tcx")) {
+    return "application/vnd.garmin.tcx+xml";
+  }
+
   return "application/octet-stream";
 }
 
 export function inferRouteFileExtension(fileName: string): string {
   const extension = fileName.split(".").pop()?.trim().toLowerCase();
   return extension && extension.length > 0 ? extension : "gpx";
+}
+
+function inferRouteFileType(fileName?: string): string | undefined {
+  if (!fileName) return undefined;
+
+  const extension = fileName.split(".").pop()?.trim().toLowerCase();
+  return extension && extension.length > 0 ? extension : undefined;
 }
 
 function calculateSimplificationTolerance(pointCount: number): number {

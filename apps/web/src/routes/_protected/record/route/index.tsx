@@ -13,12 +13,7 @@ import { Check, Loader2, Route as RouteIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { api } from "../../../../lib/api/client";
-import {
-  formatDistance,
-  normalizeRecordingActivityCategory,
-  recordingActivityOptions,
-  validateRecordingSearch,
-} from "../../../../lib/recording-web";
+import { formatDistance, validateRecordingSearch } from "../../../../lib/recording-web";
 
 export const Route = createFileRoute("/_protected/record/route/")({
   validateSearch: (search: Record<string, unknown>) => validateRecordingSearch(search),
@@ -29,7 +24,6 @@ function RecordRoutePage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
   const [searchText, setSearchText] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<"all" | typeof launcher.category>("all");
   const routesQuery = api.routes.list.useInfiniteQuery(
     { limit: 50 },
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
@@ -44,16 +38,14 @@ function RecordRoutePage() {
     const query = searchText.trim().toLowerCase();
 
     return routes.filter((route) => {
-      const category = normalizeRecordingActivityCategory(route.activity_category, "other");
-      const matchesCategory = categoryFilter === "all" || category === categoryFilter;
       const matchesQuery =
         query.length === 0 ||
         route.name.toLowerCase().includes(query) ||
         route.description?.toLowerCase().includes(query);
 
-      return matchesCategory && Boolean(matchesQuery);
+      return Boolean(matchesQuery);
     });
-  }, [categoryFilter, routes, searchText]);
+  }, [routes, searchText]);
 
   const detachRoute = () => {
     void navigate({
@@ -92,23 +84,6 @@ function RecordRoutePage() {
             value={searchText}
             onChange={(event) => setSearchText(event.currentTarget.value)}
           />
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant={categoryFilter === "all" ? "default" : "outline"}
-              onClick={() => setCategoryFilter("all")}
-            >
-              All categories
-            </Button>
-            {recordingActivityOptions.map((option) => (
-              <Button
-                key={option.value}
-                variant={categoryFilter === option.value ? "default" : "outline"}
-                onClick={() => setCategoryFilter(option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
-          </div>
           {launcher.routeId ? (
             <Button variant="ghost" className="px-0 text-destructive" onClick={detachRoute}>
               Detach current route
@@ -168,9 +143,6 @@ function RecordRoutePage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline">{formatDistance(route.total_distance)}</Badge>
-                    <Badge variant="outline">
-                      {normalizeRecordingActivityCategory(route.activity_category, "other")}
-                    </Badge>
                     {isSelected ? <Badge>Attached</Badge> : null}
                   </div>
                 </div>

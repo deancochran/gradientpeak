@@ -7,11 +7,13 @@ import { EllipticalControlUI } from "@/components/recording/ftms/EllipticalContr
 import { RowerControlUI } from "@/components/recording/ftms/RowerControlUI";
 import { TreadmillControlUI } from "@/components/recording/ftms/TreadmillControlUI";
 import { useBleState, usePlan, useSensors, useSessionView } from "@/lib/hooks/useActivityRecorder";
+import { useRecordingSessionContract } from "@/lib/hooks/useRecordingConfig";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 
 export default function FTMSControlPage() {
   const service = useSharedActivityRecorder();
+  const sessionContract = useRecordingSessionContract(service);
   const navigateTo = useAppNavigate();
   const plan = usePlan(service);
   const { sensors } = useSensors(service);
@@ -71,7 +73,8 @@ export default function FTMSControlPage() {
             </Text>
           </Button>
           <Text className="mt-3 text-xs text-muted-foreground">
-            If another app already owns trainer control, close it first and reconnect here.
+            If another app already owns trainer control, close it first and reconnect from the
+            sensors quick action.
           </Text>
         </View>
       </View>
@@ -81,6 +84,20 @@ export default function FTMSControlPage() {
   return (
     <ScrollView className="flex-1 bg-background" bounces={false}>
       <View className="px-4 pt-4 pb-6">
+        <View className="mb-4 rounded-2xl border border-border bg-card p-4">
+          <Text className="text-base font-semibold text-foreground">Trainer control</Text>
+          <Text className="mt-1 text-sm text-muted-foreground">
+            Open this screen from the control dock when you need to verify trainer readiness or
+            intentionally override automatic behavior.
+          </Text>
+          {sessionContract?.guidance.hasPlan ? (
+            <Text className="mt-3 text-xs text-muted-foreground">
+              This session is plan-led, so auto mode will follow workout targets until you switch to
+              manual.
+            </Text>
+          ) : null}
+        </View>
+
         <View className="mb-4 rounded-2xl border border-border bg-card p-4">
           <Text className="text-2xl font-bold capitalize text-foreground">
             {machineType} control

@@ -21,6 +21,11 @@ Use this file when working in `apps/mobile/app`.
 - Move reusable screen sections into `components/`.
 - Move durable non-UI logic into `lib/`.
 - Keep form ownership local to the screen and use React Hook Form context and controller APIs instead of ad hoc controlled-field plumbing.
+- For list screens, default to this order unless the screen has a clear reason not to: header actions, intro, primary controls, result summary, list content, one persistent create or schedule entry point.
+- Treat owner-library `My ...` screens as browse and manage surfaces first, not creation hubs, unless the workflow clearly depends on creation from that screen.
+- For detail screens, default to this order unless the screen has a clear reason not to: header actions, identity card, linked primary content, analytical content, structured body content, engagement or secondary content.
+- Keep screen-level management actions in the header overflow menu, and keep at most one lightweight personal action near the identity block.
+- Make linked first-class content appear early and look tappable, and keep charts or metrics visually quieter than the identity and linked-content layers they support.
 
 ## Avoid
 

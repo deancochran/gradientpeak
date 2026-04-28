@@ -86,7 +86,6 @@ type TrainingPlanFilters = {
 };
 
 type RouteFilters = {
-  categoryIds: DiscoverCategoryId[];
   minDistanceKm: number | null;
   maxDistanceKm: number | null;
   minAscentM: number | null;
@@ -147,7 +146,6 @@ const DEFAULT_TRAINING_PLAN_FILTERS: TrainingPlanFilters = {
   maxSessionsPerWeek: null,
 };
 const DEFAULT_ROUTE_FILTERS: RouteFilters = {
-  categoryIds: [],
   minDistanceKm: null,
   maxDistanceKm: null,
   minAscentM: null,
@@ -211,8 +209,7 @@ function hasTrainingPlanFilters(filters: TrainingPlanFilters) {
 
 function hasRouteFilters(filters: RouteFilters) {
   return Boolean(
-    filters.categoryIds.length > 0 ||
-      filters.minDistanceKm !== null ||
+    filters.minDistanceKm !== null ||
       filters.maxDistanceKm !== null ||
       filters.minAscentM !== null ||
       filters.maxAscentM !== null,
@@ -609,7 +606,6 @@ export default function DiscoverPage() {
   const routesInfiniteQuery = api.routes.list.useInfiniteQuery(
     {
       search: validatedSearchQuery || undefined,
-      activityCategories: routeFilters.categoryIds.length ? routeFilters.categoryIds : undefined,
       min_distance_m:
         routeFilters.minDistanceKm !== null
           ? Math.round(routeFilters.minDistanceKm * 1000)
@@ -1686,27 +1682,6 @@ function DiscoverFilterSheet({
                   direction={routeSort.direction}
                   onChange={(direction) => onRouteSortChange({ ...routeSort, direction })}
                 />
-              </FilterSection>
-
-              <FilterSection title="Route type">
-                <View className="flex-row flex-wrap gap-2">
-                  {ACTIVITY_CATEGORY_OPTIONS.map((category) => (
-                    <FilterChip
-                      key={category.id}
-                      label={category.label}
-                      isActive={routeFilters.categoryIds.includes(category.id)}
-                      onPress={() =>
-                        onRouteFiltersChange({
-                          ...routeFilters,
-                          categoryIds: routeFilters.categoryIds.includes(category.id)
-                            ? routeFilters.categoryIds.filter((id) => id !== category.id)
-                            : [...routeFilters.categoryIds, category.id],
-                        })
-                      }
-                      testID={`discover-filter-routes-category-${category.id}`}
-                    />
-                  ))}
-                </View>
               </FilterSection>
 
               <FilterSection title="Distance">

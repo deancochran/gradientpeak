@@ -16,6 +16,35 @@ import type { CanonicalSport } from "./sport";
 
 export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);
 
+export type RecordingLaunchSource =
+  | "record_tab"
+  | "activity_plan"
+  | "calendar_event"
+  | "route"
+  | "manual";
+
+export type RecordingRouteMode = "none" | "preview" | "virtual" | "live_navigation" | "unavailable";
+
+export type RecordingPrimarySurface = "workout" | "route" | "metrics" | "trainer";
+
+export type RecordingBackdropMode =
+  | "live_navigation"
+  | "virtual_route"
+  | "route_preview"
+  | "route_unavailable"
+  | "gps_map"
+  | "gps_unavailable"
+  | "ambient";
+
+export type RecordingInsightCard =
+  | "metrics"
+  | "workout_interval"
+  | "trainer"
+  | "route_progress"
+  | "climb";
+
+export type RecordingQuickAction = "activity" | "gps" | "plan" | "route" | "sensors" | "trainer";
+
 export const recordingCapabilitiesSchema = z
   .object({
     canTrackLocation: z.boolean(),
@@ -42,10 +71,16 @@ export const recordingCapabilitiesSchema = z
 // ============================================================================
 
 export interface RecordingConfigInput {
+  launchSource?: RecordingLaunchSource;
+
   // Core activity details
   activityCategory: CanonicalSport;
   gpsRecordingEnabled: boolean;
   mode: "planned" | "unplanned";
+  eventId?: string | null;
+  activityPlanId?: string | null;
+  routeId?: string | null;
+  routeGeometryAvailable?: boolean;
 
   // Plan details (if planned)
   plan?: {
@@ -61,6 +96,7 @@ export interface RecordingConfigInput {
       deviceId: string;
       features?: FTMSFeatures;
       autoControlEnabled: boolean;
+      controlReady?: boolean;
     };
     hasPowerMeter: boolean;
     hasHeartRateMonitor: boolean;
@@ -69,6 +105,11 @@ export interface RecordingConfigInput {
 
   // Environment
   gpsAvailable: boolean;
+
+  // Runtime session lifecycle
+  session?: {
+    identityLocked?: boolean;
+  };
 }
 
 // ============================================================================
@@ -103,6 +144,90 @@ export interface RecordingCapabilities {
   warnings: string[];
 }
 
+export interface RecordingSessionAuthority {
+  category: "user" | "plan";
+  structure: "none" | "plan";
+  spatial: "none" | "route";
+  locationCapture: "gps";
+  trainerExecution: "none" | "trainer";
+}
+
+export interface RecordingSessionGuidance {
+  hasPlan: boolean;
+  hasStructuredSteps: boolean;
+  hasRoute: boolean;
+  hasRouteGeometry: boolean;
+  routeMode: RecordingRouteMode;
+}
+
+export interface RecordingSessionDevices {
+  hasTrainer: boolean;
+  trainerControllable: boolean;
+  hasPower: boolean;
+  hasHeartRate: boolean;
+  hasCadence: boolean;
+  gpsIntent: "on" | "off";
+  gpsAvailable: boolean;
+}
+
+export interface RecordingSessionDegradedState {
+  gps?: string;
+  route?: string;
+  plan?: string;
+  trainer?: string;
+  sensors?: string;
+}
+
+export interface RecordingSessionUiPolicy {
+  backdropMode: RecordingBackdropMode;
+  floatingPanel: {
+    defaultCard: RecordingInsightCard;
+    availableCards: RecordingInsightCard[];
+    forcedExpanded: boolean;
+    canMinimize: boolean;
+  };
+  controls: {
+    quickActions: RecordingQuickAction[];
+  };
+}
+
+export interface RecordingSessionEditing {
+  canEditActivity: boolean;
+  canEditPlan: boolean;
+  canEditRoute: boolean;
+  canEditGps: boolean;
+  locksIdentityAfterStart: boolean;
+}
+
+export interface RecordingSessionMetrics {
+  primaryMetric: RecordingCapabilities["primaryMetric"];
+  emphasizedMetrics: Array<
+    "time" | "distance" | "pace" | "heart_rate" | "power" | "cadence" | "calories"
+  >;
+}
+
+export interface RecordingSessionSurfaces {
+  defaultPrimarySurface: RecordingPrimarySurface;
+  availablePrimarySurfaces: RecordingPrimarySurface[];
+  quickActions: RecordingQuickAction[];
+}
+
+export interface RecordingSessionValidation {
+  consequences: string[];
+}
+
+export interface RecordingSessionContract {
+  authority: RecordingSessionAuthority;
+  guidance: RecordingSessionGuidance;
+  devices: RecordingSessionDevices;
+  degraded: RecordingSessionDegradedState;
+  ui: RecordingSessionUiPolicy;
+  editing: RecordingSessionEditing;
+  metrics: RecordingSessionMetrics;
+  surfaces: RecordingSessionSurfaces;
+  validation: RecordingSessionValidation;
+}
+
 // ============================================================================
 // Full Configuration
 // ============================================================================
@@ -110,4 +235,5 @@ export interface RecordingCapabilities {
 export interface RecordingConfiguration {
   input: RecordingConfigInput;
   capabilities: RecordingCapabilities;
+  session: RecordingSessionContract;
 }

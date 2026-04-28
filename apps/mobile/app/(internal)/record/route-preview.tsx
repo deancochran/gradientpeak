@@ -3,12 +3,11 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { MapPin, Route } from "lucide-react-native";
+import { MapPin } from "lucide-react-native";
 import React, { useMemo } from "react";
 import { Alert, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { api } from "@/lib/api";
-import { useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 
@@ -21,9 +20,8 @@ export default function RoutePreviewScreen() {
   const { routeId } = useLocalSearchParams<{ routeId?: string }>();
   const router = useRouter();
   const service = useSharedActivityRecorder();
-  const recordingState = useRecordingState(service);
-  const { attachRoute, attachedRouteId } = useRecordingConfiguration(service);
-  const isSetupLocked = recordingState !== "pending" && recordingState !== "ready";
+  const { attachRoute, attachedRouteId, sessionContract } = useRecordingConfiguration(service);
+  const canEditRoute = sessionContract?.editing.canEditRoute ?? true;
 
   const { data: route, isLoading } = api.routes.get.useQuery(
     { id: routeId ?? "" },
@@ -36,11 +34,14 @@ export default function RoutePreviewScreen() {
   }, [route?.polyline]);
 
   const initialRegion = useMemo(() => {
+    if (coordinates.length === 0) return null;
+
     const center = coordinates[Math.floor(coordinates.length / 2)];
+    if (!center) return null;
 
     return {
-      latitude: center?.latitude ?? 37.78825,
-      longitude: center?.longitude ?? -122.4324,
+      latitude: center.latitude,
+      longitude: center.longitude,
       latitudeDelta: 0.05,
       longitudeDelta: 0.05,
     };
@@ -49,7 +50,7 @@ export default function RoutePreviewScreen() {
   const handleAttach = async () => {
     if (!route?.id) return;
 
-    if (isSetupLocked) {
+    if (!canEditRoute) {
       Alert.alert("Route Setup Locked", "Finish this workout to attach a different route.");
       return;
     }
@@ -98,7 +99,7 @@ export default function RoutePreviewScreen() {
   return (
     <View className="flex-1 bg-background" testID="route-preview-screen">
       <View className="h-72 bg-muted">
-        {coordinates.length > 0 ? (
+        {coordinates.length > 0 && initialRegion ? (
           <MapView
             style={{ flex: 1 }}
             provider={PROVIDER_DEFAULT}
@@ -110,8 +111,8 @@ export default function RoutePreviewScreen() {
             toolbarEnabled={false}
           >
             <Polyline coordinates={coordinates} strokeColor="#f97316" strokeWidth={4} />
-            <Marker coordinate={coordinates[0]} title="Start" />
-            <Marker coordinate={coordinates[coordinates.length - 1]} title="Finish" />
+            <Marker coordinate={coordinates[0]!} title="Start" />
+            <Marker coordinate={coordinates[coordinates.length - 1]!} title="Finish" />
           </MapView>
         ) : (
           <View className="flex-1 items-center justify-center">
@@ -121,17 +122,6 @@ export default function RoutePreviewScreen() {
       </View>
 
       <View className="flex-1 gap-4 p-4">
-        {isSetupLocked && (
-          <View className="rounded-lg border border-border bg-card p-4">
-            <Text className="text-base font-medium text-foreground">
-              Route setup is locked after recording starts
-            </Text>
-            <Text className="mt-1 text-sm text-muted-foreground">
-              Finish this workout to change the attached route.
-            </Text>
-          </View>
-        )}
-
         <Card>
           <CardHeader>
             <CardTitle>{route.name}</CardTitle>
@@ -145,18 +135,13 @@ export default function RoutePreviewScreen() {
               <MapPin size={16} className="text-muted-foreground" />
               <Text>{formatDistance(route.total_distance)}</Text>
             </View>
-
-            <View className="flex-row items-center gap-2">
-              <Route size={16} className="text-muted-foreground" />
-              <Text>{route.activity_category}</Text>
-            </View>
           </CardContent>
         </Card>
 
         <View className="mt-auto gap-3 pb-4">
           <Button
             onPress={handleAttach}
-            disabled={isSetupLocked}
+            disabled={!canEditRoute}
             testID="route-preview-attach-button"
           >
             <Text>{isAttached ? "Reattach Route" : "Attach Route"}</Text>

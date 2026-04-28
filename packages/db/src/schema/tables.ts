@@ -78,7 +78,6 @@ export const activityRoutes = pgTable(
     profile_id: uuid("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
-    activity_category: activityCategoryEnum("activity_category").notNull(),
     file_path: text("file_path").notNull(),
     total_distance: integer("total_distance").notNull(),
     total_ascent: integer("total_ascent"),
@@ -104,7 +103,6 @@ export const activityRoutes = pgTable(
     ),
     index("idx_routes_profile_id").on(table.profile_id).where(sql`${table.profile_id} is not null`),
     index("idx_routes_name").on(table.name),
-    index("idx_routes_activity_category").on(table.activity_category),
     index("idx_routes_created_at").on(table.created_at),
     index("idx_routes_is_system_template")
       .on(table.is_system_template)

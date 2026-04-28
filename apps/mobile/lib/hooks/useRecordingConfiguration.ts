@@ -1,9 +1,11 @@
 import { useCallback } from "react";
 import type { ActivityRecorderService } from "../services/ActivityRecorder";
 import { useSessionView } from "./useActivityRecorder";
+import { useRecordingSessionContract } from "./useRecordingConfig";
 
 export function useRecordingConfiguration(service: ActivityRecorderService | null) {
   const sessionView = useSessionView(service);
+  const sessionContract = useRecordingSessionContract(service);
   const recordingConfiguration = sessionView?.recordingConfiguration ?? null;
   const attachedRouteId = service?.attachedRouteId ?? null;
   const attachedRouteName = service?.currentRoute?.name ?? null;
@@ -22,6 +24,7 @@ export function useRecordingConfiguration(service: ActivityRecorderService | nul
 
   return {
     recordingConfiguration,
+    sessionContract,
     attachedRouteId,
     attachedRouteName,
     hasAttachedRoute: attachedRouteId !== null,

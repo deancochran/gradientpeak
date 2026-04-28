@@ -1,4 +1,4 @@
-import { formatGoalTypeLabel, getGoalObjectiveSummary } from "@repo/core";
+import { formatGoalTypeLabel } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
@@ -39,13 +39,6 @@ function formatLoadModeLabel(mode: string | null | undefined) {
   return mode === "goal_driven" ? "Based on your goal" : "Based on recent load";
 }
 
-function formatPriorityLabel(priority: number | undefined | null) {
-  if (typeof priority !== "number") return "Medium";
-  if (priority >= 8) return "High";
-  if (priority >= 5) return "Medium";
-  return "Low";
-}
-
 function formatPlanAnchorDate(value: string | null | undefined) {
   if (!value) return null;
 
@@ -59,6 +52,54 @@ function formatPlanAnchorDate(value: string | null | undefined) {
     day: "numeric",
     year: "numeric",
   });
+}
+
+function formatShortDate(value: string | null | undefined) {
+  if (!value) return null;
+
+  const date = new Date(value.includes("T") ? value : `${value}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getWeeklyStatusCopy(
+  weeklyLoadSummary:
+    | {
+        primaryLoad: number;
+        currentRecommended: number;
+      }
+    | null
+    | undefined,
+) {
+  if (!weeklyLoadSummary) {
+    return "Add a goal or schedule your next sessions to build this week.";
+  }
+
+  const delta = weeklyLoadSummary.primaryLoad - Math.round(weeklyLoadSummary.currentRecommended);
+
+  if (Math.abs(delta) <= 10) {
+    return "You are on track for this week.";
+  }
+
+  if (delta < 0) {
+    return "You are slightly below target this week.";
+  }
+
+  return "You are ahead of target this week.";
+}
+
+function getLoadSummaryText(primaryLoad: number | null, targetLoad: number | null) {
+  if (primaryLoad == null || targetLoad == null) {
+    return "No load target yet";
+  }
+
+  return `${primaryLoad} / ${targetLoad} TSS`;
 }
 
 function PlanDashboardScreen() {
@@ -146,6 +187,11 @@ function PlanDashboardScreen() {
     today,
   });
   const primaryActivePlan = dashboard.activePlansInProgress[0] ?? null;
+  const nextSessionDate = formatPlanAnchorDate(primaryActivePlan?.nextEventAt);
+  const nextGoalDate = formatPlanAnchorDate(dashboard.nextGoal?.goal.target_date);
+  const weeklyLoadTarget = dashboard.weeklyLoadSummary
+    ? Math.round(dashboard.weeklyLoadSummary.currentRecommended)
+    : null;
 
   useEffect(() => {
     const refreshKey = [
@@ -202,9 +248,9 @@ function PlanDashboardScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         <View className="px-4 py-4 gap-4">
-          <Card testID="plan-projection-card">
+          <Card testID="plan-week-summary-card">
             <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>Forecasted Projection</CardTitle>
+              <CardTitle>This Week</CardTitle>
               <TouchableOpacity
                 testID="projection-settings-button"
                 onPress={() =>
@@ -219,117 +265,71 @@ function PlanDashboardScreen() {
               </TouchableOpacity>
             </CardHeader>
             <CardContent className="gap-3">
-              {dashboard.weeklyLoadSummary ? (
-                <View className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
-                  <View className="flex-row items-end justify-between">
-                    <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                      This week&apos;s load
-                    </Text>
-                    <Text
-                      className={`text-xs font-medium ${dashboard.weeklyLoadSummary.vsLastWeek >= 0 ? "text-emerald-600" : "text-muted-foreground"}`}
-                    >
-                      {dashboard.weeklyLoadSummary.vsLastWeek >= 0 ? "+" : ""}
-                      {dashboard.weeklyLoadSummary.vsLastWeek} vs last week
+              <View className="rounded-xl border border-border/60 bg-muted/20 px-4 py-4 gap-3">
+                <View className="flex-row items-start justify-between gap-3">
+                  <View className="flex-1 gap-1">
+                    <Text className="text-xs text-muted-foreground">Next session</Text>
+                    <Text className="text-lg font-semibold text-foreground">
+                      {nextSessionDate ?? "Nothing scheduled yet"}
                     </Text>
                   </View>
-                  <Text className="text-2xl font-semibold text-foreground">
-                    {dashboard.weeklyLoadSummary.primaryLoad} TSS
-                  </Text>
-                  <Text className="text-sm text-muted-foreground mt-1">
-                    Recommended this week:{" "}
-                    {Math.round(dashboard.weeklyLoadSummary.currentRecommended)} TSS.{" "}
-                    {formatLoadModeLabel(dashboard.loadGuidance?.mode)}.
-                  </Text>
-                </View>
-              ) : null}
-
-              {dashboard.estimationWarning ? (
-                <Text className="text-xs text-muted-foreground">{dashboard.estimationWarning}</Text>
-              ) : null}
-
-              {dashboard.nextGoal ? (
-                <View className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-1">
-                  <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Next Goal
-                  </Text>
-                  <Text className="text-sm font-semibold text-foreground">
-                    {dashboard.nextGoal.goal.title}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    {new Date(
-                      dashboard.nextGoal.goal.target_date + "T12:00:00.000Z",
-                    ).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </Text>
-                </View>
-              ) : null}
-
-              {activePlan?.id && dashboard.nextGoal ? (
-                <TouchableOpacity
-                  onPress={() =>
-                    navigateTo({
-                      pathname: "/goal-detail",
-                      params: { id: dashboard.nextGoal?.goal.id },
-                    } as any)
-                  }
-                  className="rounded-md border border-primary/20 bg-primary/5 px-3 py-3 gap-1"
-                  activeOpacity={0.8}
-                  testID="plan-next-goal-anchor"
-                >
-                  <Text className="text-[11px] uppercase tracking-wide text-primary">
-                    Next anchor for current plan
-                  </Text>
-                  <Text className="text-sm font-semibold text-foreground">
-                    {dashboard.nextGoal.goal.title}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    Keep your current schedule aligned to this target day.
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-
-              {primaryActivePlan && dashboard.nextGoal ? (
-                <View
-                  className="rounded-md border border-border/60 bg-muted/20 px-3 py-3 gap-2"
-                  testID="plan-execution-summary"
-                >
-                  <Text className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    Execution summary
-                  </Text>
-                  <View className="flex-row items-start justify-between gap-3">
-                    <View className="flex-1 gap-1">
-                      <Text className="text-xs text-muted-foreground">Next scheduled session</Text>
-                      <Text className="text-sm font-semibold text-foreground">
-                        {formatPlanAnchorDate(primaryActivePlan.nextEventAt) ?? "Scheduled soon"}
-                      </Text>
-                    </View>
-                    <View className="flex-1 gap-1">
-                      <Text className="text-xs text-muted-foreground">Next goal day</Text>
-                      <Text className="text-sm font-semibold text-foreground">
-                        {formatPlanAnchorDate(dashboard.nextGoal.goal.target_date) ?? "Not set"}
-                      </Text>
-                    </View>
+                  <View className="items-end gap-1">
+                    <Text className="text-xs text-muted-foreground">Load target</Text>
+                    <Text className="text-lg font-semibold text-foreground">
+                      {getLoadSummaryText(
+                        dashboard.weeklyLoadSummary?.primaryLoad ?? null,
+                        weeklyLoadTarget,
+                      )}
+                    </Text>
                   </View>
                 </View>
-              ) : null}
-
-              <View testID="plan-projection-chart">
-                <PlanVsActualChart
-                  timeline={dashboard.insightTimelinePoints}
-                  actualData={dashboard.fitnessHistory}
-                  projectedData={dashboard.projectedFitness}
-                  idealData={dashboard.idealFitnessCurve}
-                  goalMarkers={dashboard.goalMarkers}
-                  goalMetrics={dashboard.goalMetrics}
-                  height={360}
-                  showLegend
-                />
+                <Text className="text-sm text-muted-foreground">
+                  {getWeeklyStatusCopy(dashboard.weeklyLoadSummary)}
+                </Text>
+                <Text className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {formatLoadModeLabel(dashboard.loadGuidance?.mode)}.
+                </Text>
+                <Button
+                  variant="outline"
+                  onPress={() => router.navigate(ROUTES.CALENDAR as any)}
+                  testID="plan-open-schedule-button"
+                >
+                  <Text>Open Schedule</Text>
+                </Button>
               </View>
             </CardContent>
           </Card>
+
+          {dashboard.nextGoal ? (
+            <TouchableOpacity
+              onPress={() =>
+                navigateTo({
+                  pathname: "/goal-detail",
+                  params: { id: dashboard.nextGoal?.goal.id },
+                } as any)
+              }
+              className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-4 gap-2"
+              activeOpacity={0.8}
+              testID="plan-next-goal-card"
+            >
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1 gap-1">
+                  <Text className="text-xs uppercase tracking-wide text-primary">Next Goal</Text>
+                  <Text className="text-base font-semibold text-foreground">
+                    {dashboard.nextGoal.goal.title}
+                  </Text>
+                </View>
+                <Text className="text-sm font-medium text-primary">
+                  {nextGoalDate ?? "No date"}
+                </Text>
+              </View>
+              <Text className="text-sm text-muted-foreground">
+                {activePlan?.id
+                  ? "Your current schedule is aligned to this target."
+                  : "Add sessions to start building toward this target."}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
 
           <Card testID="plan-goals-card">
             <CardHeader>
@@ -344,8 +344,8 @@ function PlanDashboardScreen() {
               {dashboard.goalReadiness.length === 0 ? (
                 <Text className="text-sm text-muted-foreground">
                   {(dashboard.loadGuidance?.goal_count ?? 0) > 0
-                    ? "Goal data is available and the detailed goal list is still syncing on this screen."
-                    : "No profile goals yet. Add one to start planning with intent."}
+                    ? "Your goals are syncing to this screen now."
+                    : "Add a goal to shape your schedule."}
                 </Text>
               ) : (
                 dashboard.goalReadiness.map(({ goal, readinessPercent, projectedCtl }) => (
@@ -357,45 +357,28 @@ function PlanDashboardScreen() {
                         params: { id: goal.id },
                       } as any)
                     }
-                    className="rounded-md border border-border bg-card px-3 py-3"
+                    className="rounded-xl border border-border bg-card px-4 py-3"
                     activeOpacity={0.8}
                     testID={`plan-goal-row-${goal.id}`}
                   >
-                    <View className="flex-row items-start justify-between gap-3">
+                    <View className="flex-row items-center justify-between gap-3">
                       <View className="flex-1 gap-1">
-                        <Text className="text-sm font-semibold text-foreground">{goal.title}</Text>
+                        <View className="flex-row items-center justify-between gap-3">
+                          <Text className="text-sm font-semibold text-foreground">
+                            {goal.title}
+                          </Text>
+                        </View>
                         <Text className="text-xs text-muted-foreground">
-                          {formatGoalTypeLabel(goal)} · Priority:{" "}
-                          {formatPriorityLabel(goal.priority)}
-                        </Text>
-                        <Text className="text-xs text-muted-foreground">
-                          {getGoalObjectiveSummary(goal)}
-                        </Text>
-                        <Text className="text-xs text-muted-foreground">
+                          {formatGoalTypeLabel(goal)}
                           {goal.target_date
-                            ? `Target: ${new Date(goal.target_date + "T12:00:00.000Z").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`
-                            : "No target date set"}
+                            ? ` · ${formatShortDate(goal.target_date) ?? "date"}`
+                            : ""}
                         </Text>
                       </View>
-                      <View className="items-end gap-2">
-                        <Text className="text-base font-semibold text-primary">
-                          {formatReadiness(readinessPercent)}
+                      <View className="rounded-full bg-primary/10 px-3 py-1">
+                        <Text className="text-xs font-semibold text-primary">
+                          {formatReadiness(readinessPercent)} ready
                         </Text>
-                        <Text className="text-[11px] text-muted-foreground">Readiness</Text>
-                        {projectedCtl != null ? (
-                          <Text className="text-[11px] text-muted-foreground">
-                            CTL {Math.round(projectedCtl)}
-                          </Text>
-                        ) : null}
-                        {projectedCtl == null ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onPress={() => router.navigate(ROUTES.CALENDAR as any)}
-                          >
-                            <Text>Log</Text>
-                          </Button>
-                        ) : null}
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -408,6 +391,32 @@ function PlanDashboardScreen() {
               >
                 <Text>Add Goal</Text>
               </Button>
+            </CardContent>
+          </Card>
+
+          <Card testID="plan-projection-card">
+            <CardHeader>
+              <CardTitle>Projection</CardTitle>
+            </CardHeader>
+            <CardContent className="gap-3">
+              <Text className="text-xs text-muted-foreground">
+                Long-range trend for your current plan and goals.
+              </Text>
+              {dashboard.estimationWarning ? (
+                <Text className="text-xs text-muted-foreground">{dashboard.estimationWarning}</Text>
+              ) : null}
+              <View testID="plan-projection-chart">
+                <PlanVsActualChart
+                  timeline={dashboard.insightTimelinePoints}
+                  actualData={dashboard.fitnessHistory}
+                  projectedData={dashboard.projectedFitness}
+                  idealData={dashboard.idealFitnessCurve}
+                  goalMarkers={dashboard.goalMarkers}
+                  goalMetrics={dashboard.goalMetrics}
+                  height={280}
+                  showLegend
+                />
+              </View>
             </CardContent>
           </Card>
         </View>

@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { Form, FormSelectField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { createFileRoute } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import { useState } from "react";
@@ -9,7 +9,6 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { UploadFileField } from "../../../components/protected/upload-file-field";
 import {
-  activityTypeOptions,
   type RouteUploadFormValues,
   routeUploadFormSchema,
 } from "../../../lib/activity-route-form-schemas";
@@ -33,7 +32,6 @@ function RouteUploadPage() {
   const selectedFile = getSingleFileSelection(files);
   const form = useForm<RouteUploadFormValues>({
     defaultValues: {
-      activityCategory: "run",
       description: "",
       name: "",
     },
@@ -98,7 +96,6 @@ function RouteUploadPage() {
                 try {
                   const fileContent = await readTextFile(selectedFile.file);
                   await uploadMutation.mutateAsync({
-                    activityCategory: values.activityCategory,
                     description: values.description.trim() || undefined,
                     fileContent,
                     fileName: selectedFile.name,
@@ -117,13 +114,6 @@ function RouteUploadPage() {
                 label="Route name"
                 name="name"
                 testId="route-upload-name-input"
-              />
-              <FormSelectField
-                control={form.control}
-                label="Activity category"
-                name="activityCategory"
-                options={activityTypeOptions.map((option) => ({ ...option }))}
-                placeholder="Choose activity type"
               />
               <FormTextareaField
                 className="min-h-28"

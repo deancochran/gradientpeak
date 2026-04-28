@@ -18,6 +18,8 @@ import type {
   RecordingTrainerRecoveryState,
 } from "./types";
 
+const routeGradeCommandThresholdPercent = 0.1;
+
 interface TrainerControlDependencies {
   sensorsManager: SensorsManager;
   getCurrentReadings: () => CurrentReadings;
@@ -32,6 +34,7 @@ export class TrainerControl {
   private recoveryState: RecordingTrainerRecoveryState = "idle";
   private controlState: RecordingTrainerControlState = "not_applicable";
   private lastCommandStatus: RecordingTrainerCommandStatus | null = null;
+  private lastRouteGradePercent: number | null = null;
   private hadControllableTrainer = false;
 
   constructor(private readonly deps: TrainerControlDependencies) {}
@@ -203,17 +206,41 @@ export class TrainerControl {
       return;
     }
 
-    const trainer = this.requireControlReady("periodic_refinement", "set_incline");
-    if (!trainer?.ftmsFeatures?.inclinationTargetSettingSupported) {
+    if (
+      this.lastRouteGradePercent !== null &&
+      Math.abs(percent - this.lastRouteGradePercent) < routeGradeCommandThresholdPercent
+    ) {
       return;
     }
 
-    const success = await this.deps.sensorsManager.setTargetInclination(percent, {
-      source: "periodic_refinement",
-      coalesceKey: "route_grade",
-    });
+    const trainer = this.requireControlReady("periodic_refinement", "set_simulation");
+    if (!trainer) {
+      return;
+    }
+
+    const success = trainer.ftmsFeatures?.indoorBikeSimulationSupported
+      ? await this.deps.sensorsManager.setSimulation(
+          {
+            grade: percent,
+            windSpeed: 0,
+            crr: 0.005,
+            windResistance: 0.51,
+          },
+          {
+            source: "periodic_refinement",
+            coalesceKey: "route_grade",
+          },
+        )
+      : trainer.ftmsFeatures?.inclinationTargetSettingSupported
+        ? await this.deps.sensorsManager.setTargetInclination(percent, {
+            source: "periodic_refinement",
+            coalesceKey: "route_grade",
+          })
+        : false;
     this.captureControllerStatus();
-    if (!success) {
+    if (success) {
+      this.lastRouteGradePercent = percent;
+    } else {
       this.deps.onError(`Failed to set route grade: ${percent.toFixed(1)}%`);
     }
   }
@@ -356,6 +383,10 @@ export class TrainerControl {
   }
 
   private isFtmsCandidate(sensor: ConnectedSensor): boolean {
+    if (!sensor.services?.length) {
+      return false;
+    }
+
     const ftmsService = BLE_SERVICE_UUIDS.FITNESS_MACHINE.toLowerCase();
     return sensor.services.some((service) => service.toLowerCase() === ftmsService);
   }

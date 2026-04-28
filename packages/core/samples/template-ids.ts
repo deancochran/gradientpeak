@@ -67,11 +67,9 @@ export function normalizeLinkedActivityPlanId(activityPlanId: string): string {
 
 export function normalizeSystemRouteTemplateId({
   id,
-  activityCategory,
   name,
 }: {
   id?: string;
-  activityCategory: string;
   name: string;
 }): string {
   if (id && rfc4122UuidPattern.test(id)) {
@@ -82,7 +80,5 @@ export function normalizeSystemRouteTemplateId({
     return canonicalizeLegacyUuid(id);
   }
 
-  return deterministicUuidFromSeed(
-    `system-route-template:${slugifySegment(activityCategory)}:${slugifySegment(name)}`,
-  );
+  return deterministicUuidFromSeed(`system-route-template:${slugifySegment(name)}`);
 }

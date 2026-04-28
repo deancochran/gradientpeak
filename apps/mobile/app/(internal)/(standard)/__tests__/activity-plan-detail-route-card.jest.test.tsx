@@ -21,8 +21,12 @@ const navigateToMock = jest.fn();
 const routeCardMock = jest.fn((props: any) =>
   React.createElement("RouteCard", props, props.children),
 );
-const routeGetUseQueryMock = jest.fn(() => ({ data: routeMock }));
-const routeLoadFullUseQueryMock = jest.fn(() => ({ data: routeFullMock }));
+const routeGetUseQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: routeMock,
+}));
+const routeLoadFullUseQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: routeFullMock,
+}));
 
 const fetchedPlanMock = {
   id: "plan-123",
@@ -36,7 +40,6 @@ const fetchedPlanMock = {
 const routeMock = {
   id: "route-123",
   name: "River Loop",
-  activity_category: "bike",
   total_distance: 25000,
   total_ascent: 300,
   total_descent: 300,

@@ -105,7 +105,6 @@ describe("router live-db smoke", () => {
       profile_id: seedState.profileId,
       name: "Live DB Route",
       description: "Route seeded for live DB smoke test.",
-      activity_category: "run",
       file_path: `${seedState.profileId}/live-db-route.gpx`,
       total_distance: 6200,
       total_ascent: 88,

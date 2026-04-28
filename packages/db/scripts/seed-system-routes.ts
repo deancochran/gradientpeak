@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
@@ -15,11 +15,7 @@ import {
   ROUTES_BUCKET,
 } from "../../api/src/lib/routes/route-file-helpers";
 import { getApiStorageService } from "../../api/src/storage-service";
-import {
-  getSystemRoutesByCategory,
-  SYSTEM_ROUTE_TEMPLATES,
-  type SystemRouteTemplate,
-} from "../../core/samples";
+import { SYSTEM_ROUTE_TEMPLATES, type SystemRouteTemplate } from "../../core/samples";
 import { activityPlans, activityRoutes } from "../src/schema/tables";
 import { prepareDbEnv } from "./_helpers";
 
@@ -27,17 +23,12 @@ const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 const verifyOnly = args.includes("--verify-only");
-const categoryArg = args.find((arg) => arg.startsWith("--category="));
-const category = categoryArg
-  ? (categoryArg.slice("--category=".length) as SystemRouteTemplate["activity_category"])
-  : undefined;
-
 const databaseUrl = prepareDbEnv();
 const pool = new Pool({ connectionString: databaseUrl });
 const db = drizzle({ client: pool, casing: "snake_case" });
 const storageService = getApiStorageService();
 
-const templates = category ? getSystemRoutesByCategory(category) : SYSTEM_ROUTE_TEMPLATES;
+const templates = SYSTEM_ROUTE_TEMPLATES;
 
 type ExistingSystemRoute = typeof activityRoutes.$inferSelect;
 
@@ -55,7 +46,6 @@ function hasChanges(input: {
 
   if (existing.name !== template.name) return true;
   if ((existing.description ?? null) !== template.description) return true;
-  if (existing.activity_category !== template.activity_category) return true;
   if ((existing.file_path ?? null) !== filePath) return true;
   if (existing.total_distance !== input.totalDistance) return true;
   if ((existing.total_ascent ?? null) !== input.totalAscent) return true;
@@ -133,20 +123,13 @@ async function findFirstGpxFile(rootDir: string): Promise<string | null> {
 async function seedSystemRoutes() {
   console.log("🌱 Starting system route sync...");
   console.log(`   Mode: ${verifyOnly ? "VERIFY ONLY" : isDryRun ? "DRY RUN" : "LIVE"}`);
-  console.log(`   Filter: ${category ? `${category} only` : "all verified routes"}`);
+  console.log("   Filter: all verified routes");
   console.log(`   Local Routes: ${templates.length}\n`);
 
   const existingRoutes = await db
     .select()
     .from(activityRoutes)
-    .where(
-      category
-        ? and(
-            eq(activityRoutes.is_system_template, true),
-            eq(activityRoutes.activity_category, category),
-          )
-        : eq(activityRoutes.is_system_template, true),
-    );
+    .where(eq(activityRoutes.is_system_template, true));
 
   const existingMap = new Map(existingRoutes.map((route) => [route.id, route]));
   const processedIds = new Set<string>();
@@ -199,7 +182,6 @@ async function seedSystemRoutes() {
               updated_at: new Date(),
               name: template.name,
               description: template.description,
-              activity_category: template.activity_category,
               file_path: filePath,
               total_distance: artifacts.totalDistance,
               total_ascent: artifacts.totalAscent,
@@ -220,7 +202,6 @@ async function seedSystemRoutes() {
             profile_id: null,
             name: template.name,
             description: template.description,
-            activity_category: template.activity_category,
             file_path: filePath,
             total_distance: artifacts.totalDistance,
             total_ascent: artifacts.totalAscent,

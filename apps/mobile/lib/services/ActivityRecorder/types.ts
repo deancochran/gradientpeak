@@ -489,6 +489,8 @@ export interface RecordingPlanView {
   isLast: boolean;
   isFinished: boolean;
   canAdvance: boolean;
+  canSkip: boolean;
+  canGoBack: boolean;
   planTimeRemaining: number;
 }
 

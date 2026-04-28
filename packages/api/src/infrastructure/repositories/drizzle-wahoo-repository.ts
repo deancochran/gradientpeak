@@ -240,7 +240,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           totalDistance: schema.activityRoutes.total_distance,
           totalAscent: schema.activityRoutes.total_ascent,
           totalDescent: schema.activityRoutes.total_descent,
-          activityCategory: schema.activityRoutes.activity_category,
         })
         .from(schema.activityRoutes)
         .where(

@@ -121,7 +121,6 @@ describe("WahooSyncService", () => {
   it("creates a new sync with route data when no prior sync exists", async () => {
     const repository = createRepositoryMock();
     repository.getRouteForSync.mockResolvedValueOnce({
-      activityCategory: "bike",
       description: "Greenway loop",
       filePath: "routes/greenway.gpx",
       id: "route-1",

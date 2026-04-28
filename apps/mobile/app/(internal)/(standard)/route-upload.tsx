@@ -9,7 +9,6 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-  FormSelectField,
   FormTextareaField,
   FormTextField,
 } from "@repo/ui/components/form";
@@ -21,11 +20,7 @@ import { AlertCircle, CheckCircle, FileText, Upload } from "lucide-react-native"
 import { ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
 import { getErrorMessage } from "@/lib/utils/formErrors";
-import {
-  type RouteUploadFormValues,
-  routeUploadActivityCategoryOptions,
-  routeUploadFormSchema,
-} from "@/lib/validation/route-upload";
+import { type RouteUploadFormValues, routeUploadFormSchema } from "@/lib/validation/route-upload";
 
 export default function UploadRouteScreen() {
   const router = useRouter();
@@ -35,7 +30,6 @@ export default function UploadRouteScreen() {
     defaultValues: {
       name: "",
       description: "",
-      activityCategory: "run",
       fileName: "",
       fileContent: "",
     },
@@ -101,7 +95,6 @@ export default function UploadRouteScreen() {
         await uploadMutation.mutateAsync({
           name: values.name,
           description: values.description || undefined,
-          activityCategory: values.activityCategory,
           fileContent: values.fileContent,
           fileName: values.fileName,
         });
@@ -174,15 +167,6 @@ export default function UploadRouteScreen() {
                   placeholder="e.g., Morning Hill Climb"
                   required
                   testId="route-upload-name-input"
-                />
-
-                <FormSelectField
-                  control={form.control}
-                  label="Activity Category"
-                  name="activityCategory"
-                  options={routeUploadActivityCategoryOptions.map((option) => ({ ...option }))}
-                  placeholder="Select activity category"
-                  required
                 />
 
                 <FormTextareaField

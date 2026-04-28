@@ -1,380 +1,19 @@
-import type { ActivityPayload, RecordingActivityCategory, RecordingState } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { useRouter } from "expo-router";
-import {
-  Activity,
-  AlertTriangle,
-  Bike,
-  ChevronLeft,
-  Dumbbell,
-  Footprints,
-  Waves,
-} from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, View } from "react-native";
+import { AlertTriangle, ChevronLeft } from "lucide-react-native";
+import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ActivitySelectionModal } from "@/components/ActivitySelectionModal";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { RecordingFooter } from "@/components/recording/footer";
-import { RecordingZones, ZoneFocusOverlay } from "@/components/recording/zones";
-import { api } from "@/lib/api";
-import {
-  useActivityStatus,
-  useIntensityScale,
-  usePlan,
-  useRecorderActions,
-  useRecordingState,
-  useSensors,
-} from "@/lib/hooks/useActivityRecorder";
-import { useAuth } from "@/lib/hooks/useAuth";
-import { useRecordingCapabilities } from "@/lib/hooks/useRecordingConfig";
-import { useAllPermissionsGranted } from "@/lib/hooks/useStandalonePermissions";
-import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-
-// Helper function to resolve power target
-function resolvePowerTarget(target: any, profile: any): number | null {
-  if (typeof target === "number") return Math.round(target);
-  if (target.type === "%FTP" || target.type === "ftp") {
-    const ftp = profile?.ftp || 200;
-    return Math.round((target.intensity / 100) * ftp);
-  }
-  if (target.type === "watts") return Math.round(target.intensity || 0);
-  return null;
-}
-
-// Helper function to map service state to RecordingState
-function mapServiceStateToRecordingState(serviceState: string): RecordingState {
-  if (serviceState === "pending") return "not_started";
-  if (serviceState === "recording") return "recording";
-  if (serviceState === "paused" || serviceState === "finishing") return "paused";
-  return "not_started"; // fallback
-}
+import { RecordingLiveCockpit } from "@/components/recording/cockpit";
+import { RecordingActivityQuickEdit } from "@/components/recording/RecordingActivityQuickEdit";
+import { useRecordScreenController } from "@/lib/recording/useRecordScreenController";
 
 function RecordScreen() {
-  const router = useRouter();
-  const navigateTo = useAppNavigate();
-  const { user } = useAuth();
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [activityModalVisible, setActivityModalVisible] = useState(false);
-  const [isFinishing, setIsFinishing] = useState(false);
   const insets = useSafeAreaInsets();
+  const controller = useRecordScreenController();
 
-  // Use shared service from context (provided by _layout.tsx)
-  const service = useSharedActivityRecorder();
-
-  // State and actions
-  const state = useRecordingState(service);
-  const { count: sensorCount, sensors } = useSensors(service);
-  const plan = usePlan(service);
-  const { gpsRecordingEnabled, activityCategory } = useActivityStatus(service);
-  const { start, pause, resume, finish } = useRecorderActions(service);
-  const { allGranted: allPermissionsGranted, isLoading: permissionsLoading } =
-    useAllPermissionsGranted();
-
-  // Fetch smart initialization data (derived metrics)
-  const { data: zones } = api.profiles.getZones.useQuery(undefined, {
-    enabled: !!user && !!service,
-    staleTime: 1000 * 60 * 5, // 5 minutes
-  });
-
-  // Automatically apply derived metrics on initialization
-  useEffect(() => {
-    if (!service || !zones?.profile) return;
-
-    const { ftp, threshold_hr, weight_kg, threshold_pace } = zones.profile;
-
-    if (ftp || threshold_hr || weight_kg || threshold_pace) {
-      console.log("[RecordModal] Applying derived metrics:", {
-        ftp,
-        threshold_hr,
-        weight_kg,
-        threshold_pace,
-      });
-      service.updateMetrics({
-        ftp: ftp || undefined,
-        thresholdHr: threshold_hr || undefined,
-        weightKg: weight_kg || undefined,
-        thresholdPaceSecondsPerKm: threshold_pace || undefined,
-      });
-    }
-  }, [service, zones?.profile]);
-
-  // Debug: Log permission status changes
-  useEffect(() => {
-    console.log("[RecordModal] Permission status changed:", {
-      allPermissionsGranted,
-      permissionsLoading,
-    });
-  }, [allPermissionsGranted, permissionsLoading]);
-
-  // Initialize from store selection (or show inline selector)
-  useEffect(() => {
-    if (!service || isInitialized) return;
-
-    const initializeFromStore = () => {
-      try {
-        console.log("[RecordModal] Loading selection from store");
-
-        // Get selection from store (don't consume yet)
-        const selection = activitySelectionStore.peekSelection();
-
-        if (!selection) {
-          // No pre-loaded activity - this is a direct tab access
-          // Default to run with GPS enabled
-          console.log("[RecordModal] No selection found - defaulting to run with GPS ON");
-
-          const defaultPayload: ActivityPayload = {
-            category: "run",
-            gpsRecordingEnabled: true,
-          };
-
-          service.selectActivityFromPayload(defaultPayload);
-          setIsInitialized(true);
-          return;
-        }
-
-        console.log("[RecordModal] Selection loaded:", {
-          category: selection.category,
-          gpsRecordingEnabled: selection.gpsRecordingEnabled,
-          hasPlan: !!selection.plan,
-          eventId: selection.eventId,
-        });
-
-        // Initialize the service based on the selection
-        console.log("[RecordModal] Processing selection with service method");
-        service.selectActivityFromPayload(selection);
-
-        // Now consume the selection
-        activitySelectionStore.consumeSelection();
-
-        setIsInitialized(true);
-      } catch (error) {
-        console.error("[RecordModal] Error initializing from store:", error);
-        Alert.alert("Error", "Failed to initialize activity. Please try again.", [
-          { text: "OK", onPress: () => router.back() },
-        ]);
-      }
-    };
-
-    initializeFromStore();
-  }, [service, isInitialized, router]);
-
-  // Handle activity selection from modal (for quick start)
-  const handleActivitySelect = useCallback(
-    (category: RecordingActivityCategory, nextGpsRecordingEnabled: boolean) => {
-      if (!service) {
-        Alert.alert("Error", "Service not initialized");
-        return;
-      }
-
-      console.log("[RecordModal] Activity selected from modal:", {
-        category,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
-      });
-
-      // When changing category/GPS state, DO NOT include the plan in the payload
-      // This allows selectActivityFromPayload to call updateActivityConfiguration
-      // which preserves the plan and only updates the category/GPS state
-      const payload: ActivityPayload = {
-        category,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
-        // Note: We intentionally DO NOT include the plan here
-        // The plan should remain untouched when just changing category/GPS state
-      };
-
-      console.log("[RecordModal] Updating activity configuration:", {
-        category,
-        gpsRecordingEnabled: nextGpsRecordingEnabled,
-        hasPlan: !!service.plan,
-      });
-
-      // This will call updateActivityConfiguration (if state !== 'pending')
-      // which preserves the existing plan and only updates category/GPS state
-      service.selectActivityFromPayload(payload);
-    },
-    [service],
-  );
-
-  // Get activity icon based on category (memoized to prevent re-computation)
-  const ActivityIcon = useMemo(() => {
-    switch (activityCategory) {
-      case "run":
-        return Footprints;
-      case "bike":
-        return Bike;
-      case "swim":
-        return Waves;
-      case "strength":
-        return Dumbbell;
-      case "other":
-      default:
-        return Activity;
-    }
-  }, [activityCategory]);
-
-  // Handle start action - request permissions if needed, then start
-  const handleStart = useCallback(async () => {
-    console.log("[RecordModal] Start clicked, checking permissions");
-    console.log("[RecordModal] allPermissionsGranted:", allPermissionsGranted);
-
-    if (!allPermissionsGranted) {
-      console.log("[RecordModal] Permissions not granted, requesting permissions");
-
-      // Request all permissions inline
-      if (!service) {
-        Alert.alert("Error", "Service not initialized");
-        return;
-      }
-
-      try {
-        const granted = await service.refreshAndCheckAllPermissions();
-
-        if (!granted) {
-          // Still not granted after check, request them
-          const { requestPermission } = await import("@/lib/services/permissions-check");
-
-          // Request in sequence
-          await requestPermission("bluetooth");
-          await requestPermission("location");
-          await requestPermission("location-background");
-
-          // Final check
-          const finalCheck = await service.refreshAndCheckAllPermissions();
-
-          if (!finalCheck) {
-            Alert.alert(
-              "Permissions Required",
-              "This app requires Bluetooth, Location, and Background Location permissions to record activities. Please enable them in your device settings.",
-              [{ text: "OK", style: "cancel" }],
-            );
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("[RecordModal] Error requesting permissions:", error);
-        Alert.alert("Error", "Failed to request permissions. Please try again.");
-        return;
-      }
-    }
-
-    // Validate plan requirements before starting
-    if (service) {
-      const validation = service.validatePlanRequirements();
-
-      if (validation && !validation.isValid) {
-        // Plan has missing required metrics
-        const metricDetails = validation.missingMetrics
-          .map((m) => `• ${m.name}\n  ${m.description}`)
-          .join("\n\n");
-
-        Alert.alert(
-          "Profile Setup Required",
-          `This workout requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings → Profile.`,
-          [
-            {
-              text: "Go to Profile",
-              onPress: () => {
-                if (!user?.id) return;
-                navigateTo({
-                  pathname: "/user/[userId]",
-                  params: { userId: user.id },
-                } as any);
-              },
-            },
-            {
-              text: "Continue Anyway",
-              style: "destructive",
-              onPress: async () => {
-                console.log("[RecordModal] User chose to continue without required metrics");
-                try {
-                  await start();
-                  console.log("[RecordModal] Recording started successfully");
-                } catch (error) {
-                  console.error("[RecordModal] Error starting recording:", error);
-                  Alert.alert("Error", "Failed to start recording. Please try again.");
-                }
-              },
-            },
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-          ],
-        );
-        return;
-      }
-
-      // Show warnings if any (non-blocking)
-      if (validation && validation.warnings.length > 0) {
-        console.log("[RecordModal] Plan validation warnings:", validation.warnings);
-      }
-    }
-
-    // All permissions granted and plan validated, start recording
-    console.log("[RecordModal] Permissions granted, starting recording");
-    try {
-      await start();
-      console.log("[RecordModal] Recording started successfully");
-    } catch (error) {
-      console.error("[RecordModal] Error starting recording:", error);
-      Alert.alert("Error", "Failed to start recording. Please try again.");
-    }
-  }, [allPermissionsGranted, navigateTo, start, service, user?.id]);
-
-  // Handle finish action after local finalization succeeds
-  const handleFinish = useCallback(async () => {
-    if (isFinishing) {
-      return;
-    }
-
-    console.log("[RecordModal] Finish clicked, finalizing local artifacts");
-
-    try {
-      setIsFinishing(true);
-      await finish();
-      navigateTo("/record/submit");
-    } catch (error) {
-      console.error("[RecordModal] Error finishing recording:", error);
-      Alert.alert(
-        "Finish Failed",
-        error instanceof Error ? error.message : "Failed to finalize activity. Please try again.",
-      );
-    } finally {
-      setIsFinishing(false);
-    }
-  }, [finish, isFinishing, navigateTo]);
-
-  // Handle lap action
-  const handleLap = useCallback(() => {
-    if (!service) return;
-
-    const lapTime = service.recordLap();
-    console.log("[RecordModal] Lap recorded:", lapTime);
-  }, [service]);
-
-  // Debug: Track activity status changes
-  useEffect(() => {
-    console.log("[RecordModal] Activity status changed:", {
-      gpsRecordingEnabled,
-      hasPlan: plan.hasPlan,
-    });
-  }, [gpsRecordingEnabled, plan.hasPlan]);
-
-  // Get recording capabilities - determines what UI to show
-  const capabilities = useRecordingCapabilities(service);
-
-  // Determine if activity has a route (for zone rendering)
-  // Check if the plan has a route_id or if a route is directly attached to the service
-  const hasRoute = useMemo(() => {
-    return !!service?.plan?.route_id || !!service?.currentRoute;
-  }, [service?.plan?.route_id, service?.currentRoute]);
-
-  // Show loading state while initializing
-  if (!isInitialized) {
+  if (!controller.isInitialized) {
     return (
       <View
         className="flex-1 bg-background items-center justify-center"
@@ -385,22 +24,15 @@ function RecordScreen() {
     );
   }
 
-  // Check if we need to show the activity selection prompt
-  const needsActivitySelection = !activityCategory;
-
   return (
     <View className="flex-1 bg-background" testID="record-screen-ready">
-      {/* Floating Close Button (only shows before recording starts) */}
-      {state === "pending" && (
+      {controller.serviceState === "pending" && (
         <View className="absolute top-4 left-4 z-50" style={{ top: insets.top + 16 }}>
           <Button
             size="icon"
             variant="outline"
             testID="record-close-button"
-            onPress={() => {
-              // Dismiss the record screen
-              router.back();
-            }}
+            onPress={controller.onBack}
             className="h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-lg"
           >
             <Icon as={ChevronLeft} size={20} />
@@ -408,73 +40,59 @@ function RecordScreen() {
         </View>
       )}
 
-      {/* Activity Selection Modal */}
-      <ActivitySelectionModal
-        visible={activityModalVisible}
-        onClose={() => setActivityModalVisible(false)}
-        onActivitySelect={handleActivitySelect}
-        currentCategory={activityCategory || "run"}
-        currentGpsRecordingEnabled={gpsRecordingEnabled}
+      <RecordingActivityQuickEdit
+        visible={controller.activityQuickEditVisible}
+        onClose={controller.closeActivityQuickEdit}
+        onActivitySelect={controller.handleActivityQuickEdit}
+        currentCategory={controller.activityCategory || "run"}
+        currentGpsRecordingEnabled={controller.gpsRecordingEnabled}
+        canEditActivity={controller.sessionContract?.editing.canEditActivity ?? true}
+        canEditGps={controller.sessionContract?.editing.canEditGps ?? true}
       />
 
-      {/* Sensor Disconnect Warning */}
-      {(() => {
-        const disconnectedSensors = sensors.filter((s) => s.connectionState === "disconnected");
-
-        if (!disconnectedSensors || disconnectedSensors.length === 0) return null;
-
-        return (
-          <View
-            className="bg-yellow-500/20 px-4 py-2 border-b border-yellow-500/40"
-            style={{ marginTop: insets.top }}
-          >
-            <View className="flex-row items-center gap-2">
-              <Icon as={AlertTriangle} size={16} className="text-yellow-600" />
-              <Text className="text-xs text-yellow-600 font-medium">
-                {disconnectedSensors.length} sensor(s) disconnected
-              </Text>
-            </View>
-            <Text className="text-xs text-yellow-600 mt-1">
-              {disconnectedSensors.map((s) => s.name).join(", ")} - attempting reconnection
+      {controller.disconnectedSensors.length > 0 ? (
+        <View
+          className="bg-yellow-500/20 px-4 py-2 border-b border-yellow-500/40"
+          style={{ marginTop: insets.top }}
+        >
+          <View className="flex-row items-center gap-2">
+            <Icon as={AlertTriangle} size={16} className="text-yellow-600" />
+            <Text className="text-xs text-yellow-600 font-medium">
+              {controller.disconnectedSensors.length} sensor(s) disconnected
             </Text>
           </View>
-        );
-      })()}
+          <Text className="text-xs text-yellow-600 mt-1">
+            {controller.disconnectedSensors.map((sensor) => sensor.name).join(", ")} - attempting
+            reconnection
+          </Text>
+        </View>
+      ) : null}
 
-      {/* Zones Container - Takes remaining space above footer */}
-      <View className="flex-1" style={{ paddingTop: insets.top }}>
-        <RecordingZones
-          service={service}
-          gpsRecordingEnabled={gpsRecordingEnabled}
-          hasPlan={plan.hasPlan}
-          hasRoute={hasRoute}
-        />
-
-        {/* Focused Zone Overlay - Renders inside zones container */}
-        <ZoneFocusOverlay
-          service={service}
-          gpsRecordingEnabled={gpsRecordingEnabled}
-          hasPlan={plan.hasPlan}
-          hasRoute={hasRoute}
-        />
-      </View>
-
-      {/* Recording Footer - Bottom Sheet (positioned at bottom) */}
-      <RecordingFooter
-        service={service}
-        recordingState={mapServiceStateToRecordingState(state)}
-        category={activityCategory}
-        gpsRecordingEnabled={gpsRecordingEnabled}
-        hasPlan={plan.hasPlan}
-        hasRoute={hasRoute}
-        onStart={handleStart}
-        onPause={pause}
-        onResume={resume}
-        onLap={handleLap}
-        onFinish={handleFinish}
+      <RecordingLiveCockpit
+        activityCategory={controller.activityCategory}
+        gpsRecordingEnabled={controller.gpsRecordingEnabled}
+        hasPlan={controller.hasPlan}
+        sensorCount={controller.sensorCount}
+        service={controller.service}
+        serviceState={controller.serviceState}
+        onGpsPress={controller.onGpsPress}
+        onOpenActivity={controller.onOpenActivity}
+        onOpenFtms={controller.onOpenFtms}
+        onOpenPlan={controller.onOpenPlan}
+        onOpenRoute={controller.onOpenRoute}
+        onOpenSensors={controller.onOpenSensors}
+        onRemovePlan={controller.onRemovePlan}
+        onRemoveRoute={controller.onRemoveRoute}
+        onStart={controller.handleStart}
+        onPause={controller.onPause}
+        onResume={controller.onResume}
+        onLap={controller.handleLap}
+        onFinish={controller.handleFinish}
+        recordingState={controller.recordingState}
+        sessionContract={controller.sessionContract}
       />
 
-      {isFinishing ? (
+      {controller.isFinishing ? (
         <View
           className="absolute inset-0 items-center justify-center bg-background/80 px-8"
           testID="record-screen-finishing"

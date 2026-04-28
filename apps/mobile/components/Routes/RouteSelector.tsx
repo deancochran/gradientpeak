@@ -18,22 +18,16 @@ import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface RouteSelectorProps {
-  activityCategory: string;
+  activityCategory?: string;
   selectedRouteId?: string | null;
   onSelectRoute: (routeId: string | null) => void;
 }
 
-export function RouteSelector({
-  activityCategory,
-  selectedRouteId,
-  onSelectRoute,
-}: RouteSelectorProps) {
+export function RouteSelector({ selectedRouteId, onSelectRoute }: RouteSelectorProps) {
   const navigateTo = useAppNavigate();
 
-  // Fetch routes filtered by activity category
   const { data } = api.routes.list.useInfiniteQuery(
     {
-      activityCategory: activityCategory as any,
       limit: 50,
     },
     {
@@ -78,7 +72,7 @@ export function RouteSelector({
         {routes.length === 0 ? (
           <View className="py-6 items-center gap-3">
             <Text className="text-sm text-muted-foreground text-center mb-1">
-              No routes available for this activity type
+              No routes available
             </Text>
             <Button
               variant="outline"

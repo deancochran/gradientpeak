@@ -331,6 +331,8 @@ export function usePlan(service: ActivityRecorderService | null) {
     isLast: false,
     isFinished: false,
     canAdvance: false,
+    canSkip: false,
+    canGoBack: false,
     planTimeRemaining: 0,
   });
 
@@ -355,7 +357,12 @@ export function usePlan(service: ActivityRecorderService | null) {
     isLast: planView.isLast,
     isFinished: planView.isFinished,
     canAdvance: planView.canAdvance,
+    canSkip: planView.canSkip,
+    canGoBack: planView.canGoBack,
     advance: () => service?.advanceStep(),
+    skip: () => service?.skipStep(),
+    previous: () => service?.previousStep(),
+    goToStep: (index: number) => service?.goToStep(index),
     select: (plan: RecordingServiceActivityPlan, eventId?: string) =>
       service?.selectPlan(plan, eventId),
     clear: () => service?.clearPlan(),

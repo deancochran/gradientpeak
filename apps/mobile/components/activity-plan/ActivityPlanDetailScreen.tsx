@@ -1,5 +1,4 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
-import type { ActivityPayload } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   DropdownMenu,
@@ -27,6 +26,7 @@ import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import type { RecordingLaunchPayload } from "@/lib/stores/activitySelectionStore";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
@@ -139,11 +139,13 @@ export function ActivityPlanDetailScreen({
 
   const handleRecordNow = () => {
     if (!activityPlan) return;
-    const payload: ActivityPayload = {
+    const payload: RecordingLaunchPayload = {
+      launchSource: "activity_plan" as const,
       category: activityPlan.activity_category,
       gpsRecordingEnabled: true,
       plan: activityPlan,
       eventId: plannedActivity?.id,
+      routeId: activityPlan.route_id ?? null,
     };
     activitySelectionStore.setSelection(payload);
     navigateTo("/record");
