@@ -74,16 +74,46 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
 }
 
 type MockDb = {
+  insert: ReturnType<typeof vi.fn>;
   readRepository: {
+    getEstimationInputs: (input: unknown) => Promise<unknown>;
     getValidateConstraintsInputs: (input: unknown) => Promise<unknown>;
     listOwnedEvents: (input: unknown) => Promise<unknown[]>;
     listPlannedEventDatesInRange: (input: unknown) => Promise<unknown[]>;
   };
+  select: ReturnType<typeof vi.fn>;
 };
+
+function createDrizzleSelectMock(rows: unknown[] = []) {
+  const builder: any = {
+    from: vi.fn(() => builder),
+    where: vi.fn(() => builder),
+    limit: vi.fn(() => Promise.resolve(rows)),
+    then: (onFulfilled: (value: unknown[]) => unknown) => Promise.resolve(rows).then(onFulfilled),
+  };
+
+  return vi.fn(() => builder);
+}
+
+function createDrizzleInsertMock() {
+  const builder: any = {
+    values: vi.fn(() => builder),
+    onConflictDoUpdate: vi.fn(() => Promise.resolve(undefined)),
+  };
+
+  return vi.fn(() => builder);
+}
 
 function createEventsCaller(results: Record<string, QueryResult>) {
   const db: MockDb = {
+    insert: createDrizzleInsertMock(),
     readRepository: {
+      getEstimationInputs: vi.fn(async () => ({
+        efforts: [],
+        metrics: [],
+        profile: results.profiles?.data ?? null,
+        routes: [],
+      })),
       getValidateConstraintsInputs: vi.fn(async () => ({
         trainingPlan: results.training_plans?.data ?? null,
         activityPlan: results.activity_plans?.data ?? null,
@@ -95,6 +125,7 @@ function createEventsCaller(results: Record<string, QueryResult>) {
       listOwnedEvents: vi.fn(async () => (results.events?.data as unknown[]) ?? []),
       listPlannedEventDatesInRange: vi.fn(async () => (results.events?.data as unknown[]) ?? []),
     },
+    select: createDrizzleSelectMock(),
   };
 
   return eventsRouter.createCaller({
