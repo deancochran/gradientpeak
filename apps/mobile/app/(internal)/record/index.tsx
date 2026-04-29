@@ -26,7 +26,7 @@ function RecordScreen() {
 
   return (
     <View className="flex-1 bg-background" testID="record-screen-ready">
-      {controller.serviceState === "pending" && (
+      {controller.serviceState !== "finishing" && controller.serviceState !== "finished" ? (
         <View className="absolute top-4 left-4 z-50" style={{ top: insets.top + 16 }}>
           <Button
             size="icon"
@@ -38,7 +38,7 @@ function RecordScreen() {
             <Icon as={ChevronLeft} size={20} />
           </Button>
         </View>
-      )}
+      ) : null}
 
       <RecordingActivityQuickEdit
         visible={controller.activityQuickEditVisible}

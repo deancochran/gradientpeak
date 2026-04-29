@@ -229,6 +229,13 @@ export default function StandardLayout() {
 
       {/* SETTINGS */}
       <Stack.Screen
+        name="search"
+        options={{
+          title: "Search",
+          presentation: "modal",
+        }}
+      />
+      <Stack.Screen
         name="integrations"
         options={{
           title: "Integrations",

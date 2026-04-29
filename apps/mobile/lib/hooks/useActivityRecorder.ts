@@ -17,8 +17,9 @@
 import type { RecordingActivityCategory, RecordingServiceActivityPlan } from "@repo/core";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
-import {
+import type {
   ActivityRecorderService,
+  RecordingLifecycle,
   RecordingState,
   TimeUpdate,
 } from "@/lib/services/ActivityRecorder";
@@ -128,6 +129,8 @@ export function useActivityRecorder(
 ): ActivityRecorderService | null {
   const service = useMemo(() => {
     if (!profile) return null;
+    const { ActivityRecorderService } =
+      require("@/lib/services/ActivityRecorder") as typeof import("@/lib/services/ActivityRecorder");
     console.log("[useActivityRecorder] Creating new service instance for profile:", profile.id);
     return new ActivityRecorderService(profile);
   }, [profile]);
@@ -217,6 +220,34 @@ export function useRecordingState(service: ActivityRecorderService | null): Reco
   }, [service]);
 
   return state;
+}
+
+export function useRecordingLifecycle(service: ActivityRecorderService | null): RecordingLifecycle {
+  const [lifecycle, setLifecycle] = useState<RecordingLifecycle>(
+    service?.recordingLifecycle ?? "idle",
+  );
+
+  useEffect(() => {
+    if (!service) {
+      setLifecycle("idle");
+      return;
+    }
+
+    const updateLifecycle = () => {
+      setLifecycle(service.recordingLifecycle);
+    };
+
+    updateLifecycle();
+    const stateSubscription = service.addListener("stateChanged", updateLifecycle);
+    const sessionSubscription = service.addListener("sessionUpdated", updateLifecycle);
+
+    return () => {
+      stateSubscription.remove();
+      sessionSubscription.remove();
+    };
+  }, [service]);
+
+  return lifecycle;
 }
 
 // ================================

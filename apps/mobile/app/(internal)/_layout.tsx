@@ -1,6 +1,8 @@
 // apps/native/app/(internal)/_layout.tsx
 import { Stack } from "expo-router";
 import React from "react";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { ActivityRecorderProvider } from "@/lib/providers/ActivityRecorderProvider";
 
 /**
  * Internal Layout (Authenticated Pages)
@@ -30,41 +32,45 @@ import React from "react";
  * - record group is completely isolated
  */
 export default function InternalLayout() {
+  const { profile } = useAuth();
+
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        animation: "slide_from_right",
-        gestureEnabled: true,
-        gestureDirection: "horizontal",
-      }}
-    >
-      {/* Tab Navigation - No header, has tab bar */}
-      <Stack.Screen
-        name="(tabs)"
-        options={{
+    <ActivityRecorderProvider profile={profile || null}>
+      <Stack
+        screenOptions={{
           headerShown: false,
+          animation: "slide_from_right",
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
         }}
-      />
+      >
+        {/* Tab Navigation - No header, has tab bar */}
+        <Stack.Screen
+          name="(tabs)"
+          options={{
+            headerShown: false,
+          }}
+        />
 
-      {/* Standard Pages - Headers with back buttons, no tab bar */}
-      <Stack.Screen
-        name="(standard)"
-        options={{
-          headerShown: false,
-          presentation: "card",
-        }}
-      />
+        {/* Standard Pages - Headers with back buttons, no tab bar */}
+        <Stack.Screen
+          name="(standard)"
+          options={{
+            headerShown: false,
+            presentation: "card",
+          }}
+        />
 
-      {/* Record - Isolated full-screen experience */}
-      <Stack.Screen
-        name="record"
-        options={{
-          headerShown: false,
-          presentation: "fullScreenModal",
-          gestureEnabled: false,
-        }}
-      />
-    </Stack>
+        {/* Record - Isolated full-screen experience */}
+        <Stack.Screen
+          name="record"
+          options={{
+            headerShown: false,
+            presentation: "fullScreenModal",
+            gestureEnabled: false,
+          }}
+        />
+      </Stack>
+    </ActivityRecorderProvider>
   );
 }

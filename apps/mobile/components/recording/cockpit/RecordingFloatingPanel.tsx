@@ -69,7 +69,8 @@ export function RecordingFloatingPanel({
   const panelClassName = effectiveExpanded
     ? "absolute bg-background shadow-xl"
     : "absolute overflow-hidden rounded-[28px] border border-border bg-background py-2 shadow-xl";
-  const expandedHorizontalInset = Math.max(20, insets.left + 20, insets.right + 20);
+  const expandedHorizontalInset = Math.max(28, insets.left + 24, insets.right + 24);
+  const expandedCardGap = 24;
   const expandedTopInset = Math.max(18, insets.top + 12);
   const expandedHeaderHeight = model.canMinimize && !model.forcedExpanded ? 52 : 0;
   const expandedIndicatorBottom = bottomObstructionHeight + 4;
@@ -100,7 +101,8 @@ export function RecordingFloatingPanel({
         right: model.panelHorizontalInset,
       };
   const pageWidth = effectiveExpanded ? width - expandedHorizontalInset * 2 : model.cardWidth;
-  const snapInterval = effectiveExpanded ? pageWidth : model.snapInterval;
+  const cardGap = effectiveExpanded ? expandedCardGap : model.cardGap;
+  const snapInterval = effectiveExpanded ? pageWidth + cardGap : model.snapInterval;
 
   React.useEffect(() => {
     setSelectedCard((current) => {
@@ -168,6 +170,7 @@ export function RecordingFloatingPanel({
           horizontal
           accessibilityLabel="Recording insight cards"
           decelerationRate="fast"
+          disableIntervalMomentum
           onMomentumScrollEnd={handleScrollEnd}
           showsHorizontalScrollIndicator={false}
           snapToInterval={snapInterval}
@@ -190,7 +193,7 @@ export function RecordingFloatingPanel({
         >
           {model.availableCards.map((availableCard, index) => {
             const cardStyle = {
-              marginRight: index === model.availableCards.length - 1 ? 0 : model.cardGap,
+              marginRight: index === model.availableCards.length - 1 ? 0 : cardGap,
               height: effectiveExpanded ? expandedContentHeight : compactCardHeight,
               minHeight: effectiveExpanded ? expandedContentHeight : compactCardHeight,
               width: pageWidth,

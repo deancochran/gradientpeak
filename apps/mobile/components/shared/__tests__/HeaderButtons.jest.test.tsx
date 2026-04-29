@@ -30,6 +30,7 @@ jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Bell: createHost("Bell"),
   MessageSquare: createHost("MessageSquare"),
+  Search: createHost("Search"),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -40,7 +41,11 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
-const { MessagesHeaderButton, NotificationsHeaderButton } = require("../HeaderButtons");
+const {
+  MessagesHeaderButton,
+  NotificationsHeaderButton,
+  SearchHeaderButton,
+} = require("../HeaderButtons");
 
 describe("header buttons", () => {
   beforeEach(() => {
@@ -61,5 +66,13 @@ describe("header buttons", () => {
     fireEvent.press(screen.getByTestId("notifications-header-button"));
 
     expect(navigateMock).toHaveBeenCalledWith("/notifications");
+  });
+
+  it("navigates to global search without using the Discover tab", () => {
+    renderNative(<SearchHeaderButton />);
+
+    fireEvent.press(screen.getByTestId("search-header-button"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/search");
   });
 });

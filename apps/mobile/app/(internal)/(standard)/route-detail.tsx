@@ -16,9 +16,17 @@ import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { RouteCard } from "@/components/shared/RouteCard";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
+import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
+import { useOptionalSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  handleRecordingObjectAction,
+  type RecordingObjectActionCandidate,
+  resolveRecordingObjectAction,
+} from "@/lib/recording/recordingObjectActions";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 type RouteCoordinate = { latitude: number; longitude: number; altitude?: number };
@@ -88,6 +96,8 @@ export default function RouteDetailScreen() {
   const utils = api.useUtils();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const { user } = useAuth();
+  const recorderService = useOptionalSharedActivityRecorder();
+  const recordingLifecycle = useRecordingLifecycle(recorderService);
 
   const { data: route, isLoading } = api.routes.get.useQuery({ id: id! }, { enabled: !!id });
   const { data: routeFull } = api.routes.loadFull.useQuery({ id: id! }, { enabled: !!id });
@@ -141,6 +151,35 @@ export default function RouteDetailScreen() {
     [routeFull?.coordinates],
   );
 
+  const recordingCandidate = useMemo<RecordingObjectActionCandidate | null>(() => {
+    if (!route?.id) return null;
+    return {
+      objectKind: "route",
+      objectId: route.id,
+      label: route.name,
+      category: (route as { activity_category?: string | null }).activity_category,
+      canReadGeometry: routeFull ? Boolean(routeFull.coordinates?.length) : undefined,
+    };
+  }, [route, routeFull]);
+
+  const recordingAction = recordingCandidate
+    ? resolveRecordingObjectAction({
+        candidate: recordingCandidate,
+        lifecycle: recordingLifecycle,
+        service: recorderService,
+      })
+    : null;
+
+  const handleRecordingAction = async () => {
+    if (!recordingCandidate || !recordingAction) return;
+    await handleRecordingObjectAction({
+      candidate: recordingCandidate,
+      command: recordingAction.command,
+      navigateToRecord: () => returnToRecordScreen(router),
+      service: recorderService,
+    });
+  };
+
   const handleDelete = () => {
     if (!route) return;
 
@@ -176,10 +215,6 @@ export default function RouteDetailScreen() {
   }
 
   const renderOptionsMenu = () => {
-    if (!isOwner) {
-      return null;
-    }
-
     return (
       <DropdownMenu>
         <DropdownMenuTrigger testID="route-detail-options-trigger">
@@ -189,12 +224,21 @@ export default function RouteDetailScreen() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6}>
           <DropdownMenuItem
-            onPress={handleDelete}
-            variant="destructive"
-            testID="route-detail-options-delete"
+            onPress={handleRecordingAction}
+            disabled={recordingAction?.primaryAction === "disabled" || !recordingAction?.command}
+            testID="route-detail-options-recording"
           >
-            <Text>Delete Route</Text>
+            <Text>{recordingAction?.label ?? "Start Activity"}</Text>
           </DropdownMenuItem>
+          {isOwner ? (
+            <DropdownMenuItem
+              onPress={handleDelete}
+              variant="destructive"
+              testID="route-detail-options-delete"
+            >
+              <Text>Delete Route</Text>
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     );

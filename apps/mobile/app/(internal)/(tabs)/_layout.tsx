@@ -1,10 +1,15 @@
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
 import { Tabs } from "expo-router";
-import { Calendar, Circle, Home, Search, Target } from "lucide-react-native";
+import { Calendar, Circle, Home, Target } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
+import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
+import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import {
   activitySelectionStore,
   defaultRecordLaunchPayload,
@@ -12,10 +17,30 @@ import {
 import { useTheme } from "@/lib/stores/theme-store";
 import { getNavigationTheme, getResolvedThemeScale } from "@/lib/theme";
 
+function ProfileTabIcon({ color }: { color: string }) {
+  const { user, profile } = useAuth();
+  const avatarUri = profile?.avatar_url;
+  const fallback =
+    profile?.username?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || "A";
+
+  return (
+    <Avatar alt={profile?.username || "User profile"} className="h-7 w-7 border border-border">
+      {avatarUri ? <AvatarImage source={{ uri: avatarUri }} key={avatarUri} /> : null}
+      <AvatarFallback>
+        <Text className="text-xs font-semibold" style={{ color }}>
+          {fallback}
+        </Text>
+      </AvatarFallback>
+    </Avatar>
+  );
+}
+
 export default function InternalLayout() {
   const { resolvedTheme } = useTheme();
   const guardNavigation = useNavigationActionGuard();
   const navigateTo = useAppNavigate();
+  const recorderService = useSharedActivityRecorder();
+  const recordingLifecycle = useRecordingLifecycle(recorderService);
 
   const navTheme = getNavigationTheme(resolvedTheme);
   const currentTheme = getResolvedThemeScale(resolvedTheme);
@@ -46,12 +71,13 @@ export default function InternalLayout() {
             tabBarButtonTestID: "tab-button-home",
           }}
         />
+        <Tabs.Screen name="discover" options={{ href: null }} />
         <Tabs.Screen
-          name="discover"
+          name="plan"
           options={{
-            title: "Discover",
-            tabBarIcon: ({ color }) => <Icon as={Search} size={28} color={color} />,
-            tabBarButtonTestID: "tab-button-discover",
+            title: "Plan",
+            tabBarIcon: ({ color }) => <Icon as={Target} size={28} color={color} />,
+            tabBarButtonTestID: "tab-button-plan",
           }}
         />
         <Tabs.Screen
@@ -65,7 +91,9 @@ export default function InternalLayout() {
                 testID="tab-button-record"
                 onPress={() =>
                   guardNavigation(() => {
-                    activitySelectionStore.setSelection(defaultRecordLaunchPayload());
+                    if (recordingLifecycle === "idle") {
+                      activitySelectionStore.setSelection(defaultRecordLaunchPayload());
+                    }
                     navigateTo("/record");
                   })
                 }
@@ -74,19 +102,19 @@ export default function InternalLayout() {
           }}
         />
         <Tabs.Screen
-          name="plan"
-          options={{
-            title: "Plan",
-            tabBarIcon: ({ color }) => <Icon as={Target} size={28} color={color} />,
-            tabBarButtonTestID: "tab-button-plan",
-          }}
-        />
-        <Tabs.Screen
           name="calendar"
           options={{
             title: "Calendar",
             tabBarIcon: ({ color }) => <Icon as={Calendar} size={28} color={color} />,
             tabBarButtonTestID: "tab-button-calendar",
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            tabBarIcon: ({ color }) => <ProfileTabIcon color={color} />,
+            tabBarButtonTestID: "tab-button-profile",
           }}
         />
       </Tabs>

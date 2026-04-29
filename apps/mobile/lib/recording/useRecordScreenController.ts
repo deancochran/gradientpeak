@@ -7,6 +7,7 @@ import {
   useActivityStatus,
   usePlan,
   useRecorderActions,
+  useRecordingLifecycle,
   useRecordingState,
   useSensors,
 } from "@/lib/hooks/useActivityRecorder";
@@ -32,6 +33,7 @@ export function useRecordScreenController() {
   const [isFinishing, setIsFinishing] = React.useState(false);
 
   const state = useRecordingState(service);
+  const recordingLifecycle = useRecordingLifecycle(service);
   const { count: sensorCount, sensors } = useSensors(service);
   const plan = usePlan(service);
   const { gpsRecordingEnabled, activityCategory } = useActivityStatus(service);
@@ -82,7 +84,24 @@ export function useRecordScreenController() {
 
         const selection = activitySelectionStore.peekSelection();
 
+        if (recordingLifecycle === "active") {
+          console.log(
+            "[RecordModal] Active recording found - skipping launch payload initialization",
+          );
+          if (selection) {
+            activitySelectionStore.consumeSelection();
+          }
+          setIsInitialized(true);
+          return;
+        }
+
         if (!selection) {
+          if (recordingLifecycle === "setup") {
+            console.log("[RecordModal] Existing setup found - skipping default launch payload");
+            setIsInitialized(true);
+            return;
+          }
+
           console.log("[RecordModal] No selection found - using default launch payload");
           service.selectActivityFromPayload(defaultRecordLaunchPayload());
           setIsInitialized(true);
@@ -116,7 +135,7 @@ export function useRecordScreenController() {
     initializeFromStore().catch((error) => {
       console.error("[RecordModal] Error initializing from store:", error);
     });
-  }, [service, isInitialized, router]);
+  }, [service, isInitialized, router, recordingLifecycle]);
 
   const handleActivityQuickEdit = React.useCallback(
     (category: RecordingActivityCategory, nextGpsRecordingEnabled: boolean) => {
@@ -331,12 +350,22 @@ export function useRecordScreenController() {
   }, [navigateTo]);
 
   const onOpenPlan = React.useCallback(() => {
-    navigateTo("/record/plan");
-  }, [navigateTo]);
+    router.replace({
+      pathname: "/search" as never,
+      params: {
+        scope: "activityPlans",
+      },
+    });
+  }, [router]);
 
   const onOpenRoute = React.useCallback(() => {
-    navigateTo("/record/route");
-  }, [navigateTo]);
+    router.replace({
+      pathname: "/search" as never,
+      params: {
+        scope: "routes",
+      },
+    });
+  }, [router]);
 
   const onOpenSensors = React.useCallback(() => {
     navigateTo("/record/sensors");

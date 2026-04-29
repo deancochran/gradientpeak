@@ -11,7 +11,7 @@
  */
 
 import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
-import { ActivityRecorderService } from "../services/ActivityRecorder";
+import type { ActivityRecorderService } from "../services/ActivityRecorder";
 import type { RecorderProfileRef } from "../services/ActivityRecorder/types";
 
 interface ActivityRecorderContextValue {
@@ -68,6 +68,14 @@ export function ActivityRecorderProvider({
       return serviceRef.current;
     }
 
+    // Keep configured/active sessions alive until a higher-level flow explicitly resolves them.
+    if (serviceRef.current?.hasConfiguredRecordingSetup) {
+      console.warn(
+        "[ActivityRecorderProvider] Recorder setup is active; keeping existing service during profile change",
+      );
+      return serviceRef.current;
+    }
+
     // Clean up old service if profile changed
     if (serviceRef.current) {
       console.log(
@@ -82,6 +90,8 @@ export function ActivityRecorderProvider({
 
     // Create new service if profile exists
     if (profile) {
+      const { ActivityRecorderService } =
+        require("../services/ActivityRecorder") as typeof import("../services/ActivityRecorder");
       console.log("[ActivityRecorderProvider] Creating new service for profile:", profile.id);
       serviceRef.current = new ActivityRecorderService(profile);
       profileIdRef.current = profile.id;
@@ -149,4 +159,9 @@ export function useActivityRecorderService(): ActivityRecorderContextValue {
 export function useSharedActivityRecorder(): ActivityRecorderService | null {
   const { service } = useActivityRecorderService();
   return service;
+}
+
+export function useOptionalSharedActivityRecorder(): ActivityRecorderService | null {
+  const context = useContext(ActivityRecorderContext);
+  return context?.service ?? null;
 }

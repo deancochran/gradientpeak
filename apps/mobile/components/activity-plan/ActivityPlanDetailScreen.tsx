@@ -23,11 +23,17 @@ import {
 } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import type { RecordingLaunchPayload } from "@/lib/stores/activitySelectionStore";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { useOptionalSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  handleRecordingObjectAction,
+  type RecordingObjectActionCandidate,
+  resolveRecordingObjectAction,
+} from "@/lib/recording/recordingObjectActions";
 import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
 import { useActivityPlanSchedulingActions } from "./useActivityPlanSchedulingActions";
@@ -79,6 +85,8 @@ export function ActivityPlanDetailScreen({
   const { profile } = useAuth();
   const router = require("expo-router").useRouter();
   const navigateTo = useAppNavigate();
+  const recorderService = useOptionalSharedActivityRecorder();
+  const recordingLifecycle = useRecordingLifecycle(recorderService);
 
   const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
@@ -137,18 +145,34 @@ export function ActivityPlanDetailScreen({
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
   const planRoute = getActivityPlanRoute(activityPlan);
 
-  const handleRecordNow = () => {
-    if (!activityPlan) return;
-    const payload: RecordingLaunchPayload = {
-      launchSource: "activity_plan" as const,
+  const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
+    if (!activityPlan) return null;
+    return {
+      objectKind: "activity_plan",
+      objectId: activityPlan.id,
+      label: activityPlan.name,
       category: activityPlan.activity_category,
-      gpsRecordingEnabled: true,
       plan: activityPlan,
-      eventId: plannedActivity?.id,
-      routeId: activityPlan.route_id ?? null,
+      planRouteId: activityPlan.route_id ?? null,
     };
-    activitySelectionStore.setSelection(payload);
-    navigateTo("/record");
+  }, [activityPlan]);
+
+  const recordingAction = recordingCandidate
+    ? resolveRecordingObjectAction({
+        candidate: recordingCandidate,
+        lifecycle: recordingLifecycle,
+        service: recorderService,
+      })
+    : null;
+
+  const handleRecordNow = async () => {
+    if (!recordingCandidate || !recordingAction) return;
+    await handleRecordingObjectAction({
+      candidate: recordingCandidate,
+      command: recordingAction.command,
+      navigateToRecord: () => returnToRecordScreen(router),
+      service: recorderService,
+    });
   };
   const scheduling = useActivityPlanSchedulingActions({
     action,
@@ -254,8 +278,12 @@ export function ActivityPlanDetailScreen({
         </View>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem onPress={handleRecordNow} testID="activity-plan-options-start">
-          <Text>Start Activity</Text>
+        <DropdownMenuItem
+          onPress={handleRecordNow}
+          disabled={recordingAction?.primaryAction === "disabled" || !recordingAction?.command}
+          testID="activity-plan-options-start"
+        >
+          <Text>{recordingAction?.label ?? "Start Activity"}</Text>
         </DropdownMenuItem>
         {!isEventContext ? (
           <DropdownMenuItem

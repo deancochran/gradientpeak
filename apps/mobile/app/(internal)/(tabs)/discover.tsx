@@ -4,14 +4,15 @@ import BottomSheet, {
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Button } from "@repo/ui/components/button";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import { useLocalSearchParams } from "expo-router";
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
-import { AppHeader } from "@/components/shared";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { RouteCard as SharedRouteCard } from "@/components/shared/RouteCard";
 import { TrainingPlanCard as SharedTrainingPlanCard } from "@/components/shared/TrainingPlanCard";
@@ -502,7 +503,13 @@ function toProfileSortParam(sort: SortState<ProfileSortField>) {
 
 export default function DiscoverPage() {
   const navigateTo = useAppNavigate();
-  const [activeScope, setActiveScope] = useState<DiscoverScope>("activityPlans");
+  const params = useLocalSearchParams<{
+    scope?: DiscoverScope;
+  }>();
+  const initialScope = SCOPE_OPTIONS.some((option) => option.id === params.scope)
+    ? params.scope
+    : "activityPlans";
+  const [activeScope, setActiveScope] = useState<DiscoverScope>(initialScope ?? "activityPlans");
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [activityPlanSort, setActivityPlanSort] = useState<SortState<ActivityPlanSortField>>(
@@ -566,7 +573,6 @@ export default function DiscoverPage() {
   const shouldLoadTrainingPlans = activeScope === "trainingPlans";
   const shouldLoadRoutes = activeScope === "routes";
   const shouldLoadUsers = activeScope === "users";
-
   const activityPlansInfiniteQuery = api.activityPlans.list.useInfiniteQuery(
     {
       includeSystemTemplates: true,
@@ -1202,7 +1208,6 @@ export default function DiscoverPage() {
 
   return (
     <View className="flex-1 bg-background" testID="discover-screen">
-      <AppHeader title="Discover" />
       {renderSearchInput()}
       {renderScopeRow()}
       {renderContent()}

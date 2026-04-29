@@ -650,6 +650,46 @@ describe("recording cockpit", () => {
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
   });
 
+  it("centers expanded recording cards with interval momentum disabled", () => {
+    renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService({
+          routeDistance: 10000,
+          currentRouteDistance: 3750,
+          routeProgress: 37.5,
+        })}
+        sessionContract={buildContract({
+          guidance: {
+            hasPlan: true,
+            hasStructuredSteps: true,
+            hasRoute: true,
+            hasRouteGeometry: true,
+            routeMode: "virtual",
+          },
+          ui: {
+            floatingPanel: {
+              defaultCard: "workout_interval",
+              availableCards: ["workout_interval", "route_progress", "metrics"],
+              forcedExpanded: true,
+              canMinimize: false,
+            },
+          },
+        })}
+      />,
+    );
+
+    const carousel = screen.getByTestId("recording-card-carousel");
+
+    expect(carousel.props.disableIntervalMomentum).toBe(true);
+    expect(carousel.props.contentContainerStyle.paddingHorizontal).toBeGreaterThanOrEqual(28);
+    expect(carousel.props.snapToInterval).toBeGreaterThan(
+      screen.getByTestId("recording-card-workout_interval").props.style.width,
+    );
+  });
+
   it("hides unavailable plan and trainer cards from the carousel", () => {
     renderNative(
       <RecordingFloatingPanel

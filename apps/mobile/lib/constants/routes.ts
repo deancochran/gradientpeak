@@ -61,7 +61,8 @@ export const ROUTES = {
   },
 
   // Other Tab Routes
-  DISCOVER: "/(internal)/(tabs)/discover" as const,
+  SEARCH: "/search" as const,
+  DISCOVER: "/search" as const,
   CALENDAR: "/(internal)/(tabs)/calendar" as const,
 
   // Profile

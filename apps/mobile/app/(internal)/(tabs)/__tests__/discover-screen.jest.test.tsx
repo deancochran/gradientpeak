@@ -112,6 +112,7 @@ jest.mock("@gorhom/bottom-sheet", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  useLocalSearchParams: () => ({}),
   useRouter: () => ({ push: pushMock }),
 }));
 
@@ -264,7 +265,7 @@ describe("discover screen", () => {
   it("defaults to activity plans with one selected record type", () => {
     renderNative(<DiscoverScreen />);
 
-    expect(screen.getByText("Header:Discover")).toBeTruthy();
+    expect(screen.queryByText(/^Header:/)).toBeNull();
     expect(screen.getByPlaceholderText("Search activity plans")).toBeTruthy();
     expect(screen.getByTestId("discover-scope-row")).toBeTruthy();
     expect(screen.getByTestId("discover-scope-activityPlans")).toBeTruthy();
@@ -385,15 +386,13 @@ describe("discover screen", () => {
     fireEvent.press(screen.getByTestId("discover-filter-sort-direction-desc"));
     fireEvent.changeText(screen.getByTestId("discover-filter-routes-distance-min"), "10");
     fireEvent.changeText(screen.getByTestId("discover-filter-routes-ascent-max"), "500");
-    fireEvent.press(screen.getByTestId("discover-filter-routes-category-run"));
-    fireEvent.press(screen.getByTestId("discover-filter-routes-category-bike"));
     fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: undefined,
-          activityCategories: ["run", "bike"],
+          activityCategories: undefined,
           min_distance_m: 10000,
           max_distance_m: undefined,
           min_ascent_m: undefined,

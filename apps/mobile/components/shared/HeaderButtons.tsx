@@ -1,10 +1,25 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
-import { Bell, MessageSquare } from "lucide-react-native";
+import { Bell, MessageSquare, Search } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
+
+export function SearchHeaderButton() {
+  const router = useRouter();
+
+  return (
+    <TouchableOpacity
+      onPress={() => router.navigate("/search")}
+      testID="search-header-button"
+      className="w-10 h-10 items-center justify-center mr-2"
+      accessibilityLabel="Search"
+    >
+      <Icon as={Search} size={24} className="text-foreground" />
+    </TouchableOpacity>
+  );
+}
 
 export function MessagesHeaderButton() {
   const router = useRouter();

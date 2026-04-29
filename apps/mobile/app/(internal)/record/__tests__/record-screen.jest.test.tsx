@@ -10,6 +10,9 @@ const pauseMock = jest.fn();
 const resumeMock = jest.fn();
 const finishMock = jest.fn(async () => undefined);
 const requestPermissionMock = jest.fn(async () => true);
+let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
+let mockServiceState: "pending" | "ready" | "recording" | "paused" | "finishing" | "finished" =
+  "pending";
 
 const service = {
   currentRoute: null,
@@ -19,6 +22,7 @@ const service = {
   selectActivityFromPayload: jest.fn(),
   updateMetrics: jest.fn(),
   refreshAndCheckAllPermissions: jest.fn(async () => true),
+  refreshAndCheckRecordingPermissions: jest.fn(async () => true),
   validatePlanRequirements: jest.fn<any, any>(() => ({ isValid: true, warnings: [] })),
   recordLap: jest.fn(() => 42),
 };
@@ -102,7 +106,8 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
     resume: resumeMock,
     finish: finishMock,
   }),
-  useRecordingState: () => "pending",
+  useRecordingLifecycle: () => mockRecordingLifecycle,
+  useRecordingState: () => mockServiceState,
   useSensors: () => ({ count: 1, sensors: [] }),
 }));
 
@@ -204,8 +209,11 @@ const RecordScreen = require("../index").default;
 describe("record screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRecordingLifecycle = "idle";
+    mockServiceState = "pending";
     service.attachRoute.mockResolvedValue(undefined);
     service.refreshAndCheckAllPermissions.mockResolvedValue(true);
+    service.refreshAndCheckRecordingPermissions.mockResolvedValue(true);
     service.validatePlanRequirements.mockReturnValue({ isValid: true, warnings: [] });
     activitySelectionStoreMock.peekSelection.mockReturnValue({
       category: "bike",
@@ -250,9 +258,54 @@ describe("record screen", () => {
     expect(backMock).not.toHaveBeenCalled();
   });
 
+  it("does not apply default payload over existing setup", async () => {
+    mockRecordingLifecycle = "setup";
+    activitySelectionStoreMock.peekSelection.mockReturnValue(null as any);
+
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Start")).toBeTruthy();
+    });
+
+    expect(service.selectActivityFromPayload).not.toHaveBeenCalled();
+    expect(activitySelectionStoreMock.consumeSelection).not.toHaveBeenCalled();
+  });
+
+  it("does not apply launch payload over active recording", async () => {
+    mockRecordingLifecycle = "active";
+
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Start")).toBeTruthy();
+    });
+
+    expect(service.selectActivityFromPayload).not.toHaveBeenCalled();
+    expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
+  });
+
+  it("keeps the close button available during active recording", async () => {
+    mockRecordingLifecycle = "active";
+    mockServiceState = "recording";
+
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("record-close-button")).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId("record-close-button"));
+
+    expect(backMock).toHaveBeenCalled();
+  });
+
   it("requests missing permissions before starting the recorder", async () => {
     useAllPermissionsGranted.mockReturnValue({ allGranted: false, isLoading: false });
-    service.refreshAndCheckAllPermissions.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    service.refreshAndCheckRecordingPermissions
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
 
     renderNative(<RecordScreen />);
 
@@ -264,8 +317,6 @@ describe("record screen", () => {
 
     await waitFor(() => {
       expect(requestPermissionMock).toHaveBeenNthCalledWith(1, "bluetooth");
-      expect(requestPermissionMock).toHaveBeenNthCalledWith(2, "location");
-      expect(requestPermissionMock).toHaveBeenNthCalledWith(3, "location-background");
       expect(startMock).toHaveBeenCalled();
     });
   });
@@ -285,11 +336,13 @@ describe("record screen", () => {
 
     fireEvent.press(screen.getByText("Start"));
 
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Profile Setup Required",
-      expect.stringContaining("FTP"),
-      expect.any(Array),
-    );
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Profile Setup Required",
+        expect.stringContaining("FTP"),
+        expect.any(Array),
+      );
+    });
 
     const alertButtons = (Alert.alert as jest.Mock).mock.calls[0]?.[2] as Array<any>;
     const goToProfile = alertButtons.find((button) => button.text === "Go to Profile");

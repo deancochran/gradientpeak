@@ -85,6 +85,15 @@ export type RecordingState =
   | "finishing"
   | "finished";
 
+export type RecordingLifecycle = "idle" | "setup" | "active";
+export type RecordingRouteAttachmentSource = "none" | "plan_route" | "explicit_route";
+
+export interface RecordingRouteAttachmentView {
+  routeId: string | null;
+  source: RecordingRouteAttachmentSource;
+  suppressedPlanRouteId: string | null;
+}
+
 export interface StepProgress {
   movingTime: number;
   duration: number;
@@ -198,6 +207,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   public state: RecordingState = "pending";
   public selectedActivityCategory: RecordingActivityCategory = "run";
   private _gpsRecordingEnabled: boolean = true;
+  private hasConfiguredSetup: boolean = false;
   private currentLaunchSource: RecordingConfiguration["input"]["launchSource"] = "manual";
   public recordingMetadata?: RecordingMetadata;
   private finalizedArtifact: RecordingSessionArtifact | null = null;
@@ -225,8 +235,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Route State ===
   private _currentRoute: LoadedRoute | null = null;
   private _routeOverrideId: string | null | undefined = undefined;
+  private suppressedPlanRouteId: string | null = null;
   private _routeDistance: number = 0; // Total route distance in meters
   private _currentRouteDistance: number = 0; // User's current distance along route
+  private routeAttachmentOperationId = 0;
   private lastHandledLocationKey: string | null = null;
 
   // === Private Managers ===
@@ -1185,6 +1197,22 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._plan;
   }
 
+  get recordingLifecycle(): RecordingLifecycle {
+    if (this.state === "recording" || this.state === "paused" || this.state === "finishing") {
+      return "active";
+    }
+
+    if (this.hasConfiguredSetup || this.state === "ready") {
+      return "setup";
+    }
+
+    return "idle";
+  }
+
+  get hasConfiguredRecordingSetup(): boolean {
+    return this.recordingLifecycle === "setup" || this.recordingLifecycle === "active";
+  }
+
   get eventId(): string | undefined {
     return this._eventId;
   }
@@ -1233,6 +1261,30 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.getAttachedRouteId();
   }
 
+  get routeAttachment(): RecordingRouteAttachmentView {
+    if (this._routeOverrideId) {
+      return {
+        routeId: this._routeOverrideId,
+        source: "explicit_route",
+        suppressedPlanRouteId: this.suppressedPlanRouteId,
+      };
+    }
+
+    if (this._plan?.route_id && this._routeOverrideId === undefined) {
+      return {
+        routeId: this._plan.route_id,
+        source: "plan_route",
+        suppressedPlanRouteId: null,
+      };
+    }
+
+    return {
+      routeId: null,
+      source: "none",
+      suppressedPlanRouteId: this.suppressedPlanRouteId,
+    };
+  }
+
   get routeDistance(): number {
     return this._routeDistance;
   }
@@ -1247,11 +1299,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private getAttachedRouteId(): string | null {
-    if (this._routeOverrideId !== undefined) {
-      return this._routeOverrideId;
-    }
-
-    return this._plan?.route_id ?? this._currentRoute?.id ?? null;
+    return this.routeAttachment.routeId;
   }
 
   private clearCurrentRouteState(): void {
@@ -1347,9 +1395,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     console.log("[Service] Selected plan:", plan.name);
     console.log("[Service] Plan structure:", JSON.stringify(plan.structure, null, 2));
 
+    this.hasConfiguredSetup = true;
     this._plan = plan;
     this._eventId = eventId;
     this._routeOverrideId = undefined;
+    this.suppressedPlanRouteId = null;
     if (!plan.activity_category) {
       throw new Error("no plan category found");
     }
@@ -1358,11 +1408,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (plan.route_id) {
       this.clearCurrentRouteState();
       console.log("[Service] Plan has route, loading route data:", plan.route_id);
-      this.loadRoute(plan.route_id).catch((error) => {
+      const operationId = ++this.routeAttachmentOperationId;
+      this.loadRoute(plan.route_id, operationId).catch((error) => {
         console.error("[Service] Failed to load route:", error);
         // Continue without route - don't fail the whole plan selection
       });
     } else {
+      ++this.routeAttachmentOperationId;
       this.clearCurrentRouteState();
     }
 
@@ -1398,9 +1450,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   clearPlan(): void {
     console.log("[Service] Clearing plan");
 
+    this.hasConfiguredSetup = true;
     this._plan = undefined;
     this._eventId = undefined;
     this._routeOverrideId = undefined;
+    this.suppressedPlanRouteId = null;
+    ++this.routeAttachmentOperationId;
     this.planExecution.clear();
     this.clearCurrentRouteState();
 
@@ -1413,18 +1468,28 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
+    const operationId = ++this.routeAttachmentOperationId;
+    const previousHasConfiguredSetup = this.hasConfiguredSetup;
+    const previousSuppressedPlanRouteId = this.suppressedPlanRouteId;
+    this.hasConfiguredSetup = true;
     const previousOverrideId = this._routeOverrideId;
     const previousRoute = this._currentRoute;
     const previousRouteDistance = this._routeDistance;
     const previousCurrentRouteDistance = this._currentRouteDistance;
 
     this._routeOverrideId = routeId;
+    this.suppressedPlanRouteId = null;
     this.clearCurrentRouteState();
     this.publishSessionUpdate();
 
     try {
-      await this.loadRoute(routeId);
+      await this.loadRoute(routeId, operationId);
     } catch (error) {
+      if (operationId !== this.routeAttachmentOperationId) {
+        return;
+      }
+      this.hasConfiguredSetup = previousHasConfiguredSetup;
+      this.suppressedPlanRouteId = previousSuppressedPlanRouteId;
       this._routeOverrideId = previousOverrideId;
       this._currentRoute = previousRoute;
       this._routeDistance = previousRouteDistance;
@@ -1439,17 +1504,24 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
+    this.hasConfiguredSetup = true;
+    const operationId = ++this.routeAttachmentOperationId;
     this._routeOverrideId = routeId;
+    this.suppressedPlanRouteId = null;
     this.clearCurrentRouteState();
     this.publishSessionUpdate();
 
-    this.loadRoute(routeId).catch((error) => {
+    this.loadRoute(routeId, operationId).catch((error) => {
       console.error("[Service] Failed to load prepared route:", error);
       this.publishSessionUpdate();
     });
   }
 
   public detachRoute(): void {
+    this.hasConfiguredSetup = true;
+    ++this.routeAttachmentOperationId;
+    this.suppressedPlanRouteId =
+      this.routeAttachment.source === "plan_route" ? (this._plan?.route_id ?? null) : null;
     this._routeOverrideId = null;
     this.clearCurrentRouteState();
     this.publishSessionUpdate();
@@ -1458,7 +1530,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Load full route data from the server
    */
-  private async loadRoute(routeId: string): Promise<void> {
+  private async loadRoute(
+    routeId: string,
+    operationId = this.routeAttachmentOperationId,
+  ): Promise<void> {
     try {
       console.log("[Service] Loading route:", routeId);
 
@@ -1469,6 +1544,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const route = await getVanillaApiClient().routes.loadFull.query({
         id: routeId,
       });
+
+      if (operationId !== this.routeAttachmentOperationId) {
+        return;
+      }
 
       if (!route || !route.coordinates || route.coordinates.length === 0) {
         console.warn("[Service] Route has no coordinates");
@@ -2344,6 +2423,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
+    this.hasConfiguredSetup = true;
     this.selectedActivityCategory = category;
     this._gpsRecordingEnabled = gpsRecordingEnabled;
     this.clearPlan();
