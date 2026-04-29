@@ -30,6 +30,7 @@ import {
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { ROUTES_BUCKET } from "../lib/routes/route-file-helpers";
+import { createContentAccessPermissions } from "../permissions/content-access";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -130,6 +131,16 @@ function getEventWriteRepository(ctx: { session: { user: { id: string } } }) {
 
 function getEventReadRepository(ctx: { session: { user: { id: string } } }) {
   return createEventReadRepository(getRequiredDb(ctx as any));
+}
+
+function getContentPermissions(ctx: { db?: unknown }) {
+  const db = getRequiredDb(ctx as any);
+
+  if (!("select" in db) || !("insert" in db) || !("update" in db)) {
+    return null;
+  }
+
+  return createContentAccessPermissions(db);
 }
 
 type EventStatusContext = {
@@ -986,6 +997,7 @@ export const eventsRouter = createTRPCRouter({
 
   create: protectedProcedure.input(eventCreateInputSchema).mutation(async ({ ctx, input }) => {
     const eventWriteRepository = getEventWriteRepository(ctx);
+    const permissions = getContentPermissions(ctx);
     const legacyInput = isLegacyPlannedCreateInput(input) ? input : null;
     const normalizedEventType: CoreEventType = input.event_type ?? "planned";
 
@@ -1010,16 +1022,24 @@ export const eventsRouter = createTRPCRouter({
     }
 
     if (input.activity_plan_id) {
-      const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
-        activityPlanId: input.activity_plan_id,
-        profileId: ctx.session.user.id,
-      });
-
-      if (!activityPlan) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Activity plan not found or not accessible",
+      if (permissions) {
+        await permissions.requireRead(
+          ctx.session.user.id,
+          { type: "activity_plan", id: input.activity_plan_id },
+          "Activity plan not found or not accessible",
+        );
+      } else {
+        const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
+          activityPlanId: input.activity_plan_id,
+          profileId: ctx.session.user.id,
         });
+
+        if (!activityPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Activity plan not found or not accessible",
+          });
+        }
       }
     }
 
@@ -1027,16 +1047,24 @@ export const eventsRouter = createTRPCRouter({
       "training_plan_id" in input ? (input.training_plan_id ?? null) : (null as string | null);
 
     if (trainingPlanId) {
-      const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
-        profileId: ctx.session.user.id,
-        trainingPlanId,
-      });
-
-      if (!trainingPlan) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Training plan not found or not accessible",
+      if (permissions) {
+        await permissions.requireRead(
+          ctx.session.user.id,
+          { type: "training_plan", id: trainingPlanId },
+          "Training plan not found or not accessible",
+        );
+      } else {
+        const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
+          profileId: ctx.session.user.id,
+          trainingPlanId,
         });
+
+        if (!trainingPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Training plan not found or not accessible",
+          });
+        }
       }
     }
 
@@ -1086,6 +1114,16 @@ export const eventsRouter = createTRPCRouter({
 
     const event = mapEvent(data as PlannedEventRecord);
 
+    if (permissions) {
+      await permissions.grantEventContentAccess({
+        actorProfileId: ctx.session.user.id,
+        granteeProfileId: event.profile_id,
+        eventId: event.id,
+        activityPlanId: event.activity_plan_id,
+        trainingPlanId: event.training_plan_id,
+      });
+    }
+
     let wahooSyncResult: WahooQueueResult | null = null;
     if (event.legacy_event_type === plannedEventType) {
       try {
@@ -1122,6 +1160,7 @@ export const eventsRouter = createTRPCRouter({
     const scope = input.scope ?? "single";
     const eventWriteRepository = getEventWriteRepository(ctx);
     const completionRepository = getEventCompletionRepository(ctx);
+    const permissions = getContentPermissions(ctx);
 
     const existing = await completionRepository.getOwnedEventForCompletion({
       eventId: id,
@@ -1176,30 +1215,46 @@ export const eventsRouter = createTRPCRouter({
     }
 
     if (typeof patch.activity_plan_id === "string") {
-      const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
-        activityPlanId: patch.activity_plan_id,
-        profileId: ctx.session.user.id,
-      });
-
-      if (!activityPlan) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Activity plan not found or not accessible",
+      if (permissions) {
+        await permissions.requireRead(
+          ctx.session.user.id,
+          { type: "activity_plan", id: patch.activity_plan_id },
+          "Activity plan not found or not accessible",
+        );
+      } else {
+        const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
+          activityPlanId: patch.activity_plan_id,
+          profileId: ctx.session.user.id,
         });
+
+        if (!activityPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Activity plan not found or not accessible",
+          });
+        }
       }
     }
 
     if (typeof patch.training_plan_id === "string") {
-      const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
-        profileId: ctx.session.user.id,
-        trainingPlanId: patch.training_plan_id,
-      });
-
-      if (!trainingPlan) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Training plan not found or not accessible",
+      if (permissions) {
+        await permissions.requireRead(
+          ctx.session.user.id,
+          { type: "training_plan", id: patch.training_plan_id },
+          "Training plan not found or not accessible",
+        );
+      } else {
+        const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
+          profileId: ctx.session.user.id,
+          trainingPlanId: patch.training_plan_id,
         });
+
+        if (!trainingPlan) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Training plan not found or not accessible",
+          });
+        }
       }
     }
 
@@ -1280,6 +1335,21 @@ export const eventsRouter = createTRPCRouter({
     }
     const event = mapEvent(representative);
 
+    if (permissions) {
+      await Promise.all(
+        updatedRows.map(async (row: any) => {
+          await permissions.revokeEventGrants(row.id);
+          await permissions.grantEventContentAccess({
+            actorProfileId: ctx.session.user.id,
+            granteeProfileId: row.profile_id,
+            eventId: row.id,
+            activityPlanId: row.activity_plan_id,
+            trainingPlanId: row.training_plan_id,
+          });
+        }),
+      );
+    }
+
     let wahooSyncResult: WahooQueueResult | null = null;
     const updatedPlannedEventIds = updatedRows
       .filter((row) => row.event_type === plannedEventType)
@@ -1330,6 +1400,7 @@ export const eventsRouter = createTRPCRouter({
 
   delete: protectedProcedure.input(eventDeleteInputSchema).mutation(async ({ ctx, input }) => {
     const completionRepository = getEventCompletionRepository(ctx);
+    const permissions = getContentPermissions(ctx);
     const existing = await completionRepository.getOwnedEventForCompletion({
       eventId: input.id,
       profileId: ctx.session.user.id,
@@ -1388,6 +1459,10 @@ export const eventsRouter = createTRPCRouter({
         profileId: ctx.session.user.id,
         scope,
       });
+
+      if (permissions) {
+        await Promise.all(rowsToDelete.map((row: any) => permissions.revokeEventGrants(row.id)));
+      }
     } catch (error) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -1827,7 +1902,22 @@ export const eventsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const eventReadRepository = getEventReadRepository(ctx);
+      const permissions = getContentPermissions(ctx);
       const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+      if (permissions) {
+        await permissions.requireRead(
+          ctx.session.user.id,
+          { type: "training_plan", id: input.training_plan_id },
+          "Training plan not found",
+        );
+        await permissions.requireRead(
+          ctx.session.user.id,
+          { type: "activity_plan", id: input.activity_plan_id },
+          "Activity plan not found",
+        );
+      }
+
       const validateInputs = await eventReadRepository.getValidateConstraintsInputs({
         profileId: ctx.session.user.id,
         trainingPlanId: input.training_plan_id,

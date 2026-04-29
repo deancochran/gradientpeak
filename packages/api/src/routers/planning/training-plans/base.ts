@@ -90,6 +90,10 @@ import {
   buildDynamicStressSeries,
 } from "../../../lib/activity-analysis";
 import { featureFlags } from "../../../lib/features";
+import {
+  createContentAccessPermissions,
+  needsContentGrantForRow,
+} from "../../../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { addEstimationToPlans } from "../../../utils/estimation-helpers";
@@ -185,6 +189,16 @@ async function getAccessibleTrainingPlan(input: {
         profile_id = ${input.profileId}::uuid
         or is_system_template = true
         or template_visibility = 'public'
+        or exists (
+          select 1
+          from content_access_grants
+          where content_access_grants.content_type = 'training_plan'
+            and content_access_grants.content_id = training_plans.id
+            and content_access_grants.grantee_profile_id = ${input.profileId}::uuid
+            and content_access_grants.access_level in ('read', 'read_geometry')
+            and content_access_grants.revoked_at is null
+            and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
+        )
       )
     limit 1
   `);
@@ -5979,6 +5993,7 @@ export const trainingPlansRouter = createTRPCRouter({
 
       const profileId = ctx.session.user.id;
       const db = getRequiredDb(ctx);
+      const permissions = createContentAccessPermissions(db);
 
       const activePlanLookup = await getActivePlanFromFutureEvents({
         db,
@@ -6015,6 +6030,7 @@ export const trainingPlansRouter = createTRPCRouter({
           .returning({ id: schema.events.id });
 
         scheduled_sessions_replaced = removedEvents.length;
+        await Promise.all(removedEvents.map((event) => permissions.revokeEventGrants(event.id)));
       }
 
       const templatePlan = await getAccessibleTrainingPlan({
@@ -6072,9 +6088,31 @@ export const trainingPlansRouter = createTRPCRouter({
 
       let allowedPlanIds = new Set<string>();
       const allowedPlanNameById = new Map<string, string>();
+      const allowedPlanAccessById = new Map<
+        string,
+        {
+          ownerProfileId?: string | null;
+          isPublic?: boolean | null;
+          isSystem?: boolean | null;
+          routeId?: string | null;
+        }
+      >();
       if (candidatePlanIds.length > 0) {
-        const accessiblePlans = await db.execute(sql<{ id: string; name: string }>`
-          select id, name
+        const accessiblePlans = await db.execute(sql<{
+          id: string;
+          name: string;
+          ownerProfileId: string | null;
+          isPublic: boolean | null;
+          isSystem: boolean | null;
+          routeId: string | null;
+        }>`
+          select
+            id,
+            name,
+            profile_id as "ownerProfileId",
+            template_visibility = 'public' as "isPublic",
+            is_system_template as "isSystem",
+            route_id as "routeId"
           from activity_plans
           where id in (${sql.join(
             candidatePlanIds.map((id) => sql`${id}::uuid`),
@@ -6084,13 +6122,36 @@ export const trainingPlansRouter = createTRPCRouter({
               profile_id = ${profileId}::uuid
               or is_system_template = true
               or template_visibility = 'public'
+              or exists (
+                select 1
+                from content_access_grants
+                where content_access_grants.content_type = 'activity_plan'
+                  and content_access_grants.content_id = activity_plans.id
+                  and content_access_grants.grantee_profile_id = ${profileId}::uuid
+                  and content_access_grants.access_level in ('read', 'read_geometry')
+                  and content_access_grants.revoked_at is null
+                  and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
+              )
             )
         `);
 
-        const accessiblePlanRows = getSqlRows<{ id: string; name: string }>(accessiblePlans);
+        const accessiblePlanRows = getSqlRows<{
+          id: string;
+          name: string;
+          ownerProfileId?: string | null;
+          isPublic?: boolean | null;
+          isSystem?: boolean | null;
+          routeId?: string | null;
+        }>(accessiblePlans);
         allowedPlanIds = new Set(accessiblePlanRows.map((row) => row.id));
         accessiblePlanRows.forEach((row) => {
           allowedPlanNameById.set(row.id, row.name);
+          allowedPlanAccessById.set(row.id, {
+            ownerProfileId: row.ownerProfileId,
+            isPublic: row.isPublic,
+            isSystem: row.isSystem,
+            routeId: row.routeId,
+          });
         });
       }
 
@@ -6158,6 +6219,42 @@ export const trainingPlansRouter = createTRPCRouter({
 
       scheduled_sessions_created = insertedEvents.length;
 
+      await Promise.all(
+        insertedEvents.map((event, index) => {
+          const eventRow = eventRows[index];
+          if (!eventRow) {
+            return Promise.resolve();
+          }
+
+          const linkedPlanAccess = eventRow.activity_plan_id
+            ? allowedPlanAccessById.get(eventRow.activity_plan_id)
+            : null;
+          const shouldGrantLinkedPlan = linkedPlanAccess
+            ? needsContentGrantForRow(linkedPlanAccess, profileId)
+            : false;
+          const shouldGrantTrainingPlan = needsContentGrantForRow(
+            {
+              ownerProfileId: templatePlan.profile_id,
+              isPublic: templatePlan.template_visibility === "public",
+              isSystem: templatePlan.is_system_template,
+            },
+            profileId,
+          );
+
+          if (!shouldGrantLinkedPlan && !linkedPlanAccess?.routeId && !shouldGrantTrainingPlan) {
+            return Promise.resolve();
+          }
+
+          return permissions.grantEventContentAccess({
+            actorProfileId: profileId,
+            granteeProfileId: profileId,
+            eventId: event.id,
+            activityPlanId: eventRow.activity_plan_id,
+            trainingPlanId: shouldGrantTrainingPlan ? appliedPlanId : null,
+          });
+        }),
+      );
+
       return {
         applied_plan_id: appliedPlanId,
         training_plan_id: templatePlan.id,
@@ -6182,6 +6279,7 @@ export const trainingPlansRouter = createTRPCRouter({
       const profileId = ctx.session.user.id;
       const windowStartIso = todayStartIsoUtc();
       const db = getRequiredDb(ctx);
+      const permissions = createContentAccessPermissions(db);
       const activePlanLookup = await getActivePlanFromFutureEvents({
         db,
         profileId,
@@ -6257,6 +6355,10 @@ export const trainingPlansRouter = createTRPCRouter({
           ),
         )
         .returning({ id: schema.events.id });
+
+      await Promise.all(
+        (deletedEvents ?? []).map((event) => permissions.revokeEventGrants(event.id)),
+      );
 
       return {
         id: input.id,

@@ -13,9 +13,13 @@
  */
 
 import {
+  createRecordingMetricsAccumulator,
   GLOBAL_DEFAULTS,
   type PerformanceMetrics,
   type RecordingActivityCategory,
+  type RecordingMetricsAccumulator,
+  type RecordingMetricsConfig,
+  type RecordingMetricsSnapshot,
 } from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
@@ -45,6 +49,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private profile: ProfileMetrics;
   private zones: ZoneConfig;
   private metrics: LiveMetricsState;
+  private recordingMetricsAccumulator: RecordingMetricsAccumulator;
+  private recordingMetricsSnapshot: RecordingMetricsSnapshot;
   private isActive = false;
   private gpsRecordingEnabled = true;
   private activityCategory?: RecordingActivityCategory; // Track activity type for calorie calculation
@@ -106,6 +112,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.profile = this.extractProfileMetrics(profile, metrics);
     this.zones = this.calculateZones(this.profile);
     this.metrics = this.createInitialMetrics();
+    this.recordingMetricsAccumulator = createRecordingMetricsAccumulator(
+      this.buildRecordingMetricsConfig(),
+    );
+    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
     this.buffer = new DataBuffer(RECORDING_CONFIG.BUFFER_WINDOW_SECONDS);
     this.streamBuffer = new StreamBuffer();
 
@@ -129,6 +139,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public setActivityCategory(category: RecordingActivityCategory): void {
     this.activityCategory = category;
+    this.resetRecordingMetricsAccumulator();
     console.log("[LiveMetricsManager] Activity category set to:", category);
   }
 
@@ -167,6 +178,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.startTime = Date.now();
     this.metrics.startedAt = this.startTime;
     this.zoneStartTime = this.startTime;
+    this.resetRecordingMetricsAccumulator();
+    this.addRecordingMetricsSample(this.startTime);
 
     // Start 1-second update timer
     this.updateTimer = setInterval(() => {
@@ -342,10 +355,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         this.totalDistance += distance;
 
         // Calculate speed
-        const timeDelta = (location.timestamp - this.lastLocation.timestamp) / 1000; // seconds
+        const timeDelta = (location.timestamp - previousLocation.timestamp) / 1000; // seconds
         if (timeDelta > 0) {
           const speed = distance / timeDelta; // m/s
           this.maxSpeed = Math.max(this.maxSpeed, speed);
+          this.updateTerrainIntensity(previousLocation, location, distance, timeDelta);
         }
       }
     }
@@ -370,6 +384,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public getMetrics(): LiveMetricsState {
     return { ...this.metrics };
+  }
+
+  public getRecordingMetricsSnapshot(): RecordingMetricsSnapshot {
+    return this.recordingMetricsSnapshot;
   }
 
   /**
@@ -485,16 +503,40 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       // Elevation metrics
       avgGrade: this.metrics.avgGrade,
       elevationGainPerKm: this.metrics.elevationGainPerKm,
-
-      // Advanced metrics (only if enough data)
-      ...(this.hasEnoughDataForAdvancedMetrics() && {
-        normalizedPower: this.metrics.normalizedPowerEst,
-        trainingStressScore: this.metrics.trainingStressScoreEst,
-        intensityFactor: this.metrics.intensityFactorEst,
-        variabilityIndex: this.metrics.variabilityIndexEst,
-        efficiencyFactor: this.metrics.efficiencyFactorEst,
-        aerobicDecoupling: this.metrics.decouplingEst,
+      ...(this.metrics.currentGrade !== undefined && { currentGrade: this.metrics.currentGrade }),
+      ...(this.metrics.gradeAdjustedPaceSecondsPerKm !== undefined && {
+        gradeAdjustedPaceSecondsPerKm: this.metrics.gradeAdjustedPaceSecondsPerKm,
       }),
+      ...(this.metrics.verticalSpeedMetersPerHour !== undefined && {
+        verticalSpeedMetersPerHour: this.metrics.verticalSpeedMetersPerHour,
+      }),
+
+      // Current zones
+      ...(this.metrics.currentHeartRateZone !== undefined && {
+        currentHeartRateZone: this.metrics.currentHeartRateZone,
+      }),
+      ...(this.metrics.currentPowerZone !== undefined && {
+        currentPowerZone: this.metrics.currentPowerZone,
+      }),
+
+      // Advanced metrics from the exact core accumulator.
+      ...(this.recordingMetricsSnapshot.normalizedPowerWatts !== null && {
+        normalizedPower: this.recordingMetricsSnapshot.normalizedPowerWatts,
+      }),
+      ...(this.recordingMetricsSnapshot.trainingStressScore !== null && {
+        trainingStressScore: this.recordingMetricsSnapshot.trainingStressScore,
+      }),
+      ...(this.recordingMetricsSnapshot.intensityFactor !== null && {
+        intensityFactor: this.recordingMetricsSnapshot.intensityFactor,
+      }),
+      ...(this.recordingMetricsSnapshot.variabilityIndex !== null && {
+        variabilityIndex: this.recordingMetricsSnapshot.variabilityIndex,
+      }),
+      ...(this.recordingMetricsSnapshot.efficiencyFactor !== null && {
+        efficiencyFactor: this.recordingMetricsSnapshot.efficiencyFactor,
+      }),
+      aerobicDecoupling: this.metrics.decouplingEst,
+      recordingMetrics: this.recordingMetricsSnapshot,
 
       // Plan adherence
       planAdherence: this.metrics.adherenceCurrentStep,
@@ -508,6 +550,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.stopTimers();
     this.buffer.clear();
     this.streamBuffer.clear();
+    this.resetRecordingMetricsAccumulator();
 
     // Remove all listeners for each event type
     this.removeAllListeners("statsUpdate");
@@ -525,37 +568,58 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   private calculateAndEmitMetrics(): void {
     const startTime = Date.now();
+    let coreDuration = 0;
+    let accumulatorDuration = 0;
+    let statsDuration = 0;
+    let emitDuration = 0;
 
     // Always update core metrics
     this.updateTiming();
     this.updateDistanceMetrics();
     this.updateZoneMetrics();
+    coreDuration = Date.now() - startTime;
+
+    if (this.isActive) {
+      const accumulatorStart = Date.now();
+      this.addRecordingMetricsSample(startTime);
+      accumulatorDuration = Date.now() - accumulatorStart;
+    }
 
     // Update expensive calculations less frequently
     const shouldUpdateExpensive = startTime - this.lastStatsEmit >= 1000;
 
     if (shouldUpdateExpensive) {
+      const statsStart = Date.now();
       this.updatePowerMetrics();
       this.updateHeartRateMetrics();
       this.updateCadenceMetrics();
       this.updateTemperatureMetrics();
       this.updateCalories();
       this.updateTier2Metrics();
+      this.applyRecordingMetricsSnapshot();
 
       // Cache stats
       this.cachedStats = this.getSessionStats();
       this.lastStatsEmit = startTime;
+      statsDuration = Date.now() - statsStart;
 
       // Emit stats update
+      const emitStart = Date.now();
       this.emit("statsUpdate", {
         stats: this.cachedStats,
         timestamp: startTime,
       });
+      emitDuration = Date.now() - emitStart;
     }
 
     const duration = Date.now() - startTime;
     if (duration > 50) {
-      console.warn(`[LiveMetricsManager] Slow calculation: ${duration}ms`);
+      console.warn(`[LiveMetricsManager] Slow calculation: ${duration}ms`, {
+        accumulatorDuration,
+        coreDuration,
+        emitDuration,
+        statsDuration,
+      });
     }
   }
 
@@ -914,6 +978,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       }
 
       this.currentHrZone = hrZone;
+      this.metrics.currentHeartRateZone = hrZone + 1;
     }
 
     // Update Power zone time
@@ -926,6 +991,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       }
 
       this.currentPowerZone = powerZone;
+      this.metrics.currentPowerZone = powerZone + 1;
     }
 
     // Update metrics (convert to seconds)
@@ -1123,6 +1189,69 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.metrics.decouplingEst = 0;
   }
 
+  private buildRecordingMetricsConfig(): RecordingMetricsConfig {
+    return {
+      activityCategory: this.activityCategory ?? "other",
+      ftpWatts: this.profile.ftp ?? null,
+      thresholdHeartRateBpm: this.profile.threshold_hr ?? null,
+      thresholdPaceSecondsPerKm: this.profile.threshold_pace_seconds_per_km ?? null,
+      timeBasis: "moving",
+    };
+  }
+
+  private resetRecordingMetricsAccumulator(): void {
+    this.recordingMetricsAccumulator = createRecordingMetricsAccumulator(
+      this.buildRecordingMetricsConfig(),
+    );
+    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
+  }
+
+  private addRecordingMetricsSample(timestampMs: number): void {
+    const readings = this.getCurrentReadings();
+
+    this.recordingMetricsAccumulator.addSample({
+      timestampMs,
+      moving: this.isActive,
+      powerWatts: readings.power ?? null,
+      heartRateBpm: readings.heartRate ?? null,
+      cadenceRpm: readings.cadence ?? null,
+      speedMps: readings.speed ?? null,
+      distanceMeters: this.totalDistance,
+      altitudeMeters: readings.position?.altitude ?? null,
+    });
+    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
+  }
+
+  private applyRecordingMetricsSnapshot(): void {
+    const snapshot = this.recordingMetricsSnapshot;
+
+    if (snapshot.averagePowerWatts !== null) {
+      this.metrics.avgPower = Math.round(snapshot.averagePowerWatts);
+    }
+    if (snapshot.workKilojoules !== null) {
+      this.totalWork = snapshot.workKilojoules * 1000;
+      this.metrics.totalWork = Math.round(this.totalWork);
+    }
+    if (snapshot.averageHeartRateBpm !== null) {
+      this.metrics.avgHeartRate = Math.round(snapshot.averageHeartRateBpm);
+    }
+    if (snapshot.normalizedPowerWatts !== null) {
+      this.metrics.normalizedPowerEst = snapshot.normalizedPowerWatts;
+    }
+    if (snapshot.intensityFactor !== null) {
+      this.metrics.intensityFactorEst = snapshot.intensityFactor;
+    }
+    if (snapshot.trainingStressScore !== null) {
+      this.metrics.trainingStressScoreEst = snapshot.trainingStressScore;
+    }
+    if (snapshot.variabilityIndex !== null) {
+      this.metrics.variabilityIndexEst = snapshot.variabilityIndex;
+    }
+    if (snapshot.efficiencyFactor !== null) {
+      this.metrics.efficiencyFactorEst = snapshot.efficiencyFactor;
+    }
+  }
+
   /**
    * Update elevation tracking
    */
@@ -1148,6 +1277,38 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     this.metrics.totalAscent = Math.round(this.totalAscent);
     this.metrics.totalDescent = Math.round(this.totalDescent);
+  }
+
+  private updateTerrainIntensity(
+    previousLocation: LocationReading,
+    location: LocationReading,
+    distanceMeters: number,
+    seconds: number,
+  ): void {
+    if (
+      previousLocation.altitude === undefined ||
+      location.altitude === undefined ||
+      distanceMeters <= 0 ||
+      seconds <= 0
+    ) {
+      return;
+    }
+
+    const altitudeDelta = location.altitude - previousLocation.altitude;
+    const grade = clamp((altitudeDelta / distanceMeters) * 100, -30, 30);
+    const speedMps = distanceMeters / seconds;
+    const gradeAdjustedSpeed = speedMps * (minettiCost(grade / 100) / minettiCost(0));
+
+    this.metrics.currentGrade = grade;
+    this.metrics.verticalSpeedMetersPerHour = (altitudeDelta / seconds) * 3600;
+
+    if (Number.isFinite(gradeAdjustedSpeed) && gradeAdjustedSpeed > 0) {
+      this.metrics.gradeAdjustedPaceSecondsPerKm = 1000 / gradeAdjustedSpeed;
+    }
+
+    if (this.totalDistance > 0) {
+      this.metrics.avgGrade = ((this.totalAscent - this.totalDescent) / this.totalDistance) * 100;
+    }
   }
 
   /**
@@ -1404,4 +1565,19 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       adherenceCurrentStep: 0,
     };
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function minettiCost(grade: number): number {
+  return (
+    155.4 * grade ** 5 -
+    30.4 * grade ** 4 -
+    43.3 * grade ** 3 +
+    46.3 * grade ** 2 +
+    19.5 * grade +
+    3.6
+  );
 }

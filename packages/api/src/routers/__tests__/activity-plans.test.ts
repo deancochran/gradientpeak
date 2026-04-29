@@ -1,4 +1,4 @@
-import { activityPlans, likes, profiles } from "@repo/db";
+import { activityPlans, contentAccessGrants, likes, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -70,7 +70,7 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 import { activityPlansRouter } from "../activity-plans";
 
-type MockTableName = "activity_plans" | "likes" | "profiles";
+type MockTableName = "activity_plans" | "content_access_grants" | "likes" | "profiles";
 type MockOperation = "select" | "insert" | "update" | "delete";
 
 type MockDbState = Partial<Record<`${MockOperation}:${MockTableName}`, unknown[][]>>;
@@ -134,6 +134,10 @@ function resolveTableName(table: unknown): MockTableName {
 
   if (table === likes) {
     return "likes";
+  }
+
+  if (table === contentAccessGrants) {
+    return "content_access_grants";
   }
 
   if (table === profiles) {
@@ -297,13 +301,22 @@ describe("activityPlansRouter", () => {
               is_system_template: false,
             }),
           ],
+          [
+            createActivityPlanRow({
+              id: "99999999-9999-4999-8999-999999999999",
+              profile_id: OTHER_USER_ID,
+              template_visibility: "private",
+              is_system_template: false,
+            }),
+          ],
         ],
+        "select:content_access_grants": [[]],
       },
     });
 
     await expect(
       caller.getById({ id: "99999999-9999-4999-8999-999999999999" }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
+    ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
   });
 
   it("getById rejects unexpected input fields", async () => {
@@ -347,6 +360,64 @@ describe("activityPlansRouter", () => {
     expect(result.items[1]?.has_liked).toBe(false);
     expect(result.items[0]?.owner?.id).toBe(USER_ID);
     expect(result.items[1]?.owner?.id).toBe(OTHER_USER_ID);
+  });
+
+  it("getManyByIds includes contextually granted private plans and omits denied private plans", async () => {
+    const ownPlan = createActivityPlanRow({ id: "11111111-1111-4111-8111-111111111111" });
+    const grantedPlan = createActivityPlanRow({
+      id: "22222222-2222-4222-8222-222222222222",
+      profile_id: OTHER_USER_ID,
+      template_visibility: "private",
+      is_public: false,
+    });
+    const deniedPlan = createActivityPlanRow({
+      id: "33333333-3333-4333-8333-333333333333",
+      profile_id: OTHER_USER_ID,
+      template_visibility: "private",
+      is_public: false,
+    });
+    const systemPlan = createActivityPlanRow({
+      id: "44444444-4444-4444-8444-444444444444",
+      profile_id: null,
+      is_system_template: true,
+    });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [
+          [grantedPlan, deniedPlan, systemPlan, ownPlan],
+          [grantedPlan],
+          [deniedPlan],
+        ],
+        "select:content_access_grants": [
+          [
+            {
+              accessLevel: "read",
+              sourceType: "event",
+              sourceId: "55555555-5555-4555-8555-555555555555",
+            },
+          ],
+          [],
+        ],
+        "select:likes": [[]],
+        "select:profiles": [
+          [
+            createProfileRow(),
+            createProfileRow({ id: OTHER_USER_ID, username: "Other", avatar_url: null }),
+          ],
+        ],
+      },
+    });
+
+    const result = await caller.getManyByIds({
+      ids: [deniedPlan.id, ownPlan.id, grantedPlan.id, systemPlan.id],
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      ownPlan.id,
+      grantedPlan.id,
+      systemPlan.id,
+    ]);
+    expect(result.items.map((item) => item.id)).not.toContain(deniedPlan.id);
   });
 
   it("getUserPlansCount coerces the current user's count from the DB", async () => {

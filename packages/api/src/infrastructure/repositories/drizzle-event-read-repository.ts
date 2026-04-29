@@ -1,5 +1,19 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, lt, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { EventReadRepository } from "../../repositories";
 
 function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
@@ -157,12 +171,7 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
           db
             .select({ id: schema.trainingPlans.id, structure: schema.trainingPlans.structure })
             .from(schema.trainingPlans)
-            .where(
-              and(
-                eq(schema.trainingPlans.id, trainingPlanId),
-                eq(schema.trainingPlans.profile_id, profileId),
-              ),
-            )
+            .where(eq(schema.trainingPlans.id, trainingPlanId))
             .limit(1)
             .then((rows) => rows[0] ?? null),
           db
@@ -173,15 +182,7 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
               route_id: schema.activityPlans.route_id,
             })
             .from(schema.activityPlans)
-            .where(
-              and(
-                eq(schema.activityPlans.id, activityPlanId),
-                or(
-                  eq(schema.activityPlans.profile_id, profileId),
-                  eq(schema.activityPlans.is_system_template, true),
-                ),
-              ),
-            )
+            .where(eq(schema.activityPlans.id, activityPlanId))
             .limit(1)
             .then((rows) => rows[0] ?? null),
           db
@@ -308,7 +309,26 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
                 updated_at: schema.activityRoutes.updated_at,
               })
               .from(schema.activityRoutes)
-              .where(inArray(schema.activityRoutes.id, routeIds))
+              .where(
+                and(
+                  inArray(schema.activityRoutes.id, routeIds),
+                  or(
+                    eq(schema.activityRoutes.profile_id, profileId),
+                    eq(schema.activityRoutes.is_public, true),
+                    eq(schema.activityRoutes.is_system_template, true),
+                    sql`exists (
+                      select 1
+                      from content_access_grants
+                      where content_access_grants.content_type = 'activity_route'
+                        and content_access_grants.content_id = ${schema.activityRoutes.id}
+                        and content_access_grants.grantee_profile_id = ${profileId}::uuid
+                        and content_access_grants.access_level in ('read', 'read_geometry')
+                        and content_access_grants.revoked_at is null
+                        and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
+                    )`,
+                  ),
+                ),
+              )
           : Promise.resolve([]),
       ]);
 

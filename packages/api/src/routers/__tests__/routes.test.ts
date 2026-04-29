@@ -360,6 +360,40 @@ describe("routesRouter", () => {
     expect(result.id).toBe(ROUTE_ID);
   });
 
+  it("loads full coordinates through a contextual route geometry grant", async () => {
+    const route = createRouteRow({
+      profile_id: "99999999-9999-4999-8999-999999999999",
+      is_public: false,
+      is_system_template: false,
+    });
+    const fileData = {
+      text: vi.fn().mockResolvedValue("<gpx>route</gpx>"),
+    };
+    mockStorage.download.mockResolvedValue({ error: null, data: fileData });
+
+    const db = {
+      select: vi
+        .fn()
+        .mockImplementationOnce(() => createSelectWithLimit([route]))
+        .mockImplementationOnce(() => createSelectWithLimit([route]))
+        .mockImplementationOnce(() =>
+          createSelectWithLimit([
+            {
+              accessLevel: "read_geometry",
+              sourceType: "event",
+              sourceId: "77777777-7777-4777-8777-777777777777",
+            },
+          ]),
+        ),
+    };
+
+    const caller = createCaller(db);
+    const result = await caller.loadFull({ id: ROUTE_ID });
+
+    expect(mockStorage.download).toHaveBeenCalledWith(`${OWNER_ID}/route.gpx`);
+    expect(result.id).toBe(ROUTE_ID);
+  });
+
   it("rejects invalid parsed coordinates from stored route files", async () => {
     const route = createRouteRow();
     const fileData = {

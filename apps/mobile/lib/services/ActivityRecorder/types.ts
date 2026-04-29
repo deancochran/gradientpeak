@@ -14,6 +14,7 @@ import {
   type RecordingActivityCategory,
   type RecordingConfiguration,
   type RecordingControlPolicy,
+  type RecordingMetricsSnapshot,
   RecordingServiceActivityPlan,
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
@@ -124,6 +125,9 @@ export interface LiveMetricsState {
   totalAscent: number; // meters
   totalDescent: number; // meters
   avgGrade: number; // percentage (-100 to 100)
+  currentGrade?: number; // percentage (-100 to 100)
+  gradeAdjustedPaceSecondsPerKm?: number;
+  verticalSpeedMetersPerHour?: number;
   elevationGainPerKm: number; // meters per km
 
   // === Heart Rate ===
@@ -135,6 +139,7 @@ export interface LiveMetricsState {
   hrZone3Time: number; // seconds in zone 3
   hrZone4Time: number; // seconds in zone 4
   hrZone5Time: number; // seconds in zone 5
+  currentHeartRateZone?: number; // 1-indexed current HR zone
 
   // === Power ===
   avgPower: number; // watts
@@ -147,6 +152,7 @@ export interface LiveMetricsState {
   powerZone5Time: number; // seconds in zone 5
   powerZone6Time: number; // seconds in zone 6
   powerZone7Time: number; // seconds in zone 7
+  currentPowerZone?: number; // 1-indexed current power zone
   powerHeartRateRatio: number; // watts per bpm
 
   // === Cadence ===
@@ -677,10 +683,18 @@ export interface SessionStats {
   variabilityIndex?: number;
   efficiencyFactor?: number;
   aerobicDecoupling?: number;
+  recordingMetrics?: RecordingMetricsSnapshot;
 
   // Elevation metrics
   avgGrade?: number; // percentage
+  currentGrade?: number; // percentage
+  gradeAdjustedPaceSecondsPerKm?: number;
+  verticalSpeedMetersPerHour?: number;
   elevationGainPerKm?: number; // meters per km
+
+  // Current zones (1-indexed)
+  currentHeartRateZone?: number;
+  currentPowerZone?: number;
 
   // Plan execution
   planAdherence?: number; // 0-1

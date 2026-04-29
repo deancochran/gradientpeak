@@ -16,6 +16,10 @@ import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
+import {
+  redactPrivateProfileDetailFields,
+  redactProfileListFields,
+} from "../utils/profile-privacy";
 
 const profileListFiltersSchema = z
   .object({
@@ -160,6 +164,12 @@ function serializeProfile(
     threshold_hr: performance?.threshold_hr ?? null,
     weight_kg: performance?.weight_kg ?? null,
   };
+}
+
+function serializeProfileListItem(profile: ProfileBaseRow) {
+  const serialized = serializeProfile(profile);
+
+  return redactProfileListFields(serialized);
 }
 
 async function getProfileBaseById(db: DbClient, profileId: string) {
@@ -486,13 +496,11 @@ export const profilesRouter = createTRPCRouter({
           following_count: followingCount,
         };
 
-        if (!isSelf && isPrivate && !isAcceptedFollower) {
-          resultProfile.bio = null;
-          resultProfile.preferred_units = null;
-          resultProfile.language = null;
-        }
-
-        return publicProfileSchema.parse(resultProfile);
+        return publicProfileSchema.parse(
+          !isSelf && isPrivate && !isAcceptedFollower
+            ? redactPrivateProfileDetailFields(resultProfile)
+            : resultProfile,
+        );
       } catch (error) {
         if (error instanceof TRPCError) {
           throw error;
@@ -603,7 +611,7 @@ export const profilesRouter = createTRPCRouter({
       const total = Number(totalRows[0]?.total ?? 0);
 
       return {
-        items: rows.map((profile) => serializeProfile(profile)),
+        items: rows.map((profile) => serializeProfileListItem(profile)),
         total,
         ...buildIndexPageInfo({ offset, limit: input.limit, total }),
       };

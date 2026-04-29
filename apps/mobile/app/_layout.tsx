@@ -19,6 +19,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
+import { LocationManager } from "@/lib/services/ActivityRecorder/location";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
@@ -118,6 +119,10 @@ export default function RootLayout() {
 
     GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
       console.warn("Failed to cleanup orphaned FIT recordings:", error);
+    });
+
+    LocationManager.cleanupOrphanedBackgroundTracking().catch((error) => {
+      console.warn("Failed to cleanup orphaned background location tracking:", error);
     });
   }, []);
 

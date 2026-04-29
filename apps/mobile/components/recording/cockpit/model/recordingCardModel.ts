@@ -104,12 +104,7 @@ function shouldShowRecordingCard(
   }
 
   if (card === "route_progress") {
-    return (
-      params.sessionContract?.guidance.hasRouteGeometry === true &&
-      params.sessionContract.guidance.routeMode !== "live_navigation" &&
-      params.sessionContract.guidance.routeMode !== "preview" &&
-      params.sessionContract.guidance.routeMode !== "virtual"
-    );
+    return params.sessionContract?.guidance.hasRouteGeometry === true;
   }
 
   if (card === "climb") {

@@ -38,6 +38,7 @@ import { FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
 import {
   type AllPermissionsStatus,
   areAllPermissionsGranted,
+  areRecordingPermissionsGranted,
   checkAllPermissions,
 } from "../permissions-check";
 import { persistPendingFinalizedArtifact } from "./finalizedArtifactStorage";
@@ -226,6 +227,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private _routeOverrideId: string | null | undefined = undefined;
   private _routeDistance: number = 0; // Total route distance in meters
   private _currentRouteDistance: number = 0; // User's current distance along route
+  private lastHandledLocationKey: string | null = null;
 
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
@@ -240,6 +242,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private pausedTime: number = 0;
   private lastPauseTime?: number;
   private elapsedTimeInterval?: ReturnType<typeof setInterval> | number;
+  private sessionUpdateTimer?: ReturnType<typeof setTimeout> | number;
+  private lastSessionUpdateAt = 0;
 
   // === Lap Tracking ===
   private laps: number[] = []; // Array of lap times (moving time in seconds)
@@ -297,11 +301,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       thresholdPaceSecondsPerKm: this.thresholdPaceSecondsPerKm,
     });
     this.liveMetricsManager.addListener("sensorUpdate", () => {
-      this.publishSessionUpdate();
+      this.scheduleSessionUpdate();
     });
     this.liveMetricsManager.addListener("statsUpdate", () => {
       this.updateIndoorRouteProgressFromSessionDistance();
-      this.publishSessionUpdate();
+      this.scheduleSessionUpdate();
     });
     this.liveMetricsManager.addListener("metricsUpdated", () => {
       this.publishSessionUpdate();
@@ -380,6 +384,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   async refreshAndCheckAllPermissions(): Promise<boolean> {
     await this.checkPermissions(true); // Force refresh
     return await areAllPermissionsGranted();
+  }
+
+  async refreshAndCheckRecordingPermissions(
+    gpsRequired = this._gpsRecordingEnabled,
+  ): Promise<boolean> {
+    await this.checkPermissions(true);
+    return await areRecordingPermissionsGranted(gpsRequired);
   }
 
   public getSimplifiedMetrics(): SimplifiedMetrics {
@@ -521,12 +532,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public getSessionStats() {
     const stats = this.liveMetricsManager.getSessionStats();
+    const recordingMetrics = this.liveMetricsManager.getRecordingMetricsSnapshot();
 
     return {
       ...stats,
       duration: Math.floor(this.getElapsedTime() / 1000),
       movingTime: Math.floor(this.getMovingTime() / 1000),
       pausedTime: Math.floor(this.pausedTime / 1000),
+      recordingMetrics,
     };
   }
 
@@ -607,8 +620,25 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private publishSessionUpdate(): void {
+    if (this.sessionUpdateTimer) {
+      clearTimeout(this.sessionUpdateTimer);
+      this.sessionUpdateTimer = undefined;
+    }
+    this.lastSessionUpdateAt = Date.now();
     this.syncRuntimeSourceState({ recordChanges: true });
     this.emit("sessionUpdated", this.getSessionView());
+  }
+
+  private scheduleSessionUpdate(): void {
+    if (this.sessionUpdateTimer) return;
+
+    const now = Date.now();
+    const delay = Math.max(0, 1000 - (now - this.lastSessionUpdateAt));
+
+    this.sessionUpdateTimer = setTimeout(() => {
+      this.sessionUpdateTimer = undefined;
+      this.publishSessionUpdate();
+    }, delay) as unknown as number;
   }
 
   private isMetricSelectionDegraded(selection: MetricSourceSelection): boolean {
@@ -2012,11 +2042,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     // Check all necessary permissions
-    const allGranted = await areAllPermissionsGranted();
+    const allGranted = await areRecordingPermissionsGranted(this._gpsRecordingEnabled);
     if (!allGranted) {
       console.error("[Service] Cannot start recording - missing permissions");
       throw new Error(
-        "All permissions (Bluetooth, Location, and Background Location) are required to start recording",
+        this._gpsRecordingEnabled
+          ? "Bluetooth, Location, and Background Location permissions are required to start GPS recording"
+          : "Bluetooth permission is required to start indoor recording",
       );
     }
 
@@ -2465,6 +2497,17 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     const timestamp = location.timestamp || Date.now();
+    const locationKey = [
+      timestamp,
+      location.coords.latitude.toFixed(7),
+      location.coords.longitude.toFixed(7),
+    ].join(":");
+
+    if (locationKey === this.lastHandledLocationKey) {
+      return;
+    }
+
+    this.lastHandledLocationKey = locationKey;
 
     // Ingest location data for real-time display (even in pending state for map preview)
     // The LiveMetricsManager will only persist data when recording is active
@@ -2507,6 +2550,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       clearInterval(this.elapsedTimeInterval);
       this.elapsedTimeInterval = undefined;
     }
+    if (this.sessionUpdateTimer) {
+      clearTimeout(this.sessionUpdateTimer);
+      this.sessionUpdateTimer = undefined;
+    }
   }
 
   private updateElapsedTime() {
@@ -2517,7 +2564,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       elapsed: Math.floor(this.getElapsedTime() / 1000),
       moving: Math.floor(this.getMovingTime() / 1000),
     });
-    this.publishSessionUpdate();
+    this.scheduleSessionUpdate();
 
     // Auto-advance plan steps when recording
     if (this.state === "recording") {

@@ -10,7 +10,6 @@ import {
   getBackdropTint,
   type RecordingBackdropModel,
 } from "./model/recordingBackdropModel";
-import { RouteElevationBackdrop } from "./RouteElevationBackdrop";
 
 export interface RecordingBackdropProps {
   recordingState: string;
@@ -29,12 +28,7 @@ export function RecordingBackdrop({
     () => buildRecordingBackdropModel({ currentLocation, service, sessionContract }),
     [currentLocation, service, sessionContract],
   );
-  const showBackdropCopy = ![
-    "live_navigation",
-    "route_preview",
-    "virtual_route",
-    "gps_map",
-  ].includes(model.mode);
+  const showBackdropCopy = !["live_navigation", "route_preview", "gps_map"].includes(model.mode);
   const showMapPending = isMapPendingMode(model.mode) && !model.shouldRenderMap;
 
   React.useEffect(() => {
@@ -67,9 +61,7 @@ export function RecordingBackdrop({
 
   return (
     <View className="absolute inset-0 overflow-hidden bg-background" testID="recording-backdrop">
-      {model.mode === "virtual_route" ? (
-        <RouteElevationBackdrop service={service} />
-      ) : model.shouldRenderMap && model.mapRegion ? (
+      {model.shouldRenderMap && model.mapRegion ? (
         <MapView
           key={model.mapKey}
           provider={PROVIDER_DEFAULT}

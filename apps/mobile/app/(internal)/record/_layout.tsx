@@ -60,13 +60,6 @@ export default function RecordLayout() {
           }}
         />
         <Stack.Screen
-          name="permissions"
-          options={{
-            title: "Permissions",
-            gestureEnabled: true,
-          }}
-        />
-        <Stack.Screen
           name="plan"
           options={{
             title: "Select Activity Plan",

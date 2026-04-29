@@ -168,6 +168,51 @@ function toSql(fragment: unknown) {
 }
 
 describe("drizzle-event-read-repository", () => {
+  it("fetches validate constraint plans by id after router permission checks", async () => {
+    const { db, selects } = createSelectCaptureDb({
+      training_plans: [{ id: "training-plan-1", structure: { block: "build" } }],
+      activity_plans: [
+        {
+          id: "activity-plan-1",
+          activity_category: "bike",
+          structure: { steps: [] },
+          route_id: "route-1",
+        },
+      ],
+    });
+    const repository = createEventReadRepository(db);
+
+    await expect(
+      repository.getValidateConstraintsInputs({
+        profileId: "profile-1",
+        trainingPlanId: "training-plan-1",
+        activityPlanId: "activity-plan-1",
+        effortCutoffIso: "2026-01-01T00:00:00.000Z",
+      }),
+    ).resolves.toMatchObject({
+      trainingPlan: { id: "training-plan-1", structure: { block: "build" } },
+      activityPlan: {
+        id: "activity-plan-1",
+        activity_category: "bike",
+        structure: { steps: [] },
+        route_id: "route-1",
+      },
+    });
+
+    const trainingPlanWhereSql = toSql(
+      selects.find((select) => select.table === "training_plans")?.whereArg,
+    );
+    const activityPlanWhereSql = toSql(
+      selects.find((select) => select.table === "activity_plans")?.whereArg,
+    );
+
+    expect(trainingPlanWhereSql).toContain('"training_plans"."id" = $1');
+    expect(trainingPlanWhereSql).not.toContain('"training_plans"."profile_id"');
+    expect(activityPlanWhereSql).toContain('"activity_plans"."id" = $1');
+    expect(activityPlanWhereSql).not.toContain('"activity_plans"."profile_id"');
+    expect(activityPlanWhereSql).not.toContain('"activity_plans"."is_system_template"');
+  });
+
   it("serializes estimation inputs and skips route lookup when no route ids are provided", async () => {
     const withRoutes = createEventReadRepository(
       createQueryMapDbMock({

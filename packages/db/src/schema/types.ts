@@ -10,6 +10,7 @@ import {
   coachesAthletes,
   coachingInvitations,
   comments,
+  contentAccessGrants,
   conversationParticipants,
   conversations,
   events,
@@ -68,6 +69,9 @@ export type ActivityInsert = InferInsertModel<typeof activities>;
 
 export type EventRow = InferSelectModel<typeof events>;
 export type EventInsert = InferInsertModel<typeof events>;
+
+export type ContentAccessGrantRow = InferSelectModel<typeof contentAccessGrants>;
+export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGrants>;
 
 export type ActivityEffortRow = InferSelectModel<typeof activityEfforts>;
 export type ActivityEffortInsert = InferInsertModel<typeof activityEfforts>;

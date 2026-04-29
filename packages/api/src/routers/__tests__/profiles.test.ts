@@ -218,7 +218,7 @@ describe("profilesRouter", () => {
     expect(result.onboarded).toBe(false);
   });
 
-  it("getPublicById hides private fields for non-followers while keeping follow metadata", async () => {
+  it("getPublicById hides private fields and counts for non-followers", async () => {
     const { caller } = createCaller({
       select: {
         profiles: [[createProfileRow({ id: OTHER_USER_ID, bio: "Private bio", is_public: false })]],
@@ -230,9 +230,10 @@ describe("profilesRouter", () => {
 
     expect(result.id).toBe(OTHER_USER_ID);
     expect(result.follow_status).toBe("pending");
-    expect(result.followers_count).toBe(7);
-    expect(result.following_count).toBe(3);
+    expect(result.followers_count).toBeNull();
+    expect(result.following_count).toBeNull();
     expect(result.bio).toBeNull();
+    expect(result.gender).toBeNull();
     expect(result.preferred_units).toBeNull();
     expect(result.language).toBeNull();
   });
@@ -287,7 +288,7 @@ describe("profilesRouter", () => {
     expect(calls.executes).toHaveLength(1);
   });
 
-  it("list returns serialized rows and respects limit/cursor", async () => {
+  it("list returns public-safe rows and respects limit/cursor", async () => {
     const { caller, calls } = createCaller({
       select: {
         profiles: [[createProfileRow({ id: OTHER_USER_ID, username: "other-athlete", dob: null })]],
@@ -301,7 +302,11 @@ describe("profilesRouter", () => {
         id: OTHER_USER_ID,
         username: "other-athlete",
         dob: null,
-        email: "athlete@example.com",
+        email: null,
+        ftp: null,
+        full_name: null,
+        threshold_hr: null,
+        weight_kg: null,
       }),
     ]);
     expect(calls.selects).toContainEqual({ table: "profiles", limitArgs: [5], offsetArgs: [10] });

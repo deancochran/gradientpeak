@@ -49,6 +49,7 @@ export function RecordingFloatingPanel({
     [bottomObstructionHeight, hasClimbData, hasPlan, height, insets.bottom, sessionContract, width],
   );
   const availableCardsKey = model.availableCards.join("|");
+  const showPageIndicator = model.availableCards.length > 1;
   const [selectedCard, setSelectedCard] = React.useState<RecordingInsightCard>(model.defaultCard);
   const [expanded, setExpanded] = React.useState(model.forcedExpanded);
   const wasForcedExpanded = React.useRef(model.forcedExpanded);
@@ -71,15 +72,17 @@ export function RecordingFloatingPanel({
   const expandedHorizontalInset = Math.max(20, insets.left + 20, insets.right + 20);
   const expandedTopInset = Math.max(18, insets.top + 12);
   const expandedHeaderHeight = model.canMinimize && !model.forcedExpanded ? 52 : 0;
-  const expandedIndicatorBottom = bottomObstructionHeight + Math.max(12, insets.bottom + 8);
+  const expandedIndicatorBottom = bottomObstructionHeight + 4;
   const expandedIndicatorHeight = 18;
   const expandedCarouselTop = expandedTopInset + expandedHeaderHeight;
-  const expandedCarouselBottom = expandedIndicatorBottom + expandedIndicatorHeight + 14;
+  const expandedCarouselBottom = showPageIndicator
+    ? expandedIndicatorBottom + expandedIndicatorHeight + 4
+    : bottomObstructionHeight + 4;
   const expandedContentHeight = Math.max(
     320,
     height - expandedCarouselTop - expandedCarouselBottom,
   );
-  const compactIndicatorHeight = model.availableCards.length > 1 ? 16 : 0;
+  const compactIndicatorHeight = showPageIndicator ? 16 : 0;
   const compactPanelMinHeight = getCompactPanelMinHeight(height, compactIndicatorHeight);
   const compactCardHeight = Math.max(132, compactPanelMinHeight - compactIndicatorHeight - 16);
   const panelStyle = effectiveExpanded
@@ -195,7 +198,7 @@ export function RecordingFloatingPanel({
             const cardContent = effectiveExpanded ? (
               <ScrollView
                 className="overflow-hidden"
-                contentContainerStyle={{ minHeight: expandedContentHeight, paddingBottom: 20 }}
+                contentContainerStyle={{ minHeight: expandedContentHeight }}
                 contentInsetAdjustmentBehavior="automatic"
                 showsVerticalScrollIndicator={false}
                 style={{ height: expandedContentHeight }}
@@ -235,26 +238,28 @@ export function RecordingFloatingPanel({
           })}
         </ScrollView>
 
-        <View
-          className={
-            effectiveExpanded
-              ? "absolute left-0 right-0 flex-row justify-center gap-1.5"
-              : "mt-2 flex-row justify-center gap-1.5"
-          }
-          style={effectiveExpanded ? { bottom: expandedIndicatorBottom } : undefined}
-          testID="recording-card-page-indicator"
-        >
-          {model.availableCards.map((availableCard) => (
-            <View
-              key={availableCard}
-              className={
-                availableCard === selectedCard
-                  ? "h-1.5 w-5 rounded-full bg-foreground"
-                  : "h-1.5 w-1.5 rounded-full bg-muted-foreground/50"
-              }
-            />
-          ))}
-        </View>
+        {showPageIndicator ? (
+          <View
+            className={
+              effectiveExpanded
+                ? "absolute left-0 right-0 flex-row justify-center gap-1.5"
+                : "mt-2 flex-row justify-center gap-1.5"
+            }
+            style={effectiveExpanded ? { bottom: expandedIndicatorBottom } : undefined}
+            testID="recording-card-page-indicator"
+          >
+            {model.availableCards.map((availableCard) => (
+              <View
+                key={availableCard}
+                className={
+                  availableCard === selectedCard
+                    ? "h-1.5 w-5 rounded-full bg-foreground"
+                    : "h-1.5 w-1.5 rounded-full bg-muted-foreground/50"
+                }
+              />
+            ))}
+          </View>
+        ) : null}
       </View>
     </View>
   );

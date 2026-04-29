@@ -100,6 +100,11 @@ function UserDetailScreen() {
     }
     return targetProfile;
   }, [isOwnProfile, profile, targetProfile]);
+  const canViewSocialGraph =
+    !!renderedProfile &&
+    (isOwnProfile ||
+      renderedProfile.is_public !== false ||
+      renderedProfile.follow_status === "accepted");
 
   const [isEmailUpdateVisible, setIsEmailUpdateVisible] = useState(false);
   const [newEmail, setNewEmail] = useState("");
@@ -411,18 +416,20 @@ function UserDetailScreen() {
                   : "This profile stays private until your follow request is accepted."}
             </Text>
 
-            <View className="flex-row gap-3">
-              <TouchableProfileStat
-                label="Followers"
-                value={renderedProfile?.followers_count ?? 0}
-                onPress={() => navigateTo(`/followers?userId=${targetUserId}` as any)}
-              />
-              <TouchableProfileStat
-                label="Following"
-                value={renderedProfile?.following_count ?? 0}
-                onPress={() => navigateTo(`/following?userId=${targetUserId}` as any)}
-              />
-            </View>
+            {canViewSocialGraph ? (
+              <View className="flex-row gap-3">
+                <TouchableProfileStat
+                  label="Followers"
+                  value={renderedProfile?.followers_count ?? 0}
+                  onPress={() => navigateTo(`/followers?userId=${targetUserId}` as any)}
+                />
+                <TouchableProfileStat
+                  label="Following"
+                  value={renderedProfile?.following_count ?? 0}
+                  onPress={() => navigateTo(`/following?userId=${targetUserId}` as any)}
+                />
+              </View>
+            ) : null}
 
             {!isOwnProfile && renderedProfile?.follow_status === "pending" && (
               <View className="flex-row items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 dark:bg-amber-900">

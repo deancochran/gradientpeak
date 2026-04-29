@@ -38,6 +38,8 @@
     "./plan/*": "./plan/*.ts",
     "./profile": "./profile/index.ts",
     "./profile/*": "./profile/*.ts",
+    "./recording-metrics": "./recording-metrics/index.ts",
+    "./recording-metrics/*": "./recording-metrics/*.ts",
     "./schemas": "./schemas/index.ts",
     "./schemas/*": "./schemas/*.ts",
     "./utils": "./utils/index.ts",

@@ -215,7 +215,7 @@ jest.mock("@/components/recording/footer", () => ({
 
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
-  useCurrentReadings: () => ({ power: 245, heartRate: 144, cadence: 88 }),
+  useCurrentReadings: () => ({ power: 245, heartRate: 144, cadence: 88, speed: 3.2 }),
   usePlan: () => ({
     hasPlan: true,
     currentStep: {
@@ -238,7 +238,18 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
     previous: mockPlanPrevious,
     skip: mockPlanSkip,
   }),
-  useSessionStats: () => ({ duration: 75, distance: 1200 }),
+  useSessionStats: () => ({
+    duration: 75,
+    distance: 1200,
+    normalizedPower: 241,
+    trainingStressScore: 12,
+    intensityFactor: 0.83,
+    currentHeartRateZone: 2,
+    currentPowerZone: 3,
+    currentGrade: 4.2,
+    gradeAdjustedPaceSecondsPerKm: 315,
+    verticalSpeedMetersPerHour: 640,
+  }),
 }));
 
 const { RecordingBackdrop } = require("../RecordingBackdrop");
@@ -251,36 +262,56 @@ describe("recording cockpit", () => {
     getLastKnownLocationMock.mockResolvedValue(null);
   });
 
-  it("renders an indoor route profile without subscribing to GPS for virtual routes", () => {
+  it("renders an indoor route profile in the carousel without subscribing to GPS", () => {
     const result = renderNative(
-      <RecordingBackdrop
-        recordingState="pending"
-        service={buildService({
-          currentRoute: {
-            coordinates: [
-              { latitude: 40.1, longitude: -105.1 },
-              { latitude: 40.2, longitude: -105.2 },
-            ],
-            elevation_profile: [
-              { distance: 0, elevation: 150 },
-              { distance: 3000, elevation: 360 },
-              { distance: 6000, elevation: 260 },
-            ],
-          },
-          currentRouteDistance: 3000,
-          currentRouteGrade: 4.2,
-          routeDistance: 6000,
-          routeProgress: 50,
-        })}
-        sessionContract={buildContract({
-          guidance: { hasRoute: true, hasRouteGeometry: true, routeMode: "virtual" },
-          ui: { backdropMode: "virtual_route" },
-        })}
-      />,
+      <>
+        <RecordingBackdrop
+          recordingState="pending"
+          service={buildService()}
+          sessionContract={buildContract({
+            guidance: { hasRoute: true, hasRouteGeometry: true, routeMode: "virtual" },
+            ui: { backdropMode: "ambient" },
+          })}
+        />
+        <RecordingFloatingPanel
+          bottomObstructionHeight={80}
+          hasPlan={false}
+          sensorCount={2}
+          service={buildService({
+            currentRoute: {
+              coordinates: [
+                { latitude: 40.1, longitude: -105.1 },
+                { latitude: 40.2, longitude: -105.2 },
+              ],
+              elevation_profile: [
+                { distance: 0, elevation: 150 },
+                { distance: 3000, elevation: 360 },
+                { distance: 6000, elevation: 260 },
+              ],
+            },
+            currentRouteDistance: 3000,
+            currentRouteGrade: 4.2,
+            routeDistance: 6000,
+            routeProgress: 50,
+          })}
+          sessionContract={buildContract({
+            guidance: { hasRoute: true, hasRouteGeometry: true, routeMode: "virtual" },
+            ui: {
+              floatingPanel: {
+                defaultCard: "route_progress",
+                availableCards: ["route_progress", "metrics"],
+                forcedExpanded: true,
+                canMinimize: false,
+              },
+            },
+          })}
+        />
+      </>,
     );
 
-    expect(screen.getByTestId("route-elevation-backdrop")).toBeTruthy();
-    expect(screen.getByTestId("route-profile-stage")).toBeTruthy();
+    expect(screen.queryByTestId("route-elevation-backdrop")).toBeNull();
+    expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
+    expect(screen.getByTestId("route-profile-card-content")).toBeTruthy();
     expect(screen.getByTestId("route-elevation-chart")).toBeTruthy();
     expect(screen.getByTestId("route-profile-current-dot")).toBeTruthy();
     expect(screen.getByTestId("route-profile-grade-cue")).toBeTruthy();
@@ -290,7 +321,6 @@ describe("recording cockpit", () => {
     expect(screen.queryByText("50% complete")).toBeNull();
     expect(screen.queryByText("Done")).toBeNull();
     expect(screen.queryByText("Remaining")).toBeNull();
-    expect(screen.queryByText("Route")).toBeNull();
     expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
     expect(result.UNSAFE_queryByType("Polyline" as any)).toBeNull();
     expect(addCallbackMock).not.toHaveBeenCalled();
@@ -298,8 +328,10 @@ describe("recording cockpit", () => {
 
   it("clamps virtual route progress after the route is complete", () => {
     renderNative(
-      <RecordingBackdrop
-        recordingState="recording"
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan={false}
+        sensorCount={2}
         service={buildService({
           currentRoute: {
             elevation_profile: [
@@ -314,7 +346,14 @@ describe("recording cockpit", () => {
         })}
         sessionContract={buildContract({
           guidance: { hasRoute: true, hasRouteGeometry: true, routeMode: "virtual" },
-          ui: { backdropMode: "virtual_route" },
+          ui: {
+            floatingPanel: {
+              defaultCard: "route_progress",
+              availableCards: ["route_progress", "metrics"],
+              forcedExpanded: true,
+              canMinimize: false,
+            },
+          },
         })}
       />,
     );
@@ -327,8 +366,10 @@ describe("recording cockpit", () => {
 
   it("renders distance progress fallback when virtual route elevation is unavailable", () => {
     const result = renderNative(
-      <RecordingBackdrop
-        recordingState="pending"
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan={false}
+        sensorCount={2}
         service={buildService({
           currentRoute: {
             coordinates: [
@@ -342,7 +383,14 @@ describe("recording cockpit", () => {
         })}
         sessionContract={buildContract({
           guidance: { hasRoute: true, hasRouteGeometry: true, routeMode: "virtual" },
-          ui: { backdropMode: "virtual_route" },
+          ui: {
+            floatingPanel: {
+              defaultCard: "route_progress",
+              availableCards: ["route_progress", "metrics"],
+              forcedExpanded: true,
+              canMinimize: false,
+            },
+          },
         })}
       />,
     );
@@ -353,7 +401,6 @@ describe("recording cockpit", () => {
     expect(screen.getByText("2.5 km / 10.0 km")).toBeTruthy();
     expect(screen.queryByText("Done")).toBeNull();
     expect(screen.queryByText("Remaining")).toBeNull();
-    expect(screen.queryByText("Route")).toBeNull();
     expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
   });
 
@@ -441,7 +488,12 @@ describe("recording cockpit", () => {
     expect(screen.getByTestId("activity-plan-current-interval")).toBeTruthy();
     expect(screen.getByText("Back")).toBeTruthy();
     expect(screen.getByText("Skip")).toBeTruthy();
-    expect(screen.getAllByText("245 W").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("245").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("W").length).toBeGreaterThan(0);
+    expect(screen.getByText("HR Zone")).toBeTruthy();
+    expect(screen.getByText("Z2")).toBeTruthy();
+    expect(screen.getByText("Power Zone")).toBeTruthy();
+    expect(screen.getByText("Z3")).toBeTruthy();
     expect(screen.getByTestId("trainer-insight-card")).toBeTruthy();
 
     fireEvent.press(screen.getByText("Back"));
@@ -452,6 +504,49 @@ describe("recording cockpit", () => {
 
     expect(screen.getAllByLabelText("Expand recording cards").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
+  });
+
+  it("shows every metric cell in the expanded metrics card", () => {
+    renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService()}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "metrics",
+              availableCards: ["metrics"],
+              forcedExpanded: true,
+              canMinimize: false,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Time")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("HR")).toBeTruthy();
+    expect(screen.getByText("HR Zone")).toBeTruthy();
+    expect(screen.getByText("Power")).toBeTruthy();
+    expect(screen.getByText("Power Zone")).toBeTruthy();
+    expect(screen.getByText("GAP")).toBeTruthy();
+    expect(screen.getByText("NP")).toBeTruthy();
+    expect(screen.getByText("TSS")).toBeTruthy();
+    expect(screen.getByText("IF")).toBeTruthy();
+    expect(screen.getByText("Grade")).toBeTruthy();
+    expect(screen.getByText("VAM")).toBeTruthy();
+    expect(screen.getAllByText("Z2").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Z3").length).toBeGreaterThan(0);
+    expect(screen.getByText("5:15")).toBeTruthy();
+    expect(screen.getByText("Avg Power")).toBeTruthy();
+    expect(screen.getByText("Avg Speed")).toBeTruthy();
+    expect(screen.getByText("Target 220 W")).toBeTruthy();
+    expect(screen.getAllByText("--").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("recording-card-page-indicator")).toBeNull();
   });
 
   it("expands the floating panel when the card surface is pressed and minimizes from the corner", () => {
@@ -488,7 +583,7 @@ describe("recording cockpit", () => {
     expect(screen.getByTestId("recording-card-workout_interval-surface")).toBeTruthy();
   });
 
-  it("hides route progress cards when route context is already on the backdrop", () => {
+  it("renders route progress cards when route context is attached", () => {
     renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
@@ -514,7 +609,7 @@ describe("recording cockpit", () => {
     );
 
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
-    expect(screen.queryByTestId("route-progress-insight-card")).toBeNull();
+    expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
   });
 
   it("renders a stable plan metrics trainer carousel with optional route cards", () => {
@@ -552,7 +647,7 @@ describe("recording cockpit", () => {
     expect(screen.getByText("Tempo block")).toBeTruthy();
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.getByText("Auto control follows 88% FTP.")).toBeTruthy();
-    expect(screen.queryByTestId("route-progress-insight-card")).toBeNull();
+    expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
   });
 
   it("hides unavailable plan and trainer cards from the carousel", () => {
@@ -665,7 +760,7 @@ describe("recording cockpit", () => {
     );
 
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
-    expect(screen.queryByTestId("route-progress-insight-card")).toBeNull();
+    expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
 
     result.rerender(
       <RecordingFloatingPanel

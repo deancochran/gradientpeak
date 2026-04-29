@@ -51,8 +51,23 @@ type ChartYKey = "elevation";
 const chartPadding = { bottom: 24, left: 6, right: 6, top: 18 };
 
 export function RouteElevationBackdrop({ service }: RouteElevationBackdropProps) {
-  const font = useFont(require("@/assets/fonts/SpaceMono-Regular.ttf"), 11);
   const insets = useSafeAreaInsets();
+
+  return (
+    <View className="absolute inset-0 bg-background" testID="route-elevation-backdrop">
+      <View
+        className="absolute inset-x-4 rounded-[28px] border border-border bg-card p-4 shadow-2xl"
+        style={{ top: insets.top + 14 }}
+        testID="route-profile-stage"
+      >
+        <RouteElevationProfile service={service} />
+      </View>
+    </View>
+  );
+}
+
+export function RouteElevationProfile({ service }: RouteElevationBackdropProps) {
+  const font = useFont(require("@/assets/fonts/SpaceMono-Regular.ttf"), 11);
   const isDark = useColorScheme() === "dark";
   const colors = React.useMemo(() => getRouteBackdropColors(isDark), [isDark]);
   const [snapshot, setSnapshot] = React.useState(() => readRouteSnapshot(service));
@@ -83,110 +98,104 @@ export function RouteElevationBackdrop({ service }: RouteElevationBackdropProps)
   );
 
   return (
-    <View className="absolute inset-0 bg-background" testID="route-elevation-backdrop">
-      <View
-        className="absolute inset-x-4 rounded-[28px] border border-border bg-card p-4 shadow-2xl"
-        style={{ top: insets.top + 14 }}
-        testID="route-profile-stage"
-      >
-        <View className="mb-3 flex-row items-start justify-between gap-4">
-          <View className="flex-1">
-            <Text className="text-[10px] font-semibold uppercase tracking-[2px] text-muted-foreground">
-              Indoor route
-            </Text>
-            <Text className="mt-1 text-xl font-black leading-tight text-foreground">
-              {model.progressLabel}
-            </Text>
-          </View>
+    <View testID="route-profile-card-content">
+      <View className="mb-3 flex-row items-start justify-between gap-4">
+        <View className="flex-1">
+          <Text className="text-[10px] font-semibold uppercase tracking-[2px] text-muted-foreground">
+            Indoor route
+          </Text>
+          <Text className="mt-1 text-xl font-black leading-tight text-foreground">
+            {model.progressLabel}
+          </Text>
         </View>
-
-        {model.profilePoints.length > 1 ? (
-          <View
-            className="h-44 overflow-hidden rounded-[24px] border border-border bg-background"
-            testID="route-elevation-chart"
-          >
-            <CartesianChart<RouteElevationDatum, "distanceMeters", ChartYKey>
-              data={model.profilePoints}
-              xKey="distanceMeters"
-              yKeys={["elevation"]}
-              padding={chartPadding}
-              axisOptions={{
-                font,
-                labelColor: colors.axisLabel,
-                lineColor: colors.axisLine,
-                lineWidth: 1,
-                formatXLabel: (value: unknown) => `${(Number(value) / 1000).toFixed(1)} km`,
-                formatYLabel: (value: unknown) => `${Math.round(Number(value))} m`,
-              }}
-              frame={{ lineColor: colors.frame, lineWidth: 1 }}
-            >
-              {({ points, chartBounds }) => {
-                const chartPoints = points.elevation as unknown as RenderedChartPoint[];
-                const renderedPoint = resolveRenderedCurrentPoint({
-                  chartBounds,
-                  currentPoint: model.currentProfilePoint,
-                  points: chartPoints,
-                  progressRatio: model.progressRatio,
-                });
-                const completedPoints = buildRenderedCompletedPoints({
-                  currentPoint: model.currentProfilePoint,
-                  points: chartPoints,
-                  renderedPoint,
-                }) as typeof points.elevation;
-
-                return (
-                  <>
-                    <Line
-                      points={points.elevation}
-                      color={colors.routeLine}
-                      strokeWidth={2}
-                      curveType="natural"
-                      animate={{ type: "timing", duration: 250 }}
-                    />
-                    <Line
-                      points={completedPoints}
-                      color={colors.completedLine}
-                      strokeWidth={3}
-                      curveType="natural"
-                      animate={{ type: "timing", duration: 250 }}
-                    />
-                    {renderedPoint ? (
-                      <>
-                        <Circle
-                          cx={renderedPoint.x}
-                          cy={renderedPoint.y}
-                          r={7}
-                          color={colors.dotHalo}
-                        />
-                        <Circle
-                          cx={renderedPoint.x}
-                          cy={renderedPoint.y}
-                          r={4}
-                          color={colors.completedLine}
-                        />
-                      </>
-                    ) : null}
-                  </>
-                );
-              }}
-            </CartesianChart>
-            {model.currentProfilePoint ? (
-              <View
-                className="absolute h-1 w-1"
-                style={{ left: `${model.progressRatio * 100}%`, top: "50%" }}
-                testID="route-profile-current-dot"
-              />
-            ) : null}
-            <GradeCue
-              chartHeight={176}
-              label={model.gradeLabel}
-              progressRatio={model.progressRatio}
-            />
-          </View>
-        ) : (
-          <DistanceFallback model={model} />
-        )}
       </View>
+
+      {model.profilePoints.length > 1 ? (
+        <View
+          className="h-44 overflow-hidden rounded-[24px] border border-border bg-background"
+          testID="route-elevation-chart"
+        >
+          <CartesianChart<RouteElevationDatum, "distanceMeters", ChartYKey>
+            data={model.profilePoints}
+            xKey="distanceMeters"
+            yKeys={["elevation"]}
+            padding={chartPadding}
+            axisOptions={{
+              font,
+              labelColor: colors.axisLabel,
+              lineColor: colors.axisLine,
+              lineWidth: 1,
+              formatXLabel: (value: unknown) => `${(Number(value) / 1000).toFixed(1)} km`,
+              formatYLabel: (value: unknown) => `${Math.round(Number(value))} m`,
+            }}
+            frame={{ lineColor: colors.frame, lineWidth: 1 }}
+          >
+            {({ points, chartBounds }) => {
+              const chartPoints = points.elevation as unknown as RenderedChartPoint[];
+              const renderedPoint = resolveRenderedCurrentPoint({
+                chartBounds,
+                currentPoint: model.currentProfilePoint,
+                points: chartPoints,
+                progressRatio: model.progressRatio,
+              });
+              const completedPoints = buildRenderedCompletedPoints({
+                currentPoint: model.currentProfilePoint,
+                points: chartPoints,
+                renderedPoint,
+              }) as typeof points.elevation;
+
+              return (
+                <>
+                  <Line
+                    points={points.elevation}
+                    color={colors.routeLine}
+                    strokeWidth={2}
+                    curveType="natural"
+                    animate={{ type: "timing", duration: 250 }}
+                  />
+                  <Line
+                    points={completedPoints}
+                    color={colors.completedLine}
+                    strokeWidth={3}
+                    curveType="natural"
+                    animate={{ type: "timing", duration: 250 }}
+                  />
+                  {renderedPoint ? (
+                    <>
+                      <Circle
+                        cx={renderedPoint.x}
+                        cy={renderedPoint.y}
+                        r={7}
+                        color={colors.dotHalo}
+                      />
+                      <Circle
+                        cx={renderedPoint.x}
+                        cy={renderedPoint.y}
+                        r={4}
+                        color={colors.completedLine}
+                      />
+                    </>
+                  ) : null}
+                </>
+              );
+            }}
+          </CartesianChart>
+          {model.currentProfilePoint ? (
+            <View
+              className="absolute h-1 w-1"
+              style={{ left: `${model.progressRatio * 100}%`, top: "50%" }}
+              testID="route-profile-current-dot"
+            />
+          ) : null}
+          <GradeCue
+            chartHeight={176}
+            label={model.gradeLabel}
+            progressRatio={model.progressRatio}
+          />
+        </View>
+      ) : (
+        <DistanceFallback model={model} />
+      )}
     </View>
   );
 }

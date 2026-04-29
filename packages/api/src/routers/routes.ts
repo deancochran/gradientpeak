@@ -18,6 +18,7 @@ import {
   ROUTES_BUCKET,
   routeCoordinateSchema,
 } from "../lib/routes/route-file-helpers";
+import { createContentAccessPermissions } from "../permissions/content-access";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { loadProfileIdentityMap, profileIdentitySchema } from "../utils/profile-identity";
@@ -126,6 +127,45 @@ function buildAccessibleRouteCondition(userId: string) {
 
 function buildOwnedRouteCondition(userId: string) {
   return eq(activityRoutes.profile_id, userId);
+}
+
+async function requireRouteReadForRow(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  route: ActivityRouteRow;
+  userId: string;
+}) {
+  await createContentAccessPermissions(input.db).requireReadForRow({
+    actorProfileId: input.userId,
+    resource: { type: "activity_route", id: input.route.id },
+    row: {
+      ownerProfileId: input.route.profile_id,
+      isPublic: input.route.is_public,
+      isSystem: input.route.is_system_template,
+    },
+    message: "Route not found",
+  });
+}
+
+async function requireRouteGeometryForRow(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  route: ActivityRouteRow;
+  userId: string;
+}) {
+  const row = {
+    ownerProfileId: input.route.profile_id,
+    isPublic: input.route.is_public,
+    isSystem: input.route.is_system_template,
+  };
+
+  if (row.ownerProfileId === input.userId || row.isPublic === true || row.isSystem === true) {
+    return;
+  }
+
+  await createContentAccessPermissions(input.db).requireRouteGeometry(
+    input.userId,
+    input.route.id,
+    "Route not found",
+  );
 }
 
 const uploadRouteSchema = z
@@ -316,19 +356,11 @@ export const routesRouter = createTRPCRouter({
     .output(activityRouteWithLikeSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const visibilityCondition = or(
-        eq(activityRoutes.profile_id, ctx.session.user.id),
-        eq(activityRoutes.is_public, true),
-      );
-
-      if (!visibilityCondition) {
-        throw new Error("Failed to build route visibility condition");
-      }
 
       const [route] = await db
         .select()
         .from(activityRoutes)
-        .where(and(eq(activityRoutes.id, input.id), visibilityCondition))
+        .where(eq(activityRoutes.id, input.id))
         .limit(1);
 
       if (!route) {
@@ -337,6 +369,8 @@ export const routesRouter = createTRPCRouter({
           message: "Route not found",
         });
       }
+
+      await requireRouteReadForRow({ db, route, userId: ctx.session.user.id });
 
       const [likeData] = await db
         .select({ id: likes.id })
@@ -367,19 +401,11 @@ export const routesRouter = createTRPCRouter({
     .output(loadFullRouteOutputSchema)
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const visibilityCondition = or(
-        eq(activityRoutes.profile_id, ctx.session.user.id),
-        eq(activityRoutes.is_public, true),
-      );
-
-      if (!visibilityCondition) {
-        throw new Error("Failed to build route visibility condition");
-      }
 
       const [routeData] = await db
         .select()
         .from(activityRoutes)
-        .where(and(eq(activityRoutes.id, input.id), visibilityCondition))
+        .where(eq(activityRoutes.id, input.id))
         .limit(1);
 
       if (!routeData) {
@@ -388,6 +414,8 @@ export const routesRouter = createTRPCRouter({
           message: "Route not found",
         });
       }
+
+      await requireRouteGeometryForRow({ db, route: routeData, userId: ctx.session.user.id });
 
       if (!routeData.file_path) {
         throw new TRPCError({

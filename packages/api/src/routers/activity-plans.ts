@@ -18,6 +18,7 @@ import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or } from "drizzle-o
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
+import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   type ActivityPlanWithDerivedMetrics,
@@ -181,6 +182,48 @@ function buildAccessiblePlanCondition(userId: string) {
 
 function buildOwnedPlanCondition(userId: string) {
   return eq(activityPlans.profile_id, userId);
+}
+
+function activityPlanAccessInput(plan: ActivityPlanRow) {
+  return {
+    resource: { type: "activity_plan" as const, id: plan.id },
+    access: {
+      ownerProfileId: plan.profile_id,
+      isPublic: plan.template_visibility === "public",
+      isSystem: plan.is_system_template,
+    },
+  };
+}
+
+async function requireActivityPlanReadForRow(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  plan: ActivityPlanRow;
+  userId: string;
+}) {
+  const accessInput = activityPlanAccessInput(input.plan);
+
+  await createContentAccessPermissions(input.db).requireReadForRow({
+    actorProfileId: input.userId,
+    resource: accessInput.resource,
+    row: accessInput.access,
+    message: "Activity plan not found",
+  });
+}
+
+async function requireRouteRead(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  routeId: string | null | undefined;
+  userId: string;
+}) {
+  if (!input.routeId) {
+    return;
+  }
+
+  await createContentAccessPermissions(input.db).requireRead(
+    input.userId,
+    { type: "activity_route", id: input.routeId },
+    "Route not found",
+  );
 }
 
 function withIdentityFields<
@@ -412,16 +455,7 @@ export const activityPlansRouter = createTRPCRouter({
 
     const planRow = activityPlanRowSchema.parse(rawPlanRow);
 
-    const isOwner = planRow.profile_id === userId;
-    const isSystemTemplate = planRow.is_system_template === true;
-    const isPublic = planRow.template_visibility === "public";
-
-    if (!isOwner && !isSystemTemplate && !isPublic) {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "You don't have permission to view this activity plan",
-      });
-    }
+    await requireActivityPlanReadForRow({ db, plan: planRow, userId });
 
     const plan = serializeActivityPlanRow(planRow);
 
@@ -468,16 +502,19 @@ export const activityPlansRouter = createTRPCRouter({
       const estimationStore = createEventReadRepository(db);
       const userId = ctx.session.user.id;
       const ids = Array.from(new Set(input.ids));
+      const permissions = createContentAccessPermissions(db);
 
-      const planRows = await db
-        .select()
-        .from(activityPlans)
-        .where(and(inArray(activityPlans.id, ids), buildAccessiblePlanCondition(userId)));
+      const planRows = await db.select().from(activityPlans).where(inArray(activityPlans.id, ids));
 
       const parsedPlanRows = z.array(activityPlanRowSchema).parse(planRows);
+      const readablePlanRows = await permissions.filterReadableRows({
+        actorProfileId: userId,
+        rows: parsedPlanRows,
+        getRowInput: (plan) => ({ row: plan, ...activityPlanAccessInput(plan) }),
+      });
 
       const planById = new Map(
-        parsedPlanRows.map((plan) => [plan.id, serializeActivityPlanRow(plan)]),
+        readablePlanRows.map((plan) => [plan.id, serializeActivityPlanRow(plan)]),
       );
       const orderedPlans = ids
         .map((id) => planById.get(id))
@@ -549,6 +586,8 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
+    await requireRouteRead({ db, routeId: input.route_id, userId: ctx.session.user.id });
+
     const metrics = await computePlanMetrics(
       {
         activity_category: input.activity_category,
@@ -600,6 +639,12 @@ export const activityPlansRouter = createTRPCRouter({
           message: "Activity plan not found or you don't have permission to edit it",
         });
       }
+
+      await requireRouteRead({
+        db,
+        routeId: updates.route_id,
+        userId: ctx.session.user.id,
+      });
 
       if (updates.structure) {
         try {
@@ -695,9 +740,7 @@ export const activityPlansRouter = createTRPCRouter({
       const [originalRow] = await db
         .select()
         .from(activityPlans)
-        .where(
-          and(eq(activityPlans.id, input.id), buildAccessiblePlanCondition(ctx.session.user.id)),
-        )
+        .where(eq(activityPlans.id, input.id))
         .limit(1);
 
       if (!originalRow) {
@@ -706,6 +749,8 @@ export const activityPlansRouter = createTRPCRouter({
           message: "Original activity plan not found",
         });
       }
+
+      await requireActivityPlanReadForRow({ db, plan: originalRow, userId: ctx.session.user.id });
 
       const originalPlan = serializeActivityPlanRow(originalRow);
 
@@ -721,11 +766,22 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
+      const duplicateRouteId = originalPlan.route_id
+        ? (
+            await createContentAccessPermissions(db).canRead(ctx.session.user.id, {
+              type: "activity_route",
+              id: originalPlan.route_id,
+            })
+          ).allowed
+          ? originalPlan.route_id
+          : null
+        : null;
+
       await computePlanMetrics(
         {
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
-          route_id: originalPlan.route_id,
+          route_id: duplicateRouteId,
         },
         estimationStore,
         ctx.session.user.id,
@@ -744,7 +800,7 @@ export const activityPlansRouter = createTRPCRouter({
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
           version: originalPlan.version,
-          route_id: originalPlan.route_id,
+          route_id: duplicateRouteId,
           profile_id: ctx.session.user.id,
           template_visibility: "private",
           import_provider: null,

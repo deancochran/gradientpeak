@@ -171,7 +171,11 @@ export function useRecordScreenController() {
     console.log("[RecordModal] Start clicked, checking permissions");
     console.log("[RecordModal] allPermissionsGranted:", allPermissionsGranted);
 
-    if (!allPermissionsGranted) {
+    const hasRequiredPermissions = gpsRecordingEnabled
+      ? allPermissionsGranted
+      : await service?.refreshAndCheckRecordingPermissions(false);
+
+    if (!hasRequiredPermissions) {
       console.log("[RecordModal] Permissions not granted, requesting permissions");
 
       if (!service) {
@@ -180,21 +184,26 @@ export function useRecordScreenController() {
       }
 
       try {
-        const granted = await service.refreshAndCheckAllPermissions();
+        const granted = await service.refreshAndCheckRecordingPermissions(gpsRecordingEnabled);
 
         if (!granted) {
           const { requestPermission } = await import("@/lib/services/permissions-check");
 
           await requestPermission("bluetooth");
-          await requestPermission("location");
-          await requestPermission("location-background");
 
-          const finalCheck = await service.refreshAndCheckAllPermissions();
+          if (gpsRecordingEnabled) {
+            await requestPermission("location");
+            await requestPermission("location-background");
+          }
+
+          const finalCheck = await service.refreshAndCheckRecordingPermissions(gpsRecordingEnabled);
 
           if (!finalCheck) {
             Alert.alert(
               "Permissions Required",
-              "This app requires Bluetooth, Location, and Background Location permissions to record activities. Please enable them in your device settings.",
+              gpsRecordingEnabled
+                ? "This app requires Bluetooth, Location, and Background Location permissions to record GPS activities. Please enable them in your device settings."
+                : "This app requires Bluetooth permission to record indoor activities. Please enable it in your device settings.",
               [{ text: "OK", style: "cancel" }],
             );
             return;
@@ -262,7 +271,7 @@ export function useRecordScreenController() {
       console.error("[RecordModal] Error starting recording:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
-  }, [allPermissionsGranted, navigateTo, start, service, user?.id]);
+  }, [allPermissionsGranted, gpsRecordingEnabled, navigateTo, start, service, user?.id]);
 
   const handleFinish = React.useCallback(async () => {
     if (isFinishing) return;

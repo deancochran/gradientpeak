@@ -295,8 +295,8 @@ export class RecordingConfigResolver {
         floatingPanel: {
           defaultCard: insightCards[0] ?? "metrics",
           availableCards: insightCards,
-          forcedExpanded: !hasRoute && !input.gpsRecordingEnabled,
-          canMinimize: hasRoute || input.gpsRecordingEnabled,
+          forcedExpanded: !input.gpsRecordingEnabled,
+          canMinimize: input.gpsRecordingEnabled,
         },
         controls: {
           quickActions,
@@ -371,7 +371,7 @@ export class RecordingConfigResolver {
     }
 
     if (routeMode === "virtual") {
-      return "virtual_route";
+      return "ambient";
     }
 
     if (routeMode === "preview") {

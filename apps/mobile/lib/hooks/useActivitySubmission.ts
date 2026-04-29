@@ -41,20 +41,6 @@ import {
 import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/types";
 // import * as FileSystem from "expo-file-system"; // Removed as we use File class now
 
-import {
-  AggregatedStream,
-  calculateAverageGrade,
-  calculateDecoupling,
-  calculateEfficiencyFactor,
-  calculateElapsedTime,
-  calculateElevationChanges,
-  calculateElevationGainPerKm,
-  calculateMovingTime,
-  calculateNormalizedPower,
-  calculatePowerHeartRateRatio,
-  calculateTotalWork,
-  calculateVariabilityIndex,
-} from "@repo/core";
 import { useCallback, useEffect, useReducer } from "react";
 import type { PreparedRecordedActivityDraft } from "@/lib/contracts/activity-submission";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -125,130 +111,6 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
   }
 }
 
-// ================================
-// Utility Functions (Internal)
-// ================================
-
-function calculateActivityMetrics(
-  timing: { startedAt: string; endedAt: string },
-  aggregatedStreams: Map<string, AggregatedStream>,
-): {
-  durationSeconds: number;
-  movingSeconds: number;
-  distanceMeters: number;
-  metrics: Record<string, unknown>;
-  hrZoneSeconds: number[] | null;
-  powerZoneSeconds: number[] | null;
-} {
-  if (!timing.startedAt || !timing.endedAt) {
-    throw new Error(`Invalid recording: startedAt=${timing.startedAt}, endedAt=${timing.endedAt}`);
-  }
-
-  // Extract stream references
-  const hrStream = aggregatedStreams.get("heartrate");
-  const powerStream = aggregatedStreams.get("power");
-  const distanceStream = aggregatedStreams.get("distance");
-  const speedStream = aggregatedStreams.get("speed");
-  const cadenceStream = aggregatedStreams.get("cadence");
-  const elevationStream = aggregatedStreams.get("elevation");
-  const gradientStream = aggregatedStreams.get("gradient");
-
-  // Base calculations
-  const duration_seconds = Math.round(calculateElapsedTime(timing.startedAt, timing.endedAt));
-  const moving_seconds = Math.round(
-    calculateMovingTime(timing.startedAt, timing.endedAt, aggregatedStreams),
-  );
-
-  // Distance in meters
-  const distance_meters = Math.round(distanceStream?.maxValue || 0);
-
-  // Simple aggregated values
-  const avg_hr = hrStream?.avgValue ? Math.round(hrStream.avgValue) : undefined;
-  const max_hr = hrStream?.maxValue ? Math.round(hrStream.maxValue) : undefined;
-  const avg_power = powerStream?.avgValue ? Math.round(powerStream.avgValue) : undefined;
-  const max_power = powerStream?.maxValue ? Math.round(powerStream.maxValue) : undefined;
-  const avg_speed = speedStream?.avgValue;
-  const max_speed = speedStream?.maxValue;
-  const avg_cadence = cadenceStream?.avgValue ? Math.round(cadenceStream.avgValue) : undefined;
-  const max_cadence = cadenceStream?.maxValue ? Math.round(cadenceStream.maxValue) : undefined;
-
-  // Power-derived metrics
-  // NOTE: Advanced metrics (TSS, IF, zones) will be calculated on server
-  // using historical metrics from profile_performance_metric_logs table
-  const normalized_power = calculateNormalizedPower(powerStream);
-  const intensity_factor = undefined; // requires FTP from metric logs
-  const tss = undefined; // requires FTP from metric logs
-  const vi = Math.round(calculateVariabilityIndex(powerStream, normalized_power) || 0);
-  const total_work = Math.round(calculateTotalWork(powerStream, duration_seconds) || 0);
-
-  // Zone calculations - will be recalculated on server with historical metrics
-  const hr_zones = null; // calculateHRZones requires threshold_hr from metric logs
-  const power_zones = null; // calculatePowerZones requires ftp from metric logs
-
-  // Multi-stream advanced metrics
-  const ef = Math.round(calculateEfficiencyFactor(powerStream, hrStream) || 0);
-  const decoupling = Math.round(calculateDecoupling(powerStream, hrStream) || 0);
-  const power_hr_ratio = calculatePowerHeartRateRatio(powerStream, hrStream);
-  // power_weight_ratio requires weight from metric logs - calculated on server
-  const power_weight_ratio = undefined;
-
-  // Elevation calculations
-  const { totalAscent, totalDescent } = calculateElevationChanges(elevationStream);
-  const total_ascent = Math.round(totalAscent || 0);
-  const total_descent = Math.round(totalDescent || 0);
-  const avg_grade = calculateAverageGrade(gradientStream);
-  const elevation_gain_per_km = calculateElevationGainPerKm(total_ascent, distanceStream);
-
-  // Calories - will be calculated on server with weight from metric logs
-  const calories = undefined;
-
-  // Max HR percentage of threshold - will be calculated on server
-  const max_hr_pct_threshold = undefined;
-
-  // Build metrics JSONB object
-  const metrics: Record<string, unknown> = {};
-
-  // Only include defined values
-  if (avg_power !== undefined) metrics.avg_power = avg_power;
-  if (max_power !== undefined) metrics.max_power = max_power;
-  if (normalized_power !== undefined) metrics.normalized_power = normalized_power;
-  if (avg_hr !== undefined) metrics.avg_hr = avg_hr;
-  if (max_hr !== undefined) metrics.max_hr = max_hr;
-  if (max_hr_pct_threshold !== undefined) metrics.max_hr_pct_threshold = max_hr_pct_threshold;
-  if (avg_cadence !== undefined) metrics.avg_cadence = avg_cadence;
-  if (max_cadence !== undefined) metrics.max_cadence = max_cadence;
-  if (avg_speed !== undefined) metrics.avg_speed = avg_speed;
-  if (max_speed !== undefined) metrics.max_speed = max_speed;
-  if (total_work !== undefined) metrics.total_work = total_work;
-  if (calories !== undefined) metrics.calories = calories;
-  if (total_ascent !== undefined) metrics.total_ascent = total_ascent;
-  if (total_descent !== undefined) metrics.total_descent = total_descent;
-  if (avg_grade !== undefined) metrics.avg_grade = avg_grade;
-  if (elevation_gain_per_km !== undefined) metrics.elevation_gain_per_km = elevation_gain_per_km;
-  if (tss !== undefined) metrics.tss = tss;
-  if (intensity_factor !== undefined) metrics.if = intensity_factor;
-  if (vi !== undefined) metrics.vi = vi;
-  if (ef !== undefined) metrics.ef = ef;
-  if (power_weight_ratio !== undefined) metrics.power_weight_ratio = power_weight_ratio;
-  if (power_hr_ratio !== undefined) metrics.power_hr_ratio = power_hr_ratio;
-  if (decoupling !== undefined) metrics.decoupling = decoupling;
-
-  // Build HR zone seconds array (5 zones) - will be calculated on server
-  const hrZoneSeconds = null;
-
-  // Build power zone seconds array (7 zones) - will be calculated on server
-  const powerZoneSeconds = null;
-
-  return {
-    durationSeconds: duration_seconds,
-    movingSeconds: moving_seconds,
-    distanceMeters: distance_meters,
-    metrics,
-    hrZoneSeconds,
-    powerZoneSeconds,
-  };
-}
-
 function buildDefaultActivityName(artifact: RecordingSessionArtifact): string {
   const category = artifact.snapshot.activity.category;
   const gpsLabel = artifact.snapshot.activity.gpsMode === "on" ? "GPS ON" : "GPS OFF";
@@ -261,9 +123,8 @@ function buildDefaultActivityName(artifact: RecordingSessionArtifact): string {
 function buildActivityFromArtifact(args: {
   artifact: RecordingSessionArtifact;
   profileId: string;
-  calculatedMetrics?: ReturnType<typeof calculateActivityMetrics> | null;
 }): PreparedRecordedActivityDraft {
-  const { artifact, profileId, calculatedMetrics } = args;
+  const { artifact, profileId } = args;
 
   return {
     profileId,
@@ -274,19 +135,7 @@ function buildActivityFromArtifact(args: {
     durationSeconds: artifact.finalStats.durationSeconds,
     movingSeconds: artifact.finalStats.movingSeconds,
     distanceMeters: Math.round(artifact.finalStats.distanceMeters),
-    avgPower: calculatedMetrics?.metrics.avg_power as number | undefined,
-    maxPower: calculatedMetrics?.metrics.max_power as number | undefined,
-    normalizedPower: calculatedMetrics?.metrics.normalized_power as number | undefined,
-    avgHeartRate: calculatedMetrics?.metrics.avg_hr as number | undefined,
-    maxHeartRate: calculatedMetrics?.metrics.max_hr as number | undefined,
-    avgCadence: calculatedMetrics?.metrics.avg_cadence as number | undefined,
-    maxCadence: calculatedMetrics?.metrics.max_cadence as number | undefined,
-    avgSpeedMps: calculatedMetrics?.metrics.avg_speed as number | undefined,
-    maxSpeedMps: calculatedMetrics?.metrics.max_speed as number | undefined,
-    calories:
-      (calculatedMetrics?.metrics.calories as number | undefined) ?? artifact.finalStats.calories,
-    elevationGainMeters: calculatedMetrics?.metrics.total_ascent as number | undefined,
-    elevationLossMeters: calculatedMetrics?.metrics.total_descent as number | undefined,
+    calories: artifact.finalStats.calories,
     activityPlanId: artifact.snapshot.activity.activityPlanId,
   };
 }
@@ -341,33 +190,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw new Error("No finalized activity artifact found");
       }
 
-      let calculatedMetrics: ReturnType<typeof calculateActivityMetrics> | null = null;
-
-      if (service?.getFinalizedArtifact()?.sessionId === artifact.sessionId) {
-        try {
-          const aggregatedStreams =
-            await service.liveMetricsManager.streamBuffer.aggregateAllChunks();
-
-          if (aggregatedStreams.size > 0) {
-            console.log(
-              `[useActivitySubmission] Aggregated ${aggregatedStreams.size} metrics for enrichment`,
-            );
-            calculatedMetrics = calculateActivityMetrics(
-              {
-                startedAt: artifact.snapshot.identity.startedAt,
-                endedAt: artifact.completedAt,
-              },
-              aggregatedStreams,
-            );
-          }
-        } catch (error) {
-          console.warn(
-            "[useActivitySubmission] Failed to aggregate stream data, using artifact stats only",
-            error,
-          );
-        }
-      }
-
       const profileId = service?.recordingMetadata?.profileId ?? profile?.id;
 
       if (!profileId) {
@@ -377,7 +199,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       const activity = buildActivityFromArtifact({
         artifact,
         profileId,
-        calculatedMetrics,
       });
 
       const hasStreams = artifact.streamArtifactPaths.length > 0;

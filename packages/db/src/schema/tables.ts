@@ -483,6 +483,50 @@ export const events = pgTable(
   ],
 );
 
+export const contentAccessGrants = pgTable(
+  "content_access_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    content_type: text("content_type", {
+      enum: ["profile", "event", "activity_plan", "activity_route", "training_plan"],
+    }).notNull(),
+    content_id: uuid("content_id").notNull(),
+    grantee_profile_id: uuid("grantee_profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    actor_profile_id: uuid("actor_profile_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    access_level: text("access_level", { enum: ["read", "read_geometry"] }).notNull(),
+    source_type: text("source_type", { enum: ["event", "training_plan"] }).notNull(),
+    source_id: uuid("source_id").notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    revoked_at: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("content_access_grants_source_unique").on(
+      table.content_type,
+      table.content_id,
+      table.grantee_profile_id,
+      table.access_level,
+      table.source_type,
+      table.source_id,
+    ),
+    index("idx_content_access_grants_grantee_content").on(
+      table.grantee_profile_id,
+      table.content_type,
+      table.content_id,
+    ),
+    index("idx_content_access_grants_source").on(table.source_type, table.source_id),
+    index("idx_content_access_grants_active_expiry")
+      .on(table.expires_at)
+      .where(sql`${table.expires_at} is not null and ${table.revoked_at} is null`),
+  ],
+);
+
 export const activities = pgTable(
   "activities",
   {

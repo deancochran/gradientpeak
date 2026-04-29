@@ -1,15 +1,16 @@
-import { activities, likes, profiles } from "@repo/db";
+import { activities, likes, profiles, trainingPlans } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { socialRouter } from "../social";
 
-type SelectTableName = "likes" | "profiles";
+type SelectTableName = "likes" | "profiles" | "trainingPlans";
 
 type DbPlan = {
   select?: Partial<Record<SelectTableName, Array<unknown[]>>>;
   execute?: Array<Array<Record<string, unknown>>>;
   query?: {
     activities?: unknown[];
+    events?: unknown[];
   };
 };
 
@@ -25,6 +26,7 @@ const COMMENT_ID = "88888888-8888-4888-8888-888888888888";
 function getSelectTableName(table: unknown): SelectTableName {
   if (table === likes) return "likes";
   if (table === profiles) return "profiles";
+  if (table === trainingPlans) return "trainingPlans";
   throw new Error(`Unhandled select table: ${String(table)}`);
 }
 
@@ -32,9 +34,11 @@ function createDbMock(plan: DbPlan = {}) {
   const selectQueues = {
     likes: [...(plan.select?.likes ?? [])],
     profiles: [...(plan.select?.profiles ?? [])],
+    trainingPlans: [...(plan.select?.trainingPlans ?? [])],
   } satisfies Record<SelectTableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
   const activityQueryQueue = [...(plan.query?.activities ?? [])];
+  const eventQueryQueue = [...(plan.query?.events ?? [])];
 
   const calls = {
     selects: [] as Array<{ table: SelectTableName }>,
@@ -87,6 +91,9 @@ function createDbMock(plan: DbPlan = {}) {
       query: {
         activities: {
           findFirst: vi.fn(async () => activityQueryQueue.shift() ?? null),
+        },
+        events: {
+          findFirst: vi.fn(async () => eventQueryQueue.shift() ?? null),
         },
       },
     },
@@ -202,6 +209,9 @@ describe("socialRouter", () => {
 
   it("getFollowers returns follower rows with relationship status for the viewer", async () => {
     const { caller } = createCaller({
+      select: {
+        profiles: [[{ is_public: true }]],
+      },
       execute: [
         [
           {
@@ -257,6 +267,9 @@ describe("socialRouter", () => {
 
   it("getFollowing returns followed users with viewer-specific relationship status", async () => {
     const { caller } = createCaller({
+      select: {
+        profiles: [[{ is_public: true }]],
+      },
       execute: [
         [
           {
@@ -308,6 +321,23 @@ describe("socialRouter", () => {
       hasMore: false,
       nextCursor: undefined,
     });
+  });
+
+  it("getFollowers rejects private social graph access for non-followers", async () => {
+    const { caller, calls } = createCaller({
+      select: {
+        profiles: [[{ is_public: false }]],
+      },
+      execute: [
+        [{ follower_id: SESSION_USER_ID, following_id: TARGET_USER_ID, status: "pending" }],
+      ],
+    });
+
+    await expect(caller.getFollowers({ user_id: TARGET_USER_ID, limit: 2 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+
+    expect(calls.executes).toHaveLength(1);
   });
 
   it("searchUsers trims the query and returns paginated matches", async () => {
@@ -452,14 +482,19 @@ describe("socialRouter", () => {
     const trainingPlanId = "99999999-9999-4999-8999-999999999999";
 
     const { caller } = createCaller({
-      execute: [
-        [
-          {
-            profile_id: null,
-            is_system_template: true,
-            template_visibility: "public",
-          },
+      select: {
+        trainingPlans: [
+          [
+            {
+              id: trainingPlanId,
+              ownerProfileId: null,
+              templateVisibility: "public",
+              isSystem: true,
+            },
+          ],
         ],
+      },
+      execute: [
         [
           {
             id: COMMENT_ID,
@@ -497,5 +532,24 @@ describe("socialRouter", () => {
       hasMore: false,
       nextCursor: undefined,
     });
+  });
+
+  it("getComments rejects event comments for non-owners", async () => {
+    const eventId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const { caller, calls } = createCaller({
+      query: {
+        events: [{ profile_id: TARGET_USER_ID }],
+      },
+    });
+
+    await expect(
+      caller.getComments({
+        entity_id: eventId,
+        entity_type: "event",
+        limit: 20,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    expect(calls.executes).toHaveLength(0);
   });
 });

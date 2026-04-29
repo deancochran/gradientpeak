@@ -177,6 +177,18 @@ export * from "./notifications"; // Shared notification normalization helpers
 export * from "./parity"; // Product parity registry and contracts
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./profile"; // Shared profile contracts and adapters
+export type {
+  ActivityCategory as RecordingMetricsActivityCategory,
+  RecordingMetricSample,
+  RecordingMetricsAccumulator,
+  RecordingMetricsConfig,
+  RecordingMetricsSnapshot,
+  TrainingStressScoreMethod,
+} from "./recording-metrics";
+export {
+  calculateRecordingMetrics,
+  createRecordingMetricsAccumulator,
+} from "./recording-metrics"; // Live/replay recording metrics accumulator
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
 export * from "./sports"; // Canonical sport registry and heuristics
@@ -229,6 +241,7 @@ export * as Load from "./load";
 export * as Messaging from "./messaging";
 export * as Plan from "./plan";
 export * as Profile from "./profile";
+export * as RecordingMetrics from "./recording-metrics";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
 export * as Sports from "./sports";

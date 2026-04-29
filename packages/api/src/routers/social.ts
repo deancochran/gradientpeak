@@ -1,17 +1,10 @@
 import { randomUUID } from "node:crypto";
-import {
-  activities,
-  activityPlans,
-  activityRoutes,
-  events,
-  likes,
-  profiles,
-  publicNotificationTypeSchema,
-} from "@repo/db";
+import { activities, events, likes, profiles, publicNotificationTypeSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
+import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 
@@ -92,14 +85,6 @@ const commentListRowSchema = z
     profile_id: uuidSchema.nullable(),
     profile_username: nullableUsernameSchema,
     profile_avatar_url: nullableAvatarUrlSchema,
-  })
-  .strict();
-
-const trainingPlanAccessRowSchema = z
-  .object({
-    profile_id: uuidSchema.nullable(),
-    is_system_template: z.boolean(),
-    template_visibility: z.enum(["private", "public"]),
   })
   .strict();
 
@@ -218,69 +203,57 @@ async function checkPlanAccess(
   planType: "training_plan" | "activity_plan",
   userId: string,
 ): Promise<boolean> {
-  if (planType === "activity_plan") {
-    const plan = await db.query.activityPlans.findFirst({
-      columns: {
-        profile_id: true,
-        is_system_template: true,
-        template_visibility: true,
-      },
-      where: eq(activityPlans.id, planId),
-    });
+  const decision = await createContentAccessPermissions(db).canRead(userId, {
+    type: planType,
+    id: planId,
+  });
 
-    if (!plan) {
-      return false;
-    }
-
-    if (plan.profile_id === userId) {
-      return true;
-    }
-
-    if (plan.is_system_template) {
-      return true;
-    }
-
-    return plan.template_visibility === "public";
-  }
-
-  const result = await db.execute(sql`
-    select profile_id, is_system_template, template_visibility
-    from training_plans
-    where id = ${planId}::uuid
-    limit 1
-  `);
-
-  const plan = result.rows[0] ? trainingPlanAccessRowSchema.parse(result.rows[0]) : null;
-
-  if (!plan) {
-    return false;
-  }
-
-  if (plan.profile_id === userId) {
-    return true;
-  }
-
-  if (plan.is_system_template) {
-    return true;
-  }
-
-  return plan.template_visibility === "public";
+  return decision.allowed;
 }
 
 async function checkRouteAccess(db: DbClient, routeId: string, userId: string): Promise<boolean> {
-  const route = await db.query.activityRoutes.findFirst({
-    columns: {
-      profile_id: true,
-      is_public: true,
-    },
-    where: eq(activityRoutes.id, routeId),
+  const decision = await createContentAccessPermissions(db).canRead(userId, {
+    type: "activity_route",
+    id: routeId,
   });
 
-  if (!route) {
-    return false;
+  return decision.allowed;
+}
+
+async function requireProfileSocialGraphAccess(
+  db: DbClient,
+  targetUserId: string,
+  currentUserId: string,
+) {
+  if (targetUserId === currentUserId) {
+    return;
   }
 
-  return route.profile_id === userId || route.is_public;
+  const [targetProfile] = await db
+    .select({ is_public: profiles.is_public })
+    .from(profiles)
+    .where(eq(profiles.id, targetUserId))
+    .limit(1);
+
+  if (!targetProfile) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Profile not found",
+    });
+  }
+
+  if (targetProfile.is_public !== false) {
+    return;
+  }
+
+  const relationship = await getFollowRecord(db, currentUserId, targetUserId);
+
+  if (relationship?.status !== "accepted") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You don't have permission to view this profile's social graph",
+    });
+  }
 }
 
 async function checkEventAccess(db: DbClient, eventId: string, userId: string): Promise<boolean> {
@@ -560,6 +533,8 @@ export const socialRouter = createTRPCRouter({
         const currentUserId = ctx.session.user.id;
         const offset = parseIndexCursor(input.cursor);
 
+        await requireProfileSocialGraphAccess(db, input.user_id, currentUserId);
+
         const followersResult = await db.execute(sql`
           select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
           from follows f
@@ -648,6 +623,8 @@ export const socialRouter = createTRPCRouter({
       try {
         const currentUserId = ctx.session.user.id;
         const offset = parseIndexCursor(input.cursor);
+
+        await requireProfileSocialGraphAccess(db, input.user_id, currentUserId);
 
         const followingResult = await db.execute(sql`
           select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
@@ -962,6 +939,17 @@ export const socialRouter = createTRPCRouter({
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "You don't have permission to view comments on this route",
+          });
+        }
+      }
+
+      if (input.entity_type === "event") {
+        const hasAccess = await checkEventAccess(db, input.entity_id, userId);
+
+        if (!hasAccess) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You don't have permission to view comments on this event",
           });
         }
       }

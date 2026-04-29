@@ -234,8 +234,9 @@ describe("RecordingConfigResolver", () => {
     expect(liveRoute.session.ui.backdropMode).toBe("live_navigation");
     expect(liveRoute.session.ui.floatingPanel.canMinimize).toBe(true);
 
-    expect(virtualRoute.session.ui.backdropMode).toBe("virtual_route");
-    expect(virtualRoute.session.ui.floatingPanel.canMinimize).toBe(true);
+    expect(virtualRoute.session.ui.backdropMode).toBe("ambient");
+    expect(virtualRoute.session.ui.floatingPanel.forcedExpanded).toBe(true);
+    expect(virtualRoute.session.ui.floatingPanel.canMinimize).toBe(false);
 
     expect(routePreview.session.ui.backdropMode).toBe("route_preview");
     expect(routePreview.session.ui.floatingPanel.canMinimize).toBe(true);
@@ -319,9 +320,11 @@ describe("RecordingConfigResolver", () => {
     expect(routeGpsOn.session.ui.floatingPanel.availableCards).toContain("route_progress");
 
     expect(routeGpsOff.session.guidance.routeMode).toBe("virtual");
-    expect(routeGpsOff.session.ui.backdropMode).toBe("virtual_route");
+    expect(routeGpsOff.session.ui.backdropMode).toBe("ambient");
     expect(routeGpsOff.session.devices.gpsIntent).toBe("off");
     expect(routeGpsOff.session.ui.floatingPanel.availableCards).toContain("route_progress");
+    expect(routeGpsOff.session.ui.floatingPanel.forcedExpanded).toBe(true);
+    expect(routeGpsOff.session.ui.floatingPanel.canMinimize).toBe(false);
 
     expect(routeGpsDenied.session.guidance.routeMode).toBe("preview");
     expect(routeGpsDenied.session.ui.backdropMode).toBe("route_preview");

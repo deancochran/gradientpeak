@@ -11,14 +11,18 @@ type MetricKey =
   | "distance"
   | "pace"
   | "heart_rate"
+  | "heart_rate_zone"
   | "power"
+  | "power_zone"
   | "cadence"
   | "speed"
+  | "gap"
   | "calories"
   | "work"
   | "ascent"
   | "descent"
   | "grade"
+  | "vertical_speed"
   | "avg_heart_rate"
   | "avg_power"
   | "avg_cadence"
@@ -32,8 +36,14 @@ interface MetricInsight {
   key: MetricKey;
   label: string;
   value: string;
+  unit: string | null;
   target: string | null;
   tone: MetricTone;
+}
+
+interface MetricDisplayValue {
+  value: string;
+  unit: string | null;
 }
 
 export function MetricsInsightCard({
@@ -45,9 +55,10 @@ export function MetricsInsightCard({
   stats,
 }: InsightCardProps) {
   const compact = mode === "compact";
-  const metrics = React.useMemo(
+  const expandedMetrics = React.useMemo(
     () =>
       buildMetricInsights({
+        includeUnavailable: true,
         targets: plan.hasPlan ? plan.currentStep?.targets : undefined,
         readings,
         service,
@@ -56,7 +67,18 @@ export function MetricsInsightCard({
       }),
     [plan, readings, service, sessionContract, stats],
   );
-  const compactMetrics = metrics.slice(0, 6);
+  const compactMetrics = React.useMemo(
+    () =>
+      buildMetricInsights({
+        includeUnavailable: false,
+        targets: plan.hasPlan ? plan.currentStep?.targets : undefined,
+        readings,
+        service,
+        sessionContract,
+        stats,
+      }).slice(0, 6),
+    [plan, readings, service, sessionContract, stats],
+  );
 
   if (compact) {
     return (
@@ -67,8 +89,9 @@ export function MetricsInsightCard({
               compact
               key={metric.key}
               label={metric.label}
-              subtitle={metric.target ? `Target ${metric.target}` : null}
+              target={metric.target}
               tone={metric.tone}
+              unit={metric.unit}
               value={metric.value}
             />
           ))}
@@ -78,15 +101,16 @@ export function MetricsInsightCard({
   }
 
   return (
-    <View testID="metrics-insight-card">
-      <View className="flex-row flex-wrap justify-between gap-y-3">
-        {metrics.map((metric) => (
+    <View className="flex-1" testID="metrics-insight-card">
+      <View className="flex-1 flex-row flex-wrap content-stretch items-stretch justify-between gap-y-3">
+        {expandedMetrics.map((metric) => (
           <MetricTile
             key={metric.key}
             label={metric.label}
             layout="half"
-            subtitle={metric.target ? `Target ${metric.target}` : null}
+            target={metric.target}
             tone={metric.tone}
+            unit={metric.unit}
             value={metric.value}
           />
         ))}
@@ -96,12 +120,14 @@ export function MetricsInsightCard({
 }
 
 function buildMetricInsights({
+  includeUnavailable,
   targets,
   readings,
   service,
   sessionContract,
   stats,
 }: Pick<InsightCardProps, "readings" | "service" | "sessionContract" | "stats"> & {
+  includeUnavailable: boolean;
   targets?: IntensityTargetV2[];
 }): MetricInsight[] {
   const order = getMetricOrder(targets, sessionContract?.metrics.emphasizedMetrics ?? []);
@@ -109,8 +135,8 @@ function buildMetricInsights({
 
   return order
     .map((key) => {
-      const value = getMetricValue(key, readings, stats, service);
-      if (!value) return null;
+      const display = getMetricValue(key, readings, stats, service);
+      if (!display && !includeUnavailable) return null;
 
       const current = getMetricNumericValue(key, readings);
       const target = targetValues[key] ?? null;
@@ -118,7 +144,8 @@ function buildMetricInsights({
       return {
         key,
         label: getMetricLabel(key),
-        value,
+        value: display?.value ?? "--",
+        unit: display?.unit ?? getMetricUnit(key),
         target: target?.label ?? null,
         tone: current && target ? getTargetTone(current, target.value) : "neutral",
       };
@@ -142,11 +169,17 @@ function getMetricOrder(targets: IntensityTargetV2[] | undefined, emphasized: Me
     ...targetMetrics,
     ...emphasized,
     "time",
-    "lap_time",
     "distance",
-    "pace",
     "heart_rate",
+    "heart_rate_zone",
     "power",
+    "power_zone",
+    "normalized_power",
+    "training_stress_score",
+    "intensity_factor",
+    "lap_time",
+    "pace",
+    "gap",
     "cadence",
     "speed",
     "calories",
@@ -154,13 +187,11 @@ function getMetricOrder(targets: IntensityTargetV2[] | undefined, emphasized: Me
     "ascent",
     "descent",
     "grade",
+    "vertical_speed",
     "avg_heart_rate",
     "avg_power",
     "avg_cadence",
     "avg_speed",
-    "normalized_power",
-    "training_stress_score",
-    "intensity_factor",
   ]);
 }
 
@@ -173,52 +204,130 @@ function getMetricValue(
   readings: InsightCardProps["readings"],
   stats: InsightCardProps["stats"],
   service: InsightCardProps["service"],
-) {
+): MetricDisplayValue | null {
   switch (key) {
     case "time":
-      return formatSeconds(stats.duration ?? 0);
+      return { value: formatSeconds(stats.duration ?? 0), unit: null };
     case "lap_time":
-      return formatSeconds(getLapTimeSeconds(service, stats));
+      return { value: formatSeconds(getLapTimeSeconds(service, stats)), unit: null };
     case "distance":
-      return hasNumber(stats.distance) ? `${(stats.distance / 1000).toFixed(2)} km` : null;
+      return hasNumber(stats.distance)
+        ? { value: (stats.distance / 1000).toFixed(2), unit: "km" }
+        : null;
     case "pace":
       return readings.speed && readings.speed > 0
-        ? `${formatPace(1000 / 60 / readings.speed)} /km`
+        ? { value: formatPace(1000 / 60 / readings.speed), unit: "/km" }
         : null;
     case "heart_rate":
-      return readings.heartRate ? `${Math.round(readings.heartRate)} bpm` : null;
+      return hasNumber(readings.heartRate)
+        ? { value: `${Math.round(readings.heartRate)}`, unit: "bpm" }
+        : null;
+    case "heart_rate_zone":
+      return hasNumber(stats.currentHeartRateZone)
+        ? { value: `Z${stats.currentHeartRateZone}`, unit: null }
+        : null;
     case "power":
-      return readings.power ? `${Math.round(readings.power)} W` : null;
+      return hasNumber(readings.power)
+        ? { value: `${Math.round(readings.power)}`, unit: "W" }
+        : null;
+    case "power_zone":
+      return hasNumber(stats.currentPowerZone)
+        ? { value: `Z${stats.currentPowerZone}`, unit: null }
+        : null;
     case "cadence":
-      return readings.cadence ? `${Math.round(readings.cadence)} rpm` : null;
+      return readings.cadence ? { value: `${Math.round(readings.cadence)}`, unit: "rpm" } : null;
     case "speed":
       return readings.speed && readings.speed > 0
-        ? `${(readings.speed * 3.6).toFixed(1)} km/h`
+        ? { value: (readings.speed * 3.6).toFixed(1), unit: "km/h" }
+        : null;
+    case "gap":
+      return hasNumber(stats.gradeAdjustedPaceSecondsPerKm) &&
+        stats.gradeAdjustedPaceSecondsPerKm > 0
+        ? { value: formatPace(stats.gradeAdjustedPaceSecondsPerKm / 60), unit: "/km" }
         : null;
     case "calories":
-      return hasNumber(stats.calories) ? `${Math.round(stats.calories)} cal` : null;
+      return hasNumber(stats.calories)
+        ? { value: `${Math.round(stats.calories)}`, unit: "cal" }
+        : null;
     case "work":
-      return hasNumber(stats.work) ? `${Math.round(stats.work / 1000)} kJ` : null;
+      return hasNumber(stats.work)
+        ? { value: `${Math.round(stats.work / 1000)}`, unit: "kJ" }
+        : null;
     case "ascent":
-      return hasNumber(stats.ascent) ? `${Math.round(stats.ascent)} m` : null;
+      return hasNumber(stats.ascent) ? { value: `${Math.round(stats.ascent)}`, unit: "m" } : null;
     case "descent":
-      return hasNumber(stats.descent) ? `${Math.round(stats.descent)} m` : null;
+      return hasNumber(stats.descent) ? { value: `${Math.round(stats.descent)}`, unit: "m" } : null;
     case "grade":
-      return stats.avgGrade !== undefined ? `${stats.avgGrade.toFixed(1)}%` : null;
+      return hasNumber(stats.currentGrade)
+        ? { value: stats.currentGrade.toFixed(1), unit: "%" }
+        : hasNumber(stats.avgGrade)
+          ? { value: stats.avgGrade.toFixed(1), unit: "%" }
+          : null;
+    case "vertical_speed":
+      return hasNumber(stats.verticalSpeedMetersPerHour)
+        ? { value: `${Math.round(stats.verticalSpeedMetersPerHour)}`, unit: "m/h" }
+        : null;
     case "avg_heart_rate":
-      return stats.avgHeartRate > 0 ? `${Math.round(stats.avgHeartRate)} bpm` : null;
+      return stats.avgHeartRate > 0
+        ? { value: `${Math.round(stats.avgHeartRate)}`, unit: "bpm" }
+        : null;
     case "avg_power":
-      return stats.avgPower > 0 ? `${Math.round(stats.avgPower)} W` : null;
+      return stats.avgPower > 0 ? { value: `${Math.round(stats.avgPower)}`, unit: "W" } : null;
     case "avg_cadence":
-      return stats.avgCadence > 0 ? `${Math.round(stats.avgCadence)} rpm` : null;
+      return stats.avgCadence > 0
+        ? { value: `${Math.round(stats.avgCadence)}`, unit: "rpm" }
+        : null;
     case "avg_speed":
-      return stats.avgSpeed > 0 ? `${(stats.avgSpeed * 3.6).toFixed(1)} km/h` : null;
+      return stats.avgSpeed > 0 ? { value: (stats.avgSpeed * 3.6).toFixed(1), unit: "km/h" } : null;
     case "normalized_power":
-      return stats.normalizedPower ? `${Math.round(stats.normalizedPower)} W` : null;
+      return hasNumber(stats.normalizedPower)
+        ? { value: `${Math.round(stats.normalizedPower)}`, unit: "W" }
+        : null;
     case "training_stress_score":
-      return stats.trainingStressScore ? `${Math.round(stats.trainingStressScore)}` : null;
+      return hasNumber(stats.trainingStressScore)
+        ? { value: `${Math.round(stats.trainingStressScore)}`, unit: null }
+        : null;
     case "intensity_factor":
-      return stats.intensityFactor ? stats.intensityFactor.toFixed(2) : null;
+      return hasNumber(stats.intensityFactor)
+        ? { value: stats.intensityFactor.toFixed(2), unit: null }
+        : null;
+  }
+}
+
+function getMetricUnit(key: MetricKey) {
+  switch (key) {
+    case "distance":
+      return "km";
+    case "pace":
+      return "/km";
+    case "heart_rate":
+    case "avg_heart_rate":
+      return "bpm";
+    case "power":
+    case "avg_power":
+    case "normalized_power":
+      return "W";
+    case "cadence":
+    case "avg_cadence":
+      return "rpm";
+    case "speed":
+    case "avg_speed":
+      return "km/h";
+    case "gap":
+      return "/km";
+    case "calories":
+      return "cal";
+    case "work":
+      return "kJ";
+    case "ascent":
+    case "descent":
+      return "m";
+    case "grade":
+      return "%";
+    case "vertical_speed":
+      return "m/h";
+    default:
+      return null;
   }
 }
 
@@ -280,7 +389,11 @@ function getTargetTone(current: number, target: number): MetricTone {
 
 function getMetricLabel(key: MetricKey) {
   if (key === "heart_rate") return "HR";
+  if (key === "heart_rate_zone") return "HR Zone";
+  if (key === "power_zone") return "Power Zone";
+  if (key === "gap") return "GAP";
   if (key === "lap_time") return "Lap";
+  if (key === "vertical_speed") return "VAM";
   if (key === "avg_heart_rate") return "Avg HR";
   if (key === "avg_power") return "Avg Power";
   if (key === "avg_cadence") return "Avg Cadence";

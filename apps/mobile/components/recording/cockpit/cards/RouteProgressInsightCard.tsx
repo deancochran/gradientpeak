@@ -1,6 +1,6 @@
-import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { View } from "react-native";
+import { RouteElevationProfile } from "../RouteElevationBackdrop";
 import { MetricTile } from "./MetricTile";
 import type { InsightCardProps } from "./types";
 
@@ -35,14 +35,8 @@ export function RouteProgressInsightCard({ mode, service, stats }: InsightCardPr
 
   return (
     <View className="gap-5" testID="route-progress-insight-card">
-      <View className="rounded-[32px] bg-muted/45 p-5">
-        <Text className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-          Route Progress
-        </Text>
-        <Text className="mt-2 text-4xl font-black text-foreground">{progressLabel}</Text>
-        <Text className="mt-2 text-base font-semibold text-muted-foreground">
-          {distanceLabel} covered • {remainingLabel} remaining
-        </Text>
+      <View className="rounded-[32px] border border-border bg-card p-4">
+        <RouteElevationProfile service={service} />
       </View>
       <View className="h-5 overflow-hidden rounded-full bg-muted">
         <View
