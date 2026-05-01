@@ -210,17 +210,6 @@ export default function SignInScreen() {
               >
                 <Text>Need an account? Sign up</Text>
               </Button>
-
-              {__DEV__ && (
-                <Button
-                  variant="ghost"
-                  onPress={() => navigateTo("/(external)/ui-preview" as any)}
-                  testId="open-ui-preview-button"
-                  className="mt-3 w-full"
-                >
-                  <Text>UI Preview</Text>
-                </Button>
-              )}
             </View>
           </CardContent>
         </Card>

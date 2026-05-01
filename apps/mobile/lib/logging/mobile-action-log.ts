@@ -6,6 +6,26 @@ type MobileActionPhase = "attempt" | "success" | "failure";
 
 type MobileActionLogDetails = Record<string, string | number | boolean | null | undefined>;
 
+const SENSITIVE_DETAIL_KEY_PATTERN =
+  /(authorization|cookie|email|lat|latitude|lng|longitude|password|path|signed|token|url)/i;
+
+function isDevBuild() {
+  return Boolean((globalThis as { __DEV__?: boolean }).__DEV__);
+}
+
+export function isMobileActionLoggingEnabled() {
+  return isDevBuild() || process.env.EXPO_PUBLIC_ENABLE_MOBILE_LOGS === "1";
+}
+
+export function sanitizeMobileActionDetails(details: MobileActionLogDetails) {
+  return Object.fromEntries(
+    Object.entries(details).map(([key, value]) => [
+      key,
+      SENSITIVE_DETAIL_KEY_PATTERN.test(key) ? "[redacted]" : value,
+    ]),
+  );
+}
+
 function getExpoConstants() {
   try {
     return require("expo-constants").default as {
@@ -44,20 +64,12 @@ function inferDeviceKind() {
   return `${Platform.OS}-device`;
 }
 
-function getDeviceName() {
-  const expoConstants = getExpoConstants();
-
-  return expoConstants?.deviceName ?? null;
-}
-
 function getActorSnapshot() {
   const authState = useAuthStore.getState();
   const session = authState.session;
 
   return {
     actorType: session?.user ? "authenticated" : "guest",
-    userId: session?.user?.id ?? null,
-    email: session?.user?.email ?? null,
     authReady: authState.ready,
     authLoading: authState.loading,
   };
@@ -108,20 +120,21 @@ export function logMobileAction(
   phase: MobileActionPhase,
   details: MobileActionLogDetails = {},
 ) {
+  if (!isMobileActionLoggingEnabled()) {
+    return;
+  }
+
   const record = {
     ts: new Date().toISOString(),
     source: "mobile",
     platform: Platform.OS,
     deviceKind: inferDeviceKind(),
-    deviceName: getDeviceName(),
     ...getAppMetadata(),
     apiHost: getApiHost(),
-    apiUrl: getServerConfig().apiUrl,
-    serverOverride: getServerConfig().overrideUrl,
     action,
     phase,
     ...getActorSnapshot(),
-    details,
+    details: sanitizeMobileActionDetails(details),
   };
 
   console.log(`[mobile-log] ${JSON.stringify(record)}`);

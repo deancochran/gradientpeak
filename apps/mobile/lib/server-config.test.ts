@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-async function loadServerConfigModule() {
+async function loadServerConfigModule(environment = "development") {
   vi.resetModules();
+  process.env.APP_ENV = environment;
   process.env.EXPO_PUBLIC_API_URL = "https://api.gradientpeak.app";
   process.env.EXPO_PUBLIC_SUPABASE_URL = "https://db.gradientpeak.app";
+  delete process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE;
 
   const secureStore = await import("expo-secure-store");
   (secureStore as any).__store.clear();
@@ -15,6 +17,8 @@ async function loadServerConfigModule() {
 describe("server-config", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.APP_ENV;
+    delete process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE;
   });
 
   it("loads hosted defaults when no override exists", async () => {
@@ -82,6 +86,23 @@ describe("server-config", () => {
 
     await expect(module.setServerUrlOverride("not-a-url")).rejects.toThrow(
       "Please enter a valid URL",
+    );
+  });
+
+  it("disables stored and new override URLs in production", async () => {
+    const { module, secureStore } = await loadServerConfigModule("production");
+
+    await secureStore.setItemAsync("server_url_override", "http://127.0.0.1:3000");
+    await module.initializeServerConfig();
+
+    expect(module.isServerUrlOverrideEnabled()).toBe(false);
+    expect(module.getServerConfig()).toMatchObject({
+      apiUrl: "https://api.gradientpeak.app",
+      supabaseUrl: "https://db.gradientpeak.app",
+      overrideUrl: null,
+    });
+    await expect(module.setServerUrlOverride("http://127.0.0.1:3000")).rejects.toThrow(
+      "disabled in production",
     );
   });
 

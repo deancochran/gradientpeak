@@ -24,13 +24,14 @@ import { getDisplayNameFromEmail, type SignUpFields, signUpSchema } from "@/lib/
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { useServerConfig } from "@/lib/server-config";
+import { isServerUrlOverrideEnabled, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function SignUpScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
+  const serverOverrideEnabled = isServerUrlOverrideEnabled();
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
     serverConfig.overrideUrl ?? serverConfig.apiUrl,
@@ -52,7 +53,7 @@ export default function SignUpScreen() {
   const onSignUp = async (data: SignUpFields) => {
     try {
       await applyPendingAuthServerOverride({
-        expanded: isServerConfigExpanded,
+        expanded: serverOverrideEnabled && isServerConfigExpanded,
         serverUrlInput,
       });
 
@@ -207,13 +208,15 @@ export default function SignUpScreen() {
               <Text>{isLoading ? "Creating Account..." : "Create Account"}</Text>
             </Button>
 
-            <ServerUrlOverride
-              expanded={isServerConfigExpanded}
-              value={serverUrlInput}
-              usingHostedDefault={!serverConfig.overrideUrl}
-              onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
-              onChange={setServerUrlInput}
-            />
+            {serverOverrideEnabled ? (
+              <ServerUrlOverride
+                expanded={isServerConfigExpanded}
+                value={serverUrlInput}
+                usingHostedDefault={!serverConfig.overrideUrl}
+                onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
+                onChange={setServerUrlInput}
+              />
+            ) : null}
 
             {/* Sign In Link */}
             <View className="border-t border-border pt-4">

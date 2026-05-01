@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 
 const SERVER_URL_OVERRIDE_KEY = "server_url_override";
 const useLocalE2EHost = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
+const appEnvironment = process.env.APP_ENV ?? "development";
 
 const hostedApiUrl = useLocalE2EHost
   ? "http://127.0.0.1:3000"
@@ -29,6 +30,10 @@ let state: ServerConfigState = {
 
 const listeners = new Set<() => void>();
 let initializePromise: Promise<void> | null = null;
+
+export function isServerUrlOverrideEnabled() {
+  return appEnvironment !== "production" || process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE === "1";
+}
 
 function emit() {
   listeners.forEach((listener) => listener());
@@ -108,7 +113,9 @@ export async function initializeServerConfig() {
   }
 
   initializePromise = (async () => {
-    const storedUrl = await SecureStore.getItemAsync(SERVER_URL_OVERRIDE_KEY);
+    const storedUrl = isServerUrlOverrideEnabled()
+      ? await SecureStore.getItemAsync(SERVER_URL_OVERRIDE_KEY)
+      : null;
     const normalizedOverride = normalizeBaseUrl(storedUrl);
     updateState(normalizedOverride);
   })();
@@ -121,6 +128,10 @@ export async function initializeServerConfig() {
 }
 
 export async function setServerUrlOverride(url: string | null) {
+  if (!isServerUrlOverrideEnabled()) {
+    throw new Error("Server URL overrides are disabled in production builds");
+  }
+
   const normalizedOverride = normalizeBaseUrl(url);
 
   if (url && !normalizedOverride) {

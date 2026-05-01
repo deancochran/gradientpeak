@@ -156,7 +156,7 @@ export class FitUploader {
       const fileResponse = await fetch(file.uri);
       const blob = await fileResponse.blob();
 
-      console.log(`[FitUploader] Uploading ${blob.size} bytes via Blob to ${url}`);
+      console.log(`[FitUploader] Uploading ${blob.size} bytes via Blob`);
 
       const response = await fetch(url, {
         method: method,

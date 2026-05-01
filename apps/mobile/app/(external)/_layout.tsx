@@ -134,12 +134,6 @@ export default function ExternalLayout() {
           headerShown: false,
         }}
       />
-      <Stack.Screen
-        name="ui-preview"
-        options={{
-          title: "Developer UI Preview",
-        }}
-      />
     </Stack>
   );
 }

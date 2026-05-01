@@ -2,6 +2,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
+import { parseFreshLocationBuffer, serializeLocationBuffer } from "./locationBuffer";
 
 const BACKGROUND_LOCATION_TASK = "background-location-task";
 const LOCATION_BUFFER_KEY = "location_buffer";
@@ -62,8 +63,6 @@ TaskManager.defineTask(
         } else {
           console.warn("[Background Location Task] Invalid location, skipping:", {
             accuracy: location.coords?.accuracy,
-            lat: location.coords?.latitude,
-            lng: location.coords?.longitude,
           });
         }
       }
@@ -102,7 +101,7 @@ async function bufferLocations(locations: Location.LocationObject[]): Promise<vo
   try {
     // Get current buffer
     const bufferedStr = await AsyncStorage.getItem(LOCATION_BUFFER_KEY);
-    let buffer: Location.LocationObject[] = bufferedStr ? JSON.parse(bufferedStr) : [];
+    let buffer = parseFreshLocationBuffer(bufferedStr).locations;
 
     // Add new locations
     buffer.push(...locations);
@@ -113,7 +112,7 @@ async function bufferLocations(locations: Location.LocationObject[]): Promise<vo
     }
 
     // Persist to storage
-    await AsyncStorage.setItem(LOCATION_BUFFER_KEY, JSON.stringify(buffer));
+    await AsyncStorage.setItem(LOCATION_BUFFER_KEY, serializeLocationBuffer(buffer));
   } catch (error) {
     console.warn("Failed to buffer locations:", error);
   }
@@ -178,7 +177,11 @@ export class LocationManager {
     try {
       const bufferedStr = await AsyncStorage.getItem(LOCATION_BUFFER_KEY);
       if (bufferedStr) {
-        this.locationBuffer = JSON.parse(bufferedStr);
+        const parsedBuffer = parseFreshLocationBuffer(bufferedStr);
+        this.locationBuffer = parsedBuffer.locations;
+        if (parsedBuffer.isStale) {
+          await AsyncStorage.removeItem(LOCATION_BUFFER_KEY);
+        }
         console.log(`Loaded ${this.locationBuffer.length} buffered locations`);
       }
     } catch (error) {

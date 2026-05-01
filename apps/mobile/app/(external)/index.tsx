@@ -5,11 +5,9 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const navigateTo = useAppNavigate();
   const { isAuthenticated } = useAuth();
 
   React.useEffect(() => {
@@ -22,10 +20,6 @@ export default function WelcomeScreen() {
 
   const handleSignupPress = () => {
     router.replace({ pathname: "/(external)/sign-up" });
-  };
-
-  const handleUiPreviewPress = () => {
-    navigateTo("/(external)/ui-preview" as any);
   };
 
   return (
@@ -73,18 +67,6 @@ export default function WelcomeScreen() {
               >
                 <Text>Create Account</Text>
               </Button>
-
-              {__DEV__ && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onPress={handleUiPreviewPress}
-                  testId="open-ui-preview-button"
-                  className="w-full"
-                >
-                  <Text>UI Preview</Text>
-                </Button>
-              )}
             </View>
           </CardContent>
         </Card>
