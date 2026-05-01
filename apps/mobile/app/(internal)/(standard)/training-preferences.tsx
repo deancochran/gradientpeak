@@ -45,12 +45,69 @@ type PreferencesTabKey =
 
 type TrainingPreferencesValues = AthleteTrainingSettings | AthleteTrainingSettingsFormInput;
 
+type PreferencePresetKey = "conservative" | "balanced" | "performance";
+
 const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = [
   { key: "schedule", label: "Schedule" },
   { key: "training-style", label: "Training style" },
   { key: "recovery", label: "Recovery" },
   { key: "goal-strategy", label: "Goal strategy" },
   { key: "baseline-fitness", label: "Baseline fitness" },
+];
+
+const preferencePresets: Array<{
+  key: PreferencePresetKey;
+  label: string;
+  description: string;
+  values: Pick<
+    AthleteTrainingSettingsFormInput["training_style"],
+    "progression_pace" | "week_pattern_preference"
+  > &
+    Pick<
+      AthleteTrainingSettingsFormInput["recovery_preferences"],
+      "recovery_priority" | "systemic_fatigue_tolerance"
+    > &
+    Pick<
+      AthleteTrainingSettingsFormInput["goal_strategy_preferences"],
+      "target_surplus_preference"
+    >;
+}> = [
+  {
+    key: "conservative",
+    label: "Safer",
+    description: "Protect recovery and keep progression steady.",
+    values: {
+      progression_pace: 0.35,
+      week_pattern_preference: 0.35,
+      recovery_priority: 0.75,
+      systemic_fatigue_tolerance: 0.35,
+      target_surplus_preference: 0.15,
+    },
+  },
+  {
+    key: "balanced",
+    label: "Balanced",
+    description: "Use the default tradeoff between progress and recovery.",
+    values: {
+      progression_pace: 0.5,
+      week_pattern_preference: 0.5,
+      recovery_priority: 0.6,
+      systemic_fatigue_tolerance: 0.5,
+      target_surplus_preference: 0.25,
+    },
+  },
+  {
+    key: "performance",
+    label: "Push harder",
+    description: "Allow faster progression when the projection stays safe.",
+    values: {
+      progression_pace: 0.72,
+      week_pattern_preference: 0.65,
+      recovery_priority: 0.45,
+      systemic_fatigue_tolerance: 0.68,
+      target_surplus_preference: 0.45,
+    },
+  },
 ];
 
 function toFractionFromPercent(value: number, decimals = 2) {
@@ -85,6 +142,31 @@ function createTrainingPreferencesFormDefaults(
     baseline_fitness: normalized.baseline_fitness ?? {
       ...defaultAthletePreferenceProfile.baseline_fitness,
     },
+  };
+}
+
+function getPreferenceDirectionSummary(draft: AthleteTrainingSettingsFormInput) {
+  const progression = draft.training_style.progression_pace;
+  const recovery = draft.recovery_preferences.recovery_priority;
+  const surplus = draft.goal_strategy_preferences.target_surplus_preference;
+
+  if (recovery >= 0.7 && progression <= 0.45) {
+    return {
+      title: "Safer progression",
+      body: "Your draft protects recovery first and keeps load changes steadier.",
+    };
+  }
+
+  if (progression >= 0.65 || surplus >= 0.4) {
+    return {
+      title: "Performance leaning",
+      body: "Your draft asks the planner to push harder when safety caps allow it.",
+    };
+  }
+
+  return {
+    title: "Balanced setup",
+    body: "Your draft keeps the main tradeoff centered between progress and recovery.",
   };
 }
 
@@ -148,6 +230,7 @@ export default function TrainingPreferencesScreen() {
   const utils = api.useUtils();
   const settingsQuery = useProfileSettings();
   const [activeTab, setActiveTab] = useState<PreferencesTabKey>("schedule");
+  const [showAdvancedBaselineControls, setShowAdvancedBaselineControls] = useState(false);
 
   const formDefaults = useMemo(
     () => createTrainingPreferencesFormDefaults(settingsQuery.settings),
@@ -245,6 +328,44 @@ export default function TrainingPreferencesScreen() {
     return `${minSessions}-${maxSessions} sessions per week, ${weeklyBudget ?? "no weekly cap"}, longest workout ${longestWorkout ?? "not set"}.`;
   }, [draft.dose_limits]);
 
+  const preferenceDirectionSummary = useMemo(() => getPreferenceDirectionSummary(draft), [draft]);
+
+  const applyPreferencePreset = (presetKey: PreferencePresetKey) => {
+    const preset = preferencePresets.find((item) => item.key === presetKey);
+    if (!preset) {
+      return;
+    }
+
+    form.setValue("training_style.progression_pace", preset.values.progression_pace, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("training_style.week_pattern_preference", preset.values.week_pattern_preference, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("recovery_preferences.recovery_priority", preset.values.recovery_priority, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue(
+      "recovery_preferences.systemic_fatigue_tolerance",
+      preset.values.systemic_fatigue_tolerance,
+      {
+        shouldDirty: true,
+        shouldValidate: true,
+      },
+    );
+    form.setValue(
+      "goal_strategy_preferences.target_surplus_preference",
+      preset.values.target_surplus_preference,
+      {
+        shouldDirty: true,
+        shouldValidate: true,
+      },
+    );
+  };
+
   if (settingsQuery.isLoading) {
     return (
       <View
@@ -262,6 +383,36 @@ export default function TrainingPreferencesScreen() {
       <Form {...form}>
         <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
           <TrainingPreferencesProjectionPreview draft={draft} />
+
+          <View className="gap-3 rounded-xl border border-border bg-card p-4">
+            <View className="gap-1">
+              <Text className="text-sm font-semibold text-foreground">
+                {preferenceDirectionSummary.title}
+              </Text>
+              <Text className="text-xs text-muted-foreground">
+                {preferenceDirectionSummary.body}
+              </Text>
+            </View>
+            <View className="flex-row gap-2">
+              {preferencePresets.map((preset) => (
+                <Pressable
+                  key={preset.key}
+                  onPress={() => applyPreferencePreset(preset.key)}
+                  className="flex-1 rounded-md border border-border bg-muted/20 px-2 py-2"
+                  accessibilityRole="button"
+                  accessibilityLabel={`Apply ${preset.label} training preference preset`}
+                  testID={`training-preferences-preset-${preset.key}`}
+                >
+                  <Text className="text-center text-xs font-semibold text-foreground">
+                    {preset.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text className="text-xs text-muted-foreground">
+              Pick a direction first, then fine tune the sections below only when needed.
+            </Text>
+          </View>
 
           <ScrollView
             horizontal
@@ -498,43 +649,56 @@ export default function TrainingPreferencesScreen() {
                       pickerPresentation="modal"
                       testId="preferences-baseline-date"
                     />
-                    <View className="mt-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
-                      <Text className="text-sm font-medium text-warning">
-                        Advanced: Ramp Rate Settings
+                    <View className="mt-4 gap-2 rounded-md border border-border bg-muted/20 px-3 py-2">
+                      <Text className="text-sm font-medium text-foreground">
+                        Advanced ramp controls
                       </Text>
-                      <Text className="mt-1 text-xs text-muted-foreground">
-                        Override the default weekly ramp caps. Higher values allow faster training
-                        load progression but increase injury risk.
+                      <Text className="text-xs text-muted-foreground">
+                        Keep these collapsed unless you know your safe weekly ramp is higher than
+                        the default.
                       </Text>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onPress={() => setShowAdvancedBaselineControls((value) => !value)}
+                        testID="preferences-toggle-advanced-ramp"
+                      >
+                        <Text>
+                          {showAdvancedBaselineControls ? "Hide ramp controls" : "Fine tune ramps"}
+                        </Text>
+                      </Button>
                     </View>
-                    <FormIntegerStepperField
-                      control={form.control}
-                      description="Maximum weekly TSS increase (default: 10%)"
-                      label="Max Weekly TSS Ramp %"
-                      max={40}
-                      min={1}
-                      name="baseline_fitness.max_weekly_tss_ramp_pct"
-                      testId="preferences-ramp-tss-pct"
-                    />
-                    <FormIntegerStepperField
-                      control={form.control}
-                      description="Maximum CTL increase per week (default: 5)"
-                      label="Max CTL Ramp Per Week"
-                      max={12}
-                      min={1}
-                      name="baseline_fitness.max_ctl_ramp_per_week"
-                      testId="preferences-ramp-ctl"
-                    />
-                    <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
-                      <Text className="text-sm font-medium text-info">Why Adjust Ramp Rates?</Text>
-                      <Text className="mt-1 text-xs text-muted-foreground">
-                        If your plan's readiness score feels too low, it may be because the goal
-                        requires more training load than the default ramp caps allow. Try increasing
-                        the Max Weekly TSS Ramp % or Max CTL Ramp Per Week above to see if that
-                        unlocks a higher readiness. Higher values allow faster progression but
-                        increase injury risk.
-                      </Text>
-                    </View>
+                    {showAdvancedBaselineControls ? (
+                      <>
+                        <FormIntegerStepperField
+                          control={form.control}
+                          description="Maximum weekly TSS increase (default: 10%)"
+                          label="Max Weekly TSS Ramp %"
+                          max={40}
+                          min={1}
+                          name="baseline_fitness.max_weekly_tss_ramp_pct"
+                          testId="preferences-ramp-tss-pct"
+                        />
+                        <FormIntegerStepperField
+                          control={form.control}
+                          description="Maximum CTL increase per week (default: 5)"
+                          label="Max CTL Ramp Per Week"
+                          max={12}
+                          min={1}
+                          name="baseline_fitness.max_ctl_ramp_per_week"
+                          testId="preferences-ramp-ctl"
+                        />
+                        <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
+                          <Text className="text-sm font-medium text-info">
+                            Why adjust ramp rates?
+                          </Text>
+                          <Text className="mt-1 text-xs text-muted-foreground">
+                            Higher values can unlock more load when your goal is constrained, but
+                            they also reduce the planner's safety margin.
+                          </Text>
+                        </View>
+                      </>
+                    ) : null}
                     <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
                       <Text className="text-sm font-medium text-info">Example CTL Values</Text>
                       <Text className="mt-1 text-xs text-muted-foreground">

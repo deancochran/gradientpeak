@@ -1,4 +1,5 @@
 import { canonicalizeMinimalTrainingPlanCreate } from "@repo/core/plan/canonicalization";
+import type { ProjectionChartPayload } from "@repo/core/plan/projectionTypes";
 import type { PreviewReadinessSnapshot } from "@repo/core/plan/trainingPlanPreview";
 import { athleteTrainingSettingsFormSchema } from "@repo/core/schemas/settings/profile_settings";
 import type { GoalTargetV2 } from "@repo/core/schemas/training_plan_structure";
@@ -143,13 +144,21 @@ export function TrainingPreferencesProjectionPreview({
   const previewResult = useMemo(() => {
     const minimalPlan = toPreviewMinimalPlan(snapshot);
     if (!minimalPlan) {
-      return { previewIdealCurve: [], previewSnapshot: null as PreviewReadinessSnapshot | null };
+      return {
+        previewIdealCurve: [],
+        previewSnapshot: null as PreviewReadinessSnapshot | null,
+        projectionChart: null as ProjectionChartPayload | null,
+      };
     }
 
     const lastActualPoint = fitnessHistory[fitnessHistory.length - 1] ?? null;
     const parsedDraft = athleteTrainingSettingsFormSchema.safeParse(draft);
     if (!parsedDraft.success) {
-      return { previewIdealCurve: [], previewSnapshot: null as PreviewReadinessSnapshot | null };
+      return {
+        previewIdealCurve: [],
+        previewSnapshot: null as PreviewReadinessSnapshot | null,
+        projectionChart: null as ProjectionChartPayload | null,
+      };
     }
 
     const resolvedDraft = parsedDraft.data;
@@ -181,9 +190,14 @@ export function TrainingPreferencesProjectionPreview({
             ctl: point.predicted_fitness_ctl,
           })) ?? [],
         previewSnapshot: preview.previewSnapshotBaseline,
+        projectionChart: preview.projectionChart,
       };
     } catch {
-      return { previewIdealCurve: [], previewSnapshot: null as PreviewReadinessSnapshot | null };
+      return {
+        previewIdealCurve: [],
+        previewSnapshot: null as PreviewReadinessSnapshot | null,
+        projectionChart: null as ProjectionChartPayload | null,
+      };
     }
   }, [draft, fitnessHistory, snapshot]);
 
@@ -220,6 +234,25 @@ export function TrainingPreferencesProjectionPreview({
     const sign = delta > 0 ? "+" : "";
     return `Draft vs baseline at the latest checkpoint: ${sign}${delta} CTL.`;
   }, [idealFitnessCurve, previewIdealCurve]);
+
+  const compactGuidance = useMemo(() => {
+    const summary = previewResult.projectionChart?.load_resolution_summary;
+    if (!summary) {
+      return null;
+    }
+
+    if (summary.capped_weeks > 0) {
+      return `${summary.capped_weeks} capped week${summary.capped_weeks === 1 ? "" : "s"}; the planner is protecting your ramp while applying this draft.`;
+    }
+
+    if (summary.recovery_weeks > 0) {
+      return `${summary.recovery_weeks} recovery week${summary.recovery_weeks === 1 ? "" : "s"} preserved around goals.`;
+    }
+
+    return summary.confidence === "high"
+      ? "This draft is stable against the current plan context."
+      : "This draft is usable, but confidence is limited by available plan context.";
+  }, [previewResult.projectionChart]);
 
   const projectionPreviewState = useMemo(() => {
     if (snapshot.loading.plan || snapshot.loading.actualCurve || snapshot.loading.idealCurve) {
@@ -308,16 +341,19 @@ export function TrainingPreferencesProjectionPreview({
             <Text className="text-sm text-muted-foreground">{projectionPreviewState.body}</Text>
           </View>
         )}
-        <Text className="text-sm font-medium text-foreground">{projectionPreviewState.title}</Text>
-        <Text className="text-sm text-muted-foreground">
-          {projectionPreviewState.tone === "ready"
-            ? projectionPreviewSummary
-            : projectionPreviewState.body}
-        </Text>
-        <Text className="text-xs text-muted-foreground">
-          This draft line is recomputed locally with the shared projection engine for your current
-          goal context instead of being estimated from a chart-only heuristic.
-        </Text>
+        <View className="gap-1 rounded-md bg-muted/20 px-3 py-2">
+          <Text className="text-sm font-medium text-foreground">
+            {projectionPreviewState.title}
+          </Text>
+          <Text className="text-sm text-muted-foreground">
+            {projectionPreviewState.tone === "ready"
+              ? projectionPreviewSummary
+              : projectionPreviewState.body}
+          </Text>
+          {compactGuidance ? (
+            <Text className="text-xs text-muted-foreground">{compactGuidance}</Text>
+          ) : null}
+        </View>
         {previewResult.previewSnapshot ? (
           <Text className="text-xs text-muted-foreground">
             Draft readiness: {Math.round(previewResult.previewSnapshot.readiness_score)}. Load:{" "}
