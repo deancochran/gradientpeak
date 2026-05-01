@@ -2,6 +2,7 @@ import {
   type AthleteTrainingSettings,
   addDaysDateOnlyUtc,
   buildDeterministicProjectionPayload,
+  buildProjectionChartPayloadFromDeterministicProjection,
   buildPreviewReadinessSnapshot,
   buildProjectionEngineInput,
   buildReadinessDeltaDiagnostics,
@@ -10,6 +11,7 @@ import {
   type CreationNormalizationInput,
   canonicalizeMinimalTrainingPlanCreate,
   classifyCreationFeasibility,
+  classifyProjectionFeasibility,
   countAvailableTrainingDays,
   derivePlanTimeline,
   deterministicUuidFromSeed,
@@ -294,45 +296,11 @@ export function computeLocalCreationPreview(input: LocalPreviewInput): LocalPrev
     }),
   );
 
-  const projectionChart: ProjectionChartPayload = {
-    start_date: expandedPlan.start_date,
-    end_date: expandedPlan.end_date,
-    points: deterministicProjection.points,
-    display_points: deterministicProjection.display_points,
-    goal_markers: deterministicProjection.goal_markers,
-    periodization_phases: expandedPlan.blocks.map((block, index) => ({
-      id: deterministicUuidFromSeed(
-        `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
-      ),
-      name: block.name,
-      start_date: block.start_date,
-      end_date: block.end_date,
-      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
-    })),
-    microcycles: deterministicProjection.microcycles.map((microcycle) => ({
-      id: deterministicUuidFromSeed(
-        `projection-microcycle|${expandedPlan.start_date}|${microcycle.week_start_date}|${microcycle.week_end_date}`,
-      ),
-      ...microcycle,
-    })),
-    recovery_segments: deterministicProjection.recovery_segments,
-    constraint_summary: deterministicProjection.constraint_summary,
-    inferred_current_state: deterministicProjection.inferred_current_state,
-    no_history: toNoHistoryMetadataOrUndefined(deterministicProjection.no_history),
-    readiness_score: deterministicProjection.readiness_score,
-    readiness_confidence: deterministicProjection.readiness_confidence,
-    readiness_rationale_codes: deterministicProjection.readiness_rationale_codes,
-    capacity_envelope: deterministicProjection.capacity_envelope,
-    feasibility_band: deterministicProjection.feasibility_band,
-    risk_score: deterministicProjection.risk_score,
-    risk_level: deterministicProjection.risk_level,
-    risk_flags: deterministicProjection.risk_flags,
-    caps_applied: deterministicProjection.caps_applied,
-    projection_diagnostics: deterministicProjection.projection_diagnostics,
-    optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary,
-    goal_assessments: deterministicProjection.goal_assessments,
-  };
+  const projectionChart: ProjectionChartPayload =
+    buildProjectionChartPayloadFromDeterministicProjection({
+      expandedPlan,
+      deterministicProjection,
+    });
 
   const projectionConflicts = deriveProjectionDrivenConflicts({
     expandedPlan,
@@ -344,10 +312,10 @@ export function computeLocalCreationPreview(input: LocalPreviewInput): LocalPrev
     ...projectionConflicts,
   ];
 
-  const projectionFeasibilityState = getProjectionFeasibilityState(projectionChart);
+  const projectionFeasibility = classifyProjectionFeasibility(projectionChart);
   const previewSnapshotBaseline = buildPreviewReadinessSnapshot({
     projectionChart,
-    projectionFeasibilityState,
+    projectionFeasibilityState: projectionFeasibility.state,
   });
 
   const readinessDeltaDiagnostics =
@@ -373,51 +341,6 @@ export function computeLocalCreationPreview(input: LocalPreviewInput): LocalPrev
     readinessDeltaDiagnostics,
     previewSnapshotBaseline,
   };
-}
-
-function getProjectionFeasibilityState(
-  projectionChart: ProjectionChartPayload,
-): "feasible" | "aggressive" | "unsafe" {
-  const nearCapThreshold = 0.9;
-  let tssNearCapWeeks = 0;
-  let ctlNearCapWeeks = 0;
-
-  for (const microcycle of projectionChart.microcycles) {
-    const tssRamp = microcycle.metadata?.tss_ramp;
-    const ctlRamp = microcycle.metadata?.ctl_ramp;
-    if (!tssRamp || !ctlRamp) {
-      continue;
-    }
-
-    if (!tssRamp.clamped && tssRamp.previous_week_tss > 0 && tssRamp.max_weekly_tss_ramp_pct > 0) {
-      const requestedRampPct =
-        ((tssRamp.requested_weekly_tss - tssRamp.previous_week_tss) / tssRamp.previous_week_tss) *
-        100;
-      if (requestedRampPct >= tssRamp.max_weekly_tss_ramp_pct * nearCapThreshold) {
-        tssNearCapWeeks += 1;
-      }
-    }
-
-    if (!ctlRamp.clamped && ctlRamp.max_ctl_ramp_per_week > 0) {
-      if (ctlRamp.requested_ctl_ramp >= ctlRamp.max_ctl_ramp_per_week * nearCapThreshold) {
-        ctlNearCapWeeks += 1;
-      }
-    }
-  }
-
-  if (projectionChart.constraint_summary?.tss_ramp_clamp_weeks) {
-    return "unsafe";
-  }
-
-  if (projectionChart.constraint_summary?.ctl_ramp_clamp_weeks) {
-    return "unsafe";
-  }
-
-  if (tssNearCapWeeks > 0 || ctlNearCapWeeks > 0) {
-    return "aggressive";
-  }
-
-  return "feasible";
 }
 
 function deriveProjectionDrivenConflicts(input: {
@@ -488,18 +411,4 @@ function deriveProjectionDrivenConflicts(input: {
   }
 
   return conflicts;
-}
-
-function toNoHistoryMetadataOrUndefined(
-  metadata: NonNullable<ProjectionChartPayload["no_history"]>,
-): ProjectionChartPayload["no_history"] | undefined {
-  if (
-    !metadata.projection_floor_applied &&
-    !metadata.evidence_confidence &&
-    !metadata.projection_feasibility
-  ) {
-    return undefined;
-  }
-
-  return metadata;
 }

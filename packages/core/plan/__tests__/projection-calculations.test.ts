@@ -95,6 +95,58 @@ describe("projection calculations", () => {
     expect(projection.feasibility_assessment?.status).toBeDefined();
   });
 
+  it("surfaces named weekly load resolution terms without changing selected load", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-04-06",
+        end_date: "2026-04-27",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-04-06",
+          end_date: "2026-04-27",
+          target_weekly_tss_range: { min: 360, max: 400 },
+        },
+      ],
+      goals: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "10K Goal",
+          target_date: "2026-04-26",
+          priority: 9,
+          targets: [
+            {
+              target_type: "race_performance",
+              distance_m: 10000,
+              target_time_s: 2700,
+              activity_category: "run",
+            },
+          ],
+        },
+      ],
+      starting_ctl: 48,
+    });
+
+    const firstWeek = projection.microcycles[0];
+    expect(firstWeek).toBeDefined();
+    if (!firstWeek) {
+      return;
+    }
+
+    expect(firstWeek.metadata.load_resolution).toMatchObject({
+      week_start_date: firstWeek.week_start_date,
+      baseline_tss: firstWeek.metadata.tss_ramp.rolling_base_weekly_tss,
+      recovery_adjusted_tss: firstWeek.metadata.tss_ramp.raw_requested_weekly_tss,
+      preference_adjusted_tss: firstWeek.metadata.tss_ramp.requested_weekly_tss,
+      final_weekly_tss: firstWeek.planned_weekly_tss,
+    });
+    expect(firstWeek.metadata.load_resolution.rationale_codes).toContain(
+      "rolling_base_prior_week_primary",
+    );
+  });
+
   it("surfaces precomputed reference context when goals are valid", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {

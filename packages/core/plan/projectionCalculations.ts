@@ -1240,6 +1240,7 @@ export interface DeterministicProjectionPoint {
 }
 
 export interface ProjectionWeekMetadata {
+  load_resolution: WeeklyLoadResolution;
   recovery: {
     active: boolean;
     goal_ids: string[];
@@ -1273,6 +1274,20 @@ export interface ProjectionWeekMetadata {
     max_ctl_ramp_per_week: number;
     clamped: boolean;
   };
+}
+
+export interface WeeklyLoadResolution {
+  week_start_date: string;
+  baseline_tss: number;
+  reference_target_tss: number | null;
+  demand_floor_tss: number | null;
+  recovery_adjusted_tss: number;
+  preference_adjusted_tss: number;
+  mpc_selected_tss: number;
+  safety_capped_tss: number;
+  final_weekly_tss: number;
+  constraints: string[];
+  rationale_codes: string[];
 }
 
 export interface DeterministicProjectionMicrocycle {
@@ -1363,6 +1378,7 @@ export interface DeterministicProjectionPayload {
   risk_level?: "low" | "moderate" | "high" | "extreme";
   risk_flags?: string[];
   caps_applied?: string[];
+  load_resolution_summary?: ProjectionLoadResolutionSummary;
   projection_diagnostics?: ProjectionDiagnostics;
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
   sport_load_states?: ProjectionSportLoadState[];
@@ -1670,6 +1686,25 @@ export interface ProjectionDiagnostics {
     taper_pressure: number;
     safety_penalty: number;
   };
+  load_resolution_summary?: ProjectionLoadResolutionSummary;
+}
+
+export interface ProjectionLoadResolutionSummary {
+  week_count: number;
+  capped_weeks: number;
+  tss_ramp_capped_weeks: number;
+  ctl_ramp_capped_weeks: number;
+  demand_floor_weeks: number;
+  demand_floor_override_weeks: number;
+  recovery_adjusted_weeks: number;
+  recovery_weeks: number;
+  average_baseline_to_final_delta_tss: number;
+  average_requested_to_final_delta_tss: number;
+  average_mpc_to_final_delta_tss: number;
+  max_requested_to_final_delta_tss: number;
+  limiting_constraints: string[];
+  confidence: ProjectionFloorConfidence;
+  confidence_reasons: string[];
 }
 
 interface WeeklyOptimizationDecision {
@@ -1980,6 +2015,50 @@ function resolveWeeklyLoadSignals(input: WeeklyLoadSignalInput): WeeklyLoadSigna
     rhythmAdjustedDemandFloor,
     floorOverrideApplied,
     rollingCompositionRationaleCodes,
+  };
+}
+
+function buildWeeklyLoadResolution(input: {
+  weekStartDate: string;
+  weekSignals: WeeklyLoadSignalResult;
+  referenceContext: ProjectionReferenceContext;
+  weeklyDecision: WeeklyOptimizationDecision;
+  cappedDecision: WeeklyTssCapResult;
+  tssRampClamped: boolean;
+  ctlRampClamped: boolean;
+  appliedWeeklyTss: number;
+}): WeeklyLoadResolution {
+  const referenceTargetTss =
+    input.referenceContext.reference_by_date?.get(input.weekStartDate)?.target_tss ?? null;
+  const constraints = [
+    ...(input.tssRampClamped ? ["weekly_tss_ramp_cap"] : []),
+    ...(input.ctlRampClamped ? ["weekly_ctl_ramp_cap"] : []),
+    ...(input.weekSignals.recoveryOverlap.goal_ids.length > 0 ? ["recovery_segment"] : []),
+    ...(input.weekSignals.weightedNoHistoryDemandFloor !== null ? ["demand_floor_signal"] : []),
+    ...(input.weekSignals.floorOverrideApplied ? ["demand_floor_above_requested_load"] : []),
+  ];
+
+  return {
+    week_start_date: input.weekStartDate,
+    baseline_tss: round1(input.weekSignals.baseWeeklyTss),
+    reference_target_tss: referenceTargetTss === null ? null : round1(referenceTargetTss),
+    demand_floor_tss:
+      input.weekSignals.weightedNoHistoryDemandFloor === null
+        ? null
+        : round1(input.weekSignals.weightedNoHistoryDemandFloor),
+    recovery_adjusted_tss: round1(input.weekSignals.recoveryAdjustedWeeklyTss),
+    preference_adjusted_tss: round1(input.weekSignals.flooredWeeklyTss),
+    mpc_selected_tss: round1(input.weeklyDecision.selected_weekly_tss),
+    safety_capped_tss: round1(input.cappedDecision.appliedWeeklyTss),
+    final_weekly_tss: round1(input.appliedWeeklyTss),
+    constraints: [...new Set(constraints)],
+    rationale_codes: [
+      ...input.weekSignals.rollingCompositionRationaleCodes,
+      `weekly_optimizer_path_${input.weeklyDecision.diagnostics.selected_path}`,
+      ...(input.weeklyDecision.diagnostics.fallback_reason
+        ? [`weekly_optimizer_fallback_${input.weeklyDecision.diagnostics.fallback_reason}`]
+        : []),
+    ],
   };
 }
 
@@ -3309,35 +3388,20 @@ function buildDoseRecommendation(input: {
   goalAssessmentsCount: number;
   surplusApplied: boolean;
 }): ProjectionDoseRecommendation {
-  const trailingWeeks = input.microcycles.slice(-3);
-  const averageLoad =
-    trailingWeeks.length === 0
-      ? 0
-      : trailingWeeks.reduce((sum, cycle) => sum + cycle.planned_weekly_tss, 0) /
-        trailingWeeks.length;
-  const maxWeeklyDuration = input.preferenceProfile?.dose_limits.max_weekly_duration_minutes;
-  const recommendedMinutes = round1(
-    Math.max(
-      90,
-      maxWeeklyDuration === undefined
-        ? averageLoad * 0.58
-        : Math.min(maxWeeklyDuration, averageLoad * 0.58),
-    ),
-  );
-  const recommendedSessions = Math.max(
-    input.preferenceProfile?.dose_limits.min_sessions_per_week ?? 3,
-    Math.min(
-      input.preferenceProfile?.dose_limits.max_sessions_per_week ?? 6,
-      Math.round(recommendedMinutes / 75),
-    ),
-  );
-  const keySessionCount = Math.max(1, Math.min(3, Math.round(recommendedSessions * 0.4)));
-  const longSessionCeilingMinutes = Math.round(
-    Math.min(
-      input.preferenceProfile?.dose_limits.max_single_session_duration_minutes ?? 180,
-      Math.max(75, recommendedMinutes * 0.32),
-    ),
-  );
+  const averageLoad = resolveRecommendedWeeklyLoad(input.microcycles);
+  const recommendedMinutes = resolveRecommendedWeeklyDurationMinutes({
+    averageLoad,
+    preferenceProfile: input.preferenceProfile,
+  });
+  const recommendedSessions = resolveRecommendedSessionCount({
+    recommendedMinutes,
+    preferenceProfile: input.preferenceProfile,
+  });
+  const keySessionCount = resolveKeySessionCount(recommendedSessions);
+  const longSessionCeilingMinutes = resolveLongSessionCeilingMinutes({
+    recommendedMinutes,
+    preferenceProfile: input.preferenceProfile,
+  });
   const recoveryPressure = round3(
     clamp01(
       input.recoveryWeeks / Math.max(1, input.microcycles.length) + input.clampPressure * 0.45,
@@ -3364,6 +3428,172 @@ function buildDoseRecommendation(input: {
       recoveryPressure > 0.45 ? "recovery_pressure_elevated" : "recovery_pressure_managed",
     ],
   };
+}
+
+function buildProjectionLoadResolutionSummary(input: {
+  microcycles: DeterministicProjectionMicrocycle[];
+  evidenceConfidenceScore: number;
+  demandGapUnmetRatio: number;
+}): ProjectionLoadResolutionSummary {
+  const weekCount = input.microcycles.length;
+  if (weekCount === 0) {
+    return {
+      week_count: 0,
+      capped_weeks: 0,
+      tss_ramp_capped_weeks: 0,
+      ctl_ramp_capped_weeks: 0,
+      demand_floor_weeks: 0,
+      demand_floor_override_weeks: 0,
+      recovery_adjusted_weeks: 0,
+      recovery_weeks: 0,
+      average_baseline_to_final_delta_tss: 0,
+      average_requested_to_final_delta_tss: 0,
+      average_mpc_to_final_delta_tss: 0,
+      max_requested_to_final_delta_tss: 0,
+      limiting_constraints: [],
+      confidence: "low",
+      confidence_reasons: ["no_projection_weeks"],
+    };
+  }
+
+  let baselineToFinalDelta = 0;
+  let requestedToFinalDelta = 0;
+  let mpcToFinalDelta = 0;
+  let maxRequestedToFinalDelta = 0;
+  let tssRampCappedWeeks = 0;
+  let ctlRampCappedWeeks = 0;
+  let demandFloorWeeks = 0;
+  let demandFloorOverrideWeeks = 0;
+  let recoveryAdjustedWeeks = 0;
+  let recoveryWeeks = 0;
+  const constraintCounts = new Map<string, number>();
+
+  for (const microcycle of input.microcycles) {
+    const resolution = microcycle.metadata.load_resolution;
+    const requestedDelta = resolution.final_weekly_tss - resolution.preference_adjusted_tss;
+
+    baselineToFinalDelta += resolution.final_weekly_tss - resolution.baseline_tss;
+    requestedToFinalDelta += requestedDelta;
+    mpcToFinalDelta += resolution.final_weekly_tss - resolution.mpc_selected_tss;
+    maxRequestedToFinalDelta = Math.max(maxRequestedToFinalDelta, Math.abs(requestedDelta));
+
+    if (resolution.demand_floor_tss !== null) {
+      demandFloorWeeks += 1;
+    }
+    if (resolution.constraints.includes("demand_floor_above_requested_load")) {
+      demandFloorOverrideWeeks += 1;
+    }
+    if (resolution.constraints.includes("weekly_tss_ramp_cap")) {
+      tssRampCappedWeeks += 1;
+    }
+    if (resolution.constraints.includes("weekly_ctl_ramp_cap")) {
+      ctlRampCappedWeeks += 1;
+    }
+    if (resolution.constraints.includes("recovery_segment")) {
+      recoveryWeeks += 1;
+      recoveryAdjustedWeeks += 1;
+    }
+
+    for (const constraint of resolution.constraints) {
+      constraintCounts.set(constraint, (constraintCounts.get(constraint) ?? 0) + 1);
+    }
+  }
+
+  const cappedWeeks = new Set(
+    input.microcycles
+      .filter((microcycle) => {
+        const constraints = microcycle.metadata.load_resolution.constraints;
+        return (
+          constraints.includes("weekly_tss_ramp_cap") || constraints.includes("weekly_ctl_ramp_cap")
+        );
+      })
+      .map((microcycle) => microcycle.week_start_date),
+  ).size;
+  const confidenceReasons = [
+    ...(input.evidenceConfidenceScore < 0.5 ? ["low_evidence_confidence"] : []),
+    ...(cappedWeeks / weekCount > 0.3 ? ["frequent_safety_caps"] : []),
+    ...(demandFloorOverrideWeeks > 0 ? ["demand_floor_overrides_requested_load"] : []),
+    ...(input.demandGapUnmetRatio > 0.15 ? ["unmet_goal_demand"] : []),
+  ];
+  const confidence: ProjectionFloorConfidence =
+    confidenceReasons.length >= 2 || input.evidenceConfidenceScore < 0.45
+      ? "low"
+      : confidenceReasons.length === 1 || input.evidenceConfidenceScore < 0.7
+        ? "medium"
+        : "high";
+
+  return {
+    week_count: weekCount,
+    capped_weeks: cappedWeeks,
+    tss_ramp_capped_weeks: tssRampCappedWeeks,
+    ctl_ramp_capped_weeks: ctlRampCappedWeeks,
+    demand_floor_weeks: demandFloorWeeks,
+    demand_floor_override_weeks: demandFloorOverrideWeeks,
+    recovery_adjusted_weeks: recoveryAdjustedWeeks,
+    recovery_weeks: recoveryWeeks,
+    average_baseline_to_final_delta_tss: round1(baselineToFinalDelta / weekCount),
+    average_requested_to_final_delta_tss: round1(requestedToFinalDelta / weekCount),
+    average_mpc_to_final_delta_tss: round1(mpcToFinalDelta / weekCount),
+    max_requested_to_final_delta_tss: round1(maxRequestedToFinalDelta),
+    limiting_constraints: [...constraintCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([constraint]) => constraint),
+    confidence,
+    confidence_reasons:
+      confidenceReasons.length > 0 ? confidenceReasons : ["load_resolution_stable"],
+  };
+}
+
+function resolveRecommendedWeeklyLoad(microcycles: DeterministicProjectionMicrocycle[]): number {
+  const trailingWeeks = microcycles.slice(-3);
+  return trailingWeeks.length === 0
+    ? 0
+    : trailingWeeks.reduce((sum, cycle) => sum + cycle.planned_weekly_tss, 0) /
+        trailingWeeks.length;
+}
+
+function resolveRecommendedWeeklyDurationMinutes(input: {
+  averageLoad: number;
+  preferenceProfile?: AthletePreferenceProfile;
+}): number {
+  const maxWeeklyDuration = input.preferenceProfile?.dose_limits.max_weekly_duration_minutes;
+  const rawMinutes = input.averageLoad * 0.58;
+
+  return round1(
+    Math.max(
+      90,
+      maxWeeklyDuration === undefined ? rawMinutes : Math.min(maxWeeklyDuration, rawMinutes),
+    ),
+  );
+}
+
+function resolveRecommendedSessionCount(input: {
+  recommendedMinutes: number;
+  preferenceProfile?: AthletePreferenceProfile;
+}): number {
+  return Math.max(
+    input.preferenceProfile?.dose_limits.min_sessions_per_week ?? 3,
+    Math.min(
+      input.preferenceProfile?.dose_limits.max_sessions_per_week ?? 6,
+      Math.round(input.recommendedMinutes / 75),
+    ),
+  );
+}
+
+function resolveKeySessionCount(recommendedSessions: number): number {
+  return Math.max(1, Math.min(3, Math.round(recommendedSessions * 0.4)));
+}
+
+function resolveLongSessionCeilingMinutes(input: {
+  recommendedMinutes: number;
+  preferenceProfile?: AthletePreferenceProfile;
+}): number {
+  return Math.round(
+    Math.min(
+      input.preferenceProfile?.dose_limits.max_single_session_duration_minutes ?? 180,
+      Math.max(75, input.recommendedMinutes * 0.32),
+    ),
+  );
 }
 
 function resolveRiskLevel(input: {
@@ -3995,6 +4225,16 @@ function buildDeterministicProjectionPayloadInternal(
     if (weekSignals.recoveryOverlap.goal_ids.length > 0) {
       recoveryWeeks += 1;
     }
+    const loadResolution = buildWeeklyLoadResolution({
+      weekStartDate,
+      weekSignals,
+      referenceContext,
+      weeklyDecision,
+      cappedDecision,
+      tssRampClamped,
+      ctlRampClamped,
+      appliedWeeklyTss,
+    });
 
     for (let dayOffset = 0; dayOffset < daysInWeek; dayOffset += 1) {
       const dayDate = addDaysDateOnlyUtc(weekStartDate, dayOffset);
@@ -4021,6 +4261,7 @@ function buildDeterministicProjectionPayloadInternal(
       planned_weekly_tss: appliedWeeklyTss,
       projected_ctl: round1(currentCtl),
       metadata: {
+        load_resolution: loadResolution,
         recovery: {
           active: weekSignals.recoveryOverlap.goal_ids.length > 0,
           goal_ids: weekSignals.recoveryOverlap.goal_ids,
@@ -4108,6 +4349,12 @@ function buildDeterministicProjectionPayloadInternal(
     confidence: evidenceConfidenceScore,
     projectionWeeks: Math.max(1, microcycles.length),
   });
+  const loadResolutionSummary = buildProjectionLoadResolutionSummary({
+    microcycles,
+    evidenceConfidenceScore,
+    demandGapUnmetRatio: projectionFeasibility.demand_gap.unmet_ratio,
+  });
+  projectionDiagnostics.load_resolution_summary = loadResolutionSummary;
   const clampPressure = (tssRampClampWeeks + ctlRampClampWeeks) / Math.max(1, microcycles.length);
   const planningConfidence = computePlanningConfidence({
     evidence_score: evidenceConfidenceScore * 100,
@@ -4442,6 +4689,7 @@ function buildDeterministicProjectionPayloadInternal(
     risk_level: riskAssessment.riskLevel,
     risk_flags: uniqueRiskFlags,
     caps_applied: [],
+    load_resolution_summary: loadResolutionSummary,
     projection_diagnostics: projectionDiagnostics,
     optimization_tradeoff_summary: projectionDiagnostics.optimization_tradeoff_summary,
     sport_load_states: sportLoadStates,

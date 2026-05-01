@@ -32,3 +32,34 @@ export function weightedMean(values: number[], weights: number[]): number {
 
   return weightedSum / totalWeight;
 }
+
+export interface WeightedScoreComponent {
+  value: number;
+  weight: number;
+}
+
+/**
+ * Computes a normalized weighted score from named component objects.
+ *
+ * This keeps score blends stable when calibration overrides do not sum to 1.
+ */
+export function weightedScore(components: WeightedScoreComponent[]): number {
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const component of components) {
+    if (!Number.isFinite(component.value) || !Number.isFinite(component.weight)) {
+      continue;
+    }
+
+    const weight = Math.max(0, component.weight);
+    weightedSum += component.value * weight;
+    totalWeight += weight;
+  }
+
+  if (totalWeight <= 0) {
+    return 0;
+  }
+
+  return weightedSum / totalWeight;
+}

@@ -7,6 +7,7 @@ import {
   computeOptimalTsb,
   READINESS_TIMELINE,
 } from "../calibration-constants";
+import { weightedScore } from "../scoring/weightedMean";
 import type { CapacityEnvelopeResult, EvidenceState } from "./capacity-envelope";
 import { computeEventRecoveryProfile, computePostEventFatiguePenalty } from "./event-recovery";
 
@@ -116,6 +117,24 @@ export interface PlanningConfidenceResult {
   rationale_codes: string[];
 }
 
+function compareGoalPriorityAndDate(
+  left: ProjectionPointReadinessGoalInput,
+  right: ProjectionPointReadinessGoalInput,
+): number {
+  const priorityDelta = (right.priority ?? 0) - (left.priority ?? 0);
+  if (priorityDelta !== 0) {
+    return priorityDelta;
+  }
+
+  return left.target_date.localeCompare(right.target_date);
+}
+
+function resolvePrimaryGoal(
+  goals: ProjectionPointReadinessGoalInput[],
+): ProjectionPointReadinessGoalInput | undefined {
+  return [...goals].sort(compareGoalPriorityAndDate)[0];
+}
+
 export function computeDurabilityScore(input: {
   weekly_tss: number[];
   durability_penalties?: TrainingPlanCalibrationConfig["durability_penalties"];
@@ -176,11 +195,12 @@ export function computeCompositeReadiness(
   });
   const effectiveEvidenceContribution = evidenceScore * (0.3 + evidenceSupport * 0.4);
 
-  const readinessRaw =
-    targetAttainmentScore * targetWeight +
-    envelopeScore * envelopeWeight +
-    durabilityScore * durabilityWeight +
-    effectiveEvidenceContribution * evidenceWeight;
+  const readinessRaw = weightedScore([
+    { value: targetAttainmentScore, weight: targetWeight },
+    { value: envelopeScore, weight: envelopeWeight },
+    { value: durabilityScore, weight: durabilityWeight },
+    { value: effectiveEvidenceContribution, weight: evidenceWeight },
+  ]);
   const readinessScore = clampScore(readinessRaw);
 
   const baseConfidence = evidenceScore * 0.62 + envelopeScore * 0.24 + durabilityScore * 0.14;
@@ -481,22 +501,28 @@ export function computeProjectionPointReadinessScores(input: {
 
   const goals = input.goals ?? [];
   const timelineCalibration = input.timeline_calibration;
+  const pointIndexByDate = new Map(input.points.map((point, index) => [point.date, index]));
 
   const resolveGoalIndex = (targetDate: string): number => {
-    const exactIndex = input.points.findIndex((point) => point.date === targetDate);
-    if (exactIndex >= 0) {
+    const exactIndex = pointIndexByDate.get(targetDate);
+    if (exactIndex !== undefined) {
       return exactIndex;
     }
 
     let nearestDistance = Number.POSITIVE_INFINITY;
     let nearestIndex = 0;
+    const targetMs = Date.parse(`${targetDate}T00:00:00.000Z`);
     for (let i = 0; i < input.points.length; i += 1) {
       const candidatePoint = input.points[i];
       if (!candidatePoint) {
         continue;
       }
 
-      const distance = Math.abs(diffDateOnlyUtcDays(candidatePoint.date, targetDate));
+      const candidateMs = Date.parse(`${candidatePoint.date}T00:00:00.000Z`);
+      const distance =
+        Number.isNaN(candidateMs) || Number.isNaN(targetMs)
+          ? Math.abs(diffDateOnlyUtcDays(candidatePoint.date, targetDate))
+          : Math.abs(candidateMs - targetMs);
       if (distance < nearestDistance) {
         nearestDistance = distance;
         nearestIndex = i;
@@ -507,7 +533,7 @@ export function computeProjectionPointReadinessScores(input: {
   };
 
   // Compute event-duration-aware optimal TSB
-  const primaryGoal = goals[0];
+  const primaryGoal = resolvePrimaryGoal(goals);
   const primaryTarget = primaryGoal?.targets?.[0];
   const eventDurationHours =
     primaryTarget?.target_type === "race_performance" && primaryTarget.target_time_s

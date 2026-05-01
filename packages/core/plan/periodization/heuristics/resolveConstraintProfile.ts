@@ -1,8 +1,10 @@
 import type { CalculatedParameter } from "../../../schemas/planning";
 import type { AthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
 import type { CanonicalSport } from "../../../schemas/sport";
-import type { OptimizationProfile } from "../../projection/safety-caps";
-import { RISK_PROFILE_DEFAULTS } from "../constants";
+import {
+  getProjectionProfileDefaults,
+  type OptimizationProfile,
+} from "../../projection/safety-caps";
 import { getSportModelConfig } from "../sports";
 import {
   applyProgressionPaceModifier,
@@ -30,7 +32,7 @@ export interface ResolvedConstraintProfile {
 }
 
 export function resolveConstraintProfile(input: ConstraintProfileInput): ResolvedConstraintProfile {
-  const defaults = RISK_PROFILE_DEFAULTS[input.optimizationProfile];
+  const defaults = getProjectionProfileDefaults(input.optimizationProfile);
   const sportBaseline = getSportModelConfig(input.sport);
   const progressionParameter = applyProgressionPaceModifier(
     1,
@@ -47,12 +49,12 @@ export function resolveConstraintProfile(input: ConstraintProfileInput): Resolve
     input.preferenceProfile.training_style.strength_integration_priority,
   );
   const weeklyRamp = Math.min(
-    defaults.maxWeeklyTssRampPct,
-    defaults.maxWeeklyTssRampPct * progressionParameter.effective,
+    defaults.max_weekly_tss_ramp_pct,
+    defaults.max_weekly_tss_ramp_pct * progressionParameter.effective,
   );
   const ctlRamp = Math.min(
-    defaults.maxCtlRampPerWeek,
-    defaults.maxCtlRampPerWeek * progressionParameter.effective,
+    defaults.max_ctl_ramp_per_week,
+    defaults.max_ctl_ramp_per_week * progressionParameter.effective,
   );
 
   return {
@@ -62,7 +64,7 @@ export function resolveConstraintProfile(input: ConstraintProfileInput): Resolve
     effective_max_ctl_ramp_per_week: Math.round(ctlRamp * 100) / 100,
     effective_acwr_ceiling: Math.round(fatigueToleranceParameter.effective * 1000) / 1000,
     effective_post_goal_recovery_days: Math.max(
-      defaults.postGoalRecoveryDays,
+      defaults.post_goal_recovery_days,
       Math.round(input.preferenceProfile.recovery_preferences.post_goal_recovery_days),
     ),
     effective_tsb_floor: -Math.round((5 + weeklyRamp / 2) * 100) / 100,
