@@ -297,6 +297,7 @@ describe("fitFilesRouter", () => {
       name: "Morning Ride",
       notes: "Imported",
       activityType: "bike",
+      is_private: false,
       importProvenance: {
         import_source: "manual_historical",
         import_file_type: "fit",
@@ -525,7 +526,13 @@ describe("fitFilesRouter", () => {
   it("returns parsed streams for an owned activity", async () => {
     const activityId = "66666666-6666-4666-8666-666666666666";
     const { db } = createDbMock({
-      findFirstResults: [{ profile_id: "11111111-1111-4111-8111-111111111111", is_private: true }],
+      findFirstResults: [
+        {
+          profile_id: "11111111-1111-4111-8111-111111111111",
+          is_private: true,
+          fit_file_path: "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
+        },
+      ],
     });
 
     mocks.parseFitFileWithSDK.mockReturnValue({
@@ -538,16 +545,41 @@ describe("fitFilesRouter", () => {
 
     const caller = createCaller({ db });
     const result = await caller.getStreams({
-      fitFilePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+      fitFilePath: "11111111-1111-4111-8111-111111111111/ignored.fit",
       activityId,
     });
 
+    expect(mocks.storage.download).toHaveBeenCalledWith(
+      "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
+    );
     expect(result).toEqual({
       records: [{ timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240 }],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
       summary: { totalTime: 1800, totalDistance: 20000 },
     });
+  });
+
+  it("rejects stream access when an authorized activity has no FIT file", async () => {
+    const activityId = "77777777-7777-4777-8777-777777777777";
+    const { db } = createDbMock({
+      findFirstResults: [
+        {
+          profile_id: "11111111-1111-4111-8111-111111111111",
+          is_private: true,
+          fit_file_path: null,
+        },
+      ],
+    });
+
+    const caller = createCaller({ db });
+
+    await expect(
+      caller.getStreams({
+        fitFilePath: "11111111-1111-4111-8111-111111111111/ignored.fit",
+        activityId,
+      }),
+    ).rejects.toThrow("Activity does not have an associated FIT file");
   });
 
   it("cleans up malformed parsed FIT data during processing", async () => {

@@ -48,6 +48,7 @@ function SubmitScreen() {
     async (data: ActivitySubmissionFormData) => {
       // Pass all form data to submission.update
       submission.update({
+        is_private: data.is_private,
         name: data.name,
         notes: data.notes ?? undefined,
       });

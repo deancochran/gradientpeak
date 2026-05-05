@@ -175,6 +175,7 @@ const processFitFileInput = z
     name: z.string().trim().min(1, "Activity name is required"),
     notes: z.string().trim().optional(),
     activityType: z.string().trim().min(1, "Activity type is required"),
+    is_private: z.boolean().optional(),
     importProvenance: manualHistoricalImportProvenanceSchema.optional(),
   })
   .strict();
@@ -258,6 +259,7 @@ async function createActivityRecord(
     name: string;
     notes: string | null;
     activityType: string;
+    isPrivate: boolean;
     startedAt: Date;
     finishedAt: Date;
     durationSeconds: number;
@@ -330,7 +332,7 @@ async function createActivityRecord(
       ${input.name},
       ${input.notes},
       ${input.activityType},
-      ${true},
+      ${input.isPrivate},
       ${input.startedAt},
       ${input.finishedAt},
       ${input.durationSeconds},
@@ -367,9 +369,14 @@ async function createActivityRecord(
   });
 }
 
-async function canAccessActivityStreams(db: DbClient, activityId: string, userId: string) {
+async function canAccessActivityStreams(
+  db: DbClient,
+  activityId: string,
+  userId: string,
+): Promise<string | null> {
   const activity = await db.query.activities.findFirst({
     columns: {
+      fit_file_path: true,
       profile_id: true,
       is_private: true,
     },
@@ -381,7 +388,7 @@ async function canAccessActivityStreams(db: DbClient, activityId: string, userId
   }
 
   if (activity.profile_id === userId || !activity.is_private) {
-    return;
+    return activity.fit_file_path ?? null;
   }
 
   const followResult = await db.execute(sql<{ has_access: boolean }>`
@@ -401,6 +408,8 @@ async function canAccessActivityStreams(db: DbClient, activityId: string, userId
         "Access denied: You can only access your own activities or public activities from users you follow",
     });
   }
+
+  return activity.fit_file_path ?? null;
 }
 
 function serializeActivityDates<T extends Record<string, unknown>>(activity: T): T {
@@ -475,7 +484,7 @@ export const fitFilesRouter = createTRPCRouter({
    * Process a FIT file that has been uploaded to storage
    */
   processFitFile: protectedProcedure.input(processFitFileInput).mutation(async ({ ctx, input }) => {
-    const { fitFilePath, name, notes, activityType, importProvenance } = input;
+    const { fitFilePath, name, notes, activityType, is_private, importProvenance } = input;
     const userId = ctx.session?.user?.id;
     const supabase = storageService;
     const db = getRequiredDb(ctx);
@@ -811,6 +820,7 @@ export const fitFilesRouter = createTRPCRouter({
           name,
           notes: notes || null,
           activityType,
+          isPrivate: is_private ?? true,
           startedAt: startTime,
           finishedAt: endTime,
           durationSeconds: Math.round(duration),
@@ -1299,13 +1309,23 @@ export const fitFilesRouter = createTRPCRouter({
       }
 
       try {
+        let resolvedFitFilePath = fitFilePath.trim();
+
         // If activityId is provided, use proper database-driven authorization
         if (activityId) {
-          await canAccessActivityStreams(db, activityId, userId);
+          const authorizedFitFilePath = await canAccessActivityStreams(db, activityId, userId);
+
+          if (!authorizedFitFilePath) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Activity does not have an associated FIT file",
+            });
+          }
+
+          resolvedFitFilePath = authorizedFitFilePath;
         } else {
           // Fallback: legacy behavior - check file path ownership directly
-          const cleanPath = fitFilePath.trim();
-          const isOwnFile = isOwnedFitFilePath(userId, cleanPath);
+          const isOwnFile = isOwnedFitFilePath(userId, resolvedFitFilePath);
 
           if (!isOwnFile) {
             throw new Error("Access denied: You can only access your own files");
@@ -1315,7 +1335,7 @@ export const fitFilesRouter = createTRPCRouter({
         // Download FIT file from storage
         const { data: fitFile, error: downloadError } = await supabase.storage
           .from("fit-files")
-          .download(fitFilePath.trim());
+          .download(resolvedFitFilePath);
 
         if (downloadError || !fitFile) {
           throw new TRPCError({
