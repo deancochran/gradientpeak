@@ -15,6 +15,7 @@ import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { buildTimelineEvents, buildTimelineEventsByDate } from "@/lib/calendar/timelineEvents";
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -140,9 +141,21 @@ export default function CalendarDayScreen() {
   const events = useMemo(() => (data?.items ?? []) as CalendarEvent[], [data?.items]);
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
   const profileGoals = useProfileGoals();
+  const timelineEvents = useMemo(
+    () => buildTimelineEvents({ calendarEvents: events, goals: profileGoals.goals, todayKey }),
+    [events, profileGoals.goals, todayKey],
+  );
+  const timelineEventsByDate = useMemo(
+    () => buildTimelineEventsByDate(timelineEvents),
+    [timelineEvents],
+  );
   const visibleEvents = useMemo(
     () => (eventsByDate.get(dateKey) ?? []).filter((event) => event.event_type !== "rest_day"),
     [dateKey, eventsByDate],
+  );
+  const visibleTimelineEvents = useMemo(
+    () => (timelineEventsByDate.get(dateKey) ?? []).filter((event) => event.type !== "rest_day"),
+    [dateKey, timelineEventsByDate],
   );
   const plannedEventsOnDate = useMemo(
     () => visibleEvents.filter((event) => event.event_type === "planned" && event.activity_plan),
@@ -152,7 +165,7 @@ export default function CalendarDayScreen() {
     () => profileGoals.goals.filter((goal) => goal.target_date === dateKey),
     [dateKey, profileGoals.goals],
   );
-  const isRestDay = plannedEventsOnDate.length === 0 && goalsOnDate.length === 0;
+  const isRestDay = visibleTimelineEvents.length === 0;
   const title = useMemo(() => formatCalendarDayTitle(dateKey, todayKey), [dateKey, todayKey]);
 
   const handleOpenEvent = (event: CalendarEvent) => {

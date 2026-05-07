@@ -21,6 +21,11 @@ import {
   buildCalendarQueryWindow,
   ensureCalendarQueryWindowCovers,
 } from "@/lib/calendar/queryWindow";
+import {
+  buildTimelineEvents,
+  buildTimelineEventsByDate,
+  type TimelineEvent,
+} from "@/lib/calendar/timelineEvents";
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -47,25 +52,27 @@ function buildSelectedDaySummary({
   dateKey,
   todayKey,
   events,
-  hasGoal,
+  timelineEvents,
 }: {
   dateKey: string;
   todayKey: string;
   events: CalendarEvent[];
-  hasGoal: boolean;
+  timelineEvents: TimelineEvent[];
 }) {
+  const hasGoal = timelineEvents.some((event) => event.type === "goal");
+  const eventCount = timelineEvents.filter((event) => event.type !== "goal").length;
   const plannedEvents = events.filter((event) => event.event_type === "planned");
   const primaryTitle =
     plannedEvents[0]?.activity_plan?.name ?? plannedEvents[0]?.title ?? events[0]?.title ?? null;
 
   let headline = "No workouts scheduled";
-  if (events.length === 1) {
+  if (eventCount === 1) {
     headline = "1 session scheduled";
-  } else if (events.length > 1) {
-    headline = `${events.length} sessions scheduled`;
+  } else if (eventCount > 1) {
+    headline = `${eventCount} sessions scheduled`;
   }
 
-  if (hasGoal && events.length === 0) {
+  if (hasGoal && eventCount === 0) {
     headline = "Goal milestone day";
   }
 
@@ -165,6 +172,14 @@ function CalendarScreen() {
   );
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
   const profileGoals = useProfileGoals();
+  const timelineEvents = useMemo(
+    () => buildTimelineEvents({ calendarEvents: events, goals: profileGoals.goals, todayKey }),
+    [events, profileGoals.goals, todayKey],
+  );
+  const timelineEventsByDate = useMemo(
+    () => buildTimelineEventsByDate(timelineEvents),
+    [timelineEvents],
+  );
   const goalDates = useMemo(
     () => new Set(profileGoals.goals.map((goal) => goal.target_date)),
     [profileGoals.goals],
@@ -179,9 +194,9 @@ function CalendarScreen() {
         dateKey: activeDate,
         todayKey,
         events: selectedDayEvents,
-        hasGoal: goalDates.has(activeDate),
+        timelineEvents: timelineEventsByDate.get(activeDate) ?? [],
       }),
-    [activeDate, goalDates, selectedDayEvents, todayKey],
+    [activeDate, selectedDayEvents, timelineEventsByDate, todayKey],
   );
 
   const extendMonthRangeBackward = useCallback(() => {

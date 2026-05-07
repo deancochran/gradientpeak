@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { buildGoalOverlays } from "@/lib/analytics/goalOverlays";
 import { type useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { type useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 
@@ -25,6 +26,8 @@ export type PlanReadinessGoalMarker = {
   targetDate: string;
   label?: string;
   status?: string;
+  color?: string;
+  targetMetric?: string | null;
 };
 
 export type PlanWeeklyLoadBar = {
@@ -280,20 +283,22 @@ export function usePlanDashboardViewModel({
     return null;
   }, [goals.goals, snapshot.idealCurveData]);
 
+  const todayKey = today.toISOString().split("T")[0] ?? "";
+  const goalOverlays = useMemo(
+    () => buildGoalOverlays({ goals: goals.goals, todayKey }),
+    [goals.goals, todayKey],
+  );
   const profileGoalMarkers = useMemo(
     () =>
-      goals.goals
-        .filter(
-          (goal): goal is typeof goal & { target_date: string } =>
-            typeof goal.target_date === "string" && goal.target_date.length > 0,
-        )
-        .sort((left, right) => left.target_date.localeCompare(right.target_date))
-        .map((goal) => ({
-          id: goal.id,
-          targetDate: goal.target_date,
-          label: goal.title,
-        })),
-    [goals.goals],
+      goalOverlays.map((overlay) => ({
+        id: overlay.goalId,
+        targetDate: overlay.targetDate,
+        label: overlay.label,
+        status: overlay.status,
+        color: overlay.color,
+        targetMetric: overlay.targetMetric,
+      })),
+    [goalOverlays],
   );
 
   const projectionDashboard = snapshot.insightTimeline?.projection_dashboard ?? null;
@@ -371,6 +376,9 @@ export function usePlanDashboardViewModel({
             targetDate: goal.target_date,
             label: goal.title,
             status: goal.status,
+            color: profileGoalMarkers.find((marker) => marker.id === goal.goal_id)?.color,
+            targetMetric: profileGoalMarkers.find((marker) => marker.id === goal.goal_id)
+              ?.targetMetric,
           }))
         : profileGoalMarkers;
 

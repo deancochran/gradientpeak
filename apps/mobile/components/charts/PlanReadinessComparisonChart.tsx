@@ -16,7 +16,14 @@ export interface PlanReadinessComparisonPoint {
 
 export interface PlanReadinessComparisonChartProps {
   points: PlanReadinessComparisonPoint[];
-  goalMarkers?: Array<{ id: string; targetDate: string; label?: string; status?: string }>;
+  goalMarkers?: Array<{
+    id: string;
+    targetDate: string;
+    label?: string;
+    status?: string;
+    color?: string;
+    targetMetric?: string | null;
+  }>;
   zones?: Array<{ id: string; label: string; min: number; max: number }>;
   today?: string;
   accessibilitySummary?: string;
@@ -291,7 +298,7 @@ export function PlanReadinessComparisonChart({
                       key={`readiness-goal-${marker.id}`}
                       p1={vec(targetPoint.x, chartBounds.bottom)}
                       p2={vec(targetPoint.x, chartBounds.top)}
-                      color="rgba(34, 197, 94, 0.55)"
+                      color={marker.color ?? "rgba(34, 197, 94, 0.55)"}
                       strokeWidth={1.5}
                     >
                       <DashPathEffect intervals={[4, 4]} />

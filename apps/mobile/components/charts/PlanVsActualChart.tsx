@@ -37,6 +37,9 @@ export interface PlanVsActualChartProps {
     id: string;
     targetDate: string;
     label?: string;
+    status?: string;
+    color?: string;
+    targetMetric?: string | null;
   }>;
   goalMetrics?: {
     targetCTL: number;
@@ -385,6 +388,7 @@ export function PlanVsActualChart({
         weekKey: string;
         targetDate: string;
         count: number;
+        color: string;
       }
     >();
 
@@ -400,6 +404,7 @@ export function PlanVsActualChart({
         weekKey,
         targetDate: marker.targetDate,
         count: 1,
+        color: marker.color ?? "rgba(34, 197, 94, 0.6)",
       });
     }
 
@@ -598,7 +603,7 @@ export function PlanVsActualChart({
                           <SkiaLine
                             p1={vec(targetPoint.x, chartBounds.bottom)}
                             p2={vec(targetPoint.x, chartBounds.top + 12)}
-                            color="rgba(34, 197, 94, 0.6)"
+                            color={marker.color}
                             strokeWidth={2}
                           >
                             <DashPathEffect intervals={[4, 4]} />
