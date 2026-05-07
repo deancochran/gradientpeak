@@ -554,6 +554,10 @@ function MiniLineVisual({
   );
 }
 
+export default function TrendsTabScreen() {
+  return <TrendsInsightsSurface />;
+}
+
 function MiniBarVisual({ points, tone }: { points: InsightPoint[]; tone: Tone }) {
   const visiblePoints = points.slice(-12);
   if (visiblePoints.length === 0) return <EmptyMiniVisual />;
@@ -1418,7 +1422,11 @@ function TrendInsightDetailModal({
   );
 }
 
-export default function TrendsTabScreen() {
+type TrendsInsightsSurfaceProps = {
+  embedded?: boolean;
+};
+
+export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfaceProps) {
   const [selectedInsight, setSelectedInsight] = React.useState<Insight | null>(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const range = React.useMemo(() => {
@@ -1518,25 +1526,65 @@ export default function TrendsTabScreen() {
   ]);
 
   return (
-    <View className="flex-1 bg-background" testID="trends-tab-screen">
-      <AppHeader title="Trends" />
+    <View
+      className={embedded ? "gap-4" : "flex-1 bg-background"}
+      testID={embedded ? "profile-trends-section" : "trends-tab-screen"}
+    >
+      {embedded ? (
+        <View className="gap-1">
+          <Text className="text-lg font-semibold text-foreground">Analytics & Trends</Text>
+          <Text className="text-sm text-muted-foreground">
+            Visual summaries from profile metrics, training load, consistency, volume, and recent
+            performance.
+          </Text>
+        </View>
+      ) : (
+        <AppHeader title="Trends" />
+      )}
       {isLoading ? (
-        <View className="flex-1 items-center justify-center">
+        <View
+          className={
+            embedded
+              ? "items-center justify-center rounded-3xl border border-border bg-card p-6"
+              : "flex-1 items-center justify-center"
+          }
+        >
           <ActivityIndicator />
           <Text className="mt-3 text-sm text-muted-foreground">Building your insight cards...</Text>
         </View>
       ) : hasError ? (
-        <ScrollView
-          contentContainerClassName="flex-grow items-center justify-center px-6"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        >
-          <Text className="text-center text-lg font-semibold text-foreground">
-            Unable to load trends
-          </Text>
-          <Text className="mt-2 text-center text-sm text-muted-foreground">
-            Some insight data could not be loaded. Pull to refresh or try again later.
-          </Text>
-        </ScrollView>
+        embedded ? (
+          <View className="items-center justify-center rounded-3xl border border-border bg-card p-6">
+            <Text className="text-center text-lg font-semibold text-foreground">
+              Unable to load trends
+            </Text>
+            <Text className="mt-2 text-center text-sm text-muted-foreground">
+              Some insight data could not be loaded. Try again later.
+            </Text>
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerClassName="flex-grow items-center justify-center px-6"
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+          >
+            <Text className="text-center text-lg font-semibold text-foreground">
+              Unable to load trends
+            </Text>
+            <Text className="mt-2 text-center text-sm text-muted-foreground">
+              Some insight data could not be loaded. Pull to refresh or try again later.
+            </Text>
+          </ScrollView>
+        )
+      ) : embedded ? (
+        <View className="flex-row flex-wrap gap-4">
+          {insights.map((insight) => (
+            <TrendInsightCard
+              key={insight.id}
+              insight={insight}
+              onPress={() => setSelectedInsight(insight)}
+            />
+          ))}
+        </View>
       ) : (
         <ScrollView
           contentContainerClassName="gap-5 p-5 pb-10"

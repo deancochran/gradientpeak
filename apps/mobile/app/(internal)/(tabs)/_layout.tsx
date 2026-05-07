@@ -2,7 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Tabs } from "expo-router";
-import { BarChart3, CalendarDays, Circle, Home } from "lucide-react-native";
+import { CalendarDays, Circle, Home } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
@@ -110,9 +110,7 @@ export default function InternalLayout() {
         <Tabs.Screen
           name="trends"
           options={{
-            title: "Trends",
-            tabBarIcon: ({ color }) => <Icon as={BarChart3} size={28} color={color} />,
-            tabBarButtonTestID: "tab-button-trends",
+            href: null,
           }}
         />
         <Tabs.Screen

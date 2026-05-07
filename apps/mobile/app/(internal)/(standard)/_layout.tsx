@@ -37,6 +37,12 @@ import { TouchableOpacity } from "react-native";
  * - schedule-activity - Schedule activity to calendar
  * - scheduled-activities-list - View all scheduled activities
  *
+ * GOALS:
+ * - goals-list - Browse and filter athlete goals
+ * - goal-detail - Individual goal intelligence destination
+ * - goal-create - Create a goal
+ * - goal-edit - Edit a goal
+ *
  * TRAINING PLANS:
  * - training-plans-list - Training plan management
  * - training-plan-detail - Training plan overview
@@ -181,9 +187,27 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="goals-list"
+        options={{
+          title: "Goals",
+        }}
+      />
+      <Stack.Screen
         name="goal-detail"
         options={{
           title: "Goal Details",
+        }}
+      />
+      <Stack.Screen
+        name="goal-create"
+        options={{
+          title: "Create Goal",
+        }}
+      />
+      <Stack.Screen
+        name="goal-edit"
+        options={{
+          title: "Edit Goal",
         }}
       />
 

@@ -8,8 +8,12 @@ const refetchActivePlanMock = jest.fn(async () => undefined);
 const refetchSnapshotMock = jest.fn(async () => undefined);
 const recentEventsUpdatedAtRef = { current: 1 };
 const upcomingEventsUpdatedAtRef = { current: 1 };
+const goalsUpdatedAtRef = { current: 1 };
 const activePlanQueryOptionsRef = { current: null as any };
 const eventQueryOptionsRef = { current: [] as any[] };
+let mockDetailDateRange: "7d" | "30d" | "90d" | "all" = "90d";
+const readinessChartPropsMock = jest.fn();
+const projectionChartPropsMock = jest.fn();
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -83,7 +87,7 @@ jest.mock("@/components/shared", () => ({
     React.createElement(
       "DetailChartModal",
       { visible, ...props },
-      visible ? children("90d") : null,
+      visible ? children(mockDetailDateRange) : null,
     ),
 }));
 
@@ -94,12 +98,18 @@ jest.mock("@/components/goals", () => ({
 
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
-  PlanVsActualChart: createHost("PlanVsActualChart"),
+  PlanVsActualChart: (props: any) => {
+    projectionChartPropsMock(props);
+    return React.createElement("PlanVsActualChart", props, props.children);
+  },
 }));
 
 jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
   __esModule: true,
-  PlanReadinessComparisonChart: createHost("PlanReadinessComparisonChart"),
+  PlanReadinessComparisonChart: (props: any) => {
+    readinessChartPropsMock(props);
+    return React.createElement("PlanReadinessComparisonChart", props, props.children);
+  },
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -182,6 +192,7 @@ jest.mock("@/lib/hooks/useProfileGoals", () => ({
       },
     ],
     goalsCount: 2,
+    dataUpdatedAt: goalsUpdatedAtRef.current,
     refetch: jest.fn(async () => undefined),
   }),
 }));
@@ -632,6 +643,10 @@ describe("plan dashboard navigation", () => {
     navigateMock.mockClear();
     refetchActivePlanMock.mockClear();
     refetchSnapshotMock.mockClear();
+    readinessChartPropsMock.mockClear();
+    projectionChartPropsMock.mockClear();
+    mockDetailDateRange = "90d";
+    goalsUpdatedAtRef.current = 1;
     activePlanQueryOptionsRef.current = null;
     eventQueryOptionsRef.current = [];
   });
@@ -656,6 +671,20 @@ describe("plan dashboard navigation", () => {
     await React.act(async () => {
       recentEventsUpdatedAtRef.current += 1;
       upcomingEventsUpdatedAtRef.current += 1;
+      view.rerender(<PlanScreenWithErrorBoundary />);
+    });
+
+    expect(refetchActivePlanMock).toHaveBeenCalled();
+    expect(refetchSnapshotMock).toHaveBeenCalled();
+  });
+
+  it("refreshes the projection snapshot when goals change", async () => {
+    const view = renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(refetchSnapshotMock).not.toHaveBeenCalled();
+
+    await React.act(async () => {
+      goalsUpdatedAtRef.current += 1;
       view.rerender(<PlanScreenWithErrorBoundary />);
     });
 
@@ -694,6 +723,32 @@ describe("plan dashboard navigation", () => {
 
     fireEvent.press(screen.getByTestId("plan-insight-card-readiness"));
     expect(screen.getByTestId("plan-readiness-comparison-chart")).toBeTruthy();
+  });
+
+  it("filters fullscreen analytics to the selected date range", () => {
+    mockDetailDateRange = "7d";
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("plan-insight-card-readiness"));
+
+    expect(readinessChartPropsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        points: expect.arrayContaining([expect.objectContaining({ date: "2026-04-05" })]),
+        goalMarkers: [],
+      }),
+    );
+    expect(readinessChartPropsMock.mock.calls.at(-1)?.[0].points).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ date: "2026-08-01" })]),
+    );
+
+    fireEvent.press(screen.getByTestId("plan-insight-card-load"));
+
+    expect(projectionChartPropsMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeline: expect.arrayContaining([expect.objectContaining({ date: "2026-04-01" })]),
+        goalMarkers: [],
+      }),
+    );
   });
 
   it("does not render active-plan navigation action", () => {

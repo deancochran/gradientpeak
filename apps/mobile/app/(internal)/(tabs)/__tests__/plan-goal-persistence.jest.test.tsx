@@ -1,10 +1,9 @@
 import React from "react";
 
-import { renderNative } from "../../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
-const createGoalMutateAsync = jest.fn().mockResolvedValue({ id: "goal-new" });
+const navigateMock = jest.fn();
 const goalsFixture: any[] = [];
-const goalEditorModalPropsRef = { current: null as any };
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -24,7 +23,7 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ push: jest.fn(), navigate: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), navigate: navigateMock }),
 }));
 
 jest.mock("@/lib/auth/auth-headers", () => ({
@@ -80,13 +79,6 @@ jest.mock("@/components/shared", () => ({
       { visible, ...props },
       visible ? children("90d") : null,
     ),
-}));
-jest.mock("@/components/goals", () => ({
-  __esModule: true,
-  GoalEditorModal: (props: any) => {
-    goalEditorModalPropsRef.current = props;
-    return React.createElement("GoalEditorModal", props, props.children);
-  },
 }));
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
@@ -185,7 +177,7 @@ jest.mock("@/lib/api", () => ({
       list: { useQuery: () => ({ data: { items: [] }, refetch: jest.fn() }) },
     },
     goals: {
-      create: { useMutation: () => ({ isPending: false, mutateAsync: createGoalMutateAsync }) },
+      create: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
       update: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
     },
   },
@@ -195,41 +187,15 @@ const PlanScreenWithErrorBoundary = require("../plan").default;
 
 describe("plan goal persistence", () => {
   beforeEach(() => {
-    createGoalMutateAsync.mockClear();
-    goalEditorModalPropsRef.current = null;
+    navigateMock.mockClear();
     goalsFixture.splice(0, goalsFixture.length);
   });
 
-  it("serializes canonical goal payloads when creating a goal", async () => {
+  it("routes goal creation through the dedicated create screen", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    await goalEditorModalPropsRef.current.onSubmit({
-      title: "Spring 5K",
-      targetDate: "2026-06-01",
-      importance: 8,
-      goalType: "race_performance",
-      activityCategory: "run",
-      raceDistanceKm: 5,
-      raceTargetMode: "time",
-      targetDuration: "0:25:00",
-      thresholdTestDuration: "0:20:00",
-      consistencySessionsPerWeek: 4,
-      consistencyWeeks: 8,
-    });
+    fireEvent.press(screen.getByTestId("plan-add-goal-button"));
 
-    expect(createGoalMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        profile_id: "11111111-1111-4111-8111-111111111111",
-        target_date: "2026-06-01",
-        title: "Spring 5K",
-        priority: 8,
-        activity_category: "run",
-        target_payload: expect.objectContaining({
-          type: "event_performance",
-          distance_m: 5000,
-          target_time_s: 1500,
-        }),
-      }),
-    );
+    expect(navigateMock).toHaveBeenCalledWith("/goal-create");
   });
 });

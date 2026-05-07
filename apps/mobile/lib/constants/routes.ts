@@ -53,6 +53,13 @@ export const ROUTES = {
     DETAIL: (metricId: string) => `/profile-metric-detail?id=${metricId}` as const,
   },
 
+  GOALS: {
+    LIST: "/goals-list" as const,
+    CREATE: "/goal-create" as const,
+    DETAIL: (goalId: string) => `/goal-detail?id=${goalId}` as const,
+    EDIT: (goalId: string) => `/goal-edit?id=${goalId}` as const,
+  },
+
   // Routes Routes
   ROUTES: {
     LIST: "/routes-list" as const,

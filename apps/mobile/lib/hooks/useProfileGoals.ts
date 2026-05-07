@@ -66,6 +66,7 @@ export function useProfileGoals(options: UseProfileGoalsOptions = {}) {
     isFetching: !!profileId && query.isFetching,
     isError: !!profileId && query.isError,
     error: profileId ? query.error : null,
+    dataUpdatedAt: query.dataUpdatedAt,
     refetch,
   };
 }

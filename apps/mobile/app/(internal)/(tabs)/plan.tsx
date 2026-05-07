@@ -12,9 +12,7 @@ import { CalendarMonthList } from "@/components/calendar/CalendarMonthList";
 import { PlanReadinessComparisonChart } from "@/components/charts/PlanReadinessComparisonChart";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { GoalEditorModal } from "@/components/goals";
 import { usePlanDashboardViewModel } from "@/components/plan/usePlanDashboardViewModel";
-import { usePlanGoalEditorController } from "@/components/plan/usePlanGoalEditorController";
 import {
   AppHeader,
   CompactInsightCard,
@@ -32,6 +30,7 @@ import {
   parseDateKey,
 } from "@/lib/calendar/dateMath";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAutoPaginateInfiniteQuery } from "@/lib/hooks/useAutoPaginateInfiniteQuery";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
@@ -72,6 +71,29 @@ function compactDateTime(value: string) {
   const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00.000Z` : value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function getDateRangeStartKey(dateRange: DateRange, referenceDateKey?: string | null) {
+  if (dateRange === "all" || !referenceDateKey) return null;
+  const days = dateRange === "7d" ? 6 : dateRange === "30d" ? 29 : 89;
+  const parsed = new Date(`${referenceDateKey}T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setDate(parsed.getDate() - days);
+  return getDateKey(parsed);
+}
+
+function filterByDateRange<T>(
+  items: T[],
+  dateRange: DateRange,
+  referenceDateKey: string | null | undefined,
+  getItemDate: (item: T) => string | null | undefined,
+) {
+  const startKey = getDateRangeStartKey(dateRange, referenceDateKey);
+  if (!startKey || !referenceDateKey) return items;
+  return items.filter((item) => {
+    const itemDate = getItemDate(item);
+    return !!itemDate && itemDate >= startKey && itemDate <= referenceDateKey;
+  });
 }
 
 type PlanInsightKind = "load" | "readiness";
@@ -469,7 +491,6 @@ function PlanDashboardScreen() {
     curveWindow: "overview",
   });
   const goals = useProfileGoals({ loadAllPages: true });
-  const goalEditor = usePlanGoalEditorController({ goals });
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
   const calendarEvents = useMemo(
     () => (calendarEventsQuery.data?.items ?? []) as CalendarEvent[],
@@ -528,6 +549,7 @@ function PlanDashboardScreen() {
       activePlan?.id ?? "",
       String(upcomingPlannedEventsQuery.dataUpdatedAt ?? 0),
       String(recentPlannedEventsQuery.dataUpdatedAt ?? 0),
+      String(goals.dataUpdatedAt ?? 0),
     ].join(":");
 
     if (!activePlan?.id) {
@@ -552,6 +574,7 @@ function PlanDashboardScreen() {
     void Promise.all([refetchActivePlan(), snapshot.refetchAll()]);
   }, [
     activePlan?.id,
+    goals.dataUpdatedAt,
     recentPlannedEventsQuery.dataUpdatedAt,
     refetchActivePlan,
     snapshot.refetchAll,
@@ -668,11 +691,18 @@ function PlanDashboardScreen() {
 
           <View className="gap-2" testID="plan-goals-card">
             <View className="flex-row items-center justify-between">
-              <Text className="text-sm font-semibold text-foreground">Goals</Text>
+              <TouchableOpacity
+                accessibilityRole="button"
+                activeOpacity={0.85}
+                onPress={() => router.navigate(ROUTES.GOALS.LIST as never)}
+                testID="plan-view-goals-button"
+              >
+                <Text className="text-sm font-semibold text-foreground">Goals</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 className="h-8 w-8 items-center justify-center rounded-full bg-primary"
                 activeOpacity={0.85}
-                onPress={goalEditor.openCreateGoalEditor}
+                onPress={() => router.navigate(ROUTES.GOALS.CREATE as never)}
                 testID="plan-add-goal-button"
                 accessibilityRole="button"
                 accessibilityLabel="Add goal"
@@ -687,7 +717,7 @@ function PlanDashboardScreen() {
                     key={goal.id}
                     className="flex-row items-center gap-3 rounded-2xl bg-muted/30 px-3 py-2.5"
                     activeOpacity={0.85}
-                    onPress={() => goalEditor.openEditGoalEditor(goal.id)}
+                    onPress={() => router.navigate(ROUTES.GOALS.DETAIL(goal.id) as never)}
                     testID={`plan-goal-row-${goal.id}`}
                   >
                     <View className="h-8 w-8 items-center justify-center rounded-full border border-amber-500/70 bg-amber-500/10">
@@ -722,7 +752,7 @@ function PlanDashboardScreen() {
               <TouchableOpacity
                 className="flex-row items-center gap-3 rounded-2xl border border-dashed border-border px-3 py-3"
                 activeOpacity={0.85}
-                onPress={goalEditor.openCreateGoalEditor}
+                onPress={() => router.navigate(ROUTES.GOALS.CREATE as never)}
               >
                 <View className="h-8 w-8 items-center justify-center rounded-full bg-muted">
                   <Icon as={Flag} size={14} className="text-muted-foreground" />
@@ -803,23 +833,46 @@ function PlanDashboardScreen() {
         </View>
       </ScrollView>
 
-      <GoalEditorModal
-        visible={goalEditor.isGoalModalVisible}
-        initialValue={goalEditor.goalEditorInitialValue}
-        title={goalEditor.goalEditorTitle}
-        submitLabel={goalEditor.goalEditorSubmitLabel}
-        isSubmitting={goalEditor.isGoalSaving}
-        onClose={goalEditor.closeGoalEditor}
-        onSubmit={goalEditor.submitGoal}
-      />
       <DetailChartModal
         visible={!!selectedPlanInsight}
         onClose={() => setSelectedPlanInsight(null)}
         title={selectedPlanInsight === "readiness" ? "Readiness Forecast" : "Load Comparison"}
         defaultDateRange="90d"
       >
-        {(_dateRange: DateRange) =>
-          selectedPlanInsight === "readiness" ? (
+        {(dateRange: DateRange) => {
+          const rangeEndKey = dashboard.readinessForecast?.today ?? todayKey;
+          const rangedReadinessPoints = filterByDateRange(
+            dashboard.readinessComparisonPoints,
+            dateRange,
+            rangeEndKey,
+            (point) => point.date,
+          );
+          const rangedReadinessGoalMarkers = filterByDateRange(
+            dashboard.readinessGoalMarkers,
+            dateRange,
+            rangeEndKey,
+            (marker) => marker.targetDate,
+          );
+          const rangedWeeklyLoadBars = filterByDateRange(
+            dashboard.weeklyLoadBars,
+            dateRange,
+            rangeEndKey,
+            (week) => week.weekStart,
+          );
+          const rangedTimelinePoints = filterByDateRange(
+            dashboard.insightTimelinePoints,
+            dateRange,
+            rangeEndKey,
+            (point) => point.date,
+          );
+          const rangedGoalMarkers = filterByDateRange(
+            dashboard.goalMarkers,
+            dateRange,
+            rangeEndKey,
+            (marker) => marker.targetDate,
+          );
+
+          return selectedPlanInsight === "readiness" ? (
             <View className="gap-4">
               <PlanInsightDetailHero
                 category="Trajectory"
@@ -830,14 +883,14 @@ function PlanDashboardScreen() {
                 }
                 tone="green"
               >
-                <MiniReadinessTrend points={dashboard.readinessComparisonPoints} />
+                <MiniReadinessTrend points={rangedReadinessPoints} />
               </PlanInsightDetailHero>
               <Card className="rounded-3xl border border-border bg-card">
                 <CardContent className="p-5">
                   <View testID="plan-readiness-comparison-chart">
                     <PlanReadinessComparisonChart
-                      points={dashboard.readinessComparisonPoints}
-                      goalMarkers={dashboard.readinessGoalMarkers}
+                      points={rangedReadinessPoints}
+                      goalMarkers={rangedReadinessGoalMarkers}
                       zones={dashboard.readinessForecast?.zones}
                       today={dashboard.readinessForecast?.today}
                       accessibilitySummary={dashboard.readinessAccessibilitySummary}
@@ -859,17 +912,17 @@ function PlanDashboardScreen() {
                 }
                 tone="orange"
               >
-                <MiniLoadTrend weeks={dashboard.weeklyLoadBars} />
+                <MiniLoadTrend weeks={rangedWeeklyLoadBars} />
               </PlanInsightDetailHero>
               <Card className="rounded-3xl border border-border bg-card">
                 <CardContent className="p-5">
                   <View testID="plan-projection-chart">
                     <PlanVsActualChart
-                      timeline={dashboard.insightTimelinePoints}
+                      timeline={rangedTimelinePoints}
                       actualData={dashboard.fitnessHistory}
                       projectedData={dashboard.projectedFitness}
                       idealData={dashboard.idealFitnessCurve}
-                      goalMarkers={dashboard.goalMarkers}
+                      goalMarkers={rangedGoalMarkers}
                       goalMetrics={dashboard.goalMetrics}
                       height={360}
                       showLegend
@@ -878,14 +931,14 @@ function PlanDashboardScreen() {
                 </CardContent>
               </Card>
               <PlanKeyReadings rows={loadDetailRows} />
-              {dashboard.weeklyLoadBars.length > 0 ? (
+              {rangedWeeklyLoadBars.length > 0 ? (
                 <Card
                   className="rounded-3xl border border-border bg-card"
                   testID="plan-weekly-load-bars"
                 >
                   <CardContent className="gap-3 p-5">
                     <Text className="text-base font-semibold text-foreground">Weekly Load Gap</Text>
-                    {dashboard.weeklyLoadBars.slice(0, 6).map((week) => {
+                    {rangedWeeklyLoadBars.slice(0, 6).map((week) => {
                       const maxLoad = Math.max(1, week.actual, week.scheduled, week.recommended);
                       return (
                         <View key={week.weekStart} className="gap-1">
@@ -920,8 +973,8 @@ function PlanDashboardScreen() {
                 </Card>
               ) : null}
             </View>
-          )
-        }
+          );
+        }}
       </DetailChartModal>
     </View>
   );

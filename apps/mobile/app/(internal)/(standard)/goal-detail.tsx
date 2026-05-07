@@ -1,10 +1,6 @@
 import { invalidateGoalQueries } from "@repo/api/react";
 import {
-  buildGoalDraftFromGoal,
-  buildGoalUpdatePayload,
-  createEmptyGoalDraft,
   formatGoalTypeLabel,
-  type GoalEditorDraft,
   getGoalDistanceBadge,
   getGoalMetricSummary,
   getGoalObjectiveSummary,
@@ -23,10 +19,10 @@ import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, Target } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
-import { GoalEditorModal } from "@/components/goals/GoalEditorModal";
+import { ActivityIndicator, ScrollView, View } from "react-native";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
 
 export default function GoalDetailScreen() {
   const router = useRouter();
@@ -34,14 +30,12 @@ export default function GoalDetailScreen() {
   const utils = api.useUtils();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
-  const [showEditor, setShowEditor] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const {
-    data: goal,
-    isLoading,
-    refetch,
-  } = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
+  const { data: goal, isLoading } = api.goals.getById.useQuery(
+    { id: goalId },
+    { enabled: !!goalId },
+  );
   const goalRecord = useMemo(() => {
     if (!goal) {
       return null;
@@ -54,12 +48,6 @@ export default function GoalDetailScreen() {
     }
   }, [goal]);
 
-  const updateGoalMutation = api.goals.update.useMutation({
-    onSuccess: async () => {
-      await Promise.all([invalidateGoalQueries(utils, { goalId }), refetch()]);
-      setShowEditor(false);
-    },
-  });
   const deleteGoalMutation = api.goals.delete.useMutation({
     onSuccess: async () => {
       await invalidateGoalQueries(utils, { includeGoalDetail: false });
@@ -67,13 +55,6 @@ export default function GoalDetailScreen() {
     },
   });
 
-  const initialDraft = useMemo(() => {
-    if (!goalRecord) {
-      return createEmptyGoalDraft() satisfies GoalEditorDraft;
-    }
-
-    return buildGoalDraftFromGoal({ goal: goalRecord });
-  }, [goalRecord]);
   const metricSummary = goalRecord ? getGoalMetricSummary(goalRecord) : null;
   const distanceBadge = goalRecord ? getGoalDistanceBadge(goalRecord) : null;
   const objectiveSummary = goalRecord ? getGoalObjectiveSummary(goalRecord) : null;
@@ -92,24 +73,6 @@ export default function GoalDetailScreen() {
     }
 
     setShowDeleteConfirm(true);
-  };
-
-  const handleSubmitGoal = async (draft: GoalEditorDraft) => {
-    if (!goalRecord) {
-      return;
-    }
-
-    try {
-      await updateGoalMutation.mutateAsync({
-        id: goalRecord.id,
-        data: buildGoalUpdatePayload({ draft }),
-      });
-    } catch (error) {
-      Alert.alert(
-        "Unable to save goal",
-        error instanceof Error ? error.message : "Please try again.",
-      );
-    }
   };
 
   if (isLoading) {
@@ -143,7 +106,10 @@ export default function GoalDetailScreen() {
         </View>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem onPress={() => setShowEditor(true)} testID="goal-detail-options-edit">
+        <DropdownMenuItem
+          onPress={() => router.navigate(ROUTES.GOALS.EDIT(goalRecord.id) as never)}
+          testID="goal-detail-options-edit"
+        >
           <Text>Edit Goal</Text>
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -256,17 +222,6 @@ export default function GoalDetailScreen() {
         </Card>
       </ScrollView>
 
-      <GoalEditorModal
-        visible={showEditor}
-        initialValue={initialDraft}
-        title="Edit Goal"
-        submitLabel="Save Changes"
-        isSubmitting={updateGoalMutation.isPending}
-        onClose={() => setShowEditor(false)}
-        onSubmit={(draft) => {
-          void handleSubmitGoal(draft);
-        }}
-      />
       {showDeleteConfirm ? (
         <AppConfirmModal
           description="Are you sure you want to delete this goal?"

@@ -21,6 +21,9 @@ const navigateToMock = jest.fn();
 const routeCardMock = jest.fn((props: any) =>
   React.createElement("RouteCard", props, props.children),
 );
+const contentPreviewMock = jest.fn((props: any) =>
+  React.createElement("ActivityPlanContentPreview", props, props.children),
+);
 const routeGetUseQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: routeMock,
 }));
@@ -184,7 +187,7 @@ jest.mock("@/lib/activityPlanMetrics", () => ({
 
 jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   __esModule: true,
-  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
+  ActivityPlanContentPreview: (props: any) => contentPreviewMock(props),
 }));
 
 jest.mock("@/components/activity-plan/useActivityPlanDetailViewModel", () => ({
@@ -257,6 +260,7 @@ describe("activity plan detail route card", () => {
   beforeEach(() => {
     navigateToMock.mockReset();
     routeCardMock.mockClear();
+    contentPreviewMock.mockClear();
     routeGetUseQueryMock.mockClear();
     routeLoadFullUseQueryMock.mockClear();
     routeGetUseQueryMock.mockImplementation(() => ({ data: routeMock }));
@@ -283,6 +287,19 @@ describe("activity plan detail route card", () => {
       pathname: "/(internal)/(standard)/route-detail",
       params: { id: "route-123" },
     });
+  });
+
+  it("keeps route map preview canonical to the shared route card", () => {
+    renderNative(<ActivityPlanDetail />);
+
+    expect(routeCardMock).toHaveBeenCalledTimes(1);
+    expect(contentPreviewMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        route: routeMock,
+        routeFull: routeFullMock,
+        showRoutePreview: false,
+      }),
+    );
   });
 
   it("loads the route preview when opened from a template payload", () => {

@@ -52,6 +52,7 @@ type ActivityPlanContentPreviewProps = {
   plan: ActivityPlanPreviewLike | null | undefined;
   route?: RouteLike | null;
   routeFull?: FullRouteLike | null;
+  showRoutePreview?: boolean;
   size?: "small" | "medium" | "large";
   testIDPrefix?: string;
   tss?: number | null;
@@ -219,6 +220,7 @@ export function ActivityPlanContentPreview({
   plan,
   route,
   routeFull,
+  showRoutePreview = true,
   size,
   testIDPrefix,
   tss,
@@ -258,7 +260,13 @@ export function ActivityPlanContentPreview({
     routeDistanceMeters !== null ||
     !!route?.name;
 
-  if (!plan || (!hasMetrics && !hasTimeline && visibleSteps.length === 0 && !routeCoordinates)) {
+  if (
+    !plan ||
+    (!hasMetrics &&
+      !hasTimeline &&
+      visibleSteps.length === 0 &&
+      !(showRoutePreview && routeCoordinates))
+  ) {
     return null;
   }
 
@@ -289,7 +297,11 @@ export function ActivityPlanContentPreview({
         />
       ) : null}
 
-      {route && routeCoordinates && routeCoordinates.length > 0 && resolvedSize !== "small" ? (
+      {showRoutePreview &&
+      route &&
+      routeCoordinates &&
+      routeCoordinates.length > 0 &&
+      resolvedSize !== "small" ? (
         <Pressable
           onPress={onRoutePress ?? undefined}
           disabled={!onRoutePress}

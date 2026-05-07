@@ -2,8 +2,7 @@ import React from "react";
 
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
-const updateGoalMutateAsync = jest.fn().mockResolvedValue({ id: "goal-1" });
-const goalEditorModalPropsRef = { current: null as any };
+const navigateMock = jest.fn();
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -31,7 +30,7 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: "goal-1" }),
-  useRouter: () => ({ back: jest.fn() }),
+  useRouter: () => ({ back: jest.fn(), navigate: navigateMock }),
 }));
 
 jest.mock("@repo/core", () => ({
@@ -54,14 +53,6 @@ jest.mock("@repo/core", () => ({
   getGoalDistanceBadge: jest.fn(() => null),
   getGoalMetricSummary: jest.fn(() => null),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
-}));
-
-jest.mock("@/components/goals/GoalEditorModal", () => ({
-  __esModule: true,
-  GoalEditorModal: (props: any) => {
-    goalEditorModalPropsRef.current = props;
-    return React.createElement("GoalEditorModal", props, props.children);
-  },
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
@@ -114,7 +105,6 @@ jest.mock("@/lib/api", () => ({
           refetch: jest.fn(async () => undefined),
         }),
       },
-      update: { useMutation: () => ({ isPending: false, mutateAsync: updateGoalMutateAsync }) },
       delete: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
     },
   },
@@ -124,42 +114,14 @@ const GoalDetailScreen = require("../goal-detail").default;
 
 describe("goal detail persistence", () => {
   beforeEach(() => {
-    updateGoalMutateAsync.mockClear();
-    goalEditorModalPropsRef.current = null;
+    navigateMock.mockClear();
   });
 
-  it("serializes canonical updates when editing a goal", async () => {
+  it("routes editing through the dedicated goal edit screen", async () => {
     renderNative(<GoalDetailScreen />);
 
     fireEvent.press(screen.getByTestId("goal-detail-options-edit"));
 
-    await goalEditorModalPropsRef.current.onSubmit({
-      title: "Spring 5K",
-      targetDate: "2026-06-15",
-      importance: 9,
-      goalType: "race_performance",
-      activityCategory: "run",
-      raceDistanceKm: 5,
-      raceTargetMode: "time",
-      targetDuration: "0:24:10",
-      thresholdTestDuration: "0:20:00",
-      consistencySessionsPerWeek: 4,
-      consistencyWeeks: 8,
-    });
-
-    expect(updateGoalMutateAsync).toHaveBeenCalledWith({
-      id: "goal-1",
-      data: expect.objectContaining({
-        target_date: "2026-06-15",
-        title: "Spring 5K",
-        priority: 9,
-        activity_category: "run",
-        target_payload: expect.objectContaining({
-          type: "event_performance",
-          target_time_s: 1450,
-          distance_m: 5000,
-        }),
-      }),
-    });
+    expect(navigateMock).toHaveBeenCalledWith("/goal-edit?id=goal-1");
   });
 });

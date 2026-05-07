@@ -442,6 +442,7 @@ export function ActivityPlanDetailScreen({
                   : null
             }
             routeFull={routeFull}
+            showRoutePreview={false}
             onRoutePress={
               routeId
                 ? () =>
